@@ -1377,6 +1377,7 @@ name = "qsl-analyze"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "jsonschema 0.17.1",
  "num-bigint",
  "num-integer",
  "num-traits",

@@ -77,6 +77,7 @@ fn registry(graph: &CheckedGraph) -> Registry {
                 fairness_kinds: None,
                 evidence_kinds: None,
                 memory_models: None,
+                reductions: None,
             },
         )
         .expect("a valid manifest");

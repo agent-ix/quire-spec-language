@@ -57,7 +57,7 @@ pub mod routing;
 
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
-use qsl_foundation::{BackendId, MemoryModelName};
+use qsl_foundation::{BackendId, MemoryModelName, ReductionKind};
 #[cfg(test)]
 use qsl_foundation::{Code, EmptyBackendIdentity};
 use qsl_semantics::check::Capability;
@@ -282,6 +282,7 @@ pub struct BackendDescriptor {
     domains: Option<BTreeSet<DomainKind>>,
     fairness_kinds: BTreeSet<FairnessKind>,
     memory_models: BTreeSet<MemoryModelName>,
+    reductions: BTreeSet<ReductionKind>,
     evidence_kinds: BTreeSet<EvidenceKind>,
     dynamics: Option<BTreeSet<DynamicsKind>>,
     solver_bounds: Option<SolverBounds>,
@@ -299,6 +300,9 @@ pub struct ManifestMembers<'a> {
     pub evidence_kinds: Option<&'a [&'a str]>,
     /// The `memory_models` member (QSpec FR-331-AC-30).
     pub memory_models: Option<&'a [MemoryModelName]>,
+    /// The `reductions` member (FR-159 "Capability", QSpec FR-382): the
+    /// state-space reductions the backend applies.
+    pub reductions: Option<&'a [&'a str]>,
 }
 
 /// Convert one already-read FR-331 provider manifest into its routed
@@ -325,6 +329,15 @@ pub struct ManifestMembers<'a> {
 /// ruling); a descriptor with no
 /// member advertises `sc` only (FR-226-AC-2).
 ///
+/// `reductions` is the manifest's `reductions` member (FR-159
+/// "Capability", QSpec FR-382), `None` when it has none, which advertises
+/// no reduction. It is judged after `memory_models`, for a backend of any
+/// kind. A member that is empty, holds a label other than `symmetry`,
+/// `partial-order` or `constraint` (the first in member order), or repeats
+/// one refuses retaining the [`ReductionsDefect`]. No QSpec registration
+/// cause names it yet (spec gap STD-493), so it reports under the sibling
+/// member's cause `invalid-dynamics`, as `memory_models` does.
+///
 /// `evidence_kinds` is the manifest's evidence-kind labels, `None` when it
 /// has none. It is judged after every advertised pair, `domains` and
 /// `fairness_kinds` and before `memory_models`, and only for a backend that advertises
@@ -344,6 +357,7 @@ pub fn descriptor_from_manifest<'a>(
         fairness_kinds,
         evidence_kinds,
         memory_models,
+        reductions,
     } = members;
     let refuse = |cause| RegistrationRefusal {
         backend: backend.clone(),
@@ -384,6 +398,8 @@ pub fn descriptor_from_manifest<'a>(
     };
     let memory_models = admit_memory_models(memory_models, advertises_temporal)
         .map_err(|defect| refuse(RegistrationCause::InvalidMemoryModels(defect)))?;
+    let reductions = admit_reductions(reductions)
+        .map_err(|defect| refuse(RegistrationCause::InvalidReductions(defect)))?;
     Ok(BackendDescriptor {
         backend,
         origin,
@@ -395,7 +411,29 @@ pub fn descriptor_from_manifest<'a>(
         dynamics: None,
         solver_bounds: None,
         memory_models,
+        reductions,
     })
+}
+
+/// FR-159 "Capability": a `reductions` member is a nonempty,
+/// duplicate-free list of reduction spellings; an absent member advertises
+/// none.
+fn admit_reductions(member: Option<&[&str]>) -> Result<BTreeSet<ReductionKind>, ReductionsDefect> {
+    let Some(labels) = member else {
+        return Ok(BTreeSet::new());
+    };
+    if labels.is_empty() {
+        return Err(ReductionsDefect::Empty);
+    }
+    let mut seen = BTreeSet::new();
+    for label in labels {
+        let kind = ReductionKind::from_wire(label)
+            .ok_or_else(|| ReductionsDefect::UnknownLabel((*label).to_owned()))?;
+        if !seen.insert(kind) {
+            return Err(ReductionsDefect::DuplicateLabel((*label).to_owned()));
+        }
+    }
+    Ok(seen)
 }
 
 /// FR-331-AC-30: a `memory_models` member is a nonempty, duplicate-free list
@@ -597,6 +635,7 @@ impl BackendDescriptor {
             domains,
             fairness_kinds: BTreeSet::new(),
             memory_models: BTreeSet::new(),
+            reductions: BTreeSet::new(),
             evidence_kinds,
             dynamics: None,
             solver_bounds: None,
@@ -707,6 +746,19 @@ impl BackendDescriptor {
     /// The memory models this backend advertises (FR-226).
     pub fn memory_models(&self) -> &BTreeSet<MemoryModelName> {
         &self.memory_models
+    }
+
+    /// Advertise the reductions this backend applies (FR-159
+    /// "Capability"). A descriptor built without this call applies none.
+    #[must_use]
+    pub fn with_reductions(mut self, reductions: impl IntoIterator<Item = ReductionKind>) -> Self {
+        self.reductions = reductions.into_iter().collect();
+        self
+    }
+
+    /// The reductions this backend advertises (FR-159).
+    pub fn reductions(&self) -> &BTreeSet<ReductionKind> {
+        &self.reductions
     }
 
     /// Whether this backend decides an item whose subject resolves its
@@ -958,6 +1010,18 @@ pub enum MemoryModelsDefect {
     NonTemporal,
 }
 
+/// Why a `reductions` member was refused (FR-159 "Capability").
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ReductionsDefect {
+    /// The list had no labels.
+    Empty,
+    /// A label was not `symmetry`, `partial-order` or `constraint`; the
+    /// first such, in member order.
+    UnknownLabel(String),
+    /// A label occurred more than once.
+    DuplicateLabel(String),
+}
+
 /// Why a temporal provider's `dynamics` member was refused.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DynamicsDefect {
@@ -1009,6 +1073,10 @@ pub enum RegistrationCause {
     /// member's cause, `invalid-dynamics`, until a spec rules a cause of its
     /// own.
     InvalidMemoryModels(MemoryModelsDefect),
+    /// The manifest's `reductions` member is defective (FR-159
+    /// "Capability"). No QSpec cause names it yet (spec gap STD-493); it
+    /// reports under `invalid-dynamics`, as `memory_models` does.
+    InvalidReductions(ReductionsDefect),
 }
 
 impl RegistrationCause {
@@ -1023,7 +1091,7 @@ impl RegistrationCause {
             Self::InvalidFairnessKinds(_) => "invalid-fairness-kinds",
             Self::UnknownEvidenceKind(_) => "unknown-evidence-kind",
             Self::InvalidDynamics(_) => "invalid-dynamics",
-            Self::InvalidMemoryModels(_) => "invalid-dynamics",
+            Self::InvalidMemoryModels(_) | Self::InvalidReductions(_) => "invalid-dynamics",
         }
     }
 }
@@ -1087,6 +1155,7 @@ pub struct CandidateSet {
     candidates: Vec<Candidate>,
     fairness: BTreeMap<Candidate, BTreeSet<FairnessKind>>,
     missing_fairness: BTreeSet<FairnessKind>,
+    missing_reduction: Option<ReductionKind>,
     evidence: Option<ItemEvidence>,
 }
 
@@ -1101,6 +1170,7 @@ impl CandidateSet {
             candidates: Vec::new(),
             fairness: BTreeMap::new(),
             missing_fairness: BTreeSet::new(),
+            missing_reduction: None,
             evidence: None,
         }
     }
@@ -1144,6 +1214,15 @@ impl CandidateSet {
     /// absence, FR-076).
     pub fn missing_fairness_kinds(&self) -> &BTreeSet<FairnessKind> {
         &self.missing_fairness
+    }
+
+    /// The selected reduction that emptied this set (FR-159 "Capability"):
+    /// the first, in the order symmetry, partial-order, constraint, that a
+    /// candidate left out does not advertise. The item settles V-8
+    /// `unsupported-requested-capability` naming it. `None` when the set is
+    /// not empty or was empty before the reductions were read.
+    pub fn missing_reduction(&self) -> Option<ReductionKind> {
+        self.missing_reduction
     }
 
     /// Whether this set has no candidates (backend absence, FR-076).
@@ -1423,6 +1502,44 @@ impl Registry {
         self.compute(kind, &ItemEvidence::Absent, named, fairness, models, hybrid)
     }
 
+    /// FR-159 "Capability": `outcome`, a candidate set computed for an
+    /// item, restricted to the candidates advertising every reduction in
+    /// `selected`. Negotiation never drops, adds or replaces a selected
+    /// reduction, so when the restriction empties the set it names the
+    /// first selected reduction, in the order symmetry, partial-order,
+    /// constraint, that a left-out candidate does not advertise
+    /// ([`CandidateSet::missing_reduction`]). An unknown named backend is
+    /// returned unchanged.
+    pub fn restrict_to_reductions(
+        &self,
+        outcome: CandidateOutcome,
+        selected: &BTreeSet<ReductionKind>,
+    ) -> CandidateOutcome {
+        let CandidateOutcome::Candidates(mut set) = outcome else {
+            return outcome;
+        };
+        let advertised = |candidate: &Candidate| {
+            self.held
+                .get(&candidate.id)
+                .map_or_else(BTreeSet::new, |descriptor| descriptor.reductions.clone())
+        };
+        let (kept, left_out): (Vec<Candidate>, Vec<Candidate>) = set
+            .candidates
+            .drain(..)
+            .partition(|candidate| selected.is_subset(&advertised(candidate)));
+        if kept.is_empty() && !left_out.is_empty() {
+            set.missing_reduction = ReductionKind::ALL.into_iter().find(|reduction| {
+                selected.contains(reduction)
+                    && left_out
+                        .iter()
+                        .any(|candidate| !advertised(candidate).contains(reduction))
+            });
+        }
+        set.fairness.retain(|candidate, _| kept.contains(candidate));
+        set.candidates = kept;
+        CandidateOutcome::Candidates(set)
+    }
+
     fn compute(
         &self,
         kind: Capability,
@@ -1479,6 +1596,7 @@ impl Registry {
             candidates,
             fairness,
             missing_fairness,
+            missing_reduction: None,
             evidence: matches!(kind, Capability::ProbabilisticSatisfaction)
                 .then(|| evidence.clone()),
         })
