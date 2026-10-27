@@ -646,7 +646,6 @@ fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
         [
             ProtocolConstruct::Control("event"),
             ProtocolConstruct::Control("check"),
-            ProtocolConstruct::Captures
         ]
     );
     assert_eq!(found[0].tracking(), "QSL-1126");
