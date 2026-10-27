@@ -57,9 +57,25 @@ on all 11 open PR heads.
 | FND-004 | low | AC-26 has no order check for a sequence of a non-pure-clock record of a clock-bearing element beyond `Cfg` (no ordered case for `Sequence<Timer>`, whose order is by `n` and ignores `x`), and no negative for `Set<Cfg>[0, 1]`/`Bag`/`Map` that the new bullet names as unbounded, so the stated Set/Bag/Map exception is not pinned. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:711 | missing-requirement |
 | FND-005 | low | The order bullet carries rationale ("the cheapest order, since it needs no comparison between lengths") and an unneeded FR-215 appeal inside a SHALL; the list sentence calls the new item "the clock-bearing sequence" although `Sequence<Cfg>` with no clock is included. Wording only. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:406-407,453-460 | missing-requirement |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-006 | medium | The new slot rule is stated for "the same position of a sequence" only, but `Set<E>` and `Bag<E>` of a clock-bearing non-pure-clock element (`Set<Timer>[0, 2]`, `Bag<Timer>[0, 2]`) are now finite by the same bullet and have clock slots (FR-230-AC-19 lists `Call.b.[slot]`). Which pre-state slot a candidate's element keeps (by data part, by ascending order, by count) is not stated, and AC-26/TC-1270 grant only `Set<Cfg>`, `Bag<Cfg>` and `Set<Clock>`, so no clock-bearing Set/Bag is pinned. State the matching rule (or that a clock-bearing Set/Bag element other than a bare clock stays unbounded until ruled) and add one case. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:462-470 | missing-requirement |
+| FND-007 | low | The new-slot rule says the added slot holds "a newly created clock at 0 in its declared unit (FR-230 \"Clocks and resets\")", but FR-230 states no creation value or default for a clock slot; `Fresh` there carries the constants of a written literal. The rule is the author's own, so cite it as this section's (as the tuple/clock-place bullet does) rather than as FR-230's. Not a contradiction with FR-230 (its Carried/Fresh provenance concerns a written conjunct, which the new text defers to). | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:467-470 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Same-position slots keep the pre-state value or the FR-230 provenance when the collection is written; an added slot is Fresh at 0; AC-26 and TC-1270 step 5 work the length-1 to length-2 and empty pre-state cases. A Set/Bag residue is FND-006. |
+| FND-002 | fixed | Step 5 declares dense time and the types and grants sr21 and sr85; 21 and 85 are each observable. |
+| FND-003 | fixed | Option<Clock> is a clock place with p = 1; AC-26 `so: Sequence<Option<Clock>>[0, 3]` has 4 and step 5 grants it. |
+| FND-004 | fixed | Set/Bag are now finite with sizes pinned (7, 22, 28, 2), Map, ordered set and Set with no maximum are step 6 negatives, and sr21/sr85 order by n is stated. |
+| FND-005 | fixed | Rationale moved out of the SHALL bullets; list sentence now reads "sequence of a finite or clock element". |
+| FND-006 | still-open | medium: Set/Bag clock-slot matching undefined; see New findings. |
+| FND-007 | still-open | low: citation of FR-230 for a rule FR-230 does not state. |
+
 ## Verdict
 
-Changes requested, narrow: FND-001 and FND-002 (medium) should be fixed in this PR; FND-003 to FND-005
-are low. The core rule, the size formula, the arithmetic (43, 21, 85, 4), the order, the withdrawal of
-the unbounded reading and the Reference<Clock>/Set/Bag/Map exceptions are consistent with the ruling
-(with the Set/Bag/Map exception needing the planner's explicit acceptance), with FR-215 and with FR-230.
+Round 1: changes requested, narrow. FND-001 to FND-005 are fixed. Arithmetic verified: Set<Cfg>[0,1] 1+6 = 7; Set<Cfg>[0,2] 1+6+C(6,2)=15 = 22; Bag<Cfg>[0,2] 1+6+C(7,2)=21 = 28; Set<Clock>[0,2] p=1 gives C(1,0)+C(1,1)+C(1,2) = 2, matching FR-230 "Set<Clock> holding at most one element"; Bag p=1 gives N+1, matching FR-230 "one for each occurrence". Set, Bag and OrderedSet are QSL types (FR-230 "Clock collections", FR-106 spelling, TC-1171). Map and ordered set left unbounded with a follow-up note is acceptable. Count-then-ascending order for Set/Bag is consistent. quire validate passes; the scratch matrix lists FR-120-AC-22..26 rows.
