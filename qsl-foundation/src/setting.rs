@@ -118,6 +118,7 @@ settings! {
     ModelCheckMaxStoreBuffer => "model_check.max_store_buffer", "EN-1 weak memory", NodeCount;
     ModelCheckMaxMessages => "model_check.max_messages", "EN-1 weak memory", NodeCount;
     ExpansionMaxCandidates => "expansion.max_candidates", "model-subject expansion", NodeCount;
+    InspectMaxViewEntries => "inspect.max_view_entries", "typed view construction", NodeCount;
 }
 
 impl Setting {

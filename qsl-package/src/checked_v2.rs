@@ -382,7 +382,7 @@ pub enum SourceMapDefect {
 
 /// ADR-013 O-07: an occurrence role's FR-322 wire spelling, which the
 /// kernel `Role` carries.
-fn role_spelling(role: &CheckedOccurrenceRole) -> &'static str {
+pub(crate) fn role_spelling(role: &CheckedOccurrenceRole) -> &'static str {
     match role {
         CheckedOccurrenceRole::Declaration => "declaration",
         CheckedOccurrenceRole::Type => "type",
@@ -410,7 +410,7 @@ pub(crate) fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
         .find(|role| role_spelling(role) == spelling)
 }
 
-fn raw_source_ref(source: &CheckedSourceRef) -> Result<RawSourceRef, SourceMapDefect> {
+pub(crate) fn raw_source_ref(source: &CheckedSourceRef) -> Result<RawSourceRef, SourceMapDefect> {
     let digest = DigestRecord::from_wire(Some(&source.digest_domain), &source.digest)?;
     Ok(RawSourceRef::new(
         &*source.authority,

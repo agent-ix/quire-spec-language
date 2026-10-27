@@ -391,7 +391,8 @@ impl CompileRefusal {
                 | Setting::ModelCheckMaxLiveInstances
                 | Setting::ModelCheckMaxStoreBuffer
                 | Setting::ModelCheckMaxMessages
-                | Setting::ExpansionMaxCandidates => SpineStage::Emit,
+                | Setting::ExpansionMaxCandidates
+                | Setting::InspectMaxViewEntries => SpineStage::Emit,
             },
         }
     }
