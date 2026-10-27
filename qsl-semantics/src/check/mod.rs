@@ -237,6 +237,7 @@ pub fn builtin_rational_type_key() -> quire_exact::NodeKey {
         semantic_type: None,
         declaration: None,
         body: &body,
+        owner_model: None,
     };
     node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
         .expect("the built-in Rational scalar has a valid structural key")
@@ -255,6 +256,7 @@ pub fn builtin_text_type_key() -> quire_exact::NodeKey {
         semantic_type: None,
         declaration: None,
         body: &body,
+        owner_model: None,
     };
     node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
         .expect("the built-in Text scalar has a valid structural key")
