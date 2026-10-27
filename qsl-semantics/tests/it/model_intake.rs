@@ -1781,7 +1781,7 @@ fn lift_document_blocks_on_a_duplicate_identity() {
         ),
         (
             "spec/functional/FR-001-note.md",
-            "---\nid: FR-001\ntitle: Note\nobject: entity\ntype: FR\n---\n# FR-001: Note\n\n## Description\n\nAn authored fixture record whose field and whose own operation mint the\nsame member identity.\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| revision | Integer | 1 | |\n| id | UUID | 1 | identity |\n\n## Operations\n\n### revision\n\nReturns: Integer [1]\n",
+            "---\nid: FR-001\ntitle: Note\nobject: entity\ntype: entity\n---\n# FR-001: Note\n\n## Description\n\nAn authored fixture record whose field and whose own operation mint the\nsame member identity.\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| revision | Integer | 1 | |\n| id | UUID | 1 | identity |\n\n## Operations\n\n### revision\n\nReturns: Integer [1]\n",
         ),
     ]);
     let fixtures = fcd_fixtures_dir();
