@@ -134,19 +134,22 @@ as QSpec FR-336 `$defs.CallInput` specifies. Its mapping is:
 | Corpus field | Typed API field | Mapping |
 | --- | --- | --- |
 | `function` | `Call.function` | Pass the FR-100 function identity string unchanged. |
-| Each `arguments[*].parameter` | `CallArgument.parameter` | Pass the declared parameter name unchanged. |
-| Each `arguments[*].value` tagged `boolean` | `CallArgument.value` | `quire_exact::Value::Boolean(value)`. |
-| Each `arguments[*].value` tagged `integer` | `CallArgument.value` | Parse the canonical decimal under FR-038 and construct `quire_exact::Value::Integer`, with no floating-point conversion. |
-| Each `arguments[*].value` tagged `reference` | `CallArgument.value` | Construct the existing `ObjectReference` with the supplied universe, effective type and exact object identity. FR-100 admission still runs. |
-| Each `arguments[*].value` tagged `population` | `CallArgument.value` | Resolve `name` to the matching admitted population entry in the `population` file, then use its FR-089 `PopulationId` as `quire_exact::Value::Population`. The adapter SHALL NOT mint an id. |
+| Each `arguments[i]` tagged `boolean` | `CallArgument.parameter`, `CallArgument.value` | Resolve the selected function's declared parameter at zero-based position `i`; use its exact declared name for `parameter` and construct `quire_exact::Value::Boolean(value)`. |
+| Each `arguments[i]` tagged `integer` | `CallArgument.parameter`, `CallArgument.value` | Resolve the selected function's declared parameter at zero-based position `i`; use its exact declared name for `parameter`, parse the canonical decimal under FR-038 and construct `quire_exact::Value::Integer`, with no floating-point conversion. |
+| Each `arguments[i]` tagged `reference` | `CallArgument.parameter`, `CallArgument.value` | Resolve the selected function's declared parameter at zero-based position `i`; use its exact declared name for `parameter` and construct the existing `ObjectReference` with the supplied universe, effective type and exact object identity. FR-100 admission still runs. |
+| Each `arguments[i]` tagged `population` | `CallArgument.parameter`, `CallArgument.value` | Resolve the selected function's declared parameter at zero-based position `i`; use its exact declared name for `parameter`; resolve `name` to the matching admitted population entry in the `population` file, then use its FR-089 `PopulationId` as `quire_exact::Value::Population`. The adapter SHALL NOT mint an id. |
 | `accounting` | `Call.accounting` | Parse each canonical decimal string as u64, then map the ten FR-100 `quire.value.accounting/v1` counters by their unchanged names and exact values. Reject overflow before constructing `Call`. Omitted counters use FR-100's defaults. |
 | (no corpus field) | `Call.supplied` | Use `SuppliedLimits::default()` under FR-277; this corpus input does not override supplied-value helper ceilings. |
 
-The runner SHALL preserve argument array order when constructing the `Call`;
-FR-100 then applies its declared-name binding and refusal precedence. The
-runner SHALL NOT route tagged values through native-run/1's signed-i64
-assignment encoding. Population tagged values are corpus-harness references
-only: native-run/1 itself still has no Population argument wire encoding.
+The runner SHALL preserve argument array order and pair `arguments[i]` with
+the selected function's declared parameter at the same zero-based position
+when constructing `CallArgument`. A value with no corresponding formal is an
+input-adapter refusal, not a value to drop or reassign; a shorter array is a
+prefix call, and FR-100 settles its remaining unbound parameters. FR-100 then
+applies its declared-name binding and refusal precedence. The runner SHALL
+NOT route tagged values through native-run/1's signed-i64 assignment encoding.
+Population tagged values are corpus-harness references only: native-run/1
+itself still has no Population argument wire encoding.
 
 #### `population` object-context mapping
 

@@ -25,6 +25,7 @@ use serde::Serialize;
 use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use quire_contract_model::ExecutionPoint;
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
 use quire_exact::Rational;
@@ -35,6 +36,41 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 // tests below still assert the wire shape against the domain's own constant.
 #[cfg(test)]
 use quire_exact::NODE_KEY_DOMAIN;
+
+/// The accepted `ClauseBinding.execution_point` (QSpec FR-322-AC-131) as the
+/// IR's closed four-variant [`ExecutionPoint`], which the IR owns: this
+/// wrapper adds only the `Hash` the IR type lacks, over the variant and its
+/// anchor name, so a [`Member`] and a node body stay hashable. Equality and
+/// the wire form are the IR type's own.
+///
+/// quire:canonical
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, FixedShape)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(transparent)]
+pub struct AcceptedPoint(ExecutionPoint);
+
+impl AcceptedPoint {
+    /// The accepted point `point`.
+    pub fn new(point: ExecutionPoint) -> Self {
+        Self(point)
+    }
+
+    /// The IR point.
+    pub fn point(&self) -> &ExecutionPoint {
+        &self.0
+    }
+}
+
+impl std::hash::Hash for AcceptedPoint {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match &self.0 {
+            ExecutionPoint::Initialization { name } => (0_u8, name).hash(state),
+            ExecutionPoint::Handler { name } => (1_u8, name).hash(state),
+            ExecutionPoint::Pre { operation } => (2_u8, operation).hash(state),
+            ExecutionPoint::Post { operation } => (3_u8, operation).hash(state),
+        }
+    }
+}
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
@@ -109,6 +145,11 @@ pub enum Member {
         /// Invariant, precondition or postcondition -- an invalid kind is
         /// unrepresentable, since [`StateClauseKind`] is itself a closed enum.
         clause: StateClauseKind,
+        /// The accepted `ClauseBinding.execution_point` (QSpec FR-341,
+        /// FR-322-AC-131), in the IR's closed four-variant shape; `None`
+        /// only when the checked clause has no point. It is part of the
+        /// member, so it enters the node's application preimage and key.
+        execution_point: Option<AcceptedPoint>,
     },
     /// An interval-capable temporal operator's interval (QSpec FR-370):
     /// `{kind: "temporal_interval", interval}`, with `interval` `null` for
@@ -242,8 +283,12 @@ impl Member {
             Self::ProfileOperator { operator } => MemberWire::ProfileOperator {
                 operator: operator.as_str(),
             },
-            Self::StateClause { clause } => MemberWire::StateClause {
+            Self::StateClause {
+                clause,
+                execution_point,
+            } => MemberWire::StateClause {
                 clause: state_clause_spelling(*clause),
+                execution_point: execution_point.as_ref().map(AcceptedPoint::point),
             },
             Self::TemporalInterval { interval } => MemberWire::TemporalInterval {
                 interval: interval.map(|interval| {
@@ -369,6 +414,8 @@ enum MemberWire<'a> {
     },
     StateClause {
         clause: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        execution_point: Option<&'a ExecutionPoint>,
     },
     TemporalInterval {
         interval: Option<IntervalWire>,
@@ -551,11 +598,57 @@ mod tests {
         );
     }
 
+    /// QSpec FR-322-AC-131: the member carries each closed `ExecutionPoint`
+    /// variant as exactly `{kind, name | operation}`, and omits the member
+    /// when the clause has no point.
+    #[test]
+    fn state_clause_renders_each_closed_execution_point_variant() {
+        use quire_contract_model::AnchorName;
+        let anchor = |text: &str| AnchorName::new(text).expect("test anchor name is valid");
+        let cases = [
+            (
+                ExecutionPoint::Initialization {
+                    name: anchor("boot"),
+                },
+                json!({"kind": "initialization", "name": "boot"}),
+            ),
+            (
+                ExecutionPoint::Handler {
+                    name: anchor("validate"),
+                },
+                json!({"kind": "handler", "name": "validate"}),
+            ),
+            (
+                ExecutionPoint::Pre {
+                    operation: anchor("go"),
+                },
+                json!({"kind": "pre", "operation": "go"}),
+            ),
+            (
+                ExecutionPoint::Post {
+                    operation: anchor("go"),
+                },
+                json!({"kind": "post", "operation": "go"}),
+            ),
+        ];
+        for (point, expected) in cases {
+            let member = Member::StateClause {
+                clause: StateClauseKind::Invariant,
+                execution_point: Some(AcceptedPoint::new(point)),
+            };
+            assert_eq!(
+                to_wire(&member),
+                json!({"kind": "state_clause", "clause": "invariant", "execution_point": expected})
+            );
+        }
+    }
+
     /// FR-341's own catalog member shape (QSpec STD-111).
     #[test]
     fn state_clause_renders_the_schema_shape_with_no_declaration() {
         let member = Member::StateClause {
             clause: StateClauseKind::Invariant,
+            execution_point: None,
         };
         let wire = to_wire(&member);
         assert_eq!(

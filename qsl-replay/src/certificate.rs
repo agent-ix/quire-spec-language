@@ -4,6 +4,8 @@
 //! [`zone`] holds the zone certificate checker's difference-bound matrices
 //! (ADR-026 CF-3, CF-6; FR-245): separate code from the zone engine's DBM in
 //! `qsl-analyze`, so a fault in one cannot hide a fault in the other.
+//! [`zone_certificate`] holds FR-244's zone certificate and FR-245's check
+//! of it.
 //! [`closure`] holds FR-338's closure certificate and its checker (ADR-018
 //! PC-3); [`scc`] holds FR-339's component certificate witnesses and the
 //! partition check of them (ADR-018 PC-4); [`simulation`] holds FR-149's
@@ -123,6 +125,75 @@ pub enum CertificateLocus {
         /// The step's index in that query's proof.
         index: u64,
     },
+    /// A malformed member of a certificate (FR-163, FR-245).
+    CertificateMember(CertificateMember),
+    /// A zone certificate node, by its position in `nodes` (FR-245).
+    ZoneNode {
+        /// The node's position.
+        node: u64,
+    },
+    /// A zone certificate edge, by its position in `edges` (FR-245).
+    ZoneEdge {
+        /// The edge's position.
+        edge: u64,
+    },
+    /// A zone certificate component, by its index (FR-245).
+    ZoneComponent {
+        /// The component's index.
+        component: u64,
+    },
+}
+
+/// A certificate member QSpec FR-331's certificate-member locus names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CertificateMember {
+    /// `identity`.
+    Identity,
+    /// `objective`.
+    Objective,
+    /// `kind`.
+    Kind,
+    /// `values`.
+    Values,
+    /// `ranking`.
+    Ranking,
+    /// `policy`.
+    Policy,
+    /// `components`.
+    Components,
+    /// `scale`.
+    Scale,
+    /// `bounds`, a zone certificate's LU bounds.
+    Bounds,
+    /// `nodes`.
+    Nodes,
+    /// `edges`.
+    Edges,
+    /// `reasons`.
+    Reasons,
+    /// `divergence`.
+    Divergence,
+}
+
+impl CertificateMember {
+    /// The member's FR-331 spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Objective => "objective",
+            Self::Kind => "kind",
+            Self::Values => "values",
+            Self::Ranking => "ranking",
+            Self::Policy => "policy",
+            Self::Components => "components",
+            Self::Scale => "scale",
+            Self::Bounds => "bounds",
+            Self::Nodes => "nodes",
+            Self::Edges => "edges",
+            Self::Reasons => "reasons",
+            Self::Divergence => "divergence",
+        }
+    }
 }
 
 impl Serialize for CertificateLocus {
@@ -150,6 +221,26 @@ impl Serialize for CertificateLocus {
                 object.end()
             }
             Self::Query { part } => part.serialize(serializer),
+            Self::CertificateMember(member) => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
+                object.serialize_field("member", member.as_str())?;
+                object.end()
+            }
+            Self::ZoneNode { node } => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
+                object.serialize_field("node", &node.to_string())?;
+                object.end()
+            }
+            Self::ZoneEdge { edge } => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
+                object.serialize_field("edge", &edge.to_string())?;
+                object.end()
+            }
+            Self::ZoneComponent { component } => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
+                object.serialize_field("component", &component.to_string())?;
+                object.end()
+            }
             Self::ProofStep { part, index } => {
                 let mut object = serializer.serialize_struct("CertificateLocus", 2)?;
                 object.serialize_field("part", part)?;
@@ -169,3 +260,4 @@ pub mod scc;
 pub mod simulation;
 pub mod state_graph;
 pub mod zone;
+pub mod zone_certificate;
