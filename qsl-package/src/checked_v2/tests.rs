@@ -2938,7 +2938,7 @@ fn conformance_shipped_projection_cases_are_refused_and_admitted_once_removed() 
 /// [`Code::UnknownProfile`], located at the law's definition.
 fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
     let application_key = |node: &Value| {
-        package_id_digest(&json!({
+        let mut preimage = json!({
             "version": "quire.application-node/v1",
             "node_tag": node["node_tag"],
             "semantic_form": node["semantic_form"],
@@ -2946,7 +2946,12 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
             "declaration": node.get("declaration").cloned().unwrap_or(Value::Null),
             "recursion": Value::Null,
             "body": node["body"],
-        }))
+        });
+        // A protocol clause's identity-bound owner edge (FR-464, FR-322).
+        if let Some(owner_model) = node.get("owner_model") {
+            preimage["owner_model"] = owner_model.clone();
+        }
+        package_id_digest(&preimage)
     };
     let nodes_of = |package: &Value| {
         package["semantic_graph"]["nodes"]
