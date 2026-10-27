@@ -90,3 +90,16 @@ CHANGES REQUESTED, non-blocking in risk but one fail-open guard to close: FND-00
 in this PR (two arms), FND-003 needs a resolvable trace id, FND-002 is a request for per-arm unit
 tests, FND-004 to FND-006 are low. Mergeability against current main: textually clean (no
 conflict). No security or panic concern; nothing in QSL can construct either type yet.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: `holds_reference` and `lift` descend a Map (lift rebuilds `MapType` with the lifted values and the same bound) and both wildcards became explicit variant lists; check.rs reference/event walks, `contains_population` and `widen_range` also gained Map arms. Mutating either arm (lift returns the values unchanged, holds_reference returns false) fails `a_reference_in_a_map_value_is_a_nested_reference` and `lifting_reaches_a_reference_inside_a_map_value`. |
+| FND-002 | fixed | Round 1: exact-figure tests for the family encoding of Map and BoundedQuantity, `type_node` refusal (`TypeMismatch`), Map equality `OperatorIneligible` and BoundedQuantity equality equal to Quantity, `classify_domains` for both (TC-437, FR-097-AC-2), and `holds_float` through a Map (the float scan was factored out as a function). |
+| FND-003 | fixed | Round 1: the call test traces TC-1053 / FR-367-AC-4 (both exist, AC-4 is the WrongValueKind criterion); the spelling test carries no trace and says why. |
+| FND-004 | fixed | Round 1: exact strings asserted for the unbounded and bounded Map and for `BoundedQuantity[unit]`. |
+| FND-005 | fixed | Round 1: `Ty::of` reads a BoundedQuantity as `Quantity(unit)`; the threshold and reward refusals are documented as deliberate conservative refusals (QSL-1155). `Ty::of` has no direct test (nit, not blocking). |
+| FND-006 | fixed | Round 1: `witness_type` refuses a BoundedQuantity `WrongValueKind` early, like a Map; the deciding-element wire encoder also refuses both types as unsupported. |
+
+Round 1 verdict: READY at 16edcb0b0 plus this disposition commit. fmt clean; clippy `-D warnings` clean; `--test it layer` passes; qsl-semantics, qsl-eval and qsl-replay full suites pass; QSpec main 60383a35 conformance: qsl-semantics vectors 7 of 7 match, qsl-package conformance still 13 of 15 red from the QSpec #461 owner_model break, unchanged by this PR.
