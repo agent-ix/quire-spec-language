@@ -228,6 +228,9 @@ pub use result_views::{
     StateGraphView, TracePositionView, TraceView,
 };
 
+mod render;
+pub use render::{render_outcome, render_view, RenderCause, RenderForm, RenderSources, Rendered};
+
 /// Inspect a checked package, using the package's typed emission metadata.
 pub fn inspect_package<'a>(
     package: &'a CheckedPackage,

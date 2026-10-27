@@ -123,6 +123,8 @@ pub fn inspect_outcome<'a>(
 pub struct AssignmentView<'a> {
     /// The declared parameter name.
     pub parameter: &'a str,
+    /// Zero-based position in the declared function parameter order.
+    pub declaration_order: usize,
     /// The parameter's checked wire identity.
     pub identity: qsl_foundation::digest::WireNodeId,
     /// The typed assignment value.
@@ -154,10 +156,11 @@ pub fn inspect_counterexample<'a>(
     let mut named = Vec::with_capacity(assignments.len());
     for assignment in assignments {
         budget.charge(cancel)?;
-        let Some((name, _)) = site
+        let Some((declaration_order, (name, _))) = site
             .parameters
             .iter()
-            .find(|(_, id)| *id == assignment.parameter)
+            .enumerate()
+            .find(|(_, (_, id))| *id == assignment.parameter)
         else {
             return Err(StageFailure::Refused(InspectCause::IncompatibleSelection {
                 selector: String::from("counterexample"),
@@ -165,6 +168,7 @@ pub fn inspect_counterexample<'a>(
         };
         named.push(AssignmentView {
             parameter: name.as_str(),
+            declaration_order,
             identity: assignment.parameter,
             value: &assignment.value,
         });

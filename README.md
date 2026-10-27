@@ -328,6 +328,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-route` | Matches a package's requirements to the backends that can check it. |
 | `qsl-analyze` | In-process model checking, timed zones and schedulability. |
 | `qsl-replay` | Recompiles and re-runs counterexamples; codegen calls it. |
+| `qsl-inspect` | Typed package and result views, rendered as bounded JSON, text or DOT. |
 | `qsl-source` | Reads rules from Quire Markdown (feature `quire-extraction`). |
 | `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
 | `qsl-walk-grow`, `qsl-bench` | Deep-recursion stack growth, benchmarks. |
