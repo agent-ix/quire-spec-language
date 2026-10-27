@@ -125,6 +125,7 @@ fn the_targets_are_the_unique_set_of_every_type_population_and_context() {
 fn the_generic_node_key_refuses_an_abstraction_body() {
     let body = BodyTerm::Abstraction(term("amount"));
     let input = NodeInput {
+        owner_model: None,
         owner: None,
         node_tag: NodeTag::Correspondence,
         semantic_form: "abstraction_relation",

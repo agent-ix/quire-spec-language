@@ -9,10 +9,10 @@ review_set: all
 
 ## Summary
 
-The two changed requirement documents are grammar-clean under the scoped Quire validation. The new acceptance criteria state observable mapping and refusal outcomes.
+FR-350 explicitly names the replay-request schema, field-by-field adaptation, closed structural mappings, and path refusals; scoped Quire validation is clean.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No EARS ambiguity found in the reviewed adapter requirements. | FR-350-AC-8, FR-350-AC-9, FR-350-AC-10 |
+| FND-001 | low | The replay requirements retain observable conversion and refusal outcomes. | FR-350-AC-8/9/10; FR-336-AC-7/8 |

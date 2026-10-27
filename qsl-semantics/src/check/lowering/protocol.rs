@@ -354,6 +354,10 @@ impl Lowering<'_> {
             if self.fifo_key_unstable(protocol, &location)? {
                 unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
             }
+            let owner = self.owner_model_object(protocol);
+            if owner.is_none() {
+                unemitted.push(ProtocolConstruct::NoOwnerModel);
+            }
             if let Some(first) = unemitted.first() {
                 refusals.extend(
                     unemitted
@@ -363,11 +367,32 @@ impl Lowering<'_> {
                 keys.push(ProtocolKey::NotEmitted(*first));
                 continue;
             }
-            let key = self.protocol_node(protocol, &law, &location)?;
+            let Some(owner) = owner else {
+                return Err(fault(&location, KeyFault::UncheckedProtocolFact));
+            };
+            let key = self.protocol_node(protocol, &law, owner, &location)?;
             keys.push(ProtocolKey::Keyed(key));
         }
         self.protocol_keys = keys;
         Ok(refusals)
+    }
+
+    /// The object type `protocol` is declared over, whose model declaration
+    /// node is the clause's `owner_model` (QSpec FR-464 "owner_model": the
+    /// exact local model declaration node the clause's source `over` type
+    /// represents; QSpec's published fixtures name the object type the
+    /// `over` reference targets). `None` when `over` is not a reference to an
+    /// object type of a selected model: no node can be named, so the clause
+    /// is not emitted ([`ProtocolConstruct::NoOwnerModel`]).
+    fn owner_model_object(&self, protocol: &ProtocolInput<'_>) -> Option<EffectiveId> {
+        let ValueType::Reference(context) = &protocol.checked.slots.binders.first()?.value_type
+        else {
+            return None;
+        };
+        self.models
+            .iter()
+            .any(|model| model.object_types().any(|(_, object)| object == *context))
+            .then_some(*context)
     }
 
     /// Whether a FIFO channel of `protocol` is keyed by a type IR's reader
@@ -471,11 +496,13 @@ impl Lowering<'_> {
         semantic_form: &'static str,
         boolean: NodeKey,
         declaration: Vec<Identifier>,
+        owner_model: Option<NodeKey>,
         body: BodyTerm,
     ) -> Result<NodeKey, CheckRefusal> {
         let key = self.insert_node(
             location,
             NodeContent {
+                owner_model,
                 node_tag: NodeTag::Protocol,
                 semantic_form,
                 semantic_type: Some(boolean),
@@ -494,10 +521,12 @@ impl Lowering<'_> {
         &mut self,
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
+        owner: EffectiveId,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
         let slots = &protocol.checked.slots;
+        let owner_model = self.object_node(owner, location)?;
         let boolean = self.type_node(&ValueType::Boolean, location)?;
         let operation = |operator: &'static str| -> Result<Operation, CheckRefusal> {
             Ok(Operation {
@@ -567,6 +596,7 @@ impl Lowering<'_> {
             "protocol_clause",
             boolean,
             vec![identifier(name, location)?],
+            Some(owner_model),
             BodyTerm::application(
                 Operator::ProtocolControl,
                 operation("protocol")?,
@@ -710,6 +740,7 @@ impl Lowering<'_> {
                 "role",
                 boolean,
                 declaration,
+                None,
                 BodyTerm::application(
                     Operator::ProtocolControl,
                     operation.clone(),
@@ -836,6 +867,7 @@ impl Lowering<'_> {
                 "channel",
                 boolean,
                 declaration,
+                None,
                 BodyTerm::application(
                     Operator::ProtocolControl,
                     operations.channel.clone(),
@@ -931,6 +963,7 @@ impl Lowering<'_> {
         let queue = self.insert_node(
             location,
             NodeContent {
+                owner_model: None,
                 node_tag: NodeTag::Protocol,
                 semantic_form: "queue",
                 semantic_type: Some(boolean),
@@ -1000,6 +1033,7 @@ impl Lowering<'_> {
             "obligation",
             boolean,
             declaration,
+            None,
             BodyTerm::application(
                 Operator::ProtocolControl,
                 operation.clone(),
@@ -1045,6 +1079,7 @@ impl Lowering<'_> {
                 "control",
                 boolean,
                 declaration,
+                None,
                 BodyTerm::application(
                     Operator::ProtocolControl,
                     operation.clone(),
@@ -1076,6 +1111,7 @@ impl Lowering<'_> {
         let key = self.insert_node(
             node.location(),
             NodeContent {
+                owner_model: None,
                 node_tag: NodeTag::Protocol,
                 semantic_form: "protocol_reference",
                 semantic_type: Some(semantic_type),

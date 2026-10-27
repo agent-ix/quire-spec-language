@@ -20,7 +20,7 @@ const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     model M = \"acme/orders\" version \"1.0.0\" digest \
     \"sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114\";\n\
     function refers using v(): Boolean pure { protocol Fill }\n\
-    protocol Fill using v over (input: Boolean) on origin {\n\
+    protocol Fill using v over (input: M::Gadget) on origin {\n\
     role R on M::Gadget;\n\
     run sequence Main { }\n\
     finish End as (outcome: Boolean) { true };\n\
