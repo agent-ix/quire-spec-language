@@ -49,7 +49,9 @@ which mapping expression has the wrong type, before any model check runs.
 - The unit's admitted domain packages and model declarations (FR-103), the
   resolved profile selection (FR-110), and, when the abstract alias names a
   dependency's model, that dependency's checked package from the S4
-  closure (ADR-015).
+  closure (ADR-015). For both aliases, the checker also retains the selected
+  model package's canonical identity and digest from the existing model
+  selection; aliases are source-level names and are not emitted identities.
 
 ## Outputs
 
@@ -101,6 +103,13 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 - The abstract subject's contract clauses SHALL be read from the declaring
   package when the abstract alias is local, and from the dependency's
   checked package otherwise.
+- Each selected model package SHALL have one whole-model root identity,
+  formed from that existing selection's canonical identity and digest. This
+  root names the model as a whole regardless of its number of object types or
+  `state_machine` declarations. S3 SHALL retain the selected identity and
+  digest for each side in the checked refinement binding. It SHALL NOT choose
+  an object type or state machine as a representative and SHALL NOT require a
+  new FCD declaration or model-selection field.
 - The header's abstract side is QSpec FR-375's `abstract-subject` production,
   `ident [ '::' member-name ]`: an alias alone selects a model subject and
   `abstract <A>::<protocol>` a protocol subject, which FR-147 resolves. The
@@ -134,14 +143,31 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
   SHALL refuse `invalid_model_binding`/`conflicting-binding`; a `from` type
   outside the source population SHALL refuse
   `invalid_model_binding`/`malformed-declaration`.
+- A `state_machine` declaration's declared fields are a field set in the
+  model state and SHALL be represented by one `object` row naming that
+  `state_machine` declaration as the row's abstract type and a concrete
+  `state_machine` declaration as its source. This row is not population-bound:
+  it maps the machine's fields and creates neither an object nor a population.
+  Each abstract `state_machine` declaration SHALL have exactly one such row;
+  a missing row SHALL refuse `missing_declaration`/`missing-name`, duplicate
+  rows SHALL refuse `invalid_model_binding`/`conflicting-binding`, and a row
+  pairing a `state_machine` declaration with an object type SHALL refuse
+  `invalid_model_binding`/`malformed-declaration`. Multiple state-machine
+  records are selected by their rows and are not ambiguous.
+- A model with no `state_machine` declaration is still a valid refinement
+  subject. Its object-type state is represented by the population and object
+  rows above; there is no requirement to synthesize or select a
+  `state_machine` node.
 - Each field row `f = e` SHALL name a declared field of the abstract type.
   A field named twice SHALL refuse
   `invalid_model_binding`/`conflicting-binding`, naming both rows. An
   undeclared field SHALL refuse `missing_declaration`/`missing-name`.
-- The checker SHALL check `e` with `self` bound to the concrete object type
-  and the concrete model's fields, functions, history fields (FR-138) and
-  population names and forms as FR-139 states, admitting the model reads a
-  state clause body admits (ADR-016 FE-4).
+- For a state-machine row, `self` in each field expression SHALL be bound to
+  the concrete machine field set; for an object-type row it SHALL be bound to
+  the concrete object type. In both cases the checker SHALL read concrete
+  fields, functions, history fields (FR-138) and population names and forms
+  as FR-139 states, admitting the model reads a state-clause body admits
+  (ADR-016 FE-4).
 - The checker SHALL lift references: a field of declared type
   `Reference<T_A>` SHALL accept an expression of type `Reference<T_C>`
   exactly when an object row maps `T_A` from `T_C`.
@@ -265,6 +291,8 @@ standing.
 | FR-135-AC-8 | In a unit whose own declarations select no layer, `RingIsQueue`'s rows `s.ring = self` and `(self.head + i) mod 2` check, because they are admitted under the layers the governing infinite-trace profile requires; a Boolean field row naming a protocol declared in the unit refuses `unsupported_construct`/`expression-form` at the `protocol` token, naming the layer that admits it (`quire.protocol.complete/v1`). | Test (TC-540) |
 | FR-135-AC-9 | A refinement given a non-empty resolved internal list refuses `unsupported_construct`/`not-yet-implemented` naming `refinement-internal-list` at the first token of the name after `abstract`, once for the refinement, with no `subject` member, no `CheckedRefinement` and the classification `unsupported` (FR-341-AC-5); a list with a resolution defect reports the defect and not this pair (FR-147-AC-7, AC-11). | Test (TC-540) |
 | FR-135-AC-10 | The header `abstract Spec::Twice concrete Impl` is read as QSpec FR-375's `abstract-subject` (model alias `Spec`, protocol `Twice`), and `abstract Spec concrete Impl` as a model subject; the concrete side never names a protocol, and a refinement whose step rows name one protocol clause of `Impl` records it as `concrete_protocol`, one whose rows name none records `None` (FR-136-AC-6). | Test (TC-540) |
+| FR-135-AC-11 | A mapped `state_machine` declaration has one `object` row whose target and source are both state-machine declarations; its declared fields check through that row without a population row. Omitting the row refuses `missing_declaration`/`missing-name`; duplicating it refuses `invalid_model_binding`/`conflicting-binding`; pairing it with an object type refuses `invalid_model_binding`/`malformed-declaration`. `CasRefinesCounter` over the object-type-only `Spec` and `Impl` models checks with its existing population and object rows, with no `state_machine` declaration or synthetic subject. | Test (TC-540) |
+| FR-135-AC-12 | For each selected abstract and concrete model package, the checked refinement binding retains that selection's canonical identity and digest; it does not use the source alias or a declaration as a representative. A model-only header binds to the whole-model identity; protocol refinement retains the same abstract model identity plus its exact protocol-clause key. Zero, one and multiple object types or state machines are all valid cardinalities for the same binding rule. The binding is derived from existing model selection state and adds no FCD field. | Test (TC-540) |
 
 ## Dependencies
 

@@ -73,6 +73,28 @@ pub enum StepTarget {
 
 ## Behavior
 
+### Whole-model identity at S4
+
+- The checked model binding that FR-135 retains for each side SHALL include
+  the selected model package's canonical identity and digest. S4 SHALL emit
+  the identity-bound `model_root` node required by QSpec FR-322 for each
+  selected package, regardless of declaration count; the selected digest
+  participates in the root key, while the source alias does not.
+- For a model subject, S4 SHALL set the refinement node's `semantic_type` to
+  the concrete model root and its body `abstract` to the abstract model root.
+  For a protocol subject, `semantic_type` remains the concrete model root,
+  body `abstract` remains the abstract model root, and body `protocol` names
+  the exact selected protocol clause. A dependency-package abstract root uses
+  the QSpec local-or-dependency key form; a concrete root in the package being
+  emitted is local.
+- The concrete model root is an annotation at `semantic_type` and is not
+  added to `dependencies` solely for that reason. The abstract model root is
+  included in `dependencies` through the body `abstract` key. Protocol clause
+  `owner_model` edges continue to name exact declaration nodes; class-catalog
+  joins associate those declarations with the selected package identity.
+- S3 derives both model bindings from existing model-selection state. This
+  requirement adds no FCD declaration or selection field.
+
 ### Order of the checked rows
 
 - The refinement node's `steps` array that S4 emits for a model subject
@@ -261,17 +283,21 @@ subject until the checked clause is available meets the same rule.
   otherwise, and the row SHALL record `binds_result: true`. Otherwise it
   SHALL record `false`.
 
-### The state-machine subject
+### Model subject and field-set rows
 
-- A refinement's node is keyed over a state-machine node and its steps
-  anchor their operations on it (QSpec FR-375), so S4 SHALL select, for each
-  side of a refinement, the one `state_machine` record of that side's
-  admitted package as the side's subject. A side whose package declares no
-  `state_machine` record (the ADR-020 object-type models) SHALL refuse
-  `unsupported_construct`/`declaration-form` naming the side and its alias,
-  and a side whose package declares several SHALL refuse
-  `ambiguous_declaration`/`ambiguous-name` naming the side, its alias and the
-  count. Neither is `not-yet-implemented`.
+- The header selects the abstract and concrete model packages. A model
+  subject SHALL NOT require exactly one `state_machine` record on either
+  side. The checked model and its mapped state are identified by the header
+  model keys and the refinement's `object` rows (QSpec FR-375; FR-135).
+- Each `state_machine` declaration's field set is mapped by its explicit
+  `object` row (FR-135). An object-type-only model, such as ADR-020 §8's
+  `Spec` or `Impl`, is a valid subject and uses its population/object rows;
+  it needs no synthetic `state_machine` record.
+- A model with several `state_machine` records is not ambiguous: each
+  abstract machine has its own row and row-level missing, duplicate and
+  kind-mismatch rules apply under FR-135. Step rows continue to cover the
+  concrete model's operations, or the selected concrete protocol's classes,
+  according to the rules above; they do not select a `state_machine` record.
 
 ## Acceptance Criteria
 
@@ -288,7 +314,7 @@ subject until the checked clause is available meets the same rule.
 | FR-136-AC-9 | With rows naming `P`, `Q` and `R` in that order, `P` is selected and two `conflicting-binding` refusals are reported, at `Q`'s first row and at `R`'s, each naming that row and `P`'s first row. A protocol clause declared in a package other than the declaring one is not a clause for the rows and refuses `missing_declaration`/`missing-name` at its segment. | Test (TC-541) |
 | FR-136-AC-10 | Over FR-136-AC-7's protocol, the source-resolved memory model of its outermost `parallel` is `tso`, so a `memory flush` row is required and a `memory nope` row refuses `missing_declaration`/`missing-name` at `nope`. With a protocol whose `parallel` is under `sc` and a `memory flush` row, S3 refuses at `flush`. A check request that selects `tso` for the `sc` protocol, with no `flush` row, is refused when admitted with `missing_declaration`/`missing-name` naming `flush`; a request that selects `sc` for the `tso` protocol admits and leaves the `flush` row unused. With two outermost `parallel` nodes, one `sc` and one `tso`, one `memory flush` row covers the kind for both. | Test (TC-541) |
 | FR-136-AC-11 | In a build whose support set holds `protocol-abstract-side`, a unit declaring, in this source order, an invariant over a concrete object type whose body is a non-Boolean field read, `CasTwice` (FR-147) with its `population` row written twice, and FR-136-AC-6's refinement over `Run` with a further row naming a second protocol clause `Other` and no `fork`, `join` or `finish` row, is refused with exactly, in order: the invariant's `ill_typed`/`non-boolean-root`; `CasTwice`'s `invalid_model_binding`/`conflicting-binding` naming both `population` rows (FR-135-AC-2); and the `Run` refinement's `invalid_model_binding`/`conflicting-binding` at `Other`'s first row. No refusal names `Twice`'s header or a coverage class, and no `CheckedRefinement` is produced. With the invariant and the `Other` row removed, `CasTwice`'s refusal does not stop the unit, and the unit reports `CasTwice`'s `conflicting-binding` and FR-136-AC-4's `missing-name` naming the `fork` node. | Test (TC-541) |
-| FR-136-AC-12 | A refinement that checks over two object-type models with no `state_machine` record (`CasRefinesCounter`), emitted, refuses `unsupported_construct`/`declaration-form` naming the abstract side and its alias, and is not refused `not-yet-implemented`; with the abstract package declaring two `state_machine` records it refuses `ambiguous_declaration`/`ambiguous-name` with count 2; with exactly one on each side the subject refusal is absent. | Test (TC-541) |
+| FR-136-AC-12 | `CasRefinesCounter` over object-type-only models with no `state_machine` record emits and reads back as a refinement whose `abstract` and `semantic_type` keys identify the canonical whole-model roots selected by `Spec` and `Impl`, and whose `objects` row maps `Spec::Counter` from `Impl::Counter`; it has no synthetic state-machine key and chooses no object type as the model identity. A refinement with two state-machine declarations on each side emits one object row per mapped field set, ordered by the canonical object-row rule, with no missing-subject or ambiguous-subject refusal. | Test (TC-541) |
 
 ## Dependencies
 

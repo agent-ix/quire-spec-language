@@ -87,3 +87,17 @@ Every verdict is unchanged. My original 200,000-deep chain, and a 200,000-deep c
 | FND-001 | fixed | `components_bytes`, `numbering_ok` and `reasons` walk explicit stacks. `Components` has an iterative `Drop`. `numbering_ok` requires each nested numbering to number a strict subset of its own component (members only), so depth is bounded by the node count. Regression test: `a_strong_nesting_deeper_than_its_nodes_is_malformed`. |
 | FND-002 | fixed | The duplicate arm is gone. A new `CertificateCheckLimits::max_automaton_states` (default the shared engine constant) bounds the rebuilt automaton, for both the liveness and window paths, and stops the check with `Stopped(LimitReached(MaxAutomatonStates))`. FR-245's Inputs do not list this field; STD-493 8eafddf9 item 4 records that correctly. It is a real resource bound, not ceremony. |
 | FND-003 | fixed | Kept by design. FR-245 has no Malformed row for an edge that covers no successor; such edges are charged to `max_certificate_edges`, and `padding_edges_are_charged_against_the_edge_limit` pins that. |
+
+Round 2. The head is e12f4b7d9. The fix commit is on top of 4842a64a5, with no restack. `Components` has hand-written `Clone`, `PartialEq`/`Eq` and `Debug` over a breadth-first flattening (`levels`). A strong reason names the later level of its nested numbering, so every reference points forward. That is why `Clone` can rebuild deepest first and take each built level exactly once. Equal levels hold exactly when the derived equality holds, because the breadth-first indices are fixed by the tree's shape. `Debug` prints the levels: different text from the derived form, but the same information.
+
+My probe, reverted afterwards, used two 200k-deep chains with two reasons at each level:
+- a clone equals the original;
+- chains that differ only at the deepest leaf compare unequal, and so do chains that differ only at the deepest constraint;
+- a branching level with its two strong reasons swapped compares unequal;
+- a clone of the branching level keeps each nested numbering under its own reason.
+
+None of these overflowed. `zone_live_certificate`: 7/7 passed. Clippy with `-D warnings`: exit 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | Iterative `Clone`, `PartialEq`/`Eq` and `Debug` over the breadth-first levels, equal in meaning to the derived impls. `a_deep_strong_nesting_clones_compares_and_prints` covers a 200k-deep chain. |
