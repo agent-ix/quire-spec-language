@@ -105,10 +105,12 @@ pub(crate) use hybrid::{
 pub(crate) use hyper::HyperClauseInput;
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
-    bound_origin, quantity_origin, record_node_key, variant_type_node_key, QuantityKind,
-    RecordKeyError,
+    bound_origin, quantity_origin, record_node_key, strictly_below, variant_type_node_key,
+    QuantityKind, RecordKeyError,
 };
-pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
+pub use model::{
+    AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause, PlaceStep,
+};
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
     ProtocolSite,
@@ -281,6 +283,12 @@ impl SemanticNode {
     /// [`Self::nominal`] preimage, so this is `None` for it.
     pub fn owner(&self) -> Option<&Owner> {
         self.content.owner.as_ref()
+    }
+
+    /// QSpec FR-464's `owner_model`: the exact model declaration node a
+    /// `protocol_clause` node is declared over; `None` for every other node.
+    pub fn owner_model(&self) -> Option<NodeKey> {
+        self.content.owner_model
     }
 
     /// The node's recursion group, when it is in one.
@@ -509,6 +517,8 @@ struct NodeContent {
     semantic_type: Option<NodeKey>,
     declaration: Option<Vec<Identifier>>,
     owner: Option<Owner>,
+    /// QSpec FR-464's `owner_model`: set for a `protocol_clause` node alone.
+    owner_model: Option<NodeKey>,
     body: BodyTerm,
 }
 
@@ -522,6 +532,7 @@ impl NodeContent {
             semantic_type: self.semantic_type,
             declaration: self.declaration.as_deref(),
             body: &self.body,
+            owner_model: self.owner_model,
         }
     }
 }
@@ -1736,6 +1747,7 @@ impl<'a> Lowering<'a> {
         self.insert_node(
             location,
             NodeContent {
+                owner_model: None,
                 node_tag,
                 semantic_form,
                 semantic_type,
@@ -1759,6 +1771,7 @@ impl<'a> Lowering<'a> {
         self.insert_node(
             location,
             NodeContent {
+                owner_model: None,
                 node_tag,
                 semantic_form,
                 semantic_type,
@@ -2367,6 +2380,7 @@ impl<'a> Lowering<'a> {
             declaration,
             bytes,
             NodeContent {
+                owner_model: None,
                 node_tag: NodeTag::ScalarType,
                 semantic_form: "enum",
                 semantic_type: None,
@@ -2404,6 +2418,7 @@ impl<'a> Lowering<'a> {
             key,
             bytes,
             NodeContent {
+                owner_model: None,
                 node_tag: NodeTag::Value,
                 semantic_form: "enum_value",
                 semantic_type: Some(declaration),
@@ -2745,6 +2760,7 @@ impl<'a> Lowering<'a> {
                 let key = self.insert_node(
                     &draft.location,
                     NodeContent {
+                        owner_model: draft.content.owner_model,
                         node_tag: draft.content.node_tag,
                         semantic_form: draft.content.semantic_form,
                         semantic_type: *semantic_type,
@@ -2827,6 +2843,7 @@ impl<'a> Lowering<'a> {
                 semantic_type: types[at],
                 declaration: draft.content.declaration.as_deref(),
                 body: &bodies[at],
+                owner_model: draft.content.owner_model,
             })
             .collect();
         let meter = &mut *self.meter;
@@ -2873,6 +2890,7 @@ impl<'a> Lowering<'a> {
                     semantic_type,
                     declaration: draft.content.declaration.as_deref(),
                     body: &body,
+                    owner_model: draft.content.owner_model,
                 },
                 self.identity,
             )
@@ -2890,6 +2908,7 @@ impl<'a> Lowering<'a> {
                         size: keys.size,
                     }),
                     content: NodeContent {
+                        owner_model: draft.content.owner_model,
                         node_tag: draft.content.node_tag,
                         semantic_form: forms[at],
                         semantic_type,

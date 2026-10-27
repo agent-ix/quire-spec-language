@@ -31,7 +31,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::contracts::{verdict, Verdict};
 use super::domain::{Domain, Odometer};
-use super::encode::{value_enc, values_equal};
+use super::encode::{value_enc, values_equal, Typing};
 use super::frames::{identity_bytes, text_of};
 use super::walk::{exhausted, expand_enabled, stop};
 use super::{refused, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, BROKEN};
@@ -215,7 +215,7 @@ pub(crate) enum OrderKey {
 ///
 /// `runtime_invariant`/`established-invariant-broken` when a value ordered
 /// by its bytes has no typed canonical form.
-pub(crate) fn order_key(value: &Value) -> Result<OrderKey, ExpansionStop> {
+pub(crate) fn order_key(value: &Value, typing: Typing<'_>) -> Result<OrderKey, ExpansionStop> {
     Ok(match value {
         Value::Boolean(flag) => OrderKey::Boolean(*flag),
         Value::Integer(integer) => OrderKey::Number(Rational::from_integer(integer.clone())),
@@ -224,8 +224,11 @@ pub(crate) fn order_key(value: &Value) -> Result<OrderKey, ExpansionStop> {
         Value::Quantity(quantity) => OrderKey::Number(quantity.magnitude().clone()),
         Value::Enum(member) => OrderKey::Rank(member.rank()),
         _ => OrderKey::Bytes(
-            quire_canonical::to_vec(&value_enc(value), quire_canonical::Limits::new(u64::MAX))
-                .map_err(|_| stop(BROKEN))?,
+            quire_canonical::to_vec(
+                &value_enc(value, typing),
+                quire_canonical::Limits::new(u64::MAX),
+            )
+            .map_err(|_| stop(BROKEN))?,
         ),
     })
 }
@@ -369,11 +372,11 @@ fn zero_of(value_type: &ValueType) -> Option<Value> {
 
 /// `value` as a record field renders it: an integer in decimal, a Boolean
 /// as `true` or `false`, anything else by its typed canonical text.
-fn rendered_value(value: &Value) -> Result<String, ExpansionStop> {
+fn rendered_value(value: &Value, typing: Typing<'_>) -> Result<String, ExpansionStop> {
     match value {
         Value::Integer(integer) => Ok(integer.to_string()),
         Value::Boolean(flag) => Ok(flag.to_string()),
-        _ => text_of(value),
+        _ => text_of(value, typing),
     }
 }
 
@@ -528,7 +531,8 @@ impl ModelSystem<'_> {
                         .iter()
                         .zip(&arguments)
                         .map(|((name, _), value)| {
-                            rendered_value(value).map(|text| format!("{name} = {text}"))
+                            rendered_value(value, self.typing())
+                                .map(|text| format!("{name} = {text}"))
                         })
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(|_| super::fault("reward-argument-text"))?;
@@ -619,7 +623,12 @@ impl ModelSystem<'_> {
                 })
                 .map(|(_, (_, value))| value.clone())
                 .collect();
-            let order = identity_bytes(&vector.operation, &vector.receiver, &arguments)?;
+            let order = identity_bytes(
+                &vector.operation,
+                &vector.receiver,
+                &arguments,
+                self.typing(),
+            )?;
             let mut reached = Vec::with_capacity(vector.successors.len());
             for index in vector.successors.clone() {
                 let successor = successors
@@ -663,7 +672,7 @@ impl ModelSystem<'_> {
                 action.draws = sorted_by_key(action.draws, |draw| {
                     draw.random
                         .iter()
-                        .map(order_key)
+                        .map(|value| order_key(value, self.typing()))
                         .collect::<Result<Vec<_>, _>>()
                 })?;
                 Ok(action)

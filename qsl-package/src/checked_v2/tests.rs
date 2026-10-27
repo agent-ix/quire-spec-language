@@ -20,8 +20,6 @@ use sha2::{Digest, Sha256};
 use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
-mod timed_model_wire_port;
-
 use qsl_foundation::diagnostic::{Code, LimitExceeded, LimitKind, Locus};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -2114,7 +2112,6 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
 
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("QSL writes the checked timed model into a complete package");
-    timed_model_wire_port::observe("standard", &timed_models, emission.package().bytes());
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(
@@ -2244,7 +2241,6 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
 
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("a no-clock model writes without an integer literal type");
-    timed_model_wire_port::observe("dense", &timed_models, emission.package().bytes());
     let emitted: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
     let (_, round_trip) = read_fixture_wire(&emitted);
     let Read::Verified {
@@ -2261,7 +2257,14 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
 
 /// FR-415-AC-17: changes to each typed time-source, clock-place and
 /// constraint input change the relevant node key and survive I2 read-back.
+/// Part of FR-230-AC-30 (TC-685 step 26) at the writer: changing only the
+/// source unit, a tick period, a clock place's path, a constraint's bound or
+/// comparator, or a reset's value changes that node's key, the root's key and
+/// the package identity. Not covered: the S3-to-S4 emission of a checked
+/// model's clocks, guards, invariants and urgency, which S4 does not write
+/// yet (`TimedModelNotEmitted`), and occurrence reordering.
 #[trace("TC-367", "FR-415-AC-17", "FR-322-AC-122")]
+#[trace("TC-685")]
 #[test]
 fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -2365,6 +2368,14 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     changed_bound.normalized_constraints[0].bound = "7/2".to_owned();
     cases.push(("bound", changed_bound));
 
+    let mut changed_comparison = original.clone();
+    changed_comparison.normalized_constraints[0].comparison = "lt".to_owned();
+    cases.push(("comparison", changed_comparison));
+
+    let mut changed_reset = original.clone();
+    changed_reset.resets[0].value = "5/2".to_owned();
+    cases.push(("reset", changed_reset));
+
     let id_for = |package: &quire_contract_model::CheckedPackageV2, form: &str| {
         package
             .graph()
@@ -2380,11 +2391,6 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     for (case, mut expected) in cases {
         let emission = crate::emit::emit_timed_models(&admitted, &[expected.clone()])
             .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
-        timed_model_wire_port::observe(
-            case,
-            std::slice::from_ref(&expected),
-            emission.package().bytes(),
-        );
         let wire: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
         assert_ne!(
             wire["package_id"]["digest"],
@@ -2406,7 +2412,8 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         let changed_form = match case {
             "unit" => "time_source",
             "path" => "clock_place",
-            "bound" => "clock_constraint",
+            "bound" | "comparison" => "clock_constraint",
+            "reset" => "clock_reset",
             _ => unreachable!(),
         };
         assert_ne!(
@@ -2414,7 +2421,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             id_for(&admitted, changed_form),
             "{case} changes its node key"
         );
-        if case == "path" || case == "bound" || case == "unit" {
+        {
             assert_ne!(
                 id_for(&reread_package, "timed_model"),
                 id_for(&admitted, "timed_model"),
@@ -2483,11 +2490,6 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     let tick_emission =
         crate::emit::emit_timed_models(&tick_admitted, std::slice::from_ref(&changed_tick))
             .expect("changed tick period emits");
-    timed_model_wire_port::observe(
-        "period",
-        std::slice::from_ref(&changed_tick),
-        tick_emission.package().bytes(),
-    );
     let changed_tick_wire: Value = serde_json::from_slice(tick_emission.package().bytes()).unwrap();
     assert_ne!(
         changed_tick_wire["package_id"]["digest"],
@@ -2574,7 +2576,17 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 /// The published TM schema and semantic refusal vectors reach the real I2
 /// reader. The body order is supplied by IR's FR-322 reader: hybrid,
 /// timed-model, then protocol; QSpec pins that order in TC-233.
+/// FR-230-AC-31 and FR-230-AC-34 (TC-685 steps 26 and 27): I2 refuses a
+/// missing root (`missing-timed-model`), a dangling or wrong-kind edge
+/// (`timed-node-reference`), a duplicate place (`duplicate-clock-place`), a
+/// noncanonical path (`malformed-clock-place`) and a non-time unit or
+/// malformed quantity (`invalid-time-quantity`), each at the first failing
+/// timed node's locus; a `resolved_path` row missing, extra or mismatched in
+/// its declaring type, member identity, member type or collection metadata
+/// refuses `malformed-clock-place`; FR-230-AC-35 to AC-37's vectors refuse as
+/// those criteria state.
 #[trace("TC-1187", "FR-447-AC-13")]
+#[trace("TC-685", "FR-230-AC-31", "FR-230-AC-34")]
 #[test]
 fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -2938,7 +2950,7 @@ fn conformance_shipped_projection_cases_are_refused_and_admitted_once_removed() 
 /// [`Code::UnknownProfile`], located at the law's definition.
 fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
     let application_key = |node: &Value| {
-        package_id_digest(&json!({
+        let mut preimage = json!({
             "version": "quire.application-node/v1",
             "node_tag": node["node_tag"],
             "semantic_form": node["semantic_form"],
@@ -2946,7 +2958,12 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
             "declaration": node.get("declaration").cloned().unwrap_or(Value::Null),
             "recursion": Value::Null,
             "body": node["body"],
-        }))
+        });
+        // A protocol clause's identity-bound owner edge (FR-464, FR-322).
+        if let Some(owner_model) = node.get("owner_model") {
+            preimage["owner_model"] = owner_model.clone();
+        }
+        package_id_digest(&preimage)
     };
     let nodes_of = |package: &Value| {
         package["semantic_graph"]["nodes"]
@@ -3603,7 +3620,7 @@ pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
 /// `semantic_graph.nodes`: the hashed projection is derived from them. Every
 /// `identity_preimage` field is left as the envelope's own, so a frame-only
 /// mutation changes no other identity input.
-fn refresh_frame_identity(envelope: &mut Value) {
+pub(crate) fn refresh_frame_identity(envelope: &mut Value) {
     envelope["package_id"]["digest"] = json!(derived_package_id(envelope).hex());
 }
 
@@ -4213,5 +4230,20 @@ fn published_extension_definitions_conform_to_their_schema_and_pairing() {
                 production["keyword"]
             );
         }
+    }
+}
+
+/// IR FR-038-AC-292: a `wrong_snapshot` envelope (a `choice`/`repeat` decision
+/// reading a fact outside its role's visible set) reaches QSL as the typed
+/// `wrong_snapshot` code, not as a generic invalid package.
+#[test]
+fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
+    use quire_contract_model::CheckedPackageRefusalCode as Ir;
+    for (ir, qsl) in [
+        (Ir::WrongSnapshot, Code::WrongSnapshot),
+        (Ir::IllTyped, Code::IllTyped),
+        (Ir::InvalidPackage, Code::InvalidPackage),
+    ] {
+        assert_eq!(super::map_refusal_code(ir), qsl);
     }
 }

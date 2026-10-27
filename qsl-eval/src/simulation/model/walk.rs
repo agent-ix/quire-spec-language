@@ -57,6 +57,21 @@ impl Budget {
             Ok(())
         }
     }
+    /// Count `count` candidates at once.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::charge`].
+    pub(super) fn charge_many(&mut self, count: usize) -> Result<(), ExpansionStop> {
+        self.used = self
+            .used
+            .saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
+        if self.used > self.max {
+            Err(exhausted(ExpansionLimit::MaxCandidates))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// One object of the expanded state.
@@ -202,7 +217,7 @@ pub(super) fn walk_of<'s, 'a>(
     enforcement: Option<&'s Enforcement<'s>>,
 ) -> Result<Walk<'s, 'a>, ExpansionStop> {
     let identity = identity_limits();
-    let state_key = encode::model_key(&system.model, &state.state);
+    let state_key = encode::model_key(&system.model, &state.state, system.typing());
     let (_, digest) = key::state_key(&state_key, identity).map_err(|_| stop(BROKEN))?;
     let observation = system
         .model

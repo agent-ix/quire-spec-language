@@ -10,7 +10,7 @@ use qsl_analyze::zone_check::{
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedSystem};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedBehaviour, TimedSystem};
 use qsl_eval::temporal::{
     evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TimedTrace, UndefinedCause,
@@ -246,9 +246,14 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
 /// FR-239-AC-1 and FR-241-AC-1: `NoLateReply` holds over `Rpc` with
 /// `T = 4 ms`, with a certificate, and, with `T = 3 ms`, is violated at
 /// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
-/// `0`, `3`, `0`; the deadlock-freedom item holds under both.
+/// `0`, `3`, `0`; the deadlock-freedom item holds under both. Each step's
+/// `post_state` is the digest of the timed state the subject reaches by the
+/// same steps after the same delays; with `qsl-eval`'s
+/// `a_timed_post_state_digest_changes_with_its_clock_value_alone`, this is
+/// FR-236-AC-1.
 #[trace("TC-694", "FR-239-AC-1")]
 #[trace("TC-696", "FR-241-AC-1")]
+#[trace("TC-691", "FR-236-AC-1")]
 #[test]
 fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     let four = rpc(4);
@@ -275,6 +280,29 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     );
     assert_eq!(counterexample.final_delay, None);
     assert!(counterexample.over_binding.is_some());
+
+    // FR-236-AC-1: each step's `post_state` is the digest of the timed
+    // state the subject reaches by taking the same steps after the same
+    // delays.
+    let system = three.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = <[_; 1]>::try_from(timed.initial()).expect("one initial state");
+    let mut behaviour = TimedBehaviour::new(initial);
+    for step in &counterexample.prefix {
+        behaviour
+            .advance(
+                &timed,
+                step.delay.as_ref().expect("a timed step carries its delay"),
+                &step.transition,
+            )
+            .expect("the counterexample's step is admitted");
+        assert_eq!(
+            timed
+                .state_digest(behaviour.last().state())
+                .expect("a digest"),
+            step.post_state
+        );
+    }
 
     for world in [&four, &three] {
         assert_edges_cover(world, &proved(deadlock(world)));
@@ -903,6 +931,7 @@ pub(crate) fn check(
         ZoneCertificateRequest {
             simulation: world.request(),
             model: "M",
+            max_clocks: qsl_eval::simulation::model::DEFAULT_MAX_CLOCKS,
             item,
         },
         &certificate.obligation,

@@ -213,6 +213,7 @@ impl StateClauseDeclaration {
             operation: self.operation.as_ref(),
             context_population: self.context_population,
             frame_population: self.frame_population,
+            binders: &[],
             body: &self.body,
         }
     }
@@ -247,6 +248,9 @@ pub(crate) struct ClauseView<'a> {
     pub(crate) operation: Option<&'a ClauseOperation>,
     pub(crate) context_population: Option<PopulationDomain>,
     pub(crate) frame_population: Option<PopulationDomain>,
+    /// Further parameters after the operation's: the collection elements a
+    /// timed guard part reads (FR-230 "Quantified reads"); none elsewhere.
+    pub(crate) binders: &'a [(String, ValueType)],
     pub(crate) body: &'a Expression,
 }
 
@@ -277,6 +281,7 @@ impl ClauseView<'_> {
             .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
             .collect();
         let Some(operation) = self.operation else {
+            parameters.extend(self.binders.iter().cloned());
             return (parameters, false);
         };
         let result = match (self.kind, operation.declaration.result()) {
@@ -287,6 +292,7 @@ impl ClauseView<'_> {
             _ => false,
         };
         parameters.extend(operation.declaration.parameters().iter().cloned());
+        parameters.extend(self.binders.iter().cloned());
         (parameters, result)
     }
 }

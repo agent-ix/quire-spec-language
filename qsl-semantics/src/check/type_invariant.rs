@@ -64,6 +64,7 @@ impl TypeInvariantDeclaration {
             operation: None,
             context_population: None,
             frame_population: None,
+            binders: &[],
             body: &self.invariant.expression,
         }
     }

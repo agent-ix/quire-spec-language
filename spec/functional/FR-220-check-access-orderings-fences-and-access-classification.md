@@ -48,6 +48,24 @@ include only applications whose selected effective precondition evaluates
 `Completed(true)` over that thread's observation and whose record satisfies
 the attempt constraint (ADR-025 MA-1). Enabled footprints alone SHALL decide
 sharing, access classification and V-8 refusal.
+EN-1 SHALL maintain each deferred local-ordering candidate by the attempt's
+static declaration path, typed transition identity and each canonical model
+location its footprint touches. While reachable states remain to classify,
+EN-1 SHALL keep a local access unresolved.
+
+- While EN-1 has not completed reachable-state classification, EN-1 SHALL
+  defer an ordering mismatch for a local access that carries an ordering.
+- When EN-1 classifies one of a deferred candidate's canonical model locations
+  as shared in a reachable state, EN-1 SHALL discharge that candidate for the
+  location.
+- When EN-1 completes reachable-state classification exhaustively, EN-1 SHALL
+  report each remaining candidate whose name was never shared as
+  `OrderingMismatch{access: Local, ordering}`.
+- When exploration ends incomplete, EN-1 SHALL return an incomplete result
+  without refusing unresolved candidates.
+- Potential footprints MAY identify names to track.
+- Potential footprints SHALL NOT discharge a candidate, make a name shared, or
+  cause a V-8 refusal.
 
 ## Use case
 
@@ -194,12 +212,14 @@ local access takes none).
   evaluates `Completed(true)`, whose record satisfies its attempt constraint,
   and that carries `acquire` or `acq_rel`, an RMW whose selected effective
   precondition evaluates `Completed(true)`, whose record satisfies its attempt
-  constraint, and that carries no ordering, and a local access (class
-  `Local`: its shared footprint is empty) that carries any ordering, naming
-  the attempt as `site`, its instantiated
-  class as `access` and the ordering it carries as `ordering` (none for the
-  RMW). The item SHALL settle before the current state's outgoing transitions
-  are generated.
+  constraint, and that carries no ordering. A local access (class `Local` in
+  the current state) that carries any ordering SHALL be deferred as described
+  under Sharing and classification; it SHALL be added to
+  `WeakAccessShape.failures` only if exhaustive reachable-state classification
+  proves that its accessed name is never shared. Such a deferred entry names
+  the attempt as `site`, its instantiated class as `access` and the ordering
+  it carries as `ordering` (none for the RMW). Other applicable failures SHALL
+  still settle before the current state's outgoing transitions are generated.
 - The shape SHALL be written
   `{"type":"ordering-mismatch","access":<"load"|"store"|"rmw"|"local">,"ordering":<ordering>}`,
   `ordering` being the ordering's spelling (`relaxed`, `acquire`, `release`,
@@ -253,7 +273,7 @@ local access takes none).
 | FR-220-AC-11 | EN-1 classifies ADR-025 §10's `SB` under `tso` and under `ra` using only attempt applications whose selected precondition is true in the current thread observation and whose attempt constraint admits the application record: `Sx` and `Sy` are stores, `Ly` and `Lx` are loads, and (`c1`, `r`), (`c2`, `r`) are branch-local. Applications whose selected precondition is false contribute no enabled access footprint, including for a receiver or argument in the domain; their potential footprints may reserve memory backing but do not affect these classifications. | Test (EN-1 sharing; TC-665 step 10) |
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
-| FR-220-AC-14 | At the initial state, the EN-1 pre-check collects V-8 `WeakAccessShape.failures` before generating any outgoing transition under `tso` and under `ra`: an enabled instantiated load with `release` as `{"type":"ordering-mismatch","access":"load","ordering":"release"}`, a load with `acq_rel` as `{"type":"ordering-mismatch","access":"load","ordering":"acq_rel"}`, a store with `acquire` as `{"type":"ordering-mismatch","access":"store","ordering":"acquire"}`, a store with `acq_rel` as `{"type":"ordering-mismatch","access":"store","ordering":"acq_rel"}`, and an RMW with no ordering as `{"type":"ordering-mismatch","access":"rmw","ordering":null}`. Under `sc` each is admitted. An attempt with `release` that writes a branch-local register (so S3 admits it) and, on instantiation, touches no shared location is a local access and contributes `{"type":"ordering-mismatch","access":"local","ordering":"release"}`. An attempt with `acquire` that reads a branch-local register and writes two shared fields, which S3 admits because it reads, contributes its `MultiLocation` entry and is not tested for ordering mismatch. The pre-check does not stop at that entry; all other applicable failures are collected in canonical order. | Test (EN-1 pre-check; TC-665 step 13) |
+| FR-220-AC-14 | Under `tso` and `ra`, the pre-check returns V-8 `WeakAccessShape.failures` for an enabled instantiated load with `release` as `{"type":"ordering-mismatch","access":"load","ordering":"release"}`, a load with `acq_rel` as `{"type":"ordering-mismatch","access":"load","ordering":"acq_rel"}`, a store with `acquire` as `{"type":"ordering-mismatch","access":"store","ordering":"acquire"}`, a store with `acq_rel` as `{"type":"ordering-mismatch","access":"store","ordering":"acq_rel"}`, and an RMW with no ordering as `{"type":"ordering-mismatch","access":"rmw","ordering":null}`. Each non-local mismatch settles before that state's outgoing transitions. Under `sc` each is admitted. An attempt with `release` that writes a branch-local register (so S3 admits it) and, on instantiation, touches no shared location remains local throughout exhaustive reachable-state classification and then contributes `{"type":"ordering-mismatch","access":"local","ordering":"release"}` with the same V-8 cause and fields. An attempt with `acquire` that reads a branch-local register and writes two shared fields, which S3 admits because it reads, contributes its `MultiLocation` entry and is not tested for ordering mismatch. The pre-check does not stop at that entry; all other applicable failures are collected in canonical order. | Test (EN-1 pre-check; TC-665 step 13) |
 | FR-220-AC-15 | In `SB`'s `parallel` under `tso`, an `event` reader whose constraint reads `x.v` beside the branch whose enabled attempt stores `x.v` contributes a `MultiLocation` entry and settles V-8 `WeakAccessShape.failures`; the ordinary storing attempt is not itself a failing shape. In a variant where that store carries `acquire`, the reader entry and the enabled store attempt's `OrderingMismatch` entry are both returned in one list, ordered together by ascending JCS bytes of their typed protocol transition identities (ADR-027 TS-2); the reader entry names the event and `(x, v)` and has `transition: None`, and the attempt entry names its instantiated transition. The first entry supplies the headline reason, without category precedence. The `SB` operations' selected preconditions and attempt constraints admit accesses to `x` and `y` only; their `kind` fields are immutable, so in a variant whose universe also holds a `Cell` `z` of kind `Other`, no attempt is enabled for `z`. With the `event` reading `z.v`, the item is admitted: a potential footprint may reserve memory backing for `z`, but it does not make `z.v` enabled-shared or cause a refusal. Under `sc` the shared-reader variant is admitted, and a `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
 
 ## Dependencies

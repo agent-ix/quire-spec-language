@@ -239,10 +239,12 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::DuplicateEnumMember { .. }
         | AssemblyCause::DuplicateQuantityName { .. }
         | AssemblyCause::UnresolvedQuantityName { .. }
+        | AssemblyCause::UnanchoredBaseDimension { .. }
         | AssemblyCause::UnresolvedModelQuantityType { .. }
         | AssemblyCause::QuantityCycle { .. }
         | AssemblyCause::ZeroDenominator
         | AssemblyCause::UnitGraphTopology { .. }
+        | AssemblyCause::DimensionEquivalence { .. }
         | AssemblyCause::NominalAdmission(_)
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
@@ -297,11 +299,6 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::Unsupported { .. }
             | RefinementCause::UnsupportedRowForm { .. }
             | RefinementCause::AbstractRelationships { .. }
-            // Unreachable by design: both are raised only at the emission
-            // gate, which replay's checks (unwritten refinements kept) skip;
-            // `None` is the defined value, no limit having been reached.
-            | RefinementCause::NoStateMachineSubject { .. }
-            | RefinementCause::AmbiguousStateMachineSubject { .. }
             | RefinementCause::PopulationBound { .. }
             | RefinementCause::NodeArgumentCount { .. }
             | RefinementCause::NodeArgumentType { .. } => None,
@@ -326,6 +323,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::MissingQualifiedName(_)
         | CheckCause::MissingSegment { .. }
         | CheckCause::MissingSelf
+        | CheckCause::ClockReadingCall(_)
         | CheckCause::AmbiguousName { .. }
         | CheckCause::AmbiguousMember(_)
         | CheckCause::AmbiguousQualified(_)

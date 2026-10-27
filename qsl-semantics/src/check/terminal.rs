@@ -170,6 +170,7 @@ pub(crate) fn check_terminal<'a>(
         operation: None,
         context_population: *population,
         frame_population: None,
+        binders: &[],
         body: &predicate.expression,
     };
     let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope)).map_err(

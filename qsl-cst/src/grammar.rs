@@ -316,6 +316,7 @@ fn source_and_types(g: &mut Grammar) {
     g.insert(P::ImportDeclaration, selection_rule(P::ImportDeclaration));
     g.insert(P::Model, selection_rule(P::Model));
     let declarations = vec![
+        r(P::DimensionEquivalence),
         r(P::DimensionDeclaration),
         r(P::UnitDeclaration),
         r(P::EnumDeclaration),
@@ -478,6 +479,27 @@ fn source_and_types(g: &mut Grammar) {
                 r(P::DimensionTerm),
                 star(s(vec![c(vec![x("*"), x("/")]), r(P::DimensionTerm)])),
             ])),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::RatioTerm,
+        s(vec![
+            c(vec![uint(), r(P::ExactNumber)]),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::DimensionEquivalence,
+        s(vec![
+            x("dimension"),
+            r(P::QualifiedName),
+            x("~"),
+            r(P::QualifiedName),
+            x("by"),
+            r(P::RatioTerm),
+            x("="),
+            r(P::RatioTerm),
             x(";"),
         ]),
     );

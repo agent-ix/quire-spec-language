@@ -582,6 +582,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedQuantityName { name } => {
             format!("no dimension or unit is named `{name}`")
         }
+        AssemblyCause::UnanchoredBaseDimension { dimension, unit } => {
+            format!("the base dimension `{dimension}` of unit `{unit}` has no unit")
+        }
         AssemblyCause::UnresolvedModelQuantityType {
             name,
             member_identity,
@@ -597,6 +600,16 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             limit.actual(),
             limit.setting()
         ),
+        AssemblyCause::DimensionEquivalence { retained, .. } => {
+            format!(
+                "the dimension equivalence is not admissible at {}",
+                retained
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
         AssemblyCause::UnitGraphTopology { declarations, .. } => {
             format!(
                 "the unit graph is not admissible at {}",
@@ -700,7 +713,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         );
     }
     match &first.cause {
-        CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
+        CheckCause::MissingName(name)
+        | CheckCause::AmbiguousName { name, .. }
+        | CheckCause::ClockReadingCall(name) => {
             message = format!("{message}: `{name}`");
         }
         // FR-104-AC-2: name the clause kind and, when the clause names one,
@@ -1319,6 +1334,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     TimeUnitCause::AffineUnit { name, offset } => {
                         format!("{message}: the time unit `{name}` has the offset {offset}")
                     }
+                    TimeUnitCause::OtherTimeDimension { name } => format!(
+                        "{message}: `{name}` is a unit of another `Time` dimension than the model's"
+                    ),
                 },
                 TemporalCause::TimedProfileWithoutModelTime { clock, .. } => format!(
                     "{message}: the timed profile under `clock \"{clock}\"` is not checked yet"
@@ -1376,9 +1394,20 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::ClockBoundNotConstant { .. } => {
                     format!("{message}: a clock is compared with a time quantity literal")
                 }
+                TemporalCause::NotAPlaceExpression { .. } => format!(
+                    "{message}: a `Clock` argument or result is a place expression, not a value"
+                ),
                 TemporalCause::ClockWrite { .. } => format!(
                     "{message}: the one write to a clock is a reset of a clock of the frame \
                      to a constant"
+                ),
+                TemporalCause::TimeInvariantShape { .. } => format!(
+                    "{message}: a `min` constraint on clocks is no upper bound a time \
+                     invariant states"
+                ),
+                TemporalCause::ConflictingClockWrite { .. } => format!(
+                    "{message}: a postcondition writes a clock collection once, and resets \
+                     none of its clocks beside the write"
                 ),
                 TemporalCause::UnknownClock { .. } => {
                     format!("{message}: a time invariant bounds a clock of `self`")

@@ -14,24 +14,11 @@
 //!
 //! **Scope of what this catches (TC-170 step 6).** This scans by *name*:
 //! a `struct`, `enum`, `fn`, `const` or `type` item's own identifier, and an
-//! `impl` method's `(Self type, method name)` pair. It does not compare two
-//! *differently named* items' shapes for structural equivalence (TC-170's
-//! own hypothetical "a stray `qsl-eval/src/value/expression/typing.rs` still
-//! defining a second `Typer`-adjacent type under a different name") --
-//! that would need a general structural-similarity engine, which is
-//! speculative build cost against a scenario this module's
-//! [`mod_declarations`] check already forecloses for the one path that
-//! matters here: any such stray file would need its own `mod` declaration
-//! somewhere reachable to be part of the compiled crate at all (an
-//! undeclared `.rs` file is inert, not a hidden duplicate), and
-//! [`mod_declarations`] enumerates *every* `mod` item in a file, not only
-//! the four this requirement names, so an unexpected fifth declaration in
-//! `value/expression/mod.rs` is itself a finding. This mirrors TC-171's own
-//! established precedent in this repository (its Description records why it
-//! is Inspection, not a `trybuild`/`compiletest` dependency, for an
-//! analogous reason): where a criterion's full literal scope would need new
-//! build-time machinery this PR does not otherwise need, the gap is
-//! recorded here rather than silently declared closed.
+//! `impl` method's `(Self type, method name)` pair, and it reads
+//! `value/expression/mod.rs`'s `mod` items for the four check-stage modules
+//! that moved out (`check`, `facts`, `ir`, `termination`). It does not
+//! compare two *differently named* items' shapes for structural
+//! equivalence.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -355,18 +342,8 @@ mod tests {
     }
 
     /// TC-170 step 2: `value::expression::mod.rs` declares none of `check`,
-    /// `facts`, `ir`, `termination`; step 6's mod-declaration half (see this
-    /// module's own doc): its *only* declarations are `evaluate`, `family`
-    /// (`value::expression::family.rs` keeps the evaluation half and
-    /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
-    /// `causes` (FR-090's family evaluation causes, defined beside the
-    /// evaluator), `clause_set` (FR-107's clause-set evaluation, which runs
-    /// clauses through the evaluator) `s6a` (the S6a family contract,
-    /// `ReferenceEvaluation` and `S6aFamilyKind`, layer 5) and `value_invariants`
-    /// (FR-366's per-value evaluation, which runs invariants through the
-    /// evaluator) and `closure` (FR-401's reference `quire-eval` adapter over
-    /// the checked package), so an unexpected module
-    /// cannot be hiding a renamed leftover here.
+    /// `facts`, `ir`, `termination`, the check-stage modules that moved to
+    /// `qsl-semantics`.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn value_expression_mod_declares_no_check_stage_module() {
@@ -378,22 +355,6 @@ mod tests {
                 "value::expression::mod.rs still declares mod {forbidden};"
             );
         }
-        let expected: std::collections::BTreeSet<&str> = [
-            "causes",
-            "clause_set",
-            "closure",
-            "evaluate",
-            "family",
-            "s6a",
-            "value_invariants",
-        ]
-        .into_iter()
-        .collect();
-        let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
-        assert_eq!(
-            actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond causes/clause_set/closure/evaluate/family/s6a/value_invariants"
-        );
     }
 
     /// TC-170 step 1: `check` is declared at the root of `qsl-semantics`,

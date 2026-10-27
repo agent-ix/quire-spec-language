@@ -83,7 +83,7 @@ use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Time
 
 use crate::value::counter::Counter;
 use crate::value::definition::DefinitionReference;
-use crate::value::member::Member;
+use crate::value::member::{AcceptedPoint, Member};
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 
 /// FR-322's application-node preimage version.
@@ -419,6 +419,10 @@ pub enum BindingValue {
     Group(GroupTerm),
     /// A Tuple.
     Tuple(TupleTerm),
+    /// The accepted `ClauseBinding.execution_point` of an `operation_anchor`
+    /// body's `execution_point` binding (QSpec FR-342): the IR's closed
+    /// four-variant shape, which is not a term and holds no node reference.
+    ExecutionPoint(AcceptedPoint),
 }
 
 /// The Member stratum: an application argument or a body aggregate's
@@ -954,6 +958,7 @@ impl BindingValue {
             Self::Leaf(leaf) => vec![leaf],
             Self::Group(group) => group.leaves().collect(),
             Self::Tuple(tuple) => tuple.leaves(),
+            Self::ExecutionPoint(_) => Vec::new(),
         }
     }
 
@@ -962,6 +967,7 @@ impl BindingValue {
             Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
             Self::Group(group) => Self::Group(group.map_keys(map)),
             Self::Tuple(tuple) => Self::Tuple(tuple.map_keys(map)),
+            Self::ExecutionPoint(point) => Self::ExecutionPoint(point.clone()),
         }
     }
 }
@@ -1600,6 +1606,11 @@ pub(crate) struct NodeInput<'a> {
     pub(crate) declaration: Option<&'a [Identifier]>,
     /// The node's body.
     pub(crate) body: &'a BodyTerm,
+    /// QSpec FR-464's `owner_model`: the exact model declaration node a
+    /// `protocol`/`protocol_clause` node is declared over, `Some` for that
+    /// node and `None` for every other; it enters the clause's
+    /// `quire.application-node/v1` preimage.
+    pub(crate) owner_model: Option<NodeKey>,
 }
 
 /// The inputs of one application-bearing node's FR-322 key: the
@@ -1642,6 +1653,10 @@ pub enum NodeKeyRefusal {
     /// application preimage has no owner member.
     #[error("an application node carries an owner")]
     OwnedApplication,
+    /// An `owner_model` on a node that is not a protocol clause, or a protocol
+    /// clause without one (QSpec FR-464 "owner_model").
+    #[error("owner_model is present exactly on a protocol clause")]
+    OwnerModelPresence,
     /// A structural node's `owner` and `declaration` are not both present
     /// or both absent.
     #[error("a declared node's owner and declaration disagree")]
@@ -1728,6 +1743,7 @@ pub(crate) fn application_node_key(
         semantic_type: Some(node.semantic_type),
         declaration: node.declaration,
         body: node.body,
+        owner_model: None,
     };
     let (_, has_application) = Walk::OUTSIDE.body(node.body)?;
     if !has_application {
@@ -2076,6 +2092,9 @@ fn typed_preimage<'a>(
     // application preimage even though its body, an aggregate over the
     // member binding, contains no `application` term.
     let has_application = has_application || is_union_value(node);
+    if node.owner_model.is_some() != is_protocol_clause(node) {
+        return Err(NodeKeyRefusal::OwnerModelPresence);
+    }
     let (version, recursion) = if has_application {
         if node.owner.is_some() {
             return Err(NodeKeyRefusal::OwnedApplication);
@@ -2118,11 +2137,22 @@ fn typed_preimage<'a>(
         declaration: node.declaration.map(|segments| DeclarationPreimage {
             qualified_name: segments.iter().map(Identifier::as_str).collect(),
         }),
+        owner_model: node.owner_model.map(NodeRef),
         recursion,
         body,
     };
     Ok((preimage, has_application))
 }
+
+/// Whether `node` is a `protocol`/`protocol_clause` node, the one node that
+/// carries an `owner_model` (QSpec FR-464).
+#[ix_trace_rs::string_edge]
+fn is_protocol_clause(node: &NodeInput<'_>) -> bool {
+    node.node_tag == NodeTag::Protocol && node.semantic_form == PROTOCOL_CLAUSE_FORM
+}
+
+/// The `semantic_form` of a protocol clause node.
+pub(crate) const PROTOCOL_CLAUSE_FORM: &str = "protocol_clause";
 
 /// Whether `node` is a `value`/`union_value` node, which QSpec FR-440 keys by
 /// `quire.application-node/v1` whatever its body holds.
@@ -2144,6 +2174,7 @@ struct Preimage<'a> {
     semantic_form: &'a str,
     semantic_type: Option<SemanticTypePreimage>,
     declaration: Option<DeclarationPreimage<'a>>,
+    owner_model: Option<NodeRef>,
     recursion: Option<RecursionPreimage>,
     body: PreimageTerm<'a>,
 }
@@ -2168,6 +2199,10 @@ impl Encode for Preimage<'_> {
         writer.serialize(&self.semantic_type)?;
         writer.name("declaration")?;
         writer.serialize(&self.declaration)?;
+        if let Some(owner_model) = &self.owner_model {
+            writer.name("owner_model")?;
+            writer.serialize(owner_model)?;
+        }
         writer.name("recursion")?;
         writer.serialize(&self.recursion)?;
         writer.name("body")?;
@@ -2227,6 +2262,9 @@ enum PreimageTerm<'a> {
         name: &'a str,
         value: Box<PreimageTerm<'a>>,
     },
+    /// An `execution_point` binding's value, serialized as the IR's closed
+    /// `{kind, name | operation}` object.
+    ExecutionPoint(&'a AcceptedPoint),
 }
 
 /// A preimage term with no subterm.
@@ -2274,6 +2312,7 @@ impl Encode for PreimageTerm<'_> {
         while let Some(task) = tasks.pop() {
             match task {
                 Task::Term(PreimageTerm::Leaf(leaf)) => writer.serialize(leaf)?,
+                Task::Term(PreimageTerm::ExecutionPoint(point)) => writer.serialize(*point)?,
                 Task::Term(PreimageTerm::Application {
                     operator,
                     operation,
@@ -2358,7 +2397,13 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         },
         Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
         // No `declaration`: nothing for `map` to remap.
-        Member::StateClause { clause } => Member::StateClause { clause },
+        Member::StateClause {
+            clause,
+            execution_point,
+        } => Member::StateClause {
+            clause,
+            execution_point,
+        },
         Member::TemporalInterval { interval } => Member::TemporalInterval { interval },
         timed @ Member::TimedInterval(_) => timed,
         Member::Fairness {
@@ -2486,6 +2531,7 @@ impl Walk<'_> {
                     BindingValue::Leaf(leaf) => self.leaf(leaf)?,
                     BindingValue::Group(group) => self.group(group)?,
                     BindingValue::Tuple(tuple) => self.tuple(tuple)?,
+                    BindingValue::ExecutionPoint(point) => PreimageTerm::ExecutionPoint(point),
                 };
                 Self::binding(&binding.name, value)
             }

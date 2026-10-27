@@ -124,6 +124,9 @@ pub enum ZoneCheckLimit {
     MaxAutomatonStates(u64),
     /// `max_zone_bytes`.
     MaxZoneBytes(u64),
+    /// The timed subject's `max_clocks` (QSpec FR-415 "Cardinality bound"):
+    /// a state's live clocks exceed it.
+    MaxClocks(u64),
 }
 
 /// Why a run stopped with no verdict.
@@ -287,6 +290,11 @@ pub enum ZoneCheckRefusal {
     /// The clause's negation automaton could not be built (FR-240).
     #[error("the clause's automaton could not be built: {0}")]
     Automaton(AutomatonError),
+    /// A step of the model writes a clock collection whole, so a clock may
+    /// move between slots (FR-230 "Collection-valued writes"), and EN-6's
+    /// zones map no carried clock between places yet.
+    #[error("the model writes a clock collection whole, whose carried clocks EN-6 does not map")]
+    CarriedClocks,
     /// An invariant of the engine broke.
     #[error("the zone engine broke an invariant: {0}")]
     Fault(&'static str),
@@ -367,6 +375,9 @@ pub fn check_timed_model<S: Clone>(
     };
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
+    }
+    if request.subject.writes_collections() {
+        return Err(ZoneCheckRefusal::CarriedClocks);
     }
     // FR-239: an unbounded population root refuses before any state is
     // explored, as FR-126 states.
@@ -655,7 +666,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     pub(super) fn timed<T>(&self, result: Result<T, TimedStop>) -> Result<T, Halt> {
-        result.map_err(|stop| self.undecided(ZoneUndecided::UndecidedSuccessor(stop)))
+        result.map_err(|stop| match stop {
+            TimedStop::MaxClocks { max_clocks } => self.stop(ZoneStop::LimitReached(
+                ZoneCheckLimit::MaxClocks(max_clocks),
+            )),
+            stop => self.undecided(ZoneUndecided::UndecidedSuccessor(stop)),
+        })
     }
 
     pub(super) fn scaled(&self, value: &Rational) -> BigInt {
@@ -1685,7 +1701,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             .places()
             .iter()
             .zip(&concrete.last_clocks)
-            .filter(|(place, _)| place.present(&state))
+            .filter(|(place, _)| self.timed.live(place, &state))
             .map(|(_, value)| value.clone())
             .collect();
         let (kind, over_binding, fairness) = match badness {

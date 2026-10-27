@@ -114,8 +114,9 @@ fn service_steps_carry_the_products_of_their_draws() {
     ];
     for (d, ok, probability) in expected {
         let texts = [
-            crate::simulation::model::frames::text_of(&int(d)).expect("text"),
-            crate::simulation::model::frames::text_of(&Value::Boolean(ok)).expect("text"),
+            crate::simulation::model::frames::text_of(&int(d), system.typing()).expect("text"),
+            crate::simulation::model::frames::text_of(&Value::Boolean(ok), system.typing())
+                .expect("text"),
         ];
         let step = busy
             .iter()
@@ -191,7 +192,8 @@ fn link_steps_weigh_operations_then_draws() {
         operation_text(&system, "send_b"),
     ];
     ordered.sort_by_key(|text| {
-        super::identity_bytes(text, &actions[0].identity.receiver, &[]).expect("bytes")
+        super::identity_bytes(text, &actions[0].identity.receiver, &[], system.typing())
+            .expect("bytes")
     });
     assert_eq!(operations, ordered);
     for action in &actions {
