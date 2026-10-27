@@ -34,8 +34,8 @@ use quire_semantic_value::catalog::UndefinedReason;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::{
-    CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ModelTimeSource, TimeSourceKind,
-    TimedModel, Urgency,
+    CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ModelTimeSource, PlaceStep,
+    TimeSourceKind, TimedModel, Urgency,
 };
 
 use super::encode::declaration_text;
@@ -668,10 +668,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             })?,
                         };
                         if data {
-                            clause_parts.push(
-                                self.over(&vector.receiver, part.clocks())
-                                    .collect::<Vec<_>>(),
-                            );
+                            clause_parts.push(self.placed(
+                                state,
+                                &vector.receiver,
+                                part.clocks(),
+                            )?);
                         }
                     }
                     parts = parts
@@ -736,6 +737,74 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
         let steps = keyed.into_iter().map(|(_, step)| step).collect();
         Ok(steps)
+    }
+
+    /// `constraints` of an operation's guard part over places, each of
+    /// `receiver`'s own clock or of the object `receiver` reaches at `state`
+    /// through the constraint's reference fields (FR-230-AC-10).
+    ///
+    /// # Errors
+    ///
+    /// A broken-invariant [`ExpansionStop`] when a reference field does not
+    /// resolve to a present object of the universe, which FR-120's closure
+    /// of a required single reference rules out.
+    fn placed(
+        &self,
+        state: &ModelSimState,
+        receiver: &ObjectReference,
+        constraints: &[ClockConstraint],
+    ) -> Result<Vec<PlaceConstraint>, ExpansionStop> {
+        constraints
+            .iter()
+            .map(|constraint| {
+                let place = self
+                    .holder(state, receiver, constraint.via())
+                    .and_then(|holder| self.place(&holder, constraint.clock()))
+                    .filter(|place| {
+                        constraint.via().is_empty()
+                            || self
+                                .places
+                                .get(*place)
+                                .is_some_and(|held| held.present(state))
+                    })
+                    .ok_or_else(|| stop(BROKEN))?;
+                Ok(PlaceConstraint {
+                    place,
+                    op: constraint.op(),
+                    bound: constraint.bound().clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// The object `object` reaches at `state` through the reference fields
+    /// `via`, each a required single reference: `object` itself for none.
+    fn holder(
+        &self,
+        state: &ModelSimState,
+        object: &ObjectReference,
+        via: &[PlaceStep],
+    ) -> Option<ObjectReference> {
+        let model = &self.system.model;
+        let mut at = object.clone();
+        for PlaceStep::Field(name) in via {
+            // The object is held under its key in the population whose
+            // objects its universe names.
+            let stored = state.state().populations.values().find_map(|objects| {
+                let stored = objects.get(at.object().as_str())?;
+                let reference = model
+                    .object_reference(&stored.type_identity, at.object().as_str())
+                    .ok()?;
+                (reference.universe() == at.universe()).then_some(stored)
+            })?;
+            let fields = model.fields(&stored.type_identity).ok()??;
+            let field = fields.iter().find(|field| field.name == *name)?;
+            match stored.fields.get(&field.key)? {
+                quire_exact::Value::Reference(next) => at = next.clone(),
+                _ => return None,
+            }
+        }
+        Some(at)
     }
 
     /// `predicate` at `state` with `self` bound to `object`.

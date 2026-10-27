@@ -107,6 +107,10 @@ pub struct AdmittedModel {
     /// Every clock place of the package's object types
     /// ([`Self::clock_places`]), found once from `records`.
     places: Vec<PackagePlace>,
+    /// Every required single-valued field whose type is a package object
+    /// type, `(owner, field name, target)`: [`Self::referenced_object`],
+    /// found once from `records`.
+    references: Vec<(EffectiveId, String, EffectiveId)>,
 }
 
 /// One population of an admitted package as FR-391 names it
@@ -507,6 +511,7 @@ impl AdmittedModel {
             alias: None,
             population_bounds: BTreeMap::new(),
             places: Vec::new(),
+            references: Vec::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -527,6 +532,7 @@ impl AdmittedModel {
     /// The model with its clock places found.
     fn with_places(mut self) -> Self {
         self.places = self.find_places();
+        self.references = self.find_references();
         self
     }
 
@@ -546,6 +552,7 @@ impl AdmittedModel {
             alias: None,
             population_bounds: BTreeMap::new(),
             places: Vec::new(),
+            references: Vec::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -1190,6 +1197,61 @@ impl AdmittedModel {
         }
         paths.sort();
         paths
+    }
+
+    /// The object type a required single-valued field `name` of an object
+    /// of type `object` refers to: the field's type is a package object
+    /// type, so its value is a reference to one object of it (FR-230-AC-10's
+    /// `peer`).
+    pub(crate) fn referenced_object(&self, object: EffectiveId, name: &str) -> Option<EffectiveId> {
+        self.references
+            .iter()
+            .find(|(owner, field, _)| field == name && self.conforms(object, *owner))
+            .map(|(_, _, target)| *target)
+    }
+
+    /// Every required single-valued field of a package object type
+    /// referring to one: `(owner, field name, target)`.
+    fn find_references(&self) -> Vec<(EffectiveId, String, EffectiveId)> {
+        use crate::model::domain_package::ValueTypeRef;
+        self.records
+            .values()
+            .filter_map(|record| {
+                let DomainPackageRecord::FieldMember(field) = record else {
+                    return None;
+                };
+                let owner = self.object_type_id(&field.owner)?;
+                let name =
+                    crate::model::intake::member_identity_name(&field.owner.node, &field.key.node)?;
+                let single = field.multiplicity.lower == 1
+                    && field.multiplicity.upper == Some(1)
+                    && field.presence == quire_exact::Presence::Required;
+                match &field.value_type {
+                    ValueTypeRef::Package(target) if single => {
+                        Some((owner, name.to_owned(), self.object_type_id(target)?))
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    /// `path` from an object of type `object` split where it leaves the
+    /// objects it reaches by reference: the leading reference fields walked,
+    /// counted, and the object type the rest of the path starts from.
+    pub(crate) fn through_references(
+        &self,
+        object: EffectiveId,
+        path: &[PlaceStep],
+    ) -> (usize, EffectiveId) {
+        let mut at = object;
+        for (walked, PlaceStep::Field(name)) in path.iter().enumerate() {
+            match self.referenced_object(at, name) {
+                Some(next) => at = next,
+                None => return (walked, at),
+            }
+        }
+        (path.len(), at)
     }
 
     /// The package record type of the value an object of type `object`

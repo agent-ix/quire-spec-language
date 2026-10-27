@@ -227,6 +227,16 @@ fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
 /// [`world_over`] whose initial `Call` also holds the field values
 /// `fields`.
 fn world_holding(document: Vec<u8>, profiles: &str, unit_body: &str, fields: Json) -> World {
+    world_of(
+        document,
+        profiles,
+        unit_body,
+        json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(fields)}]),
+    )
+}
+
+/// [`world_over`] whose initial state holds the `Call` objects `objects`.
+fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -> World {
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -273,10 +283,7 @@ fn world_holding(document: Vec<u8>, profiles: &str, unit_body: &str, fields: Jso
             "revision": "fixture:1"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
-        "populations": [{"population": ident("calls"), "complete": true, "objects": [{
-            "key": "c", "type": ident("Call"),
-            "fields": initial_fields(fields),
-        }]}],
+        "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
     });
     let bytes = document.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -1373,4 +1380,120 @@ fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
             "`{name}` is offered: {offered:?}"
         );
     }
+}
+
+/// FR-230-AC-10 (TC-685), over a universe: `Call` with `peer:
+/// Reference<Call>` and `function peer_clock(o: Call): Clock { o.peer.x }`.
+/// `peer_clock(self) <= 2 ms` constrains the clock of the object each
+/// state's `self.peer` refers to: with `c1.peer = c2` and `c2.peer = c1`,
+/// `c1`'s `work` is guarded by `c2.x <= 2` and `c2`'s by `c1.x <= 2`, and
+/// after a delay of 3 and `c2`'s `send` resets `c2.x`, `c1`'s guard holds
+/// and `c2`'s does not. `own_clock(self.peer) <= 2 ms` of `function
+/// own_clock(o: Call): Clock { o.x }` reads the same places, and `not
+/// (peer_clock(self) <= 2 ms)` their negation (SR-1651 GA FND-002).
+#[trace("TC-685")]
+#[test]
+fn a_peer_clock_is_the_clock_of_the_referenced_object() {
+    // `peer_clock(self)`, `own_clock(self.peer)` and the negation of the
+    // first: each receiver's `work` is guarded by its peer's clock.
+    let peer_clock = "function peer_clock using v(o: M::Call): Clock pure { o.peer.x }\n";
+    let own_clock = "function own_clock using v(o: M::Call): Clock pure { o.x }\n";
+    for (declaration, guard, holds) in [
+        (peer_clock, "peer_clock(self) <= 2 ms", true),
+        (own_clock, "own_clock(self.peer) <= 2 ms", true),
+        (peer_clock, "not (peer_clock(self) <= 2 ms)", false),
+    ] {
+        peer_guarded_work(declaration, guard, holds);
+    }
+}
+
+/// [`a_peer_clock_is_the_clock_of_the_referenced_object`] over the guard
+/// `guard` of `work`, which reads the peer's clock `x <= 2` when `holds`
+/// and its negation otherwise.
+fn peer_guarded_work(declaration: &str, guard: &str, holds: bool) {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("peer", &ident("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let peer = |key: &str| json!({"reference": {"population": ident("calls"), "key": key}});
+    let object = |key: &str, other: &str| {
+        json!({"key": key, "type": ident("Call"),
+            "fields": initial_fields(json!({"peer": peer(other)}))})
+    };
+    let world = world_of(
+        document,
+        "",
+        &only(
+            &["send", "work"],
+            &format!(
+                "{declaration}pre Near using v on M::Call::work {{ {guard} }}\n\
+                 post Send using v on M::Call::send {{ self.x = 0 ms }}\n"
+            ),
+        ),
+        json!([object("c1", "c2"), object("c2", "c1")]),
+    );
+    let system = system_over(&world, &["c1", "c2"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let key =
+        |place: usize| -> String { timed.places()[place].object().object().as_str().to_owned() };
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    // Each receiver's `work` names its peer's clock.
+    let guarded = |state: &TimedState| -> Vec<(String, String, bool)> {
+        timed
+            .guarded_steps(state.discrete())
+            .expect("the state expands")
+            .iter()
+            .filter(|step| step.operation().contains("Call/work\""))
+            .flat_map(|step| {
+                let receiver = step.receiver().object().as_str().to_owned();
+                step.parts()
+                    .iter()
+                    .flatten()
+                    .map(|constraint| {
+                        (
+                            receiver.clone(),
+                            key(constraint.place()),
+                            constraint.holds(state.clocks()),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    let mut named = guarded(initial);
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            ("c1".to_owned(), "c2".to_owned(), holds),
+            ("c2".to_owned(), "c1".to_owned(), holds)
+        ],
+        "{guard}"
+    );
+    let late = timed
+        .delay(initial, &exact(3, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    let send = timed
+        .steps(&late)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(step, _)| {
+            step.operation().contains("Call/send\"") && step.receiver().object().as_str() == "c2"
+        })
+        .expect("c2 sends");
+    let mut named = guarded(&send.1);
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            ("c1".to_owned(), "c2".to_owned(), holds),
+            ("c2".to_owned(), "c1".to_owned(), !holds)
+        ],
+        "{guard}"
+    );
 }
