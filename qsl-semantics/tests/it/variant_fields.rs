@@ -19,6 +19,7 @@ use qsl_semantics::model::intake::{admit_unit, package_input};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{CollectionKind, IllTypedCause, Presence, ValueType};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+use quire_semantic_value::declaration::CompositeShape;
 use serde_json::Value;
 
 #[path = "../support/variant_fields.rs"]
@@ -169,6 +170,74 @@ fn a_member_typed_by_a_variant_type_is_admitted_with_a_field_export_only() {
         alone.len(),
         "the enum and variant exports are unchanged by a member naming the type"
     );
+}
+
+/// FR-056-AC-25 / TC-995: a resolving Boolean payload is admitted as a union
+/// member rather than refused as an unsupported enumeration payload.
+#[trace("FR-056-AC-25", "TC-995")]
+#[test]
+fn a_variant_case_with_a_resolving_payload_is_admitted() {
+    let mut choice = fixture::variant_type("PayloadChoice", &["Empty", "Enabled"]);
+    choice["variants"][1]["payloadType"] = json!("ix://quire/native/Boolean");
+    let mut document = fixture::with_types(vec![choice]);
+    let account = document["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|ty| ty["displayName"] == "Account")
+        .expect("Account");
+    account["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(fixture::field(
+            "Account",
+            "choice",
+            &fixture::id("PayloadChoice"),
+        ));
+    let (declarations, packages) = declarations_of(&document, "Config", "");
+    let package = &packages[0];
+    let case = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Variant(case) if case.case == "Enabled" => Some(case),
+            _ => None,
+        })
+        .expect("Enabled case");
+    assert_eq!(
+        case.payload_type,
+        Some(ValueTypeRef::Native(
+            qsl_semantics::model::domain_package::NativeValueType::Boolean,
+        ))
+    );
+    let composite = declarations
+        .types
+        .composites()
+        .find(|declared| declared.name() == "Config::PayloadChoice")
+        .expect("the payload-bearing variant is a union composite");
+    let CompositeShape::Union(members) = composite.shape() else {
+        panic!(
+            "payload-bearing variant is a union: {:?}",
+            composite.shape()
+        );
+    };
+    assert_eq!(members.len(), 2);
+    assert_eq!(members[0].positions(), &[]);
+    assert_eq!(members[1].positions(), &[ValueType::Boolean]);
+    let account = declarations
+        .types
+        .object_types()
+        .find(|declared| declared.name() == "Config::Account")
+        .expect("Account");
+    let choice = account
+        .attributes()
+        .iter()
+        .find(|attribute| attribute.name() == "choice")
+        .expect("Account.choice");
+    assert_eq!(choice.value_type(), &ValueType::Composite(composite.key()));
+    declarations
+        .check(CheckingLimits::default())
+        .expect("the package's union payload type checks");
 }
 
 /// The refusals I1 reports for `document`, selected as model `Config`.

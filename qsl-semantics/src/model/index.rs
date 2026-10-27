@@ -229,7 +229,15 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .chain(&record.supertypes)
             .collect(),
         DomainPackageRecord::Enum(record) => vec![&record.key],
-        DomainPackageRecord::Variant(record) => vec![&record.key, &record.owner],
+        DomainPackageRecord::Variant(record) => std::iter::once(&record.key)
+            .chain([&record.owner])
+            .chain(
+                record
+                    .payload_type
+                    .as_ref()
+                    .and_then(crate::model::domain_package::ValueTypeRef::as_package),
+            )
+            .collect(),
         DomainPackageRecord::EventType(record) => std::iter::once(&record.key)
             .chain(&record.identity_fields)
             .chain(record.occurrence_field.iter())
