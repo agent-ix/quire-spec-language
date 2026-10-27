@@ -62,8 +62,8 @@ source map (FR-095).
 
 | Node | `semantic_type` | `body` | Occurrences |
 | --- | --- | --- | --- |
-| `state`/`state_clause` | the `Boolean` scalar type node | an application of `quire.op.state.clause` whose `member` is `{kind: "state_clause", clause: <kind>}` and whose arguments are, in order: `aggregate` of the parameter references (`self`, then `result` when present, then the operation's parameters in declared order), a `reference` to the anchor, and the condition term | one `claim` occurrence per declaration that checks to this node, ordinals 0, 1, ... in source order |
-| `state`/`operation_anchor` | the declaring type's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) | `aggregate[ binding("context", reference(declaring type node)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
+| `state`/`state_clause` | the `Boolean` scalar type node | an application of `quire.op.state.clause` whose `member` is `{kind: "state_clause", clause: <kind>, execution_point?: <accepted ClauseBinding point>}` and whose arguments are, in order: `aggregate` of the parameter references (`self`, then `result` when present, then the operation's parameters in declared order), a `reference` to the anchor, and the condition term | one `claim` occurrence per declaration that checks to this node, ordinals 0, 1, ... in source order |
+| `state`/`operation_anchor` | the declaring type's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) | `aggregate[ binding("context", reference(declaring type node)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)), binding("execution_point", <accepted ClauseBinding point>)? ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
 | `state`/`frame` | the declaring type's node (as the anchor's) | QSpec FR-340's frame term: `modifies`, `creates`, `deletes` and `deletes_scoped`, with each field `modifies` entry an (object type node, field name) pair carrying its `scope`, each `creates`/`deletes` entry an `object_type` node, and each `deletes_scoped` entry `receiver` or a reference parameter's name (FR-154) | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way. Each occurrence carries one region: the span of the operation reference (the qualified operation name) in the first clause or protocol attempt, in source order, that names the operation |
 
 - `<kind>` is `invariant`, `constraint` (a state constraint, FR-158),
@@ -71,6 +71,17 @@ source map (FR-095).
   (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) for an
   invariant or a constraint, and the operation's `state`/`operation_anchor`
   node otherwise. An invariant and a constraint bind `self` alone.
+- `execution_point`, when present, is the accepted
+  `ClauseBinding.execution_point` encoded as the exact closed IR form:
+  `{kind: "initialization", name}`, `{kind: "handler", name}`,
+  `{kind: "pre", operation}` or `{kind: "post", operation}`. The value is
+  part of the state-clause application member and of the operation-anchor
+  body, so each contributes to its node preimage and identity. The
+  `state_clause` member omits it only when the checked clause has no point;
+  an operation anchor omits it only when no clause binding supplies a point
+  (for example, a protocol-attempt-only anchor). An operation clause's point
+  matches between its clause and anchor. Different points on otherwise equal
+  clauses or anchors produce different node identities.
 - `self`, `result` and each operation parameter are `value`/`parameter`
   nodes, as a function's parameters are (FR-092). `result` is present only in
   a postcondition of an operation with a result.
@@ -96,7 +107,8 @@ source map (FR-095).
   declarations that check to one node id (FR-104-AC-6) SHALL give one node
   with two `claim` occurrences, never two nodes with one id.
 - S4 SHALL emit one `operation_anchor` per (declaring type, operation
-  name), however many clauses name the operation and from whichever subtype
+  name, execution point), with absence as a distinct no-point value, however
+  many clauses name the operation and from whichever subtype
   they name it, and none for an operation no clause and no protocol attempt
   (FR-114) names. The anchor's `frame` is the node of that operation's
   frame. A frame node's key hashes its body and its `semantic_type`, so
@@ -166,6 +178,7 @@ source map (FR-095).
 | FR-105-AC-9 | In FR-105-AC-1's package, the frame node's `generated` occurrence for `attemptUpdate` carries exactly one region, the byte span of `attemptUpdate`'s qualified operation reference in `VersionUnchanged`, the first clause naming it. Adding, before `VersionUnchanged`, a second `post` clause naming `attemptUpdate` moves the region to that clause's reference and leaves the occurrence's (node id, role, ordinal) unchanged. Over TC-1043's fixture R, the occurrences for `all` and `same` carry the span of each operation's reference in the first clause naming it. A `generated` frame occurrence with no region refuses `UnlocatedOccurrence` (FR-062). | Test (TC-462) |
 | FR-105-AC-10 | Adding `constraint Low using v on Config::ConfigVersion at current { self.versionNumber <= 1 }` to the ConfigVersion unit of FR-104-AC-1 adds exactly one `state_clause` node, whose body is a `quire.op.state.clause` application with kind member `{kind: "state_clause", clause: "constraint"}`, a parameter aggregate holding only the `self` `value`/`parameter` node, the `ConfigVersion` `model`/`object_type` node as anchor, and the lowered condition; it has one `claim` occurrence and adds no `operation_anchor` or `frame` node. Replacing `constraint` with `invariant` in that declaration gives a node with a different node id, and the package passes QSL's I2 read in both cases. `(state, state_clause, quire.op.state.clause, constraint)` decodes to `Constraint`. | Test (TC-462) |
 | FR-105-AC-11 | With only `attempt Update by R on Config::ConfigVersion::attemptUpdate contracts []` naming `attemptUpdate`, the frame's `generated` occurrence has one region: the qualified operation reference `Config::ConfigVersion::attemptUpdate` in the attempt, not the attempt name `Update`. When that attempt and `VersionUnchanged` both name `attemptUpdate`, the occurrence's region is the operation reference in whichever declaration appears first in source order: the attempt when it precedes the clause, and the clause when it follows it. Reordering those declarations leaves the occurrence's `(node id, role, ordinal)` unchanged. | Test (TC-462) |
+| FR-105-AC-12 | The accepted `ClauseBinding.execution_point` is emitted in the `state_clause` operation member and, for an operation clause, the referenced `operation_anchor` body using the closed `Initialization{name}`, `Handler{name}`, `Pre{operation}` or `Post{operation}` shape; both carrier locations participate in their node preimages. The names and variant match the checked clause, the clause and anchor points agree, different points create different node identities, and a protocol-attempt-only anchor omits the point. QSL's V2 read admits the exact bytes and rejects altered, inapplicable or mismatched points. | Test (TC-462, TC-463) |
 
 ## Dependencies
 

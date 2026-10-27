@@ -395,6 +395,8 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Decimal { .. }
         | NodeKind::DecimalNegate(..)
         | NodeKind::Ieee(..)
+        | NodeKind::IeeeSquareRoot(..)
+        | NodeKind::IeeeNumericEquality(..)
         | NodeKind::Quantity(..)
         | NodeKind::ConvertDecimal(..)
         | NodeKind::Order(..)

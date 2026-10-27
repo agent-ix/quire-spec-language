@@ -1747,8 +1747,22 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        let has_ieee_literal = self.functions.iter().any(|function| {
+            function.body.contains_ieee_literal()
+                || function
+                    .measure
+                    .as_ref()
+                    .is_some_and(qsl_forms::Expression::contains_ieee_literal)
+        }) || self
+            .state_clauses
+            .iter()
+            .any(|clause| clause.body.contains_ieee_literal())
+            || self
+                .hyper_clauses
+                .iter()
+                .any(hyper_clause::declaration_has_ieee_literal);
         scope
-            .select_declared_ieee_profile(&signatures)
+            .select_declared_ieee_profile(&signatures, has_ieee_literal)
             .map_err(|refusal| vec![refusal])?;
         let signatures = Signatures::new(signatures);
         let mut seen_operations = std::collections::BTreeSet::new();
@@ -5953,6 +5967,30 @@ fn register_protocol_sites(
             protocol_site(name, ProtocolSite::Role(&role.name.name)),
             role.name.span,
         );
+    }
+    for role in &protocol.roles {
+        if let Some(qsl_forms::RoleLifetime::Until(until)) = role
+            .replicated
+            .as_ref()
+            .map(|replicated| &replicated.lifetime)
+        {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::RoleUntil(&role.name.name)),
+                until.spans.clone(),
+            );
+        }
+    }
+    for channel in &protocol.channels {
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Channel(&channel.name.name)),
+            channel.span,
+        );
+        if let qsl_forms::ChannelOrdering::Fifo { key, .. } = &channel.ordering.value {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::ChannelKey(&channel.name.name)),
+                key.spans.clone(),
+            );
+        }
     }
     for control in &checked.controls.controls {
         if let Some(declaration) = protocol.declarations.get(control.node.0) {

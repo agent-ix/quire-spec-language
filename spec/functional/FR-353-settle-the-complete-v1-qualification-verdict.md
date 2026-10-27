@@ -87,10 +87,12 @@ and yields `not-qualified`, coverage zero and exit 1.
   `not-qualified`, naming every such capability with its outcome, and SHALL
   exit 1.
 - If the corpus location cannot be read, if the corpus fails QSpec FR-336's
-  validation (a `contract_version` other than `quire.conformance-corpus/v1`,
-  a missing required property, a duplicate key, an out-of-domain value or a
-  non-canonical encoding), if a `--capability` id names no capability the
-  corpus lists (FR-351), or if an argument is malformed, then the gate SHALL
+  `quire.conformance-corpus/v1` schema or semantic validation (including a
+  wrong `contract_version`, missing required or unknown members, duplicate
+  object keys or primary capability ids, an out-of-domain value, an invalid
+  vector or rollup reference, or a non-canonical encoding), if a
+  `--capability` id names no `coverage.primary` capability (FR-351), or if
+  an argument is malformed, then the gate SHALL
   report the refusal, naming its cause and locus, give no verdict and exit 2.
 - A verdict for a caller-selected scope SHALL name that scope. Only a run
   over the default scope SHALL report `complete-v1: qualified`.

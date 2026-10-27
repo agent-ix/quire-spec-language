@@ -48,6 +48,7 @@ mod owners;
 mod population_bound;
 mod population_reference;
 mod probabilistic;
+mod protocol_graph;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;

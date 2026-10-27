@@ -624,6 +624,7 @@ impl World {
 
     fn trace_subject(&self) -> ModelTraceSubject {
         ModelTraceSubject {
+            timed: None,
             initial: self.initial.clone(),
             universes: self
                 .keys
