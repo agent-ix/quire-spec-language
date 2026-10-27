@@ -15,6 +15,8 @@ use serde_json::{json, Map, Value};
 use crate::error::{Error, Result};
 use crate::Outcome;
 
+mod replay;
+
 const USAGE: &str = "usage: cargo xtask qualify --corpus <dir> [--capability <id>]... [--limit <setting>=<value>]... [--text]";
 const CORPUS_FILE: &str = "complete-v1.json";
 const SCHEMA_FILE: &str = "proposals/conformance-corpus-v1/schema.json";
@@ -315,6 +317,17 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
             schema_path.display()
         ))
     })?;
+    let replay_schema = json!({
+        "$schema": schema["$schema"],
+        "$defs": schema["$defs"],
+        "$ref": "#/$defs/ReplayRequest"
+    });
+    let replay_schema = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft202012)
+        .compile(&replay_schema)
+        .map_err(|error| {
+            Error::QualificationRefusal(format!("invalid FR-336 replay schema: {error}"))
+        })?;
     let schema = jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .compile(&schema)
@@ -406,7 +419,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         {
             continue;
         }
-        let report = execute_vector(vector, &corpus_root, &limits);
+        let report = execute_vector(vector, &corpus_root, &limits, &replay_schema);
         vector_outcomes
             .entry(vector.capability_id.clone())
             .or_default()
@@ -691,7 +704,12 @@ fn is_qsl_subject(subject: &Subject) -> bool {
     )
 }
 
-fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimits) -> VectorReport {
+fn execute_vector(
+    vector: &Vector,
+    root: &Path,
+    limits: &qsl_replay::CallerLimits,
+    replay_schema: &jsonschema::JSONSchema,
+) -> VectorReport {
     let expected = vector.expected.clone();
     let mut inputs = Vec::with_capacity(vector.input.files.len());
     for input in &vector.input.files {
@@ -951,6 +969,19 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                     None,
                     Some(json!({"code":"outcome-document","message":error})),
                 ),
+            }
+        }
+        (ConsumerType::Runtime, Operation::Replay) => {
+            match replay::execute(vector, &inputs, root, limits, replay_schema) {
+                Ok((actual, output)) => (actual, Some(output), None),
+                Err(failure) => {
+                    return vector_failure(
+                        vector,
+                        expected,
+                        VectorOutcome::ToolFailure,
+                        json!({"code":"replay-input","message":failure}),
+                    )
+                }
             }
         }
         _ => {
