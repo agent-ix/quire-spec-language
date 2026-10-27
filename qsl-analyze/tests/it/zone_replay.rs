@@ -1464,3 +1464,91 @@ fn a_local_lock_comes_first_at_a_node_and_the_first_node_first() {
     assert!(first.prefix.is_empty());
     assert_eq!(first.final_delay, Some(whole(0)));
 }
+
+/// Part of FR-415-AC-13 (TC-367), SR-1676002 FND-002: EN-6 over a timed
+/// subject whose bound `max_clocks` is 1, below the two live clocks `x` and
+/// `y` of `Call`, stops `LimitReached(MaxClocks(1))` when it expands the
+/// initial state, and the outcome settles `incomplete` `limit-reached`
+/// naming `max_clocks`, its value 1 and the setting
+/// `model_check.max_clocks`. Under a bound of 2 the claim is decided. Not
+/// covered: the request's `limits.max_clocks` member, whose request schema
+/// (FR-368) this crate does not read.
+#[trace("TC-367")]
+#[test]
+fn live_clocks_beyond_max_clocks_settle_limit_reached() {
+    let world = crate::zone_search::rpc_world(
+        &document(
+            &["x", "y"],
+            &[
+                ("send", &["phase", "inflight", "late", "x"]),
+                ("reply", &["phase", "inflight", "late"]),
+                ("timeout", &["phase"]),
+                ("reset", &["phase"]),
+            ],
+        ),
+        4,
+        INFINITE,
+        "temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always holds(not c.late) }\n",
+    );
+    let decided = |max_clocks: u64| {
+        let system = world.system();
+        let timed = TimedSystem::with_max_clocks(
+            &system,
+            "M",
+            std::num::NonZeroU64::new(max_clocks).expect("positive"),
+        )
+        .expect("a timed subject");
+        let node = &world.package.graph().temporal_clauses()[0];
+        let letters = system.clause_letters(node).expect("letters");
+        qsl_analyze::zone_check::check_timed_model(
+            qsl_analyze::zone_check::ZoneCheckRequest {
+                subject: &timed,
+                item: qsl_analyze::zone_check::ZoneCheckItem::Clause {
+                    clause: node.clause(),
+                    letters: &letters,
+                },
+                obligation: qsl_route::deadlock::ItemObligation {
+                    subject: crate::zone_search::SUBJECT,
+                    kind: qsl_route::deadlock::ObligationKind::Authored(
+                        qsl_replay::node_occurrence(node),
+                    ),
+                },
+                limits: ZoneCheckLimits::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("EN-6 takes the claim")
+    };
+    let stopped = decided(1);
+    assert!(
+        matches!(
+            stopped,
+            ZoneCheckOutcome::Stopped {
+                cause: qsl_analyze::zone_check::ZoneStop::LimitReached(
+                    qsl_analyze::zone_check::ZoneCheckLimit::MaxClocks(1)
+                ),
+                ..
+            }
+        ),
+        "{stopped:?}"
+    );
+    let record = settle(&stopped, ZoneCertificateVerdict::Accepted, Err(fault()));
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxClocks,
+            value: 1,
+        })
+    );
+    assert_eq!(ModelCheckLimit::MaxClocks.as_str(), "max_clocks");
+    assert_eq!(
+        ModelCheckLimit::MaxClocks.setting(),
+        "model_check.max_clocks"
+    );
+    assert!(
+        matches!(decided(2), ZoneCheckOutcome::Holds { .. }),
+        "{:?}",
+        decided(2)
+    );
+}

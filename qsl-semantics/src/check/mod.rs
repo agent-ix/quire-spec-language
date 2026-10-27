@@ -407,8 +407,8 @@ pub use temporal_clause::{
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp, ClockReset,
-    ClockResets, CollectionWrite, ConvexPart, ElementBinding, QuantifiedFamily, SlotSelection,
-    TimeInvariant, TimedModel, Urgency, Written,
+    ClockResets, CollectionWrite, ConvexPart, ElementBinding, QuantifiedFamily, SlotRef,
+    SlotSelection, TimeInvariant, TimedModel, Urgency, Written,
 };
 
 /// A checked function.

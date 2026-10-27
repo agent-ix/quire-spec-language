@@ -2963,6 +2963,12 @@ fn read_value_type_ref(
     allow_clock: bool,
 ) -> Result<ValueTypeRef, ModelRefusal> {
     if let Some(name) = type_ref.strip_prefix("ix://quire/unit/") {
+        // A unit of this package may be named by its package path too,
+        // `ix://quire/unit/<package>/<name>` (FR-230-AC-17).
+        let name = name
+            .strip_prefix(package)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .unwrap_or(name);
         if name.is_empty() || name.contains('/') {
             return Err(ctx.malformed_in(
                 "typeRef",

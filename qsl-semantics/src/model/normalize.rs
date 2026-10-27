@@ -2243,6 +2243,7 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
+                        && !index.is_alias_or_sequence_type(value_type)
                     {
                         refusals.push(signature_type_refusal(
                             domain_package,
@@ -2259,6 +2260,7 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
+                        && !index.is_alias_or_sequence_type(value_type)
                     {
                         refusals.push(signature_type_refusal(
                             domain_package,

@@ -4,7 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{ClockOp, CollectionShape, PlaceStep};
+use qsl_semantics::check::{ClockOp, CollectionShape, PlaceStep, SlotRef};
 use quire_semantic_value::declaration::CompositeShape;
 use serde_json::{json, Value};
 
@@ -658,6 +658,14 @@ fn a_record_collection_reads_its_data_and_refuses_value_comparison() {
     }
 }
 
+/// The index of a held slot.
+fn held(slot: SlotRef) -> u64 {
+    match slot {
+        SlotRef::Held(slot) => slot,
+        SlotRef::Family => panic!("a held slot expected"),
+    }
+}
+
 /// The guard parts of the first guard of `model`: for each, the elements
 /// its data predicate reads (field, slot) and its constraints (clock name,
 /// slots, op, bound).
@@ -677,7 +685,7 @@ fn slot_parts(
                 part.data().is_some(),
                 part.elements()
                     .iter()
-                    .map(|element| (element.path().join("."), element.slot()))
+                    .map(|element| (element.path().join("."), held(element.slot())))
                     .collect(),
                 part.clocks()
                     .iter()
@@ -688,7 +696,7 @@ fn slot_parts(
                                 .expect("a clock")
                                 .name()
                                 .to_owned(),
-                            constraint.slots().to_vec(),
+                            constraint.slots().iter().copied().map(held).collect(),
                             constraint.op(),
                             format!("{:?}", constraint.bound()),
                         )
@@ -701,7 +709,7 @@ fn slot_parts(
 
 /// A family's template part: the slots of the elements it reads, and each
 /// constraint's slots and operator.
-type Template = (Vec<u64>, Vec<(Vec<u64>, ClockOp)>);
+type Template = (Vec<SlotRef>, Vec<(Vec<SlotRef>, ClockOp)>);
 
 /// Part of FR-230-AC-21 (TC-685), "Quantified reads" in a precondition:
 /// over `ts: Sequence<Timer>[0, 3]`, the guard `forall(e in self.ts: e.x <=
@@ -802,7 +810,7 @@ fn a_quantified_guard_records_one_entry_per_size_or_slot() {
             .collect();
         (family.path().join("."), family.each(), templates)
     };
-    let open = qsl_semantics::check::ElementBinding::FAMILY_SLOT;
+    let open = SlotRef::Family;
     assert_eq!(
         family("forall(e in self.ts: e.x <= 3 ms)"),
         (
@@ -1211,9 +1219,10 @@ fn a_package_sequence_type_is_an_unbounded_clock_collection() {
 /// alias `Stopwatch` of `ix://quire/native/Clock` types `Call.s` as the
 /// clock `s`; an alias `D` of the unit `ix://quire/unit/ms` types `Call.d`
 /// as `Quantity<ms>`, and a sequence type `Ds` whose `items` is `D` types
-/// `Call.ds` as a sequence of `Quantity<ms>`. Not covered: the map halves
-/// (quire-exact has no map value type), an operation parameter and result
-/// typed by `D`, and the ghost-unit refusals.
+/// `Call.ds` as a sequence of `Quantity<ms>`. Not covered here: the map
+/// halves (quire-exact has no map value type); the parameter, result and
+/// ghost-unit refusals are
+/// [`a_unit_alias_or_sequence_types_each_position_and_refuses_a_ghost_unit`].
 #[trace("TC-685")]
 #[test]
 fn an_alias_of_a_clock_or_a_unit_types_its_members() {
@@ -1524,6 +1533,146 @@ fn a_max_constraint_on_a_clock_alias_bounds_its_places() {
         assert!(
             message.contains("InvalidModelBinding") && message.contains("constraints"),
             "{keyword} {value}: {message}"
+        );
+    }
+}
+
+/// Part of FR-230-AC-17 (TC-685): the unit `ms` named by its package path
+/// `ix://quire/unit/<package>/ms` as the `target` of an alias `D` types the
+/// field `Call.d`, the parameter `bump(p: D)` and the result of `bump` as
+/// `Quantity<ms>`, and a sequence type `Ms` whose `items` is that unit
+/// types `Call.ms` as a sequence of `Quantity<ms>`. The same alias `target`
+/// or sequence `items` naming `ix://quire/unit/ghost` refuses
+/// `missing_declaration`/`missing-name` naming the type definition and its
+/// path `TypeDefinition.target` or `TypeDefinition.items`, once, whether
+/// or not a member is typed by it. Not covered: the map half (IR-1046,
+/// quire-exact has no map value type).
+#[trace("TC-685")]
+#[test]
+fn a_unit_alias_or_sequence_types_each_position_and_refuses_a_ghost_unit() {
+    let document = |unit: &str, used: bool| {
+        let unit = unit.to_owned();
+        timer_document(move |document: &mut Value| {
+            let core = |name: &str, kind: &str, extra: Value| {
+                let mut node = wire_type(&package(name), "unused", extra);
+                node["kind"] = json!(kind);
+                node
+            };
+            let types = document["types"].as_array_mut().expect("types");
+            types.push(core("D", "alias", json!({"target": unit})));
+            types.push(core("Ms", "sequence", json!({"items": unit})));
+            if !used {
+                return;
+            }
+            let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+            fields.push(field("d", &package("D")));
+            fields.push(field("ms", &package("Ms")));
+            for operation in types[1]["operations"].as_array_mut().expect("operations") {
+                if operation["name"] == "bump" {
+                    let mut parameter = wire_field(
+                        &format!("{}/p", call("bump")),
+                        "p",
+                        &package("D"),
+                        "required",
+                        1,
+                    );
+                    parameter["multiplicity"]["unique"] = json!(true);
+                    operation["params"] = json!([parameter]);
+                    operation["returns"] = json!({
+                        "typeRef": package("D"),
+                        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                        "nullable": false,
+                    });
+                }
+            }
+        })
+    };
+    let graph = check(
+        &document(&format!("ix://quire/unit/{PACKAGE}/ms"), true),
+        &format!("{UNITS}{DENSE}"),
+    )
+    .unwrap_or_else(|refusals| panic!("the unit types check: {refusals:?}"));
+    let model = timed(&graph);
+    let owner = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "x")
+        .expect("Call.x")
+        .owner();
+    let typed = |name: &str| {
+        graph
+            .scope()
+            .types()
+            .attribute(owner, name)
+            .unwrap_or_else(|| panic!("Call.{name}"))
+            .field()
+            .value_type()
+            .clone()
+    };
+    let quantity = typed("d");
+    assert!(
+        matches!(quantity, quire_exact::ValueType::Quantity(_)),
+        "{quantity:?}"
+    );
+    let ms = typed("ms");
+    let quire_exact::ValueType::Collection(ms) = &ms else {
+        panic!("ms is a collection: {ms:?}");
+    };
+    assert_eq!(ms.kind(), quire_exact::CollectionKind::Sequence);
+    assert_eq!(ms.element(), &quantity);
+    let bump = graph
+        .scope()
+        .operations()
+        .declared_by(owner)
+        .iter()
+        .find(|operation| operation.name() == "bump")
+        .expect("bump");
+    assert_eq!(bump.parameters(), &[("p".to_owned(), quantity.clone())]);
+    assert_eq!(bump.result(), Some(&quantity));
+
+    for used in [true, false] {
+        let refusal = crate::model_operations::admit_and_assemble_with_profiles(
+            &document("ix://quire/unit/ghost", used),
+            crate::timed_model::TEMPORAL,
+            &format!("{UNITS}{DENSE}"),
+        )
+        .expect_err("a ghost unit refuses");
+        let mut named: Vec<(Code, String, String)> = refusal
+            .errors
+            .iter()
+            .map(|error| {
+                let qsl_semantics::check::AssemblyCause::UnresolvedModelQuantityType {
+                    name,
+                    member_identity,
+                    member_path,
+                } = &error.cause
+                else {
+                    panic!("an unresolved unit: {error:?}");
+                };
+                assert_eq!(name, "ghost");
+                (
+                    error.cause.code(),
+                    member_identity.clone(),
+                    member_path.clone(),
+                )
+            })
+            .collect();
+        named.sort_by(|left, right| (&left.1, &left.2).cmp(&(&right.1, &right.2)));
+        assert_eq!(
+            named,
+            [
+                (
+                    Code::MissingDeclaration,
+                    package("D"),
+                    "TypeDefinition.target".to_owned()
+                ),
+                (
+                    Code::MissingDeclaration,
+                    package("Ms"),
+                    "TypeDefinition.items".to_owned()
+                ),
+            ],
+            "used: {used}"
         );
     }
 }

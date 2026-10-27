@@ -56,3 +56,36 @@ Changes requested: FND-001, FND-002 and FND-003. FND-002 also needs a spec rulin
   - a three-element set with a literal duplicate (correctly dropped).
 - Eval probes: three changing writes (0 steps each), and an identity write and a reset (16 steps each, clocks correct).
 - All probes were reverted with `git checkout --`. The `clock_places` tests pass.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The zone checker, the zone certificate checker and timed closure exploration all refuse a model that writes a clock collection, by name (`CarriedClocks`). That is an explicit, acceptable deferral. But the follow-up (mapping carried places in a DBM) is only listed in the PR body, and no ticket exists. File one, so that the refusal has an owner. | zone_check/search.rs 376; zone_certificate.rs 674; timed/explore.rs 83 |
+
+## Dispositions
+
+Round 1. The head is c3110bf0a, and its fix commit is c3110bf0a on top of 859dca6c3. Checked in a fresh worktree and target under locked-build at jobs 4:
+- qsl-eval `timed` tests: 44 passed, plus my own reverted probe.
+- qsl-semantics `clock_places`: 13/13 passed.
+- clippy `-p qsl-semantics -p qsl-eval -p qsl-replay -p qsl-analyze --all-targets --all-features -D warnings`: exit 0.
+
+I re-ran the round-0 eval probes as a two-step run: `send` resets slot 1's `x` at t = 3, then `reply` writes at t = 4. All probes were reverted afterwards.
+
+| Write | Result |
+| --- | --- |
+| `filter(e in pre(self.ts): e.n > 1)` over a Sequence, a Set and a Bag | 16 steps each; slot 0 becomes `x = 1`, `y = 4` (slot 1's clocks moved) and slot 1 is gone |
+| `map(e in pre(self.ts): e)`, `filter(... e.n > 0)`, `pre(self.ts)` | clocks unchanged per slot |
+| Fresh `sequence[M::Timer{x: 2 ms, y: 5 ms, n: 3}]` | `x = 2`, `y = 5` |
+| Set `[T{x: 0, n: 1}, T{x: 5, n: 1 + 0}]` | one slot, `x = 0` (the first occurrence) |
+| Bare `filter(e in self.ts: ...)` and bare `self.ts = self.ts` | the expansion stops `unsupported_construct`/`collection-write-not-computed`. No successor is silently dropped. |
+
+At S3, a second write of one field, and a write plus a selection reset in either order, refuse `conflicting-clock-write`. `map(e in pre(self.ts): e)` records `Element("e")`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Frame exploration computes each write from the pre-state and confirms that the value is a function of it (computed again over the written state). Each post slot's provenance is recorded by value. The timed subject applies `GuardedStep::carries` before resets, and gives fresh slots their literal constants. A write that cannot be computed stops the expansion by name. Zone analyses refuse `CarriedClocks` (see FND-006). |
+| FND-002 | fixed | `pre(self.f)` is the carried source (`Written::Field { pre: true }`). A bare `self.f` is recorded with `pre: false` and refused at execution. Filed as STD-493 item 28 (bab3d3c9, read back). |
+| FND-003 | fixed | The checker records every occurrence. Duplicate occurrences are resolved at execution by value: for a Set or OrderedSet, the k-th equal slot takes the k-th equal occurrence, so the first occurrence's clocks win. The `1 + 0` probe gives one slot at `x = 0`. |
+| FND-004 | fixed | A second write of one field, or a write plus a reset of one of its clocks, refuses `conflicting-clock-write`. |
+| FND-005 | fixed | `Written::Element(binder)`. |

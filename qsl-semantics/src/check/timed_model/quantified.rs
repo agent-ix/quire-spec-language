@@ -23,7 +23,7 @@ use qsl_forms::{
 use super::reading::free_occurrences;
 use super::{
     self_path, timed, ClockConstraint, ClockId, ClockOp, Clocks, DataLiteral, Dnf, ElementBinding,
-    FamilyDraft, Located, PartBudget, ResetDraft,
+    FamilyDraft, Located, PartBudget, ResetDraft, SlotRef,
 };
 use crate::check::lowering::{CollectionShape, PlaceStep};
 use crate::check::refusal::{CheckCause, TemporalCause};
@@ -120,7 +120,7 @@ pub(super) fn bodies(
 /// The refusals of [`slot`] for its body. Over a collection with no
 /// declared maximum the read is the family of the entries indexed by size,
 /// a [`DataLiteral::Family`] whose body is read once at
-/// [`ElementBinding::FAMILY_SLOT`].
+/// [`SlotRef::Family`].
 pub(super) fn read(
     located: &Located<'_>,
     id: ExprId,
@@ -138,7 +138,7 @@ pub(super) fn read(
         let binding = ElementBinding {
             name: format!("{}#{}#n", quantifier.binder, quantifier.path.join(".")),
             path: quantifier.path.clone(),
-            slot: ElementBinding::FAMILY_SLOT,
+            slot: SlotRef::Family,
         };
         let (positive, negative) = slot(
             located,
@@ -167,7 +167,7 @@ pub(super) fn read(
         let binding = ElementBinding {
             name: format!("{}#{}#{at}", quantifier.binder, quantifier.path.join(".")),
             path: quantifier.path.clone(),
-            slot: at,
+            slot: SlotRef::Held(at),
         };
         slots.push(slot(
             located,
