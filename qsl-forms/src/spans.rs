@@ -159,6 +159,28 @@ impl ExpressionSpans {
         Some(tree)
     }
 
+    /// Spans for `expression` that place every node at `point`, an empty span:
+    /// the spans of a tree built from parts of a source rather than written
+    /// at one place of it, located at `point`.
+    pub fn at_point(expression: &Expression, point: usize) -> Result<Self, SpanRefusal> {
+        let span = Span {
+            start: point,
+            end: point,
+        };
+        let mut tree = Self::new(span)?;
+        let mut pending = vec![(expression.root_id(), tree.root())];
+        while let Some((source, target)) = pending.pop() {
+            let Some(node) = expression.get(source) else {
+                continue;
+            };
+            for child in node.node().children() {
+                let added = tree.push_child(target, span)?;
+                pending.push((child, added));
+            }
+        }
+        Ok(tree)
+    }
+
     /// The spans of [`Expression::cut`]`(root, leaves)` when these spans
     /// fit `expression`: the tree under `root`'s span, each leaf keeping its
     /// own span and none of its descendants'. `None` when the spans do not
@@ -169,6 +191,19 @@ impl ExpressionSpans {
         root: ExprId,
         leaves: &BTreeSet<ExprId>,
     ) -> Option<Self> {
+        self.cut_removing(expression, root, leaves, &BTreeSet::new())
+    }
+
+    /// The spans of [`Expression::cut_removing`]`(root, leaves, removed)`:
+    /// [`Self::cut`]'s, without the spans of each removed node and its
+    /// descendants.
+    pub fn cut_removing(
+        &self,
+        expression: &Expression,
+        root: ExprId,
+        leaves: &BTreeSet<ExprId>,
+        removed: &BTreeSet<ExprId>,
+    ) -> Option<Self> {
         let spans = self.of_nodes(expression)?;
         let span_of = |id: ExprId| spans.get(id.index()).copied();
         let mut tree = Self::new(span_of(root)?).ok()?;
@@ -178,6 +213,9 @@ impl ExpressionSpans {
                 continue;
             }
             for child in expression.get(source)?.node().children() {
+                if removed.contains(&child) {
+                    continue;
+                }
                 let added = tree.push_child(target, span_of(child)?).ok()?;
                 pending.push((child, added));
             }

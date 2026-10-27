@@ -231,9 +231,112 @@ fn the_rpc_declarations_build_their_time_forms_in_order_with_spans() {
     );
 }
 
-/// TC-685 S2 evidence for FR-230-AC-4: the guard tree preserves its ordered
-/// `and`/`or`/clock comparisons, and a 10^40 bound remains an exact natural.
+/// FR-230-AC-3's S2 half (TC-685 step 3): `time Rpc tick tick period
+/// rational(1,2) ms unit ms` builds a tick source naming the operation
+/// `tick`, the exact period `1/2 ms` and the unit `ms`; `period 0 ms`
+/// builds an exact zero; an operation name no model declares stays in the
+/// form as written. S2 resolves nothing and refuses none of them; S3's half
+/// is `qsl-semantics`' `tick_sources_check_and_refuse_at_their_spans`.
+#[trace("TC-685", "FR-230-AC-3")]
+#[test]
+fn tick_sources_build_with_their_exact_period_and_unresolved_operation() {
+    let (text, unit) = build(
+        "time Rpc tick tick period rational(1,2) ms unit ms;\n\
+         time Rpc tick tick period 0 ms unit ms;\n\
+         time Rpc tick nothing period 1 ms unit ms;",
+    );
+    let sources: Vec<_> = unit
+        .forms()
+        .iter()
+        .map(|form| {
+            let source = time_source(form.form());
+            let TimeSourceSyntax::Tick { operation, period } = &source.source else {
+                panic!("a tick source: {source:?}");
+            };
+            (
+                operation.name.as_str(),
+                slice(&text, operation.span),
+                quantity(period),
+                slice(&text, period.span),
+                source.unit.name.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            (
+                "tick",
+                "tick",
+                (exact(ExactValueKind::Rational, 1, 2), "ms"),
+                "rational(1,2) ms",
+                "ms"
+            ),
+            ("tick", "tick", (natural(0), "ms"), "0 ms", "ms"),
+            ("nothing", "nothing", (natural(1), "ms"), "1 ms", "ms"),
+        ]
+    );
+}
+
+/// FR-230-AC-1's S2 half (TC-685 step 1): ADR-026 §11's `Rpc` time member
+/// builds as a dense source naming `ms` and, in the `s` variant, `s`; its two
+/// time invariants build in source order with the bounds `3 ms` and `4 ms`
+/// (`T = 4 ms`); `send`'s reset and `reply`'s `x >= 1 ms` guard build as
+/// clause forms with their spans. S2 refuses none of them.
 #[trace("TC-685")]
+#[test]
+fn the_rpc_time_member_invariants_reset_and_guard_build_with_spans() {
+    for unit_name in ["ms", "s"] {
+        let (text, unit) = build(&format!(
+            "time Rpc dense unit {unit_name};\n\
+             time invariant inflight when {{ self.inflight }} {{ self.x <= 3 ms }}\n\
+             time invariant waiting when {{ self.waiting }} {{ self.x <= 4 ms }}\n\
+             post Send using t on Rpc::Call::send {{ self.x = 0 ms }}\n\
+             pre Reply using t on Rpc::Call::reply {{ self.x >= 1 ms }}"
+        ));
+        let [dense, inflight, waiting, send, reply] = unit.forms() else {
+            panic!("five declarations: {:?}", unit.forms());
+        };
+        let dense = time_source(dense.form());
+        assert_eq!(dense.source, TimeSourceSyntax::Dense);
+        assert_eq!(dense.unit.name, unit_name);
+        assert_eq!(slice(&text, dense.unit.span), unit_name);
+        let bounds: Vec<_> = [inflight, waiting]
+            .into_iter()
+            .map(|form| {
+                let invariant = time_invariant(form.form());
+                let [bound] = invariant.bounds.as_slice() else {
+                    panic!("one bound: {invariant:?}");
+                };
+                (
+                    invariant.name.name.as_str(),
+                    quantity(&bound.bound),
+                    slice(&text, bound.span),
+                )
+            })
+            .collect();
+        assert_eq!(
+            bounds,
+            [
+                ("inflight", (natural(3), "ms"), "self.x <= 3 ms"),
+                ("waiting", (natural(4), "ms"), "self.x <= 4 ms"),
+            ]
+        );
+        for (form, written) in [(send, "self.x = 0 ms"), (reply, "self.x >= 1 ms")] {
+            let DeclarationForm::StateClause(clause) = form.form() else {
+                panic!("a state clause: {:?}", form.form());
+            };
+            let root = clause.spans.body.span(clause.spans.body.root());
+            assert_eq!(root.map(|span| slice(&text, span)), Some(written));
+        }
+    }
+}
+
+/// FR-230-AC-4's S2 half (TC-685 step 4): the guard tree preserves its
+/// ordered `and`/`or`/clock comparisons, and a 10^40 bound remains an exact
+/// natural. The S3 half is `qsl-semantics`' `timed_model` tests and the
+/// 6,400 clock places are `qsl-eval`'s `timed_subject` test.
+#[trace("TC-685", "FR-230-AC-4")]
 #[test]
 fn large_clock_bound_and_disjunctive_guard_keep_their_source_forms() {
     let huge = "10000000000000000000000000000000000000000";

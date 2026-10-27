@@ -369,7 +369,7 @@ impl ModelSystem<'_> {
                 for key in &class.keys {
                     let bytes = match objects.and_then(|objects| objects.get(key)) {
                         Some(object) => quire_canonical::to_vec(
-                            &encode::object_enc(&self.model, object, &placeholder),
+                            &encode::object_enc(&self.model, object, self.typing(), &placeholder),
                             limits,
                         )
                         .map_err(|_| stop(BROKEN))?,

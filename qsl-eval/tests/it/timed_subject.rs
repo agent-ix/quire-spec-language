@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelSimulationRequest, ModelSystem, MoveRefusal, PopulationUniverse,
-    TimedBehaviour, TimedSystem,
+    BehaviourReading, ClockValuation, ExpansionLimits, ModelSimulationRequest, ModelSystem,
+    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedSystem,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
@@ -221,6 +221,22 @@ fn world_with(profiles: &str, unit_body: &str) -> World {
 
 /// [`world_with`] over `document`.
 fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
+    world_holding(document, profiles, unit_body, json!({}))
+}
+
+/// [`world_over`] whose initial `Call` also holds the field values
+/// `fields`.
+fn world_holding(document: Vec<u8>, profiles: &str, unit_body: &str, fields: Json) -> World {
+    world_of(
+        document,
+        profiles,
+        unit_body,
+        json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(fields)}]),
+    )
+}
+
+/// [`world_over`] whose initial state holds the `Call` objects `objects`.
+fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -> World {
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -267,11 +283,7 @@ fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
             "revision": "fixture:1"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
-        "populations": [{"population": ident("calls"), "complete": true, "objects": [{
-            "key": "c", "type": ident("Call"),
-            "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
-                "late": {"boolean": false}},
-        }]}],
+        "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
     });
     let bytes = document.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -290,6 +302,17 @@ fn world_over(document: Vec<u8>, profiles: &str, unit_body: &str) -> World {
             digest: snapshot_digest,
         },
     }
+}
+
+/// The initial `Call`'s field values: `phase` 0, `inflight` and `late`
+/// false, and `extra`.
+fn initial_fields(extra: Json) -> Json {
+    let mut fields = json!({"phase": {"integer": "0"}, "inflight": {"boolean": false},
+        "late": {"boolean": false}});
+    for (name, value) in extra.as_object().expect("field values") {
+        fields[name] = value.clone();
+    }
+    fields
 }
 
 const METER: ScalarLimits = ScalarLimits {
@@ -422,11 +445,57 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
     );
 }
 
+/// FR-236-AC-1's digest half (TC-691): over `Rpc` with `T = 3 ms`, the steps of
+/// `NoLateReply`'s counterexample, `send` after 0, `timeout` after 3 and
+/// `reply` after 0, reach post-states whose FR-236 digest changes when only
+/// the resulting clock value changes, and is equal for an equal timed state.
+/// The counterexample's steps and delays are the zone search's
+/// (`qsl-analyze` `zone_search`), which writes this digest as each step's
+/// `post_state`; its steps, delays and `trace_position` are asserted there.
+#[trace("TC-691", "FR-236-AC-1")]
+#[test]
+fn a_timed_post_state_digest_changes_with_its_clock_value_alone() {
+    let world = world(&rpc_unit(3, ""));
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let mut behaviour = TimedBehaviour::new(initial.clone());
+    for (operation, delay) in [("send", 0), ("timeout", 3), ("reply", 0)] {
+        let step = transition(&timed, &behaviour, operation);
+        behaviour
+            .advance(&timed, &exact(delay, 1), &step)
+            .unwrap_or_else(|refusal| panic!("{operation} after {delay}: {refusal:?}"));
+    }
+    let posts: Vec<_> = behaviour.positions()[1..]
+        .iter()
+        .map(|position| position.state().clone())
+        .collect();
+    assert_eq!(posts.len(), 3);
+    for (index, post) in posts.iter().enumerate() {
+        let digest = timed.state_digest(post).expect("a digest");
+        assert_eq!(
+            timed.state_digest(&post.clone()).expect("a digest"),
+            digest,
+            "step {index}: an equal timed state has an equal digest"
+        );
+        let shifted = TimedState::new(post.discrete().clone(), post.clocks().delayed(&exact(1, 2)));
+        assert_ne!(
+            timed.state_digest(&shifted).expect("a digest"),
+            digest,
+            "step {index}: only the clock value changed"
+        );
+    }
+    assert_eq!(posts[0].clocks().values(), [exact(0, 1)]);
+    assert_eq!(posts[1].clocks().values(), [exact(3, 1)]);
+}
+
 /// Part of FR-231-AC-2 (TC-686): with `urgent when { self.phase = 1 }`, no
 /// positive delay is admissible after `send`; the `Replied` state is
 /// quiescent and the waiting one is not. The idle-tail reading is the next
 /// test's.
-#[trace("TC-686")]
+#[trace("TC-686", "FR-231-AC-2")]
 #[test]
 fn an_urgent_state_admits_no_positive_delay() {
     let urgent = world(&rpc_unit(4, "urgent Eager when { self.phase = 1 };"));
@@ -478,10 +547,9 @@ fn an_urgent_state_admits_no_positive_delay() {
 /// quiescent `Replied` state reads under the timed profile as its stutter
 /// step repeated after positive delays, so `always holds(c.phase != 1)` is
 /// true from position 2 and false from position 1; the closed reading ends
-/// at position 2, and one ending at the waiting state has no idle tail. Not
-/// covered: the closed reading under a unit selecting the event-position
-/// profile.
-#[trace("TC-686")]
+/// at position 2. The event-position reading is
+/// `under_event_position_the_execution_closes_at_its_last_position`.
+#[trace("TC-686", "FR-231-AC-2")]
 #[test]
 fn a_quiescent_end_reads_as_an_idle_tail() {
     use qsl_eval::model_subject::ModelInstance;
@@ -508,7 +576,14 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
         .advance(&timed, &exact(1, 1), &reply)
         .expect("reply");
 
-    let trace = behaviour.timed_trace(&timed, true).expect("a timed lasso");
+    // The clause's own profile chooses the idle tail.
+    let node = &world.package.graph().temporal_clauses()[0];
+    let BehaviourReading::Timed(trace) = behaviour
+        .clause_reading(&timed, node.clause().profile())
+        .expect("a timed lasso")
+    else {
+        panic!("the timed profile reads time stamps");
+    };
     assert!(trace.is_lasso());
     let closed = behaviour
         .timed_trace(&timed, false)
@@ -516,7 +591,6 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
     assert!(!closed.is_lasso());
     assert_eq!(closed.stamps().len(), 3);
 
-    let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("the clause has letters");
     let instance = ModelInstance {
         population: DeclarationKey {
@@ -538,6 +612,98 @@ fn a_quiescent_end_reads_as_an_idle_tail() {
     };
     assert_eq!(at(2), TemporalOutcome::Holds);
     assert!(matches!(at(1), TemporalOutcome::Violated { .. }));
+}
+
+/// Part of FR-231-AC-2 (TC-686): in a unit selecting
+/// `quire.temporal.event-position.false-extension/v1`, the behaviour `send`
+/// then `reply` of `Rpc` closes at position 2: the clause's profile reads it
+/// as the closed trace of its three positions, with no loop (under
+/// infinite-trace the same behaviour is the lasso looping on position 2),
+/// and over it `always[0,1] holds(c.phase = 2)` is violated at position 2,
+/// not pending: false extension reads no position 3, where the idle tail
+/// would repeat `Replied`, while `always[0,0] holds(c.phase = 2)` holds
+/// there.
+#[trace("TC-686", "FR-231-AC-2")]
+#[test]
+fn under_event_position_the_execution_closes_at_its_last_position() {
+    use qsl_eval::model_subject::ModelInstance;
+    use qsl_eval::simulation::model::BehaviourLetters;
+    use qsl_eval::temporal::{evaluate_at, TemporalOutcome, TemporalPosition, TemporalTrace};
+
+    let world = world_with(
+        "profile ep = \"quire.temporal.event-position.false-extension/v1\";\n",
+        &rpc_unit(
+            4,
+            "temporal Stays using ep over (c: M::Call) clock \"model-steps\" on origin \
+             { always[0,1] holds(c.phase = 2) }\n\
+             temporal Here using ep over (c: M::Call) clock \"model-steps\" on origin \
+             { always[0,0] holds(c.phase = 2) }",
+        ),
+    );
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let mut behaviour = TimedBehaviour::new(timed.initial().remove(0));
+    for (operation, delay) in [("send", 0), ("reply", 1)] {
+        let step = transition(&timed, &behaviour, operation);
+        behaviour
+            .advance(&timed, &exact(delay, 1), &step)
+            .expect("the step is admitted");
+    }
+    let closed = behaviour
+        .timed_trace(&timed, false)
+        .expect("a closed timed trace");
+    assert!(!closed.is_lasso());
+    assert_eq!(closed.stamps(), [exact(0, 1), exact(0, 1), exact(1, 1)]);
+
+    let instance = ModelInstance {
+        population: DeclarationKey {
+            package: PACKAGE.to_owned(),
+            node: ident("calls"),
+        },
+        key: "c".to_owned(),
+    };
+    let reading = |clause: usize| {
+        let node = &world.package.graph().temporal_clauses()[clause];
+        behaviour
+            .clause_reading(&timed, node.clause().profile())
+            .expect("a closed reading")
+    };
+    assert_eq!(
+        reading(0),
+        BehaviourReading::Untimed(TemporalTrace::Finite { len: 3 })
+    );
+    assert_eq!(
+        behaviour
+            .clause_reading(&timed, qsl_semantics::check::TemporalProfile::InfiniteTrace)
+            .expect("an idle tail"),
+        BehaviourReading::Untimed(TemporalTrace::Lasso {
+            prefix: 2,
+            loop_len: 1
+        })
+    );
+    let at = |clause: usize, position: u64| {
+        let node = &world.package.graph().temporal_clauses()[clause];
+        let letters = system.clause_letters(node).expect("the clause has letters");
+        let mut letters = BehaviourLetters::new(&letters, &instance, &behaviour);
+        let BehaviourReading::Untimed(trace) = reading(clause) else {
+            panic!("an untimed reading");
+        };
+        evaluate_at(
+            node.clause(),
+            trace,
+            TemporalPosition::new(position),
+            &mut letters,
+            &mut quire_exact::Meter::new(METER),
+        )
+        .expect("evaluated")
+    };
+    assert!(
+        matches!(at(0, 2), TemporalOutcome::Violated { .. }),
+        "{:?}",
+        at(0, 2)
+    );
+    // Position 2 itself reads `Replied`.
+    assert_eq!(at(1, 2), TemporalOutcome::Holds);
 }
 
 /// FR-231-AC-3: under `time M tick M::Call::tick period 5 ms unit ms`,
@@ -587,19 +753,25 @@ fn a_tick_source_stamps_positions_by_tick_count() {
     assert_eq!(timed.tick_period(), Some(&exact(5, 1)));
 }
 
-/// Part of FR-230-AC-4 (TC-685): 64 package clock fields over a universe of
-/// 100 objects are 6,400 clock places, each 0 initially. The guard's convex
-/// parts and the `10^40 ms` constant are S3's (qsl-semantics `timed_model`).
-#[trace("TC-685")]
+/// FR-230-AC-4's subject half (TC-685 step 4): a model with 64 package
+/// clock fields over a universe of 100 objects has 6,400 clock places, each
+/// 0 initially, and its guard `x <= 10^40 ms` checks with no refusal and
+/// reads the exact constant. The S2 forms are `qsl-forms`' and the convex
+/// parts `qsl-semantics`' `timed_model` tests.
+#[trace("TC-685", "FR-230-AC-4")]
 #[test]
 fn every_object_holds_its_own_clock_of_every_clock_field() {
     let names: Vec<String> = (0..63).map(|index| format!("c{index:02}")).collect();
     let extra: Vec<&str> = names.iter().map(String::as_str).collect();
+    let huge = format!("1{}", "0".repeat(40));
     let world = world_over(
         clocked_document(true, &extra),
         "",
-        "dimension Time;\nunit s : Time = rational(1, 1);\n\
-         unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n",
+        &format!(
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n\
+             pre Big using v on M::Call::work {{ self.x <= {huge} ms }}\n"
+        ),
     );
     let keys: Vec<String> = std::iter::once("c".to_owned())
         .chain((1..100).map(|index| format!("k{index:03}")))
@@ -609,6 +781,13 @@ fn every_object_holds_its_own_clock_of_every_clock_field() {
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     assert_eq!(timed.model().clocks().len(), 64);
     assert_eq!(timed.places().len(), 6_400);
+    let [guard] = timed.model().guards() else {
+        panic!("one guard: {:?}", timed.model().guards());
+    };
+    assert_eq!(
+        guard.parts()[0].clocks()[0].bound().numerator().to_string(),
+        huge
+    );
     let initial = timed.initial().remove(0);
     assert!(initial
         .clocks()
@@ -929,4 +1108,392 @@ fn a_huge_guard_constant_decides_fairness_as_a_small_one_does() {
     assert!(!fair(">=", &huge));
     assert!(fair("<=", &huge));
     assert!(started.elapsed() < std::time::Duration::from_secs(30));
+}
+
+/// [`rpc_document`] with the package record `Timer { x: Clock; y: Clock;
+/// n: Phase }` held by the `Call` field `t`.
+fn timer_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    let timer = ident("Timer");
+    let member = |name: &str, type_ref: &str| {
+        let mut member = wire_field(name, type_ref);
+        let identity = format!("{timer}/{name}");
+        member["identity"] = json!(identity);
+        member["origin"] = origin(&identity);
+        member
+    };
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(
+        &timer,
+        "value_record",
+        json!({"fields": [
+            member("x", "ix://quire/native/Clock"),
+            member("y", "ix://quire/native/Clock"),
+            member("n", &ident("Phase")),
+        ]}),
+    ));
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("t", &timer));
+    // `send` also writes `t`.
+    for operation in types[1]["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "send" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("a frame")
+                .push(json!(ident("Call/t")));
+        }
+    }
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(json!({
+        "kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
+        "manifestDigest": PLACEHOLDER,
+        "construct": {"identity": "none", "shape": "record", "members": {},
+            "meaning": meaning::RECORD_VALUE_TYPE}}));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-11 (TC-685): with the record `Timer { x: Clock; y:
+/// Clock; n }` held by `Call.t` over a universe of three objects, every
+/// object holds its own clock of each place, `t.x`, `t.y` and `x`: nine
+/// clocks. The digest of a state holding the record value is defined: an
+/// equal state has an equal digest, and it changes with a clock value and
+/// with the record's data field (FR-181's `record` form).
+#[trace("TC-685")]
+#[test]
+fn every_object_holds_its_own_clock_of_every_record_place() {
+    let holding = |n: &str| {
+        world_holding(
+            timer_document(),
+            "",
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n\
+             pre Near using v on M::Call::work { self.t.x <= 3 ms }\n",
+            json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}}}),
+        )
+    };
+    let world = holding("0");
+    let system = system_over(&world, &["c", "d", "e"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let names: Vec<&str> = timed
+        .model()
+        .clocks()
+        .iter()
+        .map(|clock| clock.name())
+        .collect();
+    assert_eq!(names, ["t.x", "t.y", "x"]);
+    assert_eq!(timed.places().len(), 9);
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    // The initial state holds `c` alone, with its three clocks at 0.
+    let held = timed
+        .places()
+        .iter()
+        .filter(|place| place.present(initial.discrete()))
+        .count();
+    assert_eq!(held, 3);
+    let digest = timed
+        .state_digest(initial)
+        .expect("a record state has a digest");
+    assert_eq!(
+        timed.state_digest(&initial.clone()).expect("a digest"),
+        digest
+    );
+    let shifted = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(1, 2)),
+    );
+    assert_ne!(timed.state_digest(&shifted).expect("a digest"), digest);
+    // One value at `t.x` and the other at `t.y` are two states.
+    let at = |name: &str| {
+        timed
+            .places()
+            .iter()
+            .position(|place| {
+                place.object().object().as_str() == "c"
+                    && timed.model().clock(place.clock()).map(|clock| clock.name()) == Some(name)
+            })
+            .expect("a place of c")
+    };
+    let one_at = |place: usize| {
+        let mut values = vec![exact(0, 1); timed.places().len()];
+        values[place] = exact(1, 1);
+        timed
+            .state_digest(&TimedState::new(
+                initial.discrete().clone(),
+                ClockValuation::new(values),
+            ))
+            .expect("a digest")
+    };
+    assert_ne!(one_at(at("t.x")), one_at(at("t.y")));
+    let other = holding("1");
+    let other_system = system_over(&other, &["c", "d", "e"]);
+    let other_timed = TimedSystem::new(&other_system, "M").expect("a timed subject");
+    let [other_initial] = &other_timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    assert_ne!(
+        other_timed.state_digest(other_initial).expect("a digest"),
+        digest,
+        "the record's data field is in the state key"
+    );
+}
+
+/// Part of FR-230-AC-11 (TC-685): a state holding a record value steps.
+/// From `Call.t = Timer { n: 0 }`, after a delay of 2, `send` (whose
+/// postcondition writes `phase`) has its four successors, each keeping `t`
+/// and every clock at 2, and each post state has a digest. Not covered:
+/// a step writing `t` through a record literal, which FR-120's value domains
+/// do not reach (a record is an unbounded domain; STD-493 item 21).
+#[trace("TC-685")]
+#[test]
+fn a_record_holding_state_steps() {
+    let world = world_holding(
+        timer_document(),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.phase = 1 }\n",
+        ),
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}}}),
+    );
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = timed
+        .delay(initial, &exact(2, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    let steps = timed.steps(&later).expect("a record-holding state steps");
+    assert_eq!(
+        steps.len(),
+        4,
+        "one successor per value of `inflight` and `late`"
+    );
+    let t_key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/t"),
+    };
+    let t_of = |state: &TimedState| {
+        state
+            .discrete()
+            .state()
+            .populations
+            .values()
+            .find_map(|objects| objects.get("c"))
+            .and_then(|object| object.fields.get(&t_key))
+            .cloned()
+            .expect("c holds t")
+    };
+    for (step, post) in &steps {
+        assert!(step.operation().contains("Call/send\""));
+        assert!(post
+            .clocks()
+            .values()
+            .iter()
+            .all(|value| value == &exact(2, 1)));
+        let (quire_exact::Value::Composite(before), quire_exact::Value::Composite(after)) =
+            (t_of(&later), t_of(post))
+        else {
+            panic!("t is a record");
+        };
+        assert_eq!(
+            format!("{:?}", before.slots()),
+            format!("{:?}", after.slots()),
+            "send keeps t"
+        );
+        timed
+            .state_digest(post)
+            .expect("the post state has a digest");
+    }
+}
+
+/// Part of FR-230-AC-11 (TC-685), SR-1646005: a record holding an enum
+/// data field compares by case, so an operation whose frame does not grant
+/// the record keeps it unchanged and steps. With `Timer { x; y: Clock; n:
+/// Phase; m: Mode }` and `Call.t = Timer { n: 0, m: A }`, `reply`, whose
+/// frame does not name `t`, is offered alongside `send`, whose frame does.
+#[trace("TC-685")]
+#[test]
+fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let mode = ident("Mode");
+    let case = |name: &str, line: u64| {
+        json!({"identity": ident(&format!("variant/Mode-{name}")), "name": name,
+            "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+                "startLine": line, "startColumn": 3}}})
+    };
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(
+        &mode,
+        "mode",
+        json!({"variants": [case("A", 10), case("B", 11)]}),
+    ));
+    let timer = types
+        .iter_mut()
+        .find(|ty| ty["identity"] == ident("Timer"))
+        .expect("Timer");
+    let identity = format!("{}/m", ident("Timer"));
+    let mut member = wire_field("m", &mode);
+    member["identity"] = json!(identity);
+    member["origin"] = origin(&identity);
+    timer["fields"].as_array_mut().expect("fields").push(member);
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(json!({
+            "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
+            "manifestDigest": PLACEHOLDER,
+            "construct": {"identity": "none", "shape": "enumeration",
+                "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
+    let world = world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n",
+        json!({"t": {"record": {"type": ident("Timer"), "fields": {
+            "n": {"integer": "0"},
+            "m": {"variant": {"type": mode, "case": "A"}},
+        }}}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let offered: Vec<String> = timed
+        .guarded_steps(initial.discrete())
+        .expect("the state expands")
+        .iter()
+        .map(|step| step.operation().to_owned())
+        .collect();
+    for name in ["reply", "send"] {
+        let suffix = format!("Call/{name}\"");
+        assert!(
+            offered.iter().any(|operation| operation.contains(&suffix)),
+            "`{name}` is offered: {offered:?}"
+        );
+    }
+}
+
+/// FR-230-AC-10 (TC-685), over a universe: `Call` with `peer:
+/// Reference<Call>` and `function peer_clock(o: Call): Clock { o.peer.x }`.
+/// `peer_clock(self) <= 2 ms` constrains the clock of the object each
+/// state's `self.peer` refers to: with `c1.peer = c2` and `c2.peer = c1`,
+/// `c1`'s `work` is guarded by `c2.x <= 2` and `c2`'s by `c1.x <= 2`, and
+/// after a delay of 3 and `c2`'s `send` resets `c2.x`, `c1`'s guard holds
+/// and `c2`'s does not. `own_clock(self.peer) <= 2 ms` of `function
+/// own_clock(o: Call): Clock { o.x }` reads the same places, and `not
+/// (peer_clock(self) <= 2 ms)` their negation (SR-1651 GA FND-002).
+#[trace("TC-685")]
+#[test]
+fn a_peer_clock_is_the_clock_of_the_referenced_object() {
+    // `peer_clock(self)`, `own_clock(self.peer)` and the negation of the
+    // first: each receiver's `work` is guarded by its peer's clock.
+    let peer_clock = "function peer_clock using v(o: M::Call): Clock pure { o.peer.x }\n";
+    let own_clock = "function own_clock using v(o: M::Call): Clock pure { o.x }\n";
+    for (declaration, guard, holds) in [
+        (peer_clock, "peer_clock(self) <= 2 ms", true),
+        (own_clock, "own_clock(self.peer) <= 2 ms", true),
+        (peer_clock, "not (peer_clock(self) <= 2 ms)", false),
+    ] {
+        peer_guarded_work(declaration, guard, holds);
+    }
+}
+
+/// [`a_peer_clock_is_the_clock_of_the_referenced_object`] over the guard
+/// `guard` of `work`, which reads the peer's clock `x <= 2` when `holds`
+/// and its negation otherwise.
+fn peer_guarded_work(declaration: &str, guard: &str, holds: bool) {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("peer", &ident("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let peer = |key: &str| json!({"reference": {"population": ident("calls"), "key": key}});
+    let object = |key: &str, other: &str| {
+        json!({"key": key, "type": ident("Call"),
+            "fields": initial_fields(json!({"peer": peer(other)}))})
+    };
+    let world = world_of(
+        document,
+        "",
+        &only(
+            &["send", "work"],
+            &format!(
+                "{declaration}pre Near using v on M::Call::work {{ {guard} }}\n\
+                 post Send using v on M::Call::send {{ self.x = 0 ms }}\n"
+            ),
+        ),
+        json!([object("c1", "c2"), object("c2", "c1")]),
+    );
+    let system = system_over(&world, &["c1", "c2"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let key =
+        |place: usize| -> String { timed.places()[place].object().object().as_str().to_owned() };
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    // Each receiver's `work` names its peer's clock.
+    let guarded = |state: &TimedState| -> Vec<(String, String, bool)> {
+        timed
+            .guarded_steps(state.discrete())
+            .expect("the state expands")
+            .iter()
+            .filter(|step| step.operation().contains("Call/work\""))
+            .flat_map(|step| {
+                let receiver = step.receiver().object().as_str().to_owned();
+                step.parts()
+                    .iter()
+                    .flatten()
+                    .map(|constraint| {
+                        (
+                            receiver.clone(),
+                            key(constraint.place()),
+                            constraint.holds(state.clocks()),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    let mut named = guarded(initial);
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            ("c1".to_owned(), "c2".to_owned(), holds),
+            ("c2".to_owned(), "c1".to_owned(), holds)
+        ],
+        "{guard}"
+    );
+    let late = timed
+        .delay(initial, &exact(3, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    let send = timed
+        .steps(&late)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(step, _)| {
+            step.operation().contains("Call/send\"") && step.receiver().object().as_str() == "c2"
+        })
+        .expect("c2 sends");
+    let mut named = guarded(&send.1);
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            ("c1".to_owned(), "c2".to_owned(), holds),
+            ("c2".to_owned(), "c1".to_owned(), !holds)
+        ],
+        "{guard}"
+    );
 }

@@ -12,7 +12,11 @@
 #[cfg(feature = "test-support")]
 mod business_meanings;
 mod child_composite;
+#[cfg(feature = "test-support")]
+mod clock_places;
 mod complete_value_lock;
+#[cfg(feature = "test-support")]
+mod dimension_equivalence;
 mod dispatch_linking;
 #[cfg(feature = "test-support")]
 mod enum_type_admission;
@@ -106,6 +110,7 @@ mod timed_intervals;
 mod timed_model;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
+mod unit_typed_members;
 mod variant_fields;
 mod variant_type;
 

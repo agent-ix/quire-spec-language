@@ -26,7 +26,7 @@ pub(super) mod judge;
 
 use super::contracts::{conjunction, Conjunction};
 use super::domain::{Domain, Odometer};
-use super::encode::{self, value_enc, values_equal};
+use super::encode::{self, value_enc, values_equal, Typing};
 use super::footprints::ReadCheck;
 use super::walk::{stop, Applied, Budget, ContractFinding, Row, Selected, Walk};
 use super::{
@@ -49,8 +49,8 @@ pub(super) fn text_limits() -> CanonicalLimits {
 }
 
 /// `value`'s canonical text.
-pub(super) fn text_of(value: &Value) -> Result<String, ExpansionStop> {
-    value_enc(value)
+pub(super) fn text_of(value: &Value, typing: Typing<'_>) -> Result<String, ExpansionStop> {
+    value_enc(value, typing)
         .canonical_text(text_limits())
         .map_err(|_| stop(BROKEN))
 }
@@ -62,13 +62,14 @@ fn transition_of(
     row: &Row,
     application: &Application,
     args: &[(String, Value)],
+    typing: Typing<'_>,
 ) -> Result<ModelTransition, ExpansionStop> {
     let receiver = encode::reference_enc(&row.reference)
         .canonical_text(text_limits())
         .map_err(|_| stop(BROKEN))?;
     let arguments = args
         .iter()
-        .map(|(_, value)| text_of(value))
+        .map(|(_, value)| text_of(value, typing))
         .collect::<Result<Vec<_>, _>>()?;
     ModelTransition::new(
         application.text.clone(),
@@ -143,7 +144,12 @@ pub(super) fn identities(
     while let Some(digits) = arguments.next_digits() {
         budget.charge()?;
         let args = arguments_of(application, &domains, &digits)?;
-        out.push(transition_of(row, application, &args)?);
+        out.push(transition_of(
+            row,
+            application,
+            &args,
+            walk.system.typing(),
+        )?);
     }
     Ok(())
 }
@@ -185,7 +191,7 @@ pub(super) fn apply(
         // Every argument vector counts, enabled or not: a false or undecided
         // precondition would otherwise let one expansion run unbounded.
         budget.charge()?;
-        let transition = transition_of(row, application, &args)?;
+        let transition = transition_of(row, application, &args, walk.system.typing())?;
         let transition_bytes =
             quire_canonical::to_vec(&transition, text_limits()).map_err(|_| stop(BROKEN))?;
         let footprint = walk
@@ -278,7 +284,7 @@ pub(super) fn first_precondition(
         return Ok(None);
     };
     let args = arguments_of(application, &domains, &digits)?;
-    let transition = transition_of(row, application, &args)?;
+    let transition = transition_of(row, application, &args, walk.system.typing())?;
     for clause in &clauses.preconditions {
         let verdict = conjunction(walk, &[*clause], |info| {
             pre_observations(walk, info, row, &args)
@@ -325,13 +331,14 @@ pub(super) fn identity_bytes(
     operation: &str,
     receiver: &ObjectReference,
     arguments: &[Value],
+    typing: Typing<'_>,
 ) -> Result<Vec<u8>, ExpansionStop> {
     let receiver = encode::reference_enc(receiver)
         .canonical_text(text_limits())
         .map_err(|_| stop(BROKEN))?;
     let arguments = arguments
         .iter()
-        .map(text_of)
+        .map(|value| text_of(value, typing))
         .collect::<Result<Vec<_>, _>>()?;
     let transition = ModelTransition::new(
         operation.to_owned(),
@@ -967,8 +974,12 @@ impl Run<'_, '_, '_> {
                     changed.push(FieldChange {
                         object: reference(pre, population, key)?,
                         field: field.name.clone(),
-                        pre: left.map(text_of).transpose()?,
-                        post: right.map(text_of).transpose()?,
+                        pre: left
+                            .map(|value| text_of(value, system.typing()))
+                            .transpose()?,
+                        post: right
+                            .map(|value| text_of(value, system.typing()))
+                            .transpose()?,
                     });
                 }
             }
@@ -1004,8 +1015,11 @@ impl Run<'_, '_, '_> {
         let mut keyed = Vec::new();
         for index in 0..domain.len() {
             let value = domain.nth(index).ok_or_else(|| stop(BROKEN))?;
-            let bytes = quire_canonical::to_vec(&value_enc(&value), text_limits())
-                .map_err(|_| stop(BROKEN))?;
+            let bytes = quire_canonical::to_vec(
+                &value_enc(&value, self.walk.system.typing()),
+                text_limits(),
+            )
+            .map_err(|_| stop(BROKEN))?;
             keyed.push((bytes, index));
         }
         keyed.sort();
@@ -1030,7 +1044,7 @@ impl Run<'_, '_, '_> {
         }
         let system = self.walk.system;
         if evidence.is_none() {
-            let state_key = encode::model_key(&system.model, candidate);
+            let state_key = encode::model_key(&system.model, candidate, system.typing());
             let (bytes, digest) =
                 key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
             let observation = system
@@ -1107,7 +1121,10 @@ impl Run<'_, '_, '_> {
                 self.post_conjunction(&mut evidence, &candidate, &effect, result.as_ref())?;
             match verdict {
                 Conjunction::True => {
-                    effect.result = result.as_ref().map(text_of).transpose()?;
+                    effect.result = result
+                        .as_ref()
+                        .map(|value| text_of(value, self.walk.system.typing()))
+                        .transpose()?;
                     successors.push(Applied {
                         transition: self.transition.clone(),
                         state: ModelSimState {

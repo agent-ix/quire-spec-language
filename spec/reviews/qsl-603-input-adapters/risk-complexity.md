@@ -9,10 +9,10 @@ review_set: all
 
 ## Summary
 
-The main risk is translating untrusted corpus JSON into typed runtime and replay requests while preserving existing validation. The contract keeps that conversion at a narrow harness boundary and requires owner admission after conversion.
+The larger replay mapping creates conversion and identity risks. Mitigation is the exhaustive 15-field table, closed tagged schema, FR-255 decoder, digest validation and TC-970 path/mutation cases.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | The adapter has several identity-sensitive conversions, especially PopulationId name resolution and ReplayRequestWire byte provision. Mitigate with tests for every tag, unknown names, path confinement, duplicate/missing paths and digest mismatch before broad corpus execution. | FR-350-AC-8, FR-350-AC-9, FR-350-AC-10 |
+| FND-001 | medium | The replay implementation should exercise each structural variant and path/digest failure before broad corpus execution. | FR-350-AC-10; FR-336-AC-7/8; TC-970 |
