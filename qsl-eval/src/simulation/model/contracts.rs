@@ -128,8 +128,8 @@ pub(super) fn invariants(walk: &Walk<'_, '_>) -> Result<Vec<ModelFinding>, Expan
                 .populations
                 .get(&row.population)
                 .and_then(|objects| objects.get(&row.key))
-                .and_then(|object| object.fields.get(&bound.field))
-                .and_then(|value| bound.violation(value))
+                .and_then(|object| object.fields.get(&bound.member))
+                .and_then(|value| bound.violation(value, system.types))
                 .is_some();
             if violated {
                 findings.push(ModelFinding::InvariantViolated {

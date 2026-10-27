@@ -633,6 +633,14 @@ impl<'a> ModelSystem<'a> {
 
         let mut member_bounds = model.member_bounds();
         member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
+        // A field's bounds, read on each state; a parameter's and a result's
+        // are read where an invocation supplies them.
+        member_bounds.retain(|bound| {
+            fields
+                .values()
+                .flatten()
+                .any(|field| field.key == bound.member)
+        });
         let system = Self {
             over: match selections {
                 [only] => Some(only.identity.clone()),

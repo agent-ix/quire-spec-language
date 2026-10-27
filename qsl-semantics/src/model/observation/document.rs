@@ -2301,6 +2301,30 @@ impl PopulationValues<'_> {
 /// conformance). The object and value ceilings (FR-106 Inputs) are not
 /// charged here: the read charged them as it walked the document
 /// (FR-261 B4).
+/// The `invalid_runtime_input`/`invalid-value` record of the first of
+/// `bounds` on the member `member` that the supplied `value` violates (QSpec
+/// FR-154 "Unit bounds"): naming the constraint, its keyword and bound, at
+/// the path to the violating quantity.
+pub(super) fn unit_bound_refusal(
+    bounds: &[crate::model::state::MemberBound],
+    member: &DeclarationKey,
+    value: &Value,
+    types: &TypeEnvironment,
+) -> Option<AdmissionRecord> {
+    bounds
+        .iter()
+        .filter(|bound| &bound.member == member)
+        .find_map(|bound| {
+            let path = bound.violation(value, types)?;
+            let mut record = admission_record(Code::InvalidRuntimeInput, "invalid-value")
+                .with("constraint", bound.constraint.node.clone())
+                .with("keyword", bound.keyword())
+                .with("bound", bound.canonical_bound());
+            record.path = path;
+            Some(record)
+        })
+}
+
 pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
@@ -2318,6 +2342,12 @@ pub(super) fn admit_population_values<'t>(
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut references = References::over(views, types, populations);
     let mut out_of_range: Vec<OutOfRange> = Vec::new();
+    // QSpec FR-154 "Unit bounds": a supplied value that violates a bound
+    // refuses; a post-state one is the successor's, which records it.
+    let bounds = match range {
+        PostStateRange::Refuse => crate::model::state::member_bounds(views),
+        PostStateRange::Witness => Vec::new(),
+    };
 
     for entry in populations {
         completeness.insert(entry.population.clone(), entry.complete);
@@ -2462,6 +2492,16 @@ pub(super) fn admit_population_values<'t>(
                                     .with("field", name.to_owned()),
                             )
                         })?;
+                if let (false, FieldValue::Present(value)) = (bounds.is_empty(), &field_value) {
+                    let key = super::initial::field_key(views, attribute)?;
+                    if let Some(record) = unit_bound_refusal(&bounds, &key, value, types) {
+                        return Err(refuse(
+                            record
+                                .with("object", object.key.clone())
+                                .with("field", name.to_owned()),
+                        ));
+                    }
+                }
                 breaches.extend(
                     found
                         .into_iter()

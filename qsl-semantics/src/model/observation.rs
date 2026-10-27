@@ -2728,6 +2728,14 @@ fn admit_invocation_documents(
         &invocation.call.parameters,
     )?;
     let result = document::admit_result(&mut result_references, &operation, &invocation.result)?;
+    check_argument_bounds(
+        views,
+        types,
+        clause_context,
+        &operation,
+        &parameters,
+        result.as_ref(),
+    )?;
 
     Ok(InvocationAdmission {
         documents,
@@ -2742,6 +2750,64 @@ fn admit_invocation_documents(
         parameters,
         result,
     })
+}
+
+/// QSpec FR-154 "Unit bounds": an argument or result an invocation supplies
+/// that violates a bound on its parameter or on the operation's result
+/// refuses `invalid_runtime_input`/`invalid-value`, naming the parameter
+/// (or the result), the constraint, its keyword and bound.
+fn check_argument_bounds(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    context: EffectiveId,
+    operation: &OperationDeclaration,
+    parameters: &[(String, Value)],
+    result: Option<&Value>,
+) -> Result<(), AdmissionFailure> {
+    let bounds = crate::model::state::member_bounds(views);
+    if bounds.is_empty() {
+        return Ok(());
+    }
+    for view in views {
+        for record in &view.view.domain_package().records {
+            let crate::model::domain_package::DomainPackageRecord::OperationMember(member) = record
+            else {
+                continue;
+            };
+            let declared =
+                crate::model::intake::member_identity_name(&member.owner.node, &member.key.node)
+                    == Some(operation.name())
+                    && view
+                        .view
+                        .type_identities()
+                        .get(&member.owner)
+                        .is_some_and(|owner| types.conforms(context, *owner));
+            if !declared {
+                continue;
+            }
+            for (name, value) in parameters {
+                let Some(parameter) = member.parameters.iter().find(|parameter| {
+                    crate::model::intake::member_identity_name(
+                        &member.key.node,
+                        &parameter.key.node,
+                    ) == Some(name.as_str())
+                }) else {
+                    continue;
+                };
+                if let Some(record) =
+                    document::unit_bound_refusal(&bounds, &parameter.key, value, types)
+                {
+                    return Err(refuse(record.with("parameter", name.clone())));
+                }
+            }
+            if let Some(record) = result
+                .and_then(|value| document::unit_bound_refusal(&bounds, &member.key, value, types))
+            {
+                return Err(refuse(record.with("result", operation.name().to_owned())));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// What a pre-call admission reads about the selected clause, whether the
