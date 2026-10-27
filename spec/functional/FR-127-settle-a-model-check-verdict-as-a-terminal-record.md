@@ -97,6 +97,9 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 //   written certificate-rejected{rule, at} (QSpec FR-331)
 //   StaleDependency { requested: PackageId, recompiled: PackageId },
 //   written stale-dependency{requested, recompiled} (QSpec FR-331)
+//   RefutedIgnoringConstraints, written as the QSpec FR-331 inconclusive
+//   cause refuted-ignoring-constraints; its lasso violates an explicitly
+//   ignored memory constraint and is not an ordinary counterexample.
 
 // ProductStateRef, ClosureCertificate, CertificateRule: FR-338.
 // ComponentCertificate, ProofCertificate: FR-339.
@@ -169,6 +172,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-6 | `Undecided(UndecidedSuccessor)` (a refused contract conjunction), `Undecided(NoInitialState)` or `Undecided(NoInstance)` (an item with zero instances, FR-125) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-6 | `Violated` whose replay settles `inconclusive` (`Verdicts` or `NoValue`) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::UnfairLasso` (FR-131), an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
+| V-6 | The protocol liveness engine returns `RefutedIgnoringConstraints` (FR-228), because its lasso violates an ignored memory fairness constraint | `inconclusive` | `unsettled` | `Inconclusive(RefutedIgnoringConstraints)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::PackageIdMismatch{requested, recompiled}` (ADR-013 O-26), the request's `package_id` and the recompiled one | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, written `stale-dependency{requested, recompiled}` | inconclusive |
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
@@ -178,6 +182,12 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 
 - When an outcome is `Violated`, the settlement map SHALL settle it `refuted`
   only through its replay.
+- When the protocol liveness engine returns `RefutedIgnoringConstraints`,
+  the settlement map SHALL write the typed QSpec FR-331 cause
+  `refuted-ignoring-constraints` as `inconclusive`. It SHALL retain neither a
+  `refuted` label nor a proof basis, and it SHALL NOT send the lasso to the
+  ordinary counterexample replay path or write it as a standard
+  counterexample.
 - When a claim, a contract conjunction or a `terminal when` predicate
   evaluates undefined on an admitted behaviour (ADR-018 UE-1, UE-6), the
   settlement map SHALL settle the item `refuted` with cause `UndefinedEvaluation{where,
@@ -318,6 +328,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-14 | `settle_smt_proof`, a `qsl-replay` entry, settles each `SmtProofOutcome` for FR-314-AC-1's `Counter` items: `BoundedComplete{depth: 3}` with FR-314-AC-1's accepted certificate as `Proved{BoundedComplete{depth: 3}, Certified}`, `proved`, success; `Inductive{depth: 1}` with its accepted certificate as `Proved{Inductive{depth: 1}, Certified}`; `BoundedComplete{depth: 3}` with `certificate: None` as `Proved{BoundedComplete{depth: 3}, Uncertified}`, with no check run and the request's meters unchanged; FR-314-AC-2's `QueryMismatch` certificate as `Inconclusive(CertificateRejected{QueryMismatch, Query { part: Unrolling }})`; FR-314-AC-2's `hole` certificate as `Proved{BoundedComplete{depth: 3}, Uncertified}`; FR-314-AC-5's limit-stopped certificate as `Incomplete(LimitReached{MaxCertificateBytes, 1, certificate_check.max_certificate_bytes})`; FR-315-AC-30's faulting rebuild as `Failed`. A crate whose only QSL dependency is `qsl-replay` names `SmtProofOutcome`, `SmtProofBasis`, `SmtProofCertificate` and `settle_smt_proof` and compiles. | Test (TC-1199) |
 | FR-127-AC-15 | Over FR-314-AC-1's `Counter` under event-position false-extension, an SMT `BoundedComplete{depth: 0}` result for `always[0,3] eventually[0,1] holds(c.value = 3)` (horizon 4) with no certificate settles `inconclusive`, `Inconclusive(CertificateRejected{ShapeMismatch, Query { part: Unrolling }})`, with no check run and the request's certificate meters unchanged, never `Proved{.., Uncertified}`; the same result with a certificate settles the same before any query is encoded; `BoundedComplete{depth: 3}` with no certificate for the TP-1 item `always holds(c.value <= 3)` settles the same; `BoundedComplete{depth: 3}` with no certificate for `always[0,3] holds(c.value <= 3)` (horizon 3) still settles `Proved{BoundedComplete{depth: 3}, Uncertified}`. | Test (TC-1201) |
 | FR-127-AC-16 | The settlement map settles `Stopped{ResourceExhausted, {EvaluationMeter{work_units}, 0}}` (FR-126-AC-19's run) as FR-360 `failed`, execution `resource-incomplete`, `unavailable`, `Incomplete(LimitReached{limit: work_units, value: 0, setting: accounting.work_units})`, category incomplete; `{EvaluationMeter{value_occurrences}, 7}` as `Incomplete(LimitReached{limit: value_occurrences, value: 7, setting: accounting.value_occurrences})`; `{EvaluationMeter{integer_bits}, 18446744073709551615}` as `Incomplete(LimitReached{limit: integer_bits, value: 18446744073709551615, setting: accounting.integer_bits})`; and `{MaxCandidates, 1}` as `Incomplete(LimitReached{limit: max_candidates, value: 1, setting: expansion.max_candidates})`. Each record equals the one FR-203 writes for the same stop, each `setting` is a name the FR-255 settings operation accepts (`accounting.work_units=1` returns accounting limits with `work_units` 1), and no record writes the setting `meter`, a bare counter name or a bare `max_candidates`. | Test (TC-522) |
+| FR-127-AC-17 | FR-228-AC-10's `RefutedIgnoringConstraints` engine result settles as `inconclusive`, `unsettled`, `Inconclusive(RefutedIgnoringConstraints)`, with no basis and no standard counterexample record; it is never readable as `refuted`, `Refuted` or any proof. | Test (TC-673) |
 
 ## Dependencies
 

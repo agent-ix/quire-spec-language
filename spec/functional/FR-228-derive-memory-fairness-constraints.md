@@ -53,7 +53,8 @@ visible.
 ## Inputs
 
 - An infinite-trace clause over a protocol subject with its fairness set
-  (FR-212) and the resolved models (FR-219).
+  (FR-212), the resolved models (FR-219), and the protocol check's
+  `ignore_memory_constraints` selection (default `false`).
 
 ## Outputs
 
@@ -105,7 +106,26 @@ visible.
   constraints only and keeps the memory constraints (QSpec FR-430). That a memory constraint is what rejects a lasso is
   observed at FR-126's fairness filter, which is one function over an SCC and
   a fairness set (ADR-018 FA-5), given the set with and without its `memory`
-  members.
+  members. The explicit diagnostic selection below changes only the fairness
+  set view used by that one liveness search; it removes no member from the
+  checked clause, its obligation identity or the protocol's fairness set.
+- The QSL protocol liveness request SHALL set `ignore_memory_constraints` to
+  `false` by default.
+- When `ignore_memory_constraints` is `true`, the QSL liveness search SHALL
+  use the same clause and subject but omit only fairness members whose origin
+  is `memory` from FR-126's fair-component filter. Authored and scheduler
+  constraints remain active.
+- When a lasso found with `ignore_memory_constraints: true` satisfies every
+  original fairness constraint, the engine SHALL use the ordinary FR-127
+  replay path.
+- When a lasso found with `ignore_memory_constraints: true` violates one or
+  more omitted memory constraints, the engine SHALL return the typed
+  `RefutedIgnoringConstraints` diagnostic.
+- FR-127 SHALL settle `RefutedIgnoringConstraints` as `inconclusive` with the
+  matching typed cause, never as `refuted` or `proved`.
+- A component certificate checker SHALL continue to validate certificates
+  against the original fairness set (FR-339), regardless of the liveness
+  request's `ignore_memory_constraints` selection.
 - An authored constraint SHALL name one of FR-212's targets, whose classes
   hold no memory step.
 
@@ -122,6 +142,7 @@ visible.
 | FR-228-AC-7 | Given an accepting SCC on `p`, `q`, `r`, `s` with the edges `p → q` (thread `c` loads `ℓ₂` from `ℓ₂`'s mo-last message), `q → p`, `r → s` (thread `a`), `s → q` (thread `a`), `q → r` (thread `b` loads `ℓ₁` from a message that is not mo-last) and `s → r` (thread `c` loads `ℓ₂` from a message that is not mo-last), `p` accepting, the filter removes `q → r` for the pair (`b`, `ℓ₁`) at the first level (it is the only pair that fails in the whole SCC), finds `{r, s}` holding a stale load of `ℓ₂` by `c` and no fresh one, removes `s → r` at the second level, and passes `{p, q}`. | Test (TC-673) |
 | FR-228-AC-8 | Given a synthesized accepting SCC on states 0 to 4, with a strong constraint `s` enabled only at state 0 and taken by no edge, a visibility pair with the stale load edge `1 → 2` and no fresh load, a second pair with the stale load edge `3 → 3` and the fresh load edge `3 → 4`, and the edges `0 → 1`, `1 → 0`, `1 → 2`, `2 → 3`, `3 → 1`, `3 → 3`, `3 → 4` and `4 → 3`, state 3 accepting, the filter refines in one step that removes state 0 and the edge `1 → 2`, passes `{3, 4}`, and the loop CX-5 builds is `3 → 4 → 3`. | Test (TC-673) |
 | FR-228-AC-9 | Given an SCC searched from state 0 (discovery order 0, 1, 2), with states 1 and 2 accepting, and the edges `e0` `1 → 1`, `e1` `2 → 2`, `e2` `0 → 1`, `e3` `0 → 2`, `e4` `2 → 0`, `e5` `2 → 1`, `e6` `1 → 2` and `e7` `2 → 2` (a second, stale self-loop), and two visibility pairs with no fresh load, pair A with stale load edges `e5`, `e6`, `e7` and pair B with stale load edges `e4`, `e5`, `e6`, the one refinement step removes the edges of both pairs, components are ranked by their earliest-discovered state (FS-6, FR-181 breadth-first order), and the first passing component is `{1}`. | Test (TC-673) |
+| FR-228-AC-10 | FR-228-AC-2's protocol liveness request with `ignore_memory_constraints: false` is unchanged and settles its accepted component certificate `proved`, `Certified`. With the same request and the switch `true`, the lasso that keeps `w`'s buffer `[x := 1]` and polls `x` as 0 passes scheduler fairness but violates `flush(w)`; the engine returns `RefutedIgnoringConstraints`, and FR-127 settles `inconclusive` with cause `refuted-ignoring-constraints`, never `Refuted` or `Proved`. A lasso that also passes `flush(w)` still follows ordinary replay and may settle `refuted`. | Test (TC-673) |
 
 ## Dependencies
 
