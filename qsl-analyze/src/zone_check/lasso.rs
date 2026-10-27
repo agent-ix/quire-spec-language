@@ -41,6 +41,11 @@ pub(super) struct LoopStage {
     pub resets: Vec<(usize, Rational)>,
     /// The time invariants after the position.
     pub target: Vec<PlaceConstraint>,
+    /// A claim automaton's guard on its own clocks at the position, read
+    /// before its resets (FR-242); its resets are among `resets`, and no
+    /// step resets its clocks, so the guard reads their values before the
+    /// position.
+    pub position: Vec<PlaceConstraint>,
     /// The zone over clock places, in units of `1 / scale`, the valuation
     /// before the step, after the delay, lies in.
     pub before: Option<Dbm>,
@@ -299,6 +304,7 @@ pub(super) fn solve_loop(
         system.constraints(&stage.invariants, |system, place| system.before(place, k));
         system.constraints(&stage.part, |system, place| system.before(place, k));
         system.constraints(&stage.target, |system, place| system.after(place, k));
+        system.constraints(&stage.position, |system, place| system.before(place, k));
         if let Some(before) = &stage.before {
             system.piece(before, |system, place| system.before(place, k))?;
         }
@@ -434,6 +440,7 @@ mod tests {
             part,
             resets,
             target: Vec::new(),
+            position: Vec::new(),
             before: None,
             piece: None,
         }

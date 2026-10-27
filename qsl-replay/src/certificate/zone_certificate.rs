@@ -74,7 +74,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use qsl_eval::automaton::{translate_position_negation, AutomatonError, Read, Stamp, WindowClaim};
+use qsl_eval::automaton::{
+    position_automaton, AutomatonError, ClockedEdge, Read, Stamp, WindowClaim, WindowRefusal,
+};
 use qsl_eval::fairness::{components, EdgeLabel, FairnessError, Graph, Identity};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
@@ -678,19 +680,30 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 .instances(&clause.over().1)
                 .map_err(|_| ZoneCertificateRefusal::Unbounded)?;
             let atom = qsl_eval::automaton::invariant_atom(clause);
-            let window = if atom.is_some() {
-                None
-            } else if matches!(
-                clause.timed_form(),
-                Some(TimedPropertyForm::BoundedWindow { .. })
-            ) {
-                let claim = WindowClaim::new(
+            // A TT-2 window nesting no interval operator under another has
+            // FR-242's horizon automaton; any other clause is read on the
+            // liveness product.
+            let flat = if atom.is_none()
+                && matches!(
+                    clause.timed_form(),
+                    Some(TimedPropertyForm::BoundedWindow { .. })
+                ) {
+                match WindowClaim::new(
                     clause.formula(),
                     instances.len(),
                     timed.tick_period().cloned(),
                     limits.max_automaton_states,
-                )
-                .map_err(|_| ZoneCertificateRefusal::UnsupportedItem)?;
+                ) {
+                    Ok(claim) => Some(claim),
+                    Err(WindowRefusal::NestedWindow) => None,
+                    Err(_) => return Err(ZoneCertificateRefusal::UnsupportedItem),
+                }
+            } else {
+                None
+            };
+            let window = if atom.is_some() {
+                None
+            } else if let Some(claim) = flat {
                 let pieces = match timed.tick_period() {
                     None => claim.pieces(timed.places().len()),
                     Some(_) => vec![(Vec::new(), Rational::from_integer(Integer::zero()))],
@@ -701,19 +714,15 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 })
             } else {
                 // FR-240: any other clause, on the liveness product.
-                let mut automaton =
-                    match translate_position_negation(clause, limits.max_automaton_states) {
-                        Ok(automaton) => automaton,
-                        Err(AutomatonError::StateLimit { limit }) => {
-                            return Ok(automaton_stop(limit))
-                        }
-                        Err(AutomatonError::ProfileNotTranslated { .. }) => {
-                            return Err(ZoneCertificateRefusal::UnsupportedItem)
-                        }
-                        Err(_) => {
-                            return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton))
-                        }
-                    };
+                let mut automaton = match position_automaton(clause, limits.max_automaton_states) {
+                    Ok(automaton) => automaton,
+                    Err(AutomatonError::StateLimit { limit }) => return Ok(automaton_stop(limit)),
+                    Err(
+                        AutomatonError::ProfileNotTranslated { .. }
+                        | AutomatonError::NestedIntervalShape,
+                    ) => return Err(ZoneCertificateRefusal::UnsupportedItem),
+                    Err(_) => return Err(ZoneCertificateRefusal::Fault(CheckerFault::Automaton)),
+                };
                 let start = match automaton.initial() {
                     Ok(start) => start,
                     Err(AutomatonError::StateLimit { limit }) => return Ok(automaton_stop(limit)),
@@ -812,6 +821,8 @@ struct Successor {
     mark: Option<ProductMark>,
     /// A liveness product successor's cell, over every clock of a node.
     cell: Option<Zone>,
+    /// A liveness product position's claim-automaton transition.
+    read: Option<ClockedEdge>,
 }
 
 struct Checker<'c, 'a, O> {
@@ -942,7 +953,11 @@ impl<O> Checker<'_, '_, O> {
     /// a TT-2 claim, the horizon clock.
     fn dim(&self) -> usize {
         let z = self.live.is_some() && self.timed.tick_period().is_none();
-        self.timed.places().len() + 1 + usize::from(self.window.is_some()) + usize::from(z)
+        self.timed.places().len()
+            + 1
+            + usize::from(self.window.is_some())
+            + self.automaton_clocks()
+            + usize::from(z)
     }
 
     /// The horizon clock's index in a zone.
@@ -973,6 +988,24 @@ impl<O> Checker<'_, '_, O> {
                 let most = low.clone().max(high.clone());
                 low.clone_from(&most);
                 *high = most;
+            }
+            // Each claim-automaton clock is compared with its interval's
+            // ends, which are exact at the scale (FR-242).
+            let (constants, every) = self.live.as_ref().map_or_else(Default::default, |live| {
+                let automaton = live.automaton.borrow();
+                (automaton.constants(), automaton.all_constants())
+            });
+            for value in &every {
+                if self.scaled(value).is_err() {
+                    return malformed(CertificateMember::Scale);
+                }
+            }
+            for constant in &constants {
+                let Ok(bound) = self.scaled(constant) else {
+                    return malformed(CertificateMember::Scale);
+                };
+                lower.push(Some(bound.clone()));
+                upper.push(Some(bound));
             }
             if self.timed.tick_period().is_none() {
                 lower.push(Some(certificate.scale.clone()));
@@ -1391,6 +1424,7 @@ impl<O> Checker<'_, '_, O> {
                                 silent: None,
                                 mark: None,
                                 cell: None,
+                                read: None,
                             });
                         }
                         continue;
@@ -1425,6 +1459,7 @@ impl<O> Checker<'_, '_, O> {
                             silent: None,
                             mark: None,
                             cell: None,
+                            read: None,
                         });
                     }
                 }
@@ -1467,6 +1502,7 @@ impl<O> Checker<'_, '_, O> {
                     silent: None,
                     mark: None,
                     cell: None,
+                    read: None,
                 });
             }
         }
@@ -1876,6 +1912,9 @@ impl<O> Checker<'_, '_, O> {
                 }
                 (None, None) => {}
             }
+            if let Some(read) = &successor.read {
+                self.read_at(&mut next, read)?;
+            }
             self.settle_within(post, &mut next, Some(cell))?;
             return Ok(next);
         }
@@ -1939,6 +1978,9 @@ impl<O> Checker<'_, '_, O> {
                 zone.constrain(0, z, &self.certificate.scale.neg(), false)?;
             }
             None => {}
+        }
+        if let Some(read) = &successor.read {
+            self.read_before(&mut zone, read)?;
         }
         if let Some(horizon) = &successor.horizon {
             self.constrain(&mut zone, horizon)?;
