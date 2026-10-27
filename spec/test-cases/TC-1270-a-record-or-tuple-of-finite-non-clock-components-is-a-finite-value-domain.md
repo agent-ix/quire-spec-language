@@ -19,9 +19,11 @@ value domain is a finite value domain in `ModelSystem::domains()`, enumerated
 with the first declared component most significant (ADR-027 ST-11, FR-215);
 that an enum is finite, in order, as a bare parameter, result or granted field and inside a record; that a clock component is a clock place and adds no factor and no
 unboundedness; and that a record or tuple with an unbounded non-clock component
-stays unbounded and returns `NotSimulated::RequiresBound`.
+stays unbounded and returns `NotSimulated::RequiresBound`; and that a sequence with a declared maximum
+over a finite or pure-clock element is a finite value domain ordered length first, while a sequence with no
+declared maximum is unbounded.
 
-Scope: FR-120-AC-22 to FR-120-AC-25.
+Scope: FR-120-AC-22 to FR-120-AC-26.
 
 ## Test Procedure
 
@@ -48,11 +50,17 @@ domain value. Read domains through `ModelSystem::domains`, successors through
    `modifies ck, sw, mx` and
    postcondition `self.ck = Timer { x: 0 ms, n: 3 }`. Read each domain and
    expand the initial state; repeat with no postcondition. In another model,
-   grant `Sequence<Timer>[0, 1]` and `Sequence<Clock>[0, 1]` fields.
+   grant `Sequence<Timer>[0, 1]` and `Sequence<Clock>[0, 1]` fields (bounded, step 5).
 4. Add `op: Open` (`Open { n: Integer, b: Boolean }`), `tm: Tm`
    (`Tm { x: Clock, k: Integer }`), `wr: Wrap2` (`Wrap2 { o: Open }`) and
    `u: U` (union `U { a, b(Boolean) }`) as fields, each granted by a frame, one
    at a time. Call `explore_model` and `sample_model`.
+
+5. In a separate model grant `sc: Sequence<Cfg>[0, 2]`, `st: Sequence<Tick>[0, 3]`
+   (`Tick { x: Clock }`), `sk: Sequence<Clock>[0, 3]`, `sr: Sequence<Timer>[0, 2]`;
+   then, one at a time, `Reference<Clock>`, `Sequence<Reference<Clock>>[0, 1]`,
+   `Sequence<Open>[0, 1]` and `Sequence<Cfg>` with no maximum. Read domains; call
+   `explore_model` and `sample_model` for the negatives.
 
 Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
 
@@ -72,8 +80,17 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   one value; `mx` has 8, `t` most significant. The expansion has a successor
   with `ck.n` 3 and `x` reset, `sw` unchanged, and no candidate ranges over a
   value of `x`. With no postcondition each clock keeps its pre-state value. The
-  `Sequence<Timer>` and `Sequence<Clock>` fields are unbounded roots.
+  `Sequence<Timer>[0, 1]` and `Sequence<Clock>[0, 1]` fields are bounded roots (AC-26).
 - Step 4: each of `op`, `tm`, `wr` and `u` is an unbounded root.
   `explore_model` returns `NotSimulated::RequiresBound` and `sample_model`
   `ModelSampleError::NotSimulated(RequiresBound)`, each naming that field's
   `WireNodeId`, with no state expanded. `tm`'s clock does not make it bounded.
+- Step 5 (FR-120-AC-26): `sc: Sequence<Cfg>[0, 2]` has 43 values, ordered by
+  length, then lexicographically with the first element most significant;
+  `Sequence<Tick>[0, 3]` and `Sequence<Clock>[0, 3]` have 4 values each;
+  `Sequence<Timer>[0, 2]` has 21 and `Sequence<Timer>[0, 3]` has 85; no
+  unbounded root and no candidate ranges over a clock slot. Negative: a
+  `Reference<Clock>` field, `Sequence<Reference<Clock>>[0, 1]`,
+  `Sequence<Open>[0, 1]` and `Sequence<Cfg>` with no declared maximum are
+  unbounded roots and `explore_model`/`sample_model` return `RequiresBound`
+  naming the field's `WireNodeId`.
