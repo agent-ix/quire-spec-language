@@ -89,7 +89,7 @@ edges, automaton states and stored zone bytes.
 
 ### Symbolic states and successors
 
-- The initial symbolic state SHALL be the zero valuation of the present clocks (a dropped clock is unconstrained, FR-230), let time elapse
+- The initial symbolic state SHALL be the zero valuation of the present clocks (an absent or dropped clock is unconstrained, FR-230), let time elapse
   unless `s0` is urgent, intersected with `s0`'s time invariants, paired
   with the claim automaton's initial state.
 - The successor by transition identity `t` SHALL intersect `Z` with one
