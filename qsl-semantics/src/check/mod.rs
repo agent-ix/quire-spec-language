@@ -408,9 +408,9 @@ pub use temporal_clause::{
     TimedPropertyForm, UnaryTemporal,
 };
 pub use timed_model::{
-    CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp, ClockReset,
-    ClockResets, CollectionWrite, ConvexPart, ElementBinding, QuantifiedFamily, SlotRef,
-    SlotSelection, TimeInvariant, TimedModel, Urgency, Written,
+    CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
+    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConvexPart, ElementBinding,
+    QuantifiedFamily, SlotRef, SlotSelection, TimeInvariant, TimedModel, Urgency, Written,
 };
 
 /// A checked function.

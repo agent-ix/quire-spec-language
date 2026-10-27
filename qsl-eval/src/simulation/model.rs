@@ -1495,23 +1495,6 @@ fn state_document(digest: &DigestRecord) -> DocumentRef {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ix_trace_rs::trace;
-
-    /// FR-120 "Post-states": the two stops a model expansion makes carry the
-    /// catalog's codes.
-    #[trace("TC-472", "FR-120-AC-6")]
-    #[test]
-    fn the_stop_causes_are_the_catalog_codes() {
-        assert_eq!(EXHAUSTED.code(), "resource_exhausted");
-        assert_eq!(EXHAUSTED.cause(), "insufficient-next-charge");
-        assert_eq!(BROKEN.code(), "runtime_invariant");
-        assert_eq!(BROKEN.cause(), "established-invariant-broken");
-    }
-}
-
 /// Each of `initial` with every combination of the clock-collection counts
 /// `counts` on each object of the count's type: every count from `min` to
 /// `max`, or `min` alone with no maximum (such a root requires a bound).
@@ -1562,4 +1545,21 @@ fn with_clock_counts(
         states = next;
     }
     states
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// FR-120 "Post-states": the two stops a model expansion makes carry the
+    /// catalog's codes.
+    #[trace("TC-472", "FR-120-AC-6")]
+    #[test]
+    fn the_stop_causes_are_the_catalog_codes() {
+        assert_eq!(EXHAUSTED.code(), "resource_exhausted");
+        assert_eq!(EXHAUSTED.cause(), "insufficient-next-charge");
+        assert_eq!(BROKEN.code(), "runtime_invariant");
+        assert_eq!(BROKEN.cause(), "established-invariant-broken");
+    }
 }

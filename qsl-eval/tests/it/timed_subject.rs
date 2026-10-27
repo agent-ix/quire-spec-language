@@ -3514,3 +3514,113 @@ fn a_collection_of_bare_clocks_ranges_over_its_counts() {
     let zero = Rational::new(Integer::from(0_i64), Integer::from(1_i64)).expect("0");
     assert_eq!(slots, [(0, five), (1, zero)]);
 }
+
+/// [`rpc_document`] whose `work` takes `c: Clock` (FR-230 "Operation
+/// parameters") and whose frame names `frame`.
+fn clock_parameter_document(frame: &[&str]) -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    for operation in document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        if operation["name"] == "work" {
+            let identity = ident("Call/work/c");
+            operation["params"] = json!([{
+                "identity": identity, "origin": origin(&identity), "name": "c",
+                "typeRef": "ix://quire/native/Clock", "presence": "required", "nullable": false,
+                "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+            }]);
+            operation["frame"]["modifies"] = json!(frame
+                .iter()
+                .map(|field| ident(&format!("Call/{field}")))
+                .collect::<Vec<_>>());
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-13 (TC-685), with FR-230-AC-16's domain-package `Clock`
+/// parameter: over two calls `c1` and `c2`, `work(c: Clock)` with the
+/// postcondition `c = 0 ms` and a frame naming `Call.x` has one instance
+/// for each object's place of `Call.x`, each transition naming its place as
+/// an opaque `clock_place` argument, and resets that place alone; with the
+/// precondition `c >= 1 ms` and no reset it has one instance for each live
+/// clock place of the model, each enabled only once its place reads 1 ms.
+/// The data clauses never read `c`: the argument is no data value.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_has_one_instance_per_place() {
+    let objects = json!([
+        {"key": "c1", "type": ident("Call"), "fields": initial_fields(json!({}))},
+        {"key": "c2", "type": ident("Call"), "fields": initial_fields(json!({}))},
+    ]);
+    let reset = world_of(
+        clock_parameter_document(&["x"]),
+        "",
+        &only(
+            &["work"],
+            "post Work using v on M::Call::work { c = 0 ms }\n",
+        ),
+        objects.clone(),
+    );
+    let held = system_over(&reset, &["c1", "c2"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let two = Rational::new(Integer::from(2_i64), Integer::from(1_i64)).expect("2");
+    let later = TimedState::new(initial.discrete().clone(), initial.clocks().delayed(&two));
+    let steps = timed.steps(&later).expect("the state expands");
+    // Two receivers, each with one instance per object's `x`.
+    assert_eq!(steps.len(), 4);
+    for (step, next) in &steps {
+        let arguments = step.transition().arguments();
+        let [place] = arguments else {
+            panic!("one argument: {arguments:?}");
+        };
+        assert!(
+            place.contains("clock_place") && place.contains("Call/x"),
+            "{place}"
+        );
+        // The named place is reset; every other place kept its 2 ms.
+        let zeros: Vec<usize> = timed
+            .places()
+            .iter()
+            .zip(next.clocks().values())
+            .enumerate()
+            .filter(|(_, (_, value))| value.numerator().is_zero())
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(zeros.len(), 1, "{place}");
+        let object = timed.places()[zeros[0]].object();
+        let named = format!(
+            "\"identity\":\"{}\"",
+            hex(object.object().as_str().as_bytes())
+        );
+        assert!(place.contains(&named), "{place} names {object:?}");
+    }
+
+    let check = world_of(
+        clock_parameter_document(&[]),
+        "",
+        &only(
+            &["work"],
+            "pre Work using v on M::Call::work { c >= 1 ms }\n",
+        ),
+        objects,
+    );
+    let held = system_over(&check, &["c1", "c2"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let live = timed
+        .places()
+        .iter()
+        .filter(|place| timed.live(place, initial.discrete()))
+        .count();
+    let steps = timed.steps(&initial).expect("the state expands");
+    // Each receiver, each live place: the guard `place >= 1` is no part at
+    // 0 ms, and every one is at 1 ms.
+    assert_eq!(steps.len(), 0);
+    let one = Rational::new(Integer::from(1_i64), Integer::from(1_i64)).expect("1");
+    let later = TimedState::new(initial.discrete().clone(), initial.clocks().delayed(&one));
+    assert_eq!(timed.steps(&later).expect("expands").len(), 2 * live);
+}

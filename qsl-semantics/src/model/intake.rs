@@ -2502,7 +2502,8 @@ fn read_operation_parameter(
         ));
     }
     let type_ref = ctx.str_field("typeRef")?;
-    let value_type = read_value_type_ref(package, &ctx, type_ref, false)?;
+    // A `Clock` parameter is a place (FR-230 "Operation parameters").
+    let value_type = read_value_type_ref(package, &ctx, type_ref, true)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
     Ok(OperationParameterRecord {
         key: declaration_key(package, node),
@@ -2661,7 +2662,8 @@ pub(super) fn read_operation_member(
                 .ok_or_else(|| {
                     returns_ctx.malformed_in("returns.typeRef", "missing or not a string")
                 })?;
-            let value_type = read_value_type_ref(package, &returns_ctx, type_ref, false)?;
+            // A `Clock` result is a place (FR-230 "Results").
+            let value_type = read_value_type_ref(package, &returns_ctx, type_ref, true)?;
             let multiplicity = returns_ctx.multiplicity_of(returns, "returns.multiplicity")?;
             Some(OperationResult {
                 value_type,

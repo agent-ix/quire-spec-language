@@ -51,6 +51,9 @@ pub(super) struct Place {
     pub(super) via: Vec<PlaceStep>,
     /// The clock.
     pub(super) clock: ClockId,
+    /// The operation's `Clock` parameter position, for a place an instance
+    /// binds that parameter to (FR-230 "Operation parameters").
+    pub(super) parameter: Option<usize>,
 }
 
 /// The unit's clock-reading declarations, by name.
@@ -677,8 +680,30 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 Place {
                     via: Vec::new(),
                     clock,
+                    parameter: None,
                 },
             )]));
+        }
+        // A `Clock` parameter: one place for each clock field of its range,
+        // the one an instance binds it to.
+        if let Some(parameter) = self.located.parameter(id) {
+            budget.charge(parameter.range.len())?;
+            return Ok(Some(
+                parameter
+                    .range
+                    .iter()
+                    .map(|clock| {
+                        (
+                            Vec::new(),
+                            Place {
+                                via: Vec::new(),
+                                clock: *clock,
+                                parameter: Some(parameter.position),
+                            },
+                        )
+                    })
+                    .collect(),
+            ));
         }
         match self.located.node(id) {
             Some(ExprNode::If {
@@ -1117,6 +1142,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 Ok(vec![(
                     Vec::new(),
                     Place {
+                        parameter: None,
                         via: via.to_vec(),
                         clock,
                     },
@@ -1362,6 +1388,7 @@ pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: S
         op,
         bound: bound.clone(),
         span,
+        parameter: place.parameter,
     };
     let positive = places
         .iter()
