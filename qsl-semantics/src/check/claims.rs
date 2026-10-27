@@ -457,12 +457,14 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Decimal(_)
         | ValueType::Text(_)
         | ValueType::Enum(_)
-        | ValueType::Quantity(_) => true,
+        | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_) => true,
         ValueType::Boolean
         | ValueType::Reference(_)
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
+        | ValueType::Map(_)
         | ValueType::Float(_)
         | ValueType::Population(_)
         // The native scalar families (`quire.op.string.*`, `.uuid.*`,
