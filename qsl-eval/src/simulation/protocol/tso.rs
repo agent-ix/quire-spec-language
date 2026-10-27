@@ -45,7 +45,7 @@ use super::race::{
     RaceSummary,
 };
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::{map_enc, value_enc, Enc};
+use crate::simulation::model::encode::{map_enc, untyped_value_enc, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// The published default of a memory bound (ADR-025 MB-2).
@@ -173,7 +173,7 @@ impl Tso {
                     owned.push(Buffered {
                         location: shared.location.clone(),
                         cell: shared.cell.clone(),
-                        enc: value.as_ref().map_or(Enc::Null, value_enc),
+                        enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
                         value,
                         location_enc: location_enc(shared.location, Some(shared.cell)),
                         race: RaceMap::new(),

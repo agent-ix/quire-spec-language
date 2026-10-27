@@ -819,6 +819,12 @@ pub enum ProtocolConstruct {
     /// the node is written before the functions are, so the constraint
     /// cannot name them yet. QSL-1121g.
     FinishReadsDeclaration,
+    /// A clause whose `over` input is not a reference to an object type of a
+    /// selected model: there is no exact local model declaration node to
+    /// name as the clause's `owner_model`
+    /// (QSpec FR-464 "owner_model", FR-383), and the reader refuses a clause
+    /// without one. QSL-1147.
+    NoOwnerModel,
 }
 
 impl ProtocolConstruct {
@@ -835,6 +841,7 @@ impl ProtocolConstruct {
             Self::ChannelCarriesBounded => "QSL-1137",
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
+            Self::NoOwnerModel => "QSL-1147",
         }
     }
 }
@@ -914,6 +921,12 @@ pub enum TimedConstruct {
     Response,
     /// A `release` declaration (QSpec FR-419, QSL FR-249).
     Release,
+    /// A clock-reading declaration whose expansion reaches its own call
+    /// (FR-230 "Clock-reading declarations").
+    RecursiveClockReading,
+    /// A clock of an object other than the receiver, reached through a
+    /// reference (FR-230 "Parameters").
+    ReferencedClock,
 }
 
 impl TimedConstruct {
@@ -929,6 +942,8 @@ impl TimedConstruct {
             Self::Schedulable => "a `schedulable` claim",
             Self::Response => "a `response` claim",
             Self::Release => "a `release` declaration",
+            Self::RecursiveClockReading => "a recursive clock-reading declaration",
+            Self::ReferencedClock => "a clock of another object",
         }
     }
 }
@@ -1249,11 +1264,31 @@ pub enum TemporalCause {
         /// The bound's span.
         span: Span,
     },
+    /// FR-230 "Clock-typed positions": an argument for a `Clock` parameter,
+    /// or the body of a function whose result is `Clock`, that is no place
+    /// expression. `ill_typed`/`type-mismatch`, located at it.
+    NotAPlaceExpression {
+        /// The argument's or the body's span.
+        span: Span,
+    },
     /// FR-230 "Clocks and resets": a write to a clock that is not a reset
     /// of a clock of the operation's frame to a constant. Located at the
     /// write.
     ClockWrite {
         /// The write's span.
+        span: Span,
+    },
+    /// FR-230 "Clock constraints on a type": a `min` constraint on clocks,
+    /// which no conjunction of upper bounds states. Located at the model.
+    TimeInvariantShape {
+        /// The model's span.
+        span: Span,
+    },
+    /// FR-230 "Collection-valued writes": a postcondition that writes one
+    /// clock collection twice, or writes it and resets a clock of it, gives
+    /// its clocks no one value. Located at the later write.
+    ConflictingClockWrite {
+        /// The later write's span.
         span: Span,
     },
     /// FR-230: a time invariant bound's operand names no clock of the
@@ -1721,6 +1756,13 @@ pub enum TimeUnitCause {
         /// The unit as written.
         name: String,
     },
+    /// The unit is a time unit of a base `Time` dimension other than the
+    /// model's time dimension, with no admitted equivalence between them
+    /// (QSpec FR-142 "Dimensions of different owners").
+    OtherTimeDimension {
+        /// The unit as written.
+        name: String,
+    },
     /// The unit's composed offset to its root is not zero.
     AffineUnit {
         /// The unit as written.
@@ -1728,6 +1770,29 @@ pub enum TimeUnitCause {
         /// The composed offset.
         offset: quire_exact::Rational,
     },
+}
+
+impl TimeUnitCause {
+    /// The cause's catalog code: an unresolved name is a missing
+    /// declaration, a unit that is no time unit of the model is ill typed.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::NoTimeDimension { .. } | Self::UnknownUnit { .. } => Code::MissingDeclaration,
+            Self::NotTimeDimension { .. }
+            | Self::OtherTimeDimension { .. }
+            | Self::AffineUnit { .. } => Code::IllTyped,
+        }
+    }
+
+    /// The cause's catalog tag.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::NoTimeDimension { .. } | Self::UnknownUnit { .. } => "missing-name",
+            Self::NotTimeDimension { .. }
+            | Self::OtherTimeDimension { .. }
+            | Self::AffineUnit { .. } => "type-mismatch",
+        }
+    }
 }
 
 impl TemporalCause {
@@ -1751,7 +1816,10 @@ impl TemporalCause {
             | Self::ClockComparison { span }
             | Self::NegativeClockConstant { span }
             | Self::ClockBoundNotConstant { span }
+            | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
+            | Self::ConflictingClockWrite { span }
+            | Self::TimeInvariantShape { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
             | Self::UrgentGuardReadsClock { span, .. }
@@ -1832,6 +1900,8 @@ impl TemporalCause {
             | Self::NegativeClockConstant { .. }
             | Self::ClockBoundNotConstant { .. }
             | Self::ClockWrite { .. }
+            | Self::ConflictingClockWrite { .. }
+            | Self::TimeInvariantShape { .. }
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
             Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
@@ -1864,16 +1934,9 @@ impl TemporalCause {
             | Self::UnknownReleaseTask { .. }
             | Self::UnresolvedReleaseOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousReleaseOperation { .. } => Code::AmbiguousDeclaration,
-            Self::UnitlessTimedBound { .. } => Code::IllTyped,
+            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    Code::MissingDeclaration
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    Code::IllTyped
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.code(),
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } | Self::TriggerType { .. } => Code::IllTyped,
             Self::DuplicateTrigger { .. } | Self::DuplicateCapture { .. } => {
@@ -1908,6 +1971,8 @@ impl TemporalCause {
             Self::NegativeClockConstant { .. } => "negative-clock-constant",
             Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
             Self::ClockWrite { .. } => "clock-write",
+            Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
+            Self::TimeInvariantShape { .. } => "time-invariant-shape",
             Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
             Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),
             Self::TimedModelNotEmitted { .. } => "not-yet-implemented",
@@ -1949,16 +2014,9 @@ impl TemporalCause {
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
-            Self::UnitlessTimedBound { .. } => "type-mismatch",
+            Self::UnitlessTimedBound { .. } | Self::NotAPlaceExpression { .. } => "type-mismatch",
             Self::ZeroDenominator { .. } => "unproved-nonzero",
-            Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
-                    "missing-name"
-                }
-                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
-                    "type-mismatch"
-                }
-            },
+            Self::TimeQuantity { cause, .. } => cause.tag(),
         }
     }
 }
@@ -2361,6 +2419,11 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// `invalid_timed_model` / `clock-read-outside-constraint`: a call of the
+    /// named clock-reading declaration outside an operation precondition, a
+    /// time invariant body or another clock-reading declaration (FR-230
+    /// "Clock-reading declarations"), located at the call.
+    ClockReadingCall(String),
     /// `missing_declaration` / `missing-name` for a qualified source name.
     MissingQualifiedName(qsl_forms::NameForm),
     /// `missing_declaration` / `missing-name` for the population segment of
@@ -2606,10 +2669,28 @@ pub struct DispatchSubtypeFailure {
     )>,
 }
 
+/// Why an accepted execution point cannot be carried by the clause it
+/// accompanies (QSpec FR-341 "Execution point", FR-342): refused before any
+/// node is keyed, so no package carries a point its V2 read would refuse.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExecutionPointRefusal {
+    /// The point's variant is not one this clause kind takes: an invariant
+    /// takes `initialization` or `handler`; a precondition `pre`; a
+    /// postcondition `post`.
+    InapplicableVariant,
+    /// A `pre` or `post` point names an operation other than the one the
+    /// clause (and so its anchor) names.
+    OperationMismatch,
+}
+
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
 /// broke it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
+    /// An accepted execution point its clause cannot carry (QSpec FR-341,
+    /// FR-342): the variant is inapplicable to the clause kind, or its
+    /// operation is not the clause's.
+    ExecutionPoint(ExecutionPointRefusal),
     /// The private intake owner lost its corresponding assembled model.
     MissingAdmittedModel(String),
     /// A staged-admission read the conformance stage made for an admitted
@@ -2714,6 +2795,7 @@ impl KeyFault {
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),
             Self::CorrespondenceConflict(_) => "model-correspondence-one-to-one",
             Self::UncheckedProtocolFact => "protocol-fact-checked",
+            Self::ExecutionPoint(_) => "execution-point-matches-clause",
         }
     }
 }
@@ -2893,6 +2975,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Code::MissingDeclaration,
+            Self::ClockReadingCall(_) => Code::InvalidTimedModel,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2967,6 +3050,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Some("missing-name"),
+            Self::ClockReadingCall(_) => Some("clock-read-outside-constraint"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }

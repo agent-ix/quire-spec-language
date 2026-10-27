@@ -11,7 +11,7 @@ use qsl_analyze::zone_check::{
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedSystem};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedBehaviour, TimedSystem};
 use qsl_eval::temporal::{
     evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TimedTrace, UndefinedCause,
@@ -173,6 +173,14 @@ pub(crate) fn deadlock(world: &World) -> Outcome {
 
 /// [`deadlock`] selecting `reductions`.
 pub(crate) fn deadlock_with(world: &World, reductions: &Reductions) -> Outcome {
+    deadlock_result(world, reductions).expect("EN-6 takes the item")
+}
+
+/// [`deadlock_with`], or EN-6's refusal.
+pub(crate) fn deadlock_result(
+    world: &World,
+    reductions: &Reductions,
+) -> Result<Outcome, ZoneCheckRefusal> {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -188,7 +196,6 @@ pub(crate) fn deadlock_with(world: &World, reductions: &Reductions) -> Outcome {
         },
         &Cancel::new(),
     )
-    .expect("EN-6 takes the item")
 }
 
 /// FR-232's time-lock-freedom item over `world`, decided by EN-6.
@@ -276,9 +283,14 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
 /// FR-239-AC-1 and FR-241-AC-1: `NoLateReply` holds over `Rpc` with
 /// `T = 4 ms`, with a certificate, and, with `T = 3 ms`, is violated at
 /// `trace_position` 3 by `send`, `timeout`, `reply` with the least delays
-/// `0`, `3`, `0`; the deadlock-freedom item holds under both.
+/// `0`, `3`, `0`; the deadlock-freedom item holds under both. Each step's
+/// `post_state` is the digest of the timed state the subject reaches by the
+/// same steps after the same delays; with `qsl-eval`'s
+/// `a_timed_post_state_digest_changes_with_its_clock_value_alone`, this is
+/// FR-236-AC-1.
 #[trace("TC-694", "FR-239-AC-1")]
 #[trace("TC-696", "FR-241-AC-1")]
+#[trace("TC-691", "FR-236-AC-1")]
 #[test]
 fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     let four = rpc(4);
@@ -305,6 +317,29 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
     );
     assert_eq!(counterexample.final_delay, None);
     assert!(counterexample.over_binding.is_some());
+
+    // FR-236-AC-1: each step's `post_state` is the digest of the timed
+    // state the subject reaches by taking the same steps after the same
+    // delays.
+    let system = three.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let [initial] = <[_; 1]>::try_from(timed.initial()).expect("one initial state");
+    let mut behaviour = TimedBehaviour::new(initial);
+    for step in &counterexample.prefix {
+        behaviour
+            .advance(
+                &timed,
+                step.delay.as_ref().expect("a timed step carries its delay"),
+                &step.transition,
+            )
+            .expect("the counterexample's step is admitted");
+        assert_eq!(
+            timed
+                .state_digest(behaviour.last().state())
+                .expect("a digest"),
+            step.post_state
+        );
+    }
 
     for world in [&four, &three] {
         assert_edges_cover(world, &proved(deadlock(world)));
@@ -933,6 +968,7 @@ pub(crate) fn check(
         ZoneCertificateRequest {
             simulation: world.request(),
             model: "M",
+            max_clocks: qsl_eval::simulation::model::DEFAULT_MAX_CLOCKS,
             item,
         },
         &certificate.obligation,
@@ -1562,6 +1598,36 @@ fn a_nested_window_is_read_by_the_timed_claim_automaton() {
     assert_eq!(
         request(&punctual).unwrap_err(),
         ZoneCheckRefusal::UnsupportedForm
+    );
+}
+
+/// FR-242: a claim needing more automaton clocks than the construction
+/// builds (`[32 ms, 33 ms]` started at many positions takes 130) is no
+/// form EN-6 decides, and the FR-245 checker refuses it alike, as an
+/// unsupported item.
+#[trace("TC-697")]
+#[test]
+fn a_claim_past_the_clock_limit_is_refused_alike() {
+    let wide = going_late(2, "eventually always[32 ms, 33 ms] holds(c.late)");
+    assert_eq!(
+        request(&wide).unwrap_err(),
+        ZoneCheckRefusal::UnsupportedForm
+    );
+    // A certificate of another claim, renamed to the wide claim's
+    // obligation so that the checker rebuilds its automaton.
+    let mut certificate = proved(claim(
+        &going_late(2, "eventually always holds(c.late)"),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    certificate.obligation = ItemObligation {
+        subject: SUBJECT,
+        kind: ObligationKind::Authored(claim_occurrence(&wide)),
+    };
+    let checked = check(&wide, &certificate, CertificateCheckLimits::default());
+    assert!(
+        matches!(checked, Err(ZoneCertificateRefusal::UnsupportedItem)),
+        "{checked:?}"
     );
 }
 

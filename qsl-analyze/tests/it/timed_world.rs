@@ -211,6 +211,17 @@ pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
 /// [`world`] over the universe `keys`, each object in the snapshot with
 /// `phase` 0 and every Boolean false.
 pub(crate) fn world_over(document: &[u8], profiles: &str, body: &str, keys: &[&str]) -> World {
+    world_armed(document, profiles, body, keys, &[])
+}
+
+/// [`world_over`] whose objects `armed` start with `inflight` true.
+pub(crate) fn world_armed(
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+) -> World {
     let packages = package_input([document]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -260,7 +271,8 @@ pub(crate) fn world_over(document: &[u8], profiles: &str, body: &str, keys: &[&s
         "populations": [{"population": ident("calls"), "complete": true,
             "objects": keys.iter().map(|key| json!({
                 "key": key, "type": ident("Call"),
-                "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
+                "fields": {"phase": {"integer": "0"},
+                    "inflight": {"boolean": armed.contains(key)},
                     "late": {"boolean": false}, "retried": {"boolean": false}},
             })).collect::<Vec<_>>()}],
     });

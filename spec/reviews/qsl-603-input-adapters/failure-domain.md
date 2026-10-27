@@ -9,10 +9,10 @@ review_set: all
 
 ## Summary
 
-Reviewed malformed tagged values, population identity resolution, request construction and path-based byte provision. Each boundary has a rejecting owner and replay paths remain outside the typed product request.
+Reviewed malformed structural values, unknown enum tags, invalid limits and unsafe byte paths. FR-071 remains the owner of typed request refusal, while path confinement is refused in the corpus adapter before construction.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No additional failure-domain issue found; malformed call values, unmatched population names, unsafe or unlisted byte paths and FR-071 digest failures are separately assigned. | FR-350-AC-8, FR-350-AC-9, FR-350-AC-10 |
+| FND-001 | low | Unknown members/tags and byte paths have explicit refusal boundaries, and valid missing inputs stay per-vector failures. | FR-350-AC-10; FR-336-AC-7/8; TC-970 |

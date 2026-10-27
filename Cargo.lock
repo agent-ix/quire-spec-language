@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.2.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=50c00e93c626664b8638f2d0ffb0370c57356955#50c00e93c626664b8638f2d0ffb0370c57356955"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=792cd89d27b424f2ca5eaad5c6ca5e77924ad150#792cd89d27b424f2ca5eaad5c6ca5e77924ad150"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -18,12 +18,12 @@ dependencies = [
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.1.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=50c00e93c626664b8638f2d0ffb0370c57356955#50c00e93c626664b8638f2d0ffb0370c57356955"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=792cd89d27b424f2ca5eaad5c6ca5e77924ad150#792cd89d27b424f2ca5eaad5c6ca5e77924ad150"
 
 [[package]]
 name = "agent-ix-semantic-schema"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-core-data?branch=main#50c00e93c626664b8638f2d0ffb0370c57356955"
+source = "git+https://github.com/agent-ix/filament-core-data?branch=main#792cd89d27b424f2ca5eaad5c6ca5e77924ad150"
 
 [[package]]
 name = "ahash"
@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#9a84e6548ce2f5c7d949eef592574be22b13705a"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#8b49bd487cc2de387524ad270aa2193277d77965"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1706,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0a365dbbec6b3592c646ea0dedea38800ff8c94c"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#2cab5d0bc66567f6753657f79726fb76bd0a048d"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -2634,6 +2634,7 @@ version = "0.1.0"
 dependencies = [
  "arch-lint",
  "ix-trace-rs",
+ "jsonschema 0.17.1",
  "logos",
  "proc-macro2",
  "qsl-cst",
@@ -2644,6 +2645,7 @@ dependencies = [
  "qsl-string-edge",
  "serde",
  "serde_json",
+ "serde_json_canonicalizer",
  "syn 2.0.119",
  "tempfile",
  "thiserror",

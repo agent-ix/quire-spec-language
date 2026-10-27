@@ -15,7 +15,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::domain::Domain;
-use super::encode::{reference_enc, value_enc};
+use super::encode::{reference_enc, value_enc, Typing};
 use super::frames::text_limits;
 use super::{ClauseInfo, ModelSystem};
 use crate::smt::{LifecycleLocus, Refusal, SmtEncodingRefusal};
@@ -84,6 +84,8 @@ pub(crate) struct SymbolicOperation<'a> {
     pub(crate) preconditions: Vec<&'a CheckedStateClause>,
     /// The applicable `post` clauses, in ascending name order.
     pub(crate) postconditions: Vec<&'a CheckedStateClause>,
+    /// The declarations its argument values are encoded under.
+    pub(crate) typing: Typing<'a>,
 }
 
 impl SymbolicOperation<'_> {
@@ -100,7 +102,7 @@ impl SymbolicOperation<'_> {
             .map_err(|_| broken())?;
         let arguments = arguments
             .iter()
-            .map(|value| value_enc(value).canonical_text(text_limits()))
+            .map(|value| value_enc(value, self.typing).canonical_text(text_limits()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| broken())?;
         ModelTransition::new(self.text.clone(), Some(receiver), arguments, text_limits())
@@ -118,7 +120,7 @@ impl SymbolicOperation<'_> {
                 Value::Integer(integer) => integer.to_string(),
                 Value::Boolean(boolean) => boolean.to_string(),
                 Value::Enum(member) => format!("#{}", member.rank()),
-                other => value_enc(other)
+                other => value_enc(other, self.typing)
                     .canonical_text(text_limits())
                     .unwrap_or_else(|_| "?".to_owned()),
             })
@@ -363,8 +365,11 @@ impl<'a> ModelSystem<'a> {
                     if order {
                         let mut keyed = Vec::with_capacity(values.len());
                         for value in values {
-                            let bytes = quire_canonical::to_vec(&value_enc(&value), text_limits())
-                                .map_err(|_| fault("result-canonical-bytes"))?;
+                            let bytes = quire_canonical::to_vec(
+                                &value_enc(&value, self.typing()),
+                                text_limits(),
+                            )
+                            .map_err(|_| fault("result-canonical-bytes"))?;
                             keyed.push((bytes, value));
                         }
                         keyed.sort_by(|left, right| left.0.cmp(&right.0));
@@ -424,6 +429,7 @@ impl<'a> ModelSystem<'a> {
                 receiver_modifies: effect.receiver_modifies.iter().cloned().collect(),
                 preconditions: applicable(&self.clauses.preconditions)?,
                 postconditions: applicable(&self.clauses.postconditions)?,
+                typing: self.typing(),
             });
         }
         Ok(operations)

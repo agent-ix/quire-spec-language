@@ -7,26 +7,27 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{admit, Reductions, SymmetryDeclaration};
 use qsl_analyze::zone_check::{
     canonical_symbolic_state, settle_zone_check, Bound, Dbm, ZoneCheckLimits, ZoneCheckOutcome,
-    ZoneItem, ZoneReduction,
+    ZoneCheckRefusal, ZoneItem, ZoneReduction,
 };
 use qsl_eval::simulation::model::TimedSystem;
 use qsl_eval::simulation::Permutation;
 use qsl_foundation::ReductionKind;
 use qsl_replay::{
-    AppliedReduction, CertificateCheckLimits, ComponentReason, CounterexampleKind, ProofBasis,
-    TerminalValue, UnavailabilityCause, ZoneCertificateVerdict,
+    AppliedReduction, CertificateCheckLimits, ComponentReason, CounterexampleKind,
+    InconclusiveCause, ProofBasis, SymmetryRefusal, TerminalValue, UnavailabilityCause,
+    ZoneCertificateVerdict,
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational};
 
 use crate::timed_world::{
-    document, ident, symmetric_document, world, world_over, World, DENSE, PACKAGE,
+    document, ident, symmetric_document, world, world_armed, World, DENSE, PACKAGE,
 };
 use crate::zone_liveness::decide;
 use crate::zone_replay::{package_id, replay, reproduced};
 use crate::zone_search::{
-    check, claim_with, deadlock, deadlock_with, delays, operations, proved, time_lock_item_with,
-    violated, INFINITE,
+    check, claim_with, deadlock, deadlock_result, deadlock_with, delays, operations, proved,
+    time_lock_item_with, violated, INFINITE,
 };
 
 /// The population of [`timers`].
@@ -48,6 +49,12 @@ fn timers(latching: bool) -> World {
 
 /// [`timers`] with the claim `body` over `t`.
 fn timers_claiming(latching: bool, body: &str) -> World {
+    timers_over(latching, body, &["t1", "t2"], &[])
+}
+
+/// [`timers_claiming`] over the timers `keys`, those `armed` armed at
+/// the start.
+fn timers_over(latching: bool, body: &str, keys: &[&str], armed: &[&str]) -> World {
     let arm: (&str, &[&str]) = ("arm", &["inflight", "x"]);
     let both = [arm, ("disarm", &["inflight", "x"])];
     let operations: &[(&str, &[&str])] = if latching { &both[..1] } else { &both };
@@ -57,7 +64,7 @@ fn timers_claiming(latching: bool, body: &str) -> World {
         "pre Disarm using v on M::Call::disarm { self.inflight and self.x >= 1 ms }\n\
          post Disarmed using v on M::Call::disarm { not self.inflight and self.x = 0 ms }\n"
     };
-    world_over(
+    world_armed(
         &symmetric_document(&["x"], operations),
         INFINITE,
         &format!(
@@ -68,8 +75,25 @@ fn timers_claiming(latching: bool, body: &str) -> World {
              temporal Unarmed using inf over (t: M::Call) clock \"model-steps\" on origin \
              {{ {body} }}\n"
         ),
-        &["t1", "t2"],
+        keys,
+        armed,
     )
+}
+
+/// `outcome` settles V-8 naming symmetry, with no state stored.
+fn refused_symmetry(outcome: ZoneCheckOutcome<&'static str>) {
+    assert!(
+        matches!(
+            outcome,
+            ZoneCheckOutcome::Reduction {
+                cause: ZoneReduction::Unsupported {
+                    reduction: ReductionKind::Symmetry
+                },
+                stats,
+            } if stats.symbolic_states == 0
+        ),
+        "{outcome:?}"
+    );
 }
 
 /// The symmetry `[[t1, t2]]` over [`calls`].
@@ -100,7 +124,7 @@ fn receivers(counterexample: &qsl_replay::TemporalCounterexample) -> Vec<&'stati
         .iter()
         .map(|step| {
             let receiver = step.transition.receiver().expect("a receiver");
-            [("t1", "7431"), ("t2", "7432")]
+            [("t1", "7431"), ("t2", "7432"), ("t3", "7433")]
                 .into_iter()
                 .find(|(_, hex)| receiver.contains(&format!("\"identity\":\"{hex}\"")))
                 .map_or("?", |(key, _)| key)
@@ -393,20 +417,7 @@ fn strong_fairness_reads_enabledness_between_positions() {
 #[test]
 fn symmetry_is_refused_where_no_reduced_graph_is_read() {
     let world = timers(false);
-    let refused = |outcome: ZoneCheckOutcome<&'static str>| {
-        assert!(
-            matches!(
-                outcome,
-                ZoneCheckOutcome::Reduction {
-                    cause: ZoneReduction::Unsupported {
-                        reduction: ReductionKind::Symmetry
-                    },
-                    stats,
-                } if stats.symbolic_states == 0
-            ),
-            "{outcome:?}"
-        );
-    };
+    let refused = refused_symmetry;
     refused(time_lock_item_with(
         &world,
         ZoneCheckLimits::default(),
@@ -419,4 +430,119 @@ fn symmetry_is_refused_where_no_reduced_graph_is_read() {
         &Cancel::new(),
         &swap(),
     ));
+}
+
+/// FR-151 over EN-6 (FR-430-AC-3): initial states that `[[t1, t2]]` does
+/// not close (`t1` armed, `t2` not) settle `SymmetryBroken`, inconclusive
+/// by FR-160's row, with no state stored; a declaration naming a key
+/// outside the universe is refused; and an item selecting symmetry over
+/// the time-lock item settles V-8 before either is judged.
+#[trace("TC-1170", "FR-430-AC-3")]
+#[test]
+fn symmetry_admission_is_judged_before_the_search() {
+    let broken = timers_over(
+        false,
+        "always holds(not t.inflight)",
+        &["t1", "t2"],
+        &["t1"],
+    );
+    let outcome = deadlock_with(&broken, &swap());
+    let ZoneCheckOutcome::Reduction {
+        cause: ZoneReduction::SymmetryBroken { population, .. },
+        stats,
+    } = &outcome
+    else {
+        panic!("expected SymmetryBroken, got {outcome:?}");
+    };
+    assert_eq!(*population, calls());
+    assert_eq!(stats.symbolic_states, 0);
+    let record = settle_zone_check(
+        ZoneItem::Outcome(&outcome),
+        &package_id(),
+        &Cancel::new(),
+        |_| panic!("no certificate"),
+        |_| panic!("no counterexample"),
+    );
+    assert!(
+        matches!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::SymmetryBroken { .. })
+        ),
+        "{record:?}"
+    );
+    refused_symmetry(time_lock_item_with(
+        &broken,
+        ZoneCheckLimits::default(),
+        &swap(),
+    ));
+
+    let world = timers(false);
+    let unknown = Reductions {
+        symmetry: vec![SymmetryDeclaration {
+            population: calls(),
+            classes: vec![vec!["t1".to_owned(), "t3".to_owned()]],
+        }],
+        ..Reductions::default()
+    };
+    assert!(
+        matches!(
+            deadlock_result(&world, &unknown),
+            Err(ZoneCheckRefusal::Symmetry(
+                SymmetryRefusal::UnknownKey { .. }
+            ))
+        ),
+        "{:?}",
+        deadlock_result(&world, &unknown)
+    );
+}
+
+/// FR-151 over EN-6: with three timers and the class `[[t1, t2]]`, `t3`
+/// is fixed. The deadlock item holds reduced as unreduced; in the
+/// latching variant both runs find the deadlock with equal delays, and the
+/// lifted counterexample replays.
+#[trace("TC-1170", "FR-430-AC-3")]
+#[test]
+fn a_partial_class_fixes_the_timers_outside_it() {
+    let three = ["t1", "t2", "t3"];
+    let world = timers_over(false, "always holds(not t.inflight)", &three, &[]);
+    assert!(matches!(deadlock(&world), ZoneCheckOutcome::Holds { .. }));
+    assert!(matches!(
+        deadlock_with(&world, &swap()),
+        ZoneCheckOutcome::HoldsReduced { .. }
+    ));
+    let latching = timers_over(true, "always holds(not t.inflight)", &three, &[]);
+    let plain = violated(deadlock(&latching));
+    let lifted = violated(deadlock_with(&latching, &swap()));
+    assert_eq!(delays(&lifted), delays(&plain));
+    let mut keys = receivers(&lifted);
+    keys.sort_unstable();
+    assert_eq!(keys, ["t1", "t2", "t3"]);
+    let settlement = replay(&latching, &lifted).expect("replays");
+    assert!(reproduced(&settlement), "{settlement:?}");
+}
+
+/// FR-160 over EN-6: a claim over an empty universe has no orbit to
+/// reduce, so under a selected symmetry it runs unreduced and its proof is
+/// certified, never `Reduced` with no reduction applied.
+#[trace("TC-1170", "FR-430-AC-3")]
+#[test]
+fn symmetry_over_no_instance_runs_unreduced() {
+    let empty = timers_over(false, "always holds(not t.inflight)", &[], &[]);
+    let declared = Reductions {
+        symmetry: vec![SymmetryDeclaration {
+            population: calls(),
+            classes: Vec::new(),
+        }],
+        ..Reductions::default()
+    };
+    let outcome = claim_with(
+        &empty,
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+        &declared,
+    );
+    assert!(
+        matches!(outcome, ZoneCheckOutcome::Holds { .. }),
+        "{outcome:?}"
+    );
 }
