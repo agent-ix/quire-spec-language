@@ -1,0 +1,26 @@
+[package]
+name = "qsl-inspect"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "Typed, bounded inspection views for QSL results"
+
+[dependencies]
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-package = { path = "../qsl-package" }
+qsl-semantics = { path = "../qsl-semantics" }
+qsl-replay = { path = "../qsl-replay" }
+qsl-analyze = { path = "../qsl-analyze" }
+qsl-eval = { path = "../qsl-eval" }
+quire-exact = { workspace = true }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+qsl-cst = { path = "../qsl-cst" }
+qsl-forms = { path = "../qsl-forms" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
