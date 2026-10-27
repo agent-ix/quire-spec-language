@@ -608,7 +608,16 @@ impl World {
         let other = second_starts.as_ref().map(|_| other_document(&document));
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
-        let base = unit_text(&document, other, vault, reset, "");
+        // IEEE profile selection is package-wide and includes literals in a
+        // hyper clause. Keep that clause in the linked package for IEEE
+        // atom tests so evaluation receives the profile selected by S3.
+        let ieee_package_clause =
+            if declaration.contains("float32(bits:") || declaration.contains("float64(bits:") {
+                format!("{declaration}\n")
+            } else {
+                String::new()
+            };
+        let base = unit_text(&document, other, vault, reset, &ieee_package_clause);
         let graph = declarations(&documents, &base)
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));

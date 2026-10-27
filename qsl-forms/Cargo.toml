@@ -12,13 +12,13 @@ description = "ADR-011 §6.1 layer 2: S2 parsed semantic forms -- the forms core
 # `tests/it/family_outcome_layering.rs` (TC-398) asserts that this table and
 # `[dev-dependencies]` name no other workspace crate.
 [dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-cst = { path = "../qsl-cst" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { workspace = true }
 quire-walk = { workspace = true }
 
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `dispatch`'s unit tests build CSTs with `LosslessCst::fixture`, gated on
 # `qsl-cst`'s own `test-support` feature; resolver 2 turns it on only when a
 # test target is built, so it never reaches the production lib.

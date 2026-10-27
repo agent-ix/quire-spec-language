@@ -22,7 +22,8 @@
 //! unit and reads the guard through the production letters.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+use qsl_analyze::model_check::{check_model, Atoms, ModelCheckRefusal, ModelCheckRequest, Por};
+use qsl_eval::automaton::translate;
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::AtomReading;
@@ -523,6 +524,126 @@ fn the_production_letters_read_the_counter_guard_and_its_footprint() {
     assert_eq!(reading, AtomReading::False);
     assert!(reads.is_empty());
     holds(&outcome);
+}
+
+/// FR-125-AC-18: each guarded row is compiled from source and decided through
+/// the production ClauseLetters, and POR visibility from the guard-only
+/// footprint.
+#[trace("TC-520", "FR-125-AC-18")]
+#[test]
+fn production_letters_decide_each_guard_row_and_include_guard_only_por_visibility() {
+    use qsl_eval::simulation::model::ModelSystem;
+    use qsl_eval::simulation::TransitionSystem;
+    use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
+
+    let run = |profile: &str, guard: &str, formula: &str| {
+        let activation = format!("{} when ({guard})", each("Counter"));
+        let world = counter_world(
+            profile,
+            &[Clause {
+                activation: &activation,
+                formula,
+            }],
+        );
+        let system = ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation)
+            .expect("the subject admits");
+        let node = &world.package.graph().temporal_clauses()[0];
+        let letters = system
+            .clause_letters(node)
+            .expect("the production letters build");
+        let outcome = check_model(
+            ModelCheckRequest {
+                subject: world.subject(&["c"], UNLIMITED),
+                item: ModelCheckItem::Clause {
+                    clause: node.clause(),
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("checked");
+        (world, outcome)
+    };
+
+    let (event_world, event) = run(BOUNDED, "c.value = 1", "eventually[0,1] holds(c.value = 3)");
+    let event = violated(&event);
+    assert_eq!(values(&event_world, &["c"], event, "c", "value"), [0, 1, 2]);
+
+    let (_, exhaustive) = run(
+        BOUNDED,
+        "c.value >= 2",
+        "eventually[0,1] holds(c.value = 3)",
+    );
+    assert!(matches!(exhaustive, ModelCheckOutcome::Holds { .. }));
+
+    let (live_world, live) = run(INFINITE, "c.value >= 3", "always holds(c.value <= 1)");
+    let live = violated(&live);
+    assert_eq!(
+        values(&live_world, &["c"], live, "c", "value"),
+        [0, 1, 2, 3]
+    );
+
+    let (undefined_world, undefined_outcome) =
+        run(INFINITE, "6 mod (2 - c.value) = 0", "always holds(true)");
+    assert_eq!(
+        undefined(&undefined_world, &undefined_outcome),
+        (2, vec![0, 1, 2])
+    );
+
+    // The atom has no reads; the activation guard alone reads Counter.value.
+    let activation = format!("{} when (c.value >= 3)", each("Counter"));
+    let por_world = counter_world(
+        INFINITE,
+        &[Clause {
+            activation: &activation,
+            formula: "always holds(true)",
+        }],
+    );
+    let system = ModelSystem::new(por_world.subject(&["c"], UNLIMITED).simulation)
+        .expect("the subject admits");
+    let node = &por_world.package.graph().temporal_clauses()[0];
+    let letters = system
+        .clause_letters(node)
+        .expect("the production letters build");
+    let automaton = translate(node.clause(), 1 << 20).expect("the clause translates");
+    let instance = ModelInstance {
+        population: por_world.domain.key(por_world.domain.population),
+        key: "c".to_owned(),
+    };
+    let por = Por::new(
+        &system,
+        Some(Atoms {
+            letters: &letters,
+            nodes: automaton.atoms(),
+            guarded: true,
+        }),
+        std::slice::from_ref(&instance),
+        node.clause().fairness(),
+        None,
+    )
+    .expect("the production footprints derive");
+    let start = system.initial_states()[0].clone();
+    let inc = system
+        .successors(&start)
+        .expect("the initial state expands")
+        .successors
+        .into_iter()
+        .find(|(_, state)| por_world.domain.integer(state, "c", "value") == 1)
+        .expect("inc is enabled")
+        .0;
+    assert!(por
+        .visible(&start, &inc)
+        .expect("the visibility is derived"));
+    assert!(letters
+        .activation_reads()
+        .expect("the guard has a footprint")
+        .contains(&SymbolicLocation::Field {
+            object: FootprintObject::Receiver,
+            field: por_world.domain.key("Counter/value"),
+        }));
 }
 
 /// A TP-4 clause is decided by the liveness engine (here its proof is

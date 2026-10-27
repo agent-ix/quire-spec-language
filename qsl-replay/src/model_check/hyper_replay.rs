@@ -71,11 +71,12 @@ use quire_exact::{Cancel, Meter, ScalarLimits};
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{Lasso, ModelStep};
 use crate::model_check::hyper_counterexample::{
     HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
-    HyperUndefined, StepMark,
+    HyperUndefined, MatchWitness, MatchWitnessCheck, StepMark,
 };
 use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::model_check::replay::{
@@ -167,6 +168,52 @@ pub fn replay_hyper_trace_tuple(
         HyperCounterexampleKind::Projected => {
             Err(fault("an-unreplayed-counterexample-is-refused-first"))
         }
+    }
+}
+
+/// Check an HP-2 candidate witness using the same trace, `μ_U` and fairness
+/// checks as counterexample replay, without reading the clause body.
+pub fn check_match_witness(
+    replay: &HyperReplay<'_, '_>,
+    witness: &MatchWitness,
+    replay_limits: ReplayLimits,
+) -> MatchWitnessCheck {
+    if let Err(bound) = BoundExceeded::check(witness.measured_bytes(), replay_limits) {
+        return MatchWitnessCheck::Refused(ReplayRefusal::Request(
+            crate::request::ReplayRequestRefusal::BoundExceeded(bound),
+        ));
+    }
+    let counterexample = HyperCounterexample {
+        kind: HyperCounterexampleKind::Lockstep {
+            loop_entry: witness.loop_entry,
+        },
+        instance: witness.instance.clone(),
+        traces: witness.traces.clone(),
+        trace_position: 0,
+    };
+    if !counterexample.marks_match_kind() {
+        return MatchWitnessCheck::Refused(shape_error(
+            "marks its steps other than as its kind does: every step of a projected one and none of any other",
+        ));
+    }
+    if let Err(refusal) = shape(replay, &counterexample) {
+        return MatchWitnessCheck::Refused(refusal);
+    }
+    let executed = match execute(replay, &counterexample) {
+        Ok(Some(executed)) => executed,
+        Ok(None) => {
+            return MatchWitnessCheck::Refused(shape_error(
+                "could not be replayed within the subject's expansion limits",
+            ))
+        }
+        Err(refusal) => return MatchWitnessCheck::Refused(refusal),
+    };
+    match universal_lasso(replay, &counterexample, &executed, witness.loop_entry) {
+        Ok(Some(())) => MatchWitnessCheck::Accepted,
+        Ok(None) => MatchWitnessCheck::Refused(shape_error(
+            "could not be checked within the subject's evaluation limits",
+        )),
+        Err(refusal) => MatchWitnessCheck::Refused(refusal),
     }
 }
 

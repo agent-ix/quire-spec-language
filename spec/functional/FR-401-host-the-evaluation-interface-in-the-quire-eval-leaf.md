@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-082
+    type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-272"
     type: depends_on
 ---
@@ -114,7 +116,7 @@ them needs no facade.
 | `Value`, `ValueType`, `Outcome`, `NodeKey` | K, `quire_exact` | none |
 | `InputRefusal` | SV, `quire_semantic_value::call` | none |
 | `ExpressionLocation`, `ExpressionOwner`, `ValueLoss`, `LocatedLoss` | SV, `quire_semantic_value::{location, loss}` | none |
-| `EnvironmentFailure` (`CallFailure::Storage`'s payload) | SV, `quire_semantic_value::declaration` | none |
+| `EnvironmentFailure` (`CallFailure::Storage`'s payload and `BodyFailure::QsvEnvironment`'s payload) | SV, `quire_semantic_value::declaration` | none |
 | `ObjectClosure` | SV, `quire_semantic_value::object_closure` | none |
 | `Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason`, `InternalFault` | SV, `quire_semantic_value::catalog` | S0, from `qsl_foundation::diagnostic` |
 | The supplied-value stop records: `SuppliedFailure`, `SuppliedStop`, `SuppliedContext`, `SuppliedCause`, `SuppliedPhase`, `SuppliedEvent`, `SuppliedLocus`, `SuppliedLimit`, `SuppliedLimitKind`, `AttemptedCount`, `SuppliedNumericOperand`, `SuppliedStorage`, `SuppliedStorageUnit`, `UnsupportedHelperStop`, and the limit-field name constants `SuppliedLimitKind::field` returns | SV, `quire_semantic_value::supplied_stop` | S0, from `qsl_semantics::value::supplied` |
@@ -123,6 +125,7 @@ them needs no facade.
 | `UnsupportedEntry`, `UnsupportedCause`, `UntranslatableConstruct` and `ExecutionBackendChoice` (`CallFailure::Unsupported`'s payload, FR-294 and FR-296) | E, `quire_eval` | S0, new |
 | The registry, its admission result (`Accepted`, `RegistrySealed`, `CallableNotAdmitted`, `SignatureMismatch`, `DuplicateBinding`), the admitted signature, the session, the step result, the body factory and invocation-state contract, and the child request | E, `quire_eval` | S0, new |
 | `PrepareLimitReached`, `PrepareSetting` (`CallFailure::Limit`'s payload, FR-279 and FR-294) | E, `quire_eval` | S0, new |
+| `BodyFailure` (`Body::resume`'s typed failure, including SV environment failure distinct from a body invariant fault) | E, `quire_eval` | new |
 | `WrongSnapshotCause` | SV, `quire_semantic_value::call` | S1, from `qsl_semantics::check::refusal`, unless FR-400's X-13 has moved it |
 
 These stay where they are and are not part of the leaf: `qsl-foundation`'s
@@ -136,6 +139,47 @@ These stay where they are and are not part of the leaf: `qsl-foundation`'s
 (`ObjectEnvironment`, `ObservedRead`, `ReadLog`) and `PopulationBinding`;
 and `qsl-eval`'s `QualifiedName`, `supplied_stop_code` and
 `supplied_stop_cause`.
+
+### Body-side SV failures
+
+`Body::resume` SHALL return `Result<Transition, BodyFailure>`. The public
+`BodyFailure` SHALL have two distinct arms: `QsvEnvironment { failure,
+cancellation }`, where `failure` is the unchanged SV
+`EnvironmentFailure` and `cancellation` is `Option<CancelCause>`, and
+`Fault(InternalFault)`, for an actual body invariant fault. A body-side SV
+failure MUST NOT be represented as `Transition::Done(Evaluation)`: a failed
+SV type-environment operation did not produce an evaluation, and `Ok(false)`
+from membership is not an error. The leaf SHALL surface `BodyFailure` through
+a distinct `CallFailure::Body(BodyFailure)` arm without converting a SV
+failure into `InternalFault`, `CallFailure::Input`, or an evaluation.
+
+`QsvEnvironment` SHALL retain all four `EnvironmentFailure` variants and
+their full payloads unchanged: `Limit(EnvironmentLimit)` retains its kind,
+configured bound and actual count; `Refused(InvalidDeclaration)` retains the
+declaration rejection; `Allocation(StorageRequest)` and
+`Capacity(StorageRequest)` retain the exact native amount and unit. The body
+SHALL snapshot cancellation when it converts the SV result to `BodyFailure`;
+it SHALL include a cause only when the exact `Cancel` handle supplied to the
+SV operation reports a trip at that point, retaining that handle's exact
+`CancelCause`; otherwise it SHALL include no cause. Thus
+`Limit(WorkUnits)` with no cancellation cause is an ordinary work ceiling,
+while `Limit(WorkUnits)` with a cause is cancellation. `Limit(AncestorSteps)`
+has no cancellation cause. `CallFailure::category()` SHALL classify
+`Refused` as refusal, `Limit`, `Allocation` and `Capacity` as incomplete, and
+`Fault` as internal failure. A body-side SV failure has no expression
+`Location`: `EnvironmentFailure` carries none and the result is a call
+failure, not an `Evaluation`. Charges admitted before the failure remain
+recorded; the failure itself adds no charge.
+
+The public SV `TypeEnvironment` API SHALL provide a reservation-control
+entry point for tests of environment construction and membership at the same
+reservation sites production uses. It SHALL let tests produce the typed
+`Allocation` and `Capacity` variants through those operations without
+accepting a preconstructed `EnvironmentFailure`, fabricating a declaration or
+changing production constructors' ordinary reservation behavior. QSL's
+public application tests SHALL use this entry point to show that the leaf and
+replay facade preserve those variants. QSL SHALL not copy SV environment
+construction or membership code.
 
 These methods change owner because their types move and the method names a
 type, or is called from a crate, that does not:
@@ -325,6 +369,8 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 | FR-401-AC-9 | With a meter whose installed handle is cancelled with `Requested` or `Deadline` before the call: over the TC-918 `Compare` package (`equality_matrix.rs`, `invariants.rs`), `call` returns `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(record))` where `record.charge_point` is `ChargePoint::FunctionCall`; over the FR-090 population query of `model_reference_queries.rs`, `call` and `evaluate` each return `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(_))`. In every run no charge is admitted, `tripped()` equals the cause and no run returns `CallFailure::Cancelled`. Over the population query, with a handle that trips at its n-th poll, `call` and `evaluate` stop at the n-th charge point of the suite's expected prefix, with the prefix before it admitted. | Test (TC-1191) |
 | FR-401-AC-10 | Over a package whose call's first meter charge is `function.call` (the TC-918 `Compare` package, and the two-argument `g(x: Int[0, 9], y: Int[0, 9]): Boolean` package): `call_supplied` with a supplied-value run over an uncancelled handle and a meter whose installed handle is a different handle cancelled with `Requested` or `Deadline` returns `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(record))` where `record.charge_point` is `ChargePoint::FunctionCall`; no charge is admitted, the meter's `tripped()` equals the cause, the run's handle is not tripped, and the result is never `CallFailure::Cancelled`. With the caller's run over a handle cancelled with `Requested` and the meter's handle not cancelled, `call_supplied` returns `CallFailure::Cancelled` with cause `Requested`, since admission under the caller's run polls that run's handle at FR-277's poll points; the meter's consumed counters are all zero and no charge is admitted. | Test (TC-1191) |
 | FR-401-AC-11 | `quire_eval::{UnsupportedEntry, UnsupportedCause, UntranslatableConstruct, ExecutionBackendChoice}` resolve; `quire_eval::CallFailure::Unsupported(UnsupportedEntry { backend: ExecutionBackendChoice::Jit, cause: UnsupportedCause::Untranslatable { construct: UntranslatableConstruct::ExpressionForm("let"), location } })` constructs from an SV `ExpressionLocation`, and with cause `NotSupplied`; for both, `category()` is `Category::Unsupported` and the catalog code is `unimplemented_capability`; `cargo tree -p quire-eval` lists no QSL crate; and the `no_std` evaluator's suite over FR-403's vectors returns no `CallFailure::Unsupported`. Serialized in an FR-286 document, the `Untranslatable` arm's diagnostic has code `unimplemented_capability`, cause `untranslatable-entry`, `backend` `jit`, `construct` `expression-form`, `construct_name` `let` and `location` the constructed `ExpressionLocation`; with `ValueType(Decimal)` and `Operation(k)`, `construct` is `value-type` with `construct_name` `Decimal`, and `operation` with `construct_name` the node key `k`; and the `NotSupplied` arm's has cause `backend-not-supplied`, `backend` `jit` and no `location`. | Test |
+| FR-401-AC-12 | A public `Body` returns each SV `EnvironmentFailure` variant through `BodyFailure::QsvEnvironment`, and the scheduler returns it as `CallFailure::Body` with the same variant and payload; `BodyFailure::Fault` remains a distinct internal fault. `Refused` is refusal, `Limit`/`Allocation`/`Capacity` are incomplete, and membership `Ok(false)` remains distinct from every error. For `Limit(WorkUnits)`, the exact supplied handle's `CancelCause` appears only when that handle is tripped; an ordinary work ceiling remains cause-free. No body-side SV failure creates an `Evaluation` or expression location; preceding meter charges remain admitted and the failure itself adds none. | Test |
+| FR-401-AC-13 | A public SV `TypeEnvironment` reservation-control entry point exercises the actual construction and membership reservation sites and produces typed `Allocation` and `Capacity` failures without a caller-constructed failure or fabricated declaration. An external QSL application consumer uses this entry point to drive both variants through `BodyFailure` and `CallFailure::Body`; production constructors continue to use their ordinary reservation policy. | Test |
 
 ## Dependencies
 
@@ -339,6 +385,11 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md) and
   [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md):
   the S6a result contract and the refusal records that stay unchanged.
+- [FR-082](FR-082-resolve-conformance-subsetting-and-redefinition.md): the
+  checked type-environment limits and refusal behavior whose typed owner
+  failures the body-side channel preserves. The SV reservation-control
+  entry point itself is an external shared-leaf contract and must be present
+  before QSL's allocation/capacity application tests can pass.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 layer E, FB-05 and §7.3 X-14 and X-15.
 - AD-001 slices S0 (IR-583), S1 (IR-585) and S2 (IR-586).

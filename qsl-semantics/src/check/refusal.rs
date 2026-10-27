@@ -776,19 +776,11 @@ pub enum ProtocolReferenceCause {
 /// write yet. Each names the ticket that writes it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ProtocolConstruct {
-    /// A replicated `role r each T from population ...` member (FR-465
-    /// "Role" `replication` Group): QSL-1125. A static role is written.
-    ReplicatedRoles,
     /// A static role `on` a whole model alias (FR-465 "Role": `model` is the
     /// text identity of a `model_selections` row). IR's protocol reader at
     /// `quire-contract-ir` `9a84e654` admits only the reference form of
     /// `model`, so the node cannot be proved admitted: an IR gap, IR-874.
     WholeModelRole,
-    /// A `channel` member and the queue generated for it (FR-465 "Channel",
-    /// "Queue"): QSL-1125.
-    Channels,
-    /// A `relationship` member (FR-464 "Clause body"): QSL-1125.
-    Relationships,
     /// A `requires temporal` member (FR-464 "Activation relation"): QSL-1127.
     Requirements,
     /// A `compensate` template (FR-466 "Compensation"): QSL-1127.
@@ -802,6 +794,23 @@ pub enum ProtocolConstruct {
     ActivationGuard,
     /// A `terminal` member (FR-465 "Terminal"): QSL-1121f.
     Terminal,
+    /// A `relationship` member (FR-464 "Clause body"): a real model package
+    /// cannot name a relationship yet, so the clause `relationships` set is
+    /// unproved against IR's reader: QSL-1141.
+    Relationships,
+    /// A `channel` that carries a bounded scalar or collection
+    /// (`Int[a, b]`, `Text`, `Decimal`, `Rational`, `Float`, a bounded
+    /// `Sequence`/`Set`/`Bag`; FR-465 "Channel"). Each lowers to a
+    /// `bounded_domain` node, which IR's reader at `quire-contract-ir`
+    /// `9a84e654` does not admit as `carries`: QSL-1137.
+    ChannelCarriesBounded,
+    /// A FIFO `channel` whose key type IR's reader does not take as
+    /// equality-stable (FR-465 "Channel"): the key's type is, or contains
+    /// through an option, a collection or a record field, a bounded domain,
+    /// a quantity, a float or a model-owned type. The check admits `=` over
+    /// it but the reader refuses the key (`ill_typed`/`operator-ineligible`):
+    /// QSL-1142.
+    ChannelKeyNotEqualityStable,
     /// A `finish` constraint that calls a function or refers to a protocol:
     /// the node is written before the functions are, so the constraint
     /// cannot name them yet. QSL-1121g.
@@ -812,13 +821,15 @@ impl ProtocolConstruct {
     /// The ticket that writes this construct's node.
     pub const fn tracking(self) -> &'static str {
         match self {
-            Self::ReplicatedRoles | Self::Channels | Self::Relationships => "QSL-1125",
             Self::WholeModelRole => "IR-874",
             Self::Control(_) => "QSL-1126",
             Self::Requirements | Self::Compensations => "QSL-1127",
             Self::Captures | Self::ActivationGuard => "QSL-1121e",
             Self::Terminal => "QSL-1121f",
             Self::FinishReadsDeclaration => "QSL-1121g",
+            Self::ChannelCarriesBounded => "QSL-1137",
+            Self::Relationships => "QSL-1141",
+            Self::ChannelKeyNotEqualityStable => "QSL-1142",
         }
     }
 }

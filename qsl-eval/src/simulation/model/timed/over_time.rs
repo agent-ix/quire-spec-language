@@ -360,8 +360,8 @@ impl TimedSystem<'_, '_> {
     }
 
     /// The largest constant any guard, time invariant or reset of the model
-    /// compares a clock with.
-    fn max_constant(&self) -> Rational {
+    /// compares a clock with (FR-236 "Timed lasso").
+    pub fn max_constant(&self) -> Rational {
         let model = self.model;
         let guards = model
             .guards()
@@ -404,6 +404,8 @@ impl TimedSystem<'_, '_> {
     /// grows by the loop's total delay at each repetition, so the loop is
     /// read at the first repetition where every such clock is above every
     /// constant of the model, after which each repetition reads alike.
+    /// Under a tick source no instant lies between two positions: each is
+    /// read at delay 0.
     ///
     /// # Errors
     ///
@@ -415,18 +417,142 @@ impl TimedSystem<'_, '_> {
         stutter_delay: &Rational,
         constrained: impl Fn(&GuardedStep) -> bool,
     ) -> Result<bool, TimedStop> {
-        let positions = behaviour.positions();
-        let Some(looped) = positions.get(entry..).filter(|looped| !looped.is_empty()) else {
+        let Some(repetition) = self.repetition(behaviour, entry, stutter_delay) else {
             return Ok(true);
         };
+        if repetition.takes(&constrained) {
+            return Ok(true);
+        }
+        let mut state = repetition.start.clone();
+        for (delay, step) in &repetition.windows {
+            if !self.enabled_throughout(&state, &self.instants(delay), &constrained)? {
+                return Ok(true);
+            }
+            state = Self::after(state, delay, *step);
+        }
+        Ok(false)
+    }
+
+    /// FR-232 "Fairness over time": whether the loop of `behaviour` from
+    /// position `entry`, repeated forever, satisfies strong fairness for the
+    /// constraint naming the steps `constrained` accepts. It does unless the
+    /// constraint is enabled at some instant of the repetition every later
+    /// one reads alike, so infinitely often, while the loop takes none of
+    /// its steps. The loop is read as [`Self::weakly_fair`] reads it, its
+    /// never-reset clocks shifted past every constant: an idle tail at a
+    /// step whose guard opens only later is enabled infinitely often.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::guarded_steps`] and [`Self::enabled_delays`].
+    pub fn strongly_fair(
+        &self,
+        behaviour: &super::TimedBehaviour,
+        entry: usize,
+        stutter_delay: &Rational,
+        constrained: impl Fn(&GuardedStep) -> bool,
+    ) -> Result<bool, TimedStop> {
+        let Some(repetition) = self.repetition(behaviour, entry, stutter_delay) else {
+            return Ok(true);
+        };
+        if repetition.takes(&constrained) {
+            return Ok(true);
+        }
+        Ok(!self
+            .enabled_by_window(&repetition)?
+            .iter()
+            .flatten()
+            .any(constrained))
+    }
+
+    /// The steps enabled at some instant of each window of the loop of
+    /// `behaviour` from `entry`, read at the repetition every later one
+    /// reads alike, as [`Self::weakly_fair`] reads it: window `i` starts at
+    /// loop position `i`. Empty for an empty loop.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::guarded_steps`] and [`Self::enabled_delays`].
+    pub fn loop_enabled(
+        &self,
+        behaviour: &super::TimedBehaviour,
+        entry: usize,
+        stutter_delay: &Rational,
+    ) -> Result<Vec<Vec<GuardedStep>>, TimedStop> {
+        match self.repetition(behaviour, entry, stutter_delay) {
+            Some(repetition) => self.enabled_by_window(&repetition),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn enabled_by_window(
+        &self,
+        repetition: &Repetition<'_>,
+    ) -> Result<Vec<Vec<GuardedStep>>, TimedStop> {
+        let mut state = repetition.start.clone();
+        let mut enabled = Vec::with_capacity(repetition.windows.len());
+        for (delay, step) in &repetition.windows {
+            let window = DelayInterval {
+                lower: (zero(), true),
+                upper: Some((self.instants(delay), true)),
+            };
+            let mut here = Vec::new();
+            for candidate in self.guarded_steps(&state.discrete)? {
+                if self
+                    .enabled_delays(&state, &candidate)?
+                    .iter()
+                    .any(|interval| !interval.meet(&window).is_empty())
+                {
+                    here.push(candidate);
+                }
+            }
+            enabled.push(here);
+            state = Self::after(state, delay, *step);
+        }
+        Ok(enabled)
+    }
+
+    /// The delays of a window of `delay` at which the loop is observed:
+    /// all of `[0, delay]`, or only 0 under a tick source.
+    fn instants(&self, delay: &Rational) -> Rational {
+        if self.tick.is_some() {
+            zero()
+        } else {
+            delay.clone()
+        }
+    }
+
+    /// The timed state after a window: `delay`, then `step` (the idle
+    /// tail's stutter when `None`).
+    fn after(state: TimedState, delay: &Rational, step: Option<&GuardedStep>) -> TimedState {
+        let delayed = state.clocks.delayed(delay);
+        match step {
+            Some(step) => TimedState {
+                discrete: step.post.clone(),
+                clocks: step.reset(&delayed),
+            },
+            None => TimedState {
+                discrete: state.discrete,
+                clocks: delayed,
+            },
+        }
+    }
+
+    /// The repetition of the loop of `behaviour` from `entry` that every
+    /// later one reads alike; `None` for an empty loop.
+    fn repetition<'b>(
+        &self,
+        behaviour: &'b super::TimedBehaviour,
+        entry: usize,
+        stutter_delay: &Rational,
+    ) -> Option<Repetition<'b>> {
+        let positions = behaviour.positions();
+        let looped = positions.get(entry..).filter(|looped| !looped.is_empty())?;
         let steps: Vec<&GuardedStep> = looped
             .iter()
             .skip(1)
             .filter_map(super::TimedPosition::step)
             .collect();
-        if steps.iter().any(|step| constrained(step)) {
-            return Ok(true);
-        }
         // Each window of one repetition: the delay before it and the step
         // that ends it, the idle tail's being the stutter step.
         let windows: Vec<(Rational, Option<&GuardedStep>)> = if looped.len() == 1 {
@@ -467,24 +593,29 @@ impl TimedSystem<'_, '_> {
             }
             clocks = super::ClockValuation(shifted);
         }
-        let mut state = TimedState {
-            discrete: looped[0].state.discrete.clone(),
-            clocks,
-        };
-        for (delay, step) in windows {
-            if !self.enabled_throughout(&state, &delay, &constrained)? {
-                return Ok(true);
-            }
-            if let Some(step) = step {
-                state = TimedState {
-                    discrete: step.post.clone(),
-                    clocks: step.reset(&state.clocks.delayed(&delay)),
-                };
-            } else {
-                state.clocks = state.clocks.delayed(&delay);
-            }
-        }
-        Ok(false)
+        Some(Repetition {
+            start: TimedState {
+                discrete: looped[0].state.discrete.clone(),
+                clocks,
+            },
+            windows,
+            steps,
+        })
+    }
+}
+
+/// One repetition of a timed loop: its start, each window's delay and the
+/// step that ends it, and the steps it takes.
+struct Repetition<'b> {
+    start: TimedState,
+    windows: Vec<(Rational, Option<&'b GuardedStep>)>,
+    steps: Vec<&'b GuardedStep>,
+}
+
+impl Repetition<'_> {
+    /// Whether the loop takes a step `constrained` accepts.
+    fn takes(&self, constrained: &impl Fn(&GuardedStep) -> bool) -> bool {
+        self.steps.iter().any(|step| constrained(step))
     }
 }
 
