@@ -919,7 +919,7 @@ pub(crate) fn record_value_type(root: &Path, name: &str, fields: &[(&str, &str, 
     std::fs::write(
         root.join(format!("spec/model/{name}.md")),
         format!(
-            "---\nid: {name}\ntitle: {name}\nobject: value_object\ntype: FR\nname: {name}\n---\n\n\
+            "---\nid: {name}\ntitle: {name}\nobject: value_object\ntype: value_object\nname: {name}\n---\n\n\
              # {name}: {name}\n\n## Description\n\nA test-authored record value type.\n\n\
              ## Properties\n\n| Field | Type | Multiplicity | Constraints |\n\
              |-------|------|--------------|-------------|\n{rows}"
