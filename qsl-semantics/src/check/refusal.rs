@@ -2601,10 +2601,28 @@ pub struct DispatchSubtypeFailure {
     )>,
 }
 
+/// Why an accepted execution point cannot be carried by the clause it
+/// accompanies (QSpec FR-341 "Execution point", FR-342): refused before any
+/// node is keyed, so no package carries a point its V2 read would refuse.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExecutionPointRefusal {
+    /// The point's variant is not one this clause kind takes: an invariant
+    /// takes `initialization` or `handler`; a precondition `pre`; a
+    /// postcondition `post`.
+    InapplicableVariant,
+    /// A `pre` or `post` point names an operation other than the one the
+    /// clause (and so its anchor) names.
+    OperationMismatch,
+}
+
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
 /// broke it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
+    /// An accepted execution point its clause cannot carry (QSpec FR-341,
+    /// FR-342): the variant is inapplicable to the clause kind, or its
+    /// operation is not the clause's.
+    ExecutionPoint(ExecutionPointRefusal),
     /// The private intake owner lost its corresponding assembled model.
     MissingAdmittedModel(String),
     /// A staged-admission read the conformance stage made for an admitted
@@ -2709,6 +2727,7 @@ impl KeyFault {
             Self::UnclassifiedExtent(fault) | Self::StageFault(fault) => fault.invariant(),
             Self::CorrespondenceConflict(_) => "model-correspondence-one-to-one",
             Self::UncheckedProtocolFact => "protocol-fact-checked",
+            Self::ExecutionPoint(_) => "execution-point-matches-clause",
         }
     }
 }

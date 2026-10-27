@@ -3950,6 +3950,14 @@ impl PackageDeclarations {
                         body: typed.body.root(),
                         body_slots: &typed.slot_names,
                         population_types: &typed.population_types,
+                        // Gated (QSL-1082): the pinned IR V2 reader refuses
+                        // a state_clause member or operation_anchor body
+                        // carrying an execution point (unknown member /
+                        // body shape), so the production check emits none
+                        // until the IR reader admits the carrier. The keying
+                        // and lowering above are exercised with a point by
+                        // their tests.
+                        execution_point: None,
                     };
                     match lowering.state_clause(&input) {
                         Ok(lowered) => *slot = Some(lowered),
