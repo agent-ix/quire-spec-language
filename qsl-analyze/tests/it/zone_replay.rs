@@ -67,14 +67,14 @@ fn replay_with_hints(
     )
 }
 
-fn replay(
+pub(crate) fn replay(
     world: &World,
     payload: &TemporalCounterexample,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     replay_on(world, payload, false, &Limits::default())
 }
 
-fn reproduced(settlement: &ModelTraceSettlement) -> bool {
+pub(crate) fn reproduced(settlement: &ModelTraceSettlement) -> bool {
     matches!(settlement, ModelTraceSettlement::Reproduced { .. })
 }
 

@@ -32,15 +32,19 @@ pub(crate) const INFINITE: &str = "profile inf = \"quire.temporal.infinite-trace
 pub(crate) const TIMED: &str = "profile tt = \"quire.temporal.timed/v1\";\n";
 
 pub(crate) fn rpc_document() -> Vec<u8> {
-    document(
-        &["x"],
-        &[
-            ("send", &["phase", "inflight", "late", "x"]),
-            ("reply", &["phase", "inflight", "late"]),
-            ("timeout", &["phase"]),
-            ("reset", &["phase"]),
-        ],
-    )
+    rpc_document_with(&[])
+}
+
+/// [`rpc_document`] with the operations `extra` after `Rpc`'s own.
+pub(crate) fn rpc_document_with(extra: &[(&str, &[&str])]) -> Vec<u8> {
+    let mut operations: Vec<(&str, &[&str])> = vec![
+        ("send", &["phase", "inflight", "late", "x"]),
+        ("reply", &["phase", "inflight", "late"]),
+        ("timeout", &["phase"]),
+        ("reset", &["phase"]),
+    ];
+    operations.extend_from_slice(extra);
+    document(&["x"], &operations)
 }
 
 /// ADR-026 §11's `Rpc` with client deadline `t` ms and the claim
@@ -70,8 +74,25 @@ pub(crate) fn rpc_variant(
     profiles: &str,
     claim: &str,
 ) -> World {
+    rpc_model(&rpc_document(), t, reply, timeout, profiles, claim)
+}
+
+/// `Rpc` over `document`, which declares at least its operations, with
+/// `claim` holding any further model text and the temporal clause.
+pub(crate) fn rpc_world(document: &[u8], t: u32, profiles: &str, claim: &str) -> World {
+    rpc_model(document, t, ">= 1", ">=", profiles, claim)
+}
+
+fn rpc_model(
+    document: &[u8],
+    t: u32,
+    reply: &str,
+    timeout: &str,
+    profiles: &str,
+    claim: &str,
+) -> World {
     world(
-        &rpc_document(),
+        document,
         profiles,
         &format!(
             "{DENSE}\
@@ -208,6 +229,11 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
                 "step",
                 "go",
                 "ping",
+                "idle",
+                "serve",
+                "echo",
+                "work",
+                "spin",
             ]
             .into_iter()
             .find(|name| operation.contains(&format!("Call/{name}\"")))
@@ -383,7 +409,7 @@ pub(crate) fn ticker(locked: bool) -> World {
 }
 
 /// [`ticker`] with `body` as its clause on origin, under the timed profile.
-fn ticker_with(locked: bool, body: &str) -> World {
+pub(crate) fn ticker_with(locked: bool, body: &str) -> World {
     let when = if locked { "true" } else { "self.phase < 2" };
     world(
         &document(&["x"], &[("step", &["phase", "x"])]),
@@ -1240,7 +1266,7 @@ fn windowed_under(
 }
 
 /// The first clause of `world` put to EN-6, refused or decided.
-fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
+pub(crate) fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];

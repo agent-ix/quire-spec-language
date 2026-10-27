@@ -26,7 +26,7 @@ use super::quotient::LoopEdge;
 /// transition identities the graph holds, numbered by `identity`: a `whole`
 /// constraint covers every transition of its operation, an `each` constraint
 /// is one constraint per such transition (ADR-018 FA-1).
-pub(super) fn fairness_constraints(
+pub(crate) fn fairness_constraints(
     system: &ModelSystem<'_>,
     fairness: &[FairnessConstraint],
     transitions: &[ModelTransition],
@@ -87,9 +87,9 @@ pub(super) fn tree_path<S, T, F>(
 /// One graph as the fairness kernels read it: vertices and edges of the
 /// retained states, the model states' enabled identities, the automaton's
 /// acceptance sets and the clause's constraints.
-pub(super) struct FairModel {
-    pub(super) graph: Graph,
-    pub(super) constraints: Vec<Constraint>,
+pub(crate) struct FairModel {
+    pub(crate) graph: Graph,
+    pub(crate) constraints: Vec<Constraint>,
 }
 
 impl FairModel {
@@ -118,7 +118,7 @@ impl FairModel {
     /// edge whose identity is in `removed`, the edges the filter's
     /// visibility refinements left out of the passing component (ADR-025
     /// MF-2).
-    pub(super) fn greedy_loop(
+    pub(crate) fn greedy_loop(
         &self,
         component: &BTreeSet<Vertex>,
         removed: &BTreeSet<Identity>,

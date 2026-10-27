@@ -86,5 +86,6 @@ mod units;
 mod universe_obligation;
 mod weak_memory;
 mod zone_certificate;
+mod zone_liveness;
 mod zone_replay;
 mod zone_search;
