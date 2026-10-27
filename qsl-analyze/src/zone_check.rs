@@ -16,6 +16,7 @@ mod divergence;
 mod scale;
 mod search;
 mod settle;
+mod time_lock;
 
 pub use certificate::certificate_item;
 pub use dbm::{Bound, Dbm, DbmError};
