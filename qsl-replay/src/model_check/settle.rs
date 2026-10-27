@@ -503,6 +503,9 @@ fn settle<T: SubjectTransition>(
             Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })
         }
         ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(cause.inconclusive()),
+        ModelCheckOutcome::RefutedIgnoringConstraints { .. } => {
+            Row::inconclusive(InconclusiveCause::RefutedIgnoringConstraints)
+        }
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         ModelCheckOutcome::Violated {
             counterexample: payload,

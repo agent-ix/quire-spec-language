@@ -10,37 +10,20 @@
 
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
-    CertificateLocus, CertificateRule, CounterexampleKind, IncompleteCause, InconclusiveCause,
-    ModelCheckLimit, ModelTraceReplayResult, ModelTraceSettlement, ProofBasis, ReachedLimit,
-    ReplayRefusal, ResultLabel, SettlementBasis, TemporalCounterexample, TerminalValue, Truth,
-    UnavailabilityCause,
+    CertificateRejection, CounterexampleKind, IncompleteCause, InconclusiveCause, ModelCheckLimit,
+    ModelTraceReplayResult, ModelTraceSettlement, ProofBasis, ReachedLimit, ReplayRefusal,
+    ResultLabel, SettlementBasis, TemporalCounterexample, TerminalValue, Truth,
+    UnavailabilityCause, ZoneCertificate, ZoneCertificateVerdict,
 };
 use qsl_replay::{Certification, Execution};
+use qsl_route::deadlock::ItemObligation;
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::Cancel;
 
-use super::certificate::ZoneCertificate;
 use super::search::{ZoneCheckLimit, ZoneCheckOutcome, ZoneStop, ZoneUndecided};
 
 /// The settlement method of an EN-6 record (FR-235).
 pub const ZONE_CERTIFIED: &str = "zone-certified";
-
-/// The result of the core's check of a zone certificate (FR-245), as the
-/// map reads it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ZoneCertificateCheck {
-    /// The checker accepted the certificate.
-    Accepted,
-    /// The checker rejected it, at the rule and locus that failed.
-    Rejected {
-        /// The rule that failed.
-        rule: CertificateRule,
-        /// Where.
-        at: CertificateLocus,
-    },
-    /// A budget or a cancellation stopped the check.
-    Stopped(IncompleteCause),
-}
 
 /// What FR-235 settles for one item over a timed subject: the request
 /// writer's disposition of an item it routed to no engine, or EN-6's
@@ -161,7 +144,7 @@ pub fn settle_zone_check<S>(
     item: ZoneItem<'_, S>,
     package_id: &DigestRecord,
     cancel: &Cancel,
-    check: impl FnOnce(&ZoneCertificate<S>) -> ZoneCertificateCheck,
+    check: impl FnOnce(&ZoneCertificate<ItemObligation<S>>) -> ZoneCertificateVerdict,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ZoneCheckRecord {
     let outcome = match item {
@@ -178,7 +161,7 @@ pub fn settle_zone_check<S>(
     };
     match outcome {
         ZoneCheckOutcome::Holds { certificate, .. } => match check(certificate) {
-            ZoneCertificateCheck::Accepted => ZoneCheckRecord::row(
+            ZoneCertificateVerdict::Accepted => ZoneCheckRecord::row(
                 TerminalValue::Proved {
                     basis: ProofBasis::ZoneCertified,
                     certification: Certification::Certified,
@@ -188,10 +171,10 @@ pub fn settle_zone_check<S>(
                 Execution::Completed,
                 Truth::Satisfied,
             ),
-            ZoneCertificateCheck::Rejected { rule, at } => {
+            ZoneCertificateVerdict::Rejected(CertificateRejection { rule, at }) => {
                 ZoneCheckRecord::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
             }
-            ZoneCertificateCheck::Stopped(cause) => ZoneCheckRecord::incomplete(cause),
+            ZoneCertificateVerdict::Stopped(cause) => ZoneCheckRecord::incomplete(cause),
         },
         ZoneCheckOutcome::Undecided { cause, .. } => ZoneCheckRecord::inconclusive(match cause {
             // FR-127's V-6 rows, which FR-235 extends.

@@ -33,7 +33,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
-    Activation, CheckedFormula, CheckedTemporalClause, FormulaNodeId, TemporalProfile,
+    Activation, CheckedFormula, CheckedTemporalClause, FormulaNode, FormulaNodeId, TemporalProfile,
 };
 
 use crate::automaton::counters::{DeadlineCounter, Expired, ExtentCounter, Violated};
@@ -328,6 +328,12 @@ impl PropertyAutomaton {
         self.reached.len()
     }
 
+    /// The reached state numbered `index`; `None` when no state has that
+    /// number yet.
+    pub fn reached_state(&self, index: usize) -> Option<StateId> {
+        (index < self.reached.len()).then(|| StateId::new(index))
+    }
+
     /// The explicit automaton of every state reachable on some letter, built
     /// by reaching them all. This is for a caller that needs the whole graph,
     /// such as a test comparing it with the evaluator; a product reaches
@@ -517,6 +523,52 @@ pub fn translate_body(
         profile,
         Activation::Origin,
         Selection::Clause,
+        Counting::Every,
+        max_states,
+        None,
+    )
+}
+
+/// Translate the negation of `clause`, with its activation, to a
+/// generalized Büchi automaton read over positions, whatever its fragment:
+/// the claim automaton of EN-6's liveness product (FR-240), in which a
+/// safety violation too is a fair accepting cycle, through the automaton's
+/// rejecting state. A timed-profile clause with no interval reads alike over
+/// positions and translates as an infinite-trace one; one with an interval
+/// counts time, which FR-242's timed automata read.
+///
+/// # Errors
+///
+/// [`AutomatonError::ProfileNotTranslated`] for a timed-profile clause with
+/// an interval and for the timestamped profile; otherwise as [`translate`].
+pub fn translate_position_negation(
+    clause: &CheckedTemporalClause,
+    max_states: u64,
+) -> Result<PropertyAutomaton, AutomatonError> {
+    let profile = match clause.profile() {
+        TemporalProfile::Timed
+            if clause.formula().nodes().iter().all(|node| {
+                !matches!(
+                    node,
+                    FormulaNode::Unary {
+                        interval: Some(_),
+                        ..
+                    } | FormulaNode::Binary {
+                        interval: Some(_),
+                        ..
+                    }
+                )
+            }) =>
+        {
+            TemporalProfile::InfiniteTrace
+        }
+        profile => profile,
+    };
+    translate_formula(
+        clause.formula(),
+        profile,
+        clause.activation(),
+        Selection::Negation,
         Counting::Every,
         max_states,
         None,
