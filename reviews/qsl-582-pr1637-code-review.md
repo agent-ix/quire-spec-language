@@ -106,3 +106,15 @@ Round 1 was reviewed at head 982b0235a, with `git diff origin/qsl-581d-timed-rep
 | FND-009 | fixed | The stale `#[allow(dead_code)]` and its comment are gone from `lib.rs`. |
 | FND-010 | fixed | `Fault(CheckerFault)` is a typed enum. |
 | FND-011 | fixed | The `certificate_bytes` doc now says it bounds the in-memory reading because FR-418's encoding does not exist yet (STD-493). |
+
+### Round 2
+
+Round 2 was reviewed at head 588c13b67, with `git diff 982b0235a 588c13b67`. The probes I re-ran and their results:
+- **Round-0 regression tests and probe_r1:** all rejected, as before, except the two that should now pass. The drifting-clock certificate, for both the clause and the deadlock item, is now `Accepted`, and so is a forged cycle `admitted` over the unbounded drift model, which really can repeat forever.
+- **A forged cycle certificate on non-repeatable models:** the probe moves the drifting-clock certificate onto models where the never-reset `x` must stay `<= b` (b = 3, 10, 30, 100). Each gives `WitnessFails` within 110 ms. A 10-edge budget gives `Stopped(LimitReached(CertificateMaxEdges, 10))`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-012 | fixed | `repeats` now starts from the start state's whole invariant zone and returns `true` only at a fixed point that meets the path's exact zone. This is sound. The path's exact forward zone holds only reachable valuations, and every valuation of the fixed point can delay, take the cycle and land back in the fixed point. That holds because `pre` is an exact inverse: it inverts each reset by constraining the clock to the reset value and then freeing it, it reverses the order of the resets, and it takes time-predecessors within the invariants. So a met valuation is both reachable and repeats forever. A probe that tried to make the fixed point meet the path zone only at valuations that cannot go round again found none. `a_cycle_that_leaves_a_clock_unreset_is_accepted` covers the honest case. |
+| FND-013 | fixed | The cap is gone. Each round is charged to `max_certificate_edges` and stops with `Stopped(LimitReached(CertificateMaxEdges))`, so the check always ends. The doc says termination follows from bounds that only fall, which is not a proof by itself: integer bounds could in principle keep falling. But they are integers, so no rational sequence can fall forever without settling, and the edge budget guarantees termination in any case. The probes reach the empty set in about `b` rounds. |
+| FND-014 | fixed | `IdentityMismatch { certificate, recompiled }` (both `ItemIdentity`), code `stale_dependency`, replaces `UnknownClause`. A clause the package does not list is `UnlistedClause` inside it. Covered by `an_identity_mismatch_names_both_identities`. |

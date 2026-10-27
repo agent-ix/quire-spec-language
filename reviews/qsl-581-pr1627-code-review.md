@@ -49,3 +49,30 @@ Rust lane: no `unwrap` or panic on production paths; out-of-range lookups return
 ## Coverage
 
 Methods: code-review with the rust-review lane. Gap analysis is SR-1627002. The probe tests were run in the reviewer's own worktree under locked-build, then discarded.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | high | The cycle witness is built rotated. `escape` returns `path` to the accepting edge's source `from`, but the cycle is `moves_within(edge.to → from)` followed by the accepting edge, so the cycle's first move is meant for `edge.to`'s state yet is applied at `from`'s. Under a dense source this is harmless: the accepting edge is the `z` reset, a no-step move, so `from` and `edge.to` map to the same certificate node. Under a tick source the accepting edge is the tick step, which changes state, so `certificate::admitted` follows step and part indices from the wrong model state. Reproduced: a tick subject where phase 0 enables `alpha` (no change) and `go` (to 1), and phase 1 enables only `tick` (back to 0). Both the claim and the deadlock-freedom item, which hold, are refused `ZoneCheckRefusal::Fault("divergence-witness")`. The two-phase and three-phase tick cycles where every index is 0 produce valid cycles only by coincidence of indices. Fix: start the cycle with the accepting edge, as `[edge.step] + moves_within(edge.to, from)`. Add the `alpha`/`go`/`tick` model as a regression test. | qsl-analyze/src/zone_check/divergence.rs:248-257; qsl-analyze/src/zone_check/certificate.rs:186-188 |
+
+## Dispositions
+
+Round 1, against fix commit a7fa78711 (`git diff 32411b40c a7fa78711`). At a7fa78711, the round-1 probe models were re-run as tests. Probe 1 (Zeno phase 0, `y`-clock `tock` in phase 1) gives `Cycle([tock, tock])` after `go`, which is divergent. Probe 2 (urgent phase 0, `go`/`back` with `x >= 1`) gives `Holds` with `Cycle([back, go])`. Probe 3 (tick, `work`/`go`/`tick`) gives `Cycle([tick])` after `go`. `zone_search` passes all 17 tests, and `clippy -p qsl-analyze --all-targets --all-features -D warnings` exits 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | still-open | The single-step tick case is fixed: `admitted` now follows the divergence test's tick cycle or terminal state, and the probe passes. But the tick-cycle witness is mis-built when the tick edge changes state (FND-008), so a tick proof whose cycle has more than one step can be refused as an engine fault. It closes with FND-008. |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | accepted-no-change | Per-part edges stay, because one target zone cannot cover a non-convex guard's union of successors. This is documented on `ZoneCertificate::edges` and filed on STD-493 (comment c39ad1b3), which is the right home for it. |
+| FND-007 | fixed | - |
+
+Round 2, against fix commit 34bc06f68 (`git diff a7fa78711 34bc06f68`). The cycle is now `[edge.step]` followed by `moves_within(edge.to, from)`. The probes were re-run for both the claim and the deadlock-freedom item: Zeno, urgent, single-step tick, three-phase tick, and a three-phase tick with non-zero step indices in every phase (`alpha`/`beta`). Every probe returned `Holds` with a closed cycle that starts with the `tick` edge. `a_tick_source_admits_by_a_tick` (the `alpha`/`go`/`tick` repro) fails against a7fa78711's `divergence.rs` and passes at 34bc06f68. `zone_search` passes all 17 tests, and `clippy -p qsl-analyze --all-targets --all-features -D warnings` exits 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-003 | fixed | - |
+| FND-008 | fixed | - |

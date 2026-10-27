@@ -462,6 +462,13 @@ impl<'a> ModelSystem<'a> {
         Self::over(request, selections)
     }
 
+    /// The model system's selected populations in ascending declaration-key
+    /// order. This preserves a checked clause's population ordinal when a
+    /// replay reconstructs an object-parameter binding.
+    pub fn populations(&self) -> &[qsl_semantics::model::state::StatePopulation] {
+        &self.populations
+    }
+
     /// [`Self::new`] over the one domain package `model` names, for a unit
     /// that selects several models (ADR-020 RM-1: a refinement's abstract
     /// and concrete subjects are two models of one checked package). The

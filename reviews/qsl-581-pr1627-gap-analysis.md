@@ -44,3 +44,15 @@ Spec-gap claims, checked in Linear: STD-493 holds items 1 to 4 and a comment for
 ## Coverage
 
 Method: manual AC-to-test trace over the PR diff and FR-244, FR-245 and FR-240 text. `quoin matrix` was not run, because the review is scoped to the PR.
+
+## Dispositions
+
+Round 1, against fix commit a7fa78711.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
