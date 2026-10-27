@@ -17,7 +17,7 @@ Scope: FR-281-AC-4 to FR-281-AC-7, FR-281-AC-11.
 ## Test Procedure
 
 1. Run TC-762 step 1 with a test hook that alters one member of the certificate before the checker runs.
-2. Run `analyze` over `Engines::qsl()` with the TC-762 step 1 item as an EN-1 item whose request selects partial-order reduction, then the same item unreduced. No test engine or seam is used.
+2. Run `analyze` over an engine set holding EN-1 with an EN-1 `temporal-satisfaction` invariant item (TP-1; for example `always holds(c.value <= 3)`) over a finite model whose `ModelSystem` offers partial-order reduction and sets no `max_depth` horizon, with the request selecting partial-order reduction, then the same item unreduced. No test engine or seam is used.
 3. Run `analyze` with a test engine that reports a counterexample whose replay evaluates the claim true, then with one whose counterexample names a parameter the function lacks.
 4. Run TC-762 step 1 with the engine's state budget set to 1.
 5. Over a finite model with one reachable state at which `x` is 0, run `analyze` with an EN-1 item claiming the invariant `100 / x > 0`, replay the record's counterexample, and map the outcome's category through FR-285.
