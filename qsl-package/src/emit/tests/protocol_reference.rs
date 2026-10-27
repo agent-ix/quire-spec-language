@@ -22,7 +22,7 @@ const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 /// empty `run` sequence and a `finish`.
 fn protocol(name: &str) -> String {
     format!(
-        "protocol {name} using v over (input: Boolean) on origin {{\n\
+        "protocol {name} using v over (input: M::Gadget) on origin {{\n\
          role R on M::Gadget;\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -78,7 +78,7 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
          model Config = \"example/config-version\" version \"1\" digest \
          \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
          {function}\
-         protocol Flow using v over (input: Boolean) on origin {{\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run {root}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -319,7 +319,7 @@ const REFERS_TO_FILL: &str = "function refers using v(): Boolean pure { protocol
 /// between them, so a queue is generated (FR-465).
 pub(super) fn channel_unit() -> String {
     selecting(
-        "protocol Flow using v over (input: Boolean) on origin {\n\
+        "protocol Flow using v over (input: M::Gadget) on origin {\n\
          role R on M::Gadget;\nrole S on M::Gadget;\n\
          channel C from R to S carries Boolean ordering unordered \
          delivery at-least-once capacity 4 overflow block;\n\
@@ -431,7 +431,7 @@ fn a_reference_emits_the_target_node_and_one_carrier_the_reader_admits() {
 #[test]
 fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
     let text = selecting(
-        "protocol Flow using v over (input: Boolean) on each (gadget: M::Gadget) {\n\
+        "protocol Flow using v over (input: M::Gadget) on each (gadget: M::Gadget) {\n\
          role R on M::Gadget;\n\
          role W on M::Widget;\n\
          scheduling adversarial;\n\
@@ -523,7 +523,7 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
 fn the_roles_set_does_not_follow_source_order() {
     let source = |first: &str, second: &str| {
         selecting(&format!(
-            "protocol Flow using v over (input: Boolean) on origin {{\n\
+            "protocol Flow using v over (input: M::Gadget) on origin {{\n\
              {first}\n{second}\n\
              run sequence Main {{ }}\n\
              finish End as (outcome: Boolean) {{ true }};\n\
@@ -550,7 +550,7 @@ fn the_roles_set_does_not_follow_source_order() {
 fn constructs_without_a_node_yet_refuse_naming_the_construct() {
     let flow = |extra: &str, activation: &str| {
         selecting(&format!(
-            "protocol Flow using v over (input: Boolean) {activation} {{\n\
+            "protocol Flow using v over (input: M::Gadget) {activation} {{\n\
              role R on M::Gadget;\n\
              {extra}\n\
              run sequence Main {{ }}\n\
@@ -566,7 +566,7 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
     };
     assert_eq!(
         causes(&selecting(
-            "protocol Flow using v over (input: Boolean) on origin {\n\
+            "protocol Flow using v over (input: M::Gadget) on origin {\n\
              role W on M;\n\
              run sequence Main { }\n\
              finish End as (outcome: Boolean) { true };\n\
@@ -594,7 +594,7 @@ fn a_sequences_children_follow_the_source_order() {
             .map(|name| format!("sequence {name} {{ }} "))
             .collect();
         let text = selecting(&format!(
-            "protocol Flow using v over (input: Boolean) on origin {{\n\
+            "protocol Flow using v over (input: M::Gadget) on origin {{\n\
              role R on M::Gadget;\n\
              run sequence Main {{ {body} }}\n\
              finish End as (outcome: Boolean) {{ true }};\n\

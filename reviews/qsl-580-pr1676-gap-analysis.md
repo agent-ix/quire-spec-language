@@ -41,3 +41,37 @@ Ticket: QSL-580. Head reviewed: 27a6266a4. Method: each AC checked against its t
 ## Verdict
 
 **Not mergeable.** The QSpec FR-415 Cardinality bound is not met: SR-1676001 FND-001 (high) and FND-001 here. FND-002 may be deferred if a named ticket carries it. FND-003 needs a ticket.
+
+## Dispositions, round 1 (head 75bc6c685)
+
+
+Round 1. Fix e79cd3b72; head 75bc6c685.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The stop now follows FR-415's rule: live clocks (every element's clocks plus the bounded places) exceeding `max_clocks`. Tested at 3, 4, 5 and 7. The listing gap that remains is SR-1676001 FND-001. |
+| FND-002 | fixed | EN-6 settles `incomplete` `limit-reached` with `ModelCheckLimit::MaxClocks`, named `max_clocks` / `model_check.max_clocks`, with its value. `ZoneCertificateRequest` and `TimedReplay` carry `max_clocks`, and `NonZeroU64` makes 0 unrepresentable. |
+| FND-003 | fixed | Ghost-unit refusals at `TypeDefinition.target` and `.items`, used or not. Alias and sequence are admitted as parameter and result types. `ix://quire/unit/<package>/<name>` reads. All tested in clock_places. |
+
+**FR-415-AC-13 and the request reader.** No request reader of `limits.max_clocks` exists in this repo, and none exists for any other zone limit (`max_zone_bytes` and the rest are typed parameters too). So the AC's request-schema half belongs to whichever intake builds FR-368's `limits`. Everything this repo owns is met:
+- the bound is a parameter that reaches EN-6, the checker and replay;
+- 2048 raises it;
+- 0 cannot be expressed;
+- the stop settles `limit-reached` naming the setting.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: 'if self.live_clocks(state) > self.max_clocks.get() { return Err(TimedStop::MaxClocks { max_clocks: self.max_clocks.get() }); }'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'TimedStop::MaxClocks { max_clocks } => self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxClocks(max_clocks)))'
+- fnd: FND-003
+  outcome: fixed
+  after_excerpt: 'an alias target or sequence items naming no unit refuses at the type definition, used or not.'
+```
+
++++
