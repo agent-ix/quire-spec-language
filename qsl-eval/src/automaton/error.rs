@@ -71,9 +71,10 @@ pub enum AutomatonError {
     /// The construction needs more automaton clocks than it builds: each
     /// interval operator started at many positions takes two clocks per
     /// copy, and its copies grow with `a / (b - a)`.
-    #[error("the claim automaton needs {clocks} clocks, above its limit of {limit}")]
+    #[error("the claim automaton needs at least {clocks} clocks, above its limit of {limit}")]
     ClockLimit {
-        /// The clocks the construction needs.
+        /// The clocks the construction needs, or, for an interval refused
+        /// before its copies are counted, a lower bound on them, saturated.
         clocks: usize,
         /// The limit.
         limit: usize,

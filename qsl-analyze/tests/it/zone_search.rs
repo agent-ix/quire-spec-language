@@ -1531,6 +1531,36 @@ fn a_nested_window_is_read_by_the_timed_claim_automaton() {
     );
 }
 
+/// FR-242: a claim needing more automaton clocks than the construction
+/// builds (`[32 ms, 33 ms]` started at many positions takes 130) is no
+/// form EN-6 decides, and the FR-245 checker refuses it alike, as an
+/// unsupported item.
+#[trace("TC-697")]
+#[test]
+fn a_claim_past_the_clock_limit_is_refused_alike() {
+    let wide = going_late(2, "eventually always[32 ms, 33 ms] holds(c.late)");
+    assert_eq!(
+        request(&wide).unwrap_err(),
+        ZoneCheckRefusal::UnsupportedForm
+    );
+    // A certificate of another claim, renamed to the wide claim's
+    // obligation so that the checker rebuilds its automaton.
+    let mut certificate = proved(claim(
+        &going_late(2, "eventually always holds(c.late)"),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    certificate.obligation = ItemObligation {
+        subject: SUBJECT,
+        kind: ObligationKind::Authored(claim_occurrence(&wide)),
+    };
+    let checked = check(&wide, &certificate, CertificateCheckLimits::default());
+    assert!(
+        matches!(checked, Err(ZoneCertificateRefusal::UnsupportedItem)),
+        "{checked:?}"
+    );
+}
+
 /// [`going_late`] with a free `ping` that changes nothing.
 fn going_late_with_pings(deadline: u32, body: &str) -> World {
     windowed(

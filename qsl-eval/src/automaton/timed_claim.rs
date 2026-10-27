@@ -607,14 +607,18 @@ fn spread(window: &TimedInterval) -> Result<usize, AutomatonError> {
             invariant: "timed-claim-rational-denominator",
         })?;
     let (floor, remainder) = ratio.numerator().div_mod_floor(denominator);
-    let limit = AutomatonError::ClockLimit {
-        clocks: usize::MAX,
-        limit: MAX_CLOCKS,
-    };
-    let floor = usize::try_from(floor.to_u64().ok_or(limit)?).map_err(|_| limit)?;
-    // Each block takes two clocks: past the limit, refuse before counting.
+    // At least `floor` blocks of two clocks each: past the limit, refuse
+    // before counting, naming that lower bound (saturated when `floor`
+    // does not fit a `usize`).
+    let floor = floor
+        .to_u64()
+        .and_then(|floor| usize::try_from(floor).ok())
+        .unwrap_or(usize::MAX);
     if floor > MAX_CLOCKS {
-        return Err(limit);
+        return Err(AutomatonError::ClockLimit {
+            clocks: floor.saturating_mul(2),
+            limit: MAX_CLOCKS,
+        });
     }
     let strict = window.lower_closed() || window.upper_closed();
     Ok(if strict && remainder.is_zero() {

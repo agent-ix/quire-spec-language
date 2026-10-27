@@ -262,9 +262,10 @@ pub enum ZoneCheckOutcome<S> {
 /// Why EN-6 does not take the request.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ZoneCheckRefusal {
-    /// The clause is of no profile EN-6 reads, or a TT-2 window's negation
+    /// The clause is of no profile EN-6 reads, a TT-2 window's negation
     /// starts a punctual interval at many positions, which no timed
-    /// automaton reads (FR-242; Alur and Dill, 1994).
+    /// automaton reads (FR-242; Alur and Dill, 1994), or its claim
+    /// automaton needs more clocks than the construction builds.
     #[error("the clause is of no form EN-6 decides")]
     UnsupportedForm,
     /// The subject has an unbounded population root (FR-239, FR-126):
@@ -417,14 +418,15 @@ pub fn check_timed_model<S: Clone>(
                 // interval through FR-242's timed claim automaton (TT-3,
                 // TT-4, and a TT-2 window nesting one interval operator
                 // under another). A punctual interval started at many
-                // positions has no timed automaton; a claim needing more
-                // clocks than the construction builds is refused by name.
+                // positions has no timed automaton, and a claim needing
+                // more clocks than the construction builds is no form EN-6
+                // decides: both are `UnsupportedForm`, as the FR-245
+                // checker reads them (`UnsupportedItem`).
                 let automaton = position_automaton(clause, request.limits.max_automaton_states)
                     .map_err(|error| match error {
                         AutomatonError::ProfileNotTranslated { .. }
-                        | AutomatonError::RepeatedPunctualInterval => {
-                            ZoneCheckRefusal::UnsupportedForm
-                        }
+                        | AutomatonError::RepeatedPunctualInterval
+                        | AutomatonError::ClockLimit { .. } => ZoneCheckRefusal::UnsupportedForm,
                         other => ZoneCheckRefusal::Automaton(other),
                     })?;
                 live = Some(automaton);
