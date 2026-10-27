@@ -56,11 +56,19 @@ domain value. Read domains through `ModelSystem::domains`, successors through
    `u: U` (union `U { a, b(Boolean) }`) as fields, each granted by a frame, one
    at a time. Call `explore_model` and `sample_model`.
 
-5. In a separate model grant `sc: Sequence<Cfg>[0, 2]`, `st: Sequence<Tick>[0, 3]`
-   (`Tick { x: Clock }`), `sk: Sequence<Clock>[0, 3]`, `sr: Sequence<Timer>[0, 2]`;
-   then, one at a time, `Reference<Clock>`, `Sequence<Reference<Clock>>[0, 1]`,
-   `Sequence<Open>[0, 1]` and `Sequence<Cfg>` with no maximum. Read domains; call
-   `explore_model` and `sample_model` for the negatives.
+5. In a separate model declare `time dense unit ms`, the types `Cfg` and `Open`
+   of steps 1 and 4, `Tick { x: Clock }` and `Timer { x: Clock, n: Int[0, 3] }`,
+   and grant `sc: Sequence<Cfg>[0, 2]`, `st: Sequence<Tick>[0, 3]`,
+   `sk: Sequence<Clock>[0, 3]`, `so: Sequence<Option<Clock>>[0, 3]`,
+   `sr21: Sequence<Timer>[0, 2]`, `sr85: Sequence<Timer>[0, 3]`,
+   `Set<Cfg>[0, 1]`, `Set<Cfg>[0, 2]`, `Bag<Cfg>[0, 2]` and
+   `Set<Clock>[0, 2]`, each in its own field. Read each domain and its order.
+   Expand a state whose `sr21` is `[ {x: 5 ms, n: 1} ]` and one whose `sr21` is
+   empty, with `put` granting `sr21` and no clause.
+6. In further models grant, one at a time, `Reference<Clock>`,
+   `Sequence<Reference<Clock>>[0, 1]`, `Sequence<Open>[0, 1]`, `Sequence<Cfg>`,
+   `Set<Cfg>` (the last two with no maximum) and `Map<Boolean, Boolean>[0, 1]`.
+   Call `explore_model` and `sample_model`.
 
 Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
 
@@ -85,12 +93,16 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   `explore_model` returns `NotSimulated::RequiresBound` and `sample_model`
   `ModelSampleError::NotSimulated(RequiresBound)`, each naming that field's
   `WireNodeId`, with no state expanded. `tm`'s clock does not make it bounded.
-- Step 5 (FR-120-AC-26): `sc: Sequence<Cfg>[0, 2]` has 43 values, ordered by
-  length, then lexicographically with the first element most significant;
-  `Sequence<Tick>[0, 3]` and `Sequence<Clock>[0, 3]` have 4 values each;
-  `Sequence<Timer>[0, 2]` has 21 and `Sequence<Timer>[0, 3]` has 85; no
-  unbounded root and no candidate ranges over a clock slot. Negative: a
-  `Reference<Clock>` field, `Sequence<Reference<Clock>>[0, 1]`,
-  `Sequence<Open>[0, 1]` and `Sequence<Cfg>` with no declared maximum are
-  unbounded roots and `explore_model`/`sample_model` return `RequiresBound`
-  naming the field's `WireNodeId`.
+- Step 5 (FR-120-AC-26): `sc` has 43 values, by length and then
+  lexicographically with the first element most significant; `st`, `sk` and `so`
+  have 4 each; `sr21` has 21 and `sr85` has 85, ordered by length and then by
+  `n`, `x` adding no factor; `Set<Cfg>[0, 1]` 7, `Set<Cfg>[0, 2]` 22,
+  `Bag<Cfg>[0, 2]` 28, `Set<Clock>[0, 2]` 2. No unbounded root and no
+  candidate ranges over a clock slot. From `[ {x: 5 ms, n: 1} ]`, a length-2
+  candidate holds `x` 5 ms in slot 0 and 0 ms in slot 1, and a length-0
+  candidate holds none; from the empty pre-state both slots of a length-2
+  candidate are 0 ms.
+- Step 6 (negative): each field is an unbounded root and `explore_model`
+  returns `NotSimulated::RequiresBound` and `sample_model`
+  `ModelSampleError::NotSimulated(RequiresBound)`, naming the field's
+  `WireNodeId`, with no state expanded.
