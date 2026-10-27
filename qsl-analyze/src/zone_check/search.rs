@@ -124,6 +124,9 @@ pub enum ZoneCheckLimit {
     MaxAutomatonStates(u64),
     /// `max_zone_bytes`.
     MaxZoneBytes(u64),
+    /// The timed subject's `max_clocks` (QSpec FR-415 "Cardinality bound"):
+    /// a state's live clocks exceed it.
+    MaxClocks(u64),
 }
 
 /// Why a run stopped with no verdict.
@@ -658,7 +661,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     }
 
     pub(super) fn timed<T>(&self, result: Result<T, TimedStop>) -> Result<T, Halt> {
-        result.map_err(|stop| self.undecided(ZoneUndecided::UndecidedSuccessor(stop)))
+        result.map_err(|stop| match stop {
+            TimedStop::MaxClocks { max_clocks } => self.stop(ZoneStop::LimitReached(
+                ZoneCheckLimit::MaxClocks(max_clocks),
+            )),
+            stop => self.undecided(ZoneUndecided::UndecidedSuccessor(stop)),
+        })
     }
 
     pub(super) fn scaled(&self, value: &Rational) -> BigInt {

@@ -171,7 +171,7 @@ compiler produces it and CG reads it in counterexamples; it serializes as
   step, and SHALL enumerate it for every record type whose fields all have
   finite domains, so no bounded record type is refused as one it cannot
   enumerate. A record type with a field whose type has no finite domain by
-  this rule (`Integer`, `Text` or a collection with no declared maximum, for
+  this rule (`Integer`, `Text` or a collection with no declared maximum other than `Set<Clock>`, for
   example) is an unbounded root: the pre-check above returns `RequiresBound` naming the
   binder, the record type and the unbounded field, before any state is
   explored.

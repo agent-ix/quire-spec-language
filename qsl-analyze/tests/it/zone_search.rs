@@ -931,6 +931,7 @@ pub(crate) fn check(
         ZoneCertificateRequest {
             simulation: world.request(),
             model: "M",
+            max_clocks: qsl_eval::simulation::model::DEFAULT_MAX_CLOCKS,
             item,
         },
         &certificate.obligation,

@@ -35,7 +35,7 @@ use qsl_forms::{
 use qsl_foundation::Span;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, Rational, ValueType};
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 pub use self::collection_write::{CollectionWrite, Written};
 use super::assemble::TimedDeclaration;
@@ -79,6 +79,9 @@ pub struct ClockField {
     field: DeclarationKey,
     path: Vec<PlaceStep>,
     name: String,
+    /// The clock aliases the clock is typed by, each alias of an alias on
+    /// the chain.
+    aliases: Vec<DeclarationKey>,
 }
 
 impl ClockField {
@@ -200,6 +203,17 @@ impl ClockOp {
     }
 }
 
+/// The slot of a clock collection a guard part reads: one held slot, or
+/// the template slot of a [`QuantifiedFamily`], which the reading
+/// instantiates at each slot the collection holds.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SlotRef {
+    /// The slot at this index.
+    Held(u64),
+    /// Every held slot in turn.
+    Family,
+}
+
 /// An atomic clock constraint `x ~ c` over the clock `x` of `self`, or of
 /// the object `self` reaches through the reference fields `via`, its bound
 /// exact in the model's unit (FR-230 `ClockConstraint`).
@@ -207,7 +221,7 @@ impl ClockOp {
 pub struct ClockConstraint {
     clock: ClockId,
     via: Vec<PlaceStep>,
-    slots: Vec<u64>,
+    slots: Vec<SlotRef>,
     op: ClockOp,
     bound: Rational,
     span: Span,
@@ -229,8 +243,9 @@ impl ClockConstraint {
 
     /// The slot of each collection on the clock's path, outermost first:
     /// none outside collections; `[j]` for the clock of slot `j` of a
-    /// quantified collection (FR-230 "Quantified reads").
-    pub fn slots(&self) -> &[u64] {
+    /// quantified collection (FR-230 "Quantified reads"), or the template
+    /// slot of a family.
+    pub fn slots(&self) -> &[SlotRef] {
         &self.slots
     }
 
@@ -279,19 +294,21 @@ impl StatePredicate for CheckedTimedPredicate {
 
 /// An element of a clock collection a guard part's data predicate reads
 /// (FR-230 "Quantified reads"): the quantifier's binder for one slot,
-/// bound to the element the receiver's collection field holds at the slot.
+/// bound to the element the receiver's collection holds at the slot. The
+/// collection is a field of the receiver or a collection below a record
+/// field of it, named by its path of field names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElementBinding {
     name: String,
-    field: String,
-    slot: u64,
+    path: Vec<String>,
+    slot: SlotRef,
 }
 
 impl ElementBinding {
-    /// The element the receiver's collection field `field` holds at
-    /// `slot`, read by the parameter `name`.
-    pub fn new(name: String, field: String, slot: u64) -> Self {
-        Self { name, field, slot }
+    /// The element the receiver's collection at `path` holds at `slot`,
+    /// read by the parameter `name`.
+    pub fn new(name: String, path: Vec<String>, slot: SlotRef) -> Self {
+        Self { name, path, slot }
     }
 
     /// The parameter name the data predicate reads the element by.
@@ -299,13 +316,13 @@ impl ElementBinding {
         &self.name
     }
 
-    /// The receiver's collection field.
-    pub fn field(&self) -> &str {
-        &self.field
+    /// The path of field names from the receiver to the collection.
+    pub fn path(&self) -> &[String] {
+        &self.path
     }
 
     /// The slot.
-    pub fn slot(&self) -> u64 {
+    pub fn slot(&self) -> SlotRef {
         self.slot
     }
 }
@@ -317,6 +334,39 @@ pub struct ConvexPart {
     data: Option<CheckedTimedPredicate>,
     elements: Vec<ElementBinding>,
     clocks: Vec<ClockConstraint>,
+    families: Vec<QuantifiedFamily>,
+}
+
+/// A quantifier over a clock collection with no declared maximum, read as
+/// the family of its entries indexed by size (FR-230 "Quantified reads"):
+/// at a state whose collection holds `n` elements, either every slot below
+/// `n` enables one of [`Self::parts`] (`each`), or some slot below `n` does.
+/// The parts are templates whose element bindings and clock constraints
+/// name [`SlotRef::Family`], read at each slot in turn.
+#[derive(Debug)]
+pub struct QuantifiedFamily {
+    path: Vec<String>,
+    each: bool,
+    parts: Vec<ConvexPart>,
+}
+
+impl QuantifiedFamily {
+    /// The path of field names from the receiver to the collection the
+    /// quantifier ranges over.
+    pub fn path(&self) -> &[String] {
+        &self.path
+    }
+
+    /// Whether every held slot must enable a part (a `forall` read
+    /// positively, an `exists` negated), rather than some slot.
+    pub fn each(&self) -> bool {
+        self.each
+    }
+
+    /// The template parts of the body at one slot.
+    pub fn parts(&self) -> &[ConvexPart] {
+        &self.parts
+    }
 }
 
 impl ConvexPart {
@@ -335,6 +385,11 @@ impl ConvexPart {
     /// The part's clock constraints, in source order.
     pub fn clocks(&self) -> &[ClockConstraint] {
         &self.clocks
+    }
+
+    /// The quantifier families the part conjoins, each read at the state.
+    pub fn families(&self) -> &[QuantifiedFamily] {
+        &self.families
     }
 }
 
@@ -382,15 +437,15 @@ pub struct ClockReset {
 /// value.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SlotSelection {
-    field: String,
+    path: Vec<String>,
     name: String,
     predicate: Option<CheckedTimedPredicate>,
 }
 
 impl SlotSelection {
-    /// The receiver's collection field.
-    pub fn field(&self) -> &str {
-        &self.field
+    /// The path of field names from the receiver to the collection.
+    pub fn path(&self) -> &[String] {
+        &self.path
     }
 
     /// The parameter name the predicate reads the element by, after
@@ -605,6 +660,19 @@ struct PartDraft {
     /// Each element the data predicate reads, with its quantifier's span.
     elements: Vec<(ElementBinding, Span)>,
     clocks: Vec<ClockConstraint>,
+    /// Each quantifier family the part conjoins: its field, whether every
+    /// slot must enable a part, and its template parts.
+    families: Vec<(Vec<String>, bool, Vec<PartDraft>)>,
+}
+
+/// An unbounded quantifier's body read at [`SlotRef::Family`]:
+/// the family of its entries indexed by size (FR-230 "Quantified reads").
+#[derive(Debug)]
+struct FamilyDraft {
+    forall: bool,
+    path: Vec<String>,
+    positive: Dnf,
+    negative: Dnf,
 }
 
 /// A predicate over the model's state object, before it is typed.
@@ -651,7 +719,7 @@ struct ResetDraft {
     span: Span,
     /// The collection field, the element's parameter name and the data
     /// predicate over it, of a reset by selection.
-    selection: Option<(String, String, Option<ExpressionForm>)>,
+    selection: Option<(Vec<String>, String, Option<ExpressionForm>)>,
 }
 
 impl ResetDraft {
@@ -1152,13 +1220,16 @@ enum DataLiteral {
     /// renamed to the element binding's name.
     /// The span is the quantifier's.
     Element(std::rc::Rc<ExpressionForm>, ElementBinding, Span),
+    /// A quantifier over a collection with no declared maximum, read as the
+    /// family of its entries indexed by size: it holds or fails at a state.
+    Family(std::rc::Rc<FamilyDraft>),
 }
 
 impl DataLiteral {
     /// The literal's own form, `None` for a node of the clause.
     fn form(&self) -> Option<&ExpressionForm> {
         match self {
-            Self::Site(_) => None,
+            Self::Site(_) | Self::Family(_) => None,
             Self::Formed(form) | Self::Element(form, ..) => Some(form),
         }
     }
@@ -1174,6 +1245,7 @@ impl PartialEq for DataLiteral {
             (Self::Element(left, left_binding, _), Self::Element(right, right_binding, _)) => {
                 left_binding == right_binding && left.expression == right.expression
             }
+            (Self::Family(left), Self::Family(right)) => std::rc::Rc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -1433,6 +1505,8 @@ fn part_predicate(
             let cut = match &literal {
                 DataLiteral::Site(id) => located.form.cut(*id, &BTreeMap::new())?,
                 DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => (**form).clone(),
+                // A family is read at the state, not by the data predicate.
+                DataLiteral::Family(_) => return None,
             };
             if positive {
                 Some(cut)
@@ -1442,6 +1516,61 @@ fn part_predicate(
         })
         .collect::<Option<Vec<_>>>()?;
     ExpressionForm::conjunction(operands)
+}
+
+/// The guard part `literals` and `clocks` state: its data predicate, the
+/// elements it reads, and each quantifier family it conjoins, read with the
+/// template parts of the polarity it takes.
+fn draft_part(
+    located: &Located<'_>,
+    literals: Vec<(DataLiteral, bool)>,
+    clocks: Vec<ClockConstraint>,
+) -> Result<PartDraft, CheckCause> {
+    let (families, literals): (Vec<_>, Vec<_>) = literals
+        .into_iter()
+        .partition(|(literal, _)| matches!(literal, DataLiteral::Family(_)));
+    let data = if literals.is_empty() {
+        None
+    } else {
+        Some(
+            part_predicate(located, &literals)
+                .ok_or_else(|| timed(located.outside(located.root())))?,
+        )
+    };
+    let mut elements: Vec<(ElementBinding, Span)> = Vec::new();
+    for (literal, _) in &literals {
+        if let DataLiteral::Element(_, binding, span) = literal {
+            if !elements.iter().any(|(held, _)| held == binding) {
+                elements.push((binding.clone(), *span));
+            }
+        }
+    }
+    elements.sort_by_key(|(binding, _)| binding.slot);
+    let families = families
+        .into_iter()
+        .filter_map(|(literal, positive)| match literal {
+            DataLiteral::Family(family) => Some((family, positive)),
+            _ => None,
+        })
+        .map(|(family, positive)| {
+            let template = if positive {
+                &family.positive
+            } else {
+                &family.negative
+            };
+            let parts = template
+                .iter()
+                .map(|(literals, clocks)| draft_part(located, literals.clone(), clocks.clone()))
+                .collect::<Result<Vec<_>, CheckCause>>()?;
+            Ok((family.path.clone(), family.forall == positive, parts))
+        })
+        .collect::<Result<Vec<_>, CheckCause>>()?;
+    Ok(PartDraft {
+        data,
+        elements,
+        clocks,
+        families,
+    })
 }
 
 /// What one state clause contributes to its operation's timing.
@@ -1802,30 +1931,7 @@ fn read_clause(
             let (dnf, polarity) = guard(&located, clocks, clause.context, budget)?;
             let parts = dnf
                 .into_iter()
-                .map(|(literals, clocks)| {
-                    let data = if literals.is_empty() {
-                        None
-                    } else {
-                        Some(
-                            part_predicate(&located, &literals)
-                                .ok_or_else(|| timed(located.outside(root)))?,
-                        )
-                    };
-                    let mut elements: Vec<(ElementBinding, Span)> = Vec::new();
-                    for (literal, _) in &literals {
-                        if let DataLiteral::Element(_, binding, span) = literal {
-                            if !elements.iter().any(|(held, _)| held == binding) {
-                                elements.push((binding.clone(), *span));
-                            }
-                        }
-                    }
-                    elements.sort_by_key(|(binding, _)| binding.slot);
-                    Ok(PartDraft {
-                        data,
-                        elements,
-                        clocks,
-                    })
-                })
+                .map(|(literals, clocks)| draft_part(&located, literals, clocks))
                 .collect::<Result<Vec<_>, CheckCause>>()?;
             let leaves = polarity
                 .into_iter()
@@ -1952,6 +2058,80 @@ fn time_invariant(
     })
 }
 
+/// The time invariants the package's `max` constraints on clocks state
+/// (FR-230 "Clock constraints on a type"): for each constraint and each
+/// object type holding a clock it bounds, `true` with the bound `x <= c` on
+/// each such clock, read at every live place of it (each held slot of a
+/// collection, a present optional member). A constraint on a clock alias
+/// bounds the clocks typed by the alias; one on `ix://quire/native/Clock`
+/// every clock of the model.
+///
+/// # Errors
+///
+/// `time-invariant-shape` for a `min` constraint, which no conjunction of
+/// upper bounds states.
+fn clock_bounds(
+    model: &AdmittedModel,
+    clocks: &Clocks<'_>,
+    inputs: &Inputs<'_>,
+    span: Span,
+) -> Result<Vec<InvariantDraft>, CheckCause> {
+    let mut drafts = Vec::new();
+    for bound in model.clock_bounds() {
+        if !bound.upper {
+            return Err(timed(TemporalCause::TimeInvariantShape { span }));
+        }
+        let mut by_owner: BTreeMap<EffectiveId, Vec<ClockConstraint>> = BTreeMap::new();
+        for (index, field) in clocks.fields.iter().enumerate() {
+            if bound
+                .alias
+                .as_ref()
+                .is_some_and(|alias| !field.aliases.contains(alias))
+            {
+                continue;
+            }
+            let slots = field
+                .path
+                .iter()
+                .filter(|step| matches!(step, PlaceStep::Slot(_)))
+                .map(|_| SlotRef::Family)
+                .collect();
+            by_owner
+                .entry(field.owner)
+                .or_default()
+                .push(ClockConstraint {
+                    clock: ClockId(index),
+                    via: Vec::new(),
+                    slots,
+                    op: ClockOp::LessOrEqual,
+                    bound: bound.value.clone(),
+                    span,
+                });
+        }
+        for (owner, bounds) in by_owner {
+            let population = population_of(inputs.models, owner, inputs.types).map_err(|_| {
+                timed(TemporalCause::TimedStateObject {
+                    ambiguous: true,
+                    span,
+                })
+            })?;
+            let expression = qsl_forms::Expression::boolean(true);
+            let spans = qsl_forms::ExpressionSpans::at_point(&expression, span.start)
+                .map_err(|_| timed(TemporalCause::TimeInvariantShape { span }))?;
+            drafts.push(InvariantDraft {
+                name: bound.key.node.clone(),
+                predicate: PredicateDraft {
+                    context: owner,
+                    population,
+                    predicate: ExpressionForm { expression, spans },
+                },
+                bounds,
+            });
+        }
+    }
+    Ok(drafts)
+}
+
 fn urgency(
     form: &UrgentForm,
     model: &AdmittedModel,
@@ -2061,6 +2241,7 @@ fn prepare_models(
                 field: place.field.clone(),
                 name: place.name(),
                 path: place.path.clone(),
+                aliases: place.aliases.clone(),
             })
             .collect();
         let target = source_of(model)
@@ -2080,8 +2261,11 @@ fn prepare_models(
     // clause reads it.
     for model in inputs.models {
         let clocks = clocks_of(model);
-        let Some(field) = clocks.fields.first() else {
-            continue;
+        // A clock, or a bound on clocks (FR-230-AC-25), needs dense time.
+        let field = match (clocks.fields.first(), model.clock_bounds().next()) {
+            (Some(field), _) => field.name.clone(),
+            (None, Some(bound)) => bound.key.node.clone(),
+            (None, None) => continue,
         };
         let span = match source_of(model) {
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
@@ -2118,10 +2302,7 @@ fn prepare_models(
                 }),
         };
         if let Some(span) = span {
-            return Err(timed(TemporalCause::ClockWithoutDenseTime {
-                field: field.name.clone(),
-                span,
-            }));
+            return Err(timed(TemporalCause::ClockWithoutDenseTime { field, span }));
         }
     }
     let declarations: Vec<&TimedDeclaration> = inputs
@@ -2228,6 +2409,7 @@ fn prepare_models(
                 TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
             }
         }
+        invariants.extend(clock_bounds(model, &clocks, inputs, source.span)?);
         let dimensions = model
             .object_types()
             .map(|(_, object)| {
@@ -2266,24 +2448,41 @@ pub(crate) struct Checking<'d, 'a> {
 fn element_type(
     checking: &Checking<'_, '_>,
     context: EffectiveId,
-    field: &str,
+    path: &[String],
     span: Span,
 ) -> Result<ValueType, CheckRefusal> {
-    checking
-        .declarations
-        .scope
-        .types()
-        .attribute(context, field)
-        .and_then(|attribute| match attribute.field().value_type() {
-            ValueType::Collection(collection) => Some(collection.element().clone()),
-            _ => None,
+    let not_checked = || {
+        refusal(CheckCause::TimedNotChecked {
+            construct: TimedConstruct::Clock,
+            span,
         })
-        .ok_or_else(|| {
-            refusal(CheckCause::TimedNotChecked {
-                construct: TimedConstruct::Clock,
-                span,
-            })
-        })
+    };
+    let types = checking.declarations.scope.types();
+    let (first, below) = path.split_first().ok_or_else(not_checked)?;
+    let mut value_type = types
+        .attribute(context, first)
+        .map(|attribute| attribute.field().value_type().clone())
+        .ok_or_else(not_checked)?;
+    // Each record field on the way to the collection.
+    for name in below {
+        let ValueType::Composite(key) = &value_type else {
+            return Err(not_checked());
+        };
+        let Some(CompositeShape::Record(fields)) =
+            types.composite(*key).map(|declaration| declaration.shape())
+        else {
+            return Err(not_checked());
+        };
+        value_type = fields
+            .iter()
+            .find(|field| field.name() == name)
+            .map(|field| field.value_type().clone())
+            .ok_or_else(not_checked)?;
+    }
+    match &value_type {
+        ValueType::Collection(collection) => Ok(collection.element().clone()),
+        _ => Err(not_checked()),
+    }
 }
 
 /// One predicate typed by the clause checker, its refusal located in its
@@ -2343,6 +2542,68 @@ fn state_view<'v>(draft: &'v PredicateDraft, complete_value: bool) -> ClauseView
 ///
 /// The clause checker's refusal of a predicate, located at the node it
 /// names.
+/// The guard part `part` of the precondition `clause` with its data
+/// predicate typed, each element it reads typed as an element of the
+/// receiver's collection field, and its families' template parts typed
+/// alike.
+fn check_part(
+    part: PartDraft,
+    clause: &StateClauseDeclaration,
+    operation: &ClauseOperation,
+    checking: &Checking<'_, '_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+    nodes_used: &mut u64,
+) -> Result<ConvexPart, CheckRefusal> {
+    let binders = part
+        .elements
+        .iter()
+        .map(|(binding, span)| {
+            let element = element_type(checking, clause.context, &binding.path, *span)?;
+            Ok((binding.name.clone(), element))
+        })
+        .collect::<Result<Vec<_>, CheckRefusal>>()?;
+    let data = match &part.data {
+        None => None,
+        Some(form) => {
+            let view = ClauseView {
+                kind: StateClauseKind::Precondition,
+                complete_value: super::state_clause::is_complete_value(&clause.selection),
+                context: Some(clause.context),
+                receiver: Some(("self", ValueType::Reference(clause.context))),
+                operation: Some(operation),
+                context_population: clause.context_population,
+                frame_population: clause.frame_population,
+                binders: &binders,
+                body: &form.expression,
+            };
+            let (predicate, used) = typed(&view, form, checking, cx)?;
+            *nodes_used = (*nodes_used).max(used);
+            Some(predicate)
+        }
+    };
+    let families = part
+        .families
+        .into_iter()
+        .map(|(path, each, parts)| {
+            let parts = parts
+                .into_iter()
+                .map(|part| check_part(part, clause, operation, checking, cx, nodes_used))
+                .collect::<Result<Vec<_>, CheckRefusal>>()?;
+            Ok(QuantifiedFamily { path, each, parts })
+        })
+        .collect::<Result<Vec<_>, CheckRefusal>>()?;
+    Ok(ConvexPart {
+        data,
+        elements: part
+            .elements
+            .into_iter()
+            .map(|(binding, _)| binding)
+            .collect(),
+        clocks: part.clocks,
+        families,
+    })
+}
+
 pub(crate) fn check(
     drafts: TimedDrafts,
     checking: &Checking<'_, '_>,
@@ -2361,47 +2622,14 @@ pub(crate) fn check(
             };
             let mut checked = Vec::with_capacity(parts.len());
             for part in parts {
-                // Each element a part reads, typed as an element of the
-                // receiver's collection field.
-                let binders = part
-                    .elements
-                    .iter()
-                    .map(|(binding, span)| {
-                        let element =
-                            element_type(checking, clause.context, &binding.field, *span)?;
-                        Ok((binding.name.clone(), element))
-                    })
-                    .collect::<Result<Vec<_>, CheckRefusal>>()?;
-                let data = match &part.data {
-                    None => None,
-                    Some(form) => {
-                        let view = ClauseView {
-                            kind: StateClauseKind::Precondition,
-                            complete_value: super::state_clause::is_complete_value(
-                                &clause.selection,
-                            ),
-                            context: Some(clause.context),
-                            receiver: Some(("self", ValueType::Reference(clause.context))),
-                            operation: Some(operation),
-                            context_population: clause.context_population,
-                            frame_population: clause.frame_population,
-                            binders: &binders,
-                            body: &form.expression,
-                        };
-                        let (predicate, used) = typed(&view, form, checking, cx)?;
-                        nodes_used = nodes_used.max(used);
-                        Some(predicate)
-                    }
-                };
-                checked.push(ConvexPart {
-                    data,
-                    elements: part
-                        .elements
-                        .into_iter()
-                        .map(|(binding, _)| binding)
-                        .collect(),
-                    clocks: part.clocks,
-                });
+                checked.push(check_part(
+                    part,
+                    clause,
+                    operation,
+                    checking,
+                    cx,
+                    &mut nodes_used,
+                )?);
             }
             guards.push(ClockGuard {
                 clause: clause.name.clone(),
@@ -2453,12 +2681,12 @@ pub(crate) fn check(
             for reset in written.resets {
                 let selection = match reset.selection {
                     None => None,
-                    Some((field, name, predicate)) => {
+                    Some((path, name, predicate)) => {
                         let predicate = match predicate {
                             None => None,
                             Some(form) => {
                                 let element =
-                                    element_type(checking, written.context, &field, reset.span)?;
+                                    element_type(checking, written.context, &path, reset.span)?;
                                 let binders = [(name.clone(), element)];
                                 let view = ClauseView {
                                     kind: StateClauseKind::Precondition,
@@ -2477,7 +2705,7 @@ pub(crate) fn check(
                             }
                         };
                         Some(SlotSelection {
-                            field,
+                            path,
                             name,
                             predicate,
                         })

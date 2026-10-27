@@ -184,6 +184,9 @@ pub(super) fn exports<'a>(
                 continue;
             }
             DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::SequenceType(_)
+            | DomainPackageRecord::AliasType(_)
+            | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::EventType(_)
             | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::Process(_)

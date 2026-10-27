@@ -403,8 +403,9 @@ every integer in the range; `Option<T>`, absent then each value of `T`;
 `Reference<T>`, each object of the state, or of the post-state for a field
 or result, whose most-specific type conforms to `T`; a sequence with a
 declared maximum `N`, every sequence of length 0 to `N` over its element
-domain. The rules below add the enum, the record and the tuple to that list;
-FR-120-AC-22 to FR-120-AC-25 pin them.
+domain. The rules below add the enum, the record, the tuple, the set, the bag and the
+sequence of a finite or clock element to that list; FR-120-AC-22 to
+FR-120-AC-26 pin them.
 
 - An enum SHALL be a finite domain, each member in declaration order, as a
   bare operation parameter, result or granted field and as a component.
@@ -431,16 +432,70 @@ FR-120-AC-22 to FR-120-AC-25 pin them.
   no clock value).
 - A record or tuple with any non-clock component whose type has no finite domain
   by these rules SHALL be an unbounded domain in `domains()`, and so SHALL a
-  union, a `Reference<Clock>` (data that names a clock place), a collection of
-  clocks or of a clock-bearing type (`Sequence<Clock>`, `Sequence<Timer>`,
-  FR-230's slot provenance), and every other type that this section's list does
-  not name: `Integer` with no range, a collection with no declared maximum, a
-  decimal, a quantity, a UUID or a Timestamp, for example. This is the
-  narrowest reading where FR-230 does not say what a candidate holds for a
-  clock slot or a union.
+  union, a `Reference<Clock>` (data that names a clock place, not a clock
+  place itself, so it is not covered by the clock-place rule), and every other
+  type that this section's list does not name: `Integer` with no range, a
+  collection with no declared maximum other than `Set<Clock>`, a `Map` (it needs its own ruling for
+  its key domain), an ordered set, a decimal, a quantity, a UUID or a Timestamp,
+  for example. This is the narrowest reading where FR-230 does not say what a
+  candidate holds for a union, for a `Reference<Clock>`, for a map or for an
+  ordered set.
+- A `Sequence<E>`, `Set<E>` or `Bag<E>` with a declared maximum `N` SHALL be a
+  finite value domain when `E` is a finite value domain by these rules or is a
+  clock place (`Clock`, an alias of `Clock`, or `Option<Clock>`). A record or
+  tuple `E` with no non-clock component is finite by the record rule. Let `p`
+  be the size of `E`'s non-clock domain: the product of the non-clock
+  components' sizes for a record or tuple (1 when it has none), `E`'s own size
+  otherwise, and 1 for a clock place, which adds no factor (`Option<Clock>`
+  included: its presence adds none). The size SHALL be, over lengths `k` from 0
+  to `N`:
+  - `Sequence<E>`: the sum of `p^k`, which is `N + 1` when `p` is 1 and
+    `(p^(N+1) - 1) / (p - 1)` otherwise;
+  - `Set<E>`: the sum of C(`p`, `k`), the `k`-element subsets of the `p`
+    values (so `Set<Clock>[0, N]`, `N` at least 1, has 2 values: empty and one
+    element, as FR-230 records);
+  - `Bag<E>`: the sum of C(`p + k - 1`, `k`), the multisets of size `k`
+    (`N + 1` when `p` is 1).
+- The values of a `Sequence<E>` SHALL be ordered by length first and, within a
+  length, lexicographically with the first element most significant, each
+  element in `E`'s own non-clock domain order. The values of a `Set<E>` or
+  `Bag<E>` SHALL be ordered by element count first and, within a count,
+  lexicographically over the elements in ascending `E` domain order, the
+  smallest element most significant.
+- The explorer SHALL NOT enumerate the clock slots of an element as values.
+  For a `Sequence<E>`, a slot present in both the pre-state and the candidate
+  (the same position) SHALL hold the pre-state value, or the reset FR-230's
+  slot provenance (`Carried` or `Fresh`, FR-230 "Collection-valued writes")
+  gives when the postcondition writes the collection. For a `Set<E>` or
+  `Bag<E>`, a candidate element SHALL be matched to a pre-state element with
+  equal non-clock components, one to one (a bag's equal elements are matched in
+  ascending order); a matched element SHALL keep that pre-state element's clock
+  values, or the provenance's reset when the postcondition writes the
+  collection. An element or slot that the candidate adds, with no pre-state
+  match (a sequence longer than the pre-state, an unmatched set or bag element),
+  SHALL hold the `Fresh` reset value, each of its clock places at 0 in its
+  declared unit. This creation value is this section's own rule: FR-230
+  states provenance for a written collection and gives no value to a created
+  clock.
+- A `Set<Clock>` SHALL be a finite value domain of 2 values (empty, then the
+  one element) with or without a declared maximum, as FR-230 records it as
+  holding at most one element.
+- Any other `Sequence<E>`, `Set<E>` or `Bag<E>` with no declared maximum, or
+  whose element has a non-clock component with no finite domain, SHALL be an
+  unbounded domain, and `explore_model` and `sample_model` SHALL return
+  `NotSimulated::RequiresBound` naming its `WireNodeId`.
 - The tuple, presence-optional field, clock-place, enum-as-parameter and union
   rules above are this section's own; FR-215 states only the record of finite
   fields and its order.
+
+Rationale. `Sequence<Timer>` and `Sequence<Clock>` with a declared maximum were
+unbounded in the earlier reading of this section; the planner ruling on STD-508
+withdraws that. The length-first order keeps the empty value first, as
+`Option<T>` puts absent first, and reads the record rule over positions; FR-215
+states an order only for a record of finite fields and takes a field's domain
+from this section. `Reference<Clock>` is data and not a clock place, so it stays
+unbounded. A map, whose size depends on a key domain, and an ordered set need
+their own ruling.
 
 ### Contract clauses
 
@@ -679,8 +734,9 @@ identity text of operation `op`.
 | FR-120-AC-21 | FR-120-AC-6's runs with `CanInc`: under a meter budget whose `work_units` is 0 and every other counter at its default, the `Stopped` outcome's `ExpansionStop` names `EvaluationMeter` with counter `work_units`, the counter whose next charge was denied; with `max_candidates` 2 and `increment` with no clause, it names `MaxCandidates` and carries no counter. | Test (TC-472) |
 | FR-120-AC-22 | Over a model whose object type `Cell` (population `cells`, universe `{k1}`) declares `cfg: Cfg` (record `Cfg { on: Boolean, n: Int[0, 2] }`), `pr: Pr` (tuple `Pr(Boolean, Int[0, 1])`) and `w: Wrap` (record `Wrap { c: Cfg, o: Option<Boolean> }`), with an operation `put()` whose frame is `modifies cfg, pr, w` and no clause, each field's domain is finite and `domains()` lists no unbounded root for them. `cfg` has 6 values, ordered `on` first: (`false`, 0), (`false`, 1), (`false`, 2), (`true`, 0), (`true`, 1), (`true`, 2). `pr` has 4: (`false`, 0), (`false`, 1), (`true`, 0), (`true`, 1). `w` has 6 × 3 = 18 values, `c` first in `Cfg` order, `o` absent, then `false`, then `true`. An application of `put` from a state holding `k1` has 6 × 4 × 18 = 432 candidates, each counted against `max_candidates`. In a separate model, a granted field `oc: Option<Cfg>` has 7 values, and so has `sq: Sequence<Cfg>[0, 1]` (the empty sequence, then the 6 one-element sequences); a two-component record `R1 { c: Cfg, a: Boolean }` has 6 × 2 = 12. | Test (TC-1270) |
 | FR-120-AC-23 | Over an enum `Color` (`red`, `blue`, `green`): an operation parameter `c: Color`, an operation result of type `Color` and a granted field `col: Color` are each a finite domain of 3 values in declaration order, and `domains()` lists no unbounded root for them. A record `Pick { col: Color, on: Boolean }` has 6 values, `col` most significant. A presence-optional field `note?: Boolean` of a record `Note { note?: Boolean, n: Int[0, 1] }` gives 3 × 2 = 6 values, `note` absent first. | Test (TC-1270) |
-| FR-120-AC-24 | Over a model declared `time dense unit ms` (FR-230; a `Clock` field is refused `invalid_timed_model`/`clock-without-dense-time` otherwise), with `ck: Timer` (record `Timer { x: Clock, n: Int[0, 3] }`) `sw: Stopwatch` (record `Stopwatch { x: Clock, y: Clock }`) and `mx: Mix` (record `Mix { t: Timer, b: Boolean }`) on `Cell`, and an operation `retime()` with frame `modifies ck, sw, mx` and postcondition `self.ck = Timer { x: 0 ms, n: 3 }` (FR-230-AC-11): `domains()` lists a root for each of `ck`, `sw` and `mx` and none is unbounded. `Timer`'s domain is the 4 values of `n` ascending, `x` contributing no factor; `Stopwatch` has exactly one value; `mx` has 4 × 2 = 8 values, `t` most significant. A successor of `retime` holds `ck.n` 3 and `x` reset, and `sw` keeps its pre-state clocks. With no postcondition, a candidate keeps each clock at its pre-state value. No candidate ranges over a value of `x`. A model that declares `Sequence<Timer>[0, 1]` or `Sequence<Clock>[0, 1]` as a granted field has an unbounded root for it. | Test (TC-1270) |
+| FR-120-AC-24 | Over a model declared `time dense unit ms` (FR-230; a `Clock` field is refused `invalid_timed_model`/`clock-without-dense-time` otherwise), with `ck: Timer` (record `Timer { x: Clock, n: Int[0, 3] }`) `sw: Stopwatch` (record `Stopwatch { x: Clock, y: Clock }`) and `mx: Mix` (record `Mix { t: Timer, b: Boolean }`) on `Cell`, and an operation `retime()` with frame `modifies ck, sw, mx` and postcondition `self.ck = Timer { x: 0 ms, n: 3 }` (FR-230-AC-11): `domains()` lists a root for each of `ck`, `sw` and `mx` and none is unbounded. `Timer`'s domain is the 4 values of `n` ascending, `x` contributing no factor; `Stopwatch` has exactly one value; `mx` has 4 × 2 = 8 values, `t` most significant. A successor of `retime` holds `ck.n` 3 and `x` reset, and `sw` keeps its pre-state clocks. With no postcondition, a candidate keeps each clock at its pre-state value. No candidate ranges over a value of `x`. A granted field of `Sequence<Timer>[0, 1]` or `Sequence<Clock>[0, 1]` is bounded (FR-120-AC-26). | Test (TC-1270) |
 | FR-120-AC-25 | Over AC-22's model with `op: Open` (record `Open { n: Integer, b: Boolean }`), `tm: Tm` (record `Tm { x: Clock, k: Integer }`) and `wr: Wrap2` (record `Wrap2 { o: Open }`) added as fields, one at a time in a frame that grants it, and with a union field `u: U` (union `U { a, b(Boolean) }`) granted likewise: each of `op`, `tm`, `wr` and `u` is an unbounded domain in `domains()`, so `explore_model` and `sample_model` return `NotSimulated::RequiresBound` naming that field's `WireNodeId`, before any state is expanded. A clock component does not make `tm` bounded, and `Wrap2` is unbounded by its nested component. | Test (TC-1270) |
+| FR-120-AC-26 | In a model with `time dense unit ms`, `Cfg` and `Open` as in AC-22 and AC-25 and `Tick { x: Clock }`, a frame that grants the field, `sc: Sequence<Cfg>[0, 2]` is a finite value domain of 1 + 6 + 36 = 43 values: the empty sequence, then the 6 one-element sequences in `Cfg` order, then the 36 two-element sequences with the first element most significant (`[c0, c0]`, `[c0, c1]`, ..., `[c5, c5]`). `st: Sequence<Tick>[0, 3]` and `sk: Sequence<Clock>[0, 3]` have 4 values each, one for each length, and so does `so: Sequence<Option<Clock>>[0, 3]`. With AC-24's `Timer { x: Clock, n: Int[0, 3] }` (`p` = 4), `sr21: Sequence<Timer>[0, 2]` has 1 + 4 + 16 = 21 values and `sr85: Sequence<Timer>[0, 3]` has 1 + 4 + 16 + 64 = 85, ordered length first and then by `n` with the first element most significant (`[]`, `[n0]`, ..., `[n3]`, `[n0, n0]`, `[n0, n1]`, ...); the `x` adds no factor. `Set<Cfg>[0, 1]` has 1 + 6 = 7 values and `Set<Cfg>[0, 2]` has 1 + 6 + 15 = 22, ordered by count and then by ascending `Cfg`; `Bag<Cfg>[0, 2]` has 1 + 6 + 21 = 28; with `Timer` as above `Set<Timer>[0, 2]` has 1 + 4 + C(4, 2) = 11 values and `Bag<Timer>[0, 2]` has 1 + 4 + C(5, 2) = 15, ordered by count and then by `n`; from a pre-state set `{ {x: 5 ms, n: 1} }`, the candidate `{n 1, n 2}` holds `x` 5 ms for `n` 1 (matched by equal `n`) and 0 ms for `n` 2, and the candidate `{n 2}` holds `x` 0 ms; `Set<Clock>[0, 2]` has 2, and so does `Set<Clock>` with no declared maximum (FR-230 caps it at one element). No candidate ranges over a clock slot's value. From a pre-state in which `sr21` is `[ {x: 5 ms, n: 1} ]`, the candidate of length 2 with `n` values 1, 2 holds the pre-state `x` 5 ms in slot 0 and a fresh `x` 0 ms in slot 1; the candidate of length 0 holds no slot; from a pre-state of length 0 every slot of a length-2 candidate is fresh at 0 ms. A `Reference<Clock>` field, `Sequence<Reference<Clock>>[0, 1]`, `Sequence<Open>[0, 1]`, `Sequence<Cfg>` and `Set<Cfg>` with no declared maximum, and a `Map<Boolean, Boolean>[0, 1]` are unbounded: `explore_model` and `sample_model` return `NotSimulated::RequiresBound` naming the field's `WireNodeId`, before any state is expanded. | Test (TC-1270) |
 ## Dependencies
 
 - [FR-215](FR-215-implement-protocolsystem-as-a-transitionsystem.md): the
