@@ -268,6 +268,8 @@ impl AdmittedPackage {
                 | DomainPackageRecord::Namespace(_)
                 | DomainPackageRecord::PersistenceInterface(_)
                 | DomainPackageRecord::ScalarType(_)
+                | DomainPackageRecord::SequenceType(_)
+                | DomainPackageRecord::AliasType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
                 | DomainPackageRecord::Allocation(_)
@@ -408,7 +410,9 @@ impl AdmittedPackage {
             DomainPackageRecord::Clause(_) => DeclarationKind::Clause,
             DomainPackageRecord::Namespace(_) => DeclarationKind::Namespace,
             DomainPackageRecord::PersistenceInterface(_) => DeclarationKind::PersistenceInterface,
-            DomainPackageRecord::ScalarType(_) => DeclarationKind::ValueType,
+            DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::SequenceType(_)
+            | DomainPackageRecord::AliasType(_) => DeclarationKind::ValueType,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted
             // component is a Part and an admitted endpoint a Port.

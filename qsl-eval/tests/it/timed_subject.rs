@@ -13,8 +13,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
     BehaviourReading, ClockValuation, ExpansionLimits, ModelSimulationRequest, ModelSystem,
-    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedStop, TimedSubjectRefusal,
-    TimedSystem,
+    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedStop, TimedSystem,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
@@ -1542,13 +1541,11 @@ fn timer_collection_document(upper: Option<u64>, ordered: bool, unique: bool) ->
 /// `ts = [Timer { n: 0 }]` slot 0 is live and slot 1 is not, so a value of
 /// slot 1 is no part of the state digest while those of slot 0 are, each
 /// by its slot. The state steps, every live clock advancing with the delay.
-/// A sequence with no declared maximum has no listing of its slots:
-/// `UnboundedCollection`.
+/// A sequence with no declared maximum is bounded by `max_clocks`
+/// ([`an_unbounded_collection_is_bounded_by_max_clocks`]).
 #[trace("TC-685")]
 #[test]
 fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
-    let units = "dimension Time;\nunit s : Time = rational(1, 1);\n\
-                 unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n";
     let timer =
         |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
     let world = world_holding(
@@ -1632,18 +1629,51 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
             .all(|value| value == &exact(2, 1)));
         timed.state_digest(post).expect("a digest");
     }
+}
 
-    let unbounded = world_holding(
-        timer_sequence_document(None),
-        "",
-        units,
-        json!({"t": timer("0"), "ts": {"sequence": []}}),
-    );
-    let unbounded_system = system(&unbounded);
-    assert!(matches!(
-        TimedSystem::new(&unbounded_system, "M"),
-        Err(TimedSubjectRefusal::UnboundedCollection { clock }) if clock == "ts.[slot].x"
-    ));
+/// Part of FR-230-AC-19 (TC-685), SR-1655002 FND-002: a sequence with no
+/// declared maximum records `max: None` and is bounded in analysis by
+/// `max_clocks` (QSpec FR-415 "Cardinality bound"). With `max_clocks` 7, the
+/// three clocks `t.x`, `t.y` and `x` leave room for two slots of each of
+/// `ts.[slot].x` and `ts.[slot].y`: a state holding two elements steps, and
+/// one holding three stops `MaxClocks { max_clocks: 7 }` when it is
+/// expanded, as it does not under the default bound.
+#[trace("TC-685")]
+#[test]
+fn an_unbounded_collection_is_bounded_by_max_clocks() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let holding = |held: usize| {
+        world_holding(
+            timer_sequence_document(None),
+            "",
+            &only(
+                &["send"],
+                "post Send using v on M::Call::send { self.phase = 1 }\n",
+            ),
+            json!({"t": timer("0"), "ts": {"sequence": vec![timer("1"); held]}}),
+        )
+    };
+    for (held, stops) in [(2, false), (3, true)] {
+        let world = holding(held);
+        let held_system = system(&world);
+        let timed = TimedSystem::with_max_clocks(&held_system, "M", 7).expect("a timed subject");
+        assert_eq!(timed.places().len(), 7);
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let steps = timed.steps(initial);
+        if stops {
+            assert_eq!(steps.err(), Some(TimedStop::MaxClocks { max_clocks: 7 }));
+            let roomy = TimedSystem::new(&held_system, "M").expect("a timed subject");
+            let [initial] = &roomy.initial()[..] else {
+                panic!("one initial state");
+            };
+            assert!(!roomy.steps(initial).expect("the state steps").is_empty());
+        } else {
+            assert!(!steps.expect("the state steps").is_empty());
+        }
+    }
 }
 
 /// One guard part's constraints: each constrained place's slots and
@@ -1713,6 +1743,85 @@ fn a_quantified_guard_reads_the_clocks_of_the_held_slots() {
     assert_eq!(
         guarded("exists(e in self.ts: e.n = 2 and e.x >= 1 ms)", "3"),
         (vec![], vec![])
+    );
+}
+
+/// Part of FR-230-AC-21 (TC-685), SR-1659002 FND-001: over `ts:
+/// Sequence<Timer>` with no declared maximum holding `[Timer { n: 2 },
+/// Timer { n: 1 }]`, the family of a quantified guard is read at each held
+/// slot. `forall(e in self.ts: e.x <= 1 ms)` is one part constraining slots
+/// 0 and 1, true at 0 and false after a delay of 2; `exists(e in self.ts:
+/// e.n = 2 and e.x >= 1 ms)` is the part of slot 0 alone, whose element has
+/// `n = 2`; `forall(e in self.ts: e.n = 2 implies e.x >= 1 ms)` constrains
+/// slot 0, and slot 1 either not at all (its `n` is not 2) or by `x >= 1`.
+#[trace("TC-685")]
+#[test]
+fn an_unbounded_quantified_guard_reads_each_held_slot() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let guarded = |guard: &str| -> (Vec<GuardParts>, Vec<GuardParts>) {
+        let world = world_holding(
+            timer_sequence_document(None),
+            "",
+            &only(
+                &["work"],
+                &format!("pre Near using v on M::Call::work {{ {guard} }}\n"),
+            ),
+            json!({"t": timer("0"), "ts": {"sequence": [timer("2"), timer("1")]}}),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::with_max_clocks(&held, "M", 16).expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let read = |state: &TimedState| {
+            timed
+                .guarded_steps(state.discrete())
+                .expect("the state expands")
+                .iter()
+                .filter(|step| step.operation().contains("Call/work\""))
+                .flat_map(|step| step.parts().to_vec())
+                .map(|part| {
+                    part.iter()
+                        .map(|constraint| {
+                            (
+                                timed.places()[constraint.place()].slots().to_vec(),
+                                constraint.holds(state.clocks()),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let later = timed
+            .delay(initial, &exact(2, 1))
+            .expect("decided")
+            .expect("no invariant bounds the delay");
+        (read(initial), read(&later))
+    };
+    assert_eq!(
+        guarded("forall(e in self.ts: e.x <= 1 ms)"),
+        (
+            vec![vec![(vec![0], true), (vec![1], true)]],
+            vec![vec![(vec![0], false), (vec![1], false)]]
+        )
+    );
+    assert_eq!(
+        guarded("exists(e in self.ts: e.n = 2 and e.x >= 1 ms)"),
+        (vec![vec![(vec![0], false)]], vec![vec![(vec![0], true)]])
+    );
+    assert_eq!(
+        guarded("forall(e in self.ts: e.n = 2 implies e.x >= 1 ms)"),
+        (
+            vec![
+                vec![(vec![0], false)],
+                vec![(vec![0], false), (vec![1], false)]
+            ],
+            vec![
+                vec![(vec![0], true)],
+                vec![(vec![0], true), (vec![1], true)]
+            ]
+        )
     );
 }
 
@@ -2027,4 +2136,79 @@ fn a_collection_write_read_in_the_post_state_refuses_its_step() {
         stop.cause,
         CatalogCode::new("unsupported_construct", "collection-write-not-computed")
     );
+}
+
+/// [`timer_document`] with a record `Holder { ts: Timer [0, 2] }` held by
+/// `Call.h`.
+fn timer_holder_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let holder = ident("Holder");
+    let mut ts = wire_field("ts", &ident("Timer"));
+    let identity = format!("{holder}/ts");
+    ts["identity"] = json!(identity);
+    ts["origin"] = origin(&identity);
+    ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("h", &holder));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Quantified reads" over a collection
+/// below a record field (SR-1659002 FND-003): with `h = Holder { ts:
+/// [Timer { n: 1 }, Timer { n: 2 }] }`, `work`'s guard `exists(e in
+/// self.h.ts: e.n = 2 and e.x >= 1 ms)` is the one part of slot 1, whose
+/// element has `n = 2`: false at 0 and true after a delay of 2.
+#[trace("TC-685")]
+#[test]
+fn a_quantified_guard_reads_a_collection_below_a_record_field() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let world = world_holding(
+        timer_holder_document(),
+        "",
+        &only(
+            &["work"],
+            "pre Near using v on M::Call::work { exists(e in self.h.ts: e.n = 2 and e.x >= 1 ms) }\n",
+        ),
+        json!({
+            "t": timer("0"),
+            "h": {"record": {"type": ident("Holder"), "fields": {
+                "ts": {"sequence": [timer("1"), timer("2")]}
+            }}}
+        }),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let read = |state: &TimedState| {
+        timed
+            .guarded_steps(state.discrete())
+            .expect("the state expands")
+            .iter()
+            .filter(|step| step.operation().contains("Call/work\""))
+            .flat_map(|step| step.parts().to_vec())
+            .map(|part| {
+                part.iter()
+                    .map(|constraint| {
+                        (
+                            timed.places()[constraint.place()].slots().to_vec(),
+                            constraint.holds(state.clocks()),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let later = timed
+        .delay(initial, &exact(2, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    assert_eq!(read(initial), vec![vec![(vec![1], false)]]);
+    assert_eq!(read(&later), vec![vec![(vec![1], true)]]);
 }

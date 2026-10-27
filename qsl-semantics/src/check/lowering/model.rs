@@ -1077,7 +1077,23 @@ impl AdmittedModel {
             }));
         }
         at.optional |= matches!(field.presence, quire_exact::Presence::Optional);
-        let key = match &field.value_type {
+        // A package sequence type is a slot of an unbounded sequence of its
+        // items (QSpec FR-154), a chain of them one slot each, and a package
+        // alias the type it aliases.
+        let Some((value_type, sequences)) =
+            crate::model::domain_package::unaliased(&field.value_type, |key| self.records.get(key))
+        else {
+            return;
+        };
+        for _ in 0..sequences {
+            at.path.push(PlaceStep::Slot(CollectionShape {
+                ordered: true,
+                unique: false,
+                min: 0,
+                max: None,
+            }));
+        }
+        let key = match value_type {
             ValueTypeRef::Clock => {
                 places.push(at);
                 return;
@@ -1354,6 +1370,27 @@ impl AdmittedModel {
                 visiting.pop();
                 bears
             }
+            Some(
+                record @ (DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_)),
+            ) if !visiting.contains(&key) => {
+                visiting.push(key);
+                let named = match record {
+                    DomainPackageRecord::SequenceType(sequence) => &sequence.items,
+                    DomainPackageRecord::AliasType(alias) => &alias.target,
+                    _ => return false,
+                };
+                let bears = match crate::model::domain_package::unaliased(named, |key| {
+                    self.records.get(key)
+                }) {
+                    Some((ValueTypeRef::Clock, _)) => true,
+                    Some((ValueTypeRef::Package(inner), _)) => {
+                        self.type_bears_clock(inner, visiting)
+                    }
+                    _ => false,
+                };
+                visiting.pop();
+                bears
+            }
             _ => false,
         }
     }
@@ -1583,6 +1620,8 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)
+        | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)

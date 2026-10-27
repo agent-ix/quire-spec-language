@@ -67,6 +67,8 @@ fn kind_label(record: &DomainPackageRecord) -> &'static str {
         DomainPackageRecord::Namespace(_) => "namespace",
         DomainPackageRecord::PersistenceInterface(_) => "persistence interface",
         DomainPackageRecord::ScalarType(_) => "scalar type",
+        DomainPackageRecord::SequenceType(_) => "sequence type",
+        DomainPackageRecord::AliasType(_) => "alias",
         DomainPackageRecord::OperationMember(_) => "operation",
         DomainPackageRecord::Component(_) => "part",
         DomainPackageRecord::Endpoint(_) => "port",

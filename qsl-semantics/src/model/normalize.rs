@@ -2211,7 +2211,9 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::PersistenceInterface(_) => {}
-        DomainPackageRecord::ScalarType(_) => {}
+        DomainPackageRecord::ScalarType(_)
+        | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::AliasType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
             // FR-208:48,217-219 gives a persistence interface its own
             // operation signatures, distinct from object-type operations.

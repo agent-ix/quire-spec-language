@@ -677,7 +677,7 @@ fn slot_parts(
                 part.data().is_some(),
                 part.elements()
                     .iter()
-                    .map(|element| (element.field().to_owned(), element.slot()))
+                    .map(|element| (element.path().join("."), element.slot()))
                     .collect(),
                 part.clocks()
                     .iter()
@@ -699,14 +699,21 @@ fn slot_parts(
         .collect()
 }
 
+/// A family's template part: the slots of the elements it reads, and each
+/// constraint's slots and operator.
+type Template = (Vec<u64>, Vec<(Vec<u64>, ClockOp)>);
+
 /// Part of FR-230-AC-21 (TC-685), "Quantified reads" in a precondition:
 /// over `ts: Sequence<Timer>[0, 3]`, the guard `forall(e in self.ts: e.x <=
 /// 3 ms)` records one entry for each size 0 to 3, each with the data
 /// predicate `size(self.ts) = s` and `x <= 3` on each slot below `s` (none
 /// for size 0); `exists(e in self.ts: e.n = 2 and e.x >= 1 ms)` records one
 /// convex part for each slot `j`, with the data predicate "holds slot `j`"
-/// and `n = 2` of the element at `j`, and `x >= 1` on slot `j`. A
-/// collection with no declared maximum refuses as not checked.
+/// and `n = 2` of the element at `j`, and `x >= 1` on slot `j`. Over a
+/// collection with no declared maximum the guard is one part conjoining the
+/// family of the entries indexed by size: the body read once at the
+/// template slot, every slot enabling it for a `forall` (`each`), some slot
+/// for an `exists` or a negated `forall` (SR-1659002 FND-001).
 #[trace("TC-685")]
 #[test]
 fn a_quantified_guard_records_one_entry_per_size_or_slot() {
@@ -762,23 +769,63 @@ fn a_quantified_guard_records_one_entry_per_size_or_slot() {
     };
     assert_eq!(slot_parts(model), [at(0), at(1), at(2)]);
     let unbounded = timer_collection(None, true, false);
-    let refusals = check(
-        &unbounded,
-        &format!(
-            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
-             forall(e in self.ts: e.x <= 3 ms) }}\n"
-        ),
-    )
-    .expect_err("an unbounded quantified guard is not checked");
-    assert!(
-        matches!(
-            refusals.as_slice(),
-            [qsl_semantics::check::CheckRefusal {
-                cause: qsl_semantics::check::CheckCause::TimedNotChecked { .. },
-                ..
-            }]
-        ),
-        "{refusals:?}"
+    let family = |guard: &str| {
+        let graph = check(
+            &unbounded,
+            &format!("{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ {guard} }}\n"),
+        )
+        .unwrap_or_else(|refusals| panic!("{guard}: {refusals:?}"));
+        let model = timed(&graph);
+        let [part] = model.guards()[0].parts() else {
+            panic!("one part: {:?}", model.guards()[0].parts());
+        };
+        let [family] = part.families() else {
+            panic!("one family: {part:?}");
+        };
+        let templates: Vec<Template> = family
+            .parts()
+            .iter()
+            .map(|template| {
+                (
+                    template
+                        .elements()
+                        .iter()
+                        .map(|element| element.slot())
+                        .collect(),
+                    template
+                        .clocks()
+                        .iter()
+                        .map(|constraint| (constraint.slots().to_vec(), constraint.op()))
+                        .collect(),
+                )
+            })
+            .collect();
+        (family.path().join("."), family.each(), templates)
+    };
+    let open = qsl_semantics::check::ElementBinding::FAMILY_SLOT;
+    assert_eq!(
+        family("forall(e in self.ts: e.x <= 3 ms)"),
+        (
+            "ts".to_owned(),
+            true,
+            vec![(vec![], vec![(vec![open], ClockOp::LessOrEqual)])]
+        )
+    );
+    assert_eq!(
+        family("not forall(e in self.ts: e.x <= 3 ms)"),
+        (
+            "ts".to_owned(),
+            false,
+            vec![(vec![], vec![(vec![open], ClockOp::Greater)])]
+        )
+    );
+    assert_eq!(
+        family("exists(e in self.ts: e.n = 2 and e.x >= 1 ms)"),
+        (
+            "ts".to_owned(),
+            false,
+            vec![(vec![open], vec![(vec![open], ClockOp::GreaterOrEqual)])]
+        )
     );
 }
 
@@ -818,10 +865,10 @@ fn a_forall_reset_selects_the_slots_it_writes() {
             (
                 model.clock(reset.clock()).expect("a clock").name(),
                 reset.value().clone(),
-                selection.field(),
+                selection.path().join("."),
                 selection.predicate().is_some(),
             ),
-            ("ts.[slot].x", value, "ts", predicate),
+            ("ts.[slot].x", value, "ts".to_owned(), predicate),
             "{clause}"
         );
     }
@@ -1071,4 +1118,265 @@ fn a_collection_in_a_collection_bounds_its_place_by_the_product() {
         .unwrap_or_else(|| panic!("the nested place: {:?}", model.clocks()));
     assert_eq!(place.slots().count(), 2);
     assert_eq!(place.bound(), Some(6));
+}
+
+/// Part of FR-230-AC-23 and FR-230-AC-16 (TC-685), the sequence halves: a
+/// package `sequence` type `Timers` over the record `Timer` types `Call.q`,
+/// whose clock place is `q.[slot].x` under an unbounded sequence slot
+/// (`max: None`, no static bound), and `Call.qs: Timers` of multiplicity
+/// `[0, 2]` holds `qs.[slot].[slot].x`. A sequence type `Ticks` whose
+/// `items` is `ix://quire/native/Clock` types `Call.ks` as the clock
+/// collection `ks.[slot]` (FR-230-AC-16). A sequence type `Flags` whose
+/// `items` is `ix://quire/native/Boolean` types `Call.ds` as a sequence of
+/// `Boolean`. Not covered: the map halves, which quire-exact's value types
+/// cannot hold yet (no map value type, IR-1046).
+#[trace("TC-685")]
+#[test]
+fn a_package_sequence_type_is_an_unbounded_clock_collection() {
+    let document = timer_document(|document: &mut Value| {
+        let sequence = |name: &str, items: &str| {
+            let mut node = wire_type(&package(name), "unused", json!({"items": items}));
+            node["kind"] = json!("sequence");
+            node
+        };
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(sequence("Timers", &package("Timer")));
+        types.push(sequence("Flags", "ix://quire/native/Boolean"));
+        types.push(sequence("Ticks", "ix://quire/native/Clock"));
+        let mut qs = field("qs", &package("Timers"));
+        qs["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+        let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+        fields.push(field("q", &package("Timers")));
+        fields.push(qs);
+        fields.push(field("ds", &package("Flags")));
+        fields.push(field("ks", &package("Ticks")));
+    });
+    let graph = check(&document, &format!("{UNITS}{DENSE}"))
+        .unwrap_or_else(|refusals| panic!("a sequence type checks: {refusals:?}"));
+    let model = timed(&graph);
+    let unbounded = PlaceStep::Slot(CollectionShape {
+        ordered: true,
+        unique: false,
+        min: 0,
+        max: None,
+    });
+    let q = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "q.[slot].x")
+        .unwrap_or_else(|| panic!("q's place: {:?}", model.clocks()));
+    assert_eq!(
+        q.path(),
+        [
+            PlaceStep::Field("q".to_owned()),
+            unbounded.clone(),
+            PlaceStep::Field("x".to_owned()),
+        ]
+    );
+    assert_eq!(q.bound(), None);
+    let qs = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "qs.[slot].[slot].x")
+        .unwrap_or_else(|| panic!("qs's place: {:?}", model.clocks()));
+    assert_eq!(qs.slots().count(), 2);
+    let ks = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "ks.[slot]")
+        .unwrap_or_else(|| panic!("ks's place: {:?}", model.clocks()));
+    assert_eq!(
+        ks.path(),
+        [PlaceStep::Field("ks".to_owned()), unbounded.clone()]
+    );
+    let ds = graph
+        .scope()
+        .types()
+        .attribute(q.owner(), "ds")
+        .expect("Call.ds")
+        .field()
+        .value_type()
+        .clone();
+    let quire_exact::ValueType::Collection(ds) = &ds else {
+        panic!("ds is a collection: {ds:?}");
+    };
+    assert_eq!(ds.kind(), quire_exact::CollectionKind::Sequence);
+    assert!(
+        matches!(ds.element(), quire_exact::ValueType::Boolean),
+        "{ds:?}"
+    );
+}
+
+/// Part of FR-230-AC-16 and FR-230-AC-17 (TC-685), the alias halves: an
+/// alias `Stopwatch` of `ix://quire/native/Clock` types `Call.s` as the
+/// clock `s`; an alias `D` of the unit `ix://quire/unit/ms` types `Call.d`
+/// as `Quantity<ms>`, and a sequence type `Ds` whose `items` is `D` types
+/// `Call.ds` as a sequence of `Quantity<ms>`. Not covered: the map halves
+/// (quire-exact has no map value type), an operation parameter and result
+/// typed by `D`, and the ghost-unit refusals.
+#[trace("TC-685")]
+#[test]
+fn an_alias_of_a_clock_or_a_unit_types_its_members() {
+    let document = timer_document(|document: &mut Value| {
+        let core = |name: &str, kind: &str, extra: Value| {
+            let mut node = wire_type(&package(name), "unused", extra);
+            node["kind"] = json!(kind);
+            node
+        };
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(core(
+            "Stopwatch",
+            "alias",
+            json!({"target": "ix://quire/native/Clock"}),
+        ));
+        types.push(core("D", "alias", json!({"target": "ix://quire/unit/ms"})));
+        types.push(core("Ds", "sequence", json!({"items": package("D")})));
+        let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+        fields.push(field("s", &package("Stopwatch")));
+        fields.push(field("d", &package("D")));
+        fields.push(field("ds", &package("Ds")));
+    });
+    let graph = check(&document, &format!("{UNITS}{DENSE}"))
+        .unwrap_or_else(|refusals| panic!("the aliases check: {refusals:?}"));
+    let model = timed(&graph);
+    let s = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "s")
+        .unwrap_or_else(|| panic!("s's place: {:?}", model.clocks()));
+    let typed = |name: &str| {
+        graph
+            .scope()
+            .types()
+            .attribute(s.owner(), name)
+            .unwrap_or_else(|| panic!("Call.{name}"))
+            .field()
+            .value_type()
+            .clone()
+    };
+    assert!(
+        matches!(typed("d"), quire_exact::ValueType::Quantity(_)),
+        "{:?}",
+        typed("d")
+    );
+    let ds = typed("ds");
+    let quire_exact::ValueType::Collection(ds) = &ds else {
+        panic!("ds is a collection: {ds:?}");
+    };
+    assert_eq!(ds.kind(), quire_exact::CollectionKind::Sequence);
+    assert!(
+        matches!(ds.element(), quire_exact::ValueType::Quantity(_)),
+        "{ds:?}"
+    );
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Quantified reads" over a collection
+/// below a record field (SR-1659002 FND-003): with a record `Holder { ts:
+/// Timer [0, 2] }` held by `Call.h`, the guard `exists(e in self.h.ts: e.n
+/// = 2 and e.x >= 1 ms)` records one part for each slot of `h.ts`, each
+/// reading the element at the path `h.ts` and constraining the slot's
+/// `h.ts.[slot].x`.
+#[trace("TC-685")]
+#[test]
+fn a_quantified_guard_reads_a_collection_below_a_record_field() {
+    let document = timer_document(|document: &mut Value| {
+        let holder = package("Holder");
+        let mut ts = wire_field(
+            &format!("{holder}/ts"),
+            "ts",
+            &package("Timer"),
+            "required",
+            0,
+        );
+        ts["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(wire_type(&holder, "value_record", json!({"fields": [ts]})));
+        types[1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(field("h", &holder));
+    });
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre Near using v on Config::Call::reply {{ \
+             exists(e in self.h.ts: e.n = 2 and e.x >= 1 ms) }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("the guard checks: {refusals:?}"));
+    let model = timed(&graph);
+    let one = format!("{:?}", exact(1, 1));
+    let at = |slot: u64| {
+        (
+            true,
+            vec![("h.ts".to_owned(), slot)],
+            vec![(
+                "h.ts.[slot].x".to_owned(),
+                vec![slot],
+                ClockOp::GreaterOrEqual,
+                one.clone(),
+            )],
+        )
+    };
+    assert_eq!(slot_parts(model), [at(0), at(1)]);
+}
+
+/// Part of FR-230-AC-21 (TC-685), "Quantified reads" in a clock-reading
+/// declaration (SR-1659002 FND-003): `predicate near(ts: Sequence<Timer>[0,
+/// 3])` with the body `forall(e in ts: e.x <= 3 ms)`, called as
+/// `near(self.ts)` in a precondition, records the guard of the `forall`
+/// over `self.ts` itself, one entry for each size 0 to 3; with the body
+/// `exists(e in ts: e.n = 2 and e.x >= 1 ms)` it records one part for each
+/// slot, reading the element at the slot.
+#[trace("TC-685")]
+#[test]
+fn a_quantified_read_expands_in_a_clock_reading_declaration() {
+    let document = timer_collection(Some(3), true, false);
+    let read = |body: &str| {
+        let graph = check(
+            &document,
+            &format!(
+                "{UNITS}{DENSE}predicate near using v(ts: Sequence<Config::Timer>[0, 3]): \
+                 Boolean {{ {body} }}\n\
+                 pre Near using v on Config::Call::reply {{ near(self.ts) }}\n"
+            ),
+        )
+        .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+        slot_parts(timed(&graph))
+    };
+    let bound = format!("{:?}", exact(3, 1));
+    let x = |slot: u64| {
+        (
+            "ts.[slot].x".to_owned(),
+            vec![slot],
+            ClockOp::LessOrEqual,
+            bound.clone(),
+        )
+    };
+    assert_eq!(
+        read("forall(e in ts: e.x <= 3 ms)"),
+        [
+            (true, vec![], vec![]),
+            (true, vec![], vec![x(0)]),
+            (true, vec![], vec![x(0), x(1)]),
+            (true, vec![], vec![x(0), x(1), x(2)]),
+        ]
+    );
+    let one = format!("{:?}", exact(1, 1));
+    let at = |slot: u64| {
+        (
+            true,
+            vec![("ts".to_owned(), slot)],
+            vec![(
+                "ts.[slot].x".to_owned(),
+                vec![slot],
+                ClockOp::GreaterOrEqual,
+                one.clone(),
+            )],
+        )
+    };
+    assert_eq!(
+        read("exists(e in ts: e.n = 2 and e.x >= 1 ms)"),
+        [at(0), at(1), at(2)]
+    );
 }

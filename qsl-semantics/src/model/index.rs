@@ -281,6 +281,12 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::ScalarType(_) | DomainPackageRecord::Population(_) => {
             vec![record.key()]
         }
+        DomainPackageRecord::SequenceType(sequence) => std::iter::once(&sequence.key)
+            .chain(sequence.items.as_package())
+            .collect(),
+        DomainPackageRecord::AliasType(alias) => std::iter::once(&alias.key)
+            .chain(alias.target.as_package())
+            .collect(),
     }
 }
 
@@ -696,6 +702,7 @@ impl RecordIndex {
                 DomainPackageRecord::PersistenceInterface(_) => {
                     index.flags[own.0].persistence_interface = true;
                 }
+                DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {}
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
                     match &scalar.domain {

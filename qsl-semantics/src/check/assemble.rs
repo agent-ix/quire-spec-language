@@ -80,8 +80,8 @@ pub use equivalence::{
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType,
-    OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,
+    unaliased, DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity,
+    NativeValueType, OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
@@ -1221,7 +1221,10 @@ fn model_object_types(
                 // Clock is retained in the admitted domain package as a
                 // model place; it is not a QSL data field in the kernel's
                 // TypeEnvironment.
-                if matches!(field.value_type, ValueTypeRef::Clock) {
+                if matches!(
+                    sequence_items(&field.value_type, &records),
+                    ValueTypeRef::Clock
+                ) {
                     continue;
                 }
                 match model_field(
@@ -1321,6 +1324,8 @@ fn model_object_types(
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::SequenceType(_)
+            | DomainPackageRecord::AliasType(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
         }
@@ -1713,6 +1718,33 @@ fn model_value_type(
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
     units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<ValueType, Unmapped> {
+    // A package sequence type is the sequence of its items (QSpec FR-154),
+    // a chain of them nested sequences, and a package alias the type it
+    // aliases; one that returns to a type it passed is broken.
+    let (items, sequences) =
+        unaliased(value_type, |key| records.get(key).copied()).ok_or(Unmapped::Broken)?;
+    if !std::ptr::eq(items, value_type) {
+        let single = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        let mut element = model_value_type(
+            items,
+            single,
+            records,
+            identities,
+            meaning_handles,
+            variant_shapes,
+            units,
+        )?;
+        for _ in 0..sequences {
+            element =
+                ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None));
+        }
+        return with_multiplicity(element, multiplicity);
+    }
     let element = match value_type {
         ValueTypeRef::Clock => return Err(Unmapped::Unsupported),
         ValueTypeRef::Native(native) => match native {
@@ -1768,6 +1800,25 @@ fn model_value_type(
             None => return Err(Unmapped::Broken),
         },
     };
+    with_multiplicity(element, multiplicity)
+}
+
+/// The type `value_type` ends at through the package's sequence types and
+/// aliases: `value_type` itself when it names neither, or when the chain
+/// returns to a type it passed.
+fn sequence_items<'r>(
+    value_type: &'r ValueTypeRef,
+    records: &BTreeMap<&DeclarationKey, &'r DomainPackageRecord>,
+) -> &'r ValueTypeRef {
+    unaliased(value_type, |key| records.get(key).copied()).map_or(value_type, |(items, _)| items)
+}
+
+/// `element` held by a member of `multiplicity`: itself for `[1, 1]`, else
+/// the collection the multiplicity's order and uniqueness name.
+fn with_multiplicity(
+    element: ValueType,
+    multiplicity: Multiplicity,
+) -> Result<ValueType, Unmapped> {
     Ok(match (multiplicity.lower, multiplicity.upper) {
         (1, Some(1)) => element,
         (lower, upper) => {
