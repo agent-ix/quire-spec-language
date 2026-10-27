@@ -885,4 +885,35 @@ mod tests {
         assert!(!domains.all_boundable());
         assert_eq!(DomainKind::Quantity.finite_kind(), None);
     }
+    /// A bounded quantity is a quantity leaf: one unbounded `Quantity`
+    /// domain, as a `Quantity` is (QSV FR-127 item 6).
+    #[trace("TC-437", "FR-097-AC-2")]
+    #[test]
+    fn tc_437_a_bounded_quantity_is_a_quantity_domain() {
+        let metre = quire_exact::UnitId::declared(NodeKey::from_digest([5; 32]));
+        let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+            quire_exact::BoundedQuantityType::new(metre, None, None).expect("in the unit"),
+        ));
+        assert_eq!(
+            extent(&bounded),
+            unbounded(&[(vec![], DomainKind::Quantity)])
+        );
+    }
+
+    /// A map is type-only (quire-exact FR-386): it is no domain of its own,
+    /// and the classifier follows its value type at child index 0, so a map
+    /// of a finite type is bounded and a map of a quantity is not.
+    #[trace("TC-437", "FR-097-AC-2")]
+    #[test]
+    fn tc_437_a_map_classifies_through_its_value_type() {
+        let map =
+            |values| ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)));
+        assert_eq!(extent(&map(int_0_9())), ClaimExtent::Bounded);
+        let metre =
+            ValueType::Quantity(quire_exact::UnitId::declared(NodeKey::from_digest([5; 32])));
+        assert_eq!(
+            extent(&map(metre)),
+            unbounded(&[(vec![0], DomainKind::Quantity)])
+        );
+    }
 }

@@ -4009,4 +4009,67 @@ mod locus_tests {
             "function f using v(): Boolean pure { not not not true }"
         );
     }
+    fn measured(value_type: &ValueType) -> (u64, u64) {
+        let mut meter = DeclarationMeter::new();
+        encode_value_type(&mut meter, value_type);
+        (meter.writes, meter.input_bytes)
+    }
+
+    fn metre() -> quire_exact::UnitId {
+        quire_exact::UnitId::compound([5; 32])
+    }
+
+    fn bounded(
+        min: Option<quire_exact::Quantity>,
+        max: Option<quire_exact::Quantity>,
+    ) -> ValueType {
+        ValueType::BoundedQuantity(std::sync::Arc::new(
+            quire_exact::BoundedQuantityType::new(metre(), min, max).expect("in the unit"),
+        ))
+    }
+
+    /// A bounded quantity is its own type, not a `Quantity` (quire-exact
+    /// FR-387): its tag is longer, and each bound adds its presence tag and
+    /// magnitude. No QSL criterion governs the declaration-size figure of
+    /// this type.
+    #[test]
+    fn a_bounded_quantity_is_encoded_with_its_own_tag_and_bound_presence() {
+        let (quantity_writes, quantity_bytes) = measured(&ValueType::Quantity(metre()));
+        let (open_writes, open_bytes) = measured(&bounded(None, None));
+        // "quantity" -> "bounded-quantity" (+8 bytes), plus two "unbounded".
+        assert_eq!(open_writes, quantity_writes + 2);
+        assert_eq!(open_bytes, quantity_bytes + 8 + 2 * (8 + 9));
+        let five = quire_exact::Quantity::new(
+            quire_exact::Rational::from_integer(quire_exact::Integer::from(5_i64)),
+            metre(),
+        );
+        let (min_writes, min_bytes) = measured(&bounded(Some(five.clone()), None));
+        let magnitude = five.magnitude().to_string().len() as u64;
+        // "unbounded" is replaced by "bounded" and the magnitude text.
+        assert_eq!(min_writes, open_writes + 1);
+        assert_eq!(min_bytes, open_bytes - (8 + 9) + (8 + 7) + (8 + magnitude));
+    }
+
+    /// A map is encoded as `"map"`, its value type, then its bound, and
+    /// bound presence changes the figure (quire-exact FR-386).
+    #[test]
+    fn a_map_is_encoded_with_its_tag_values_and_bound() {
+        let map = |bound| {
+            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+                ValueType::Boolean,
+                bound,
+            )))
+        };
+        // "map" (3), "boolean" (7), "unbounded" (9), each behind a length.
+        assert_eq!(measured(&map(None)), (3, 3 * 8 + 3 + 7 + 9));
+        // "bounded" (7) and two `u64` bounds replace "unbounded".
+        let bound = quire_exact::CardinalityBound::new(1, 4).expect("a bound");
+        assert_eq!(measured(&map(Some(bound))), (5, 3 * 8 + 3 + 7 + 7 + 2 * 8));
+        let sequence = ValueType::collection(quire_exact::CollectionType::new(
+            quire_exact::CollectionKind::Sequence,
+            ValueType::Boolean,
+            None,
+        ));
+        assert_ne!(measured(&map(None)), measured(&sequence));
+    }
 }

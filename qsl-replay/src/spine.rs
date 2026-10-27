@@ -1932,24 +1932,33 @@ mod tests {
         assert!(!message.contains("in a `hybrid` declaration"), "{message}");
     }
 
-    /// TC-927: a map and a bounded quantity spell their kind in a refusal.
-    #[trace("TC-927")]
+    /// A map and a bounded quantity spell their kind, bounds and unit in a
+    /// refusal. No QSL criterion governs the spelling of these two types (the
+    /// source-syntax spelling is a message aid); quire-exact FR-386 and FR-387
+    /// define the types.
     #[test]
     fn map_and_bounded_quantity_types_have_a_source_spelling() {
-        let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Boolean,
-            None,
-        )));
-        assert_eq!(super::value_type_source(&map), "Map<Text, Boolean>");
+        let map = |bound| {
+            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+                ValueType::Boolean,
+                bound,
+            )))
+        };
+        assert_eq!(super::value_type_source(&map(None)), "Map<Text, Boolean>");
+        let bound = quire_exact::CardinalityBound::new(1, 4).expect("a bound");
+        assert_eq!(
+            super::value_type_source(&map(Some(bound))),
+            "Map<Text, Boolean>[1, 4]"
+        );
+        let unit = quire_exact::UnitId::compound([5; 32]);
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
-            quire_exact::BoundedQuantityType::new(
-                quire_exact::UnitId::compound([5; 32]),
-                None,
-                None,
-            )
-            .expect("an unbounded bounded quantity type"),
+            quire_exact::BoundedQuantityType::new(unit, None, None)
+                .expect("an unbounded bounded quantity type"),
         ));
-        assert!(super::value_type_source(&bounded).starts_with("BoundedQuantity["));
+        assert_eq!(
+            super::value_type_source(&bounded),
+            format!("BoundedQuantity[{unit}]")
+        );
     }
 
     #[trace("TC-1065", "FR-218-AC-31")]

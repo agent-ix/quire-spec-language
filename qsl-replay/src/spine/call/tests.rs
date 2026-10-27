@@ -2295,10 +2295,11 @@ fn argument_value_binds_native_uuid_and_timestamp_values() {
     }
 }
 
-/// TC-927: a map type admits no value and a bounded quantity is a quantity
-/// leaf the call facade does not bind natively; both refuse as wrong kinds
-/// and neither panics.
-#[trace("TC-927")]
+/// FR-367-AC-4: a mistyped argument refuses `WrongValueKind` at its
+/// position. A map type admits no value (quire-exact FR-386) and a bounded
+/// quantity has no native binding here (quire-exact FR-387), so an argument
+/// for either is mistyped and neither panics.
+#[trace("TC-1053", "FR-367-AC-4")]
 #[test]
 fn argument_value_refuses_map_and_bounded_quantity_parameters() {
     let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(

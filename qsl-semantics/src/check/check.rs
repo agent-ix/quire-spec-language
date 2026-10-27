@@ -1096,6 +1096,7 @@ impl Scope {
                 }
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Map(map) => pending.push(map.values()),
                 ValueType::Composite(key) if seen.insert(*key) => {
                     match self
                         .types
@@ -1452,6 +1453,7 @@ impl Scope {
             match value_type {
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Map(map) => pending.push(map.values()),
                 ValueType::Composite(declaration) => {
                     if self.model_records.events.contains(declaration) {
                         return true;
@@ -1538,30 +1540,7 @@ impl Scope {
                 .iter()
                 .map(FieldDeclaration::value_type)
         }));
-        let has_float = has_ieee_literal
-            || declared.into_iter().any(|mut ty| loop {
-                match ty {
-                    ValueType::Float(_) => return true,
-                    ValueType::Option(payload) => ty = payload,
-                    ValueType::Collection(collection) => ty = collection.element(),
-                    ValueType::Map(map) => ty = map.values(),
-                    ValueType::Boolean
-                    | ValueType::Integer
-                    | ValueType::Int(_)
-                    | ValueType::Rational(_)
-                    | ValueType::Decimal(_)
-                    | ValueType::Quantity(_)
-                    | ValueType::BoundedQuantity(_)
-                    | ValueType::Text(_)
-                    | ValueType::String
-                    | ValueType::Uuid
-                    | ValueType::Timestamp
-                    | ValueType::Enum(_)
-                    | ValueType::Composite(_)
-                    | ValueType::Reference(_)
-                    | ValueType::Population(_) => return false,
-                }
-            });
+        let has_float = has_ieee_literal || declared.into_iter().any(holds_float);
         self.ieee_operation = has_float;
         if has_float && self.ieee_profile.is_none() {
             let lock = DefinitionLock::pinned();
@@ -4052,4 +4031,64 @@ pub(crate) fn bind_parameters(
         typer.bind(name, value_type.clone(), location, LocalKind::Parameter)?;
     }
     Ok(())
+}
+
+/// Whether `ty` is, or holds through an option, a collection or a map's
+/// values, a `Float` (the IEEE profile is needed exactly then).
+fn holds_float(mut ty: &ValueType) -> bool {
+    loop {
+        match ty {
+            ValueType::Float(_) => return true,
+            ValueType::Option(payload) => ty = payload,
+            ValueType::Collection(collection) => ty = collection.element(),
+            ValueType::Map(map) => ty = map.values(),
+            ValueType::Boolean
+            | ValueType::Integer
+            | ValueType::Int(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
+            | ValueType::Text(_)
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Enum(_)
+            | ValueType::Composite(_)
+            | ValueType::Reference(_)
+            | ValueType::Population(_) => return false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod holds_float_tests {
+    use super::*;
+
+    /// The IEEE profile is needed exactly when a `Float` is declared, also
+    /// behind an option, a collection or a map's values (quire-exact
+    /// FR-386); a bounded quantity is not a float. No QSL criterion pins the
+    /// map arm itself.
+    #[test]
+    fn a_float_behind_a_map_is_seen() {
+        let float = ValueType::Float(quire_exact::FloatType::new(
+            quire_exact::IeeeWidth::Binary64,
+            quire_exact::RoundingMode::Exact,
+        ));
+        let map =
+            |values| ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)));
+        assert!(holds_float(&float));
+        assert!(holds_float(&map(float.clone())));
+        assert!(holds_float(&map(ValueType::option(map(float)))));
+        assert!(!holds_float(&map(ValueType::Boolean)));
+        let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+            quire_exact::BoundedQuantityType::new(
+                quire_exact::UnitId::compound([5; 32]),
+                None,
+                None,
+            )
+            .expect("in the unit"),
+        ));
+        assert!(!holds_float(&bounded));
+    }
 }

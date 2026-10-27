@@ -1993,6 +1993,7 @@ fn contains_population(value_type: &quire_exact::ValueType) -> bool {
             quire_exact::ValueType::Population(_) => return true,
             quire_exact::ValueType::Option(payload) => pending.push(payload),
             quire_exact::ValueType::Collection(collection) => pending.push(collection.element()),
+            quire_exact::ValueType::Map(map) => pending.push(map.values()),
             _ => {}
         }
     }
@@ -3173,6 +3174,9 @@ fn widen_range(value_type: &quire_exact::ValueType) -> quire_exact::ValueType {
                 collection.bound(),
             ))
         }
+        quire_exact::ValueType::Map(map) => quire_exact::ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(widen_range(map.values()), map.bound()),
+        )),
         other => other.clone(),
     }
 }
