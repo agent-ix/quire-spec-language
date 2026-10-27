@@ -44,3 +44,14 @@ FND-003 and FND-004 are low.
 | FND-002 | medium | The unbounded collection is refused, though FR-230 admits it. FR-230 says a collection with no declared maximum "SHALL record `max: None` and add no static bound, and its live places are bounded in analysis by the model checker's `max_clocks` limit (QSpec FR-415 'Cardinality bound')". qsl-eval refuses the whole timed subject (`UnboundedCollection`) instead. QSL has no `max_clocks` setting yet (no code names it). The refusal is honest, but no ticket owns the specified behaviour. Track it, with the FR-255 limit registration, or bound the live slots by a `max_clocks` limit. | FR-230 "Clock collections"; qsl-eval/src/simulation/model/timed.rs:404-412 |
 | FND-003 | low | Spec gap. AC-19's `m: Map<Timer, Int>` refusal (`ill_typed`/`operator-ineligible` at the key type) cannot be reached. Package maps are keyed by `Text` (FR-154), and QSpec's shared `type-ref` grammar has no `Map`, so neither a package nor a unit can declare a clock-bearing key. File on STD-493: drop the clause or say where such a key can be written. | FR-230-AC-19, FR-230 "Clock collections" |
 | FND-004 | low | Edge coverage. `!=` over a clock collection and `convert` are named in FR-230 "Element identity" but untested; the `!=` probe refuses as expected. The `filter(…) = filter(…)` case is SR-1655001 FND-001. At qsl-eval only a `Sequence` is exercised, not the slot listing and liveness of a set or bag, nor a nested collection (a record in a collection inside a record) whose `bound` is a product. | qsl-semantics/tests/it/clock_places.rs:533-632; qsl-eval/tests/it/timed_subject.rs |
+
+## Dispositions
+
+Round 1, head f5f9dfedf (fix commit fcbfb29ef).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | moved-to-580m | The coordinator moved this to 580m. QSL intake of package `map` and `sequence` type definitions (FCD `kind: map` with `values`, QSpec FR-154-AC-27) is built there. It is recorded as moved, not still open. |
+| FND-002 | moved-to-580m | The coordinator moved this to 580m. Bounding the live places of an unbounded clock collection by `max_clocks` (FR-230 "Clock collections", QSpec FR-415) replaces `UnboundedCollection` there. |
+| FND-003 | deferred | Filed as STD-493 item 26 (2026-10-27 03:17): no input can declare a clock-bearing `Map` key, because package maps are keyed by `Text` and the `type-ref` grammar has no `Map`. |
+| FND-004 | fixed | `a_record_collection_reads_its_data_and_refuses_value_comparison` now covers `!=`, `filter(..) = filter(..)` and `convert`. `convert` refuses at the target type form `Set<Config::Timer>[0, 3]`, which is a reasonable place, because the conversion's element comparison is named there. `a_collection_in_a_collection_bounds_its_place_by_the_product` asserts that `hs.[slot].ts.[slot].x` has two slots and a bound of 6. `a_set_or_bag_of_records_holds_a_clock_per_held_slot` covers a set and a bag with 2 of 3 slots live at qsl-eval. |
