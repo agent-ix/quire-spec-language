@@ -187,6 +187,7 @@ impl Case {
                 max_messages,
                 max_live_instances,
                 limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
             },
             &Cancel::new(),
         )
@@ -646,6 +647,7 @@ fn unset_bounds_default_to_four_and_stay_out_of_the_obligation() {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         };
         let context = SubjectContext::new(&request.subject.model).expect("the package emits");
         let mut written = ModelRequest::new();

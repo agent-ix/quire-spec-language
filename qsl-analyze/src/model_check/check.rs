@@ -618,6 +618,9 @@ pub struct ProtocolCheckRequest<'a> {
     /// The method bound `max_messages` (FR-225, ADR-025 MB-2): the live
     /// messages per location under `ra`; `None` runs with 4.
     pub max_messages: Option<u64>,
+    /// Whether protocol liveness may diagnose lassos that violate memory
+    /// fairness, without treating them as ordinary counterexamples.
+    pub ignore_memory_constraints: bool,
     /// The method bound `max_live_instances` (FR-209, ADR-027 AE-4): the live
     /// instances of an `activation on each` protocol; `None` runs with 3. It
     /// is outside the subject and its obligation identity.
@@ -841,7 +844,10 @@ fn check_protocol_liveness(
                     Some(bound),
                     request.item,
                     request.max_depth,
-                    request.limits,
+                    super::liveness::ProtocolLivenessOptions {
+                        limits: request.limits,
+                        ignore_memory_constraints: request.ignore_memory_constraints,
+                    },
                     cancel,
                 )
             })
@@ -853,7 +859,10 @@ fn check_protocol_liveness(
                 None,
                 request.item,
                 request.max_depth,
-                request.limits,
+                super::liveness::ProtocolLivenessOptions {
+                    limits: request.limits,
+                    ignore_memory_constraints: request.ignore_memory_constraints,
+                },
                 cancel,
             )
         }),

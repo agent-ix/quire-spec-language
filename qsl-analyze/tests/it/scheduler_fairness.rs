@@ -185,6 +185,7 @@ impl Chatter {
                 max_messages: None,
                 max_live_instances: None,
                 limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
             },
             &Cancel::new(),
         )
@@ -715,6 +716,7 @@ fn liveness_over_an_ra_parallel_refuses() {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         },
         &Cancel::new(),
     )
