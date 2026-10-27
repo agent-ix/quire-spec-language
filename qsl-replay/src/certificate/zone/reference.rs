@@ -291,3 +291,37 @@ pub(super) fn lu_of<W: Exact>(lower: &[Option<i64>], upper: &[Option<i64>]) -> L
         upper: upper.iter().map(|b| b.map(W::of)).collect(),
     }
 }
+
+/// The classical `Extra_M` rule on plain bounds, entry by entry and not
+/// closed: `x_i - x_j ≺ c` with `c > M_i` (or `i` a clock no constant
+/// reads) becomes `∞`, and one with `c < -M_j` (`c < 0` for such a `j`)
+/// becomes `< -M_j`. Entry `k` of `max` is clock `k + 1`'s constant.
+pub(super) fn extrapolate(zone: &RawZone, max: &[Option<i64>]) -> RawZone {
+    let ceiling = |k: usize| if k == 0 { None } else { max[k - 1] };
+    let mut bounds = zone.bounds.clone();
+    for i in 0..zone.dim {
+        for j in (0..zone.dim).filter(|&j| j != i) {
+            let c = match zone.at(i, j) {
+                RefBound::Inf => continue,
+                RefBound::Lt(c) | RefBound::Le(c) => c,
+            };
+            let above = match ceiling(i) {
+                Some(m) => c > m,
+                None => i != 0,
+            };
+            let below = match ceiling(j) {
+                Some(m) => c < -m,
+                None => j != 0 && c < 0,
+            };
+            if above {
+                bounds[i * zone.dim + j] = RefBound::Inf;
+            } else if below {
+                bounds[i * zone.dim + j] = RefBound::Lt(-ceiling(j).unwrap_or(0));
+            }
+        }
+    }
+    RawZone {
+        dim: zone.dim,
+        bounds,
+    }
+}
