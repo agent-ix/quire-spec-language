@@ -156,6 +156,7 @@ impl World {
                 max_messages: None,
                 max_live_instances,
                 limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
             },
             &Cancel::new(),
         )
@@ -1247,6 +1248,7 @@ fn a_liveness_clause_over_an_on_each_protocol_refuses() {
             max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
         },
         &Cancel::new(),
     )
@@ -1459,6 +1461,7 @@ fn requests_differing_only_in_max_live_instances_share_one_obligation_identity()
         max_messages: None,
         max_live_instances,
         limits: ModelCheckLimits::default(),
+        ignore_memory_constraints: false,
     };
     let [clause] = world.checked.graph().temporal_clauses() else {
         panic!("one declared clause");
