@@ -312,6 +312,24 @@ ill-formed use.
   contains `value(p) ~ c` SHALL record the data predicate `present(p)` with the
   convex part. A time invariant `when P { value(p) <= c }` SHALL bound `p`'s
   clock only at states where `P` holds, and `P` establishes `present(p)`.
+- **Presence bit.** The presence of a guarded place is eval-side state. A
+  place whose only content is a clock (`Option<Clock>`, a union case
+  `Armed(Clock)`, a slot of `Sequence<Option<Clock>>`) has no data in an FR-106
+  snapshot from which `present` could be read, so the evaluator SHALL hold one
+  **presence bit** for each guarded place of each object, in the state and in
+  the state key; a guarded place that also has data on its path (an
+  `Option<Timer>`) takes its bit from that data and the two never disagree.
+  `present(p)` of a guarded place SHALL be a `Boolean` data predicate over that
+  bit, read through the data-predicate path and never as a clock read; the
+  recorded guard carries it as a data predicate of its convex part. A write
+  that makes the place present (`self.v = c`) SHALL set the bit and reset the
+  clock to `c`; a **drop** (`self.v = absent`, another union case, or the
+  removal of the slot) SHALL set the bit false and leave the dropped clock
+  **unconstrained**: no zone constraint, time invariant bound or elapse
+  applies to it, and a later write that makes it present resets it afresh.
+  The initial bit of a place that the snapshot carries no case for ranges over
+  absent and present (over-approximating), as the initial count of a pure-clock
+  collection does ("Clock collections", "Initial element count").
 - **Parameters.** A call argument for a `Clock` parameter, or a parameter of a
   clock-bearing type, SHALL be a **place expression**: a place path from
   `self` or from an object, record or tuple parameter; a clock parameter of the
@@ -409,6 +427,22 @@ ill-formed use.
   no declared maximum SHALL record `max: None` and add no static bound, and its live places are
   bounded in analysis by the model checker's `max_clocks` limit (QSpec FR-415 "Cardinality
   bound").
+- **Initial element count.** An element place of a clock collection is live
+  exactly while the collection holds the element. A collection whose element
+  has a data part takes its initial elements, and so its count, from the
+  snapshot (FR-106). A **pure-clock collection** (`Sequence<Clock>`,
+  `Set<Clock>`, `Bag<Clock>`, `OrderedSet<Clock>`, the same over an alias of
+  `Clock` or over `Option<Clock>`, and a `Map` whose value is such a type) has
+  no snapshot data, so its initial element count SHALL range over `[min, max]`
+  (over-approximating) and SHALL NOT take `min`; each initial element is a clock
+  place at 0, and each initial state is one choice of count. `min` is the
+  collection's lower bound (FR-144's `K<T>[a, b]` `a`, a field's multiplicity
+  lower bound, else 0) and `max` its declared maximum. A `Set<Clock>` holds at
+  most one element, so its range is `[min, min(max, 1)]`, and a `min` above 1
+  leaves no initial state (`Undecided(NoInitialState)`, FR-239). With no
+  declared maximum the range is `[min, ∞)`, which is the unbounded domain of
+  FR-120 (`RequiresBound`) except for a `Set<Clock>`, and an analysis that
+  reaches more live clocks than `max_clocks` stops `incomplete` as above.
 - **Element identity.** A `Set`, `Bag` or `OrderedSet` of a clock-bearing element type SHALL
   decide uniqueness and multiplicity by equality of the data parts (QSpec FR-144), so the
   checker SHALL record `Set<Clock>` as holding at most one element, and SHALL refuse `=` and
@@ -475,9 +509,25 @@ ill-formed use.
   a reset of each place `r` can denote, under the frame rule of "Operation parameters". `=` and
   `!=` over two `Reference<Clock>` compare the places they denote, by object, field path and
   slot, and never the clocks' values; they are data reads. A reference to a slot place names the
-  slot, so it keeps naming that slot when the collection moves its element. The state key of
-  a state SHALL hold, for a `Reference<Clock>`, the place's index in the "Places" order and no
-  clock value.
+  slot, so it keeps naming that slot when the collection moves its element.
+  **Place identity.** A `Reference<Clock>` SHALL be QSL-side an opaque
+  **place id**: the stable identity of one `clock_place` node of the checked
+  package ("Checked package"), a nonempty UTF-8 text computed from the place's
+  owner object key and its ordered `resolved_path` rows (slot steps included),
+  never from the listing position of "Places" and never a clock value. It is
+  stable within one checked package and is compared only for equality; it is
+  not ordered by value, and a place id of one package names nothing in another.
+  The same value SHALL be carried in a field, a parameter, a result, a record
+  component and a collection element, and `Option<Reference<Clock>>` is absent
+  or one place id. The domain-package target form of a `reference` whose
+  `target` is `ix://quire/native/Clock` (or an alias of it) is that place id,
+  and it needs no kernel value form: it is FR-181's reference triple with the
+  population's `universe`, the owning object type's `object_type` and the
+  place id's UTF-8 bytes as `identity` (quire-exact's `ObjectReference` takes
+  any nonempty authored identity), and a triple of this form can only be read
+  through a `Reference<Clock>` type, so it is never an object reference.
+  The state key of a state SHALL hold, for a `Reference<Clock>`, the place id
+  and no clock value.
 - **Clock constraints on a type.** A package constraint whose `appliesTo` is the clock type
   (`ix://quire/native/Clock` itself or an alias of it) is a **clock constraint**. The keywords
   admitted are `max`, with `operands.value` an exact non-negative rational number of the model's
@@ -615,6 +665,9 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-36 | I2 refuses a `tick` timed source with any clock place as `invalid_package`/`clock-without-dense-time` at the offending `clock_place` node's `model` binding pointer `/semantic_graph/nodes/{i}/body/members/0/value/target`, even when the tick operation anchor and every reference are otherwise valid. A valid tick source with no clock places remains admitted. | Test |
 | FR-230-AC-37 | I2 requires the dense or tick source unit's `dimension_node_id` to equal the timed root's exact base `Time` `time_dimension` node. A source unit in base `Length`, a derived non-Time dimension or a nominal derived-Time dimension refuses `ill_typed`/`invalid-time-quantity` at `/semantic_graph/nodes/{i}/body/members/1/value/target`; TM-24..TM-29 cover each dimension class for both source kinds. | Test |
 | FR-230-AC-38 | For `time M dense unit u` and `time M tick O period p unit u`, S3 resolves model alias `M` against the selected package and retains its alias and unique checked semantic-node `NodeKey` on the checked time source. A package with no semantic node denoted by `M` refuses `missing_declaration`/`missing-name` at `M`; a package with multiple candidate semantic model nodes refuses `ambiguous_declaration`/`ambiguous-name` at `M`, regardless of declaration or graph order. With exactly one candidate, the emitted timed-model root's `model` reference is that node. | Test |
+| FR-230-AC-39 | Over `v: Option<Clock>`, `Armed(Clock)` and `q: Sequence<Option<Clock>>[0, 2]` (none of which a snapshot carries a case for): each guarded place has one presence bit in the state and in the state key, `present(self.v)` is a `Boolean` data predicate over it (it type-checks as the operand of `and`/`not` and is recorded with the convex part, not as a clock constraint), `self.v = 0 ms` sets the bit and resets `v`, `self.v = absent` sets the bit false and leaves `v` unconstrained (a time invariant `when true { value(self.v) <= 3 ms }` refuses `unproved-presence`, and with `present(self.v)` places no bound once `v` is dropped), the initial bit ranges over absent and present, and two states that differ only in a presence bit have different state keys. For `Option<Timer>` the bit equals the presence of the data. | Test |
+| FR-230-AC-40 | With FR-230-AC-24's model and `q: Sequence<Clock>[0, 3]`, a `Reference<Clock>` value is the place id of `Call1.x`, a nonempty text built from the owner object key and the `resolved_path` rows, and not the index `0` of the "Places" order: inserting an unrelated field before `x` changes the package identity and may change the place id, while two states of one package that name `Call1.x` hold the same id. A place id is stored in a field `r`, a parameter, a result, a record component and a `Sequence<Reference<Clock>>` element; `=` over two place ids is a data comparison, `<` over them refuses `ill_typed`/`operator-ineligible`; in a package `reference` whose `target` is `ix://quire/native/Clock` the instance value is FR-181's triple with `identity` the UTF-8 bytes of the id, and `ref(self.q[0])` keeps naming slot `0` after a reorder. No new quire-exact value form is needed. | Test |
+| FR-230-AC-41 | Over `s: Sequence<Clock>[1, 3]`, `t: Set<Clock>[0, 5]`, `b: Bag<Clock>[0, 2]`, `r: Sequence<Timer>[1, 3]` with a snapshot of two `Timer` elements, and `u: Sequence<Clock>` (no maximum): the initial element count of `s` ranges over `[1, 3]`, giving three initial states, and not only `1`; `t` ranges over `[0, 1]`; `b` over `[0, 2]`; `r` takes its count 2 from the snapshot; every initial clock is 0. `Set<Clock>[2, 5]` leaves no initial state (`Undecided(NoInitialState)`). `u` ranges over `[0, ∞)` and a request over it returns `NotSimulated::RequiresBound` (FR-120). | Test |
 
 ## Dependencies
 
