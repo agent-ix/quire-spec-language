@@ -172,7 +172,7 @@ pub use refinement::{
     RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
     RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
     RefinementV2EncodingError, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel,
-    StepRow, StepTarget, SubjectSide, UnsupportedFeature,
+    StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -4825,20 +4825,11 @@ impl PackageDeclarations {
                         ))),
                     });
                 };
-                refinement::subject_refusal(checked, declaration.form.span, |alias| {
-                    models
-                        .iter()
-                        .filter(|model| model.alias() == Some(alias))
-                        .map(AdmittedModel::state_machine_count)
-                        .sum()
-                })
-                .or_else(|| {
-                    (!checked.v2_empty_model_body()).then(|| {
-                        refinement::not_emitted(
-                            declaration.form.name.name.clone(),
-                            declaration.form.span,
-                        )
-                    })
+                (!checked.v2_empty_model_body()).then(|| {
+                    refinement::not_emitted(
+                        declaration.form.name.name.clone(),
+                        declaration.form.span,
+                    )
                 })
                 // `None` means this checked declaration is included by the
                 // current V2 emission slice.
