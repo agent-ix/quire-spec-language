@@ -43,7 +43,7 @@ pub(crate) fn enumerable(value_type: &ValueType) -> bool {
 /// enumerates, an enum, a record with optional fields, or a record or tuple of
 /// such, indexed in declaration order with the last field moving fastest and
 /// an absent optional field first.
-enum Space {
+pub(super) enum Space {
     Plain(Domain),
     Enum(Vec<Value>),
     Composite {
@@ -319,9 +319,49 @@ pub(super) enum Domain {
     /// A random parameter's support, in declared order (FR-187, ADR-024
     /// PM-1): its finite domain whatever its declared type.
     Listed(Vec<Value>),
+    /// An enum, or a record, tuple or union of finite components, as a
+    /// field's domain ([`Domain::of_field`]).
+    Space(Box<Space>),
 }
 
 impl Domain {
+    /// The domain of a field of declared type `value_type`: [`Self::of`],
+    /// and for an enum, or a record, tuple or union whose data components
+    /// all have finite domains, its finite space (ADR-027 ST-11). A clock
+    /// component is a place, not a component of the value (FR-230), so it
+    /// has no part in the space. QSL enumerates such a field pending
+    /// FR-120's text, which names every other type an unbounded domain
+    /// (STD-493 item 21).
+    pub(super) fn of_field(
+        value_type: &ValueType,
+        objects: &[ObjectReference],
+        types: &TypeEnvironment,
+    ) -> Option<Self> {
+        match value_type {
+            ValueType::Composite(_) | ValueType::Enum(_) => {
+                Space::of(value_type, objects, types, &mut Vec::new())
+                    .map(|space| Self::Space(Box::new(space)))
+            }
+            ValueType::Option(payload) => Some(Self::Option {
+                payload_type: (**payload).clone(),
+                inner: Box::new(Self::of_field(payload, objects, types)?),
+            }),
+            ValueType::Collection(collection) => {
+                let bound = collection.bound()?;
+                if collection.kind() != CollectionKind::Sequence {
+                    return None;
+                }
+                Some(Self::Sequence {
+                    collection: (**collection).clone(),
+                    element: Box::new(Self::of_field(collection.element(), objects, types)?),
+                    min: bound.minimum(),
+                    max: bound.maximum(),
+                })
+            }
+            other => Self::of(other, objects, types),
+        }
+    }
+
     /// The domain of `value_type`, where a `Reference<T>` ranges over the
     /// members of `objects` whose most-specific type conforms to `T`.
     /// `None` when `value_type` is not [`enumerable`].
@@ -374,6 +414,7 @@ impl Domain {
             Self::Option { inner, .. } => inner.len().saturating_add(1),
             Self::Reference(objects) => objects.len() as u128,
             Self::Listed(values) => values.len() as u128,
+            Self::Space(space) => space.len(),
             Self::Sequence {
                 element, min, max, ..
             } => {
@@ -415,6 +456,7 @@ impl Domain {
                 .cloned()
                 .map(Value::Reference),
             Self::Listed(values) => values.get(usize::try_from(index).ok()?).cloned(),
+            Self::Space(space) => space.nth(index),
             Self::Sequence {
                 collection,
                 element,

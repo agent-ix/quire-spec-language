@@ -1249,10 +1249,11 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
 
 /// Part of FR-230-AC-11 (TC-685): a state holding a record value steps.
 /// From `Call.t = Timer { n: 0 }`, after a delay of 2, `send` (whose
-/// postcondition writes `phase`) has its four successors, each keeping `t`
-/// and every clock at 2, and each post state has a digest. Not covered:
-/// a step writing `t` through a record literal, which FR-120's value domains
-/// do not reach (a record is an unbounded domain; STD-493 item 21).
+/// postcondition writes `phase` and keeps `t.n`) has its four successors,
+/// each keeping `t` and every clock at 2, and each post state has a digest.
+/// `t`'s frame grants it, so its data part ranges over its finite domain
+/// where the postcondition leaves it free
+/// ([`a_granted_field_ranges_over_its_finite_domain_or_stops`]).
 #[trace("TC-685")]
 #[test]
 fn a_record_holding_state_steps() {
@@ -1261,7 +1262,7 @@ fn a_record_holding_state_steps() {
         "",
         &only(
             &["send"],
-            "post Send using v on M::Call::send { self.phase = 1 }\n",
+            "post Send using v on M::Call::send { self.phase = 1 and self.t.n = pre(self.t.n) }\n",
         ),
         json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}}}),
     );
@@ -1556,7 +1557,7 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
         "",
         &only(
             &["send"],
-            "post Send using v on M::Call::send { self.phase = 1 }\n",
+            "post Send using v on M::Call::send { self.phase = 1 and self.ts = pre(self.ts) }\n",
         ),
         json!({"t": timer("0"), "ts": {"sequence": [timer("0")]}}),
     );
@@ -1655,7 +1656,7 @@ fn an_unbounded_collection_is_bounded_by_max_clocks() {
             "",
             &only(
                 &["send"],
-                "post Send using v on M::Call::send { self.phase = 1 }\n",
+                "post Send using v on M::Call::send { self.phase = 1 and self.ts = pre(self.ts) }\n",
             ),
             json!({"t": timer("0"), "ts": {"sequence": vec![timer("1"); held]}}),
         )
@@ -1993,11 +1994,35 @@ fn slot_clocks(timed: &TimedSystem<'_, '_>, state: &TimedState) -> Vec<(String, 
 /// A state `operation` steps to from `state`, after checking that every
 /// step of `operation` gives `ts` the same clocks: the frame leaves the
 /// operation's other fields free, so it has a step for each of their values.
+/// Where the operation's frame grants `ts` and its postcondition leaves
+/// `ts`'s data free, the steps that keep `ts`'s data.
 fn only_step(timed: &TimedSystem<'_, '_>, state: &TimedState, operation: &str) -> TimedState {
     let steps = timed.steps(state).expect("the state steps");
-    let mut posts = steps
+    let ts_key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/ts"),
+    };
+    let ts_of = |state: &TimedState| {
+        state
+            .discrete()
+            .state()
+            .populations
+            .values()
+            .find_map(|objects| objects.get("c"))
+            .and_then(|object| object.fields.get(&ts_key))
+            .map(|value| format!("{value:?}"))
+    };
+    let steps: Vec<_> = steps
         .into_iter()
         .filter(|(step, _)| step.operation().contains(&format!("Call/{operation}\"")))
+        .collect();
+    let kept: Vec<_> = steps
+        .iter()
+        .filter(|(_, post)| ts_of(post) == ts_of(state))
+        .cloned()
+        .collect();
+    let mut posts = if kept.is_empty() { steps } else { kept }
+        .into_iter()
         .map(|(_, post)| post);
     let first = posts.next().expect("the operation steps");
     for post in posts {
@@ -2440,4 +2465,145 @@ fn an_unbounded_collection_of_records_places_every_live_clock() {
             assert_eq!(stepped.err(), Some(TimedStop::MaxClocks { max_clocks }));
         }
     }
+}
+
+/// FR-120 "Successors" (TC-472), STD-493 item 21's ruling: a field a frame
+/// grants takes every value of its domain, a record or tuple of finite data
+/// components included, and a field with no finite domain takes the value a
+/// postcondition conjunct `self.f = E` computes, never silently its
+/// pre-state value. From `t = Timer { n: 0 }`, `send` (frame `phase`,
+/// `inflight`, `late`, `x`, `t`) with the postcondition `self.phase = 1`
+/// has 16 successors, one for each `inflight`, `late` and `t.n` (`Phase`
+/// holds 4 values), and with `self.t.n = pre(self.t.n)` too has 4. A field
+/// `h: Holder { k: Integer }`, whose `k` has no finite domain, granted by
+/// `send` and left free stops `unsupported_construct`/`write-not-computed`,
+/// and `self.h = M::Holder { k: pre(self.h).k + 1 }` writes `k = 1`; so does
+/// a free `count: Integer`, and `self.count = pre(self.count) + 2` writes
+/// 5 from 3. A field `ds:
+/// Sequence<Quantity<ms>>` with no declared maximum: `self.ds =
+/// sequence[5 ms, 11 ms]` writes it (it gave no successor before), `self.ds
+/// = self.ds` (no function of the pre-state) stops `write-not-computed`.
+#[trace("TC-472")]
+#[test]
+fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
+    use qsl_eval::simulation::TransitionSystem;
+
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let steps = |post: &str| {
+        let world = world_holding(
+            timer_document(),
+            "",
+            &only(
+                &["send"],
+                &format!("post Send using v on M::Call::send {{ {post} }}\n"),
+            ),
+            json!({"t": timer.clone()}),
+        );
+        let held = system(&world);
+        let initial = held.initial().remove(0);
+        held.successors(&initial)
+            .map(|expansion| expansion.successors.len())
+    };
+    assert_eq!(steps("self.phase = 1"), Ok(16));
+    assert_eq!(steps("self.phase = 1 and self.t.n = pre(self.t.n)"), Ok(4));
+
+    // A record with an unbounded component, and a quantity sequence.
+    let document = {
+        let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+        let holder = ident("Holder");
+        let mut k = wire_field("k", "ix://quire/native/Integer");
+        let identity = format!("{holder}/k");
+        k["identity"] = json!(identity);
+        k["origin"] = origin(&identity);
+        let types = document["types"].as_array_mut().expect("types");
+        types.push(wire_type(&holder, "value_record", json!({"fields": [k]})));
+        let mut ds = wire_field("ds", "ix://quire/unit/ms");
+        ds["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+        let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+        fields.push(wire_field("h", &holder));
+        fields.push(ds);
+        fields.push(wire_field("count", "ix://quire/native/Integer"));
+        for operation in types[1]["operations"].as_array_mut().expect("operations") {
+            if operation["name"] == "send" {
+                let modifies = operation["frame"]["modifies"]
+                    .as_array_mut()
+                    .expect("a frame");
+                modifies.push(json!(ident("Call/h")));
+                modifies.push(json!(ident("Call/ds")));
+                modifies.push(json!(ident("Call/count")));
+            }
+        }
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let holder =
+        |k: &str| json!({"record": {"type": ident("Holder"), "fields": {"k": {"integer": k}}}});
+    let written = |post: &str| {
+        let world = world_holding(
+            document.clone(),
+            "",
+            &only(&["send"], &format!("post Send using v on M::Call::send {{ self.phase = 1 and self.inflight and self.late and self.t.n = pre(self.t.n) and {post} }}\n")),
+            json!({"t": timer.clone(), "h": holder("0"), "ds": {"sequence": []},
+                "count": {"integer": "3"}}),
+        );
+        let held = system(&world);
+        let initial = held.initial().remove(0);
+        held.successors(&initial).map(|expansion| {
+            expansion
+                .successors
+                .into_iter()
+                .map(|(_, post)| {
+                    let object = post
+                        .state()
+                        .populations
+                        .values()
+                        .find_map(|objects| objects.get("c"))
+                        .expect("c")
+                        .clone();
+                    let field = |name: &str| {
+                        object
+                            .fields
+                            .get(&DeclarationKey {
+                                package: PACKAGE.to_owned(),
+                                node: ident(&format!("Call/{name}")),
+                            })
+                            .map(|value| format!("{value:?}"))
+                            .unwrap_or_default()
+                    };
+                    (field("h"), field("ds"), field("count"))
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    let not_computed = Err(qsl_eval::simulation::ExpansionStop {
+        cause: CatalogCode::new("unsupported_construct", "write-not-computed"),
+        limit: None,
+    });
+    assert_eq!(
+        written("self.ds = sequence[5 ms] and self.count = 0").map(|posts| posts.len()),
+        not_computed.clone().map(|_: ()| 0)
+    );
+    assert_eq!(
+        written("self.h = M::Holder { k: 0 } and self.ds = sequence[5 ms]")
+            .map(|posts| posts.len()),
+        not_computed.clone().map(|_: ()| 0)
+    );
+    let posts = written(
+        "self.h = M::Holder { k: pre(self.h).k + 1 } and self.ds = sequence[5 ms, 11 ms] \
+         and self.count = pre(self.count) + 2",
+    )
+    .expect("the state expands");
+    let [(h, ds, count)] = &posts[..] else {
+        panic!("one successor: {posts:?}");
+    };
+    assert!(h.contains("Integer(1)"), "{h}");
+    assert!(count.contains("Integer(5)"), "{count}");
+    assert!(
+        ds.contains("Integer(5)") && ds.contains("Integer(11)"),
+        "{ds}"
+    );
+    assert_eq!(
+        written("self.h = M::Holder { k: 0 } and self.ds = self.ds and self.count = 0")
+            .map(|posts| posts.len()),
+        not_computed.map(|_: ()| 0)
+    );
 }
