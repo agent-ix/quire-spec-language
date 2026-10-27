@@ -2599,12 +2599,12 @@ fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
     });
     assert_eq!(
         written("self.ds = sequence[5 ms] and self.count = 0").map(|posts| posts.len()),
-        not_computed.clone().map(|_: ()| 0)
+        not_computed.map(|_: ()| 0)
     );
     assert_eq!(
         written("self.h = M::Holder { k: 0 } and self.ds = sequence[5 ms]")
             .map(|posts| posts.len()),
-        not_computed.clone().map(|_: ()| 0)
+        not_computed.map(|_: ()| 0)
     );
     let posts = written(
         "self.h = M::Holder { k: pre(self.h).k + 1 } and self.ds = sequence[5 ms, 11 ms] \
@@ -3039,4 +3039,159 @@ fn an_enum_parameter_and_result_are_finite() {
         .filter(|(transition, _)| format!("{transition:?}").contains("Call/work"))
         .count();
     assert_eq!(work, 3);
+}
+
+/// [`timer_document`] with `ds: Sequence<Quantity<ms>>` on `Call`, granted
+/// by `send`, and a `max` `"3"` on `ms` on `Call` (QSpec FR-154 "Unit
+/// bounds").
+fn bounded_quantity_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&timer_document()).expect("JSON");
+    let call = ident("Call");
+    let mut ds = wire_field("ds", "ix://quire/unit/ms");
+    ds["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+    let types = document["types"].as_array_mut().expect("types");
+    types[1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(ds);
+    let identity = format!("{call}/constraints/max");
+    types[1]["constraints"] = json!([{
+        "identity": identity, "keyword": "max", "operands": {"value": "3"},
+        "appliesTo": "ix://quire/unit/ms", "diagnosticCode": "bound.max",
+        "origin": origin(&identity),
+    }]);
+    for operation in types[1]["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "send" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("a frame")
+                .push(json!(ident("Call/ds")));
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// A Quantity object of `ms` with `magnitude`.
+fn ms(magnitude: Json) -> Json {
+    json!({"kind": "quantity", "unit": "ms", "magnitude": magnitude})
+}
+
+/// A Rational magnitude `numerator`/`denominator`.
+fn ratio(numerator: &str, denominator: &str) -> Json {
+    json!({"kind": "rational", "numerator": numerator, "denominator": denominator})
+}
+
+/// The refusal admitting `world`'s initial snapshot gives, as its debug text.
+fn initial_refusal(world: &World) -> String {
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = system(world);
+    }));
+    let Err(panicked) = refused else {
+        panic!("the initial snapshot refuses");
+    };
+    panicked
+        .downcast_ref::<String>()
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// FR-106 "A Quantity value" (part of FR-106-AC-59, TC-1171) and part of
+/// FR-230-AC-26 (TC-685) with QSpec FR-154-AC-29: over `ds:
+/// Sequence<Quantity<ms>>` and a `max` `"3"` on `ms`, an initial `ds` of
+/// `[3/6 ms, 1.5 ms (Decimal)]` admits as `1/2` and `3/2` ms; `unit` `"s"`
+/// refuses `wrong-value-kind` naming `unit`, a `denominator` `"0"`
+/// `invalid-value` naming `denominator` at the path `0`, `magnitude`, and a
+/// Decimal `scale` `"-1"` `invalid-value` naming `scale`; an initial `4 ms`
+/// refuses `invalid-value` naming the constraint, `max` and `3` at element
+/// 0. From `[1/2 ms]`, `send` writing `self.ds = sequence[5 ms]` steps to a
+/// state whose expansion finds the bound's `InvariantViolated`, and one
+/// writing `sequence[2 ms]` finds nothing.
+#[trace("TC-685")]
+#[test]
+fn a_unit_bound_is_checked_on_supplied_and_stepped_quantities() {
+    use qsl_eval::simulation::model::ModelFinding;
+    use qsl_eval::simulation::TransitionSystem;
+
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world_with = |ds: Json, post: &str| {
+        world_holding(
+            bounded_quantity_document(),
+            "",
+            &only(
+                &["send"],
+                &format!(
+                    "post Send using v on M::Call::send {{ self.phase = 1 and self.inflight \
+                     and self.late and self.t.n = pre(self.t.n) and {post} }}\n"
+                ),
+            ),
+            json!({"t": timer.clone(), "ds": {"sequence": ds}}),
+        )
+    };
+    let decimal = json!({"kind": "decimal", "coefficient": "15", "scale": "1"});
+    let world = world_with(
+        json!([ms(ratio("3", "6")), ms(decimal)]),
+        "self.ds = pre(self.ds)",
+    );
+    let held = system(&world);
+    let initial = held.initial().remove(0);
+    let ds = format!("{:?}", initial.state().populations);
+    assert!(
+        ds.contains("numerator: Integer(1), denominator: Integer(2)")
+            && ds.contains("numerator: Integer(3), denominator: Integer(2)"),
+        "{ds}"
+    );
+
+    for (ds, expected) in [
+        (
+            json!([{"kind": "quantity", "unit": "s", "magnitude": ratio("1", "2")}]),
+            ["wrong-value-kind", "\"member\": \"unit\""],
+        ),
+        (
+            json!([ms(ratio("1", "0"))]),
+            ["invalid-value", "\"member\": \"denominator\""],
+        ),
+        (
+            json!([ms(
+                json!({"kind": "decimal", "coefficient": "15", "scale": "-1"})
+            )]),
+            ["invalid-value", "\"member\": \"scale\""],
+        ),
+        (
+            json!([ms(ratio("4", "1"))]),
+            ["invalid-value", "\"keyword\": \"max\""],
+        ),
+    ] {
+        let refusal = initial_refusal(&world_with(ds.clone(), "self.ds = pre(self.ds)"));
+        for part in expected {
+            assert!(refusal.contains(part), "{ds}: {refusal}");
+        }
+    }
+    let refusal = initial_refusal(&world_with(
+        json!([ms(ratio("1", "0"))]),
+        "self.ds = pre(self.ds)",
+    ));
+    assert!(
+        refusal.contains("Index(0), Field(\"magnitude\")"),
+        "{refusal}"
+    );
+
+    let findings = |post: &str| {
+        let world = world_with(json!([ms(ratio("1", "2"))]), post);
+        let held = system(&world);
+        let initial = held.initial().remove(0);
+        let expansion = held.successors(&initial).expect("the state expands");
+        let [(_, next)] = &expansion.successors[..] else {
+            panic!("one successor: {}", expansion.successors.len());
+        };
+        held.successors(next).expect("the step expands").findings
+    };
+    let violated = findings("self.ds = sequence[5 ms]");
+    assert!(
+        matches!(
+            &violated[..],
+            [ModelFinding::InvariantViolated { clause, .. }] if clause.ends_with("Call/constraints/max")
+        ),
+        "{violated:?}"
+    );
+    assert_eq!(findings("self.ds = sequence[2 ms]"), Vec::new());
 }
