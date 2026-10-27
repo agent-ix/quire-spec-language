@@ -65,8 +65,8 @@ pub use bind::{
 mod call;
 pub(crate) use call::run_reading;
 pub use call::{
-    default_accounting, run, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome,
-    CallRefusal, CallValue, RunRefusal, DEFAULT_WORK_UNITS,
+    default_accounting, run, run_positional, run_positional_with_adapter, Call, CallArgument,
+    CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue, RunRefusal, DEFAULT_WORK_UNITS,
 };
 
 pub(crate) mod clause;

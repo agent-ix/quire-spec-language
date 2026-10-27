@@ -2133,9 +2133,26 @@ impl Disposition {
                     });
                     return result;
                 }
+                if let super::RunRefusal::ObjectContext(
+                    qsl_semantics::model::observation::AdmissionFailure::Fault(fault),
+                ) = refusal.as_ref()
+                {
+                    result.internal_fault = Some(InternalFaultWire {
+                        stage: fault.stage(),
+                        invariant: fault.invariant(),
+                    });
+                    return result;
+                }
                 let cause = match refusal.as_ref() {
                     super::RunRefusal::Compile(compile) => compile.cause(),
                     super::RunRefusal::Fault(_) => None,
+                    super::RunRefusal::ObjectContext(
+                        qsl_semantics::model::observation::AdmissionFailure::Refused(record)
+                        | qsl_semantics::model::observation::AdmissionFailure::Incomplete(record),
+                    ) => Some(record.cause),
+                    super::RunRefusal::ObjectContext(
+                        qsl_semantics::model::observation::AdmissionFailure::Fault(_),
+                    ) => None,
                     super::RunRefusal::MissingDeclaration { .. }
                     | super::RunRefusal::UnsupportedResult { .. }
                     | super::RunRefusal::UnknownParameter { .. }
@@ -2210,6 +2227,12 @@ impl Disposition {
                         }
                         record = record.fields(fields);
                     }
+                    super::RunRefusal::ObjectContext(
+                        qsl_semantics::model::observation::AdmissionFailure::Refused(admission)
+                        | qsl_semantics::model::observation::AdmissionFailure::Incomplete(admission),
+                    ) => {
+                        record = record.fields(admission.fields.clone());
+                    }
                     super::RunRefusal::DanglingReference { position }
                     | super::RunRefusal::Storage { position, .. } => {
                         record =
@@ -2219,6 +2242,9 @@ impl Disposition {
                     | super::RunRefusal::Cancelled(_)
                     | super::RunRefusal::Supplied(_)
                     | super::RunRefusal::UnsupportedHelper(_) => {}
+                    super::RunRefusal::ObjectContext(
+                        qsl_semantics::model::observation::AdmissionFailure::Fault(_),
+                    ) => {}
                 }
                 result.refusal = Some(record);
             }

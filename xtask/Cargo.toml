@@ -21,6 +21,7 @@ qsl-replay = { path = "../qsl-replay" }
 qsl-semantics = { path = "../qsl-semantics" }
 # FR-064: `xtask string-edge` calls the one standalone scanner with QSL's roots.
 qsl-string-edge = { path = "../qsl-string-edge" }
+quire-exact = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }

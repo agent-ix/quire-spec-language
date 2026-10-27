@@ -1257,6 +1257,9 @@ impl OutcomeDocument {
                 .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(compile)]),
                 RunRefusal::Cancelled(cause) => Self::cancelled(Operation::Execute, *cause),
                 RunRefusal::Fault(fault) => Self::faulted(Operation::Execute, fault),
+                RunRefusal::ObjectContext(
+                    qsl_semantics::model::observation::AdmissionFailure::Fault(fault),
+                ) => Self::faulted(Operation::Execute, fault),
                 // FR-277: a supplied-phase stop is phase-marked, not a
                 // catalog record. Its category is the document's; the shared
                 // result contract has no field for the phase context yet, so
@@ -1296,6 +1299,10 @@ impl OutcomeDocument {
                 | RunRefusal::UnboundParameter { .. }
                 | RunRefusal::WrongValueKind { .. }
                 | RunRefusal::Admission { .. }
+                | RunRefusal::ObjectContext(
+                    qsl_semantics::model::observation::AdmissionFailure::Refused(_)
+                    | qsl_semantics::model::observation::AdmissionFailure::Incomplete(_),
+                )
                 | RunRefusal::Storage { .. }
                 | RunRefusal::DanglingReference { .. } => Self::new(
                     Operation::Execute,

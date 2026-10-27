@@ -27,6 +27,7 @@ use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::refusal::OfferedSelection;
 use qsl_semantics::value::environment_stage::membership_failure_code;
 use quire_eval::{FamilyOutcome, FamilyResult};
@@ -289,6 +290,10 @@ pub enum RunRefusal {
         /// The owning model refusal.
         refusal: ModelRefusal,
     },
+    /// The supplied FR-106 population snapshot could not be admitted as the
+    /// call's object context.
+    #[error("the population object context was not admitted: {0}")]
+    ObjectContext(AdmissionFailure),
     /// An argument's membership in its parameter's declared type was not
     /// decided because the type environment could not reserve storage
     /// (`resource_exhausted`): never a wrong-value-kind refusal.
@@ -346,6 +351,7 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. }
             | Self::Admission { .. }
+            | Self::ObjectContext(_)
             | Self::Storage { .. }
             | Self::DanglingReference { .. }
             | Self::Supplied(_)
@@ -375,6 +381,7 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. }
             | Self::Admission { .. }
+            | Self::ObjectContext(_)
             | Self::Storage { .. }
             | Self::DanglingReference { .. }
             | Self::UnsupportedHelper(_)
@@ -394,6 +401,10 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
             Self::Admission { refusal, .. } => refusal.code,
+            Self::ObjectContext(
+                AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
+            ) => record.code,
+            Self::ObjectContext(AdmissionFailure::Fault(_)) => Code::RuntimeInvariant,
             Self::Storage { failure, .. } => membership_failure_code(failure),
             Self::DanglingReference { .. } => Code::DanglingReference,
             Self::Fault(_) => Code::RuntimeInvariant,
@@ -406,7 +417,11 @@ impl RunRefusal {
     /// FR-285: the refusal's ADR-013 O-16 category, read from its code;
     /// [`Self::Fault`] is an internal failure.
     pub fn category(&self) -> Category {
-        self.code().category()
+        match self {
+            Self::ObjectContext(AdmissionFailure::Incomplete(_)) => Category::Incomplete,
+            Self::ObjectContext(AdmissionFailure::Fault(_)) => Category::InternalFailure,
+            _ => self.code().category(),
+        }
     }
 }
 
@@ -447,6 +462,102 @@ pub fn run(
     .map(|(package_id, outcome, ())| (package_id, outcome))
 }
 
+/// FR-336's corpus adapter: bind an ordered value list to the declared
+/// parameter positions of the selected function, then perform the same
+/// one-compile FR-100 run. The adapter creates the named [`Call`] only
+/// after S3 has admitted the function signature, so it never reparses QSL
+/// source or compiles the unit twice.
+#[allow(clippy::too_many_arguments)]
+pub fn run_positional(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    function: String,
+    arguments: Vec<Value>,
+    accounting: ScalarLimits,
+    supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
+    objects: &ObjectEnvironment,
+    cancel: &Cancel,
+) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+    run_positional_with_adapter(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        function,
+        accounting,
+        supplied,
+        |_, _| Ok((arguments, objects.clone())),
+        cancel,
+    )
+}
+
+/// FR-336's positional call adapter when its values and object context need
+/// the checked unit's admitted model views. The adapter runs after the one
+/// compile, then the spine binds its returned values to the selected
+/// function's declared parameter positions and executes that call.
+#[allow(clippy::too_many_arguments)]
+pub fn run_positional_with_adapter(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    function: String,
+    accounting: ScalarLimits,
+    supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
+    adapt: impl FnOnce(
+        &CheckedPackage,
+        &AdmittedModels,
+    ) -> Result<(Vec<Value>, ObjectEnvironment), Box<RunRefusal>>,
+    cancel: &Cancel,
+) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+    run_reading_with_call(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        |checked, models| {
+            let (arguments, objects) = adapt(checked.package(), models)?;
+            let selected = select(checked.package(), &function)?;
+            if arguments.len() > selected.parameters.len() {
+                return Err(Box::new(RunRefusal::UnknownParameter {
+                    parameter: format!("arguments[{}]", selected.parameters.len()),
+                }));
+            }
+            let named = selected
+                .parameters
+                .iter()
+                .zip(arguments)
+                .map(|((parameter, _), value)| CallArgument {
+                    parameter: parameter.clone(),
+                    value,
+                })
+                .collect();
+            Ok((
+                Call {
+                    function,
+                    arguments: named,
+                    accounting,
+                    supplied,
+                },
+                objects,
+            ))
+        },
+        cancel,
+        |_, _, _| Ok(()),
+    )
+    .map(|(package_id, outcome, ())| (package_id, outcome))
+}
+
 /// [`run`] over one compile, and, once the call has run, `read` over the
 /// compile's checked unit, emitted unit and admitted models (FR-395 "One
 /// checked graph", FR-404 "One compile"): the value `read` returns comes from
@@ -466,6 +577,34 @@ pub(crate) fn run_reading<T>(
     limits: SpineLimits,
     call: &Call,
     objects: &ObjectEnvironment,
+    cancel: &Cancel,
+    read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
+) -> Result<(PackageId, CallOutcome, T), Box<RunRefusal>> {
+    run_reading_with_call(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        |_, _| Ok((call.clone(), objects.clone())),
+        cancel,
+        read,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_reading_with_call<T>(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    call_for_checked: impl FnOnce(
+        &CheckedUnit,
+        &AdmittedModels,
+    ) -> Result<(Call, ObjectEnvironment), Box<RunRefusal>>,
     cancel: &Cancel,
     read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
 ) -> Result<(PackageId, CallOutcome, T), Box<RunRefusal>> {
@@ -504,6 +643,7 @@ pub(crate) fn run_reading<T>(
         .map_err(refusal)?
         .into_value();
     let package_id = emitted.package().package_id();
+    let (call, objects) = call_for_checked(&checked, &models)?;
     let package = checked.package();
     let selected = select(package, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
@@ -512,14 +652,14 @@ pub(crate) fn run_reading<T>(
         package.graph().scope().types(),
         selected.parameters,
         &arguments,
-        objects,
+        &objects,
     )?;
     let evaluation = front_end::execute(
         &checked,
         &front_end::ExecuteRequest {
             function: &selected.name,
             arguments: &arguments,
-            objects,
+            objects: &objects,
             supplied: call.supplied,
         },
         call.accounting,

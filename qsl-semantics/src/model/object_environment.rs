@@ -293,6 +293,18 @@ impl ObjectEnvironment {
     pub fn resolve_population(&self, population_id: PopulationId) -> Option<&PopulationBinding> {
         self.populations.get(&population_id).map(Arc::as_ref)
     }
+
+    /// The admitted population identity for its declaration name, when this
+    /// environment recorded that binding. Call adapters use this only after
+    /// snapshot admission; the declaration name never creates a
+    /// [`PopulationId`].
+    pub fn population_id_for_declaration(&self, declaration: &str) -> Option<PopulationId> {
+        self.populations
+            .iter()
+            .find_map(|(population_id, binding)| {
+                (binding.population_key().node == declaration).then_some(*population_id)
+            })
+    }
 }
 
 /// One read an evaluation made of an observation: a field of an object, or

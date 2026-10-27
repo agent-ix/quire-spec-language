@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::SettingLimits;
+use qsl_foundation::{AccountingSetting, SettingLimits};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -174,6 +174,35 @@ struct Input {
 struct InputFile {
     kind: InputKind,
     path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CallInput {
+    function: String,
+    arguments: Vec<CallInputValue>,
+    #[serde(default)]
+    accounting: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+enum CallInputValue {
+    Boolean {
+        value: bool,
+    },
+    Integer {
+        decimal: String,
+    },
+    Reference {
+        universe: String,
+        #[serde(rename = "type")]
+        type_identity: String,
+        object_identity: String,
+    },
+    Population {
+        name: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -560,7 +589,14 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
             }
             if !matches!(
                 file.kind,
-                InputKind::Source | InputKind::Model | InputKind::Input
+                InputKind::Source
+                    | InputKind::Model
+                    | InputKind::Input
+                    | InputKind::Call
+                    | InputKind::ObjectContext
+                    | InputKind::Population
+                    | InputKind::ReplayRequest
+                    | InputKind::Bytes
             ) {
                 return Err(Error::QualificationRefusal(format!(
                     "vector {} has unsupported input kind {:?}",
@@ -692,34 +728,46 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         };
         inputs.push((input, bytes));
     }
-    let source = vector
-        .input
-        .files
-        .iter()
-        .find(|file| file.kind == InputKind::Source);
-    let Some(source) = source else {
-        return vector_failure(
-            vector,
-            expected,
-            VectorOutcome::ToolFailure,
-            json!({"code":"missing-input","message":"subject requires a source input"}),
-        );
-    };
-    let bytes = inputs
-        .iter()
-        .find(|(input, _)| input.path == source.path)
-        .map(|(_, bytes)| bytes.as_slice())
-        .expect("source input was read before execution");
-    let identity =
-        qsl_foundation::SourceIdentity::new("agent-ix", &source.path, "qualification", "1");
+    if vector.subject.consumer_type == ConsumerType::Runtime
+        && vector.subject.operation == Operation::Run
+    {
+        if let Err(message) = validate_run_inputs(&vector.input.files) {
+            return vector_failure(
+                vector,
+                expected,
+                VectorOutcome::ToolFailure,
+                json!({"code":"call-input","message":message}),
+            );
+        }
+    }
     let result = match (vector.subject.consumer_type, vector.subject.operation) {
         (ConsumerType::Language, Operation::Compile) => {
+            let Some((source, bytes)) = input_bytes(&inputs, InputKind::Source) else {
+                return vector_failure(
+                    vector,
+                    expected,
+                    VectorOutcome::ToolFailure,
+                    json!({"code":"missing-input","message":"compile requires a source input"}),
+                );
+            };
+            let identity = source_identity(source);
             let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());
+            let packages = match model_packages(&inputs) {
+                Ok(packages) => packages,
+                Err(error) => {
+                    return vector_failure(
+                        vector,
+                        expected,
+                        VectorOutcome::ToolFailure,
+                        json!({"code":"model-input","message":error}),
+                    )
+                }
+            };
             match qsl_replay::compile_package(
                 identity,
                 &source.path,
                 bytes,
-                std::iter::empty::<&[u8]>(),
+                packages.values().map(Vec::as_slice),
                 &qsl_replay::DependencyInput::default(),
                 stage_limits,
                 limits.replay,
@@ -740,6 +788,15 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
             }
         }
         (ConsumerType::Tool, Operation::Format) => {
+            let Some((source, bytes)) = input_bytes(&inputs, InputKind::Source) else {
+                return vector_failure(
+                    vector,
+                    expected,
+                    VectorOutcome::ToolFailure,
+                    json!({"code":"missing-input","message":"format requires a source input"}),
+                );
+            };
+            let identity = source_identity(source);
             match qsl_cst::parse(identity, &source.path, bytes, limits.spine.source) {
                 Ok(parsed) => match qsl_cst::format::format_with_limits(&parsed, limits.format) {
                     Ok(formatted) => (json!(formatted), Some(formatted), None),
@@ -756,6 +813,143 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
                     json!({"code": diagnostic.code.as_str(), "cause": diagnostic.cause.as_str()}),
                     None,
                     None,
+                ),
+            }
+        }
+        (ConsumerType::Runtime, Operation::Run) => {
+            let Some((source, bytes)) = input_bytes(&inputs, InputKind::Source) else {
+                return vector_failure(
+                    vector,
+                    expected,
+                    VectorOutcome::ToolFailure,
+                    json!({"code":"missing-input","message":"run requires a source input"}),
+                );
+            };
+            let Some((call_file, call_bytes)) = input_bytes(&inputs, InputKind::Call) else {
+                return vector_failure(
+                    vector,
+                    expected,
+                    VectorOutcome::ToolFailure,
+                    json!({"code":"missing-input","message":"run requires a call input"}),
+                );
+            };
+            let call: CallInput = match serde_json::from_slice(call_bytes) {
+                Ok(call) => call,
+                Err(error) => {
+                    return vector_failure(
+                        vector,
+                        expected,
+                        VectorOutcome::ToolFailure,
+                        json!({"code":"call-input","message":error.to_string(),"path":call_file.path}),
+                    )
+                }
+            };
+            let accounting = match call_accounting(call.accounting) {
+                Ok(accounting) => accounting,
+                Err(error) => {
+                    return vector_failure(
+                        vector,
+                        expected,
+                        VectorOutcome::ToolFailure,
+                        json!({"code":"call-input","message":error,"path":call_file.path}),
+                    )
+                }
+            };
+            let packages = match model_packages(&inputs) {
+                Ok(packages) => packages,
+                Err(error) => {
+                    return vector_failure(
+                        vector,
+                        expected,
+                        VectorOutcome::ToolFailure,
+                        json!({"code":"model-input","message":error}),
+                    )
+                }
+            };
+            let population_input = input_bytes(&inputs, InputKind::Population);
+            let result = qsl_replay::spine::run_positional_with_adapter(
+                source_identity(source),
+                &source.path,
+                bytes,
+                &packages,
+                &qsl_replay::DependencyInput::default(),
+                limits.spine,
+                call.function,
+                accounting,
+                qsl_replay::SuppliedLimits::default(),
+                |package, _models| {
+                    let (objects, population_ids) = match population_input {
+                        Some((population_file, population_bytes)) => {
+                            let document_digest =
+                                qsl_semantics::model::observation::snapshot_document_digest(
+                                    population_bytes,
+                                )
+                                .map_err(|failure| {
+                                    Box::new(qsl_replay::spine::RunRefusal::ObjectContext(failure))
+                                })?;
+                            let selected = qsl_replay::DocumentRef {
+                                authority: "agent-ix".to_owned(),
+                                identity: population_file.path.clone(),
+                                revision_namespace: "qualification".to_owned(),
+                                revision: "1".to_owned(),
+                                digest: document_digest,
+                            };
+                            let provision =
+                                BTreeMap::from([(document_digest, population_bytes.to_vec())]);
+                            let (objects, _) =
+                                qsl_semantics::model::observation::admit_current_snapshot(
+                                    package.graph().model_selections(),
+                                    package.graph().scope().types(),
+                                    &packages,
+                                    limits.spine.model,
+                                    &provision,
+                                    &selected,
+                                    limits.observation,
+                                )
+                                .map_err(|failure| {
+                                    Box::new(qsl_replay::spine::RunRefusal::ObjectContext(failure))
+                                })?;
+                            let mut population_ids = BTreeMap::new();
+                            for name in population_names(population_bytes).map_err(|_| {
+                                Box::new(qsl_replay::spine::RunRefusal::WrongValueKind {
+                                    position: 0,
+                                })
+                            })? {
+                                let Some(population_id) =
+                                    objects.population_id_for_declaration(&name)
+                                else {
+                                    return Err(Box::new(
+                                        qsl_replay::spine::RunRefusal::WrongValueKind {
+                                            position: 0,
+                                        },
+                                    ));
+                                };
+                                population_ids.insert(name, population_id);
+                            }
+                            (objects, population_ids)
+                        }
+                        None => (qsl_replay::ObjectEnvironment::default(), BTreeMap::new()),
+                    };
+                    let values = call
+                        .arguments
+                        .into_iter()
+                        .enumerate()
+                        .map(|(position, value)| {
+                            call_input_value(value, &population_ids).map_err(|_| {
+                                Box::new(qsl_replay::spine::RunRefusal::WrongValueKind { position })
+                            })
+                        })
+                        .collect::<std::result::Result<Vec<_>, _>>()?;
+                    Ok((values, objects))
+                },
+                &qsl_replay::Cancel::new(),
+            );
+            match outcome_document_value(qsl_replay::OutcomeDocument::from_run(&result)) {
+                Ok(actual) => (actual, None, None),
+                Err(error) => (
+                    Value::Null,
+                    None,
+                    Some(json!({"code":"outcome-document","message":error})),
                 ),
             }
         }
@@ -780,6 +974,179 @@ fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimit
         expected,
         actual,
     }
+}
+
+fn validate_run_inputs(files: &[InputFile]) -> std::result::Result<(), String> {
+    let count = |kind| files.iter().filter(|file| file.kind == kind).count();
+    if count(InputKind::Source) != 1 {
+        return Err(format!(
+            "runtime/run requires exactly one source file; found {}",
+            count(InputKind::Source)
+        ));
+    }
+    if count(InputKind::Call) != 1 {
+        return Err(format!(
+            "runtime/run requires exactly one call file; found {}",
+            count(InputKind::Call)
+        ));
+    }
+    if count(InputKind::Population) > 1 {
+        return Err(format!(
+            "runtime/run accepts at most one population file; found {}",
+            count(InputKind::Population)
+        ));
+    }
+    if let Some(file) = files.iter().find(|file| {
+        !matches!(
+            file.kind,
+            InputKind::Source | InputKind::Call | InputKind::Population | InputKind::Model
+        )
+    }) {
+        return Err(format!(
+            "runtime/run does not map input kind {:?} to FR-100",
+            file.kind
+        ));
+    }
+    Ok(())
+}
+
+fn input_bytes<'a>(
+    inputs: &'a [(&InputFile, Vec<u8>)],
+    kind: InputKind,
+) -> Option<(&'a InputFile, &'a [u8])> {
+    inputs
+        .iter()
+        .find(|(input, _)| input.kind == kind)
+        .map(|(input, bytes)| (*input, bytes.as_slice()))
+}
+
+fn model_packages(
+    inputs: &[(&InputFile, Vec<u8>)],
+) -> std::result::Result<BTreeMap<[u8; 32], Vec<u8>>, String> {
+    inputs
+        .iter()
+        .filter(|(input, _)| input.kind == InputKind::Model)
+        .map(|(input, bytes)| {
+            qsl_semantics::model::intake::PackageDocument::parse(
+                bytes,
+                qsl_foundation::IntakeLimits::default(),
+            )
+            .map(|document| (document.jcs_digest(), bytes.clone()))
+            .map_err(|error| format!("{}: {error:?}", input.path))
+        })
+        .collect()
+}
+
+fn source_identity(source: &InputFile) -> qsl_foundation::SourceIdentity {
+    qsl_foundation::SourceIdentity::new("agent-ix", &source.path, "qualification", "1")
+}
+
+fn call_input_value(
+    value: CallInputValue,
+    population_ids: &BTreeMap<String, quire_exact::PopulationId>,
+) -> std::result::Result<quire_exact::Value, String> {
+    use std::str::FromStr;
+
+    match value {
+        CallInputValue::Boolean { value } => Ok(quire_exact::Value::Boolean(value)),
+        CallInputValue::Integer { decimal } => quire_exact::Integer::from_str(&decimal)
+            .map(quire_exact::Value::Integer)
+            .map_err(|error| format!("invalid integer decimal: {error}")),
+        CallInputValue::Reference {
+            universe,
+            type_identity,
+            object_identity,
+        } => {
+            let universe = parse_digest(&universe)?;
+            let type_identity = parse_digest(&type_identity)?;
+            let object = quire_exact::ObjectId::new(object_identity)
+                .map_err(|error| format!("invalid object identity: {error}"))?;
+            Ok(quire_exact::Value::Reference(
+                quire_exact::ObjectReference::new(
+                    quire_exact::UniverseId::from_digest(universe),
+                    quire_exact::EffectiveId::from_digest(type_identity),
+                    object,
+                ),
+            ))
+        }
+        CallInputValue::Population { name } => population_ids
+            .get(&name)
+            .copied()
+            .map(quire_exact::Value::Population)
+            .ok_or_else(|| format!("population {name:?} is not admitted")),
+    }
+}
+
+fn population_names(bytes: &[u8]) -> std::result::Result<Vec<String>, String> {
+    let document: Value = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    let populations = document
+        .get("populations")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "snapshot has no populations array".to_owned())?;
+    populations
+        .iter()
+        .map(|population| {
+            population
+                .get("population")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| "snapshot population has no string identity".to_owned())
+        })
+        .collect()
+}
+
+fn parse_digest(hex: &str) -> std::result::Result<[u8; 32], String> {
+    if hex.len() != 64 {
+        return Err(format!(
+            "digest must contain 64 lowercase hexadecimal characters: {hex:?}"
+        ));
+    }
+    let mut digest = [0_u8; 32];
+    for (index, pair) in hex.as_bytes().as_chunks::<2>().0.iter().enumerate() {
+        let nibble = |byte: u8| match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            _ => None,
+        };
+        let high =
+            nibble(pair[0]).ok_or_else(|| format!("invalid lowercase hex digest: {hex:?}"))?;
+        let low =
+            nibble(pair[1]).ok_or_else(|| format!("invalid lowercase hex digest: {hex:?}"))?;
+        digest[index] = high * 16 + low;
+    }
+    Ok(digest)
+}
+
+fn call_accounting(
+    overrides: BTreeMap<String, String>,
+) -> std::result::Result<quire_exact::ScalarLimits, String> {
+    let mut limits = qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS);
+    for (name, decimal) in overrides {
+        let bound = decimal
+            .parse::<u64>()
+            .map_err(|error| format!("accounting.{name} is not a u64: {error}"))?;
+        match AccountingSetting::from_counter(&name) {
+            Some(AccountingSetting::IntegerBits) => limits.integer_bits = bound,
+            Some(AccountingSetting::DecimalDigits) => limits.decimal_digits = bound,
+            Some(AccountingSetting::ScaleExpansion) => limits.scale_expansion = bound,
+            Some(AccountingSetting::TextInputBytes) => limits.text_input_bytes = bound,
+            Some(AccountingSetting::TextScalars) => limits.text_scalars = bound,
+            Some(AccountingSetting::NormalizedScalars) => limits.normalized_scalars = bound,
+            Some(AccountingSetting::UnitEdges) => limits.unit_edges = bound,
+            Some(AccountingSetting::ValueOccurrences) => limits.value_occurrences = bound,
+            Some(AccountingSetting::WorkUnits) => limits.work_units = bound,
+            Some(AccountingSetting::ResultUnits) => limits.result_units = bound,
+            None => return Err(format!("unknown accounting counter {name:?}")),
+        }
+    }
+    Ok(limits)
+}
+
+fn outcome_document_value(
+    document: qsl_replay::OutcomeDocument,
+) -> std::result::Result<Value, String> {
+    serde_json::from_slice(&document.to_bytes().map_err(|error| error.to_string())?)
+        .map_err(|error| error.to_string())
 }
 
 fn vector_failure(

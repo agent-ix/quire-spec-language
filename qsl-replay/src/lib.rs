@@ -334,6 +334,7 @@ pub use qsl_foundation::bound::{
 pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
 pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
+pub use quire_semantic_value::supplied_stop::SuppliedLimits;
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
     ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
