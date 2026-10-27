@@ -239,10 +239,12 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::DuplicateEnumMember { .. }
         | AssemblyCause::DuplicateQuantityName { .. }
         | AssemblyCause::UnresolvedQuantityName { .. }
+        | AssemblyCause::UnanchoredBaseDimension { .. }
         | AssemblyCause::UnresolvedModelQuantityType { .. }
         | AssemblyCause::QuantityCycle { .. }
         | AssemblyCause::ZeroDenominator
         | AssemblyCause::UnitGraphTopology { .. }
+        | AssemblyCause::DimensionEquivalence { .. }
         | AssemblyCause::NominalAdmission(_)
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }

@@ -478,7 +478,7 @@ fn take_step(
     let mut random = Vec::new();
     for support in system.random_of_text(operation) {
         let items = sorted_by_key(support.items.iter().collect(), |item| {
-            order_key(&item.value)
+            order_key(&item.value, system.typing())
         })?;
         let weights: Vec<Rational> = items.iter().map(|item| item.weight.clone()).collect();
         let item = items.get(draws.choose(&weights)?).ok_or_else(broken)?;

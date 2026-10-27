@@ -105,10 +105,10 @@ pub(crate) use hybrid::{
 pub(crate) use hyper::HyperClauseInput;
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
-    bound_origin, quantity_origin, record_node_key, variant_type_node_key, QuantityKind,
-    RecordKeyError,
+    bound_origin, quantity_origin, record_node_key, strictly_below, variant_type_node_key,
+    QuantityKind, RecordKeyError,
 };
-pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
+pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause, PlaceStep};
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
     ProtocolSite,

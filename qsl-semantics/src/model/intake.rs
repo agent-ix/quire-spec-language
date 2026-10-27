@@ -4915,11 +4915,23 @@ pub fn read_domain_package(
         .filter_map(|node| {
             let identity = node.get("identity")?.as_str()?;
             let name = node.get("name")?.as_str()?;
-            let base = node.get("terms")?.as_array()?.is_empty();
+            let written = node.get("terms")?.as_array()?;
+            let terms = written
+                .iter()
+                .map(|term| {
+                    let dimension = term.get("dimension")?.as_str()?;
+                    let exponent = term.get("exponent")?.as_str()?;
+                    Some((
+                        declaration_key(&selection.identity, dimension),
+                        <quire_exact::Integer as std::str::FromStr>::from_str(exponent).ok()?,
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
             Some(PackageDimensionRecord {
                 key: declaration_key(&selection.identity, identity),
                 name: name.to_owned(),
-                base,
+                base: written.is_empty(),
+                terms,
             })
         })
         .collect();
@@ -5853,6 +5865,39 @@ mod tests {
             .expect_err("this reader admits only the native Timestamp alias");
         assert_eq!(refusals[0].code, Code::InvalidModelBinding);
         assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    }
+
+    /// Part of FR-230-AC-26 (TC-685), its reference half: a package
+    /// `reference` whose `target` is the unit `ix://quire/unit/ms` names no
+    /// object type, so FCD's validator refuses it and the reader reports
+    /// `invalid_model_binding`/`malformed-declaration` at
+    /// `TypeDefinition.target`. Not covered: the alias `Level` of a unit
+    /// with `min`/`max` constraints, which waits on FCD.
+    #[trace("TC-685")]
+    #[test]
+    fn a_reference_to_a_unit_refuses_at_its_target() {
+        let reference = wire_type(
+            "ix://acme/orders/Level",
+            serde_json::json!("reference"),
+            serde_json::json!({"target": "ix://quire/unit/ms"}),
+        );
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([reference]),
+        )
+        .to_string();
+        let refusals = read_records("acme/orders", &parse_document(document.as_bytes()))
+            .expect_err("a reference to a unit is no reference");
+        let [refusal] = &refusals[..] else {
+            panic!("one refusal: {refusals:?}");
+        };
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert_eq!(refusal.cause.as_str(), "malformed-declaration");
+        let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &refusal.cause else {
+            panic!("a malformed declaration: {refusal:?}");
+        };
+        assert_eq!(*member, MemberPath::type_definition().name("target"));
     }
 
     #[trace("TC-897", "FR-056-AC-17")]

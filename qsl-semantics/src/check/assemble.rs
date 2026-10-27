@@ -30,10 +30,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
-    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
-    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind,
-    TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm, UrgentForm,
+    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionEquivalenceForm, DimensionForm,
+    EnumForm, ExprNode, Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit,
+    PopulationBoundForm, RecordFieldForm, StateClauseForm, TerminalDeclarationForm,
+    TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm,
+    UrgentForm,
 };
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -69,7 +70,12 @@ use super::type_invariant::{TypeInvariantDeclaration, TypeSlot};
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 
+mod equivalence;
 mod units;
+
+pub use equivalence::{
+    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
+};
 
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
@@ -159,8 +165,6 @@ impl Default for AssemblyLimits {
 /// declarations").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TopologyFault {
-    /// A derived dimension whose normalized terms are empty.
-    EmptyDerivedDimension,
     /// A unit whose scale is zero.
     ZeroScale,
     /// A targetless unit whose scale is not one or whose offset is not
@@ -298,6 +302,25 @@ pub enum AssemblyCause {
     /// [`AssemblyLimits::decimal_scale`] (`s3.decimal_scale`); `actual` is
     /// `u128::MAX` when the scale does not fit a `u64`.
     DecimalScaleLimit(LimitExceeded),
+    /// A dimension equivalence refused past name resolution (QSpec FR-142
+    /// "Dimension equivalence" steps 3 to 7), naming what it retains.
+    DimensionEquivalence {
+        /// Which step refused.
+        fault: EquivalenceFault,
+        /// The declarations, units, dimensions or values the step retains.
+        retained: Vec<EquivalenceRetained>,
+    },
+    /// FR-142's base-dimension rule: a base dimension with no unit, here or
+    /// in the package that declares it, that a local unit's dimension
+    /// carries in its normalized map.
+    UnanchoredBaseDimension {
+        /// The base dimension: a source dimension's name, or a package
+        /// dimension's FCD identity.
+        dimension: String,
+        /// The first local unit, in source order, whose dimension carries
+        /// it.
+        unit: String,
+    },
     /// A unit-graph topology error, naming the declarations it concerns.
     UnitGraphTopology {
         /// Which check refused.
@@ -490,12 +513,14 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
-            Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
+                Code::MissingDeclaration
+            }
             Self::UnresolvedModelQuantityType { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
             }
-            Self::QuantityCycle { .. } => Code::InvalidPackage,
+            Self::QuantityCycle { .. } | Self::DimensionEquivalence { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
             // FR-091-OQ-12: STD-112 has not published the topology causes.
@@ -577,12 +602,19 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
-            Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
+                "missing-name"
+            }
             Self::UnresolvedModelQuantityType { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 "duplicate-declaration"
             }
             Self::QuantityCycle { .. } => "definition-cycle",
+            Self::DimensionEquivalence { fault, .. } => match fault {
+                EquivalenceFault::Conflicting => "conflicting-definition",
+                EquivalenceFault::Incompatible => "incompatible-definition",
+                EquivalenceFault::InvalidValue => "invalid-value",
+            },
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
             // Informational (FR-091-OQ-12): STD-112 replaces this cause
@@ -753,6 +785,7 @@ impl TimedDeclaration {
 struct Unit {
     aliases: Vec<AliasForm>,
     dimensions: Vec<DimensionForm>,
+    equivalences: Vec<DimensionEquivalenceForm>,
     units: Vec<UnitForm>,
     composites: Vec<Composite>,
     enums: Vec<EnumForm>,
@@ -803,11 +836,12 @@ struct Unit {
 }
 
 impl Unit {
-    fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
-        let mut clock_forms = clock_forms::classify(&forms);
+    fn new(forms: Vec<qsl_forms::ParsedForm>, package_bearing: BTreeSet<String>) -> Self {
+        let mut clock_forms = clock_forms::classify(&forms, package_bearing);
         let mut unit = Self {
             aliases: Vec::new(),
             dimensions: Vec::new(),
+            equivalences: Vec::new(),
             units: Vec::new(),
             composites: Vec::new(),
             enums: Vec::new(),
@@ -872,6 +906,9 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
+                DeclarationForm::DimensionEquivalence(equivalence) => {
+                    unit.equivalences.push(*equivalence)
+                }
                 DeclarationForm::Unit(quantity) => unit.units.push(*quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
@@ -1371,6 +1408,9 @@ fn model_object_types(
             })
             .collect();
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
+        // A record's clock fields are places, not data (FR-230 "Records,
+        // tuples and unions"): its declaration lists the data fields only.
+        effective_fields.retain(|field| !matches!(field.value_type, ValueTypeRef::Clock));
         for field in effective_fields {
             match model_field(
                 field,
@@ -2680,27 +2720,53 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let mut unit = Unit::new(forms);
+        // The models and the one meter their admission counted on; checking
+        // continues that meter into the conformance stage.
+        let (models, model_meter) = models.into().into_parts();
+        // FR-230 "Clock-typed positions": a package record type that holds a
+        // clock is clock-bearing where the unit's own source writes it.
+        let package_bearing: BTreeSet<String> = selections
+            .models
+            .iter()
+            .filter_map(|selection| {
+                let model = models.iter().find(|model| model.alias == selection.alias)?;
+                Some(
+                    AdmittedModel::from_view(&model.view)
+                        .with_alias(&selection.alias)
+                        .clock_bearing_record_names(),
+                )
+            })
+            .flatten()
+            .collect();
+        let mut unit = Unit::new(forms, package_bearing);
         // FR-393: retain the parsed timed forms through S2. FR-230 checks
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
         let quantity_owners = OwnerSelection::new([owner.node_owner()]);
-        let quantity_result = units::assemble(
-            &unit.dimensions,
-            &unit.units,
-            &owner,
-            &quantity_owners,
-            limits,
+        // The selected packages' dimensions, which a source dimension's
+        // terms may name.
+        let imported = units::Imported::new(
+            &selections
+                .models
+                .iter()
+                .filter_map(|selection| {
+                    let model = models.iter().find(|model| model.alias == selection.alias)?;
+                    Some((
+                        AdmittedModel::from_view(&model.view).with_alias(&selection.alias),
+                        selection.span,
+                    ))
+                })
+                .collect::<Vec<_>>(),
+            limits.identity,
         );
+        let quantity_result =
+            units::assemble(&unit.dimensions, &unit.units, &imported, &owner, limits);
         let model_units = quantity_result
             .as_ref()
             .ok()
             .map(|quantities| super::check::declared_unit_ids(&quantities.graph))
             .unwrap_or_default();
-        // The models and the one meter their admission counted on; checking
-        // continues that meter into the conformance stage.
-        let (models, model_meter) = models.into().into_parts();
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
@@ -2986,13 +3052,46 @@ impl PackageDeclarations {
             }
         }
 
-        // The unit's dimensions and units, admitted under its owner.
+        // The unit's dimensions and units, admitted under its owner, and its
+        // dimension equivalences over them and those of its selected
+        // packages, in FR-091's phases: the base pairs before the first
+        // dimension turn, every other pair after the last.
         let owners = quantity_owners;
-        let quantities = match quantity_result {
-            Ok(quantities) => Some(quantities),
-            Err(found) => {
-                errors.extend(found);
-                None
+        let (quantities, equivalences) = match quantity_result {
+            Ok(quantities) => {
+                let equivalences = equivalence::assemble(
+                    &unit.equivalences,
+                    equivalence::SourceView::Admitted(&quantities),
+                    &admitted,
+                    &owner,
+                    limits,
+                    equivalence::Phase::All,
+                )
+                .unwrap_or_else(|found| {
+                    errors.extend(found);
+                    Vec::new()
+                });
+                (Some(quantities), equivalences)
+            }
+            Err(refused) => {
+                let base = equivalence::assemble(
+                    &unit.equivalences,
+                    equivalence::SourceView::Provisional(&refused.provisional),
+                    &admitted,
+                    &owner,
+                    limits,
+                    equivalence::Phase::Base,
+                )
+                .err()
+                .unwrap_or_default();
+                // A base-pair refusal comes before the first turn, so it
+                // stands in for the turns' topology defects.
+                let topology_only = refused.topology && !base.is_empty();
+                if !topology_only {
+                    errors.extend(refused.errors);
+                }
+                errors.extend(base);
+                (None, Vec::new())
             }
         };
 
@@ -3595,6 +3694,12 @@ impl PackageDeclarations {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
         }
+        for equivalence in &equivalences {
+            package
+                .nominal_spans
+                .insert(equivalence.key, equivalence.span);
+        }
+        package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;

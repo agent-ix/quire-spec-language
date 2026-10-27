@@ -451,6 +451,12 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// The declarations every value of this system is encoded under: the
+    /// package's record, tuple, union and variant types (FR-181).
+    pub(crate) fn typing(&self) -> encode::Typing<'a> {
+        encode::Typing::with_variants(self.types, self.package.graph().scope().variant_types())
+    }
+
     /// Check the universes, then admit each initial document in the given
     /// order, returning the first failure (FR-120 "Initial states").
     ///
@@ -647,7 +653,7 @@ impl<'a> ModelSystem<'a> {
         state: &ModelSimState,
     ) -> Result<(Vec<u8>, DigestRecord), crate::simulation::EncodingRefusal> {
         let (key, digest) = crate::simulation::key::state_key(
-            &encode::model_key(&self.model, &state.state),
+            &encode::model_key(&self.model, &state.state, self.typing()),
             identity_limits(),
         )?;
         Ok((key.as_bytes().to_vec(), digest))
@@ -1101,7 +1107,7 @@ impl TransitionSystem for ModelSystem<'_> {
     }
 
     fn key(&self, state: &Self::State) -> Self::Key {
-        encode::model_key(&self.model, &state.state)
+        encode::model_key(&self.model, &state.state, self.typing())
     }
 
     fn successors(

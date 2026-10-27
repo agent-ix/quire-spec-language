@@ -288,8 +288,9 @@ pub use ir::{
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
-    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse, TimedDeclaration,
-    TopologyFault, DEFAULT_DECIMAL_SCALE,
+    ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
+    DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
+    TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
@@ -396,6 +397,7 @@ pub use state_graph_claim::{
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
 
+pub use lowering::PlaceStep;
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
@@ -1083,6 +1085,7 @@ impl PackageDeclarations {
                 &self.units,
                 self.nominal_spans.keys().copied(),
                 &self.models,
+                &self.dimension_equivalences,
                 self.identity,
             );
             // The model a `time invariant` or `urgent` declaration belongs
@@ -1364,6 +1367,7 @@ impl PackageDeclarations {
                 &self.units,
                 self.nominal_spans.keys().copied(),
                 &self.models,
+                &self.dimension_equivalences,
                 self.identity,
             );
             timed_model::prepare(
@@ -1414,6 +1418,7 @@ impl PackageDeclarations {
                     &self.units,
                     self.nominal_spans.keys().copied(),
                     &self.models,
+                    &self.dimension_equivalences,
                     self.identity,
                 );
                 let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
@@ -3110,6 +3115,7 @@ impl PackageDeclarations {
             &self.units,
             self.nominal_spans.keys().copied(),
             &models,
+            &self.dimension_equivalences,
             self.identity,
         );
         let temporal_declarations = temporal_clause::TemporalDeclarations {
