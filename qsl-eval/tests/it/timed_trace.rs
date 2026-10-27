@@ -11,6 +11,7 @@
 //! `c.level` at each position.
 
 use ix_trace_rs::trace;
+use qsl_eval::automaton::{translate_position_negation, Atom, Letter};
 use qsl_eval::temporal::{
     evaluate, evaluate_timed_at, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
     TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace, UndefinedCause,
@@ -26,6 +27,7 @@ use qsl_semantics::model::key::hex;
 use quire_exact::{Integer, Meter, Rational, ScalarLimits, Undefined};
 
 use crate::model_simulation::{counters_document, increment, PACKAGE};
+use crate::property_automata::accepts;
 
 const VALUE: &str = "quire.value.complete/v1";
 const TIMED: &str = "quire.temporal.timed/v1";
@@ -583,4 +585,112 @@ fn an_undefined_atom_on_a_timed_lasso_is_reported_at_its_position() {
         matches!(outcome, TemporalOutcome::Undefined(ref undefined) if undefined.at == TemporalPosition::new(1)),
         "{outcome:?}"
     );
+}
+
+/// FR-240's claim automaton, `translate_position_negation`, answers to the
+/// timed evaluator: for each timed-profile body with no interval, over
+/// every lasso of 1 to 4 positions with `c.level` in `0..=2` and stamps
+/// one `ms` apart, its loop re-entered 1 `ms` after its last position, the
+/// automaton of the negation
+/// accepts the lasso exactly when the evaluator finds the clause violated
+/// at position 0.
+#[trace("TC-695", "FR-240")]
+#[test]
+fn the_position_negation_answers_to_the_timed_evaluator() {
+    let bodies = [
+        "always holds(c.level = 1)",
+        "eventually holds(c.level = 1)",
+        "always eventually holds(c.level = 1)",
+        "eventually always holds(c.level = 1)",
+        "always (holds(c.level = 1) implies eventually holds(c.level = 2))",
+        "holds(c.level = 1) until holds(c.level = 2)",
+        "holds(c.level = 1) release holds(c.level = 2)",
+        "always (holds(c.level = 2) implies once holds(c.level = 1))",
+        "eventually (holds(c.level = 1) and always not holds(c.level = 2))",
+    ];
+    for body in bodies {
+        let fixture = timed(body);
+        let mut property = translate_position_negation(&fixture.clause, 1 << 16)
+            .unwrap_or_else(|why| panic!("{body}: {why}"));
+        let gba = property
+            .explore()
+            .unwrap_or_else(|why| panic!("{body}: {why}"));
+        // The level each atom of the automaton's letter reads.
+        let atom_levels: Vec<i64> = property
+            .atoms()
+            .iter()
+            .map(|node| {
+                let Some(FormulaNode::Holds { span }) =
+                    fixture.clause.formula().nodes().get(node.index())
+                else {
+                    panic!("{body}: an atom is a holds atom");
+                };
+                fixture.text[span.start..span.end]
+                    .strip_prefix("holds(c.level = ")
+                    .and_then(|rest| rest.strip_suffix(')'))
+                    .and_then(|level| level.parse().ok())
+                    .expect("a `holds(c.level = k)` atom")
+            })
+            .collect();
+        let (mut compared, mut violated) = (0, 0);
+        for length in 1..=4_u32 {
+            for code in 0..3_u32.pow(length) {
+                let levels: Vec<i64> = (0..length)
+                    .map(|position| i64::from(code / 3_u32.pow(position) % 3))
+                    .collect();
+                let word: Vec<Letter> = levels
+                    .iter()
+                    .map(|level| {
+                        atom_levels
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, atom)| *atom == level)
+                            .fold(Letter::default(), |letter, (index, _)| {
+                                letter.with(Atom::new(index).expect("a small atom"))
+                            })
+                    })
+                    .collect();
+                let stamps: Vec<u64> = (0..u64::from(length)).collect();
+                for loop_start in 0..length {
+                    let trace = TimedTrace::lasso(
+                        stamps.iter().copied().map(ms).collect(),
+                        u64::from(loop_start),
+                        ms(u64::from(length - loop_start)),
+                    )
+                    .expect("a timed lasso");
+                    let mut letters = Levels {
+                        fixture: &fixture,
+                        levels: levels.clone(),
+                        undefined_at: None,
+                    };
+                    let outcome = evaluate_timed_at(
+                        &fixture.clause,
+                        &trace,
+                        TemporalPosition::new(0),
+                        &mut letters,
+                        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+                    )
+                    .expect("the lasso is readable");
+                    let refuted = match outcome {
+                        TemporalOutcome::Holds => false,
+                        TemporalOutcome::Violated { .. } => true,
+                        other => panic!("{body} over {levels:?}: {other:?}"),
+                    };
+                    let loop_start = usize::try_from(loop_start).expect("a small position");
+                    assert_eq!(
+                        accepts(&gba, &word, loop_start),
+                        refuted,
+                        "{body} over {levels:?} looping to {loop_start}"
+                    );
+                    compared += 1;
+                    violated += usize::from(refuted);
+                }
+            }
+        }
+        assert_eq!(compared, 426);
+        assert!(
+            violated > 0 && violated < compared,
+            "{body}: {violated} violated"
+        );
+    }
 }
