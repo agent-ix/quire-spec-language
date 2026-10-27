@@ -1524,6 +1524,13 @@ fn resets(
                 element,
             };
             let write = writing.write(field, key, *right, &mut cut)?;
+            if cut
+                .writes
+                .iter()
+                .any(|earlier| earlier.field() == write.field())
+            {
+                return Err(TemporalCause::ConflictingClockWrite { span });
+            }
             cut.writes.push(write);
             continue;
         }
@@ -1830,6 +1837,24 @@ fn read_clause(
             let cut = resets(&located, clause, clocks).map_err(timed)?;
             if let Some(span) = stray_literal(&located, clocks, &cut.literals) {
                 return Err(timed(TemporalCause::ClockWrite { span }));
+            }
+            // A collection written whole and a clock of it reset in one
+            // postcondition give that clock no one value.
+            if let Some(reset) = cut.resets.iter().find(|reset| {
+                let Some(first) = clocks
+                    .fields
+                    .get(reset.clock.0)
+                    .and_then(|clock| clock.path.first())
+                else {
+                    return false;
+                };
+                cut.writes
+                    .iter()
+                    .any(|write| matches!(first, PlaceStep::Field(field) if field == write.field()))
+            }) {
+                return Err(timed(TemporalCause::ConflictingClockWrite {
+                    span: reset.span,
+                }));
             }
             removed = cut.removed;
             (cut.leaves, ClauseClocks::Resets(cut.resets, cut.writes))

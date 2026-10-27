@@ -13,7 +13,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
     BehaviourReading, ClockValuation, ExpansionLimits, ModelSimulationRequest, ModelSystem,
-    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedSubjectRefusal, TimedSystem,
+    MoveRefusal, PopulationUniverse, TimedBehaviour, TimedState, TimedStop, TimedSubjectRefusal,
+    TimedSystem,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
@@ -23,6 +24,7 @@ use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, Rational, ScalarLimits};
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
@@ -1735,6 +1737,7 @@ fn a_forall_reset_writes_the_selected_slots() {
     );
     let held = system(&world);
     let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    assert!(!timed.writes_collections());
     let [initial] = &timed.initial()[..] else {
         panic!("one initial state");
     };
@@ -1822,4 +1825,206 @@ fn a_set_or_bag_of_records_holds_a_clock_per_held_slot() {
             "{kind}"
         );
     }
+}
+
+/// [`timer_sequence_document`] of at most 3 elements whose `reply` writes
+/// `ts` as well as `send`.
+fn timer_sequence_written_by_reply() -> Vec<u8> {
+    let mut document: Json =
+        serde_json::from_slice(&timer_sequence_document(Some(3))).expect("JSON");
+    for operation in document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        if operation["name"] == "reply" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("a frame")
+                .push(json!(ident("Call/ts")));
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// The value of each live place of `ts.[slot].x` and `ts.[slot].y` at
+/// `state`, by clock name and slot.
+fn slot_clocks(timed: &TimedSystem<'_, '_>, state: &TimedState) -> Vec<(String, usize, Rational)> {
+    timed
+        .places()
+        .iter()
+        .zip(state.clocks().values())
+        .filter(|(place, _)| timed.live(place, state.discrete()))
+        .filter_map(|(place, value)| {
+            let name = timed.model().clock(place.clock())?.name();
+            name.starts_with("ts.")
+                .then(|| (name.to_owned(), place.slots()[0], value.clone()))
+        })
+        .collect()
+}
+
+/// A state `operation` steps to from `state`, after checking that every
+/// step of `operation` gives `ts` the same clocks: the frame leaves the
+/// operation's other fields free, so it has a step for each of their values.
+fn only_step(timed: &TimedSystem<'_, '_>, state: &TimedState, operation: &str) -> TimedState {
+    let steps = timed.steps(state).expect("the state steps");
+    let mut posts = steps
+        .into_iter()
+        .filter(|(step, _)| step.operation().contains(&format!("Call/{operation}\"")))
+        .map(|(_, post)| post);
+    let first = posts.next().expect("the operation steps");
+    for post in posts {
+        assert_eq!(slot_clocks(timed, &post), slot_clocks(timed, &first));
+    }
+    first
+}
+
+/// Part of QSpec FR-181-AC-25 and FR-230-AC-20 (TC-685), the record part
+/// of collection-valued writes, executed: from `ts = [Timer { n: 1 },
+/// Timer { n: 2 }]`, a delay of 3 and a `send` resetting slot 1's `x` give
+/// slot 0 `x = 3` and slot 1 `x = 0`; after a delay of 1 `reply` writes
+/// `self.ts = filter(e in pre(self.ts): e.n > 1)`, which filters out slot 0
+/// and moves slot 1's clocks to slot 0 with their values (`x = 1`, `y =
+/// 4`), slot 1 no longer live. A `send` writing the literal
+/// `sequence[Timer { x: 2 ms, y: 5 ms, n: 3 }]` gives the fresh slot 0 its
+/// literal's constants. The model writes a collection, which
+/// `writes_collections` reports so that a zone analysis refuses it by name;
+/// a model with only resets by selection does not. Not covered: a fresh
+/// insert at the front, which
+/// AC-20 spells with `flatten` over a nested literal that does not type
+/// (STD-493 item 29).
+#[trace("TC-685")]
+#[test]
+fn a_collection_write_moves_each_clock_with_its_element() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let world = world_holding(
+        timer_sequence_written_by_reply(),
+        "",
+        &only(
+            &["send", "reply"],
+            "post Send using v on M::Call::send { forall(e in self.ts: e.n = 2 implies e.x = 0 ms) }\n\
+             post Reply using v on M::Call::reply { self.ts = filter(e in pre(self.ts): e.n > 1) }\n",
+        ),
+        json!({"t": timer("0"), "ts": {"sequence": [timer("1"), timer("2")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let delayed = |state: &TimedState, by: i64| {
+        timed
+            .delay(state, &exact(by, 1))
+            .expect("decided")
+            .expect("no invariant bounds the delay")
+    };
+    // A zone over places maps no carried clock, so zone analyses refuse
+    // the model by name.
+    assert!(timed.writes_collections());
+    let sent = only_step(&timed, &delayed(initial, 3), "send");
+    let at = |name: &str, slot: usize, value: i64| (name.to_owned(), slot, exact(value, 1));
+    assert_eq!(
+        slot_clocks(&timed, &sent),
+        [
+            at("ts.[slot].x", 0, 3),
+            at("ts.[slot].x", 1, 0),
+            at("ts.[slot].y", 0, 3),
+            at("ts.[slot].y", 1, 3),
+        ]
+    );
+    let replied = only_step(&timed, &delayed(&sent, 1), "reply");
+    assert_eq!(
+        slot_clocks(&timed, &replied),
+        [at("ts.[slot].x", 0, 1), at("ts.[slot].y", 0, 4)]
+    );
+
+    let world = world_holding(
+        timer_sequence_document(Some(3)),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.ts = sequence[M::Timer { x: 2 ms, y: 5 ms, n: 3 }] }\n",
+        ),
+        json!({"t": timer("0"), "ts": {"sequence": [timer("1"), timer("2")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let sent = only_step(&timed, &delayed(initial, 3), "send");
+    assert_eq!(
+        slot_clocks(&timed, &sent),
+        [at("ts.[slot].x", 0, 2), at("ts.[slot].y", 0, 5)]
+    );
+}
+
+/// Part of FR-230-AC-20 (TC-685), SR-1662001 FND-003: occurrences of a set
+/// literal equal as values are one element, however they are spelled.
+/// `set[Timer { x: 0 ms, y: 0 ms, n: 0 }, Timer { x: 5 ms, y: 5 ms, n:
+/// pre(self.t.n) }]`, with `t.n = 0`, writes one element whose clocks take
+/// the first occurrence's constants.
+#[trace("TC-685")]
+#[test]
+fn equal_occurrences_of_a_set_literal_are_one_element() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let world = world_holding(
+        timer_collection_document(Some(3), false, true),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.ts = set[M::Timer { x: 0 ms, y: 0 ms, n: 0 }, \
+             M::Timer { x: 5 ms, y: 5 ms, n: pre(self.t.n) }] }\n",
+        ),
+        json!({"t": timer("0"), "ts": {"set": [timer("1"), timer("2")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = timed
+        .delay(initial, &exact(3, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    let sent = only_step(&timed, &later, "send");
+    let at = |name: &str, slot: usize, value: i64| (name.to_owned(), slot, exact(value, 1));
+    assert_eq!(
+        slot_clocks(&timed, &sent),
+        [at("ts.[slot].x", 0, 0), at("ts.[slot].y", 0, 0)]
+    );
+}
+
+/// SR-1662001 FND-001: a collection write the engine cannot compute from
+/// the pre-state refuses the step by name and never drops it.
+/// `self.ts = filter(e in self.ts: e.n > 1)` reads `ts` in the post-state
+/// (FR-104, STD-493 item 28), so expanding the state stops
+/// `unsupported_construct`/`collection-write-not-computed`.
+#[trace("TC-685")]
+#[test]
+fn a_collection_write_read_in_the_post_state_refuses_its_step() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let world = world_holding(
+        timer_sequence_document(Some(3)),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.ts = filter(e in self.ts: e.n > 1) }\n",
+        ),
+        json!({"t": timer("0"), "ts": {"sequence": [timer("1"), timer("2")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let Err(TimedStop::Expansion(stop)) = timed.steps(initial) else {
+        panic!("the step is refused");
+    };
+    assert_eq!(
+        stop.cause,
+        CatalogCode::new("unsupported_construct", "collection-write-not-computed")
+    );
 }

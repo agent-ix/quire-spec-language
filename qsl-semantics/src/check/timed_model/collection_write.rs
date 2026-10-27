@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use qsl_forms::{BinderQuery, ExprId, ExprNode, FieldInitializer};
+use qsl_forms::{BinderQuery, ExprId, ExprNode};
 use qsl_foundation::Span;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{CollectionKind, EffectiveId, Rational};
@@ -22,17 +22,26 @@ use crate::check::refusal::TemporalCause;
 /// slot or fresh.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Written {
-    /// `self.g`: each element carried from its slot of the pre-state
-    /// collection `g`.
-    Field(String),
-    /// The element a traversal binds, carried from its slot.
-    Element,
+    /// `pre(self.g)`, or `self.g`: each element carried from its slot of
+    /// the collection `g`. Under FR-104 a bare `self.g` on the right reads
+    /// the post-state (`pre: false`), so the write is a constraint on the
+    /// post-state, not a value of the pre-state (STD-493 item 28).
+    Field {
+        /// The read collection field.
+        field: String,
+        /// Whether it is read in the pre-state, `pre(self.g)`.
+        pre: bool,
+    },
+    /// The element the traversal binding the named binder binds, carried
+    /// from its slot.
+    Element(String),
     /// A record literal: fresh, its clocks at the exact constants of its
     /// clock components.
     Fresh(Vec<(ClockId, Rational)>),
     /// A collection literal of `kind`, its occurrences in source order. Of
-    /// a `Set` or `OrderedSet`, an occurrence equal by data part to an
-    /// earlier one is left out, the first kept.
+    /// a `Set` or `OrderedSet`, occurrences equal as values are one element,
+    /// whose clocks are the first occurrence's: the executor decides it on
+    /// the values, which may read the state.
     Literal {
         /// The literal's kind.
         kind: CollectionKind,
@@ -63,6 +72,22 @@ pub struct CollectionWrite {
     field: String,
     written: Written,
     span: Span,
+}
+
+impl Written {
+    /// Whether the write is a function of the pre-state: every collection
+    /// it carries from is read in the pre-state.
+    pub fn of_pre_state(&self) -> bool {
+        match self {
+            Self::Field { pre, .. } => *pre,
+            Self::Element(_) | Self::Fresh(_) => true,
+            Self::Literal { occurrences, .. } => occurrences.iter().all(Self::of_pre_state),
+            Self::Filter(source) | Self::Flatten(source) | Self::Convert(source) => {
+                source.of_pre_state()
+            }
+            Self::Map { source, body } => source.of_pre_state() && body.of_pre_state(),
+        }
+    }
 }
 
 impl CollectionWrite {
@@ -160,8 +185,12 @@ impl Writing<'_, '_, '_> {
             Some(ExprNode::Name(name))
                 if name.segments.len() == 1 && bound.contains(name.name.as_str()) =>
             {
-                Ok(Written::Element)
+                Ok(Written::Element(name.name.clone()))
             }
+            Some(ExprNode::Pre(operand)) => match self.collection(*operand) {
+                Some(field) => Ok(Written::Field { field, pre: true }),
+                None => Err(refused()),
+            },
             Some(ExprNode::Record { .. }) => {
                 let mut components = Vec::new();
                 self.record
@@ -180,28 +209,13 @@ impl Writing<'_, '_, '_> {
                         .collect(),
                 ))
             }
-            Some(ExprNode::Collection { kind, elements }) => {
-                let mut occurrences: Vec<(ExprId, Written)> = Vec::new();
-                for element in elements {
-                    let written = self.written(*element, bound, cut)?;
-                    let unique = matches!(kind, CollectionKind::Set | CollectionKind::OrderedSet);
-                    if unique
-                        && occurrences
-                            .iter()
-                            .any(|(earlier, _)| self.equal_data(*earlier, *element))
-                    {
-                        continue;
-                    }
-                    occurrences.push((*element, written));
-                }
-                Ok(Written::Literal {
-                    kind: *kind,
-                    occurrences: occurrences
-                        .into_iter()
-                        .map(|(_, written)| written)
-                        .collect(),
-                })
-            }
+            Some(ExprNode::Collection { kind, elements }) => Ok(Written::Literal {
+                kind: *kind,
+                occurrences: elements
+                    .iter()
+                    .map(|element| self.written(*element, bound, cut))
+                    .collect::<Result<_, _>>()?,
+            }),
             Some(ExprNode::Flatten(operand)) => Ok(Written::Flatten(Box::new(
                 self.written(*operand, bound, cut)?,
             ))),
@@ -224,7 +238,7 @@ impl Writing<'_, '_, '_> {
                     return Ok(Written::Filter(source));
                 }
                 let body = self.written(*body, &inner, cut)?;
-                if !matches!(body, Written::Element | Written::Fresh(_)) {
+                if !matches!(body, Written::Element(_) | Written::Fresh(_)) {
                     return Err(refused());
                 }
                 Ok(Written::Map {
@@ -232,55 +246,28 @@ impl Writing<'_, '_, '_> {
                     body: Box::new(body),
                 })
             }
-            _ => match self_path(located.form, id) {
-                Some(path) => match path.as_slice() {
-                    [PlaceStep::Field(field)]
-                        if self.record.clocks.fields.iter().any(|clock| {
-                            clock.path.len() > 1
-                                && clock.path[0] == path[0]
-                                && matches!(clock.path[1], PlaceStep::Slot(_))
-                        }) =>
-                    {
-                        Ok(Written::Field(field.clone()))
-                    }
-                    _ => Err(refused()),
-                },
+            _ => match self.collection(id) {
+                Some(field) => Ok(Written::Field { field, pre: false }),
                 None => Err(refused()),
             },
         }
     }
 
-    /// Whether the record literals `left` and `right` are equal by data
-    /// part: each data component the same literal.
-    fn equal_data(&self, left: ExprId, right: ExprId) -> bool {
-        let located = self.record.located;
-        let data = |id: ExprId| -> Option<Vec<(&str, &ExprNode)>> {
-            let ExprNode::Record { fields, .. } = located.node(id)? else {
-                return None;
-            };
-            let mut components = Vec::new();
-            for (name, initializer) in fields {
-                let mut below = self.element.clone();
-                below.push(PlaceStep::Field(name.clone()));
-                if self
-                    .record
-                    .places_below(&self.element)
-                    .any(|(_, clock)| clock.path == below)
-                {
-                    continue;
-                }
-                let FieldInitializer::Value(value) = initializer else {
-                    return None;
-                };
-                let node = located.node(*value)?;
-                if !node.children().is_empty() {
-                    return None;
-                }
-                components.push((name.as_str(), node));
-            }
-            components.sort_by_key(|(name, _)| *name);
-            Some(components)
+    /// The receiver's clock collection field node `id` names, `self.g`.
+    fn collection(&self, id: ExprId) -> Option<String> {
+        let path = self_path(self.record.located.form, id)?;
+        let [PlaceStep::Field(field)] = path.as_slice() else {
+            return None;
         };
-        matches!((data(left), data(right)), (Some(left), Some(right)) if left == right)
+        self.record
+            .clocks
+            .fields
+            .iter()
+            .any(|clock| {
+                clock.path.len() > 1
+                    && clock.path[0] == path[0]
+                    && matches!(clock.path[1], PlaceStep::Slot(_))
+            })
+            .then(|| field.clone())
     }
 }

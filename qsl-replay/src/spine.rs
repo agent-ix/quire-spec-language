@@ -1401,6 +1401,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: the one write to a clock is a reset of a clock of the frame \
                      to a constant"
                 ),
+                TemporalCause::ConflictingClockWrite { .. } => format!(
+                    "{message}: a postcondition writes a clock collection once, and resets \
+                     none of its clocks beside the write"
+                ),
                 TemporalCause::UnknownClock { .. } => {
                     format!("{message}: a time invariant bounds a clock of `self`")
                 }

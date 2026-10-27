@@ -878,19 +878,26 @@ fn timer_sequence_and_set() -> Vec<u8> {
 }
 
 /// Part of FR-230-AC-20 (TC-685), "Collection-valued writes":
-/// - `self.ts = filter(e in self.ts: e.n > 1)` writes each surviving
-///   element carried from its slot;
+/// - `self.ts = filter(e in pre(self.ts): e.n > 1)` writes each surviving
+///   element carried from its slot of the pre-state; a bare `self.ts` on
+///   the right is recorded as read in the post-state (FR-104, STD-493 item
+///   28);
+/// - `self.ts = map(e in pre(self.ts): e)` carries the element its binder
+///   `e` names;
 /// - `self.ts = sequence[Timer { x: 0 ms, n: 9 }]` writes a fresh element
 ///   with `x = 0`, and the checked body keeps the data `9` and drops the
 ///   clock constant;
 /// - `self.st = set[Timer { x: 0 ms, n: 1 }, Timer { x: 5 ms, n: 1 }]`
-///   writes one fresh occurrence, the first (`x = 0`).
+///   records both occurrences: which are equal is decided on their values
+///   when the write executes (SR-1662001 FND-003).
 ///
 /// These refuse:
 /// - `clock-write` at the occurrence for a component reading a clock
 ///   (`Timer { x: self.x, n: 1 }`);
 /// - `clock-write` when `ts` is written in an invariant, under a `let`,
-///   or by `reply`, whose frame does not name `ts`.
+///   or by `reply`, whose frame does not name `ts`;
+/// - `conflicting-clock-write` at the later write when one postcondition
+///   writes `ts` twice, or writes it and resets a clock of it.
 ///
 /// Not covered: `Timer { x: self.ts[0].x, n: 1 }`, whose selection has no
 /// S2 form (STD-493 item 24), and AC-20's `flatten(sequence[sequence[..],
@@ -934,11 +941,26 @@ fn a_collection_write_records_the_provenance_of_each_occurrence() {
             .map(|(id, _)| id)
             .unwrap_or_else(|| panic!("{name}"))
     };
+    let field = |pre: bool| Written::Field {
+        field: "ts".to_owned(),
+        pre,
+    };
+    assert_eq!(
+        written("self.ts = filter(e in pre(self.ts): e.n > 1)").0,
+        [("ts".to_owned(), Written::Filter(Box::new(field(true))))]
+    );
     assert_eq!(
         written("self.ts = filter(e in self.ts: e.n > 1)").0,
+        [("ts".to_owned(), Written::Filter(Box::new(field(false))))]
+    );
+    assert_eq!(
+        written("self.ts = map(e in pre(self.ts): e)").0,
         [(
             "ts".to_owned(),
-            Written::Filter(Box::new(Written::Field("ts".to_owned())))
+            Written::Map {
+                source: Box::new(field(true)),
+                body: Box::new(Written::Element("e".to_owned())),
+            }
         )]
     );
     let (writes, literals) = written("self.ts = sequence[Config::Timer { x: 0 ms, n: 9 }]");
@@ -960,7 +982,10 @@ fn a_collection_write_records_the_provenance_of_each_occurrence() {
             "st".to_owned(),
             Written::Literal {
                 kind: quire_exact::CollectionKind::Set,
-                occurrences: vec![Written::Fresh(vec![(clock("st.[slot].x"), exact(0, 1))])],
+                occurrences: vec![
+                    Written::Fresh(vec![(clock("st.[slot].x"), exact(0, 1))]),
+                    Written::Fresh(vec![(clock("st.[slot].x"), exact(5, 1))]),
+                ],
             }
         )]
     );
@@ -986,6 +1011,26 @@ fn a_collection_write_records_the_provenance_of_each_occurrence() {
         assert_eq!(
             (cause.code(), cause.tag(), text.as_str()),
             (Code::InvalidTimedModel, "clock-write", at),
+            "{clause}"
+        );
+    }
+    for (clause, at) in [
+        (
+            "self.ts = filter(e in pre(self.ts): e.n > 1) and self.ts = pre(self.ts)",
+            "self.ts = pre(self.ts)",
+        ),
+        (
+            "self.ts = pre(self.ts) and forall(e in self.ts: e.x = 0 ms)",
+            "forall(e in self.ts: e.x = 0 ms)",
+        ),
+    ] {
+        let (cause, text) = refused(
+            &document,
+            &format!("{UNITS}{DENSE}post Q using v on Config::Call::send {{ {clause} }}\n"),
+        );
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "conflicting-clock-write", at),
             "{clause}"
         );
     }
