@@ -22,18 +22,20 @@ use quire_exact::{Integer, Rational};
 use super::search::scaled;
 use super::{Bound, Dbm, DbmError};
 
-/// One step of a symbolic path, with the members its delay obeys.
+/// One position of a symbolic path, with the members its delay obeys.
 pub(super) struct Stage {
-    /// The time invariants applying before the step.
+    /// The time invariants applying before the position.
     pub invariants: Vec<PlaceConstraint>,
-    /// Whether time may elapse before the step.
+    /// Whether time may elapse before the position.
     pub elapses: bool,
     /// The time invariants applying after it.
     pub target: Vec<PlaceConstraint>,
-    /// The convex part of its guard taken.
-    pub part: usize,
-    /// The step.
-    pub step: GuardedStep,
+    /// The step and the convex part of its guard taken; `None` for an
+    /// idle-tail stutter position, which comes after a positive delay.
+    pub step: Option<(GuardedStep, usize)>,
+    /// What a claim automaton requires of its horizon clock at the
+    /// position (FR-242).
+    pub position: Vec<PlaceConstraint>,
 }
 
 /// Where the path's last valuation must lie.
@@ -46,7 +48,8 @@ pub(super) enum Target {
 
 /// A concretised path.
 pub(super) struct Concrete {
-    /// Its steps, each with its delay and post-state digest.
+    /// Its steps, each with its delay and post-state digest; a stutter
+    /// position adds none.
     pub prefix: Vec<ModelStep>,
     /// Its last clock valuation, every place in order.
     pub last_clocks: Vec<Rational>,
@@ -117,14 +120,16 @@ fn apply(
 
 /// FR-241: the path from the initial zero valuation through `stages`, its
 /// last valuation in `target`, with exact delays; `scale` is the zone's
-/// scale factor.
+/// scale factor and `clocks` its number of clocks: the clock places, then
+/// any clock a claim automaton adds, which no step resets.
 pub(super) fn concretise(
     timed: &TimedSystem<'_, '_>,
+    clocks: usize,
     stages: &[Stage],
     target: &Target,
     scale: &BigInt,
 ) -> Result<Concrete, NotConcretised> {
-    let places = timed.places().len();
+    let places = clocks;
     let zero = Rational::from_integer(Integer::zero());
     let mut resets = Resets(vec![(0, zero.clone()); places]);
     let mut times = Dbm::universe(stages.len() + 1);
@@ -134,20 +139,25 @@ pub(super) fn concretise(
         if !stage.elapses {
             times.constrain(at, at - 1, Bound::le(BigInt::from(0)))?;
         }
-        let part = stage
-            .step
-            .parts()
-            .get(stage.part)
-            .ok_or(NotConcretised::Part)?;
+        let part: &[PlaceConstraint] = match &stage.step {
+            Some((step, part)) => step.parts().get(*part).ok_or(NotConcretised::Part)?,
+            // A stutter position reads the state again. One at zero delay
+            // re-reads the same state at the same stamp, so it only marks
+            // the idle tail and is taken as is: no positive delay is
+            // required of it (SR-1631001 FND-004).
+            None => &[],
+        };
         for constraint in stage.invariants.iter().chain(part) {
             resets.constrain(&mut times, at, constraint, scale)?;
         }
-        for (place, value) in stage.step.resets() {
-            if let Some(slot) = resets.0.get_mut(*place) {
-                *slot = (at, value.clone());
+        if let Some((step, _)) = &stage.step {
+            for (place, value) in step.resets() {
+                if let Some(slot) = resets.0.get_mut(*place) {
+                    *slot = (at, value.clone());
+                }
             }
         }
-        for constraint in &stage.target {
+        for constraint in stage.target.iter().chain(&stage.position) {
             resets.constrain(&mut times, at, constraint, scale)?;
         }
     }
@@ -233,21 +243,26 @@ pub(super) fn concretise(
                 .sub(&stamps[since])
                 .add(&resets_value(stages, place, since));
         }
-        for (place, reset) in stage.step.resets() {
+        let Some((step, _)) = &stage.step else {
+            continue;
+        };
+        for (place, reset) in step.resets() {
             if let Some(slot) = values.get_mut(*place) {
                 slot.clone_from(reset);
                 last_reset[*place] = at;
             }
         }
+        // The post-state digest names the model's clock places only.
+        let model_clocks = values.get(..timed.places().len()).unwrap_or(&values);
         let state = TimedState::new(
-            stage.step.post().clone(),
-            ClockValuation::new(values.clone()),
+            step.post().clone(),
+            ClockValuation::new(model_clocks.to_vec()),
         );
         let post_state = timed
             .state_digest(&state)
             .map_err(|_| NotConcretised::Digest)?;
         prefix.push(ModelStep {
-            transition: stage.step.transition().clone(),
+            transition: step.transition().clone(),
             post_state,
             delay: Some(delay),
         });
@@ -267,6 +282,8 @@ fn resets_value(stages: &[Stage], place: usize, since: usize) -> Rational {
         .and_then(|stage| {
             stage
                 .step
+                .as_ref()?
+                .0
                 .resets()
                 .iter()
                 .rev()

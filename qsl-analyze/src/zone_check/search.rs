@@ -28,15 +28,18 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
-    CounterexampleKind, TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    CounterexampleKind, Lasso, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
-use qsl_semantics::check::{CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile};
+use qsl_semantics::check::{
+    CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,
+};
 use quire_exact::{Cancel, Meter, Rational};
 
 use super::certificate::{Proof, ZoneCertificate};
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
+use super::window::{Read, Stamp, WindowClaim};
 use super::{scale_constants, Bound, Dbm, DbmError};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 
@@ -67,11 +70,12 @@ impl Default for ZoneCheckLimits {
 /// The item EN-6 decides.
 #[derive(Clone, Copy)]
 pub enum ZoneCheckItem<'a> {
-    /// A TT-1 clause `always holds(A)` whose atom reads the model state.
-    Invariant {
+    /// A TT-1 clause `always holds(A)` whose atom reads the model state, or
+    /// a TT-2 `BoundedWindow` clause read on origin (FR-242).
+    Clause {
         /// The checked clause.
         clause: &'a CheckedTemporalClause,
-        /// The seam to the one clause evaluator for its atom.
+        /// The seam to the one clause evaluator for its atoms.
         letters: &'a dyn ModelLetters,
     },
     /// FR-124's deadlock-freedom item, read over time (FR-232).
@@ -131,6 +135,11 @@ pub enum ZoneUndecided {
     /// delay, which no position of a counterexample names: FR-236 and QSpec
     /// FR-417 give `final_delay` to time-locks only (spec gap STD-493).
     DeadlockAfterDelay,
+    /// FR-242 over ADR-024 WA-4: no violation was found, but an admitted
+    /// behaviour read a window aggregate short of data for this instance,
+    /// which the evaluator reports `InsufficientData`, so the claim is not
+    /// proved.
+    InsufficientData(ModelInstance),
 }
 
 /// The run's counts.
@@ -157,6 +166,8 @@ pub(super) struct SymbolicNode {
     pub initial: Option<usize>,
     /// Whether it violates the item only on time-locked valuations.
     pub locked: bool,
+    /// The claim-automaton state; 0 with no automaton.
+    pub q: usize,
 }
 
 /// A retained edge: a successor by a step's convex guard part, in
@@ -170,10 +181,23 @@ pub(super) struct SymbolicEdge {
     pub to: usize,
     /// Whether `to` covers the successor rather than holding it.
     pub covering: bool,
-    /// The step's index among the source's guarded steps.
-    pub step: usize,
-    /// The convex part's index among the step's parts.
-    pub part: usize,
+    /// The step's index among the source's guarded steps and the convex
+    /// part's index among its parts; `None` for an idle-tail stutter
+    /// position (FR-242).
+    pub step: Option<(usize, usize)>,
+    /// The piece of the horizon clock's axis a TT-2 position lies in, by
+    /// index into the run's pieces; `None` with no automaton, under a tick
+    /// source, and past the formula's horizon.
+    pub piece: Option<usize>,
+}
+
+/// How a new node is reached: an edge from a stored node, with its step
+/// and piece.
+#[derive(Clone, Copy, Debug)]
+struct Arrival {
+    from: usize,
+    step: Option<(usize, usize)>,
+    piece: Option<usize>,
 }
 
 impl SymbolicEdge {
@@ -220,10 +244,16 @@ pub enum ZoneCheckOutcome<S> {
 /// Why EN-6 does not take the request.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ZoneCheckRefusal {
-    /// The clause is not `always holds(A)` under infinite-trace or the
-    /// timed profile.
-    #[error("the clause is not a TT-1 `always holds(A)`")]
-    NotTimedInvariant,
+    /// The clause is neither a TT-1 `always holds(A)` under infinite-trace
+    /// or the timed profile nor a TT-2 `BoundedWindow` clause: TT-3 and TT-4
+    /// translate by MightyL (FR-242), which this engine does not build yet.
+    #[error("the clause is not a TT-1 or TT-2 clause")]
+    UnsupportedForm,
+    /// A TT-2 clause has an interval operator under another temporal
+    /// operator, which needs a clock per activation beyond the one horizon
+    /// clock (FR-242).
+    #[error("a TT-2 clause nests an interval operator under another")]
+    NestedWindow,
     /// The clause's `over` instances are not finite.
     #[error("the clause's instances are not finite")]
     Unbounded,
@@ -250,8 +280,12 @@ impl From<DbmError> for ZoneCheckRefusal {
 enum Badness {
     /// The claim's atom is false for the instance.
     False(ModelInstance),
-    /// The claim's atom is undefined for the instance.
-    Undefined(ModelInstance, qsl_eval::temporal::UndefinedCause),
+    /// An atom of the claim is undefined for the instance.
+    Undefined(
+        ModelInstance,
+        qsl_eval::temporal::UndefinedCause,
+        FormulaNodeId,
+    ),
     /// The node holds deadlocked valuations at entry, within the zone.
     Deadlock(Dbm),
 }
@@ -288,7 +322,7 @@ pub fn check_timed_model<S: Clone>(
     // The certificate names the request's obligation, which must be the
     // item's: an authored claim's occurrence, or `deadlock-freedom`.
     let matches = match request.item {
-        ZoneCheckItem::Invariant { .. } => {
+        ZoneCheckItem::Clause { .. } => {
             matches!(request.obligation.kind, ObligationKind::Authored(_))
         }
         ZoneCheckItem::DeadlockFreedom => {
@@ -298,31 +332,53 @@ pub fn check_timed_model<S: Clone>(
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
+    let mut window = None;
     let claim = match request.item {
-        ZoneCheckItem::Invariant { clause, letters } => {
-            let atom = qsl_eval::automaton::invariant_atom(clause)
-                .ok_or(ZoneCheckRefusal::NotTimedInvariant)?;
-            if !matches!(
-                clause.profile(),
-                TemporalProfile::InfiniteTrace | TemporalProfile::Timed
+        ZoneCheckItem::Clause { clause, letters } => {
+            let instances = || {
+                request
+                    .subject
+                    .system()
+                    .instances(&clause.over().1)
+                    .map_err(|_| ZoneCheckRefusal::Unbounded)
+            };
+            if let Some(atom) = qsl_eval::automaton::invariant_atom(clause) {
+                if !matches!(
+                    clause.profile(),
+                    TemporalProfile::InfiniteTrace | TemporalProfile::Timed
+                ) {
+                    return Err(ZoneCheckRefusal::UnsupportedForm);
+                }
+                Some(Claim {
+                    clause,
+                    atom: Some(atom),
+                    letters,
+                    instances: instances()?,
+                })
+            } else if matches!(
+                clause.timed_form(),
+                Some(TimedPropertyForm::BoundedWindow { .. })
             ) {
-                return Err(ZoneCheckRefusal::NotTimedInvariant);
+                let instances = instances()?;
+                window = Some(WindowClaim::new(
+                    clause.formula(),
+                    instances.len(),
+                    request.subject.tick_period().cloned(),
+                    request.limits.max_automaton_states,
+                )?);
+                Some(Claim {
+                    clause,
+                    atom: None,
+                    letters,
+                    instances,
+                })
+            } else {
+                return Err(ZoneCheckRefusal::UnsupportedForm);
             }
-            let instances = request
-                .subject
-                .system()
-                .instances(&clause.over().1)
-                .map_err(|_| ZoneCheckRefusal::Unbounded)?;
-            Some(Claim {
-                clause,
-                letters,
-                atom,
-                instances,
-            })
         }
         ZoneCheckItem::DeadlockFreedom => None,
     };
-    let mut run = Run::new(request.subject, claim, request.limits, cancel);
+    let mut run = Run::new(request.subject, claim, window, request.limits, cancel);
     let searched = match run.search() {
         Ok(searched) => searched,
         Err(Halt::Outcome(searched)) => *searched,
@@ -368,13 +424,21 @@ pub(super) enum Searched {
 struct Claim<'r> {
     clause: &'r CheckedTemporalClause,
     letters: &'r dyn ModelLetters,
-    atom: FormulaNodeId,
+    /// A TT-1 clause's atom; `None` for a TT-2 clause, which the run's
+    /// [`WindowClaim`] reads.
+    atom: Option<FormulaNodeId>,
     instances: Vec<ModelInstance>,
 }
 
 pub(super) struct Run<'r, 's, 'a> {
     pub(super) timed: &'r TimedSystem<'s, 'a>,
     claim: Option<Claim<'r>>,
+    /// A TT-2 clause's automaton, whose horizon clock is the last clock of
+    /// every zone.
+    pub(super) window: Option<WindowClaim>,
+    /// The pieces of the horizon axis a TT-2 position is read on, computed
+    /// once: under a tick source, one, since the automaton keeps the stamp.
+    pub(super) pieces: Vec<(Vec<PlaceConstraint>, Rational)>,
     pub(super) limits: ZoneCheckLimits,
     cancel: &'r Cancel,
     pub(super) scale: BigInt,
@@ -398,19 +462,28 @@ pub(super) struct Run<'r, 's, 'a> {
     escape_edges: u64,
     /// The guarded steps of each model state reached, by its key.
     steps: BTreeMap<Vec<u8>, Vec<GuardedStep>>,
+    /// The first instance an admitted behaviour read short of data for.
+    insufficient: Option<ModelInstance>,
 }
 
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
     fn new(
         timed: &'r TimedSystem<'s, 'a>,
         claim: Option<Claim<'r>>,
+        window: Option<WindowClaim>,
         limits: ZoneCheckLimits,
         cancel: &'r Cancel,
     ) -> Self {
-        let (scale, lower, upper) = scaled_bounds(timed);
+        let (scale, lower, upper) = scaled_bounds(timed, window.as_ref());
+        let pieces = match (&window, timed.tick_period()) {
+            (Some(window), None) => window.pieces(timed.places().len()),
+            _ => vec![(Vec::new(), zero_stamp())],
+        };
         Self {
             timed,
             claim,
+            window,
+            pieces,
             limits,
             cancel,
             scale,
@@ -427,6 +500,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             escape_states: 0,
             escape_edges: 0,
             steps: BTreeMap::new(),
+            insufficient: None,
         }
     }
 
@@ -434,7 +508,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         ZoneStats {
             symbolic_states: widen(self.nodes.len()),
             retained_edges: widen(self.edges.len()),
-            automaton_states: u64::from(self.claim.is_some()),
+            automaton_states: self
+                .window
+                .as_ref()
+                .map_or(0, |window| widen(window.state_count())),
             zone_bytes: self.zone_bytes,
         }
     }
@@ -466,6 +543,12 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
 
     fn scaled(&self, value: &Rational) -> BigInt {
         scaled(value, &self.scale)
+    }
+
+    /// The dimension of every zone: the reference clock, the clock places
+    /// and, for a TT-2 clause, the horizon clock.
+    pub(super) fn dim(&self) -> usize {
+        self.timed.places().len() + 1 + usize::from(self.window.is_some())
     }
 
     /// Intersect `zone` with `constraints`.
@@ -512,6 +595,25 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         factor: &BigInt,
     ) -> Result<Vec<Successor>, Halt> {
         let mut found = Vec::new();
+        for mut successor in self.positions(state, zone, factor)? {
+            self.settle_at(&successor.state, &mut successor.zone, factor)?;
+            if !successor.zone.is_empty() {
+                found.push(successor);
+            }
+        }
+        Ok(found)
+    }
+
+    /// [`Self::successors`] at the instant of each step: the valuations
+    /// the step reaches before time elapses at its target, which a claim
+    /// automaton reads at the step's position.
+    fn positions(
+        &mut self,
+        state: &ModelSimState,
+        zone: &Dbm,
+        factor: &BigInt,
+    ) -> Result<Vec<Successor>, Halt> {
+        let mut found = Vec::new();
         for (index, step) in self.steps_for(state)?.iter().enumerate() {
             let target = self.timed(self.timed.invariants(step.post()))?;
             let tick = self.timed.tick_of(step.operation())
@@ -527,10 +629,6 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                     next.reset(place + 1, &scaled(value, factor))?;
                 }
                 constrain_at(&mut next, &target, factor)?;
-                if next.is_empty() {
-                    continue;
-                }
-                self.settle_at(step.post(), &mut next, factor)?;
                 if next.is_empty() {
                     continue;
                 }
@@ -551,25 +649,32 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         if initial.is_empty() {
             return Err(self.undecided(ZoneUndecided::NoInitialState));
         }
-        if self.claim.is_some() && self.limits.max_automaton_states == 0 {
+        if self.window.is_some() && self.limits.max_automaton_states == 0 {
             return Err(
                 self.stop(ZoneStop::LimitReached(ZoneCheckLimit::MaxAutomatonStates(
                     0,
                 ))),
             );
         }
-        let dim = self.timed.places().len() + 1;
+        let dim = self.dim();
         let mut queue = VecDeque::new();
         let mut roots = Vec::new();
         let mut delayed_deadlock = false;
         for (index, state) in initial.iter().enumerate() {
             let discrete = state.discrete().clone();
             let mut zone = Dbm::zero(dim);
+            // Position 0 is read at time 0, before time elapses.
+            let q = match self.window {
+                Some(_) => {
+                    self.window_position(None, &discrete, Stamp::At(&zero_stamp()), false)?
+                }
+                None => 0,
+            };
             self.settle(&discrete, &mut zone)?;
             if zone.is_empty() {
                 continue;
             }
-            if let Some(node) = self.insert(discrete, zone, Some(index), None)? {
+            if let Some(node) = self.insert(discrete, q, zone, Some(index), None)? {
                 roots.push(node);
                 queue.push_back(node);
                 delayed_deadlock |= self.judge(node)?;
@@ -601,6 +706,14 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             // state has no counterexample form (FR-236 gives `final_delay`
             // to time-locks only), so it is neither proved away nor refuted.
             Some(_) if delayed_deadlock => Err(self.undecided(ZoneUndecided::DeadlockAfterDelay)),
+            // ADR-024 WA-4: an admitted behaviour read a window short of
+            // data, which the evaluator reports `InsufficientData`.
+            Some(_) if self.insufficient.is_some() => {
+                let instance = self.insufficient.take();
+                Err(self.undecided(ZoneUndecided::InsufficientData(
+                    instance.ok_or(ZoneCheckRefusal::Fault("insufficient-instance"))?,
+                )))
+            }
             Some((root, witness)) => {
                 let witness = witness.ok_or(ZoneCheckRefusal::Fault("divergence-witness"))?;
                 let proof = self.certificate(&roots, root, &witness)?;
@@ -612,30 +725,33 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         }
     }
 
-    /// Store `(state, zone)` unless a stored state covers it: the new node,
-    /// or `None` with the covering node recorded through `edge`.
+    /// Store `(state, q, zone)` unless a stored state with equal `state`
+    /// and `q` covers it: the new node, or `None` with the covering node
+    /// recorded through `arrival`.
     fn insert(
         &mut self,
         state: ModelSimState,
+        q: usize,
         zone: Dbm,
         initial: Option<usize>,
-        edge: Option<(usize, usize, usize)>,
+        arrival: Option<Arrival>,
     ) -> Result<Option<usize>, Halt> {
-        let (key, _) = self
+        let (mut key, _) = self
             .timed
             .system()
             .state_key(&state)
             .map_err(|_| ZoneCheckRefusal::Fault("state-key"))?;
+        key.extend_from_slice(&widen(q).to_be_bytes());
         if let Some(stored) = self.passed.get(&key) {
             for &candidate in stored {
                 if zone.alu_covered_by(&self.nodes[candidate].zone, &self.lower, &self.upper)? {
-                    if let Some((from, step, part)) = edge {
+                    if let Some(arrival) = arrival {
                         self.retain(SymbolicEdge {
-                            from,
+                            from: arrival.from,
                             to: candidate,
                             covering: true,
-                            step,
-                            part,
+                            step: arrival.step,
+                            piece: arrival.piece,
                         })?;
                     }
                     return Ok(None);
@@ -649,19 +765,20 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             zone,
             initial,
             locked: false,
+            q,
         });
         self.keys.push(key.clone());
         self.expanded.push(false);
         self.out.push(Vec::new());
         self.passed.entry(key).or_default().push(index);
-        let parent = match edge {
-            Some((from, step, part)) => {
+        let parent = match arrival {
+            Some(arrival) => {
                 self.retain(SymbolicEdge {
-                    from,
+                    from: arrival.from,
                     to: index,
                     covering: false,
-                    step,
-                    part,
+                    step: arrival.step,
+                    piece: arrival.piece,
                 })?;
                 Some(self.edges.len() - 1)
             }
@@ -761,19 +878,173 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         self.expanded[node] = true;
         let state = self.nodes[node].state.clone();
         let zone = self.nodes[node].zone.clone();
+        let q = self.nodes[node].q;
         let scale = self.scale.clone();
         let mut created = Vec::new();
-        for successor in self.successors(&state, &zone, &scale)? {
-            if let Some(new) = self.insert(
-                successor.state,
-                successor.zone,
-                None,
-                Some((node, successor.step, successor.part)),
-            )? {
-                created.push(new);
+        // With no automaton, and once a TT-2 automaton state has decided
+        // every obligation, past the formula's horizon (FR-242, ADR-026
+        // EZ-9), a step reads no position: the automaton state stays, no
+        // atom is read and no piece of the horizon axis splits the zone,
+        // whose horizon clock no longer matters. The zone graph goes on, so
+        // the certificate keeps its edges and its `admitted` path.
+        let frozen = self.window.as_ref().is_none_or(|window| window.decided(q));
+        if frozen {
+            let horizon = self.window.as_ref().map(|_| self.timed.places().len() + 1);
+            for mut successor in self.successors(&state, &zone, &scale)? {
+                if let Some(h) = horizon {
+                    successor.zone.free(h)?;
+                }
+                let arrival = Arrival {
+                    from: node,
+                    step: Some((successor.step, successor.part)),
+                    piece: None,
+                };
+                if let Some(new) =
+                    self.insert(successor.state, q, successor.zone, None, Some(arrival))?
+                {
+                    created.push(new);
+                }
+            }
+            return Ok(created);
+        }
+        let Some(window) = self.window.as_ref() else {
+            return Err(ZoneCheckRefusal::Fault("window").into());
+        };
+        let tail = window.state(q).is_some_and(|state| state.tail);
+        let period = self.timed.tick_period().cloned();
+        let pieces = self.pieces.clone();
+        // A step's position, read on each piece of the horizon axis, or
+        // under a tick source after its tick; none in the idle tail, which
+        // takes no further step.
+        let positions = if tail {
+            Vec::new()
+        } else {
+            self.positions(&state, &zone, &scale)?
+        };
+        let terminal = positions.is_empty();
+        for successor in positions {
+            for (piece, (constraints, stamp)) in pieces.iter().enumerate() {
+                let mut at = successor.zone.clone();
+                self.constrain(&mut at, constraints)?;
+                if at.is_empty() {
+                    continue;
+                }
+                let advance = match (&period, successor.tick) {
+                    (Some(period), true) => period.clone(),
+                    _ => zero_stamp(),
+                };
+                let stamp = match period {
+                    Some(_) => Stamp::After(&advance),
+                    None => Stamp::At(stamp),
+                };
+                let read = self.window_step(q, &successor.state, stamp, false)?;
+                self.settle(&successor.state, &mut at)?;
+                if at.is_empty() {
+                    continue;
+                }
+                let arrival = Arrival {
+                    from: node,
+                    step: Some((successor.step, successor.part)),
+                    piece: period.is_none().then_some(piece),
+                };
+                if let Some(new) =
+                    self.insert(successor.state.clone(), read, at, None, Some(arrival))?
+                {
+                    created.push(new);
+                }
+            }
+        }
+        // The behaviour may idle: under a dense source at a quiescent state,
+        // a stutter position after a delay; under a tick source at a
+        // terminal state, whose stutter step is a tick (FR-231). Either
+        // leaves it in the idle tail.
+        let idles = match &period {
+            Some(_) => tail || terminal,
+            None => self.timed(self.timed.is_quiescent(&state))? && self.elapses(&state)?,
+        };
+        if idles {
+            for (piece, (constraints, stamp)) in pieces.iter().enumerate() {
+                let mut at = zone.clone();
+                self.constrain(&mut at, constraints)?;
+                if at.is_empty() {
+                    continue;
+                }
+                let stamp = match &period {
+                    Some(period) => Stamp::After(period),
+                    None => Stamp::At(stamp),
+                };
+                let read = self.window_step(q, &state, stamp, true)?;
+                self.settle(&state, &mut at)?;
+                let arrival = Arrival {
+                    from: node,
+                    step: None,
+                    piece: period.is_none().then_some(piece),
+                };
+                if let Some(new) = self.insert(state.clone(), read, at, None, Some(arrival))? {
+                    created.push(new);
+                }
             }
         }
         Ok(created)
+    }
+
+    /// The automaton state a position reads from `q`.
+    fn window_step(
+        &mut self,
+        q: usize,
+        state: &ModelSimState,
+        stamp: Stamp<'_>,
+        stutter: bool,
+    ) -> Result<usize, Halt> {
+        self.window_position(Some(q), state, stamp, stutter)
+    }
+
+    /// The automaton state position 0 (`from` = `None`) or a later position
+    /// reads at `state` and time stamp `stamp`, each atom read through the
+    /// claim's letters for the instance it names.
+    fn window_position(
+        &mut self,
+        from: Option<usize>,
+        state: &ModelSimState,
+        stamp: Stamp<'_>,
+        stutter: bool,
+    ) -> Result<usize, Halt> {
+        let claim = self
+            .claim
+            .as_ref()
+            .ok_or(ZoneCheckRefusal::Fault("window-claim"))?;
+        let window = self
+            .window
+            .as_mut()
+            .ok_or(ZoneCheckRefusal::Fault("window"))?;
+        let limits = self.timed.system().meter_limits();
+        let mut atoms = |instance: usize, atom| {
+            let instance = claim
+                .instances
+                .get(instance)
+                .ok_or_else(|| "window-instance".to_owned())?;
+            claim
+                .letters
+                .atom(atom, instance, state, &mut Meter::new(limits))
+                .map_err(|stop| format!("{stop:?}"))
+        };
+        let read = match from {
+            None => window.initial(&mut atoms),
+            Some(q) => window.step(q, stamp, stutter, &mut atoms),
+        };
+        self.read(read)
+    }
+
+    /// The automaton state of a [`Read`], or the halt it names.
+    fn read(&self, read: Read) -> Result<usize, Halt> {
+        match read {
+            Read::State(q) => Ok(q),
+            Read::Fault(invariant) => Err(ZoneCheckRefusal::Fault(invariant).into()),
+            Read::Atom(stop) => Err(ZoneCheckRefusal::Atom(stop).into()),
+            Read::AutomatonStates => Err(self.stop(ZoneStop::LimitReached(
+                ZoneCheckLimit::MaxAutomatonStates(self.limits.max_automaton_states),
+            ))),
+        }
     }
 
     /// Judge a new node: end the run on an admitted violation, mark a locked
@@ -782,7 +1053,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let badness = match self.badness(node)? {
             Some(Ok(badness)) => badness,
             Some(Err(())) => return Ok(true),
-            None => return Ok(false),
+            None => {
+                self.note_insufficient(node)?;
+                return Ok(false);
+            }
         };
         let escape = self.node_escape(node)?;
         if !escape.diverges {
@@ -796,6 +1070,32 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             counterexample: Box::new(counterexample),
             stats: self.stats(),
         })))
+    }
+
+    /// Keep the first instance an admitted behaviour through `node` read
+    /// short of data for: with no violation, the evaluator reports that
+    /// behaviour `InsufficientData`, never `Holds`.
+    fn note_insufficient(&mut self, node: usize) -> Result<(), Halt> {
+        if self.insufficient.is_some() {
+            return Ok(());
+        }
+        let Some(at) = self
+            .window
+            .as_ref()
+            .and_then(|window| window.insufficient(self.nodes[node].q))
+        else {
+            return Ok(());
+        };
+        if self.node_escape(node)?.diverges {
+            let instance = self
+                .claim
+                .as_ref()
+                .and_then(|claim| claim.instances.get(at))
+                .cloned()
+                .ok_or(ZoneCheckRefusal::Fault("window-instance"))?;
+            self.insufficient = Some(instance);
+        }
+        Ok(())
     }
 
     /// FR-240's test from `node`.
@@ -816,18 +1116,41 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let Some(claim) = &self.claim else {
             return self.deadlock(node);
         };
+        if let Some(window) = &self.window {
+            // A TT-2 clause is decided by its automaton state.
+            let q = self.nodes[node].q;
+            let instance = |at: usize| {
+                claim
+                    .instances
+                    .get(at)
+                    .cloned()
+                    .ok_or(ZoneCheckRefusal::Fault("window-instance"))
+            };
+            if let Some(undefined) = window.undefined(q) {
+                return Ok(Some(Ok(Badness::Undefined(
+                    instance(undefined.instance)?,
+                    undefined.cause.clone(),
+                    undefined.atom,
+                ))));
+            }
+            return match window.violated(q) {
+                Some(at) => Ok(Some(Ok(Badness::False(instance(at)?)))),
+                None => Ok(None),
+            };
+        }
+        let atom = claim.atom.ok_or(ZoneCheckRefusal::Fault("claim-atom"))?;
         let state = &self.nodes[node].state;
         for instance in &claim.instances {
             let mut meter = Meter::new(self.timed.system().meter_limits());
             let reading = claim
                 .letters
-                .atom(claim.atom, instance, state, &mut meter)
+                .atom(atom, instance, state, &mut meter)
                 .map_err(|stop| ZoneCheckRefusal::Atom(format!("{stop:?}")))?;
             match reading {
                 AtomReading::True => {}
                 AtomReading::False => return Ok(Some(Ok(Badness::False(instance.clone())))),
                 AtomReading::Undefined(cause) => {
-                    return Ok(Some(Ok(Badness::Undefined(instance.clone(), cause))))
+                    return Ok(Some(Ok(Badness::Undefined(instance.clone(), cause, atom))))
                 }
             }
         }
@@ -917,8 +1240,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             Some(SymbolicEdge {
                 from,
                 covering: false,
-                step,
-                part,
+                step: Some((step, part)),
                 ..
             }) => {
                 let steps = self.steps_of(from)?;
@@ -937,7 +1259,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 }
                 zone
             }
-            Some(_) => return Err(ZoneCheckRefusal::Fault("covering-parent").into()),
+            Some(_) => return Err(ZoneCheckRefusal::Fault("entry-parent").into()),
         };
         self.constrain(&mut zone, &invariants)?;
         Ok(zone)
@@ -948,7 +1270,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// exact predecessors of every valuation of the quiescent state it ends
     /// at, all of which diverge.
     fn pre_path(&mut self, path: &[(ModelSimState, usize, usize)]) -> Result<Dbm, Halt> {
-        let mut region = Dbm::universe(self.timed.places().len() + 1);
+        let mut region = Dbm::universe(self.dim());
         for (source, step, part) in path.iter().rev() {
             let steps = self.steps_for(source)?;
             let step = steps
@@ -995,7 +1317,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 .collect()
         };
         let (lower, upper) = (rescale(&self.lower), rescale(&self.upper));
-        let mut point = Dbm::universe(self.timed.places().len() + 1);
+        let mut point = Dbm::universe(self.dim());
         for (place, value) in concrete.last_clocks.iter().enumerate() {
             let value = scaled(value, &factor);
             point.constrain(place + 1, 0, Bound::le(value.clone()))?;
@@ -1016,37 +1338,49 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let mut path = Vec::new();
         let mut at = node;
         while let Some(edge) = self.parent[at] {
-            let SymbolicEdge {
-                from,
-                covering: false,
-                step,
-                part,
-                ..
-            } = self.edges[edge].clone()
-            else {
+            let edge = self.edges[edge].clone();
+            if edge.covering {
                 return Err(ZoneCheckRefusal::Fault("covering-parent").into());
+            }
+            let step = match edge.step {
+                Some((step, part)) => {
+                    let steps = self.steps_of(edge.from)?;
+                    let step = steps
+                        .get(step)
+                        .cloned()
+                        .ok_or(ZoneCheckRefusal::Fault("edge-step"))?;
+                    Some((step, part))
+                }
+                None => None,
             };
-            let steps = self.steps_of(from)?;
-            let step = steps
-                .get(step)
-                .cloned()
-                .ok_or(ZoneCheckRefusal::Fault("edge-step"))?;
-            path.push((from, step, part));
-            at = from;
+            path.push((edge.from, step, edge.piece));
+            at = edge.from;
         }
         path.reverse();
         let initial = self.nodes[at]
             .initial
             .ok_or(ZoneCheckRefusal::Fault("path-root"))?;
+        let pieces = self.window.as_ref().map(|_| self.pieces.clone());
         let mut stages = Vec::with_capacity(path.len());
-        for (from, step, part) in path {
+        let mut stutters = 0_usize;
+        for (from, step, piece) in path {
             let state = self.nodes[from].state.clone();
+            let post = step.as_ref().map_or(&state, |(step, _)| step.post());
+            let target = self.timed(self.timed.invariants(post))?;
+            stutters += usize::from(step.is_none());
+            let position = match (&pieces, piece) {
+                (Some(pieces), Some(piece)) => pieces
+                    .get(piece)
+                    .map(|(constraints, _)| constraints.clone())
+                    .ok_or(ZoneCheckRefusal::Fault("edge-piece"))?,
+                _ => Vec::new(),
+            };
             stages.push(super::concretise::Stage {
                 invariants: self.timed(self.timed.invariants(&state))?,
                 elapses: self.elapses(&state)?,
-                target: self.timed(self.timed.invariants(step.post()))?,
-                part,
+                target,
                 step,
+                position,
             });
         }
         // FR-241: the last valuation is one with a time-divergent
@@ -1068,14 +1402,27 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             }
         };
         let within = targets.into_iter().find_map(|zone| {
-            concretise(self.timed, &stages, &Target::Within(zone), &self.scale).ok()
+            concretise(
+                self.timed,
+                self.dim() - 1,
+                &stages,
+                &Target::Within(zone),
+                &self.scale,
+            )
+            .ok()
         });
         let state = self.nodes[node].state.clone();
         let concrete = match within {
             Some(concrete) => concrete,
             None => {
-                let concrete = concretise(self.timed, &stages, &Target::Any, &self.scale)
-                    .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
+                let concrete = concretise(
+                    self.timed,
+                    self.dim() - 1,
+                    &stages,
+                    &Target::Any,
+                    &self.scale,
+                )
+                .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
                 if !self.point_diverges(&state, &concrete)? {
                     // FR-241 names no cause for a finite path with no
                     // divergent concretisation, only `LassoNotConcretized`
@@ -1106,7 +1453,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                     .as_ref()
                     .map_or_else(Vec::new, |claim| claim.clause.fairness().to_vec()),
             ),
-            Badness::Undefined(instance, cause) => {
+            Badness::Undefined(instance, cause, atom) => {
                 let claim = self
                     .claim
                     .as_ref()
@@ -1116,7 +1463,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                         site: UndefinedSite {
                             position: widen(concrete.prefix.len()),
                             state_key: discrete_key,
-                            locus: UndefinedLocus::Atom(claim.atom),
+                            locus: UndefinedLocus::Atom(atom),
                             transition: None,
                             time: Some(Box::new(TimedPoint {
                                 stamp: concrete.last_stamp.clone(),
@@ -1131,13 +1478,24 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             }
             Badness::Deadlock(_) => (CounterexampleKind::Deadlock, None, Vec::new()),
         };
+        // A violation reached by idle-tail stutters is the terminal
+        // stutter's loop; the delay before the violating stutter has no
+        // field (spec gap STD-493).
+        let lasso = (stutters > 0).then_some(Lasso {
+            entry: concrete.prefix.len(),
+            terminal_stutter: true,
+        });
         Ok(TemporalCounterexample {
             initial_state: initial,
             prefix: concrete.prefix,
             over_binding,
             fairness,
             kind,
-            lasso: None,
+            // A violation read at an idle-tail position: the behaviour ends
+            // in the stutter step repeated (FR-236 "idle tail"). The
+            // stutter's delay has no field in the counterexample (spec gap
+            // STD-493).
+            lasso,
             blocked: Vec::new(),
             refinement: None,
             final_delay: None,
@@ -1233,6 +1591,7 @@ fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
 /// timed model, with 1, scaled to integers.
 fn scaled_bounds(
     timed: &TimedSystem<'_, '_>,
+    window: Option<&WindowClaim>,
 ) -> (BigInt, Vec<Option<BigInt>>, Vec<Option<BigInt>>) {
     let model = timed.model();
     let mut constants = vec![Rational::from_integer(quire_exact::Integer::one())];
@@ -1281,18 +1640,26 @@ fn scaled_bounds(
     }
     constants.extend(lower.iter().flatten().cloned());
     constants.extend(upper.iter().flatten().cloned());
+    let horizon: Vec<Rational> = window.map_or_else(Vec::new, |window| window.constants().to_vec());
+    constants.extend(horizon.iter().cloned());
     let factor = scale_constants(&constants).factor().clone();
     let max = |values: &[Rational]| values.iter().max().map(|value| scaled(value, &factor));
-    let lower = timed
+    let mut lower: Vec<Option<BigInt>> = timed
         .places()
         .iter()
         .map(|place| max(&lower[place.clock().index()]))
         .collect();
-    let upper = timed
+    let mut upper: Vec<Option<BigInt>> = timed
         .places()
         .iter()
         .map(|place| max(&upper[place.clock().index()]))
         .collect();
+    // The horizon clock is compared with every interval end, from both
+    // sides.
+    if window.is_some() {
+        lower.push(max(&horizon));
+        upper.push(max(&horizon));
+    }
     (factor, lower, upper)
 }
 
@@ -1319,4 +1686,9 @@ fn zone_bytes(zone: &Dbm) -> u64 {
 
 fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+/// Time 0.
+fn zero_stamp() -> Rational {
+    Rational::from_integer(quire_exact::Integer::zero())
 }
