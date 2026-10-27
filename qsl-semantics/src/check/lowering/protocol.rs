@@ -241,6 +241,8 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Option(_)
         | ValueType::Enum(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::Map(_)
         | ValueType::Population(_) => false,
     }
 }
