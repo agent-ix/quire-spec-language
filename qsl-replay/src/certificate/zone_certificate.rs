@@ -483,7 +483,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         read: Cell::new(0),
         max_edges: limits.max_certificate_edges,
     };
-    match checker.check(limits) {
+    match checker.verify(limits) {
         Ok(()) => Ok(ZoneCertificateVerdict::Accepted),
         Err(Halt::Verdict(verdict)) => Ok(verdict),
         Err(Halt::Refusal(refusal)) => Err(refusal),
@@ -551,7 +551,9 @@ struct Checker<'c, 'a, O> {
 }
 
 impl<O> Checker<'_, '_, O> {
-    fn check(&mut self, limits: CertificateCheckLimits) -> Step<(), O> {
+    // Not named `check`: CK-1's checked-input gate reads any `.check(..)`
+    // call in a stage crate as the S3 stage constructor (TC-745).
+    fn verify(&mut self, limits: CertificateCheckLimits) -> Step<(), O> {
         self.poll()?;
         self.budgets(limits)?;
         self.members()?;
