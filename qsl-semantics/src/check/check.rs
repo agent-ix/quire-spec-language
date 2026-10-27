@@ -469,6 +469,9 @@ pub struct PackageDeclarations {
     /// FR-230: the unit's clock-reading declarations in source order, which
     /// have no checked node; S3 checks each body and expands each call.
     pub clock_reading: Vec<super::assemble::ClockReadingDeclaration>,
+    /// The unit's admitted dimension equivalences (FR-091, QSpec FR-142
+    /// "Dimension equivalence"), in source order.
+    pub dimension_equivalences: Vec<super::assemble::DimensionEquivalence>,
     /// The `taskset`, `schedulable` and `response` forms S2 built, in source
     /// order, for QSL FR-246's S3 check.
     pub task_set_forms: Vec<super::task_set::TaskSetDeclaration>,
@@ -661,6 +664,7 @@ impl PackageDeclarations {
             temporal_selections: Vec::new(),
             timed_forms: Vec::new(),
             clock_reading: Vec::new(),
+            dimension_equivalences: Vec::new(),
             task_set_forms: Vec::new(),
             time_sources: Vec::new(),
             profile_selections: Vec::new(),

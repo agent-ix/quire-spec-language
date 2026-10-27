@@ -756,6 +756,9 @@ pub struct PackageDimensionRecord {
     pub name: String,
     /// Whether this is a base dimension (`terms` is empty).
     pub base: bool,
+    /// A derived dimension's terms: each named dimension's original FCD
+    /// identity and its exponent, in authored order.
+    pub terms: Vec<(DeclarationKey, quire_exact::Integer)>,
 }
 
 /// A domain package's unit edge, retained for owner-qualified time-unit

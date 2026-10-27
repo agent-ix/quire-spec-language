@@ -18,6 +18,7 @@ use quire_exact::{Integer, NodeKey, Rational};
 use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
+use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
 use crate::check::lowering::AdmittedModel;
 use crate::check::node_key::nominal_key;
 use crate::check::temporal_clause::TimeNominalNode;
@@ -51,6 +52,9 @@ pub struct TimeUnits {
     units: BTreeMap<String, DeclaredUnit>,
     /// Every locally admitted nominal dimension/unit node by key.
     nominal_nodes: BTreeMap<NodeKey, TimeNominalNode>,
+    /// The dimension equivalence classes (QSpec FR-142 "Effect"), through
+    /// which a quantity of one `Time` converts to an equivalent `Time`.
+    classes: EquivalenceClasses,
 }
 
 impl TimeUnits {
@@ -62,6 +66,7 @@ impl TimeUnits {
         graph: &UnitGraph,
         keys: impl IntoIterator<Item = NodeKey>,
         models: &[AdmittedModel],
+        equivalences: &[DimensionEquivalence],
         identity: IdentityLimits,
     ) -> Self {
         let table = UnitTable::declared(graph);
@@ -188,6 +193,7 @@ impl TimeUnits {
             time_dimensions,
             units,
             nominal_nodes,
+            classes: EquivalenceClasses::new(equivalences),
         }
     }
 
@@ -292,10 +298,12 @@ impl TimeUnits {
     }
 
     /// `magnitude` of the time unit `from` converted exactly to `to`
-    /// (QSpec FR-142). `from` must be a unit of `to`'s own time dimension:
-    /// a unit of another owner's `Time` is another dimension (QSpec FR-142
-    /// "Dimensions of different owners"), and QSL admits no dimension
-    /// equivalence that would relate the two.
+    /// (QSpec FR-142). `from` must be a unit of `to`'s own time dimension or
+    /// of one a dimension equivalence relates to it: a unit of another
+    /// owner's `Time` is another dimension (QSpec FR-142 "Dimensions of
+    /// different owners"). Across an equivalence the value passes through
+    /// the class root: `from`'s roots, times the size of its dimension's
+    /// root in class roots, divided by the size of `to`'s.
     pub fn convert(
         &self,
         magnitude: &Rational,
@@ -303,17 +311,25 @@ impl TimeUnits {
         to: &TimeScale,
     ) -> Result<Rational, TimeUnitCause> {
         let scale = self.scale(from)?;
-        if self.dimension(from)? != to.dimension {
-            return Err(TimeUnitCause::OtherTimeDimension {
-                name: from.to_owned(),
-            });
+        let (from_class, from_size) = self.classes.class(self.dimension(from)?);
+        let (to_class, to_size) = self.classes.class(to.dimension);
+        let other = || TimeUnitCause::OtherTimeDimension {
+            name: from.to_owned(),
+        };
+        if from_class != to_class {
+            return Err(other());
         }
-        Ok(magnitude.mul(scale).mul(&to.reciprocal))
+        let roots = magnitude
+            .mul(scale)
+            .mul(&from_size)
+            .div(&to_size)
+            .ok_or_else(other)?;
+        Ok(roots.mul(&to.reciprocal))
     }
 }
 
 /// The exact scale and composed offset of an FCD unit along its target chain.
-fn package_unit_scale(
+pub(crate) fn package_unit_scale(
     start: &PackageUnitRecord,
     units: &[PackageUnitRecord],
 ) -> Option<(Rational, Rational)> {
@@ -392,7 +408,7 @@ fn package_unit_nominal_nodes(
 }
 
 /// A canonical FCD integer or `n/d` coefficient as an exact rational.
-fn rational(spelling: &str) -> Option<Rational> {
+pub(crate) fn rational(spelling: &str) -> Option<Rational> {
     let (numerator, denominator) = spelling.split_once('/').unwrap_or((spelling, "1"));
     Rational::new(
         Integer::from_str(numerator).ok()?,
