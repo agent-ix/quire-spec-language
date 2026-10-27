@@ -21,7 +21,7 @@ use super::walk::{exhausted, stop, walk_of};
 use super::{ClauseOutcome, ModelSimState, ModelSystem, BROKEN};
 use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
 use crate::temporal::UndefinedCause;
-use crate::value::evaluate_state_predicate;
+use crate::value::evaluate_state_predicate_with;
 
 /// How a state-graph predicate read at one state.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,9 +60,27 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         predicates: &[(&P, Option<&ObjectReference>)],
     ) -> Result<Vec<PredicateReading>, ExpansionStop> {
+        let bound: Vec<_> = predicates
+            .iter()
+            .map(|(predicate, over)| (*predicate, *over, Vec::new()))
+            .collect();
+        self.state_predicates_with(state, &bound)
+    }
+
+    /// [`Self::state_predicates`] with each predicate's slots after `over`
+    /// bound to its further values, in order.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::state_predicates`].
+    pub(crate) fn state_predicates_with<P: StatePredicate>(
+        &self,
+        state: &ModelSimState,
+        predicates: &[(&P, Option<&ObjectReference>, Vec<quire_exact::Value>)],
+    ) -> Result<Vec<PredicateReading>, ExpansionStop> {
         let walk = walk_of(self, state, None)?;
         let mut readings = Vec::with_capacity(predicates.len());
-        for (predicate, over) in predicates {
+        for (predicate, over, further) in predicates {
             let bound = match over {
                 None => None,
                 Some(binding) => {
@@ -82,11 +100,12 @@ impl ModelSystem<'_> {
                     Some(row.reference.clone())
                 }
             };
-            let evaluation = evaluate_state_predicate(
+            let evaluation = evaluate_state_predicate_with(
                 self.package,
                 *predicate,
                 &walk.observation.environment,
                 bound,
+                further.clone(),
                 &mut Meter::new(self.meter),
             )
             .map_err(|_| stop(BROKEN))?;

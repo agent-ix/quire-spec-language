@@ -1278,6 +1278,13 @@ pub enum TemporalCause {
         /// The write's span.
         span: Span,
     },
+    /// FR-230 "Collection-valued writes": a postcondition that writes one
+    /// clock collection twice, or writes it and resets a clock of it, gives
+    /// its clocks no one value. Located at the later write.
+    ConflictingClockWrite {
+        /// The later write's span.
+        span: Span,
+    },
     /// FR-230: a time invariant bound's operand names no clock of the
     /// state object. Located at the operand.
     UnknownClock {
@@ -1805,6 +1812,7 @@ impl TemporalCause {
             | Self::ClockBoundNotConstant { span }
             | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
+            | Self::ConflictingClockWrite { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
             | Self::UrgentGuardReadsClock { span, .. }
@@ -1885,6 +1893,7 @@ impl TemporalCause {
             | Self::NegativeClockConstant { .. }
             | Self::ClockBoundNotConstant { .. }
             | Self::ClockWrite { .. }
+            | Self::ConflictingClockWrite { .. }
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
             Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
@@ -1954,6 +1963,7 @@ impl TemporalCause {
             Self::NegativeClockConstant { .. } => "negative-clock-constant",
             Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
             Self::ClockWrite { .. } => "clock-write",
+            Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
             Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
             Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),
             Self::TimedModelNotEmitted { .. } => "not-yet-implemented",

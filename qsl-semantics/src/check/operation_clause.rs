@@ -65,6 +65,7 @@ impl OperationClauseDeclaration {
             operation: Some(&self.operation),
             context_population: None,
             frame_population: None,
+            binders: &[],
             body: &self.clause.expression,
         }
     }
