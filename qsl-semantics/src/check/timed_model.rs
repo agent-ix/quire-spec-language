@@ -515,6 +515,9 @@ pub struct TimedModel {
     model: String,
     span: Span,
     clocks: Vec<ClockField>,
+    /// Each object type of the model with the static clock dimension of
+    /// one of its objects ([`Self::dimension`]).
+    dimensions: Vec<(EffectiveId, Option<u64>)>,
     guards: Vec<ClockGuard>,
     resets: Vec<ClockResets>,
     invariants: Vec<TimeInvariant>,
@@ -544,12 +547,15 @@ impl TimedModel {
     /// "Clock collections"): the [`ClockField::bound`] of each place the
     /// type declares, summed; a place in a collection with no declared
     /// maximum adds no static bound.
-    pub fn dimension(&self, owner: EffectiveId) -> u64 {
-        self.clocks
+    ///
+    /// The places counted are those of `owner` and of every type it
+    /// conforms to. `None` when `owner` is no object type of the model or
+    /// the sum overflows.
+    pub fn dimension(&self, owner: EffectiveId) -> Option<u64> {
+        self.dimensions
             .iter()
-            .filter(|clock| clock.owner == owner)
-            .filter_map(ClockField::bound)
-            .fold(0, u64::saturating_add)
+            .find(|(object, _)| *object == owner)
+            .and_then(|(_, dimension)| *dimension)
     }
 
     /// The clock field `id` names.
@@ -619,6 +625,7 @@ struct ModelDraft {
     model: String,
     span: Span,
     clocks: Vec<ClockField>,
+    dimensions: Vec<(EffectiveId, Option<u64>)>,
     /// Each guarded precondition, by its index among the unit's state
     /// clauses.
     guards: Vec<(usize, Vec<PartDraft>)>,
@@ -1016,6 +1023,21 @@ impl<'f> Located<'f> {
                     first[id.index()] = spans.get(id.index()).copied();
                 }
                 continue;
+            }
+            // A `filter` over a clock collection is a collection of its
+            // clock-bearing elements: read whole, outside `size` or another
+            // traversal's source, it compares or passes them as values
+            // (FR-230 "Element identity"; SR-1655001 FND-001).
+            if let ExprNode::Query {
+                query: qsl_forms::BinderQuery::Filter,
+                source,
+                ..
+            } = node.node()
+            {
+                if clocks.bears(form, *source, context) && !traversed(form, id, &parents) {
+                    first[id.index()] = spans.get(id.index()).copied();
+                    continue;
+                }
             }
             // A clock-bearing value read whole is a read no constraint takes,
             // except a clock collection whose size is read or which a
@@ -2094,10 +2116,23 @@ fn prepare_models(
                 TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
             }
         }
+        let dimensions = model
+            .object_types()
+            .map(|(_, object)| {
+                let dimension = clocks
+                    .fields
+                    .iter()
+                    .filter(|clock| model.conforms(object, clock.owner))
+                    .filter_map(ClockField::bound)
+                    .try_fold(0_u64, u64::checked_add);
+                (object, dimension)
+            })
+            .collect();
         models.push(ModelDraft {
             model: source.model.clone(),
             span: source.span,
             clocks: clocks.fields,
+            dimensions,
             guards,
             resets,
             invariants,
@@ -2353,6 +2388,7 @@ pub(crate) fn check(
             model: draft.model,
             span: draft.span,
             clocks: draft.clocks,
+            dimensions: draft.dimensions,
             guards,
             resets,
             invariants,

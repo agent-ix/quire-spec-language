@@ -1442,7 +1442,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             .places()
             .iter()
             .zip(&concrete.last_clocks)
-            .filter(|(place, _)| place.present(&state))
+            .filter(|(place, _)| self.timed.live(place, &state))
             .map(|(_, value)| value.clone())
             .collect();
         let (kind, over_binding, fairness) = match badness {
