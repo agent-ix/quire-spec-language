@@ -382,13 +382,23 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
         ),
         (
             bare("on origin", "capture start: M::Total = view.total;", "true"),
-            vec![C::Captures],
-            "QSL-1121e",
+            vec![],
+            "",
         ),
         (
             bare("on each (opened: M::Tick) when (opened.ready)", "", "true"),
-            vec![C::ActivationGuard],
-            "QSL-1121e",
+            vec![],
+            "",
+        ),
+        (
+            bare("on origin", "capture start: Boolean = ok();", "true"),
+            vec![C::CaptureReadsDeclaration],
+            "QSL-1121g",
+        ),
+        (
+            bare("on each (opened: M::Tick) when (ok())", "", "true"),
+            vec![C::ActivationGuardReadsDeclaration],
+            "QSL-1121g",
         ),
         (
             bare("on origin", "terminal any;", "true"),
@@ -402,7 +412,7 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
         ),
     ];
     for (text, expected, ticket) in cases {
-        let text = if expected == [C::FinishReadsDeclaration] {
+        let text = if ticket == "QSL-1121g" {
             text.replacen(
                 "protocol Bare",
                 "function ok using v(): Boolean pure { true }\nprotocol Bare",
