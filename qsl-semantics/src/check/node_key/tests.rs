@@ -120,6 +120,10 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
             operator: identifier("operator")?,
         },
         "state_clause" => Member::StateClause {
+            execution_point: match wire.get("execution_point") {
+                None => None,
+                Some(point) => Some(AcceptedPoint::deserialize(point).map_err(D::Error::custom)?),
+            },
             clause: match text("clause")? {
                 "invariant" => StateClauseKind::Invariant,
                 "precondition" => StateClauseKind::Precondition,
@@ -1380,4 +1384,193 @@ fn conformance_fr440_union_value_keys_match_qspec_union_fixture() {
         BTreeSet::from(["Empty".to_owned(), "Rect".to_owned()]),
         "the fixture holds the nullary and the reference-payload vector"
     );
+}
+
+// ---------------------------------------------------------------------
+// QSL-1082 / FR-105-AC-12: the accepted execution point enters the
+// `state_clause` member and the `operation_anchor` body, hence both keys.
+// ---------------------------------------------------------------------
+
+fn anchor_name(text: &str) -> quire_contract_model::AnchorName {
+    quire_contract_model::AnchorName::new(text).expect("test anchor name is valid")
+}
+
+fn point(point: quire_contract_model::ExecutionPoint) -> AcceptedPoint {
+    AcceptedPoint::new(point)
+}
+
+/// FR-341's `state_clause` application over fixed arguments.
+fn state_clause_body(clause: StateClauseKind, execution_point: Option<AcceptedPoint>) -> BodyTerm {
+    BodyTerm::Application(ApplicationTerm {
+        operator: Operator::StateClause,
+        operation: Operation {
+            identity: "quire.op.state.clause".to_owned(),
+            laws: Vec::new(),
+            mode: None,
+            member: Some(Member::StateClause {
+                clause,
+                execution_point,
+            }),
+            leaves: Vec::new(),
+        },
+        result_type: NodeRef(key(3)),
+        arguments: vec![
+            MemberTerm::Group(GroupTerm::references([key(1)])),
+            argument(2),
+            argument(9),
+        ],
+    })
+}
+
+fn state_clause_key(clause: StateClauseKind, execution_point: Option<AcceptedPoint>) -> NodeKey {
+    let body = state_clause_body(clause, execution_point);
+    application_node_key(&ApplicationNode {
+        node_tag: NodeTag::State,
+        semantic_form: "state_clause",
+        semantic_type: key(3),
+        declaration: None,
+        body: &body,
+    })
+    .expect("the state clause keys")
+    .key
+}
+
+/// FR-322-AC-131 / FR-341-AC-14: the point is in the clause's preimage, as
+/// the exact closed object, and every difference in it (variant, name,
+/// presence) is a different key.
+#[test]
+fn an_execution_point_is_part_of_the_state_clause_key() {
+    use quire_contract_model::ExecutionPoint::{Handler, Initialization, Post, Pre};
+    let body = state_clause_body(
+        StateClauseKind::Invariant,
+        Some(point(Initialization {
+            name: anchor_name("boot"),
+        })),
+    );
+    let preimage = preimage_json(&ApplicationNode {
+        node_tag: NodeTag::State,
+        semantic_form: "state_clause",
+        semantic_type: key(3),
+        declaration: None,
+        body: &body,
+    });
+    assert_eq!(
+        preimage["body"]["operation"]["member"],
+        json!({
+            "kind": "state_clause",
+            "clause": "invariant",
+            "execution_point": {"kind": "initialization", "name": "boot"},
+        })
+    );
+
+    let keys = [
+        state_clause_key(StateClauseKind::Invariant, None),
+        state_clause_key(
+            StateClauseKind::Invariant,
+            Some(point(Initialization {
+                name: anchor_name("boot"),
+            })),
+        ),
+        state_clause_key(
+            StateClauseKind::Invariant,
+            Some(point(Initialization {
+                name: anchor_name("other"),
+            })),
+        ),
+        state_clause_key(
+            StateClauseKind::Invariant,
+            Some(point(Handler {
+                name: anchor_name("boot"),
+            })),
+        ),
+        state_clause_key(
+            StateClauseKind::Precondition,
+            Some(point(Pre {
+                operation: anchor_name("go"),
+            })),
+        ),
+        state_clause_key(
+            StateClauseKind::Postcondition,
+            Some(point(Post {
+                operation: anchor_name("go"),
+            })),
+        ),
+    ];
+    let distinct: BTreeSet<String> = keys.iter().map(|key| key.to_string()).collect();
+    assert_eq!(distinct.len(), keys.len(), "{keys:?}");
+}
+
+/// FR-342: the optional fourth `execution_point` binding follows `frame`,
+/// is the exact closed object, and distinguishes the anchor's key by variant,
+/// operation name and presence.
+#[test]
+fn an_execution_point_is_part_of_the_operation_anchor_key() {
+    use quire_contract_model::ExecutionPoint::{Post, Pre};
+    let members = |execution_point: Option<AcceptedPoint>| {
+        let mut members = vec![
+            MemberTerm::bound("context", reference(1)),
+            MemberTerm::bound("operation", reference(2)),
+            MemberTerm::bound("frame", reference(4)),
+        ];
+        if let Some(execution_point) = execution_point {
+            members.push(MemberTerm::binding(
+                "execution_point",
+                BindingValue::ExecutionPoint(execution_point),
+            ));
+        }
+        BodyTerm::aggregate(members)
+    };
+    let keyed = |execution_point: Option<AcceptedPoint>| {
+        let body = members(execution_point);
+        node_key(
+            &NodeInput {
+                owner: None,
+                node_tag: NodeTag::State,
+                semantic_form: "operation_anchor",
+                semantic_type: Some(key(3)),
+                declaration: None,
+                body: &body,
+            },
+            IdentityLimits::default(),
+        )
+        .expect("the anchor keys")
+    };
+
+    let with_point = keyed(Some(point(Pre {
+        operation: anchor_name("go"),
+    })));
+    let preimage: Value = serde_json::from_slice(&with_point.preimage).expect("JSON");
+    let bound = preimage["body"]["members"].as_array().expect("members");
+    assert_eq!(bound.len(), 4);
+    assert_eq!(
+        bound[3],
+        json!({
+            "term": "binding",
+            "name": "execution_point",
+            "value": {"kind": "pre", "operation": "go"},
+        })
+    );
+    let without: Value = serde_json::from_slice(&keyed(None).preimage).expect("JSON");
+    assert_eq!(
+        without["body"]["members"]
+            .as_array()
+            .expect("members")
+            .len(),
+        3
+    );
+
+    let keys = [
+        keyed(None).key,
+        with_point.key,
+        keyed(Some(point(Post {
+            operation: anchor_name("go"),
+        })))
+        .key,
+        keyed(Some(point(Pre {
+            operation: anchor_name("stop"),
+        })))
+        .key,
+    ];
+    let distinct: BTreeSet<String> = keys.iter().map(|key| key.to_string()).collect();
+    assert_eq!(distinct.len(), keys.len(), "{keys:?}");
 }
