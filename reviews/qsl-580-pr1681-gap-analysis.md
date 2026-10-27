@@ -50,3 +50,13 @@ slots at qsl-eval.
 | FND-001 | medium | AC-25's last clause is neither built nor tested: "the same constraint under a `time tick` or untimed unit refuses `clock-without-dense-time`". The test doc calls it "Not covered". A clock-alias bound is refused anyway when a clock place exists. But a `max` with `appliesTo` `ix://quire/native/Clock` on an object type with no clock field, under `time tick`, appears to reach no refusing path (I have not probed it), and FR-230 requires the refusal. AC-25's `format` keyword and a non-rational operand such as `"abc"` are also untested; the code refuses both at `keyword` and `operands`. | FR-230-AC-25; qsl-semantics/tests/it/clock_places.rs |
 | FND-002 | low | No test exercises a unit bound on a quantity inside a record (SR-1681001 FND-001), or crossed bounds declared on two different type nodes with the same `appliesTo` (SR-1681001 FND-003). | qsl-semantics/tests/it/unit_typed_members.rs |
 | FND-003 | low | Intake refuses an alias of an alias of `Clock` or of a unit (580m's "not a clock or a unit this reader aliases"). Yet FR-154 scopes an alias bound to members "typed by that alias or an alias of it", which assumes chains can be declared. That is a QSL intake gap against QSpec FR-154, and no ticket names it. Track it with 580m's alias intake. | qsl-semantics/src/model/intake.rs (read_type_node alias branch); QSpec FR-154 Unit bounds |
+
+## Dispositions
+
+Round 1, fix commit edff0a3ad.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `prepare_models` now refuses `clock-without-dense-time` for a model with clock bounds but no clock field, naming the bound. `a_clock_bound_needs_dense_time_and_reaches_through_aliases` covers a `max` on `ix://quire/native/Clock` on a type with no clock: it refuses under `time tick` and untimed, and checks under dense. The same test covers `format` and the operand `"abc"` refusing `malformed-declaration`. |
+| FND-002 | fixed | `unit_bounds_reach_records_aliases_of_aliases_and_every_node` tests a bound inside a record and crossed bounds on two different nodes. |
+| FND-003 | fixed | Alias chains are admitted and resolved after reading (`check_alias_chains`), so FR-154's "that alias or an alias of it" can now be declared. An alias of a missing declaration refuses `missing-name`, and a chain to a record refuses at `target`. |
