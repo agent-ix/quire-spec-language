@@ -365,9 +365,9 @@ fn stored_states_do_not_grow_with_the_constant() {
 
 /// Part of FR-239-AC-4 (TC-694): `max_symbolic_states` 2 stops naming the
 /// value 2, a cancelled handle stops `Cancelled`, and two runs give equal
-/// outcomes, over `NoLateReply`. Not covered: `Settles`, its
-/// `RequiresBound` refusal with no state explored, and byte-equal
-/// certificates.
+/// outcomes, over `NoLateReply`; `Settles` is
+/// `crate::zone_mitl::settles_stops_at_its_budgets_and_repeats`, and the
+/// `RequiresBound` refusal `crate::zone_mitl::an_unbounded_root_requires_a_bound`.
 #[trace("TC-694")]
 #[test]
 fn budgets_and_cancellation_stop_the_search() {
@@ -1487,21 +1487,47 @@ fn a_timed_invariant_builds_no_automaton() {
     ));
 }
 
-/// FR-242: an interval operator under another temporal operator needs a
-/// clock per activation, which one horizon clock does not give; EN-6
-/// refuses it rather than deciding it wrongly.
+/// A model whose `go`, guarded `x >= 1 ms`, sets `late` for good, forced by
+/// `x <= {deadline} ms` at phase 0, under the TT-2 claim `body`.
+fn going_late(deadline: u32, body: &str) -> World {
+    windowed(
+        &["x"],
+        &[("go", &["phase", "late"])],
+        &format!(
+            "pre Go using v on M::Call::go {{ self.phase = 0 and self.x >= 1 ms }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 and self.late }}\n\
+             time invariant Hurry when {{ self.phase = 0 }} {{ self.x <= {deadline} ms }}\n"
+        ),
+        body,
+    )
+}
+
+/// FR-242: a TT-2 window that nests an interval operator under another is
+/// read by the timed claim automaton, one clock per operator. With `go`
+/// forced by 2 ms, `eventually[0 ms, 3 ms] always[0 ms, 1 ms]
+/// holds(c.late)` holds; with it allowed until 4 ms, `go` after 7/2 ms
+/// refutes it, and the counterexample replays. A nested interval that does
+/// not start at a closed 0 is refused.
 #[trace("TC-697")]
 #[test]
-fn a_nested_window_is_refused() {
-    let nested = windowed(
-        &[],
-        &[("go", &["phase"])],
-        "",
-        "eventually[0 ms, 3 ms] always[0 ms, 1 ms] holds(c.late)",
+fn a_nested_window_is_read_by_the_timed_claim_automaton() {
+    let body = "eventually[0 ms, 3 ms] always[0 ms, 1 ms] holds(c.late)";
+    let early = going_late(2, body);
+    assert!(matches!(
+        claim(&early, ZoneCheckLimits::default(), &Cancel::new()),
+        ZoneCheckOutcome::Holds { .. }
+    ));
+    let late = going_late(4, body);
+    let counterexample = violated(claim(&late, ZoneCheckLimits::default(), &Cancel::new()));
+    let settlement = crate::zone_replay::replay(&late, &counterexample).expect("replays");
+    assert!(
+        crate::zone_replay::reproduced(&settlement),
+        "{settlement:?}"
     );
+    let punctual = going_late(2, "eventually[0 ms, 3 ms] always[1 ms, 1 ms] holds(c.late)");
     assert_eq!(
-        request(&nested).unwrap_err(),
-        ZoneCheckRefusal::NestedWindow
+        request(&punctual).unwrap_err(),
+        ZoneCheckRefusal::UnsupportedForm
     );
 }
 
@@ -1631,8 +1657,9 @@ impl TemporalLetters for Lasso<'_> {
 /// window's data), the TT-2 translation's verdict is the reference
 /// evaluator's: it rejects the clause exactly where the evaluator returns
 /// `false`, and an undefined or short reading settles as the evaluator
-/// settles it. Not covered: `always (holds(p) implies eventually[0 ms,
-/// 2 ms] holds(q))`, a TT-3 form translated by MightyL (QSL-583).
+/// settles it. The TT-3 vector `always (holds(p) implies eventually[0 ms,
+/// 2 ms] holds(q))` is read by FR-242's timed claim automaton, tested with
+/// it in qsl-eval (`timed_trace::the_mitl_vectors_agree_with_the_evaluator`).
 #[trace("TC-697")]
 #[test]
 fn the_window_automaton_agrees_with_the_evaluator_on_random_lassos() {

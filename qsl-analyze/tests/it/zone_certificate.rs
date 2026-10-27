@@ -82,6 +82,9 @@ fn without_node(certificate: &Certificate, removed: usize) -> Certificate {
     let mut tampered = certificate.clone();
     tampered.nodes.remove(removed);
     tampered.edges = edges;
+    if let Some(components) = &mut tampered.components {
+        components.numbering.remove(removed);
+    }
     tampered.initial = certificate.initial.iter().map(|&n| renumber(n)).collect();
     tampered.admitted.start = renumber(certificate.admitted.start);
     tampered.admitted.path = certificate
@@ -102,8 +105,8 @@ fn without_node(certificate: &Certificate, removed: usize) -> Certificate {
 
 /// FR-245-AC-1 (TC-700): FR-244-AC-1's certificate, `NoLateReply` over
 /// `Rpc` with `T = 4 ms`, is accepted, and so is the deadlock-freedom
-/// item's over the same subject. Not covered: FR-244-AC-2's liveness and
-/// AC-3's time-lock-freedom certificates, which QSL-583 builds.
+/// item's over the same subject. FR-244-AC-2's and AC-3's are accepted in
+/// `crate::zone_live_certificate`.
 #[trace("TC-700")]
 #[test]
 fn the_search_certificates_are_accepted() {
@@ -126,9 +129,9 @@ fn the_search_certificates_are_accepted() {
 /// same; lowering an LU bound below the computed one is `Malformed` at
 /// `bounds`; cutting `admitted` after `send` to end at its non-quiescent
 /// target is `WitnessFails` there; an initial node that does not hold the
-/// initial state is `InitialMissing` at that state. Not covered: the
-/// backward edge and the component reason, which need FR-244's component
-/// part (QSL-583); the bad node, which FR-245-AC-5 covers over `Lock`.
+/// initial state is `InitialMissing` at that state. The backward edge and
+/// the component reason are tampered in `crate::zone_live_certificate`;
+/// the bad node is FR-245-AC-5's, over `Lock`.
 #[trace("TC-700", "TC-1197")]
 #[test]
 fn each_tampering_is_rejected_at_its_rule_and_locus() {
@@ -379,8 +382,8 @@ fn zone_loci_are_written_in_their_fr331_forms() {
 /// Part of FR-235-AC-2 (TC-690): `NoLateReply` over `Rpc` with `T = 4 ms`,
 /// decided by the zone search, settles `Proved{ZoneCertified, Certified}`
 /// once the core accepts its certificate; with one node removed it settles
-/// `inconclusive`, `CertificateRejected`. Not covered: `Settles`, a TT-3
-/// claim the search decides with MightyL (QSL-583).
+/// `inconclusive`, `CertificateRejected`. `Settles` is
+/// [`a_settles_proof_settles_through_the_core_checker`].
 #[trace("TC-690")]
 #[test]
 fn a_zone_proof_settles_through_the_core_checker() {
@@ -419,6 +422,46 @@ fn a_zone_proof_settles_through_the_core_checker() {
             at: node(first_source(certificate, last)),
         })
     );
+}
+
+/// Part of FR-235-AC-2 (TC-690): `Settles` over `Rpc` with `T = 4 ms`, a
+/// TT-3 claim decided on the liveness product with FR-242's timed claim
+/// automaton, settles `Proved{ZoneCertified, Certified}` once the core,
+/// rebuilding the automaton itself, accepts its certificate; with one node
+/// removed it settles `inconclusive`, `CertificateRejected`.
+#[trace("TC-690")]
+#[test]
+fn a_settles_proof_settles_through_the_core_checker() {
+    let world = crate::zone_mitl::settles(4, "[0 ms, 3 ms]");
+    let proof = claim(&world, ZoneCheckLimits::default(), &Cancel::new());
+    let settle = |outcome: &Outcome| {
+        settle_zone_check(
+            ZoneItem::Outcome(outcome),
+            &package_id(),
+            &Cancel::new(),
+            |certificate| verdict(&world, certificate),
+            |_| Err(fault()),
+        )
+    };
+    assert_eq!(
+        settle(&proof).value,
+        TerminalValue::Proved {
+            basis: ProofBasis::ZoneCertified,
+            certification: qsl_replay::Certification::Certified,
+        }
+    );
+    let ZoneCheckOutcome::Holds { certificate, stats } = &proof else {
+        panic!("a proof");
+    };
+    let last = certificate.nodes.len() - 1;
+    let tampered: Outcome = ZoneCheckOutcome::Holds {
+        certificate: Box::new(without_node(certificate, last)),
+        stats: *stats,
+    };
+    assert!(matches!(
+        settle(&tampered).value,
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { .. })
+    ));
 }
 
 /// `certificate` with its obligation renamed to `world`'s first clause, so

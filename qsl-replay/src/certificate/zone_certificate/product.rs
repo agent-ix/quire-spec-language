@@ -32,7 +32,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_eval::automaton::{Atom, AutomatonError, Letter, PropertyAutomaton, StateId};
+use qsl_eval::automaton::{Atom, AutomatonError, ClockedEdge, Letter, PositionAutomaton, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{GuardedStep, ModelSimState, PlaceConstraint};
 use qsl_eval::temporal::{AtomReading, CaptureReading};
@@ -51,7 +51,7 @@ use crate::certificate::zone::Zone;
 
 /// A clause decided on the liveness product, as the checker reads it.
 pub(super) struct LiveClaim<'c> {
-    pub(super) automaton: RefCell<PropertyAutomaton>,
+    pub(super) automaton: RefCell<PositionAutomaton>,
     pub(super) start: StateId,
     pub(super) letters: &'c dyn ModelLetters,
     pub(super) instances: Vec<ModelInstance>,
@@ -78,7 +78,7 @@ type CellAtom = (usize, Integer);
 
 impl<'c> LiveClaim<'c> {
     pub(super) fn new(
-        automaton: PropertyAutomaton,
+        automaton: PositionAutomaton,
         start: StateId,
         letters: &'c dyn ModelLetters,
         instances: Vec<ModelInstance>,
@@ -113,9 +113,65 @@ impl<O> Checker<'_, '_, O> {
         self.live.as_ref().ok_or(fault(CheckerFault::Automaton))
     }
 
-    /// The divergence clock's index in a zone, under a dense source.
+    /// The divergence clock's index in a zone, under a dense source: the
+    /// last, after the clock places and the automaton's clocks.
     pub(super) fn z_clock(&self) -> usize {
-        self.timed.places().len() + 1
+        self.dim() - 1
+    }
+
+    /// The number of the claim automaton's clocks.
+    pub(super) fn automaton_clocks(&self) -> usize {
+        self.live
+            .as_ref()
+            .map_or(0, |live| live.automaton.borrow().clock_count())
+    }
+
+    /// `zone` read by the claim-automaton transition `read` at a position:
+    /// held to its clock guard, then its clocks reset (FR-242); the
+    /// automaton's clocks follow the clock places.
+    pub(super) fn read_at(&self, zone: &mut Zone, read: &ClockedEdge) -> Step<(), O> {
+        let base = self.timed.places().len();
+        let guard: Vec<PlaceConstraint> = read
+            .guard
+            .iter()
+            .map(|constraint| {
+                PlaceConstraint::new(
+                    base + constraint.place(),
+                    constraint.op(),
+                    constraint.bound().clone(),
+                )
+            })
+            .collect();
+        self.constrain(zone, &guard)?;
+        if zone.is_empty() {
+            return Ok(());
+        }
+        for &clock in &read.resets {
+            zone.reset(base + 1 + clock, &Integer::zero())?;
+        }
+        Ok(())
+    }
+
+    /// The valuations from which `read` leads into `zone`: the inverse of
+    /// [`Self::read_at`].
+    pub(super) fn read_before(&self, zone: &mut Zone, read: &ClockedEdge) -> Step<(), O> {
+        let base = self.timed.places().len();
+        for &clock in &read.resets {
+            zone.constrain(base + 1 + clock, 0, &Integer::zero(), false)?;
+            zone.free(base + 1 + clock)?;
+        }
+        let guard: Vec<PlaceConstraint> = read
+            .guard
+            .iter()
+            .map(|constraint| {
+                PlaceConstraint::new(
+                    base + constraint.place(),
+                    constraint.op(),
+                    constraint.bound().clone(),
+                )
+            })
+            .collect();
+        self.constrain(zone, &guard)
     }
 
     /// The letter instance `instance` reads at `state`, `initial` at
@@ -192,13 +248,12 @@ impl<O> Checker<'_, '_, O> {
         Ok(reading)
     }
 
-    /// The automaton states `q` reads `letter` into, as the checker's
-    /// indices.
-    fn reads(&self, q: usize, letter: Letter) -> Step<Vec<usize>, O> {
+    /// The transitions `q` reads `letter` by; each target is the checker's
+    /// index.
+    fn reads(&self, q: usize, letter: Letter) -> Step<Vec<ClockedEdge>, O> {
         let live = self.live()?;
         let from = self.state_id(q)?;
-        let targets = automaton(live.automaton.borrow_mut().successors(from, letter))?;
-        Ok(targets.into_iter().map(StateId::index).collect())
+        automaton(live.automaton.borrow_mut().successors(from, letter))
     }
 
     /// The checker's automaton state of index `q`, one it has reached.
@@ -223,20 +278,23 @@ impl<O> Checker<'_, '_, O> {
             let Some(letter) = self.letter(instance, state, true)? else {
                 return Ok(None);
             };
-            let targets = self.reads(live.start.index(), letter)?;
-            let zero = Zone::zero(self.dim());
-            for (cell, piece) in self.cells(state, &zero)? {
-                let Some(zone) = self.close(state, piece, &cell)? else {
+            for read in self.reads(live.start.index(), letter)? {
+                let mut zero = Zone::zero(self.dim());
+                self.read_at(&mut zero, &read)?;
+                if zero.is_empty() {
                     continue;
-                };
-                for &q in &targets {
+                }
+                for (cell, piece) in self.cells(state, &zero)? {
+                    let Some(zone) = self.close(state, piece, &cell)? else {
+                        continue;
+                    };
                     let mark = ProductMark {
                         instance,
                         positioned: true,
                         divergent: false,
                         tail: false,
                     };
-                    found.push((instance, q, mark, zone.clone()));
+                    found.push((instance, read.target.index(), mark, zone));
                 }
             }
         }
@@ -448,21 +506,24 @@ impl<O> Checker<'_, '_, O> {
                     let Some(letter) = self.letter(instance, step.post(), false)? else {
                         return reject(CertificateRule::BadState, at_node(node));
                     };
-                    let targets = self.reads(q, letter)?;
-                    for (cell, piece) in self.cells(step.post(), &next)? {
-                        let Some(entered) = self.close(step.post(), piece, &cell)? else {
+                    for read in self.reads(q, letter)? {
+                        let mut read_zone = next.clone();
+                        self.read_at(&mut read_zone, &read)?;
+                        if read_zone.is_empty() {
                             continue;
-                        };
-                        let cell = self.cell_zone(step.post(), &cell)?;
-                        for &q in &targets {
+                        }
+                        for (cell, piece) in self.cells(step.post(), &read_zone)? {
+                            let Some(entered) = self.close(step.post(), piece, &cell)? else {
+                                continue;
+                            };
                             found.push(Successor {
                                 step: Some(step.clone()),
                                 part: Some(part),
                                 horizon: None,
                                 frees: false,
                                 digest: post_digest,
-                                q,
-                                zone: entered.clone(),
+                                q: read.target.index(),
+                                zone: entered,
                                 silent: None,
                                 mark: Some(ProductMark {
                                     instance,
@@ -470,7 +531,8 @@ impl<O> Checker<'_, '_, O> {
                                     divergent: !dense && tick,
                                     tail: false,
                                 }),
-                                cell: Some(cell.clone()),
+                                cell: Some(self.cell_zone(step.post(), &cell)?),
+                                read: Some(read.clone()),
                             });
                         }
                     }
@@ -504,6 +566,7 @@ impl<O> Checker<'_, '_, O> {
                         tail: mark.tail,
                     }),
                     cell: Some(self.cell_zone(state, &cell)?),
+                    read: None,
                 });
             }
         }
@@ -530,6 +593,7 @@ impl<O> Checker<'_, '_, O> {
                             tail: mark.tail,
                         }),
                         cell: Some(self.cell_zone(state, &own)?),
+                        read: None,
                     });
                 }
             }
@@ -538,16 +602,21 @@ impl<O> Checker<'_, '_, O> {
             let Some(letter) = self.letter(instance, state, false)? else {
                 return reject(CertificateRule::BadState, at_node(node));
             };
-            if let Some(entered) = self.close(state, zone.clone(), &own)? {
-                for q in self.reads(q, letter)? {
+            for read in self.reads(q, letter)? {
+                let mut read_zone = zone.clone();
+                self.read_at(&mut read_zone, &read)?;
+                if read_zone.is_empty() {
+                    continue;
+                }
+                if let Some(entered) = self.close(state, read_zone, &own)? {
                     found.push(Successor {
                         step: None,
                         part: None,
                         horizon: None,
                         frees: false,
                         digest,
-                        q,
-                        zone: entered.clone(),
+                        q: read.target.index(),
+                        zone: entered,
                         silent: None,
                         mark: Some(ProductMark {
                             instance,
@@ -556,6 +625,7 @@ impl<O> Checker<'_, '_, O> {
                             tail: true,
                         }),
                         cell: Some(self.cell_zone(state, &own)?),
+                        read: Some(read),
                     });
                 }
             }
