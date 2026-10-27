@@ -39,7 +39,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 
 use super::assemble::TimedDeclaration;
 use super::ir::{CheckedBody, CheckedNode};
-use super::lowering::{strictly_below, AdmittedModel, PlaceStep};
+use super::lowering::{strictly_below, AdmittedModel, CollectionShape, PlaceStep};
 use super::refusal::TimedConstruct;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{
@@ -96,9 +96,28 @@ impl ClockField {
     }
 
     /// The place's path written with `.` between its steps: the field's
-    /// member name for a clock field.
+    /// member name for a clock field, `[slot]` for a collection slot.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The most clocks of this place one object holds (FR-230 "Clock
+    /// collections", the static clock dimension): one outside collections,
+    /// the product of the declared maxima of the collections on its path,
+    /// and `None` when one of them declares no maximum.
+    pub fn bound(&self) -> Option<u64> {
+        self.path.iter().try_fold(1_u64, |count, step| match step {
+            PlaceStep::Field(_) => Some(count),
+            PlaceStep::Slot(shape) => count.checked_mul(shape.max?),
+        })
+    }
+
+    /// The collection shapes on the place's path, outermost first.
+    pub fn slots(&self) -> impl Iterator<Item = &CollectionShape> {
+        self.path.iter().filter_map(|step| match step {
+            PlaceStep::Slot(shape) => Some(shape),
+            PlaceStep::Field(_) => None,
+        })
     }
 }
 
@@ -434,6 +453,18 @@ impl TimedModel {
             .map(|(index, field)| (ClockId(index), field))
     }
 
+    /// The static clock dimension of one object of type `owner` (FR-230
+    /// "Clock collections"): the [`ClockField::bound`] of each place the
+    /// type declares, summed; a place in a collection with no declared
+    /// maximum adds no static bound.
+    pub fn dimension(&self, owner: EffectiveId) -> u64 {
+        self.clocks
+            .iter()
+            .filter(|clock| clock.owner == owner)
+            .filter_map(ClockField::bound)
+            .fold(0, u64::saturating_add)
+    }
+
     /// The clock field `id` names.
     pub fn clock(&self, id: ClockId) -> Option<&ClockField> {
         self.clocks.get(id.0)
@@ -571,6 +602,17 @@ impl Clocks<'_> {
     /// places below it: a clock-bearing record or union value.
     fn bears(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> bool {
         self_path(form, id).is_some_and(|path| self.bears_path(&path, context))
+    }
+
+    /// Whether `path` (its slots open) is a clock place of an object of type
+    /// `context`, or a clock-bearing value: a clock place lies at or below
+    /// it.
+    fn reaches(&self, path: &[PlaceStep], context: EffectiveId) -> bool {
+        self.fields.iter().any(|clock| {
+            clock.path.len() >= path.len()
+                && same_place(&clock.path[..path.len()], path)
+                && self.model.conforms(context, clock.owner)
+        })
     }
 
     /// Whether the value an object of type `context` holds at `path` is
@@ -720,6 +762,92 @@ fn self_path(form: &ExpressionForm, id: ExprId) -> Option<Vec<PlaceStep>> {
     }
 }
 
+/// The binder a traversal node binds and the collection it ranges over.
+fn traversal(node: &ExprNode) -> Option<(&str, ExprId)> {
+    match node {
+        ExprNode::Query { binder, source, .. }
+        | ExprNode::Count { binder, source, .. }
+        | ExprNode::Sum { binder, source, .. }
+        | ExprNode::Accumulate { binder, source, .. } => Some((binder.as_str(), *source)),
+        _ => None,
+    }
+}
+
+/// Whether node `id` is the operand of `size` or the collection a traversal
+/// ranges over: a position that reads no element whole.
+fn traversed(form: &ExpressionForm, id: ExprId, parents: &[Option<ExprId>]) -> bool {
+    let Some(parent) = parents.get(id.index()).copied().flatten() else {
+        return false;
+    };
+    match form.expression.get(parent).map(|node| node.node()) {
+        Some(ExprNode::Size(operand)) => *operand == id,
+        Some(node) => traversal(node).is_some_and(|(_, source)| source == id),
+        None => false,
+    }
+}
+
+/// The place path node `id` reads when it is a part of an element of a
+/// collection `self.f…`, through the binder of a traversal over it:
+/// `e.g…` is the collection's path, a slot, then `g…`. The slot's shape is
+/// left open ([`same_place`] matches any).
+fn element_path(
+    form: &ExpressionForm,
+    id: ExprId,
+    parents: &[Option<ExprId>],
+) -> Option<Vec<PlaceStep>> {
+    let mut steps = Vec::new();
+    let mut at = id;
+    let name = loop {
+        match form.expression.get(at)?.node() {
+            ExprNode::Field { operand, field } => {
+                steps.push(PlaceStep::Field(field.clone()));
+                at = *operand;
+            }
+            ExprNode::Name(name) if name.segments.len() == 1 => break name.name.as_str(),
+            _ => return None,
+        }
+    };
+    steps.reverse();
+    // The nearest enclosing traversal binding `name` whose body holds `at`.
+    let mut child = at;
+    while let Some(parent) = parents.get(child.index()).copied().flatten() {
+        if let Some((binder, source)) = form
+            .expression
+            .get(parent)
+            .and_then(|node| traversal(node.node()))
+        {
+            if binder == name && source != child {
+                let mut path = self_path(form, source)?;
+                path.push(PlaceStep::Slot(OPEN_SLOT));
+                path.extend(steps);
+                return Some(path);
+            }
+        }
+        child = parent;
+    }
+    None
+}
+
+/// The slot shape [`element_path`] writes, which [`same_place`] does not
+/// compare.
+const OPEN_SLOT: CollectionShape = CollectionShape {
+    ordered: false,
+    unique: false,
+    min: 0,
+    max: None,
+};
+
+/// Whether two place paths name one place: equal steps, any slot matching
+/// any slot.
+fn same_place(left: &[PlaceStep], right: &[PlaceStep]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|steps| match steps {
+            (PlaceStep::Field(left), PlaceStep::Field(right)) => left == right,
+            (PlaceStep::Slot(_), PlaceStep::Slot(_)) => true,
+            _ => false,
+        })
+}
+
 /// One expression form with the span of each node and what each node reads
 /// of the clocks.
 struct Located<'f> {
@@ -762,10 +890,23 @@ impl<'f> Located<'f> {
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
-            // A clock-bearing value read whole is a read no constraint takes;
-            // a data field of one (`self.t.n`) reads no clock.
+            // A part of an element of a clock collection, read through a
+            // traversal's binder (`e.n`, `e.x`): a clock or a clock-bearing
+            // value is a read no constraint takes; a data part reads none.
+            if let Some(path) = element_path(form, id, &parents) {
+                if clocks.reaches(&path, context) {
+                    first[id.index()] = spans.get(id.index()).copied();
+                }
+                continue;
+            }
+            // A clock-bearing value read whole is a read no constraint takes,
+            // except a clock collection whose size is read or which a
+            // traversal ranges over: its elements are read through the
+            // binder. A data field of one (`self.t.n`) reads no clock.
             if clocks.bears(form, id, context) {
-                first[id.index()] = spans.get(id.index()).copied();
+                if !traversed(form, id, &parents) {
+                    first[id.index()] = spans.get(id.index()).copied();
+                }
                 continue;
             }
             // A data field of a clock-bearing record (`self.t.n`) reads no
@@ -1266,10 +1407,10 @@ impl RecordWrite<'_, '_, '_> {
         cut.literals.insert(literal);
         let named: BTreeSet<&str> = fields.iter().map(|(name, _)| name.as_str()).collect();
         let omitted = self.places_below(&path).any(|(_, clock)| {
-            clock
-                .path
-                .get(path.len())
-                .is_some_and(|PlaceStep::Field(component)| !named.contains(component.as_str()))
+            clock.path.get(path.len()).is_some_and(|step| match step {
+                PlaceStep::Field(component) => !named.contains(component.as_str()),
+                PlaceStep::Slot(_) => false,
+            })
         });
         if omitted {
             return Err(TemporalCause::ClockWrite {
@@ -1653,13 +1794,12 @@ fn prepare_models(
         };
         let span = match source_of(model) {
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
-                // A place under an optional member or in a clock collection
-                // is guarded or live by a presence FR-230 does not yet give
-                // S3 a reading of (STD-493 item 17, QSpec FR-415 "Clock
-                // collections").
+                // A place under an optional member is guarded by a presence
+                // FR-230 does not yet give S3 a reading of (STD-493 item
+                // 17).
                 if AdmittedModel::clock_places(model)
                     .iter()
-                    .any(|place| place.optional || place.collection)
+                    .any(|place| place.optional)
                 {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,
