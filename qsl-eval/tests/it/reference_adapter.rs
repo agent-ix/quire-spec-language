@@ -19,15 +19,14 @@ use qsl_semantics::check::{CheckedExpression, PackageDeclarations};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{
-    Admission, Body, BodyFactory, CallFailure, Evaluation, FamilyOutcome, Progress, Registry,
-    Resume, Signature, Transition,
+    Admission, Body, BodyFactory, BodyFailure, CallFailure, Evaluation, FamilyOutcome, Progress,
+    Registry, Resume, Signature, Transition,
 };
 use quire_exact::{
     Cancel, CancelCause, ChargePoint, Integer, IntegerInterval, LimitKind, Meter, NodeKey, Outcome,
     ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
 
@@ -161,7 +160,7 @@ struct RequestBody {
 }
 
 impl Body for RequestBody {
-    fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, InternalFault> {
+    fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
         self.transitions.fetch_add(1, Ordering::SeqCst);
         match input {
             Resume::Start(_) | Resume::Again => Ok(Transition::Call(quire_eval::ChildRequest {
@@ -186,7 +185,7 @@ impl BodyFactory for Constant {
 struct ConstantBody(i64);
 
 impl Body for ConstantBody {
-    fn resume(&mut self, _input: Resume, _meter: &mut Meter) -> Result<Transition, InternalFault> {
+    fn resume(&mut self, _input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
         Ok(Transition::Done(Evaluation::completed(int(self.0))))
     }
 }

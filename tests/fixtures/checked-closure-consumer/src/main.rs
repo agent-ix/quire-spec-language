@@ -5,9 +5,10 @@ use qsl_replay::{
     acquire_checked_closure, call_site, ApplicationEnvironment, DependencyInput, Identifier,
     QualifiedName, ReplayLimits, SourceIdentity, StageLimits,
 };
-use quire_eval::{Admission, Body, BodyFactory, Evaluation, FamilyOutcome, Resume, Transition};
+use quire_eval::{
+    Admission, Body, BodyFactory, BodyFailure, Evaluation, FamilyOutcome, Resume, Transition,
+};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
-use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::object_closure::ObjectClosure;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction f using v(x: Int[0, 9]): Integer pure { x }\n";
@@ -22,7 +23,7 @@ impl BodyFactory for Generated {
 }
 
 impl Body for GeneratedCall {
-    fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, InternalFault> {
+    fn resume(&mut self, input: Resume, _meter: &mut Meter) -> Result<Transition, BodyFailure> {
         match input {
             Resume::Start(_) => Ok(Transition::Done(Evaluation {
                 outcome: FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(

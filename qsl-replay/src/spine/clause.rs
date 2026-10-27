@@ -1188,6 +1188,9 @@ pub(crate) fn check_clause_admitted(
             ),
         },
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        // Clause evaluation uses the checked interpreter, not the public
+        // registered-body application facade.
+        Err(CallFailure::Body(_)) => unreachable!("clause evaluation registers no host bodies"),
         Err(
             storage @ (CallFailure::Storage { .. }
             | CallFailure::Supplied(_)
@@ -1348,6 +1351,9 @@ pub(crate) fn check_frame(
             "frame-invocation-mismatch",
         )),
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        // Frame evaluation uses the checked interpreter, not the public
+        // registered-body application facade.
+        Err(CallFailure::Body(_)) => unreachable!("frame evaluation registers no host bodies"),
         Err(
             storage @ (CallFailure::Storage { .. }
             | CallFailure::Supplied(_)
