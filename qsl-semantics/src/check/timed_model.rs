@@ -79,6 +79,8 @@ pub struct ClockField {
     field: DeclarationKey,
     path: Vec<PlaceStep>,
     name: String,
+    /// The clock alias the clock is typed by, when it is one.
+    alias: Option<DeclarationKey>,
 }
 
 impl ClockField {
@@ -2047,6 +2049,76 @@ fn time_invariant(
     })
 }
 
+/// The time invariants the package's `max` constraints on clocks state
+/// (FR-230 "Clock constraints on a type"): for each constraint and each
+/// object type holding a clock it bounds, `true` with the bound `x <= c` on
+/// each such clock, read at every live place of it (each held slot of a
+/// collection, a present optional member). A constraint on a clock alias
+/// bounds the clocks typed by the alias; one on `ix://quire/native/Clock`
+/// every clock of the model.
+///
+/// # Errors
+///
+/// `time-invariant-shape` for a `min` constraint, which no conjunction of
+/// upper bounds states.
+fn clock_bounds(
+    model: &AdmittedModel,
+    clocks: &Clocks<'_>,
+    inputs: &Inputs<'_>,
+    span: Span,
+) -> Result<Vec<InvariantDraft>, CheckCause> {
+    let mut drafts = Vec::new();
+    for bound in model.clock_bounds() {
+        if !bound.upper {
+            return Err(timed(TemporalCause::TimeInvariantShape { span }));
+        }
+        let mut by_owner: BTreeMap<EffectiveId, Vec<ClockConstraint>> = BTreeMap::new();
+        for (index, field) in clocks.fields.iter().enumerate() {
+            if bound.alias.is_some() && field.alias != bound.alias {
+                continue;
+            }
+            let slots = field
+                .path
+                .iter()
+                .filter(|step| matches!(step, PlaceStep::Slot(_)))
+                .map(|_| ElementBinding::FAMILY_SLOT)
+                .collect();
+            by_owner
+                .entry(field.owner)
+                .or_default()
+                .push(ClockConstraint {
+                    clock: ClockId(index),
+                    via: Vec::new(),
+                    slots,
+                    op: ClockOp::LessOrEqual,
+                    bound: bound.value.clone(),
+                    span,
+                });
+        }
+        for (owner, bounds) in by_owner {
+            let population = population_of(inputs.models, owner, inputs.types).map_err(|_| {
+                timed(TemporalCause::TimedStateObject {
+                    ambiguous: true,
+                    span,
+                })
+            })?;
+            let expression = qsl_forms::Expression::boolean(true);
+            let spans = qsl_forms::ExpressionSpans::at_point(&expression, span.start)
+                .map_err(|_| timed(TemporalCause::TimeInvariantShape { span }))?;
+            drafts.push(InvariantDraft {
+                name: bound.key.node.clone(),
+                predicate: PredicateDraft {
+                    context: owner,
+                    population,
+                    predicate: ExpressionForm { expression, spans },
+                },
+                bounds,
+            });
+        }
+    }
+    Ok(drafts)
+}
+
 fn urgency(
     form: &UrgentForm,
     model: &AdmittedModel,
@@ -2156,6 +2228,7 @@ fn prepare_models(
                 field: place.field.clone(),
                 name: place.name(),
                 path: place.path.clone(),
+                alias: place.alias.clone(),
             })
             .collect();
         let target = source_of(model)
@@ -2323,6 +2396,7 @@ fn prepare_models(
                 TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
             }
         }
+        invariants.extend(clock_bounds(model, &clocks, inputs, source.span)?);
         let dimensions = model
             .object_types()
             .map(|(_, object)| {

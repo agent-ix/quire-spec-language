@@ -1380,3 +1380,150 @@ fn a_quantified_read_expands_in_a_clock_reading_declaration() {
         [at(0), at(1), at(2)]
     );
 }
+
+/// A `constraints[]` entry of `owner` bounding `applies` with `keyword`
+/// and `value`.
+fn clock_constraint(owner: &str, keyword: &str, value: &str, applies: &str) -> Value {
+    let identity = package(&format!("{owner}/{keyword}"));
+    json!({
+        "identity": identity.clone(),
+        "keyword": keyword,
+        "operands": {"value": value},
+        "appliesTo": applies,
+        "diagnosticCode": package("BOUND"),
+        "origin": {"generated": {"generatorIdentity": identity.clone(),
+            "generatorVersion": "1.0.0", "inputIdentities": [identity]}},
+    })
+}
+
+/// Part of FR-230-AC-25 (TC-685): a constraint `max` `"3"` whose
+/// `appliesTo` is the alias `Timeout` of `Clock` checks as the time
+/// invariant `x <= 3` on the place typed `Timeout` (`w`) and on no other
+/// clock; the same constraint on `Call` with `appliesTo`
+/// `ix://quire/native/Clock` bounds every clock place of `Call` by 3; a
+/// `min` `"1"` constraint refuses `invalid_timed_model`/
+/// `time-invariant-shape`; `minLength` and a negative `max` operand refuse
+/// `invalid_model_binding`/`malformed-declaration`. Not covered: the
+/// presence guard of an `Option<Timeout>` place, which waits on
+/// `Option<Clock>` places (580n), and the `time tick` and untimed
+/// refusals.
+#[trace("TC-685")]
+#[test]
+fn a_max_constraint_on_a_clock_alias_bounds_its_places() {
+    let document = |constraints: Vec<Value>, on_call: Vec<Value>| {
+        timer_document(move |document: &mut Value| {
+            let mut timeout = wire_type(
+                &package("Timeout"),
+                "unused",
+                json!({"target": "ix://quire/native/Clock", "constraints": constraints}),
+            );
+            timeout["kind"] = json!("alias");
+            let types = document["types"].as_array_mut().expect("types");
+            types.push(timeout);
+            types[1]["fields"]
+                .as_array_mut()
+                .expect("Call fields")
+                .push(field("w", &package("Timeout")));
+            types[1]["constraints"] = json!(on_call);
+        })
+    };
+    let bounded = |constraints, on_call| {
+        let graph = check(&document(constraints, on_call), &format!("{UNITS}{DENSE}"))
+            .unwrap_or_else(|refusals| panic!("the bound checks: {refusals:?}"));
+        let model = timed(&graph);
+        model
+            .invariants()
+            .iter()
+            .map(|invariant| {
+                let mut clocks: Vec<(String, String)> = invariant
+                    .bounds()
+                    .iter()
+                    .map(|bound| {
+                        (
+                            model
+                                .clock(bound.clock())
+                                .expect("a clock")
+                                .name()
+                                .to_owned(),
+                            format!("{:?} {:?}", bound.op(), bound.bound()),
+                        )
+                    })
+                    .collect();
+                clocks.sort();
+                (invariant.name().to_owned(), clocks)
+            })
+            .collect::<Vec<_>>()
+    };
+    let at_most = format!("{:?} {:?}", ClockOp::LessOrEqual, exact(3, 1));
+    assert_eq!(
+        bounded(
+            vec![clock_constraint("Timeout", "max", "3", &package("Timeout"))],
+            vec![]
+        ),
+        [(
+            package("Timeout/max"),
+            vec![("w".to_owned(), at_most.clone())]
+        )]
+    );
+    let every: Vec<(String, String)> = ["t.x", "u.x", "w", "x"]
+        .into_iter()
+        .map(|name| (name.to_owned(), at_most.clone()))
+        .collect();
+    assert_eq!(
+        bounded(
+            vec![],
+            vec![clock_constraint(
+                "Call",
+                "max",
+                "3",
+                "ix://quire/native/Clock"
+            )]
+        ),
+        [(package("Call/max"), every)]
+    );
+    let refusals = check(
+        &document(
+            vec![clock_constraint("Timeout", "min", "1", &package("Timeout"))],
+            vec![],
+        ),
+        &format!("{UNITS}{DENSE}"),
+    )
+    .expect_err("a min bound is refused");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::Temporal(cause),
+                ..
+            }] if cause.code() == Code::InvalidTimedModel && cause.tag() == "time-invariant-shape"
+        ),
+        "{refusals:?}"
+    );
+    for (keyword, value) in [("minLength", "3"), ("max", "-1")] {
+        let malformed = std::panic::catch_unwind(|| {
+            check(
+                &document(
+                    vec![clock_constraint(
+                        "Timeout",
+                        keyword,
+                        value,
+                        &package("Timeout"),
+                    )],
+                    vec![],
+                ),
+                &format!("{UNITS}{DENSE}"),
+            )
+        });
+        let Err(panicked) = malformed else {
+            panic!("{keyword} {value}: intake refuses the constraint");
+        };
+        let message = panicked
+            .downcast_ref::<String>()
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            message.contains("InvalidModelBinding") && message.contains("constraints"),
+            "{keyword} {value}: {message}"
+        );
+    }
+}

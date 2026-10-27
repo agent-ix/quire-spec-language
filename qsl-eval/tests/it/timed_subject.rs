@@ -2212,3 +2212,94 @@ fn a_quantified_guard_reads_a_collection_below_a_record_field() {
     assert_eq!(read(initial), vec![vec![(vec![1], false)]]);
     assert_eq!(read(&later), vec![vec![(vec![1], true)]]);
 }
+
+/// Part of FR-230-AC-25 (TC-685): with `Timer.x` typed by the alias
+/// `Timeout` of `Clock`, whose constraint `max` `"3"` bounds the clocks it
+/// types, and `ts = [Timer { n: 1 }]` of at most 2 elements, the time
+/// invariant bounds `t.x` and the live slot 0 of `ts.[slot].x` by 3, and not
+/// the slot 1 the sequence does not hold: a delay of 3 is admissible and one
+/// of 4 is not, with the constraint's identity named as the broken bound.
+#[trace("TC-685")]
+#[test]
+fn a_max_constraint_on_a_clock_alias_bounds_the_live_places() {
+    let mut document: Json =
+        serde_json::from_slice(&timer_sequence_document(Some(2))).expect("JSON");
+    let timeout = ident("Timeout");
+    let types = document["types"].as_array_mut().expect("types");
+    for definition in types.iter_mut() {
+        if definition["identity"] == ident("Timer") {
+            for member in definition["fields"].as_array_mut().expect("Timer fields") {
+                if member["name"] == "x" {
+                    member["typeRef"] = json!(timeout);
+                }
+            }
+        }
+    }
+    let mut alias = wire_type(
+        &timeout,
+        "unused",
+        json!({"target": "ix://quire/native/Clock", "constraints": [{
+            "identity": format!("{timeout}/max"), "keyword": "max",
+            "operands": {"value": "3"}, "appliesTo": timeout,
+            "diagnosticCode": "bound.max", "origin": origin(&timeout),
+        }]}),
+    );
+    alias["kind"] = json!("alias");
+    types.push(alias);
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let world = world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.phase = 1 }\n",
+        ),
+        json!({"t": timer("0"), "ts": {"sequence": [timer("1")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let bounded: Vec<(String, Vec<usize>)> = timed
+        .invariants(initial.discrete())
+        .expect("the invariants read")
+        .iter()
+        .map(|bound| {
+            let place = &timed.places()[bound.place()];
+            (
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .expect("a clock")
+                    .name()
+                    .to_owned(),
+                place.slots().to_vec(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        bounded,
+        [
+            ("t.x".to_owned(), vec![]),
+            ("ts.[slot].x".to_owned(), vec![0]),
+        ]
+    );
+    assert!(timed
+        .delay(initial, &exact(3, 1))
+        .expect("decided")
+        .is_some());
+    assert!(timed
+        .delay(initial, &exact(4, 1))
+        .expect("decided")
+        .is_none());
+    let past = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(4, 1)),
+    );
+    assert_eq!(
+        timed.broken_invariant(&past).expect("decided"),
+        Some(format!("{timeout}/max"))
+    );
+}

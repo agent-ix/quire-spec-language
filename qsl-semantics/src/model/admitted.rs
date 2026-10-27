@@ -270,6 +270,7 @@ impl AdmittedPackage {
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::SequenceType(_)
                 | DomainPackageRecord::AliasType(_)
+                | DomainPackageRecord::ClockBound(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
                 | DomainPackageRecord::Allocation(_)
@@ -413,6 +414,8 @@ impl AdmittedPackage {
             DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::SequenceType(_)
             | DomainPackageRecord::AliasType(_) => DeclarationKind::ValueType,
+            // A constraint is a clause on the type that declares it.
+            DomainPackageRecord::ClockBound(_) => DeclarationKind::Clause,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted
             // component is a Part and an admitted endpoint a Port.

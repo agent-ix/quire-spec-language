@@ -1271,6 +1271,12 @@ pub enum TemporalCause {
         /// The write's span.
         span: Span,
     },
+    /// FR-230 "Clock constraints on a type": a `min` constraint on clocks,
+    /// which no conjunction of upper bounds states. Located at the model.
+    TimeInvariantShape {
+        /// The model's span.
+        span: Span,
+    },
     /// FR-230 "Collection-valued writes": a postcondition that writes one
     /// clock collection twice, or writes it and resets a clock of it, gives
     /// its clocks no one value. Located at the later write.
@@ -1806,6 +1812,7 @@ impl TemporalCause {
             | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
             | Self::ConflictingClockWrite { span }
+            | Self::TimeInvariantShape { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
             | Self::UrgentGuardReadsClock { span, .. }
@@ -1887,6 +1894,7 @@ impl TemporalCause {
             | Self::ClockBoundNotConstant { .. }
             | Self::ClockWrite { .. }
             | Self::ConflictingClockWrite { .. }
+            | Self::TimeInvariantShape { .. }
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
             Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
@@ -1957,6 +1965,7 @@ impl TemporalCause {
             Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
             Self::ClockWrite { .. } => "clock-write",
             Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
+            Self::TimeInvariantShape { .. } => "time-invariant-shape",
             Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
             Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),
             Self::TimedModelNotEmitted { .. } => "not-yet-implemented",

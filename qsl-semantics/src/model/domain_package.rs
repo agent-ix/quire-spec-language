@@ -454,6 +454,24 @@ pub struct AliasTypeRecord {
     pub target: ValueTypeRef,
 }
 
+/// A package constraint `min` or `max` on clocks (FCD #315, QSL FR-230
+/// "Clock constraints on a type"): on the clock alias it names, or on every
+/// clock place of the model when it names `ix://quire/native/Clock`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockBoundRecord {
+    /// The constraint's own original declaration key.
+    pub key: DeclarationKey,
+    /// The type that declares the constraint.
+    pub owner: DeclarationKey,
+    /// The clock alias it applies to; `None` for every clock place.
+    pub alias: Option<DeclarationKey>,
+    /// `max`, an upper bound, or `min`, which a time invariant cannot state.
+    pub upper: bool,
+    /// The bound, an exact non-negative rational number of the model's time
+    /// unit.
+    pub value: quire_exact::Rational,
+}
+
 /// The type `value_type` names through the package's aliases and sequence
 /// types (QSpec FR-154): the type it ends at, and how many sequences it
 /// passes on the way. `None` for a chain that returns to a type it passed.
@@ -900,6 +918,8 @@ pub enum DomainPackageRecord {
     SequenceType(SequenceTypeRecord),
     /// A package alias of a clock or a unit (FCD #315).
     AliasType(AliasTypeRecord),
+    /// A `min` or `max` constraint on clocks (FCD #315).
+    ClockBound(ClockBoundRecord),
     /// An operation member of an object type.
     OperationMember(OperationMemberRecord),
     /// FCD FR-114 component (FR-152 Part candidate).
@@ -933,6 +953,7 @@ impl DomainPackageRecord {
             Self::ScalarType(record) => &record.key,
             Self::SequenceType(record) => &record.key,
             Self::AliasType(record) => &record.key,
+            Self::ClockBound(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
