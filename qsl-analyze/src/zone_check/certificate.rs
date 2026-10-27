@@ -12,15 +12,16 @@
 //! divergence parts belong to the liveness and time-lock-freedom proofs
 //! (QSL-583) and are not built here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
+use qsl_eval::simulation::model::PlaceConstraint;
 use qsl_foundation::digest::DigestRecord;
 use qsl_route::deadlock::ItemObligation;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::divergence::{EscapeTarget, EscapeWitness};
-use super::search::{Halt, Run};
+use super::divergence::{EscapeTarget, EscapeWitness, Move};
+use super::search::{Halt, Run, SymbolicEdge};
 use super::{Dbm, ZoneCheckRefusal};
 
 /// FR-244's certificate of a `Holds` outcome.
@@ -76,10 +77,18 @@ pub struct CertNode {
 pub struct CertEdge {
     /// The source node.
     pub from: usize,
-    /// The step's transition identity.
-    pub transition: ModelTransition,
-    /// The convex part of the step's guard taken.
-    pub part: usize,
+    /// The step's transition identity; `None` for an idle-tail stutter
+    /// position of a TT-2 clause's automaton (FR-242).
+    pub transition: Option<ModelTransition>,
+    /// The convex part of the step's guard taken; `None` for a stutter.
+    pub part: Option<usize>,
+    /// Under a dense source, the piece of a TT-2 clause's horizon axis the
+    /// position lies in, as constraints on the horizon clock (the place
+    /// past the model's clock places), which decides the automaton state
+    /// `to` holds; `None` with no automaton, past the formula's horizon,
+    /// and under a tick source, whose automaton state keeps its stamp (spec
+    /// gap STD-493: FR-244's edge names no piece).
+    pub horizon: Option<Vec<PlaceConstraint>>,
     /// The node whose zone holds, or under the aLU simulation covers, the
     /// successor.
     pub to: usize,
@@ -157,7 +166,7 @@ impl Run<'_, '_, '_> {
                 .map_err(|_| Halt::Refusal(ZoneCheckRefusal::Fault("state-key")))?;
             nodes.push(CertNode {
                 state_key,
-                automaton_state: 0,
+                automaton_state: node.q,
                 zone: node.zone.clone(),
                 locked: node.locked,
             });
@@ -169,19 +178,41 @@ impl Run<'_, '_, '_> {
         let mut edges = Vec::with_capacity(order.len());
         let mut steps = Vec::with_capacity(order.len());
         for edge in order {
-            let edge = self.edges[edge].clone();
-            let transition = self
-                .steps_of(edge.from)?
-                .get(edge.step)
-                .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-step")))?
-                .transition()
-                .clone();
-            steps.push(edge.step);
+            let SymbolicEdge {
+                from,
+                to,
+                step,
+                piece,
+                ..
+            } = self.edges[edge].clone();
+            let (transition, part) = match step {
+                Some((step, part)) => {
+                    let transition = self
+                        .steps_of(from)?
+                        .get(step)
+                        .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-step")))?
+                        .transition()
+                        .clone();
+                    (Some(transition), Some(part))
+                }
+                None => (None, None),
+            };
+            let horizon = match piece {
+                Some(piece) => Some(
+                    self.pieces
+                        .get(piece)
+                        .map(|(constraints, _)| constraints.clone())
+                        .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-piece")))?,
+                ),
+                None => None,
+            };
+            steps.push(step);
             edges.push(CertEdge {
-                from: edge.from,
+                from,
                 transition,
-                part: edge.part,
-                to: edge.to,
+                part,
+                horizon,
+                to,
             });
         }
         let admitted = admitted(&edges, &steps, root, witness)
@@ -206,35 +237,22 @@ impl Run<'_, '_, '_> {
 }
 
 /// TD-6's witness over the certificate's edges: `witness`'s moves followed
-/// from `root`, each model step taken by the certificate edge of the same
+/// from `root`, each model step taken by a certificate edge of the same
 /// step and part. A node that covers a successor under the aLU simulation
-/// enables every step and part the successor enables, so each move has its
-/// edge. A cycle is repeated until a certificate node recurs at its start,
-/// which closes it on the certificate's finitely many nodes; each
+/// enables every step and part the successor enables. Under a TT-2
+/// clause's automaton one step has an edge per piece of the horizon
+/// clock's axis, and the moves are followed through whichever pieces carry
+/// them on. A cycle is repeated until a certificate node recurs at its
+/// start, which closes it on the certificate's finitely many nodes; each
 /// repetition lets time advance, so the closed cycle does too.
 fn admitted(
     edges: &[CertEdge],
-    steps: &[usize],
+    steps: &[Option<(usize, usize)>],
     root: usize,
     witness: &EscapeWitness,
 ) -> Option<DivergenceWitness> {
-    let follow = |at: &mut usize, step: Option<(usize, usize)>, taken: &mut Vec<usize>| {
-        let Some((step, part)) = step else {
-            // Only time passes.
-            return Some(());
-        };
-        let edge = (0..edges.len()).find(|&edge| {
-            edges[edge].from == *at && steps[edge] == step && edges[edge].part == part
-        })?;
-        taken.push(edge);
-        *at = edges[edge].to;
-        Some(())
-    };
-    let mut at = root;
-    let mut path = Vec::new();
-    for &step in &witness.path {
-        follow(&mut at, step, &mut path)?;
-    }
+    let follow = |at: usize, moves: &[Move]| follow(edges, steps, at, moves);
+    let (mut at, mut path) = follow(root, &witness.path)?;
     let target = match &witness.target {
         EscapeTarget::Quiescent => DivergentTarget::Quiescent(at),
         EscapeTarget::Terminal => DivergentTarget::Terminal(at),
@@ -251,10 +269,8 @@ fn admitted(
                     break DivergentTarget::Cycle(cycle);
                 }
                 started.insert(at, rounds.len());
-                let mut round = Vec::new();
-                for &step in moves {
-                    follow(&mut at, step, &mut round)?;
-                }
+                let (end, round) = follow(at, moves)?;
+                at = end;
                 rounds.push(round);
             }
         }
@@ -264,4 +280,60 @@ fn admitted(
         path,
         target,
     })
+}
+
+/// The first sequence of certificate edges from `at` that takes `moves`'
+/// model steps in order, depth first over the edges each step has, with
+/// the node it ends at. The search is iterative, and a `(node, move)` pair
+/// from which the rest cannot be taken is tried once.
+fn follow(
+    edges: &[CertEdge],
+    steps: &[Option<(usize, usize)>],
+    at: usize,
+    moves: &[Move],
+) -> Option<(usize, Vec<usize>)> {
+    // The model steps only: a move with none lets time pass.
+    let moves: Vec<(usize, usize)> = moves.iter().filter_map(|step| *step).collect();
+    let mut leaving: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (index, edge) in edges.iter().enumerate() {
+        leaving.entry(edge.from).or_default().push(index);
+    }
+    let mut dead: BTreeSet<(usize, usize)> = BTreeSet::new();
+    // Each frame: the node, the move taken next, and the next candidate
+    // edge to try.
+    let mut taken: Vec<usize> = Vec::new();
+    let mut frames: Vec<(usize, usize)> = vec![(at, 0)];
+    loop {
+        let depth = frames.len() - 1;
+        let (node, next) = *frames.last()?;
+        if depth == moves.len() {
+            return Some((node, taken));
+        }
+        let candidates = leaving.get(&node).map_or(&[][..], Vec::as_slice);
+        let found = candidates
+            .iter()
+            .enumerate()
+            .skip(next)
+            .find(|(_, &edge)| {
+                steps[edge] == Some(moves[depth]) && !dead.contains(&(edges[edge].to, depth + 1))
+            })
+            .map(|(index, &edge)| (index, edge));
+        match found {
+            Some((index, edge)) => {
+                if let Some(frame) = frames.last_mut() {
+                    frame.1 = index + 1;
+                }
+                taken.push(edge);
+                frames.push((edges[edge].to, 0));
+            }
+            None => {
+                dead.insert((node, depth));
+                frames.pop();
+                taken.pop();
+                if frames.is_empty() {
+                    return None;
+                }
+            }
+        }
+    }
 }

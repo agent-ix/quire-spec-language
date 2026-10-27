@@ -145,6 +145,13 @@ pub struct PlaceConstraint {
 }
 
 impl PlaceConstraint {
+    /// `place op bound`, over a place index the caller names: one of
+    /// [`TimedSystem::places`], or a clock an engine adds past them, such as
+    /// a claim automaton's horizon clock (FR-242).
+    pub fn new(place: usize, op: ClockOp, bound: Rational) -> Self {
+        Self { place, op, bound }
+    }
+
     /// The constrained place's index in [`TimedSystem::places`].
     pub fn place(&self) -> usize {
         self.place
