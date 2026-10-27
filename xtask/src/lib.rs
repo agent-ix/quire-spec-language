@@ -17,6 +17,7 @@ pub mod definition_scan;
 pub mod error;
 pub mod feature_scope;
 pub mod import_graph;
+pub mod qualification;
 pub mod refinement;
 pub mod route_lint;
 pub mod seam_probe;

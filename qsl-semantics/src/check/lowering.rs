@@ -285,6 +285,12 @@ impl SemanticNode {
         self.content.owner.as_ref()
     }
 
+    /// QSpec FR-464's `owner_model`: the exact model declaration node a
+    /// `protocol_clause` node is declared over; `None` for every other node.
+    pub fn owner_model(&self) -> Option<NodeKey> {
+        self.content.owner_model
+    }
+
     /// The node's recursion group, when it is in one.
     pub fn recursion(&self) -> Option<&NodeRecursion> {
         self.recursion.as_ref()
@@ -511,6 +517,8 @@ struct NodeContent {
     semantic_type: Option<NodeKey>,
     declaration: Option<Vec<Identifier>>,
     owner: Option<Owner>,
+    /// QSpec FR-464's `owner_model`: set for a `protocol_clause` node alone.
+    owner_model: Option<NodeKey>,
     body: BodyTerm,
 }
 
@@ -524,6 +532,7 @@ impl NodeContent {
             semantic_type: self.semantic_type,
             declaration: self.declaration.as_deref(),
             body: &self.body,
+            owner_model: self.owner_model,
         }
     }
 }
@@ -1738,6 +1747,7 @@ impl<'a> Lowering<'a> {
         self.insert_node(
             location,
             NodeContent {
+                owner_model: None,
                 node_tag,
                 semantic_form,
                 semantic_type,
@@ -1761,6 +1771,7 @@ impl<'a> Lowering<'a> {
         self.insert_node(
             location,
             NodeContent {
+                owner_model: None,
                 node_tag,
                 semantic_form,
                 semantic_type,
@@ -2369,6 +2380,7 @@ impl<'a> Lowering<'a> {
             declaration,
             bytes,
             NodeContent {
+                owner_model: None,
                 node_tag: NodeTag::ScalarType,
                 semantic_form: "enum",
                 semantic_type: None,
@@ -2406,6 +2418,7 @@ impl<'a> Lowering<'a> {
             key,
             bytes,
             NodeContent {
+                owner_model: None,
                 node_tag: NodeTag::Value,
                 semantic_form: "enum_value",
                 semantic_type: Some(declaration),
@@ -2747,6 +2760,7 @@ impl<'a> Lowering<'a> {
                 let key = self.insert_node(
                     &draft.location,
                     NodeContent {
+                        owner_model: draft.content.owner_model,
                         node_tag: draft.content.node_tag,
                         semantic_form: draft.content.semantic_form,
                         semantic_type: *semantic_type,
@@ -2829,6 +2843,7 @@ impl<'a> Lowering<'a> {
                 semantic_type: types[at],
                 declaration: draft.content.declaration.as_deref(),
                 body: &bodies[at],
+                owner_model: draft.content.owner_model,
             })
             .collect();
         let meter = &mut *self.meter;
@@ -2875,6 +2890,7 @@ impl<'a> Lowering<'a> {
                     semantic_type,
                     declaration: draft.content.declaration.as_deref(),
                     body: &body,
+                    owner_model: draft.content.owner_model,
                 },
                 self.identity,
             )
@@ -2892,6 +2908,7 @@ impl<'a> Lowering<'a> {
                         size: keys.size,
                     }),
                     content: NodeContent {
+                        owner_model: draft.content.owner_model,
                         node_tag: draft.content.node_tag,
                         semantic_form: forms[at],
                         semantic_type,

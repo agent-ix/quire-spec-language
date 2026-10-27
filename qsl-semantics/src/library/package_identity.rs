@@ -54,11 +54,17 @@ const NODE_REQUIRED: [&str; 7] = [
 /// occurrence. On a nominal node it must equal the nominal
 /// `qualified_declaration`, and every export resolves only through this
 /// member, never through `nominal_identity_preimage` directly.
-const NODE_OPTIONAL: [&str; 4] = [
+///
+/// `owner_model` is a protocol clause's exact local model declaration edge
+/// (QSpec FR-322, FR-464 "owner_model"): the identity projection carries it
+/// as the node does, a node id, and IR's reader has already checked that it
+/// is present exactly on a clause.
+const NODE_OPTIONAL: [&str; 5] = [
     "recursion_group",
     "nominal_identity_preimage",
     "declaration",
     "owner",
+    "owner_model",
 ];
 
 /// Why an identity preimage is structurally malformed.
@@ -364,6 +370,12 @@ fn projected_node(value: NodeRef<'_>) -> Result<NodeShape, NodeDefect> {
     if node.get("schema_version").and_then(string_of) != Some(NODE_SCHEMA_VERSION) {
         return Err(NodeDefect::SchemaVersion);
     }
+    if node
+        .get("owner_model")
+        .is_some_and(|owner_model| wire_node_id(owner_model).is_none())
+    {
+        return Err(NodeDefect::NodeId);
+    }
     node.get("node_tag")
         .and_then(string_of)
         .and_then(CheckedNodeTag::from_wire)
@@ -608,6 +620,32 @@ mod tests {
             serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
         preimage["identity_projection"][0]["node_tag"] = Value::from("extension");
         assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
+    }
+
+    /// QSpec FR-464 "owner_model": the projection keeps the edge a node id and
+    /// refuses any other shape of it.
+    #[trace("FR-383-AC-26")]
+    #[test]
+    fn a_projected_owner_model_is_a_node_id() {
+        let base = one_node_preimage(b"L::R", &["L", "R"]);
+        let mut preimage: Value = serde_json::from_slice(&base).unwrap();
+        preimage["identity_projection"][0]["owner_model"] =
+            preimage["identity_projection"][0]["node_id"].clone();
+        assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
+        for edge in [
+            Value::Null,
+            Value::from("x"),
+            serde_json::json!({"node": "x"}),
+        ] {
+            preimage["identity_projection"][0]["owner_model"] = edge;
+            assert!(matches!(
+                project_declarations(&serde_json::to_vec(&preimage).unwrap()),
+                Err(PreimageDefect::Node {
+                    defect: NodeDefect::NodeId,
+                    ..
+                })
+            ));
+        }
     }
 
     /// Non-string tags and strings outside IR's closed V2 vocabulary are

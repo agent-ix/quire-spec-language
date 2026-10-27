@@ -9,10 +9,10 @@ review_set: all
 
 ## Summary
 
-Checked closure, multiplicity and mapping completeness for call, population and replay inputs. The ACs separate the three adapter obligations, and the request mapping enumerates every ReplayRequestWire member.
+Checked the replay mapping for complete field coverage: all 15 ReplayRequestWire members are listed, FR-323 members remain distinct from the RequestTargetWire wrapper, and structural option/enum forms are closed.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No additional integrity issue found; required and optional file counts, tagged value arms, accounting conversion, named population resolution and byte path association are stated. | FR-350-AC-8, FR-350-AC-9, FR-350-AC-10 |
+| FND-001 | low | The mapping distinguishes FR-323 shapes, structural Rust types, and the vector-relative byte path; no request field is silently omitted. | FR-350-AC-10; FR-336-AC-7/8; TC-970 |

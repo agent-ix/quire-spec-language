@@ -74,6 +74,7 @@ pub(crate) fn relation_node(
         preimage: keyed.preimage,
         recursion: None,
         content: NodeContent {
+            owner_model: None,
             node_tag: NodeTag::Correspondence,
             semantic_form: "abstraction_relation",
             semantic_type: None,

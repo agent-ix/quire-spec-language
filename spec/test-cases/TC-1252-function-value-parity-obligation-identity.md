@@ -44,7 +44,7 @@ Scope: FR-484-AC-1 to FR-484-AC-13.
   profile p = "quire.protocol.finite-global/v1";
   model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<D>";
   temporal ReachesTwo using t over (c: Config::ConfigVersion) clock "model-steps" on origin { always eventually holds(c.versionNumber = 2) }
-  protocol Flow using v over (input: Boolean) on origin {
+  protocol Flow using v over (input: Config::ConfigVersion) on origin {
   role R on Config::ConfigVersion;
   run sequence Main { }
   finish End as (outcome: Boolean) { true };
