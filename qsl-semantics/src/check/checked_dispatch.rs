@@ -1677,6 +1677,8 @@ mod tests {
         let mut forms = vec![
             Expression::boolean(true),
             Expression::integer(3_i64),
+            Expression::float32_bits(0x3f80_0000),
+            Expression::float64_bits(0x3ff0_0000_0000_0000),
             Expression::rational(Integer::from(1_i64), Integer::from(3_i64)),
             Expression::quantity(qsl_forms::QuantityForm {
                 magnitude: qsl_forms::ExactValueForm {
@@ -1797,11 +1799,13 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 36] = [
+    const FORM_NAMES: [&str; 38] = [
         "Case",
         "Boolean",
         "Integer",
         "Rational",
+        "Float32",
+        "Float64",
         "Quantity",
         "String",
         "Name",
@@ -1846,6 +1850,8 @@ mod tests {
             ExprNode::Boolean(_) => "Boolean",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
+            ExprNode::Float32(_) => "Float32",
+            ExprNode::Float64(_) => "Float64",
             ExprNode::Quantity(_) => "Quantity",
             ExprNode::String(_) => "String",
             ExprNode::Name(_) => "Name",

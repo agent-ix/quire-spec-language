@@ -80,3 +80,9 @@ Round 1, fix commit 0f579f44c. I verified each finding in a fresh detached workt
 | FND-006 | fixed | `follow` is now iterative, and dead `(node, depth)` pairs are memoised, so each pair is tried once. |
 | FND-007 | fixed | `bounded_window_verdict` is `#[doc(hidden)]` and returns a typed `TemporalOutcome` (`Undefined` with its cause, `InsufficientData`, `Pending`), not a stringified refusal. |
 | FND-008 | fixed | The pieces are computed once in `Run::new` (`Run::pieces`). Under a tick source there is a single piece. |
+
+Round 2, fix commit cc42ace8c. Gates at cc42ace8c are listed in the round-2 comment.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-009 | fixed | When `judge` finds no violation at a node, it records the first instance that read a short window, through `WindowClaim::insufficient` (skipped when a reading is undefined), but only if a time-divergent behaviour passes through that node. A search that finds no violation then ends `Undecided(ZoneUndecided::InsufficientData(instance))`, never `Holds`. A found violation still takes priority. `a_window_short_of_data_is_insufficient_data_not_holds` covers this: its letters read every false `retried` as short of data, the evaluator gives `InsufficientData`, and EN-6 gives `Undecided(InsufficientData)`. Without the fix it would return `Holds`. |

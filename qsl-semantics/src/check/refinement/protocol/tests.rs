@@ -502,7 +502,7 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
             RowObservation::Internal
         ]
     );
-    // `Fill` holds constructs S4 writes no node for yet (QSL-1125, QSL-1126):
+    // `Fill` holds constructs S4 writes no node for yet (QSL-1126):
     // it has no clause key until it does.
     assert!(refinement.concrete_protocol().is_none());
 }
@@ -517,7 +517,7 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
 fn the_rows_select_the_concrete_protocol_and_an_unwritten_clause_has_no_node_yet() {
     let graph = checks(&unit(&fill(""), ROWS));
     let protocol = only_refinement(&graph).concrete_protocol();
-    // `Fill` holds constructs S4 writes no node for yet (QSL-1125, QSL-1126):
+    // `Fill` holds constructs S4 writes no node for yet (QSL-1126):
     // no clause key is recorded until it does.
     assert!(protocol.is_none());
     // The same key whichever way the clause and the refinement are ordered.
