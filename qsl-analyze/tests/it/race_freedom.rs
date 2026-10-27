@@ -5,6 +5,8 @@
 //! `data` then the `flag`, and the reader loads `flag` and loads `data` only
 //! in the case of a `choice` where the flag load read 1.
 
+use std::collections::{BTreeSet, VecDeque};
+
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::ModelCheckRefusal;
 
@@ -121,6 +123,16 @@ fn race_freedom_obligation(case: &Case, selection: &[MemorySelection]) -> String
 /// race-freedom items its two items over `SB` give.
 fn race_freedom_item_count(case: &Case, selection: &[MemorySelection]) -> usize {
     let accesses = case.accesses(selection);
+    race_freedom_item_count_for_access(case, selection, !accesses.non_atomic().is_empty())
+}
+
+/// FR-224's request writer when the caller has derived non-atomic access
+/// from the protocol's reachable-state classifications.
+fn race_freedom_item_count_for_access(
+    case: &Case,
+    selection: &[MemorySelection],
+    non_atomic_access: bool,
+) -> usize {
     let subject = case.subject(selection);
     let models: Vec<(String, MemoryModelName)> = subject
         .memory
@@ -131,9 +143,40 @@ fn race_freedom_item_count(case: &Case, selection: &[MemorySelection]) -> usize 
     let item = ProtocolMemoryItem {
         subject: &subject.protocol,
         models: &models,
-        non_atomic_access: !accesses.non_atomic().is_empty(),
+        non_atomic_access,
     };
     race_freedom_items(&[item, item]).len()
+}
+
+/// Whether EN-1 finds a non-atomic shared access in a reachable state.
+fn has_reachable_non_atomic_access<M: MemoryModel>(
+    case: &Case,
+    selection: &[MemorySelection],
+    memory: M,
+) -> bool {
+    let system = case.system(selection, memory).expect("protocol system");
+    let mut queue: VecDeque<_> = system.initial().into();
+    let mut seen = BTreeSet::new();
+    while let Some(state) = queue.pop_front() {
+        let (key, _) = system.state_key(&state).expect("state key");
+        if !seen.insert(key) {
+            continue;
+        }
+        let has_access = system
+            .has_non_atomic_access_at(&state)
+            .expect("state access classification");
+        if has_access {
+            return true;
+        }
+        let expansion = system.successors(&state).expect("state successors");
+        for (_, successor) in expansion.successors {
+            let (key, _) = system.state_key(&successor).expect("successor key");
+            if !seen.contains(&key) {
+                queue.push_back(successor);
+            }
+        }
+    }
+    false
 }
 
 /// Whether `transition` is the step at the node named `node`, the last
@@ -1107,6 +1150,83 @@ fn the_tso_race_summary_holds_the_typed_values_of_the_message_passing_shape() {
         relaxed.settle_race(&tso(), &outcome).label,
         ResultLabel::Refuted
     );
+}
+
+/// FR-224-AC-7: the RMW is not enabled initially; it becomes enabled only
+/// after the other branch stores `x := 1`.
+fn delayed_rmw_case(ordering: &str) -> Case {
+    let extra = "pre RmwAfterStore using v on M::Cell::add { self.id = 0 and self.v = 1 }\n";
+    let writer = format!(
+        "sequence A {{ {}{} }}",
+        load_ordered("Lx", "x", 2, ""),
+        put("Sx", "x", "release"),
+    );
+    let rmw = attempt("Rmw", "w", "Cell::add", ordering, "RmwAfterStore, AddOne");
+    let reader = format!("sequence B {{ {rmw} }}");
+    unit_with("", extra, &writer, &reader)
+}
+
+/// FR-224-AC-7 (TC-669): the RMW and its shared location count when enabled
+/// in a reachable state, even though the initial state disables it.
+#[trace("TC-669", "FR-224-AC-7")]
+#[test]
+fn a_later_enabled_rmw_creates_the_race_freedom_item_under_ra_and_tso() {
+    for selection in [&ra()[..], &tso()[..]] {
+        let acquire = delayed_rmw_case("acquire");
+        let reachable = if selection[0].model == MemoryModelName::Ra {
+            has_reachable_non_atomic_access(&acquire, selection, Ra::default())
+        } else {
+            has_reachable_non_atomic_access(&acquire, selection, Tso::default())
+        };
+        assert!(reachable, "{selection:?}");
+        assert_eq!(
+            race_freedom_item_count_for_access(&acquire, selection, reachable),
+            1
+        );
+        let outcome = acquire.check(selection, ModelCheckItem::RaceFreedom, None);
+        assert!(holds(&outcome), "{selection:?}: {outcome:?}");
+
+        let relaxed = delayed_rmw_case("relaxed");
+        let reachable = if selection[0].model == MemoryModelName::Ra {
+            has_reachable_non_atomic_access(&relaxed, selection, Ra::default())
+        } else {
+            has_reachable_non_atomic_access(&relaxed, selection, Tso::default())
+        };
+        assert!(reachable, "{selection:?}");
+        assert_eq!(
+            race_freedom_item_count_for_access(&relaxed, selection, reachable),
+            1
+        );
+        let outcome = relaxed.check(selection, ModelCheckItem::RaceFreedom, None);
+        let counterexample = violated(outcome.clone());
+        let CounterexampleKind::Race(race) = &counterexample.kind else {
+            panic!("the delayed RMW counterexample is a race: {counterexample:?}");
+        };
+        assert!(
+            matches!(
+                &race.location,
+                Location::Field { object, field }
+                    if object.object().as_str() == "x" && field.node.ends_with("/Cell/v")
+            ),
+            "{selection:?}: {:?}",
+            race.location
+        );
+        assert_eq!(
+            race.earlier,
+            position_of(&counterexample, "Lx"),
+            "{selection:?}"
+        );
+        assert_eq!(
+            race.later,
+            position_of(&counterexample, "Rmw"),
+            "{selection:?}"
+        );
+        assert_eq!(
+            relaxed.settle_race(selection, &outcome).label,
+            ResultLabel::Refuted,
+            "{selection:?}"
+        );
+    }
 }
 
 /// FR-224-AC-3 (TC-669), the `tso` half: a subject whose shared accesses are

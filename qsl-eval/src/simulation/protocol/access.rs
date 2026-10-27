@@ -222,7 +222,15 @@ impl WeakAccessShape {
         }
     }
 
-    pub(crate) fn from_failures(
+    /// Build the canonical aggregate shape from ordered or unordered failures.
+    ///
+    /// The failures are sorted by their protocol transition identity before
+    /// the headline entry and wire form are derived.
+    ///
+    /// # Errors
+    ///
+    /// [`ProtocolRefusal`] when a transition identity cannot be encoded.
+    pub fn from_failures(
         failures: Vec<WeakAccessFailure>,
     ) -> Result<Option<Self>, ProtocolRefusal> {
         let mut keyed = failures
@@ -367,12 +375,67 @@ pub(crate) struct StateWeakAccesses {
 }
 
 impl StateWeakAccesses {
+    pub(crate) fn enables(&self, node: &str, transition: &ModelTransition) -> bool {
+        self.attempts.values().any(|attempt| {
+            attempt.node == node
+                && attempt
+                    .instances
+                    .iter()
+                    .any(|instance| instance.transition == *transition)
+        })
+    }
+
     pub(crate) fn attempt(&self, key: &ThreadAttempt) -> Option<&WeakAttempt> {
         self.attempts.get(key)
     }
 
     pub(crate) fn shared(&self) -> &BTreeSet<Location> {
         &self.shared
+    }
+
+    pub(crate) fn has_non_atomic_access(&self) -> bool {
+        self.attempts.values().any(|attempt| {
+            attempt.ordering.is_none()
+                && attempt.instances.iter().any(|instance| {
+                    matches!(
+                        instance.access,
+                        InstanceAccess::Access {
+                            class: AccessClass::Load | AccessClass::Store,
+                            location: Some(_),
+                        }
+                    )
+                })
+        })
+    }
+
+    pub(crate) fn deferred_local_orderings(&self) -> Vec<(Vec<Location>, WeakAccessShape)> {
+        let mut candidates = Vec::new();
+        for attempt in self.attempts.values() {
+            let Some(ordering) = attempt.ordering else {
+                continue;
+            };
+            for instance in &attempt.instances {
+                if !matches!(
+                    instance.access,
+                    InstanceAccess::Access {
+                        class: AccessClass::Local,
+                        ..
+                    }
+                ) {
+                    continue;
+                }
+                candidates.push((
+                    instance.local.clone(),
+                    WeakAccessShape::ordering_mismatch(
+                        attempt.node.clone(),
+                        instance.transition.clone(),
+                        AccessClass::Local,
+                        Some(ordering),
+                    ),
+                ));
+            }
+        }
+        candidates
     }
 
     pub(crate) fn cell(&self, location: &Location) -> Option<&Cell> {
@@ -391,7 +454,8 @@ impl StateWeakAccesses {
                         &self.cells,
                     )),
                     InstanceAccess::Access { class, .. }
-                        if ordering_mismatch(*class, attempt.ordering) =>
+                        if *class != AccessClass::Local
+                            && ordering_mismatch(*class, attempt.ordering) =>
                     {
                         failures.push(WeakAccessShape::ordering_mismatch(
                             attempt.node.clone(),

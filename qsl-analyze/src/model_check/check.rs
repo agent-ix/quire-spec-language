@@ -83,11 +83,12 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::protocol::{
     activates_on_each, check_protocol_bounds, live_instance_bound, DataRace, MemoryModel,
     ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SubjectMemory,
+    WeakAccessShape,
 };
 use qsl_eval::simulation::{
     ConstraintValue, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, FairLoop,
-    NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup,
-    TransitionSystem, ZeroProgress, ZeroProgressError,
+    Location, NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition,
+    SymmetryGroup, TransitionSystem, ZeroProgress, ZeroProgressError,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::digest::DigestRecord;
@@ -570,6 +571,8 @@ pub fn check_model(
         edges: 0,
         horizon_cut: false,
         first_bad: None,
+        deferred_local: BTreeMap::new(),
+        shared_names: BTreeSet::new(),
         monitor: Monitor::bad_prefix(automaton, max_automaton_states)
             .map_err(|_| fault("a-safety-item-has-a-safety-automaton"))?,
         group: SymmetryGroup::default(),
@@ -939,6 +942,8 @@ impl ProtocolRun<'_> {
             edges: 0,
             horizon_cut: false,
             first_bad: None,
+            deferred_local: BTreeMap::new(),
+            shared_names: BTreeSet::new(),
             monitor: Monitor::bad_prefix(automaton, self.max_automaton_states)
                 .map_err(|_| fault("a-safety-item-has-a-safety-automaton"))?,
             group: SymmetryGroup::default(),
@@ -1101,6 +1106,8 @@ fn check_reduced(
             edges: 0,
             horizon_cut: false,
             first_bad: None,
+            deferred_local: BTreeMap::new(),
+            shared_names: BTreeSet::new(),
             monitor: Monitor::bad_prefix(automaton, max_automaton_states)
                 .map_err(|_| fault("a-safety-item-has-a-safety-automaton"))?,
             group: plan.group.clone(),
@@ -1517,6 +1524,11 @@ struct Run<'r, S: SubjectSystem> {
     /// The first bad product state created and its violation; no state is
     /// created after it.
     first_bad: Option<(usize, Box<Violation>)>,
+    /// Local ordered accesses that remain candidates until their names are
+    /// shared or the reachable graph closes (FR-220).
+    deferred_local: BTreeMap<(String, ModelTransition), DeferredLocalAccess>,
+    /// Names that EN-1 classified shared in any reachable state (FR-220).
+    shared_names: BTreeSet<Location>,
     monitor: Monitor<Box<dyn SafetyAutomaton>>,
     /// The group states are canonicalised under (FR-152); trivial with no
     /// symmetry.
@@ -1544,6 +1556,11 @@ struct Run<'r, S: SubjectSystem> {
     instance_limited: BTreeSet<DigestRecord>,
 }
 
+struct DeferredLocalAccess {
+    names: BTreeSet<Location>,
+    shape: Box<WeakAccessShape>,
+}
+
 pub(super) fn certificate_package_id(
     package: &qsl_package::CheckedPackage,
 ) -> Result<qsl_semantics::library::PackageId, ModelCheckRefusal> {
@@ -1558,6 +1575,63 @@ pub(super) fn certificate_package_id(
 }
 
 impl<S: SubjectSystem> Run<'_, S> {
+    fn record_weak_access_classification(&mut self, findings: &[ModelFinding]) -> Step<()> {
+        for finding in findings {
+            match finding {
+                ModelFinding::WeakAccessDeferred { names, shape } => {
+                    let Some(transition) = shape.transition.clone() else {
+                        return Err(fault("a-deferred-local-access-has-a-transition").into());
+                    };
+                    let candidate = self
+                        .deferred_local
+                        .entry((shape.site.clone(), transition))
+                        .or_insert_with(|| DeferredLocalAccess {
+                            names: BTreeSet::new(),
+                            shape: shape.clone(),
+                        });
+                    candidate.names.extend(names.iter().cloned());
+                }
+                ModelFinding::WeakAccessShared { location } => {
+                    self.shared_names.insert(location.clone());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn has_unresolved_local_access(&self) -> bool {
+        self.deferred_local.values().any(|candidate| {
+            !candidate
+                .names
+                .iter()
+                .any(|name| self.shared_names.contains(name))
+        })
+    }
+
+    fn deferred_local_shape(&self) -> Result<Option<WeakAccessShape>, ModelCheckRefusal> {
+        let failures = self
+            .deferred_local
+            .values()
+            .filter(|candidate| {
+                !candidate
+                    .names
+                    .iter()
+                    .any(|name| self.shared_names.contains(name))
+            })
+            .flat_map(|candidate| candidate.shape.failures.iter().cloned())
+            .collect();
+        WeakAccessShape::from_failures(failures)
+            .map_err(|_| fault("a-deferred-weak-access-shape-encodes"))
+    }
+
+    fn reachability_is_exhaustive(&self) -> bool {
+        !self.horizon_cut
+            && self.boundary == 0
+            && self.bound_limited.is_empty()
+            && self.instance_limited.is_empty()
+    }
+
     fn stats(&self) -> RunStats {
         RunStats {
             product_states: widen(self.nodes.len()),
@@ -1660,7 +1734,32 @@ impl<S: SubjectSystem> Run<'_, S> {
         &mut self,
         instances: &[Instance],
     ) -> Result<ModelCheckOutcome<S::TransitionId>, ModelCheckRefusal> {
-        match self.explore() {
+        let explored = self.explore();
+        if explored.is_ok() {
+            if self.reachability_is_exhaustive() {
+                if let Some(shape) = self.deferred_local_shape()? {
+                    return Ok(ModelCheckOutcome::Memory {
+                        cause: MemoryCause::WeakAccessShape(Box::new(shape)),
+                        stats: self.stats(),
+                    });
+                }
+            }
+            if !self.has_unresolved_local_access() {
+                if let Some((_, violation)) = self.first_bad.take() {
+                    let Violation { kind, at, binding } = *violation;
+                    let counterexample = match self.counterexample(kind, at, binding) {
+                        Ok(counterexample) => counterexample,
+                        Err(Halt::Refusal(refusal)) => return Err(refusal),
+                        Err(Halt::Finish(_)) => return Err(fault("an-unreduced-path-is-concrete")),
+                    };
+                    return Ok(ModelCheckOutcome::Violated {
+                        counterexample: Box::new(counterexample),
+                        stats: self.stats(),
+                    });
+                }
+            }
+        }
+        match explored {
             // ADR-025 MB-4: a bound-limited state settles first.
             Ok(()) => Ok(
                 if let (Some(bound), true) = (self.memory_bound, !self.bound_limited.is_empty()) {
@@ -1748,7 +1847,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         let before = vec![start; self.item.instance_count()];
         for (key, index, digest, state, permutation) in initial {
-            if self.first_bad.is_some() {
+            if self.first_bad.is_some() && !self.has_unresolved_local_access() {
                 break;
             }
             let node = Node {
@@ -1766,7 +1865,9 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         while let Some(at) = self.queue.pop_front() {
             self.poll()?;
-            if self.first_bad.as_ref().is_some_and(|(bad, _)| *bad == at) {
+            if self.first_bad.as_ref().is_some_and(|(bad, _)| *bad == at)
+                && !self.has_unresolved_local_access()
+            {
                 if let Some((_, violation)) = self.first_bad.take() {
                     return Err(Finish::Violated(violation).into());
                 }
@@ -1786,6 +1887,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 Ok(expanded) => expanded,
                 Err(stop) => return Err(self.expansion_stop(stop)),
             };
+            self.record_weak_access_classification(&expansion.findings)?;
             self.contracts(at, &expansion.findings)?;
             if cut.memory {
                 self.bound_limited.insert(self.nodes[at].digest);
@@ -1829,7 +1931,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             if terminal {
                 self.close(at)?;
             }
-            if self.first_bad.is_some() {
+            if self.first_bad.is_some() && !self.has_unresolved_local_access() {
                 continue;
             }
             let mut steps = Vec::with_capacity(expansion.successors.len());
@@ -1903,7 +2005,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     boundary: false,
                 };
                 self.create(key, node, &before, reads.next().flatten())?;
-                if self.first_bad.is_some() {
+                if self.first_bad.is_some() && !self.has_unresolved_local_access() {
                     break;
                 }
             }
@@ -2318,7 +2420,9 @@ impl<S: SubjectSystem> Run<'_, S> {
         match bad {
             Some((kind, instance)) => {
                 let binding = self.binding_of(instance);
-                self.first_bad = Some((at, Box::new(Violation { kind, at, binding })));
+                if self.first_bad.is_none() {
+                    self.first_bad = Some((at, Box::new(Violation { kind, at, binding })));
+                }
             }
             None => {
                 self.known.insert(product, at);
