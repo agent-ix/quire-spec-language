@@ -48,14 +48,14 @@ use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
 
 use crate::model::domain_package::{
-    AliasTypeRecord, AllocationRecord, ClauseRecord, ClockBoundRecord, ComponentRecord,
-    DeclaredSlot, DomainPackage, DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord,
-    Extent, FieldMemberRecord, Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType,
-    ObjectTypeRecord, OperationContractClause, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, OriginalDeclaration, PackageDimensionRecord,
-    PackageUnitRecord, PersistenceInterfaceRecord, PopulationRecord, PortDirection,
-    RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
-    ScalarTypeRecord, ScalarValueDomain, SequenceTypeRecord, ValueTypeRef, VariantRecord,
+    AliasTypeRecord, AllocationRecord, ClauseRecord, ComponentRecord, DeclaredSlot, DomainPackage,
+    DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
+    Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
+    OperationContractClause, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+    OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
+    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, SequenceTypeRecord, ValueBoundRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -3014,81 +3014,130 @@ fn read_value_type_ref(
     Ok(ValueTypeRef::Package(declaration_key(package, type_ref)))
 }
 
-/// The `min`/`max` constraints of type node `ctx` on clocks (FCD #315,
-/// FR-230 "Clock constraints on a type"): on the clock alias `alias` when
-/// it is one, which every constraint must name, or else each constraint of
-/// an object type whose `appliesTo` is `ix://quire/native/Clock`, the
-/// other constraints of an object type being outside this reading.
+/// The `min`/`max` constraints of type node `ctx` on clocks and units
+/// (FCD #315, FR-230 "Clock constraints on a type", QSpec FR-154 "Unit
+/// bounds"): on the alias `alias` of `Clock` or of a unit when it is one,
+/// which every constraint must name, or else each constraint of an object
+/// type whose `appliesTo` is `ix://quire/native/Clock` or a unit, the other
+/// constraints of an object type being outside this reading.
 ///
 /// # Errors
 ///
-/// `malformed-declaration` at a constraint of a clock alias that names
-/// another type or another keyword, and at a bound that is no canonical
-/// non-negative rational number.
+/// `malformed-declaration` at a constraint of an alias that names another
+/// type or another keyword, at a bound that is no canonical rational
+/// number (or a negative one on clocks), and at the later of a `min` above
+/// a `max` on the same type.
 #[ix_trace_rs::string_edge]
-fn read_clock_bounds(
+fn read_value_bounds(
     package: &str,
     ctx: &NodeCtx<'_>,
     at: &str,
     node: &str,
-    alias: Option<&DeclarationKey>,
+    alias: Option<(&DeclarationKey, &ValueTypeRef)>,
 ) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
-    let mut bounds = Vec::new();
+    let mut bounds: Vec<ValueBoundRecord> = Vec::new();
     for (position, constraint) in ctx.array_field("constraints")?.iter().enumerate() {
         let constraint_ctx = NodeCtx::new(constraint, format!("{at}.constraints[{position}]"));
         let applies = constraint_ctx.str_field("appliesTo")?;
-        let on_clocks = match alias {
-            Some(alias) => {
+        let target = match alias {
+            Some((alias, target)) => {
                 if declaration_key(package, applies) != *alias {
                     return Err(constraint_ctx
-                        .malformed_in("appliesTo", "a clock alias's constraint names the alias"));
+                        .malformed_in("appliesTo", "an alias's constraint names the alias"));
                 }
-                true
+                target.clone()
             }
-            None => applies == "ix://quire/native/Clock",
+            None if applies == "ix://quire/native/Clock" => ValueTypeRef::Clock,
+            None if applies.starts_with("ix://quire/unit/") => {
+                read_value_type_ref(package, &constraint_ctx, applies, false)?
+            }
+            None => continue,
         };
-        if !on_clocks {
-            continue;
-        }
         let upper = match constraint_ctx.str_field("keyword")? {
             "max" => true,
             "min" => false,
             other => {
-                return Err(constraint_ctx
-                    .malformed_in("keyword", format!("{other:?} states no bound on a clock")))
+                return Err(constraint_ctx.malformed_in(
+                    "keyword",
+                    format!("{other:?} states no bound on a clock or a quantity"),
+                ))
             }
         };
         let value = constraint
             .get("operands")
             .and_then(|operands| operands.get("value"))
             .and_then(Value::as_str)
-            .and_then(clock_bound)
+            .and_then(canonical_rational)
+            .filter(|value| target != ValueTypeRef::Clock || !value.numerator().is_negative())
             .ok_or_else(|| {
                 constraint_ctx.malformed_in(
                     "operands",
-                    "a clock bound is a canonical non-negative rational number",
+                    "a bound is a canonical rational number, never negative on clocks",
                 )
             })?;
-        bounds.push(DomainPackageRecord::ClockBound(ClockBoundRecord {
+        // QSpec FR-154-AC-29: a `min` above a `max` on the same type.
+        let crossed = bounds.iter().any(|earlier| {
+            earlier.target == target
+                && earlier.alias.as_ref() == alias.map(|(alias, _)| alias)
+                && earlier.upper != upper
+                && if upper {
+                    earlier.value > value
+                } else {
+                    value > earlier.value
+                }
+        });
+        if crossed {
+            return Err(constraint_ctx.malformed_in(
+                "operands",
+                "a `min` above a `max` on the same type admits no value",
+            ));
+        }
+        bounds.push(ValueBoundRecord {
             key: declaration_key(package, constraint_ctx.str_field("identity")?),
             owner: declaration_key(package, node),
-            alias: alias.cloned(),
+            alias: alias.map(|(alias, _)| alias.clone()),
+            target,
             upper,
             value,
-        }));
+        });
     }
-    Ok(bounds)
+    Ok(bounds
+        .into_iter()
+        .map(DomainPackageRecord::ValueBound)
+        .collect())
 }
 
-/// The canonical non-negative rational number `text` spells, `n` or
-/// `n/d`.
-fn clock_bound(text: &str) -> Option<quire_exact::Rational> {
-    let (numerator, denominator) = text.split_once('/').unwrap_or((text, "1"));
-    let numerator: i128 = numerator.parse().ok()?;
-    let denominator: i128 = denominator.parse().ok()?;
-    if numerator < 0 || denominator < 1 {
-        return None;
-    }
+/// The rational number `text` spells canonically, as a unit's `scale` is
+/// spelled: `n` or `n/d` in lowest terms with `d > 1`, no sign but a `-`
+/// on a negative `n`, no leading zero.
+fn canonical_rational(text: &str) -> Option<quire_exact::Rational> {
+    let (numerator, denominator) = match text.split_once('/') {
+        Some((numerator, denominator)) => (numerator, Some(denominator)),
+        None => (text, None),
+    };
+    let integer = |digits: &str| -> Option<i128> {
+        let unsigned = digits.strip_prefix('-').unwrap_or(digits);
+        let canonical = !unsigned.is_empty()
+            && unsigned.bytes().all(|byte| byte.is_ascii_digit())
+            && (unsigned == "0" || !unsigned.starts_with('0'))
+            && digits != "-0";
+        canonical.then(|| digits.parse().ok()).flatten()
+    };
+    let numerator = integer(numerator)?;
+    let denominator = match denominator {
+        None => 1,
+        Some(denominator) => {
+            let denominator = integer(denominator)?;
+            let (mut a, mut b) = (numerator.unsigned_abs(), denominator.unsigned_abs());
+            while b != 0 {
+                (a, b) = (b, a % b);
+            }
+            if denominator < 2 || a != 1 {
+                return None;
+            }
+            denominator
+        }
+    };
     quire_exact::Rational::new(
         quire_exact::Integer::from(numerator),
         quire_exact::Integer::from(denominator),
@@ -3222,7 +3271,7 @@ pub(super) fn read_object_type(
     }
     // A `max` constraint on `ix://quire/native/Clock` bounds every clock
     // place of the model (FR-230 "Clock constraints on a type").
-    records.extend(read_clock_bounds(package, &ctx, at, node, None)?);
+    records.extend(read_value_bounds(package, &ctx, at, node, None)?);
     Ok(())
 }
 
@@ -4335,21 +4384,17 @@ fn read_type_node(
             || !ctx.array_field("operations")?.is_empty()
             || !ctx.array_field("relationships")?.is_empty()
             || !ctx.array_field("supertypes")?.is_empty()
-            || (target != ValueTypeRef::Clock && !ctx.array_field("constraints")?.is_empty())
         {
             return Err(ctx
                 .malformed(
-                    "a clock or unit alias declares no fields, operations, relationships, supertypes, or constraints this reader reads",
+                    "a clock or unit alias declares no fields, operations, relationships or supertypes",
                 )
                 .into());
         }
-        // A clock alias's `min`/`max` constraints bound the clocks it types
-        // (FR-230 "Clock constraints on a type").
-        let bounds = if target == ValueTypeRef::Clock {
-            read_clock_bounds(package, &ctx, at, node, Some(&key))?
-        } else {
-            Vec::new()
-        };
+        // An alias's `min`/`max` constraints bound the clocks or the
+        // quantities it types (FR-230 "Clock constraints on a type", QSpec
+        // FR-154 "Unit bounds").
+        let bounds = read_value_bounds(package, &ctx, at, node, Some((&key, &target)))?;
         let mut records = vec![DomainPackageRecord::AliasType(AliasTypeRecord {
             key,
             target,
@@ -4537,7 +4582,7 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::AliasType(_)
-        | DomainPackageRecord::ClockBound(_)
+        | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)

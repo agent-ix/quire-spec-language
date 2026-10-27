@@ -454,21 +454,23 @@ pub struct AliasTypeRecord {
     pub target: ValueTypeRef,
 }
 
-/// A package constraint `min` or `max` on clocks (FCD #315, QSL FR-230
-/// "Clock constraints on a type"): on the clock alias it names, or on every
-/// clock place of the model when it names `ix://quire/native/Clock`.
+/// A package constraint `min` or `max` on clocks or on a unit (FCD #315,
+/// QSL FR-230 "Clock constraints on a type", QSpec FR-154 "Unit bounds"):
+/// on the alias it names, or on every member of `Clock` or of the unit.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClockBoundRecord {
+pub struct ValueBoundRecord {
     /// The constraint's own original declaration key.
     pub key: DeclarationKey,
     /// The type that declares the constraint.
     pub owner: DeclarationKey,
-    /// The clock alias it applies to; `None` for every clock place.
+    /// The alias it applies to; `None` for every member of `target`.
     pub alias: Option<DeclarationKey>,
-    /// `max`, an upper bound, or `min`, which a time invariant cannot state.
+    /// What it bounds: [`ValueTypeRef::Clock`] or a [`ValueTypeRef::Unit`].
+    pub target: ValueTypeRef,
+    /// `max`, an upper bound, or `min`, a lower bound.
     pub upper: bool,
-    /// The bound, an exact non-negative rational number of the model's time
-    /// unit.
+    /// The bound, an exact rational number: of the model's time unit for a
+    /// clock, never negative; of the unit for a unit.
     pub value: quire_exact::Rational,
 }
 
@@ -919,7 +921,7 @@ pub enum DomainPackageRecord {
     /// A package alias of a clock or a unit (FCD #315).
     AliasType(AliasTypeRecord),
     /// A `min` or `max` constraint on clocks (FCD #315).
-    ClockBound(ClockBoundRecord),
+    ValueBound(ValueBoundRecord),
     /// An operation member of an object type.
     OperationMember(OperationMemberRecord),
     /// FCD FR-114 component (FR-152 Part candidate).
@@ -953,7 +955,7 @@ impl DomainPackageRecord {
             Self::ScalarType(record) => &record.key,
             Self::SequenceType(record) => &record.key,
             Self::AliasType(record) => &record.key,
-            Self::ClockBound(record) => &record.key,
+            Self::ValueBound(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,

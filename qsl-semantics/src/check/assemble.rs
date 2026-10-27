@@ -1327,7 +1327,7 @@ fn model_object_types(
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
-            | DomainPackageRecord::ClockBound(_)
+            | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
             // FR-230 "Units": an alias `target` or sequence `items` naming

@@ -2363,3 +2363,102 @@ fn a_family_product_is_charged_against_max_candidates() {
         Some(qsl_eval::simulation::ExpansionLimit::MaxCandidates)
     );
 }
+
+/// Part of FR-230-AC-26 (TC-685), the run-time half of QSpec FR-154 "Unit
+/// bounds": with a field `Call.ds: Sequence<Level>`, `Level` the alias of
+/// `ix://quire/unit/ms` with the constraints `min` `"0"` and `max` `"10"`,
+/// empty in the initial state, a successor whose post-state sets `ds` to
+/// `sequence[5 ms, 11 ms]` is recorded, not pruned, as violating the `max`
+/// constraint as an invariant, checked at each element, and one that sets it
+/// to `sequence[10 ms]` (equality satisfying) or `sequence[0 ms]` records
+/// nothing; a `max` `"7"` on `ms` itself bounds `ds`'s elements as well. Not covered: the static
+/// refusal of the literal `11 ms` (QSpec FR-154-AC-31), which needs the
+/// bounded quantity value type (IR-1051), and the initial-state refusal,
+/// which waits on FR-106's Quantity snapshot form.
+#[trace("TC-685")]
+#[test]
+fn a_unit_bound_violated_by_a_successor_is_recorded_as_an_invariant() {
+    use qsl_eval::simulation::model::ModelFinding;
+    use qsl_eval::simulation::TransitionSystem;
+
+    let level = ident("Level");
+    let constraint = |owner: &str, keyword: &str, value: &str, applies: &str| {
+        json!({
+            "identity": format!("{owner}/{keyword}"), "keyword": keyword,
+            "operands": {"value": value}, "appliesTo": applies,
+            "diagnosticCode": format!("bound.{keyword}"), "origin": origin(owner),
+        })
+    };
+    let document = |on_unit: bool| {
+        let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+        let types = document["types"].as_array_mut().expect("types");
+        let mut alias = wire_type(
+            &level,
+            "unused",
+            json!({"target": "ix://quire/unit/ms", "constraints": [
+                constraint(&level, "min", "0", &level),
+                constraint(&level, "max", "10", &level),
+            ]}),
+        );
+        alias["kind"] = json!("alias");
+        types.push(alias);
+        let mut d = wire_field("d", &level);
+        d["presence"] = json!("optional");
+        types[1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(d);
+        if on_unit {
+            types[1]["constraints"] =
+                json!([constraint(&ident("Call"), "max", "7", "ix://quire/unit/ms")]);
+        }
+        for operation in types[1]["operations"].as_array_mut().expect("operations") {
+            if operation["name"] == "send" {
+                operation["frame"]["modifies"]
+                    .as_array_mut()
+                    .expect("a frame")
+                    .push(json!(ident("Call/ds")));
+            }
+        }
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let violated = |on_unit: bool, written: &str| -> Vec<String> {
+        let world = world_holding(
+            document(on_unit),
+            "",
+            &only(
+                &["send"],
+                &format!(
+                    "post Send using v on M::Call::send {{ self.ds = sequence[{written}] }}\n"
+                ),
+            ),
+            json!({"ds": {"sequence": []}}),
+        );
+        let held = system(&world);
+        let initial = held.initial().remove(0);
+        let expansion = held.successors(&initial).expect("the state expands");
+        assert!(
+            held.successors(&initial)
+                .expect("the state expands")
+                .findings
+                .is_empty(),
+            "the initial state violates nothing"
+        );
+        let [(_, post)] = &expansion.successors[..] else {
+            panic!("one successor: {:?}", expansion.successors.len());
+        };
+        held.successors(post)
+            .expect("the successor expands")
+            .findings
+            .into_iter()
+            .filter_map(|finding| match finding {
+                ModelFinding::InvariantViolated { clause, .. } => Some(clause),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(violated(false, "5 ms, 11 ms"), [format!("{level}/max")]);
+    assert!(violated(false, "10 ms").is_empty());
+    assert!(violated(false, "0 ms").is_empty());
+    assert_eq!(violated(true, "8 ms"), [format!("{}/max", ident("Call"))]);
+}

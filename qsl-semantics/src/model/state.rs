@@ -22,7 +22,8 @@ use crate::model::index::ModelIndex;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
-    AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
+    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, Observation, ObservationLimits,
+    PathStep, SelectedAnchor,
 };
 use quire_checked::key::DeclarationKey;
 
@@ -61,6 +62,81 @@ pub struct StateField {
     pub value_type: ValueType,
     /// Whether the field is declared `?` and so may be absent.
     pub optional: bool,
+}
+
+/// A `min` or `max` bound on the quantities a field holds (QSpec FR-154
+/// "Unit bounds"): read from a constraint on the unit the field is typed by,
+/// or on an alias on the way to it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberBound {
+    /// The field's own declaration key, the key a [`StateObject`] holds its
+    /// value under.
+    pub field: DeclarationKey,
+    /// The constraint's declaration key.
+    pub constraint: DeclarationKey,
+    /// `max` or `min`.
+    pub upper: bool,
+    /// The bound, a magnitude in the unit.
+    pub bound: quire_exact::Rational,
+}
+
+impl MemberBound {
+    /// The constraint's keyword, `max` or `min`.
+    pub fn keyword(&self) -> &'static str {
+        if self.upper {
+            "max"
+        } else {
+            "min"
+        }
+    }
+
+    /// The bound spelled canonically, as the constraint's `operands.value`
+    /// is: `n`, or `n/d` when the denominator is not 1.
+    pub fn canonical_bound(&self) -> String {
+        if self.bound.denominator() == &quire_exact::Integer::from(1_i64) {
+            self.bound.numerator().to_string()
+        } else {
+            self.bound.to_string()
+        }
+    }
+
+    /// Whether the quantity `value` satisfies the bound, equality
+    /// satisfying; `true` for any value that is no quantity.
+    pub fn admits(&self, value: &Value) -> bool {
+        let Value::Quantity(quantity) = value else {
+            return true;
+        };
+        if self.upper {
+            quantity.magnitude() <= &self.bound
+        } else {
+            quantity.magnitude() >= &self.bound
+        }
+    }
+
+    /// The first quantity `value` holds that violates the bound, with its
+    /// path below the field: the value itself, each element of a
+    /// collection, or the payload of a present optional value.
+    pub fn violation(&self, value: &Value) -> Option<Vec<PathStep>> {
+        match value {
+            Value::Collection(collection) => {
+                collection
+                    .elements()
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, element)| {
+                        let mut path = self.violation(element)?;
+                        path.insert(0, PathStep::Index(index));
+                        Some(path)
+                    })
+            }
+            Value::Option(option) => {
+                let mut path = self.violation(option.payload()?)?;
+                path.insert(0, PathStep::OptionValue);
+                Some(path)
+            }
+            value => (!self.admits(value)).then(Vec::new),
+        }
+    }
 }
 
 /// One population of the selected models and its declared member types.
@@ -133,14 +209,102 @@ impl StateModel {
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure> {
-        admit_initial_state(
+        let (state, anchor) = admit_initial_state(
             &self.views,
             &self.types,
             provision,
             selected,
             limits,
             self.limits.ancestor_steps,
-        )
+        )?;
+        // QSpec FR-154 "Unit bounds": a supplied value that violates a bound
+        // refuses `invalid_runtime_input`/`invalid-value`.
+        let bounds = self.member_bounds();
+        for objects in state.populations.values() {
+            for (key, object) in objects {
+                for bound in &bounds {
+                    let Some(value) = object.fields.get(&bound.field) else {
+                        continue;
+                    };
+                    if let Some(path) = bound.violation(value) {
+                        let mut record = AdmissionRecord {
+                            code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
+                            cause: "invalid-value",
+                            fields: BTreeMap::new(),
+                            path,
+                            kernel: None,
+                        };
+                        record.fields.insert("object", key.clone());
+                        record.fields.insert("field", bound.field.node.clone());
+                        record
+                            .fields
+                            .insert("constraint", bound.constraint.node.clone());
+                        record.fields.insert("keyword", bound.keyword().to_owned());
+                        record.fields.insert("bound", bound.canonical_bound());
+                        return Err(AdmissionFailure::Refused(record));
+                    }
+                }
+            }
+        }
+        Ok((state, anchor))
+    }
+
+    /// The `min`/`max` bounds on the quantities each field of the selected
+    /// models holds (QSpec FR-154 "Unit bounds"): for a field typed by the
+    /// unit `u`, directly, through aliases or as a sequence's items, every
+    /// bound on `u` itself and every bound on an alias the field's type
+    /// passes. A bound on an alias bounds no other member of `u`.
+    pub fn member_bounds(&self) -> Vec<MemberBound> {
+        use crate::model::domain_package::ValueTypeRef;
+        let mut bounds = Vec::new();
+        for view in &self.views {
+            let records = &view.view.domain_package().records;
+            let record = |key: &DeclarationKey| records.iter().find(|record| record.key() == key);
+            for field in records.iter().filter_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) => Some(field),
+                _ => None,
+            }) {
+                let mut aliases = Vec::new();
+                let mut value_type = &field.value_type;
+                let mut steps = 0_usize;
+                while let ValueTypeRef::Package(key) = value_type {
+                    steps += 1;
+                    value_type = match record(key) {
+                        Some(DomainPackageRecord::AliasType(alias)) if steps <= records.len() => {
+                            aliases.push(key);
+                            &alias.target
+                        }
+                        Some(DomainPackageRecord::SequenceType(sequence))
+                            if steps <= records.len() =>
+                        {
+                            &sequence.items
+                        }
+                        _ => break,
+                    };
+                }
+                let ValueTypeRef::Unit(unit) = value_type else {
+                    continue;
+                };
+                for record in records {
+                    let DomainPackageRecord::ValueBound(bound) = record else {
+                        continue;
+                    };
+                    let applies = match &bound.alias {
+                        Some(alias) => aliases.contains(&alias),
+                        None => bound.target == ValueTypeRef::Unit(unit.clone()),
+                    };
+                    if applies {
+                        bounds.push(MemberBound {
+                            field: field.key.clone(),
+                            constraint: bound.key.clone(),
+                            upper: bound.upper,
+                            bound: bound.value.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        bounds
     }
 
     /// The [`Observation`] of `state`, named `identity`: the object

@@ -1424,9 +1424,13 @@ impl AdmittedModel {
     /// constraints on a type").
     pub(crate) fn clock_bounds(
         &self,
-    ) -> impl Iterator<Item = &crate::model::domain_package::ClockBoundRecord> {
+    ) -> impl Iterator<Item = &crate::model::domain_package::ValueBoundRecord> {
         self.records.values().filter_map(|record| match record {
-            DomainPackageRecord::ClockBound(bound) => Some(bound),
+            DomainPackageRecord::ValueBound(bound)
+                if bound.target == crate::model::domain_package::ValueTypeRef::Clock =>
+            {
+                Some(bound)
+            }
             _ => None,
         })
     }
@@ -1660,7 +1664,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::AliasType(_)
-        | DomainPackageRecord::ClockBound(_)
+        | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)

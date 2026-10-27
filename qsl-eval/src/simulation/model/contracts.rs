@@ -117,6 +117,29 @@ pub(super) fn invariants(walk: &Walk<'_, '_>) -> Result<Vec<ModelFinding>, Expan
             }
         }
     }
+    // QSpec FR-154 "Unit bounds": a state whose value violates a bound
+    // violates the constraint as an invariant, recorded rather than pruned.
+    for bound in &system.member_bounds {
+        for row in &order {
+            let row = &walk.rows[*row];
+            let violated = walk
+                .state
+                .state
+                .populations
+                .get(&row.population)
+                .and_then(|objects| objects.get(&row.key))
+                .and_then(|object| object.fields.get(&bound.field))
+                .and_then(|value| bound.violation(value))
+                .is_some();
+            if violated {
+                findings.push(ModelFinding::InvariantViolated {
+                    clause: bound.constraint.node.clone(),
+                    self_object: row.reference.clone(),
+                    anchor: walk.state.anchor.clone(),
+                });
+            }
+        }
+    }
     Ok(findings)
 }
 
