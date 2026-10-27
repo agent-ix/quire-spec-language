@@ -231,6 +231,7 @@ pub fn classify(
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::SequenceType(_)
             | DomainPackageRecord::AliasType(_)
+            | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Population(_) => {}
         }

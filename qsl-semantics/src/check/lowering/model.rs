@@ -76,6 +76,9 @@ pub(crate) struct PackagePlace {
     /// Whether an optional member (`presence: optional`, `Option<Clock>`)
     /// is on the path.
     pub(crate) optional: bool,
+    /// The clock aliases the member holding the clock is typed by, directly
+    /// or as a sequence's items, each alias of an alias on the chain.
+    pub(crate) aliases: Vec<DeclarationKey>,
 }
 
 /// Whether `field` holds one value: multiplicity `[1, 1]`, not a collection.
@@ -1051,6 +1054,7 @@ impl AdmittedModel {
                 field: field.key.clone(),
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
+                aliases: Vec::new(),
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
         }
@@ -1085,6 +1089,25 @@ impl AdmittedModel {
         else {
             return;
         };
+        // Every alias on the way to the clock.
+        let mut named = &field.value_type;
+        let mut steps = 0_usize;
+        while let ValueTypeRef::Package(key) = named {
+            steps += 1;
+            if steps > self.records.len() {
+                break;
+            }
+            named = match self.records.get(key) {
+                Some(DomainPackageRecord::AliasType(alias)) => {
+                    at.aliases.push(key.clone());
+                    &alias.target
+                }
+                Some(DomainPackageRecord::SequenceType(sequence)) if sequence.items != *named => {
+                    &sequence.items
+                }
+                _ => break,
+            };
+        }
         for _ in 0..sequences {
             at.path.push(PlaceStep::Slot(CollectionShape {
                 ordered: true,
@@ -1221,7 +1244,14 @@ impl AdmittedModel {
             for (name, field) in self.members_of(record) {
                 let mut path = prefix.clone();
                 path.push(PlaceStep::Field(name.to_owned()));
-                match &field.value_type {
+                let named = crate::model::domain_package::unaliased(&field.value_type, |key| {
+                    self.records.get(key)
+                });
+                let value_type = match named {
+                    Some((resolved, 0)) => resolved,
+                    _ => &field.value_type,
+                };
+                match value_type {
                     ValueTypeRef::Clock => paths.push(path),
                     ValueTypeRef::Package(inner)
                         if matches!(
@@ -1395,6 +1425,21 @@ impl AdmittedModel {
         }
     }
 
+    /// The package's `min`/`max` constraints on clocks (FR-230 "Clock
+    /// constraints on a type").
+    pub(crate) fn clock_bounds(
+        &self,
+    ) -> impl Iterator<Item = &crate::model::domain_package::ValueBoundRecord> {
+        self.records.values().filter_map(|record| match record {
+            DomainPackageRecord::ValueBound(bound)
+                if bound.target == crate::model::domain_package::ValueTypeRef::Clock =>
+            {
+                Some(bound)
+            }
+            _ => None,
+        })
+    }
+
     /// The object type a type name `T` or `M::T` denotes, when exactly one
     /// object type of the package is named `T`.
     pub(crate) fn object_type_named(&self, written: &NameForm) -> Option<EffectiveId> {
@@ -1426,8 +1471,10 @@ impl AdmittedModel {
                 continue;
             }
             if !matches!(
-                field.value_type,
-                crate::model::domain_package::ValueTypeRef::Clock
+                crate::model::domain_package::unaliased(&field.value_type, |key| self
+                    .records
+                    .get(key)),
+                Some((crate::model::domain_package::ValueTypeRef::Clock, 0))
             ) {
                 return false;
             }
@@ -1623,6 +1670,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::AliasType(_)
+        | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)

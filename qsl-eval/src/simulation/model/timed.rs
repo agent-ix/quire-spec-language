@@ -872,7 +872,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             })?;
             for (object, holds) in readings {
                 if holds {
-                    bounds.extend(self.over(&object, invariant.bounds()));
+                    bounds.extend(self.over(&object, invariant.bounds(), state));
                 }
             }
         }
@@ -900,7 +900,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             for (object, holds) in readings {
                 if holds
                     && !self
-                        .over(&object, invariant.bounds())
+                        .over(&object, invariant.bounds(), &state.discrete)
                         .all(|bound| bound.holds(&state.clocks))
                 {
                     return Ok(Some(invariant.name().to_owned()));
@@ -910,18 +910,41 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         Ok(None)
     }
 
-    /// `constraints` over `object`'s places.
+    /// `constraints` over `object`'s places live at `state`: a clock place
+    /// of the object, and for a constraint whose slots are each
+    /// [`SlotRef::Family`] every live slot place of its clock
+    /// (FR-230 "Clock constraints on a type"). A place that is not live has
+    /// no value to bound.
     fn over<'c>(
         &'c self,
         object: &'c ObjectReference,
         constraints: &'c [ClockConstraint],
+        state: &'c ModelSimState,
     ) -> impl Iterator<Item = PlaceConstraint> + 'c {
-        constraints.iter().filter_map(move |constraint| {
-            Some(PlaceConstraint {
-                place: self.place(object, constraint.clock())?,
-                op: constraint.op(),
-                bound: constraint.bound().clone(),
-            })
+        constraints.iter().flat_map(move |constraint| {
+            let every_slot = !constraint.slots().is_empty()
+                && constraint
+                    .slots()
+                    .iter()
+                    .all(|slot| *slot == SlotRef::Family);
+            self.places
+                .iter()
+                .enumerate()
+                .filter(move |(_, place)| {
+                    place.clock == constraint.clock()
+                        && place.holds(object)
+                        && if every_slot {
+                            place.slots.len() == constraint.slots().len()
+                        } else {
+                            place.slots.is_empty()
+                        }
+                        && self.live(place, state)
+                })
+                .map(move |(place, _)| PlaceConstraint {
+                    place,
+                    op: constraint.op(),
+                    bound: constraint.bound().clone(),
+                })
         })
     }
 

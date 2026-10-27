@@ -441,6 +441,9 @@ pub struct ModelSystem<'a> {
     declaring: std::sync::Mutex<BTreeMap<DeclarationKey, Option<Vec<ObjectReference>>>>,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
+    /// QSpec FR-154's unit bounds on fields, each an invariant of every
+    /// state, in ascending constraint order.
+    member_bounds: Vec<qsl_semantics::model::state::MemberBound>,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -628,6 +631,16 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
+        let mut member_bounds = model.member_bounds();
+        member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
+        // A field's bounds, read on each state; a parameter's and a result's
+        // are read where an invocation supplies them.
+        member_bounds.retain(|bound| {
+            fields
+                .values()
+                .flatten()
+                .any(|field| field.key == bound.member)
+        });
         let system = Self {
             over: match selections {
                 [only] => Some(only.identity.clone()),
@@ -650,6 +663,7 @@ impl<'a> ModelSystem<'a> {
             footprints: footprints::FootprintCache::default(),
             declaring: std::sync::Mutex::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
+            member_bounds,
         };
         system.check_rewards()?;
         Ok(system)

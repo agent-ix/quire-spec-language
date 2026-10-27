@@ -24,7 +24,7 @@ use quire_checked::key::DeclarationKey;
 
 /// `attribute`'s own declaration key: its owner's key with the field name
 /// appended, the key FR-106 check 11 compares fields by.
-fn field_key(
+pub(super) fn field_key(
     views: &[ModelView],
     attribute: EffectiveAttribute<'_>,
 ) -> Result<DeclarationKey, AdmissionFailure> {

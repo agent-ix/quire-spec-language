@@ -55,7 +55,7 @@ use crate::model::domain_package::{
     OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
     PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
-    ScalarValueDomain, SequenceTypeRecord, ValueTypeRef, VariantRecord,
+    ScalarValueDomain, SequenceTypeRecord, ValueBoundRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -3014,6 +3014,138 @@ fn read_value_type_ref(
     Ok(ValueTypeRef::Package(declaration_key(package, type_ref)))
 }
 
+/// The `min`/`max` constraints of type node `ctx` on clocks and units
+/// (FCD #315, FR-230 "Clock constraints on a type", QSpec FR-154 "Unit
+/// bounds"): on the alias `alias` of `Clock` or of a unit when it is one,
+/// which every constraint must name, or else each constraint of an object
+/// type whose `appliesTo` is `ix://quire/native/Clock` or a unit, the other
+/// constraints of an object type being outside this reading.
+///
+/// # Errors
+///
+/// `malformed-declaration` at a constraint of an alias that names another
+/// type or another keyword, at a bound that is no canonical rational
+/// number (or a negative one on clocks), and at the later of a `min` above
+/// a `max` on the same type.
+#[ix_trace_rs::string_edge]
+fn read_value_bounds(
+    package: &str,
+    ctx: &NodeCtx<'_>,
+    at: &str,
+    node: &str,
+    alias: Option<(&DeclarationKey, &ValueTypeRef)>,
+) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
+    let mut bounds: Vec<ValueBoundRecord> = Vec::new();
+    for (position, constraint) in ctx.array_field("constraints")?.iter().enumerate() {
+        let constraint_ctx = NodeCtx::new(constraint, format!("{at}.constraints[{position}]"));
+        let applies = constraint_ctx.str_field("appliesTo")?;
+        let target = match alias {
+            Some((alias, target)) => {
+                if declaration_key(package, applies) != *alias {
+                    return Err(constraint_ctx
+                        .malformed_in("appliesTo", "an alias's constraint names the alias"));
+                }
+                target.clone()
+            }
+            None if applies == "ix://quire/native/Clock" => ValueTypeRef::Clock,
+            None if applies.starts_with("ix://quire/unit/") => {
+                read_value_type_ref(package, &constraint_ctx, applies, false)?
+            }
+            None => continue,
+        };
+        let upper = match constraint_ctx.str_field("keyword")? {
+            "max" => true,
+            "min" => false,
+            other => {
+                return Err(constraint_ctx.malformed_in(
+                    "keyword",
+                    format!("{other:?} states no bound on a clock or a quantity"),
+                ))
+            }
+        };
+        let value = constraint
+            .get("operands")
+            .and_then(|operands| operands.get("value"))
+            .and_then(Value::as_str)
+            .and_then(canonical_rational)
+            .filter(|value| target != ValueTypeRef::Clock || !value.numerator().is_negative())
+            .ok_or_else(|| {
+                constraint_ctx.malformed_in(
+                    "operands",
+                    "a bound is a canonical rational number, never negative on clocks",
+                )
+            })?;
+        // QSpec FR-154-AC-29: a `min` above a `max` on the same type.
+        let crossed = bounds.iter().any(|earlier| {
+            earlier.target == target
+                && earlier.alias.as_ref() == alias.map(|(alias, _)| alias)
+                && earlier.upper != upper
+                && if upper {
+                    earlier.value > value
+                } else {
+                    value > earlier.value
+                }
+        });
+        if crossed {
+            return Err(constraint_ctx.malformed_in(
+                "operands",
+                "a `min` above a `max` on the same type admits no value",
+            ));
+        }
+        bounds.push(ValueBoundRecord {
+            key: declaration_key(package, constraint_ctx.str_field("identity")?),
+            owner: declaration_key(package, node),
+            alias: alias.map(|(alias, _)| alias.clone()),
+            target,
+            upper,
+            value,
+        });
+    }
+    Ok(bounds
+        .into_iter()
+        .map(DomainPackageRecord::ValueBound)
+        .collect())
+}
+
+/// The rational number `text` spells canonically, as a unit's `scale` is
+/// spelled: `n` or `n/d` in lowest terms with `d > 1`, no sign but a `-`
+/// on a negative `n`, no leading zero.
+#[ix_trace_rs::string_edge]
+fn canonical_rational(text: &str) -> Option<quire_exact::Rational> {
+    let (numerator, denominator) = match text.split_once('/') {
+        Some((numerator, denominator)) => (numerator, Some(denominator)),
+        None => (text, None),
+    };
+    let integer = |digits: &str| -> Option<i128> {
+        let unsigned = digits.strip_prefix('-').unwrap_or(digits);
+        let canonical = !unsigned.is_empty()
+            && unsigned.bytes().all(|byte| byte.is_ascii_digit())
+            && (unsigned == "0" || !unsigned.starts_with('0'))
+            && digits != "-0";
+        canonical.then(|| digits.parse().ok()).flatten()
+    };
+    let numerator = integer(numerator)?;
+    let denominator = match denominator {
+        None => 1,
+        Some(denominator) => {
+            let denominator = integer(denominator)?;
+            let (mut a, mut b) = (numerator.unsigned_abs(), denominator.unsigned_abs());
+            while b != 0 {
+                (a, b) = (b, a % b);
+            }
+            if denominator < 2 || a != 1 {
+                return None;
+            }
+            denominator
+        }
+    };
+    quire_exact::Rational::new(
+        quire_exact::Integer::from(numerator),
+        quire_exact::Integer::from(denominator),
+    )
+    .ok()
+}
+
 #[ix_trace_rs::string_edge]
 fn read_field_member(
     package: &str,
@@ -3138,6 +3270,9 @@ pub(super) fn read_object_type(
             position,
         )?));
     }
+    // A `max` constraint on `ix://quire/native/Clock` bounds every clock
+    // place of the model (FR-230 "Clock constraints on a type").
+    records.extend(read_value_bounds(package, &ctx, at, node, None)?);
     Ok(())
 }
 
@@ -4238,6 +4373,10 @@ fn read_type_node(
             ValueTypeRef::Clock
         } else if target.starts_with("ix://quire/unit/") {
             read_value_type_ref(package, &ctx, target, false)?
+        } else if type_identity_segment(package, target).is_some() {
+            // An alias of an alias: resolved once every node is read
+            // ([`check_alias_chains`]).
+            ValueTypeRef::Package(declaration_key(package, target))
         } else {
             return Err(ctx
                 .malformed_in(
@@ -4250,18 +4389,23 @@ fn read_type_node(
             || !ctx.array_field("operations")?.is_empty()
             || !ctx.array_field("relationships")?.is_empty()
             || !ctx.array_field("supertypes")?.is_empty()
-            || !ctx.array_field("constraints")?.is_empty()
         {
             return Err(ctx
                 .malformed(
-                    "a clock or unit alias declares no fields, operations, relationships, supertypes, or constraints this reader reads",
+                    "a clock or unit alias declares no fields, operations, relationships or supertypes",
                 )
                 .into());
         }
-        return Ok(vec![DomainPackageRecord::AliasType(AliasTypeRecord {
+        // An alias's `min`/`max` constraints bound the clocks or the
+        // quantities it types (FR-230 "Clock constraints on a type", QSpec
+        // FR-154 "Unit bounds").
+        let bounds = read_value_bounds(package, &ctx, at, node, Some((&key, &target)))?;
+        let mut records = vec![DomainPackageRecord::AliasType(AliasTypeRecord {
             key,
             target,
-        })]);
+        })];
+        records.extend(bounds);
+        return Ok(records);
     }
     if type_value.get("kind").and_then(Value::as_str) == Some("sequence") {
         // FCD's core kind `sequence`: the sequence of its `items` (QSpec
@@ -4443,6 +4587,7 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::AliasType(_)
+        | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
@@ -5212,6 +5357,9 @@ fn read_nodes_partial(
         }
     }
     inherit_process_identity_fields(&mut records);
+    if refusals.is_empty() {
+        check_alias_chains(types, &mut records, &mut refusals);
+    }
     // FR-103: resolve every queued operation frame against the whole
     // package's own records, only once every node above has been read --
     // an entry may name a sibling type's field or a type declared later in
@@ -5222,6 +5370,118 @@ fn read_nodes_partial(
         resolve_pending_frames(package_identity, &pending, &mut records, &mut refusals);
     }
     (records, refusals)
+}
+
+/// The alias chains and value bounds of the package, once every node is read
+/// (QSpec FR-154 "Unit bounds", FR-230 "Clock constraints on a type"): an
+/// alias whose `target` names another alias of the package resolves through
+/// it to `Clock` or a unit, and a bound on such an alias bounds what the
+/// chain ends at; a `min` above a `max` on the same type, on any two nodes,
+/// refuses at the later constraint, in reading order.
+///
+/// Each refusal is `malformed-declaration`: at `TypeDefinition.target` for
+/// an alias whose chain ends at no clock or unit, or returns to an alias it
+/// passed; at `Constraint.operands` for a negative clock bound and for the
+/// later of a crossed pair.
+fn check_alias_chains(
+    types: &[Value],
+    records: &mut [DomainPackageRecord],
+    refusals: &mut Vec<ModelRefusal>,
+) {
+    let resolved = |records: &[DomainPackageRecord], target: &ValueTypeRef| {
+        let mut target = target.clone();
+        for _ in 0..=records.len() {
+            let ValueTypeRef::Package(key) = &target else {
+                return matches!(target, ValueTypeRef::Clock | ValueTypeRef::Unit(_))
+                    .then_some(target);
+            };
+            target = records.iter().find_map(|record| match record {
+                DomainPackageRecord::AliasType(alias) if &alias.key == key => {
+                    Some(alias.target.clone())
+                }
+                _ => None,
+            })?;
+        }
+        None
+    };
+    let node_of = |node: &DeclarationKey| {
+        types.iter().enumerate().find(|(_, value)| {
+            value.get("identity").and_then(Value::as_str) == Some(node.node.as_str())
+        })
+    };
+    let constraint_of = |owner: &DeclarationKey, key: &DeclarationKey| {
+        let (position, node) = node_of(owner)?;
+        let (index, constraint) = node
+            .get("constraints")?
+            .as_array()?
+            .iter()
+            .enumerate()
+            .find(|(_, constraint)| {
+                constraint.get("identity").and_then(Value::as_str) == Some(key.node.as_str())
+            })?;
+        Some(NodeCtx::new(
+            constraint,
+            format!("$.types[{position}].constraints[{index}]"),
+        ))
+    };
+    let snapshot: Vec<DomainPackageRecord> = records.to_vec();
+    for record in records.iter_mut() {
+        match record {
+            DomainPackageRecord::AliasType(alias) => {
+                if let ValueTypeRef::Package(_) = alias.target {
+                    if resolved(&snapshot, &alias.target).is_none() {
+                        if let Some((position, node)) = node_of(&alias.key) {
+                            refusals.push(
+                                NodeCtx::new(node, format!("$.types[{position}]")).malformed_in(
+                                    "target",
+                                    "an alias's chain ends at a clock or a unit",
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            DomainPackageRecord::ValueBound(bound) => {
+                if let ValueTypeRef::Package(_) = bound.target {
+                    if let Some(target) = resolved(&snapshot, &bound.target) {
+                        bound.target = target;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut seen: Vec<&ValueBoundRecord> = Vec::new();
+    for record in records.iter() {
+        let DomainPackageRecord::ValueBound(bound) = record else {
+            continue;
+        };
+        let negative_clock =
+            bound.target == ValueTypeRef::Clock && bound.value.numerator().is_negative();
+        let crossed = seen.iter().any(|earlier| {
+            earlier.target == bound.target
+                && earlier.alias == bound.alias
+                && earlier.upper != bound.upper
+                && if bound.upper {
+                    earlier.value > bound.value
+                } else {
+                    bound.value > earlier.value
+                }
+        });
+        if negative_clock || crossed {
+            if let Some(ctx) = constraint_of(&bound.owner, &bound.key) {
+                refusals.push(ctx.malformed_in(
+                    "operands",
+                    if crossed {
+                        "a `min` above a `max` on the same type admits no value"
+                    } else {
+                        "a clock bound is never negative"
+                    },
+                ));
+            }
+        }
+        seen.push(bound);
+    }
 }
 
 /// Resolve the authored empty identity list of a process subtype from its
@@ -6015,13 +6275,17 @@ mod tests {
         let refusals = read(serde_json::json!([bounded])).expect_err("constraints are not read");
         assert_eq!(refusals[0].code, Code::InvalidModelBinding);
         assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
-        let refusals = read(serde_json::json!([
+        read(serde_json::json!([
             alias("Level", "ix://quire/unit/ms"),
             alias("Other", "ix://acme/orders/Level"),
         ]))
-        .expect_err("an alias of a package type is not read");
-        let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &refusals[0].cause
-        else {
+        .expect("an alias of a unit alias is read");
+        let refusals = read(serde_json::json!([
+            alias("Level", "ix://quire/unit/ms"),
+            alias("Other", "ix://acme/orders/Missing"),
+        ]))
+        .expect_err("an alias of no declaration refuses");
+        let ModelRefusalCause::IntakeMissingDeclaration { member, .. } = &refusals[0].cause else {
             panic!("a malformed declaration: {refusals:?}");
         };
         assert_eq!(*member, MemberPath::type_definition().name("target"));

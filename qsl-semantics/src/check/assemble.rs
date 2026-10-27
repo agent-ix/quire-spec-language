@@ -1327,6 +1327,7 @@ fn model_object_types(
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::Relationship(_)
             | DomainPackageRecord::Population(_) => {}
             // FR-230 "Units": an alias `target` or sequence `items` naming
@@ -1438,7 +1439,12 @@ fn model_object_types(
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
         // A record's clock fields are places, not data (FR-230 "Records,
         // tuples and unions"): its declaration lists the data fields only.
-        effective_fields.retain(|field| !matches!(field.value_type, ValueTypeRef::Clock));
+        effective_fields.retain(|field| {
+            !matches!(
+                sequence_items(&field.value_type, &records),
+                ValueTypeRef::Clock
+            )
+        });
         for field in effective_fields {
             match model_field(
                 field,
