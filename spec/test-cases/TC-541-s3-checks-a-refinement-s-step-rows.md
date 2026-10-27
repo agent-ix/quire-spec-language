@@ -52,9 +52,9 @@ protocol subject over a model with operations `incA` and `incB`.
     non-Boolean field read, `CasTwice` with its `population` row written twice, and
     step 6's `Run` refinement with a row naming `Other` and no control-node
     rows; then check it with the invariant and the `Other` row removed.
-12. Emit `CasRefinesCounter` over object-type models; emit a refinement
-    whose abstract package declares two `state_machine` records; emit one
-    with a single `state_machine` on each side.
+12. Emit `CasRefinesCounter` over object-type-only models. Then declare two
+    `state_machine` records on each side, give each a corresponding `object`
+    field-set row, and emit the refinement.
 
 Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 
@@ -97,6 +97,7 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
   `CheckedRefinement`. Without the invariant and the `Other` row: the
   `population` `conflicting-binding` and `missing-name` naming the `fork`
   node.
-- Step 12: `unsupported_construct`/`declaration-form` naming the abstract side
-  and its alias, never `not-yet-implemented`; `ambiguous_declaration`/
-  `ambiguous-name` with count 2; no subject refusal with one on each side.
+- Step 12: `CasRefinesCounter` emits and reads back with its model header keys
+  and ordinary `Counter` object row, with no synthetic state-machine key.
+  The two-machine fixture emits and reads back with both field-set rows in
+  canonical order and no missing-subject or ambiguous-subject refusal.
