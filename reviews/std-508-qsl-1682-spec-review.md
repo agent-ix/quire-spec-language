@@ -64,13 +64,34 @@ but it changes the bare-enum outcome with no criterion that pins it.
 | FND-008 | low | The clock pre-state is left implicit: "The explorer does not enumerate or write a clock place as a value; FR-230's reset of it is stated by the postcondition". FR-230 "Clocks and resets" already says a clock the operation does not reset keeps its value and the snapshot carries no clock value (FR-230-AC-11: the checked `Timer` node lists `n` only). Cite that sentence so a candidate over a record with no postcondition is unambiguously the pre-state clock. The empty record and clock-only edge ("exactly one value") is stated in FR-120 and AC-23's `Stopwatch` but a record with no component at all is not tested. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:417 | missing-requirement |
 | FND-009 | low | The new value-domain text is one run-on sentence of about fifteen lines with no SHALL, mixing the list, the order, the size, the clock rule, the unbounded rule and a nested-clock-record rule; split it into one statement per rule. The FR-215 edit also adds a Clock rule to protocol binders that STD-508 (FR-120 only) and ADR-027 do not state; say so in the PR or ticket. | spec/functional/FR-215-implement-protocolsystem-as-a-transitionsystem.md:167 | wrong-requirement |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-010 | low | FR-120's last new bullet says a record or tuple has the same domain and order here and in FR-215 for every component type except a union, "which FR-215 enumerates for a protocol attempt type". FR-215 as it stands on main states neither: it has no clock-place rule, no tuple, no optional-field rule and does not mention unions (only the qsl-eval code and ADR-027 ST-11's test do). Reword to what FR-215 says (record fields: finite-field records, enum members, nested records) or restore an FR-215 sentence. The enum bullet and AC-23 also carry status prose ("before this criterion a bare enum is listed as unbounded", "QSL-580o's implementation gap"), which belongs in the ticket. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:441 | wrong-requirement |
+| FND-011 | low | AC-24 and TC-1270 step 3 read the domain of `Mix { t: Timer, b: Boolean }` but declare no field of that type, and `domains()` lists fields, so `Mix` has no root to read; make it a granted field. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:683 | wrong-requirement |
+
 ## Dispositions
 
-(none yet; review pass)
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-120's edges to FR-215 and FR-230 are now `references`; FR-215 is back to main, so no cycle and no FR-215 edge is owed. |
+| FND-002 | fixed | The enum rule is its own SHALL bullet and FR-120-AC-23 and TC-1270 step 2 pin a bare parameter, result, granted field, and a record with an enum; Color 3, Pick 3 x 2 = 6 are correct. |
+| FND-003 | fixed | AC-24 and step 3 declare `time dense unit ms`, grant `ck, sw` in `retime()` with the postcondition, and say a clock keeps its pre-state value. |
+| FND-004 | fixed | The clock-place bullet names Clock, an alias, `Option<Clock>` and a `?` field of Clock; `Sequence<Clock>`, `Sequence<Timer>` and `Reference<Clock>` are stated unbounded; a presence-optional field is absent then each value (`Note` 3 x 2 = 6). |
+| FND-005 | fixed | The "one domain" claim now excepts a union. Its remaining wording about FR-215 is FND-010. |
+| FND-006 | fixed | AC-22 gives the 7-value fields in a separate model and a two-component `R1` of 6 x 2 = 12. |
+| FND-007 | fixed | AC-25 grants `wr: Wrap2` as a field and uses `k: Integer` in `Tm`, so it no longer relies on `Text`. The FR-097-AC-2 vs FR-120 Text difference remains pre-existing and is not worsened (Text is no longer in the list). |
+| FND-008 | fixed | The bullet cites FR-230 "Records, tuples and unions" for the pre-state; `Stopwatch` and the no-component rule remain. |
+| FND-009 | fixed | The value-domain text is split into one SHALL bullet per rule; the FR-215 edit is gone. |
+| FND-010 | still-open: low, wording only; fix in this PR or accept. | The FR-215 comparison and status prose remain. |
+| FND-011 | still-open: low, wording only. | `Mix` has no granted field. |
 
 ## Verdict
 
-Changes requested: not mergeable until FND-001 to FND-005 (medium) are fixed; the
+Round 2: PASS. FND-001 to FND-009 are fixed, quire validate passes on FR-120, TC-1270 and this file, ids AC-1 to AC-21 are untouched and AC-22 to AC-25 are new (nothing on main cites them), and the new vectors' arithmetic is right. FND-010 and FND-011 (low) remain and do not block.
+
+Round 1 verdict (superseded): changes requested: not mergeable until FND-001 to FND-005 (medium) are fixed; the
 low findings should be fixed in the same round. The core rule (finite non-clock
 components enumerate, first component most significant, clock places add no factor,
 any unbounded non-clock component stays `RequiresBound`) matches STD-508, STD-493
