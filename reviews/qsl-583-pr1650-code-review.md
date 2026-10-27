@@ -64,3 +64,11 @@ Gates, run with locked-build at jobs 4 and `--all-features`:
 ## Verdict
 
 **No major bugs.** The construction, EN-6's use of it and the checker's rebuild are sound and exact on the admitted subset, and everything outside it is refused. One low documentation finding. The test-strength and AC gaps are in SR-1650002.
+
+## Dispositions
+
+Round 1 was reviewed at head 3a89853d2. It contains the fix commit 251591961; the base-only restack after it changes only `check` to `verify` in the checker.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `timed_claim.rs`, `AutomatonError::NestedIntervalShape` and `ZoneCheckRefusal::UnsupportedForm` now say "FR-242's MightyL translation of those intervals is not built yet. Remaining work: QSL-583 (583e)". None of them calls it a spec gap any more. |

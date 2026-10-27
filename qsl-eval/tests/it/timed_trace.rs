@@ -1116,30 +1116,51 @@ fn letter_of(atom_levels: &[i64], level: i64) -> Letter {
         })
 }
 
-/// Whether the evaluator refutes `fixture`'s clause on the timed lasso: at
-/// position 0 under `on origin`; under `on each`, at some position, read
-/// through enough unrolled loop iterations that every past window of at
-/// most 3 ms has settled.
+/// Whether the evaluator refutes `fixture`'s clause on the timed lasso of
+/// `stamps` (quarters), `levels`, re-entering `loop_start` `period`
+/// quarters after it: at position 0 under `on origin`; under `on each`, at
+/// some position. The evaluator reads a position past the represented
+/// trace at its settled loop copy, so the lasso is first written with its
+/// loop unrolled 12 times, the same timed word with every earlier copy
+/// represented: a past window of at most 3 ms over a loop of at least
+/// 1/4 ms has settled by then.
 fn evaluator_refutes(
     fixture: &Fixture,
     body: &str,
-    trace: &TimedTrace,
-    letters: &mut Levels<'_>,
-    length: usize,
+    stamps: &[u64],
+    levels: &[i64],
     loop_start: usize,
+    period: u64,
 ) -> bool {
     let each = matches!(fixture.clause.activation(), Activation::Each { .. });
-    let last = if each {
-        length + 16 * (length - loop_start)
-    } else {
-        1
+    let copies = if each { 12 } else { 0 };
+    let (mut long_stamps, mut long_levels) = (stamps.to_vec(), levels.to_vec());
+    for copy in 1..=copies {
+        for at in loop_start..stamps.len() {
+            long_stamps.push(stamps[at] + copy * period);
+            long_levels.push(levels[at]);
+        }
+    }
+    let long_start =
+        loop_start + usize::try_from(copies).expect("small") * (stamps.len() - loop_start);
+    let trace = TimedTrace::lasso(
+        long_stamps.iter().copied().map(quarters).collect(),
+        u64::try_from(long_start).expect("small"),
+        quarters(period),
+    )
+    .expect("a timed lasso");
+    let mut letters = Levels {
+        fixture,
+        levels: long_levels.clone(),
+        undefined_at: None,
     };
+    let last = if each { long_stamps.len() } else { 1 };
     (0..last).any(|position| {
         match evaluate_timed_at(
             &fixture.clause,
-            trace,
+            &trace,
             TemporalPosition::new(u64::try_from(position).expect("small")),
-            letters,
+            &mut letters,
             &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
         )
         .expect("the lasso is readable")
@@ -1180,18 +1201,7 @@ fn agreement(
             .iter()
             .map(|level| letter_of(&atom_levels, *level))
             .collect();
-        let trace = TimedTrace::lasso(
-            stamps.iter().copied().map(quarters).collect(),
-            u64::try_from(loop_start).expect("small"),
-            quarters(period),
-        )
-        .expect("a timed lasso");
-        let mut letters = Levels {
-            fixture,
-            levels: levels.clone(),
-            undefined_at: None,
-        };
-        let refuted = evaluator_refutes(fixture, body, &trace, &mut letters, length, loop_start);
+        let refuted = evaluator_refutes(fixture, body, &stamps, &levels, loop_start, period);
         assert_eq!(
             claim_accepts(&mut claim, &stamps, &word, loop_start, period),
             refuted,

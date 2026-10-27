@@ -49,3 +49,15 @@ The four deferrals:
 ## Verdict
 
 **No major gaps, and no soundness issues.** Fix FND-001 (a cheap regression vector) and FND-003 in this PR. FND-002 needs a ticket for the unbuilt MightyL work rather than a spec-gap label. FND-004 and FND-005 are low.
+
+## Dispositions
+
+Round 1 was reviewed at head 3a89853d2 (fix commit 251591961).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `the_subsumption_rules_answer_to_the_evaluator` runs `eventually (p and eventually[0,1] q)`, the `until` form and the `always[0,1]` form under `on origin` and `on each`, on 1,000 lassos each. I re-ran the release-keeps-older mutant: it now fails both this test and `the_timed_claim_automaton_agrees_under_each_activation`. With the mutant reverted, all 18 `timed_trace` tests pass. |
+| FND-002 | fixed | QSL-583 comment 7ad71aa8 makes 583e the owner of general nested MightyL. STD-493 comment 086c74fa is rewritten: the only spec gap left is a punctual interval started at many positions inside a TT-2 window. |
+| FND-003 | fixed | EN-6 runs `check_model_bounds` before exploring anything and refuses `ZoneCheckRefusal::RequiresBound` (renamed from `Unbounded`) or `Extent`. `an_unbounded_root_requires_a_bound` (`Settles` over an `Rpc` whose `send` takes `n: Integer`) passes; qsl-analyze `zone_` is 87/87. |
+| FND-004 | fixed | `the_timed_claim_automaton_agrees_under_each_activation` runs 100 random formulas × 40 lassos, with the oracle "violated at some position". |
+| FND-005 | fixed | Deferral (c) is recorded on QSL-583 (comment 7ad71aa8) as remaining work that needs FR-236's stutter-delay lasso form. |
