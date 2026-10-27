@@ -13,7 +13,11 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{
     Admission, BodyFactory, CallFailure, Evaluation, Progress, Registry, Session, Signature,
 };
-use quire_exact::{Meter, NodeKey, Origin as OccurrenceOrigin, Role, Value};
+use quire_exact::{
+    Identifier, Meter, NodeKey, Origin as OccurrenceOrigin, Role, UnionMember, Value, ValueType,
+    VariantId,
+};
+use quire_semantic_value::declaration::CompositeShape;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -23,6 +27,122 @@ use crate::compile::{recompile_unit, CompiledPackage};
 use crate::request::StageLimits;
 use crate::spine::DependencyInput;
 use crate::DigestRecord;
+
+/// The checked form of a nominal declaration available through the closure facade.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NominalDeclarationForm {
+    /// A record with ordered named fields.
+    Record,
+    /// A tuple with ordered zero-based positions.
+    Tuple,
+    /// A union with ordered, sealed variants.
+    Union,
+}
+
+/// One checked member of a nominal declaration, in source order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NominalDeclarationMember {
+    /// A record field and its exact admitted type.
+    RecordField {
+        /// The field's checked identifier.
+        identifier: Identifier,
+        /// The field's exact admitted value type.
+        value_type: ValueType,
+    },
+    /// A tuple position and its exact admitted type.
+    TuplePosition {
+        /// The zero-based position in the checked tuple.
+        position: usize,
+        /// The position's exact admitted value type.
+        value_type: ValueType,
+    },
+    /// A union member with the sealed identity, variant and ordered payload types.
+    UnionMember {
+        /// The checked sealed member binding; clone it to preserve its identity.
+        member: UnionMember,
+        /// The exact variant identity carried by values of this member.
+        variant: VariantId,
+        /// The member's payload types in declared order.
+        payload: Vec<ValueType>,
+    },
+}
+
+/// An immutable view of one owner-authored checked nominal declaration.
+/// Consumers cannot forge one:
+///
+/// ```compile_fail
+/// fn forge(package_id: qsl_replay::DigestRecord, node: quire_exact::NodeKey) {
+///     let _ = qsl_replay::NominalDeclaration {
+///         package_id,
+///         node,
+///         key: node,
+///         qualified_name: vec![],
+///         form: qsl_replay::NominalDeclarationForm::Record,
+///         members: vec![],
+///     };
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NominalDeclaration {
+    package_id: DigestRecord,
+    node: NodeKey,
+    key: NodeKey,
+    qualified_name: Vec<Identifier>,
+    form: NominalDeclarationForm,
+    members: Vec<NominalDeclarationMember>,
+}
+
+impl NominalDeclaration {
+    /// The package that checked and owns this declaration.
+    pub fn package_id(&self) -> DigestRecord {
+        self.package_id
+    }
+
+    /// The exact checked `composite_type` node id.
+    pub fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    /// The exact admitted kernel declaration key used by `ValueType::Composite`.
+    pub fn key(&self) -> NodeKey {
+        self.key
+    }
+
+    /// The checked qualified declaration name.
+    pub fn qualified_name(&self) -> &[Identifier] {
+        &self.qualified_name
+    }
+
+    /// The checked declaration form.
+    pub fn form(&self) -> NominalDeclarationForm {
+        self.form
+    }
+
+    /// Every checked member in its declared order.
+    pub fn members(&self) -> &[NominalDeclarationMember] {
+        &self.members
+    }
+}
+
+/// Why a checked nominal declaration view could not be issued.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum NominalDeclarationRefusal {
+    /// The selection was issued by a different checked acquisition.
+    #[error("selection belongs to another checked acquisition")]
+    WrongAcquisition,
+    /// The node is owned by exactly one other package in the closure.
+    #[error("nominal declaration belongs to another package {0:?}")]
+    Foreign(DigestRecord),
+    /// No declaration reachable from this selected callable was found.
+    #[error("unknown nominal declaration")]
+    Unknown,
+    /// The selected package owns the node, but it is not a composite declaration.
+    #[error("node is not a nominal composite declaration")]
+    WrongKind,
+    /// Checked node metadata and the owner's admitted declaration disagree.
+    #[error("checked nominal declaration data is inconsistent")]
+    Inconsistent,
+}
 
 type Adapter = PackageClosure<Arc<CheckedPackage>, Arc<CheckedExpression>>;
 
@@ -138,6 +258,134 @@ impl CheckedClosureHandle {
         }
     }
 
+    /// Read one checked nominal declaration reachable from `selection`'s
+    /// signature, from the exact package that owns that callable. The view
+    /// retains the check-minted node, declaration and union-member identities;
+    /// it exposes no checked graph and carries no application authority.
+    pub fn nominal_declaration(
+        &self,
+        selection: &CallableSelection,
+        declaration: WireNodeId,
+    ) -> Result<NominalDeclaration, NominalDeclarationRefusal> {
+        if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
+            return Err(NominalDeclarationRefusal::WrongAcquisition);
+        }
+        let packages = self.closure_packages();
+        let Some(owner) = packages
+            .iter()
+            .find(|(id, _)| *id == selection.owner_package_id)
+            .map(|(_, package)| *package)
+        else {
+            return Err(NominalDeclarationRefusal::Unknown);
+        };
+        let Some(node) = owner
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .find(|node| node.key().as_bytes() == declaration.as_bytes())
+        else {
+            let foreign: Vec<_> = packages
+                .iter()
+                .filter(|(id, package)| {
+                    *id != selection.owner_package_id && has_node(package, declaration)
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            return match foreign.as_slice() {
+                [package] => Err(NominalDeclarationRefusal::Foreign(*package)),
+                _ => Err(NominalDeclarationRefusal::Unknown),
+            };
+        };
+        let graph = owner.graph();
+        let Some(checked) = graph.checked_type_node(node.key()) else {
+            return if node.node_tag() == qsl_semantics::check::NodeTag::CompositeType {
+                Err(NominalDeclarationRefusal::Inconsistent)
+            } else {
+                Err(NominalDeclarationRefusal::WrongKind)
+            };
+        };
+        let qsl_semantics::check::CheckedTypeNode::Composite {
+            node: checked_node,
+            declaration: key,
+            form,
+        } = checked
+        else {
+            return Err(NominalDeclarationRefusal::WrongKind);
+        };
+        if *checked_node != node.key()
+            || node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
+        {
+            return Err(NominalDeclarationRefusal::Inconsistent);
+        }
+        let Some(qualified_name) = node.declaration() else {
+            return Err(NominalDeclarationRefusal::Inconsistent);
+        };
+        let Some(composite) = graph.scope().types().composite(*key) else {
+            return Err(NominalDeclarationRefusal::Inconsistent);
+        };
+        if !composite_form_matches(*form, composite.shape()) {
+            return Err(NominalDeclarationRefusal::Inconsistent);
+        }
+        let reachable = reachable_composites(graph, &selection.signature)
+            .map_err(|()| NominalDeclarationRefusal::Inconsistent)?;
+        if !reachable.contains(key) {
+            return Err(NominalDeclarationRefusal::Unknown);
+        }
+        let members = match composite.shape() {
+            CompositeShape::Record(fields) => fields
+                .iter()
+                .map(|field| {
+                    let identifier = Identifier::new(field.name())
+                        .map_err(|_| NominalDeclarationRefusal::Inconsistent)?;
+                    Ok(NominalDeclarationMember::RecordField {
+                        identifier,
+                        value_type: field.value_type().clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, NominalDeclarationRefusal>>()?,
+            CompositeShape::Tuple(positions) => positions
+                .iter()
+                .enumerate()
+                .map(
+                    |(position, value_type)| NominalDeclarationMember::TuplePosition {
+                        position,
+                        value_type: value_type.clone(),
+                    },
+                )
+                .collect(),
+            CompositeShape::Union(members) => members
+                .iter()
+                .map(|member| {
+                    let binding = member
+                        .member()
+                        .ok_or(NominalDeclarationRefusal::Inconsistent)?;
+                    if binding.declaration() != *checked_node
+                        || binding.identifier() != member.identifier()
+                    {
+                        return Err(NominalDeclarationRefusal::Inconsistent);
+                    }
+                    Ok(NominalDeclarationMember::UnionMember {
+                        member: binding.clone(),
+                        variant: binding.variant(),
+                        payload: member.positions().to_vec(),
+                    })
+                })
+                .collect::<Result<Vec<_>, NominalDeclarationRefusal>>()?,
+        };
+        Ok(NominalDeclaration {
+            package_id: selection.owner_package_id,
+            node: *checked_node,
+            key: *key,
+            qualified_name: qualified_name.to_vec(),
+            form: match form {
+                qsl_semantics::check::CompositeForm::Record => NominalDeclarationForm::Record,
+                qsl_semantics::check::CompositeForm::Tuple => NominalDeclarationForm::Tuple,
+                qsl_semantics::check::CompositeForm::Union => NominalDeclarationForm::Union,
+            },
+            members,
+        })
+    }
+
     /// Issue the checked source location of one nested `call` expression inside
     /// the selected caller's checked body, minted from this acquisition's
     /// retained closure. The result is a pure function of the acquisition, the
@@ -232,6 +480,97 @@ fn has_node(package: &CheckedPackage, node: WireNodeId) -> bool {
         .semantic_graph()
         .nodes()
         .any(|candidate| candidate.key().as_bytes() == node.as_bytes())
+}
+
+/// Collect the composite declaration keys reachable through one admitted
+/// signature and its nested record, tuple and union members. Any broken link
+/// in the checked owner's own descriptor makes the result inconsistent.
+fn reachable_composites(
+    graph: &qsl_semantics::check::CheckedGraph,
+    signature: &Signature,
+) -> Result<BTreeSet<NodeKey>, ()> {
+    let mut pending = signature
+        .parameters()
+        .iter()
+        .chain(std::iter::once(signature.result()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut reachable = BTreeSet::new();
+    while let Some(value_type) = pending.pop() {
+        match &value_type {
+            ValueType::Option(payload) => pending.push((**payload).clone()),
+            ValueType::Collection(collection) => pending.push(collection.element().clone()),
+            ValueType::Composite(key) => {
+                if !reachable.insert(*key) {
+                    continue;
+                }
+                let checked = graph
+                    .checked_type_nodes()
+                    .find(|type_node| {
+                        matches!(type_node, qsl_semantics::check::CheckedTypeNode::Composite { declaration, .. } if *declaration == *key)
+                    })
+                    .ok_or(())?;
+                let qsl_semantics::check::CheckedTypeNode::Composite {
+                    node,
+                    declaration,
+                    form,
+                } = checked
+                else {
+                    return Err(());
+                };
+                if *declaration != *key
+                    || graph.semantic_graph().node(*node).is_none_or(|node| {
+                        node.node_tag() != qsl_semantics::check::NodeTag::CompositeType
+                    })
+                {
+                    return Err(());
+                }
+                let composite = graph.scope().types().composite(*key).ok_or(())?;
+                if !composite_form_matches(*form, composite.shape()) {
+                    return Err(());
+                }
+                match composite.shape() {
+                    CompositeShape::Record(fields) => {
+                        pending.extend(fields.iter().map(|field| field.value_type().clone()));
+                    }
+                    CompositeShape::Tuple(positions) => pending.extend(positions.iter().cloned()),
+                    CompositeShape::Union(members) => {
+                        for member in members {
+                            if member.member().is_none_or(|binding| {
+                                binding.declaration() != *node
+                                    || binding.identifier() != member.identifier()
+                            }) {
+                                return Err(());
+                            }
+                            pending.extend(member.positions().iter().cloned());
+                        }
+                    }
+                }
+            }
+            ValueType::Boolean
+            | ValueType::Integer
+            | ValueType::Int(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Quantity(_)
+            | ValueType::Text(_)
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Enum(_)
+            | ValueType::Reference(_)
+            | ValueType::Population(_) => {}
+        }
+    }
+    Ok(reachable)
+}
+
+fn composite_form_matches(
+    form: qsl_semantics::check::CompositeForm,
+    shape: &CompositeShape,
+) -> bool {
+    qsl_semantics::check::CompositeForm::from(shape) == form
 }
 
 /// The refusal for a node the caller's package lacks: its one actual owner, and
@@ -1804,5 +2143,305 @@ mod tests {
             NestedCallSiteRefusal::UnknownCall
         );
         assert_eq!(foreign_or_unknown(&[]), NestedCallSiteRefusal::UnknownCall);
+    }
+
+    #[trace("TC-1263", "FR-485-AC-13", "FR-485-AC-14")]
+    #[test]
+    fn nominal_declaration_views_preserve_checked_members_and_identity() {
+        use crate::{NominalDeclarationForm, NominalDeclarationMember};
+        use quire_exact::{Presence, ValueType};
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+            UnionMemberDeclaration,
+        };
+
+        let source = format!(
+            "{HEADER}tuple Pair(Boolean, Integer);\nunion Shape {{ Empty, Circle(Integer), Boxed(Pair, Boolean) }}\nrecord Holder {{ flag: Boolean; pair: Pair; shape: Shape; }}\nfunction consume using v(x: Holder): Boolean pure {{ true }}\n"
+        );
+        let acquired = acquire(&source, &DependencyInput::default());
+        let handle = acquired.handle();
+        let graph = handle.package.graph();
+        let selection = handle
+            .lookup_callable(handle.package_id, wire(&handle.package, "consume"))
+            .expect("the function selection is checked");
+        let composite_id = |name: &str| {
+            let node = graph
+                .semantic_graph()
+                .nodes()
+                .find(|node| {
+                    node.declaration()
+                        .and_then(|name| name.last())
+                        .is_some_and(|segment| segment.as_str() == name)
+                })
+                .expect("composite node");
+            WireNodeId::from_digest(*node.key().as_bytes())
+        };
+
+        let holder_id = composite_id("Holder");
+        let holder = handle
+            .nominal_declaration(&selection, holder_id)
+            .expect("the signature's record declaration is available");
+        assert_eq!(holder.package_id(), handle.package_id());
+        assert_eq!(holder.node().as_bytes(), holder_id.as_bytes());
+        assert_eq!(holder.form(), NominalDeclarationForm::Record);
+        assert_eq!(holder.qualified_name().last().unwrap().as_str(), "Holder");
+        let [NominalDeclarationMember::RecordField {
+            identifier: flag,
+            value_type: ValueType::Boolean,
+        }, NominalDeclarationMember::RecordField {
+            identifier: pair_name,
+            value_type: ValueType::Composite(pair_key),
+        }, NominalDeclarationMember::RecordField {
+            identifier: shape_name,
+            value_type: ValueType::Composite(_),
+        }] = holder.members()
+        else {
+            panic!("record members preserve their checked declaration order and types");
+        };
+        assert_eq!(flag.as_str(), "flag");
+        assert_eq!(pair_name.as_str(), "pair");
+        assert_eq!(shape_name.as_str(), "shape");
+
+        let pair_id = composite_id("Pair");
+        let pair = handle
+            .nominal_declaration(&selection, pair_id)
+            .expect("the nested tuple is reachable through Holder");
+        assert_eq!(pair.form(), NominalDeclarationForm::Tuple);
+        assert_eq!(
+            pair.members(),
+            &[
+                NominalDeclarationMember::TuplePosition {
+                    position: 0,
+                    value_type: ValueType::Boolean,
+                },
+                NominalDeclarationMember::TuplePosition {
+                    position: 1,
+                    value_type: ValueType::Integer,
+                },
+            ]
+        );
+
+        let shape_id = composite_id("Shape");
+        let shape = handle
+            .nominal_declaration(&selection, shape_id)
+            .expect("the nested union is reachable through Holder");
+        assert_eq!(shape.form(), NominalDeclarationForm::Union);
+        let [NominalDeclarationMember::UnionMember {
+            member: empty_member,
+            variant: empty_variant,
+            payload: empty_payload,
+        }, NominalDeclarationMember::UnionMember {
+            member: circle_member,
+            variant: circle_variant,
+            payload: circle_payload,
+        }, NominalDeclarationMember::UnionMember {
+            member: boxed_member,
+            variant: boxed_variant,
+            payload: boxed_payload,
+        }] = shape.members()
+        else {
+            panic!("union view retains each sealed member in declared order");
+        };
+        assert_eq!(empty_member.identifier().as_str(), "Empty");
+        assert_eq!(empty_member.variant(), *empty_variant);
+        assert!(empty_payload.is_empty());
+        assert_eq!(circle_member.identifier().as_str(), "Circle");
+        assert_eq!(circle_member.variant(), *circle_variant);
+        assert_eq!(circle_payload, &[ValueType::Integer]);
+        assert_eq!(boxed_member.identifier().as_str(), "Boxed");
+        assert_eq!(boxed_member.variant(), *boxed_variant);
+        assert_eq!(
+            boxed_payload,
+            &[ValueType::Composite(pair.key()), ValueType::Boolean]
+        );
+
+        // The returned checked record and tuple data is directly usable by the
+        // nominal environment constructor, without inventing member data.
+        let types = TypeEnvironment::new(
+            [
+                CompositeDeclaration::new(
+                    pair.key(),
+                    "Pair",
+                    CompositeShape::Tuple(
+                        pair.members()
+                            .iter()
+                            .map(|member| match member {
+                                NominalDeclarationMember::TuplePosition { value_type, .. } => {
+                                    value_type.clone()
+                                }
+                                _ => unreachable!("tuple view has tuple members"),
+                            })
+                            .collect(),
+                    ),
+                ),
+                CompositeDeclaration::new(
+                    holder.key(),
+                    "Holder",
+                    CompositeShape::Record(
+                        holder
+                            .members()
+                            .iter()
+                            .map(|member| match member {
+                                NominalDeclarationMember::RecordField {
+                                    identifier,
+                                    value_type,
+                                } => FieldDeclaration::new(
+                                    identifier.as_str(),
+                                    value_type.clone(),
+                                    Presence::Required,
+                                ),
+                                _ => unreachable!("record view has record members"),
+                            })
+                            .collect(),
+                    ),
+                ),
+                CompositeDeclaration::new(
+                    shape.key(),
+                    "Shape",
+                    CompositeShape::Union(
+                        shape
+                            .members()
+                            .iter()
+                            .map(|member| {
+                                let NominalDeclarationMember::UnionMember {
+                                    member, payload, ..
+                                } = member
+                                else {
+                                    unreachable!("union view has union members")
+                                };
+                                UnionMemberDeclaration::resolved(
+                                    member.identifier().clone(),
+                                    payload.clone(),
+                                )
+                            })
+                            .collect(),
+                    ),
+                ),
+            ],
+            [],
+        )
+        .expect("checked facade data constructs a nominal environment");
+        let mut types = types;
+        types
+            .seal_union_verified(
+                shape.key(),
+                shape.node(),
+                shape
+                    .members()
+                    .iter()
+                    .map(|member| {
+                        let NominalDeclarationMember::UnionMember { member, .. } = member else {
+                            unreachable!("union view has union members")
+                        };
+                        member.clone()
+                    })
+                    .collect(),
+            )
+            .expect("the retained union bindings seal the declared union");
+        assert_eq!(types.composite(holder.key()).unwrap().name(), "Holder");
+        assert_eq!(types.composite(shape.key()).unwrap().name(), "Shape");
+        assert_eq!(*pair_key, pair.key());
+        assert_eq!(holder.members().len(), 3);
+    }
+
+    #[trace("TC-1263", "FR-485-AC-13", "FR-485-AC-14")]
+    #[test]
+    fn nominal_declaration_views_are_acquisition_and_owner_bound() {
+        let dependency = SuppliedLibrary {
+            identity: "test/nominal".to_owned(),
+            source: identity("nominal-lib"),
+            path: "nominal-lib.native".to_owned(),
+            bytes: format!(
+                "{HEADER}record Imported {{ flag: Boolean; }}\nfunction imported using v(x: Imported): Boolean pure {{ true }}\n"
+            )
+            .into_bytes(),
+        };
+        let dependencies = DependencyInput::new([dependency]).expect("dependency");
+        let source = format!(
+            "{HEADER}import \"test/nominal\" as n;\nrecord OwnData {{ datum: Integer; }}\nfunction own_fn using v(x: OwnData): Boolean pure {{ true }}\n"
+        );
+        let acquired = acquire(&source, &dependencies);
+        let handle = acquired.handle();
+        let own_selection = handle
+            .lookup_callable(handle.package_id, wire(&handle.package, "own_fn"))
+            .expect("own callable");
+        let own_id = handle
+            .package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .find(|node| {
+                node.declaration()
+                    .and_then(|name| name.last())
+                    .is_some_and(|name| name.as_str() == "OwnData")
+            })
+            .map(|node| WireNodeId::from_digest(*node.key().as_bytes()))
+            .expect("own composite");
+        assert!(handle.nominal_declaration(&own_selection, own_id).is_ok());
+
+        let (dependency_id, dependency) = handle
+            .package
+            .dependencies()
+            .iter()
+            .next()
+            .expect("dependency package");
+        let dependency_record = dependency_id.record();
+        let imported_node = dependency
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .find(|node| {
+                node.declaration()
+                    .and_then(|name| name.last())
+                    .is_some_and(|name| name.as_str() == "Imported")
+            })
+            .map(|node| WireNodeId::from_digest(*node.key().as_bytes()))
+            .expect("imported composite");
+        assert_eq!(
+            handle.nominal_declaration(&own_selection, imported_node),
+            Err(NominalDeclarationRefusal::Foreign(dependency_record))
+        );
+        let imported_selection = handle
+            .lookup_callable(dependency_record, wire(dependency, "imported"))
+            .expect("imported callable selection");
+        let imported_view = handle
+            .nominal_declaration(&imported_selection, imported_node)
+            .expect("imported owner's declaration");
+        assert_eq!(imported_view.package_id(), dependency_record);
+        assert_ne!(imported_view.package_id(), handle.package_id());
+
+        let function_node = wire(&handle.package, "own_fn");
+        assert_eq!(
+            handle.nominal_declaration(&own_selection, function_node),
+            Err(NominalDeclarationRefusal::WrongKind)
+        );
+        assert_eq!(
+            handle.nominal_declaration(&own_selection, WireNodeId::from_digest([0xA5; 32]),),
+            Err(NominalDeclarationRefusal::Unknown)
+        );
+        let other_acquisition = acquire(&source, &dependencies);
+        assert_eq!(
+            other_acquisition
+                .handle()
+                .nominal_declaration(&own_selection, own_id),
+            Err(NominalDeclarationRefusal::WrongAcquisition)
+        );
+    }
+
+    #[trace("TC-1263", "FR-485-AC-14")]
+    #[test]
+    fn nominal_declaration_rejects_inconsistent_checked_form() {
+        assert!(!composite_form_matches(
+            qsl_semantics::check::CompositeForm::Union,
+            &CompositeShape::Record(vec![]),
+        ));
+        assert!(!composite_form_matches(
+            qsl_semantics::check::CompositeForm::Record,
+            &CompositeShape::Tuple(vec![]),
+        ));
+        assert!(!composite_form_matches(
+            qsl_semantics::check::CompositeForm::Tuple,
+            &CompositeShape::Union(vec![]),
+        ));
     }
 }
