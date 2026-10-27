@@ -112,6 +112,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid
@@ -120,6 +121,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
+        | ValueType::Map(_)
         | ValueType::Population(_) => None,
     }
 }

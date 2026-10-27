@@ -2332,3 +2332,84 @@ fn integer_literals_are_inline_operands_of_integer_equality() {
     assert_eq!(node["body"]["arguments"][1]["term"], "reference");
     assert_holds(graph.semantic_graph(), "L1");
 }
+
+/// A lowering over an empty scope, run through `body`.
+fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
+    let scope = empty_scope();
+    let owner = SourceOwner::from(&fixture_source());
+    let lock = LockEvidence::default();
+    let mut occurrences = OccurrenceMap::default();
+    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
+    let mut lowering = Lowering::new(
+        &scope,
+        &owner,
+        &[],
+        scope.types().units().clone(),
+        &lock,
+        0,
+        &mut occurrences,
+        &mut meter,
+        qsl_foundation::IdentityLimits::default(),
+    );
+    body(&mut lowering)
+}
+
+fn map_of(values: ValueType) -> ValueType {
+    ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)))
+}
+
+fn bounded_metre() -> ValueType {
+    ValueType::BoundedQuantity(std::sync::Arc::new(
+        quire_exact::BoundedQuantityType::new(metre(), None, None).expect("an unbounded type"),
+    ))
+}
+
+fn metre() -> quire_exact::UnitId {
+    quire_exact::UnitId::compound([5; 32])
+}
+
+/// No checked type node carries a map or a bounded quantity yet (quire-exact
+/// FR-386 and FR-387): building one refuses `TypeMismatch`, never a guessed
+/// node and never a panic. No QSL criterion governs this defensive refusal.
+#[test]
+fn a_map_and_a_bounded_quantity_have_no_type_node() {
+    for value_type in [map_of(ValueType::Boolean), bounded_metre()] {
+        let refusal = with_lowering(|lowering| {
+            lowering
+                .type_node(&value_type, &generated_location())
+                .expect_err("no type node")
+        });
+        assert!(
+            matches!(
+                refusal.cause,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+            ),
+            "{:?}",
+            refusal.cause
+        );
+    }
+}
+
+/// A map has no equality (QSpec FR-149 states none): `OperatorIneligible`.
+/// A bounded quantity is compared as `Quantity<u>` (quire-semantic-value
+/// FR-127 item 6), so it lowers to the same equality as the quantity.
+#[test]
+fn equality_refuses_a_map_and_reads_a_bounded_quantity_as_its_quantity() {
+    with_lowering(|lowering| {
+        let location = generated_location();
+        let refusal = lowering
+            .equality(&map_of(ValueType::Boolean), "eq", &location)
+            .expect_err("a map has no equality");
+        assert!(matches!(
+            refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible)
+        ));
+        let bounded = lowering
+            .equality(&bounded_metre(), "eq", &location)
+            .expect("a bounded quantity compares as its quantity");
+        let plain = lowering
+            .equality(&ValueType::Quantity(metre()), "eq", &location)
+            .expect("a quantity compares");
+        assert_eq!(format!("{bounded:?}"), format!("{plain:?}"));
+    });
+}

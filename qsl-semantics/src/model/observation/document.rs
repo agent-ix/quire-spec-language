@@ -2009,6 +2009,8 @@ fn missing_wire_form(value_type: &quire_exact::ValueType) -> Option<&'static str
             quire_exact::ValueType::Decimal(_) => return Some("Decimal"),
             quire_exact::ValueType::Float(_) => return Some("Float"),
             quire_exact::ValueType::Quantity(_) => return Some("Quantity"),
+            quire_exact::ValueType::BoundedQuantity(_) => return Some("BoundedQuantity"),
+            quire_exact::ValueType::Map(_) => return Some("Map"),
             quire_exact::ValueType::Population(_) => return Some("Population"),
             quire_exact::ValueType::Option(payload) => pending.push(payload),
             quire_exact::ValueType::Collection(collection) => pending.push(collection.element()),
@@ -2044,6 +2046,7 @@ fn unsupported_collection_element(value_type: &quire_exact::ValueType) -> Option
                 pending.push(collection.element());
             }
             quire_exact::ValueType::Option(payload) => pending.push(payload),
+            quire_exact::ValueType::Map(map) => pending.push(map.values()),
             quire_exact::ValueType::Boolean
             | quire_exact::ValueType::Integer
             | quire_exact::ValueType::Int(_)
@@ -2051,6 +2054,7 @@ fn unsupported_collection_element(value_type: &quire_exact::ValueType) -> Option
             | quire_exact::ValueType::Decimal(_)
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::BoundedQuantity(_)
             | quire_exact::ValueType::Text(_)
             | quire_exact::ValueType::String
             | quire_exact::ValueType::Uuid
@@ -2097,6 +2101,7 @@ fn contains_population(value_type: &quire_exact::ValueType) -> bool {
             quire_exact::ValueType::Population(_) => return true,
             quire_exact::ValueType::Option(payload) => pending.push(payload),
             quire_exact::ValueType::Collection(collection) => pending.push(collection.element()),
+            quire_exact::ValueType::Map(map) => pending.push(map.values()),
             _ => {}
         }
     }
@@ -2950,6 +2955,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             quire_exact::ValueType::Reference(_) => return true,
             quire_exact::ValueType::Option(inner) => current = inner,
             quire_exact::ValueType::Collection(collection) => current = collection.element(),
+            quire_exact::ValueType::Map(map) => current = map.values(),
             quire_exact::ValueType::Boolean
             | quire_exact::ValueType::Integer
             | quire_exact::ValueType::Int(_)
@@ -2957,6 +2963,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Decimal(_)
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::BoundedQuantity(_)
             | quire_exact::ValueType::Text(_)
             | quire_exact::ValueType::String
             | quire_exact::ValueType::Enum(_)
@@ -3275,6 +3282,9 @@ fn widen_range(value_type: &quire_exact::ValueType) -> quire_exact::ValueType {
                 collection.bound(),
             ))
         }
+        quire_exact::ValueType::Map(map) => quire_exact::ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(widen_range(map.values()), map.bound()),
+        )),
         other => other.clone(),
     }
 }
