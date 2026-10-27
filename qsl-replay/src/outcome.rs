@@ -835,6 +835,11 @@ impl OutcomeDiagnostic {
         self.cause
     }
 
+    /// The diagnostic's typed position, when present.
+    pub fn locus(&self) -> Option<&OutcomeLocus> {
+        self.locus.as_ref()
+    }
+
     /// The message.
     pub fn message(&self) -> &str {
         &self.message

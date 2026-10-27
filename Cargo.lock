@@ -1478,6 +1478,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-inspect"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-analyze",
+ "qsl-cst",
+ "qsl-eval",
+ "qsl-forms",
+ "qsl-foundation",
+ "qsl-package",
+ "qsl-replay",
+ "qsl-semantics",
+ "quire-contract-model",
+ "quire-exact",
+ "quire-semantic-value",
+]
+
+[[package]]
 name = "qsl-package"
 version = "0.1.0"
 dependencies = [

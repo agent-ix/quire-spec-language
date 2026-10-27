@@ -73,3 +73,40 @@ The two surviving mutants are a test gap. It is recorded in SR-1667002 FND-001.
 ## Verdict
 
 No soundness bug. The construction is exact, and its copy bounds are correct and tight. The code-review findings are all low.
+
+## Dispositions, round 1 (head 856f4f859)
+
+
+Round 1. Fix 090a00698; head 856f4f859, retargeted to main.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `ClockLimit` is now refused alike: `UnsupportedForm` by EN-6 and `UnsupportedItem` by the checker (`a_claim_past_the_clock_limit_is_refused_alike`). |
+| FND-002 | fixed | The early refusal names a lower bound, `2 * floor`, saturated. The message reads "at least". `[100 ms, 101 ms]` gives 200, asserted. |
+| FND-003 | deferred, accepted | Slots are zone clock indices, so canonicalising them means renaming clocks on edges. This is performance only, with no effect on what the automaton accepts. Deferring it does not block. |
+
+**Verdict: mergeable.**
+
+Gates at 856f4f859 (locked-build, jobs 4, `--all-features`, QSPEC_DIR at origin/main 60383a35):
+- fmt: exit 0.
+- qsl-eval `timed_trace`: 19/19.
+- qsl-analyze `zone_`: 91/91.
+- qsl-replay `certificate`: 27/27.
+- clippy on qsl-eval, qsl-analyze and qsl-replay with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: '| AutomatonError::ClockLimit { .. } => ZoneCheckRefusal::UnsupportedForm,'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'return Err(AutomatonError::ClockLimit { clocks: floor.saturating_mul(2), limit: MAX_CLOCKS });'
+- fnd: FND-003
+  outcome: deferred
+  reason: 'Performance only (equivalent states differ by slot permutation); slots are zone clock indices, so normalising needs clock renaming on edges. Accepted as a deferral.'
+```
+
++++
