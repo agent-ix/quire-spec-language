@@ -368,6 +368,7 @@ fn is_symbol(production: Production) -> bool {
             | Production::ImportDeclaration
             | Production::Model
             | Production::DimensionDeclaration
+            | Production::DimensionEquivalence
             | Production::UnitDeclaration
             | Production::EnumDeclaration
             | Production::RecordDeclaration

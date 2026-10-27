@@ -9,7 +9,7 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`ExprNode::children`] lists the children.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
@@ -1765,17 +1765,50 @@ impl Expression {
     /// first as every tree is. `None` when `root` or a leaf is no node of
     /// this arena, or a replacement has children.
     pub fn cut(&self, root: ExprId, leaves: &BTreeMap<ExprId, ExprNode>) -> Option<Self> {
+        self.cut_removing(root, leaves, &BTreeSet::new())
+    }
+
+    /// [`Self::cut`], with each node of `removed` dropped together with its
+    /// descendants: a removed node must be the value of a record literal's
+    /// field initializer, and that initializer is dropped from the literal.
+    /// `None` as for [`Self::cut`], or when a removed node is no such value.
+    pub fn cut_removing(
+        &self,
+        root: ExprId,
+        leaves: &BTreeMap<ExprId, ExprNode>,
+        removed: &BTreeSet<ExprId>,
+    ) -> Option<Self> {
         if leaves.values().any(|leaf| !leaf.children().is_empty()) {
             return None;
         }
         let mut kept = Vec::new();
+        let mut dropped = 0;
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
             let node = self.nodes.get(id.0)?;
             kept.push(id);
-            if !leaves.contains_key(&id) {
-                pending.extend(node.children());
+            if leaves.contains_key(&id) {
+                continue;
             }
+            for child in node.children() {
+                if !removed.contains(&child) {
+                    pending.push(child);
+                    continue;
+                }
+                let ExprNode::Record { fields, .. } = node else {
+                    return None;
+                };
+                if !fields
+                    .iter()
+                    .any(|(_, value)| *value == FieldInitializer::Value(child))
+                {
+                    return None;
+                }
+                dropped += 1;
+            }
+        }
+        if dropped != removed.len() {
+            return None;
         }
         kept.sort_unstable();
         let mut renumbered = vec![None; self.nodes.len()];
@@ -1788,11 +1821,79 @@ impl Expression {
                 Some(leaf) => leaf.clone(),
                 None => {
                     let mut copy = self.nodes[id.0].clone();
+                    if let ExprNode::Record { fields, .. } = &mut copy {
+                        fields.retain(|(_, value)| match value {
+                            FieldInitializer::Value(child) => !removed.contains(child),
+                            FieldInitializer::Null => true,
+                        });
+                    }
                     copy.shift_children(|child| renumbered[child.0].unwrap_or(ExprId(usize::MAX)));
                     copy
                 }
             })
             .collect();
+        Some(Self { nodes })
+    }
+
+    /// The tree under `root`, each node `grafts` names replaced, with its
+    /// descendants, by the whole tree it maps to. Nodes keep their relative
+    /// order and each grafted tree its own, so the copy is numbered children
+    /// first as every tree is. `None` when `root` is no node of this arena or
+    /// a grafted tree is malformed.
+    pub fn graft(&self, root: ExprId, grafts: &BTreeMap<ExprId, &Expression>) -> Option<Self> {
+        /// One source node to copy, and whether its children are copied.
+        struct Pending<'a> {
+            tree: &'a Expression,
+            id: ExprId,
+            expanded: bool,
+        }
+        let mut nodes: Vec<ExprNode> = Vec::new();
+        // The new id of each copied node whose parent is not yet copied, in
+        // copy order: a node's children are the last of them when it is
+        // copied.
+        let mut done: Vec<ExprId> = Vec::new();
+        let mut pending = vec![Pending {
+            tree: self,
+            id: root,
+            expanded: false,
+        }];
+        while let Some(Pending { tree, id, expanded }) = pending.pop() {
+            let (tree, id) = match grafts.get(&id) {
+                Some(grafted) if !expanded && std::ptr::eq(tree, self) => {
+                    (*grafted, grafted.root_id())
+                }
+                _ => (tree, id),
+            };
+            let node = tree.nodes.get(id.0)?;
+            let children = node.children();
+            if !expanded {
+                pending.push(Pending {
+                    tree,
+                    id,
+                    expanded: true,
+                });
+                for child in children.into_iter().rev() {
+                    pending.push(Pending {
+                        tree,
+                        id: child,
+                        expanded: false,
+                    });
+                }
+                continue;
+            }
+            let first = done.len().checked_sub(children.len())?;
+            let renumbered: BTreeMap<ExprId, ExprId> =
+                children.into_iter().zip(done.drain(first..)).collect();
+            let mut copy = node.clone();
+            copy.shift_children(|child| {
+                renumbered
+                    .get(&child)
+                    .copied()
+                    .unwrap_or(ExprId(usize::MAX))
+            });
+            done.push(ExprId(nodes.len()));
+            nodes.push(copy);
+        }
         Some(Self { nodes })
     }
 
@@ -2487,6 +2588,55 @@ pub struct DimensionForm {
     pub name: DeclaredName,
     /// The terms in source order; empty when no `=` is written.
     pub terms: Vec<DimensionTermForm>,
+}
+
+/// `dimension A ~ B by x U = y V;` (FR-091 "Dimension-equivalence form"):
+/// the two dimension names and the two ratio terms as written, resolved,
+/// reordered and reduced by nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DimensionEquivalenceForm {
+    /// The two dimension names, in source order.
+    pub dimensions: [NameForm; 2],
+    /// The two ratio terms of the `by` clause, in source order.
+    pub ratio: [RatioTermForm; 2],
+    /// The span of the declaration.
+    pub span: Span,
+}
+
+/// One side `x U` of a dimension equivalence's `by` clause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RatioTermForm {
+    /// The ratio number `x`.
+    pub number: RatioNumberForm,
+    /// The unit name `U`, as written.
+    pub unit: NameForm,
+    /// The span of the term.
+    pub span: Span,
+}
+
+/// Which spelling a [`RatioNumberForm`] was written in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RatioNumberKind {
+    /// An unsigned integer, its value over 1.
+    Integer,
+    /// `rational(numerator, denominator)`.
+    Rational,
+    /// `decimal(coefficient, scale)`.
+    Decimal,
+}
+
+/// A ratio number as written: its spelling kind and its two parts
+/// (numerator and denominator, or coefficient and scale).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RatioNumberForm {
+    /// The spelling kind.
+    pub kind: RatioNumberKind,
+    /// The numerator, or the coefficient.
+    pub first: Integer,
+    /// The denominator, or the scale.
+    pub second: Integer,
+    /// The span of the number.
+    pub span: Span,
 }
 
 /// Which spelling an [`ExactNumberForm`] was written in.
@@ -3418,10 +3568,23 @@ impl ExpressionForm {
     /// span. `None` when the spans do not fit the expression, a node is
     /// not of this tree, or a replacement has children.
     pub fn cut(&self, root: ExprId, leaves: &BTreeMap<ExprId, ExprNode>) -> Option<Self> {
+        self.cut_removing(root, leaves, &BTreeSet::new())
+    }
+
+    /// [`Self::cut`], with each record-literal field value of `removed`
+    /// dropped from its literal ([`Expression::cut_removing`]).
+    pub fn cut_removing(
+        &self,
+        root: ExprId,
+        leaves: &BTreeMap<ExprId, ExprNode>,
+        removed: &BTreeSet<ExprId>,
+    ) -> Option<Self> {
         let replaced = leaves.keys().copied().collect();
         Some(Self {
-            expression: self.expression.cut(root, leaves)?,
-            spans: self.spans.cut(&self.expression, root, &replaced)?,
+            expression: self.expression.cut_removing(root, leaves, removed)?,
+            spans: self
+                .spans
+                .cut_removing(&self.expression, root, &replaced, removed)?,
         })
     }
 
@@ -4503,6 +4666,8 @@ pub enum DeclarationForm {
     Enum(EnumForm),
     /// A `dimension` declaration.
     Dimension(DimensionForm),
+    /// A `dimension A ~ B by x U = y V;` declaration.
+    DimensionEquivalence(Box<DimensionEquivalenceForm>),
     /// A `unit` declaration, boxed to keep the declaration sum compact.
     Unit(Box<UnitForm>),
     /// An `invariant`, `pre` or `post` state clause, boxed for the same

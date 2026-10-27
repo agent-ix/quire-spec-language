@@ -22,11 +22,12 @@ use super::dispatch::{Construct, FormsCause, FormsRefusal};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType, CaseForm,
-    DeclarationForm, DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
-    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExprId,
-    ExprNode, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm,
-    PopulationForm, QuantityForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    DeclarationForm, DeclarationKind, DeclaredName, DimensionEquivalenceForm, DimensionForm,
+    DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm,
+    ExactValueKind, ExprId, ExprNode, Expression, ExpressionBuilder, FieldInitializer,
+    FunctionDeclaration, NameForm, PopulationForm, QuantityForm, RatioNumberForm, RatioNumberKind,
+    RatioTermForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator, TupleForm, TypeForm,
+    TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -324,6 +325,9 @@ pub(crate) fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, F
 pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
+    if node.production() == Production::DimensionEquivalence {
+        return dimension_equivalence(cst, node);
+    }
     let items = items(cst, node);
     let mut terms = Vec::new();
     let mut operator = None;
@@ -357,6 +361,59 @@ pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, For
         name: declared_name(&items, node)?,
         terms,
     }))
+}
+
+/// `dimension A ~ B by x U = y V;` (FR-091 "Dimension-equivalence form"):
+/// the names and ratio terms as written.
+fn dimension_equivalence(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<DeclarationForm, FormsRefusal> {
+    let items = items(cst, node);
+    let [first, second] = nodes_of(&items, Production::QualifiedName)[..] else {
+        return Err(unexpected(node));
+    };
+    let [left, right] = nodes_of(&items, Production::RatioTerm)[..] else {
+        return Err(unexpected(node));
+    };
+    Ok(DeclarationForm::DimensionEquivalence(Box::new(
+        DimensionEquivalenceForm {
+            dimensions: [name_form(cst, first)?, name_form(cst, second)?],
+            ratio: [ratio_term(cst, left)?, ratio_term(cst, right)?],
+            span: node.span(),
+        },
+    )))
+}
+
+/// A `RatioTerm` node: a ratio number and a unit name.
+fn ratio_term(cst: &LosslessCst, term: &CstNode) -> Result<RatioTermForm, FormsRefusal> {
+    let items = items(cst, term);
+    let number = match items.first() {
+        Some(Item::Node(number)) if number.production() == Production::ExactNumber => {
+            let number = exact_number(cst, number)?;
+            RatioNumberForm {
+                kind: match number.kind {
+                    ExactNumberKind::Rational => RatioNumberKind::Rational,
+                    ExactNumberKind::Decimal => RatioNumberKind::Decimal,
+                },
+                first: number.first,
+                second: number.second,
+                span: number.span,
+            }
+        }
+        Some(Item::Token(token)) if token.kind() == TokenKind::Integer => RatioNumberForm {
+            kind: RatioNumberKind::Integer,
+            first: integer(&text(token, term)?, term)?,
+            second: Integer::one(),
+            span: token.span(),
+        },
+        _ => return Err(unexpected(term)),
+    };
+    Ok(RatioTermForm {
+        number,
+        unit: name_form(cst, only(&items, Production::QualifiedName, term)?)?,
+        span: term.span(),
+    })
 }
 
 /// An `ExactNumber` node as written.
@@ -1198,6 +1255,8 @@ impl<'c> Mapping<'c> {
             | Production::TextProfile
             | Production::DimensionDeclaration
             | Production::DimensionTerm
+            | Production::DimensionEquivalence
+            | Production::RatioTerm
             | Production::UnitDeclaration
             | Production::EnumDeclaration
             | Production::EnumMember
@@ -1886,6 +1945,8 @@ impl<'c> Mapping<'c> {
             | Production::TextProfile
             | Production::DimensionDeclaration
             | Production::DimensionTerm
+            | Production::DimensionEquivalence
+            | Production::RatioTerm
             | Production::UnitDeclaration
             | Production::EnumDeclaration
             | Production::EnumMember

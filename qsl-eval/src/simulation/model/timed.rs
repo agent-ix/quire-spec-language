@@ -34,8 +34,8 @@ use quire_semantic_value::catalog::UndefinedReason;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::{
-    CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ModelTimeSource, TimeSourceKind,
-    TimedModel, Urgency,
+    CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ModelTimeSource, PlaceStep,
+    TimeSourceKind, TimedModel, Urgency,
 };
 
 use super::encode::declaration_text;
@@ -668,10 +668,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             })?,
                         };
                         if data {
-                            clause_parts.push(
-                                self.over(&vector.receiver, part.clocks())
-                                    .collect::<Vec<_>>(),
-                            );
+                            clause_parts.push(self.placed(
+                                state,
+                                &vector.receiver,
+                                part.clocks(),
+                            )?);
                         }
                     }
                     parts = parts
@@ -736,6 +737,74 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
         let steps = keyed.into_iter().map(|(_, step)| step).collect();
         Ok(steps)
+    }
+
+    /// `constraints` of an operation's guard part over places, each of
+    /// `receiver`'s own clock or of the object `receiver` reaches at `state`
+    /// through the constraint's reference fields (FR-230-AC-10).
+    ///
+    /// # Errors
+    ///
+    /// A broken-invariant [`ExpansionStop`] when a reference field does not
+    /// resolve to a present object of the universe, which FR-120's closure
+    /// of a required single reference rules out.
+    fn placed(
+        &self,
+        state: &ModelSimState,
+        receiver: &ObjectReference,
+        constraints: &[ClockConstraint],
+    ) -> Result<Vec<PlaceConstraint>, ExpansionStop> {
+        constraints
+            .iter()
+            .map(|constraint| {
+                let place = self
+                    .holder(state, receiver, constraint.via())
+                    .and_then(|holder| self.place(&holder, constraint.clock()))
+                    .filter(|place| {
+                        constraint.via().is_empty()
+                            || self
+                                .places
+                                .get(*place)
+                                .is_some_and(|held| held.present(state))
+                    })
+                    .ok_or_else(|| stop(BROKEN))?;
+                Ok(PlaceConstraint {
+                    place,
+                    op: constraint.op(),
+                    bound: constraint.bound().clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// The object `object` reaches at `state` through the reference fields
+    /// `via`, each a required single reference: `object` itself for none.
+    fn holder(
+        &self,
+        state: &ModelSimState,
+        object: &ObjectReference,
+        via: &[PlaceStep],
+    ) -> Option<ObjectReference> {
+        let model = &self.system.model;
+        let mut at = object.clone();
+        for PlaceStep::Field(name) in via {
+            // The object is held under its key in the population whose
+            // objects its universe names.
+            let stored = state.state().populations.values().find_map(|objects| {
+                let stored = objects.get(at.object().as_str())?;
+                let reference = model
+                    .object_reference(&stored.type_identity, at.object().as_str())
+                    .ok()?;
+                (reference.universe() == at.universe()).then_some(stored)
+            })?;
+            let fields = model.fields(&stored.type_identity).ok()??;
+            let field = fields.iter().find(|field| field.name == *name)?;
+            match stored.fields.get(&field.key)? {
+                quire_exact::Value::Reference(next) => at = next.clone(),
+                _ => return None,
+            }
+        }
+        Some(at)
     }
 
     /// `predicate` at `state` with `self` bound to `object`.
@@ -832,7 +901,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// FR-236's post-state digest of `state`: the canonical identity of its
     /// model state (FR-181's `simulation-state`) together with its exact
-    /// clock valuation, each clock named by its object and field. A clock of
+    /// clock valuation, each clock named by its object, the field it is
+    /// under and its path below the object (FR-230 "Places"). A clock of
     /// an object the state does not hold has no value and is left out
     /// (STD-493's byte form).
     ///
@@ -850,20 +920,29 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .zip(state.clocks.values())
             .filter(|(place, _)| place.present(&state.discrete))
             .map(|(place, value)| {
-                let field = self
-                    .model
-                    .clock(place.clock)
-                    .map_or(super::encode::Enc::Null, |field| {
-                        super::encode::declaration_enc(field.field())
-                    });
+                let (field, path) = self.model.clock(place.clock).map_or(
+                    (super::encode::Enc::Null, super::encode::Enc::Null),
+                    |field| {
+                        (
+                            super::encode::declaration_enc(field.field()),
+                            super::encode::Enc::Array(
+                                field.path().iter().map(place_step_enc).collect(),
+                            ),
+                        )
+                    },
+                );
                 super::encode::Enc::tagged(
                     "clock",
                     vec![
                         ("object", super::encode::reference_enc(&place.object)),
                         ("field", field),
+                        ("path", path),
                         (
                             "value",
-                            super::encode::value_enc(&quire_exact::Value::Rational(value.clone())),
+                            super::encode::value_enc(
+                                &quire_exact::Value::Rational(value.clone()),
+                                self.system.typing(),
+                            ),
                         ),
                     ],
                 )
@@ -874,7 +953,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             vec![
                 (
                     "state",
-                    super::encode::model_key(&self.system.model, state.discrete.state()).0,
+                    super::encode::model_key(
+                        &self.system.model,
+                        state.discrete.state(),
+                        self.system.typing(),
+                    )
+                    .0,
                 ),
                 ("clocks", super::encode::Enc::Array(clocks)),
             ],
@@ -1080,6 +1164,55 @@ impl TimedBehaviour {
     }
 }
 
+/// How a temporal clause reads a timed behaviour (FR-231 "Quiescent states
+/// and the idle tail", "Untimed reading"): a position trace for an untimed
+/// claim, or a time-stamped trace for a claim under the timed profile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BehaviourReading {
+    /// The positions an ADR-018 claim reads, with the clock valuation part
+    /// of each position's state.
+    Untimed(crate::temporal::TemporalTrace),
+    /// The time-stamped positions a claim under the timed profile reads.
+    Timed(crate::temporal::TimedTrace),
+}
+
+impl TimedBehaviour {
+    /// The trace a temporal clause checked under `profile` reads this
+    /// behaviour as (FR-231). Under a bounded profile (event-position or
+    /// fixed-sample false extension, or a finite window) the idle tail
+    /// closes the execution at its last discrete step: the closed trace of
+    /// its positions. Under infinite-trace the quiescent last state's
+    /// stutter step repeats forever: the lasso looping on the last position.
+    /// Under the timed profile, the timed lasso of [`Self::timed_trace`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::timed_trace`] with the idle tail, for infinite-trace and
+    /// the timed profile.
+    pub fn clause_reading(
+        &self,
+        system: &TimedSystem<'_, '_>,
+        profile: qsl_semantics::check::TemporalProfile,
+    ) -> Result<BehaviourReading, MoveRefusal> {
+        let len = u64::try_from(self.positions.len()).unwrap_or(u64::MAX);
+        if profile.is_bounded() {
+            return Ok(BehaviourReading::Untimed(
+                crate::temporal::TemporalTrace::Finite { len },
+            ));
+        }
+        let timed = self.timed_trace(system, true)?;
+        if profile == qsl_semantics::check::TemporalProfile::Timed {
+            return Ok(BehaviourReading::Timed(timed));
+        }
+        Ok(BehaviourReading::Untimed(
+            crate::temporal::TemporalTrace::Lasso {
+                prefix: len.saturating_sub(1),
+                loop_len: 1,
+            },
+        ))
+    }
+}
+
 /// The letters of one checked temporal clause over a timed behaviour: a
 /// position reads its model state, and a position past the represented
 /// behaviour the state it wraps to on the idle tail's loop.
@@ -1147,4 +1280,13 @@ impl<L: crate::model_subject::ModelLetters> crate::temporal::TemporalLetters
             .letters
             .captures(self.instance, self.state_at(position), meter)?)
     }
+}
+
+/// One step of a clock place's path in the state digest's byte form.
+fn place_step_enc(step: &qsl_semantics::check::PlaceStep) -> super::encode::Enc {
+    let qsl_semantics::check::PlaceStep::Field(name) = step;
+    super::encode::Enc::tagged(
+        "field",
+        vec![("name", super::encode::Enc::text(name.as_str()))],
+    )
 }
