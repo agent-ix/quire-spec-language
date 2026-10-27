@@ -71,3 +71,9 @@ Judgement on each deferral:
 | FND-002 | fixed | QSL-580's comment of 2026-10-26 21:10 records that FR-245-AC-3's source-edit half is pending 580d. |
 | FND-003 | fixed | `assert_edges_cover` now runs on the tick-source, `tt`-profile, `lock(false)`, deadlock and TT-2 proofs (16 sites). |
 | FND-004 | fixed | `a_successor_is_matched_by_its_post_state`, `a_deadlock_is_not_hidden_by_coverage`, `an_admitted_path_is_one_some_behaviour_takes`, `a_zeno_set_is_bounded_by_its_own_invariants` and `every_constant_is_exact_at_the_scale` carry the five probes. All pass. |
+
+### Round 2
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-005 | fixed | `a_cycle_that_leaves_a_clock_unreset_is_accepted` accepts the drifting-clock model's honest certificates for the clause and the deadlock-freedom item, and stops with `CertificateMaxEdges` when the budget is the listed edges alone. `an_identity_mismatch_names_both_identities` covers the identity refusal. |
