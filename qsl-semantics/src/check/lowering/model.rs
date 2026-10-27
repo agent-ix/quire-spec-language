@@ -632,6 +632,25 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// Every state-machine declaration of this package and its effective
+    /// identity. Refinement field-set rows address these declarations through
+    /// the same field type environment as object-type rows.
+    pub(crate) fn state_machine_types(
+        &self,
+    ) -> impl Iterator<Item = (&DeclarationKey, EffectiveId)> {
+        self.types
+            .iter()
+            .filter(|(_, key)| {
+                matches!(self.records.get(*key), Some(DomainPackageRecord::StateMachine(_)))
+                    // A refinement object row maps a state-machine *field
+                    // set*. A machine with no fields has no such set to map.
+                    && self.records.values().any(|record| {
+                        matches!(record, DomainPackageRecord::FieldMember(field) if &field.owner == *key)
+                    })
+            })
+            .map(|(id, key)| (key, *id))
+    }
+
     /// Every semantic object-type model node in this selected package, in
     /// declaration-key order. FR-230 resolves a time-source alias only when
     /// this package names exactly one such node.
@@ -674,14 +693,6 @@ impl AdmittedModel {
         let declaring = self.effective_id(&operation.owner)?;
         let name = crate::model::intake::member_identity_name(&operation.owner.node, &key.node)?;
         Some((declaring, name.to_owned()))
-    }
-
-    /// How many `state_machine` records this package declares.
-    pub(crate) fn state_machine_count(&self) -> usize {
-        self.records
-            .values()
-            .filter(|record| matches!(record, DomainPackageRecord::StateMachine(_)))
-            .count()
     }
 
     /// The content key of the package's sole state-machine declaration.
