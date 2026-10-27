@@ -36,11 +36,11 @@ use qsl_semantics::check::{
 };
 use quire_exact::{Cancel, Meter, Rational};
 
-use super::certificate::{Proof, ZoneCertificate};
+use super::certificate::Proof;
 use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
-use super::window::{Read, Stamp, WindowClaim};
 use super::{scale_constants, Bound, Dbm, DbmError};
+use qsl_eval::automaton::{Read, Stamp, WindowClaim, WindowFault, WindowRefusal};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 
 /// FR-239's budgets.
@@ -213,7 +213,7 @@ pub enum ZoneCheckOutcome<S> {
     /// time-divergent behaviour.
     Holds {
         /// FR-244's certificate, built from the retained graph.
-        certificate: Box<ZoneCertificate<S>>,
+        certificate: Box<qsl_replay::ZoneCertificate<ItemObligation<S>>>,
         /// The run's counts.
         stats: ZoneStats,
     },
@@ -267,6 +267,16 @@ pub enum ZoneCheckRefusal {
     /// An invariant of the engine broke.
     #[error("the zone engine broke an invariant: {0}")]
     Fault(&'static str),
+}
+
+impl From<WindowRefusal> for ZoneCheckRefusal {
+    fn from(refusal: WindowRefusal) -> Self {
+        match refusal {
+            WindowRefusal::UnsupportedForm => Self::UnsupportedForm,
+            WindowRefusal::NestedWindow => Self::NestedWindow,
+            WindowRefusal::FormulaNode | WindowRefusal::Broken(_) => Self::Fault("window-formula"),
+        }
+    }
 }
 
 impl From<DbmError> for ZoneCheckRefusal {
@@ -474,7 +484,18 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         limits: ZoneCheckLimits,
         cancel: &'r Cancel,
     ) -> Self {
-        let (scale, lower, upper) = scaled_bounds(timed, window.as_ref());
+        let (scale, mut lower, mut upper) = scaled_bounds(timed, window.as_ref());
+        if claim.is_none() {
+            // FR-232's deadlocks are not preserved by the aLU simulation:
+            // the deadlock-freedom item covers under the aM bisimulation,
+            // `L = U = max(L, U)` per clock, which its certificate's
+            // checker reads (FR-245).
+            for (lower, upper) in lower.iter_mut().zip(&mut upper) {
+                let most = lower.clone().max(upper.clone());
+                lower.clone_from(&most);
+                *upper = most;
+            }
+        }
         let pieces = match (&window, timed.tick_period()) {
             (Some(window), None) => window.pieces(timed.places().len()),
             _ => vec![(Vec::new(), zero_stamp())],
@@ -1039,7 +1060,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     fn read(&self, read: Read) -> Result<usize, Halt> {
         match read {
             Read::State(q) => Ok(q),
-            Read::Fault(invariant) => Err(ZoneCheckRefusal::Fault(invariant).into()),
+            Read::Fault(WindowFault::UnknownState) => {
+                Err(ZoneCheckRefusal::Fault("window-state").into())
+            }
+            Read::Fault(_) => Err(ZoneCheckRefusal::Fault("window-stamp").into()),
             Read::Atom(stop) => Err(ZoneCheckRefusal::Atom(stop).into()),
             Read::AutomatonStates => Err(self.stop(ZoneStop::LimitReached(
                 ZoneCheckLimit::MaxAutomatonStates(self.limits.max_automaton_states),
@@ -1076,9 +1100,6 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// short of data for: with no violation, the evaluator reports that
     /// behaviour `InsufficientData`, never `Holds`.
     fn note_insufficient(&mut self, node: usize) -> Result<(), Halt> {
-        if self.insufficient.is_some() {
-            return Ok(());
-        }
         let Some(at) = self
             .window
             .as_ref()
@@ -1086,7 +1107,14 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         else {
             return Ok(());
         };
-        if self.node_escape(node)?.diverges {
+        if !self.node_escape(node)?.diverges {
+            // Every behaviour through it is Zeno: as a violation on
+            // time-locked valuations, it is kept `locked`, which the
+            // certificate checker confirms (FR-245).
+            self.nodes[node].locked = true;
+            return Ok(());
+        }
+        if self.insufficient.is_none() {
             let instance = self
                 .claim
                 .as_ref()
