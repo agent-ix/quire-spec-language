@@ -23,10 +23,10 @@ use qsl_forms::{
 use super::reading::free_occurrences;
 use super::{
     self_path, timed, ClockConstraint, ClockId, ClockOp, Clocks, DataLiteral, Dnf, ElementBinding,
-    Located, PartBudget, ResetDraft,
+    FamilyDraft, Located, PartBudget, ResetDraft, SlotRef,
 };
 use crate::check::lowering::{CollectionShape, PlaceStep};
-use crate::check::refusal::{CheckCause, TemporalCause, TimedConstruct};
+use crate::check::refusal::{CheckCause, TemporalCause};
 use quire_checked::key::DeclarationKey;
 use quire_exact::EffectiveId;
 
@@ -34,7 +34,9 @@ use quire_exact::EffectiveId;
 struct Quantifier<'f> {
     query: BinderQuery,
     binder: &'f str,
-    field: String,
+    /// The field names from the receiver to the collection: its field, or
+    /// a collection below a record field.
+    path: Vec<String>,
     shape: CollectionShape,
     body: ExprId,
     /// The quantifier's span.
@@ -69,14 +71,17 @@ fn quantifier<'f>(
             _ => None,
         }
     })?;
-    let [PlaceStep::Field(field)] = path.as_slice() else {
-        // A collection below a record field is not read here.
-        return None;
-    };
+    let path = path
+        .into_iter()
+        .map(|step| match step {
+            PlaceStep::Field(name) => Some(name),
+            PlaceStep::Slot(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some(Quantifier {
         query: *query,
         binder: binder.as_str(),
-        field: field.clone(),
+        path,
         shape,
         body: *body,
         span: located.span(id),
@@ -112,9 +117,10 @@ pub(super) fn bodies(
 ///
 /// # Errors
 ///
-/// `TimedNotChecked` for a collection with no declared maximum, whose
-/// guard is a family of entries indexed by size; the refusals of
-/// [`slot`] for its body.
+/// The refusals of [`slot`] for its body. Over a collection with no
+/// declared maximum the read is the family of the entries indexed by size,
+/// a [`DataLiteral::Family`] whose body is read once at
+/// [`SlotRef::Family`].
 pub(super) fn read(
     located: &Located<'_>,
     id: ExprId,
@@ -127,17 +133,41 @@ pub(super) fn read(
     };
     let span = located.span(id);
     let Some(max) = quantifier.shape.max else {
-        return Err(CheckCause::TimedNotChecked {
-            construct: TimedConstruct::Clock,
-            span,
+        // The family of the entries indexed by size: the body read once at
+        // the template slot, instantiated at each held slot by the reading.
+        let binding = ElementBinding {
+            name: format!("{}#{}#n", quantifier.binder, quantifier.path.join(".")),
+            path: quantifier.path.clone(),
+            slot: SlotRef::Family,
+        };
+        let (positive, negative) = slot(
+            located,
+            quantifier.body,
+            &quantifier,
+            &binding,
+            clocks,
+            budget,
+        )?;
+        let family = Rc::new(FamilyDraft {
+            forall: quantifier.query == BinderQuery::Forall,
+            path: quantifier.path.clone(),
+            positive,
+            negative,
         });
+        return Ok(Some((
+            vec![(
+                vec![(DataLiteral::Family(family.clone()), true)],
+                Vec::new(),
+            )],
+            vec![(vec![(DataLiteral::Family(family), false)], Vec::new())],
+        )));
     };
     let mut slots = Vec::new();
     for at in 0..max {
         let binding = ElementBinding {
-            name: format!("{}#{}#{at}", quantifier.binder, quantifier.field),
-            field: quantifier.field.clone(),
-            slot: at,
+            name: format!("{}#{}#{at}", quantifier.binder, quantifier.path.join(".")),
+            path: quantifier.path.clone(),
+            slot: SlotRef::Held(at),
         };
         slots.push(slot(
             located,
@@ -151,10 +181,14 @@ pub(super) fn read(
     let size = |operator: BinaryOperator, count: u64| -> Result<DataLiteral, CheckCause> {
         let expression = Expression::binary(
             operator,
-            Expression::size(Expression::field(
-                Expression::self_ref(),
-                quantifier.field.clone(),
-            )),
+            Expression::size(
+                quantifier
+                    .path
+                    .iter()
+                    .fold(Expression::self_ref(), |operand, name| {
+                        Expression::field(operand, name.clone())
+                    }),
+            ),
             Expression::integer(count),
         );
         let spans = ExpressionSpans::at_point(&expression, span.start)
@@ -316,11 +350,15 @@ fn element_clock(
     // clock below it.
     steps.reverse();
     let position = clocks.fields.iter().position(|clock| {
-        let [PlaceStep::Field(field), PlaceStep::Slot(_), below @ ..] = clock.path.as_slice()
-        else {
+        let Some((head, rest)) = clock.path.split_at_checked(quantifier.path.len()) else {
             return false;
         };
-        *field == quantifier.field
+        let [PlaceStep::Slot(_), below @ ..] = rest else {
+            return false;
+        };
+        head.iter()
+            .zip(&quantifier.path)
+            .all(|(step, name)| matches!(step, PlaceStep::Field(field) if field == name))
             && below.len() == steps.len()
             && below
                 .iter()
@@ -443,7 +481,7 @@ pub(super) fn reset(
     if !in_frame {
         return Err(TemporalCause::ClockWrite { span });
     }
-    let name = format!("{}#{}", quantifier.binder, quantifier.field);
+    let name = format!("{}#{}", quantifier.binder, quantifier.path.join("."));
     let predicate = premise
         .map(|premise| renamed(located, premise, quantifier.binder, &name))
         .transpose()?;
@@ -451,6 +489,6 @@ pub(super) fn reset(
         clock,
         value,
         span,
-        selection: Some((quantifier.field, name, predicate)),
+        selection: Some((quantifier.path, name, predicate)),
     }))
 }

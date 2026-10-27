@@ -22,7 +22,8 @@ use crate::model::index::ModelIndex;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
-    AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
+    AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, PathStep,
+    SelectedAnchor,
 };
 use quire_checked::key::DeclarationKey;
 
@@ -61,6 +62,246 @@ pub struct StateField {
     pub value_type: ValueType,
     /// Whether the field is declared `?` and so may be absent.
     pub optional: bool,
+}
+
+/// A `min` or `max` bound on the quantities a member holds (QSpec FR-154
+/// "Unit bounds"): read from a constraint on the unit the quantity is typed
+/// by, or on an alias on the way to it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberBound {
+    /// The member whose value holds the quantities: an object type's field
+    /// (the key a [`StateObject`] holds its value under), an operation
+    /// parameter, or an operation for its result.
+    pub member: DeclarationKey,
+    /// The record fields from the member's value down to the quantity,
+    /// outermost first: empty when the member is typed by the unit itself.
+    pub path: Vec<String>,
+    /// The constraint's declaration key.
+    pub constraint: DeclarationKey,
+    /// `max` or `min`.
+    pub upper: bool,
+    /// The bound, a magnitude in the unit.
+    pub bound: quire_exact::Rational,
+}
+
+impl MemberBound {
+    /// The constraint's keyword, `max` or `min`.
+    pub fn keyword(&self) -> &'static str {
+        if self.upper {
+            "max"
+        } else {
+            "min"
+        }
+    }
+
+    /// The bound spelled canonically, as the constraint's `operands.value`
+    /// is: `n`, or `n/d` when the denominator is not 1.
+    pub fn canonical_bound(&self) -> String {
+        if self.bound.denominator() == &quire_exact::Integer::from(1_i64) {
+            self.bound.numerator().to_string()
+        } else {
+            self.bound.to_string()
+        }
+    }
+
+    /// Whether the quantity `value` satisfies the bound, equality
+    /// satisfying; `true` for any value that is no quantity.
+    pub fn admits(&self, value: &Value) -> bool {
+        let Value::Quantity(quantity) = value else {
+            return true;
+        };
+        if self.upper {
+            quantity.magnitude() <= &self.bound
+        } else {
+            quantity.magnitude() >= &self.bound
+        }
+    }
+
+    /// The first quantity the member's value `value` holds at [`Self::path`]
+    /// that violates the bound, with its path below the member: through
+    /// each element of a collection, the payload of a present optional
+    /// value and the record field the path names, read by `types`.
+    pub fn violation(&self, value: &Value, types: &TypeEnvironment) -> Option<Vec<PathStep>> {
+        violation_at(self, value, &self.path, types)
+    }
+}
+
+/// [`MemberBound::violation`] with `rest` of the path still to walk.
+fn violation_at(
+    bound: &MemberBound,
+    value: &Value,
+    rest: &[String],
+    types: &TypeEnvironment,
+) -> Option<Vec<PathStep>> {
+    let below = |step: PathStep, path: Option<Vec<PathStep>>| {
+        path.map(|mut path| {
+            path.insert(0, step);
+            path
+        })
+    };
+    match value {
+        Value::Collection(collection) => {
+            collection
+                .elements()
+                .iter()
+                .enumerate()
+                .find_map(|(index, element)| {
+                    below(
+                        PathStep::Index(index),
+                        violation_at(bound, element, rest, types),
+                    )
+                })
+        }
+        Value::Option(option) => below(
+            PathStep::OptionValue,
+            violation_at(bound, option.payload()?, rest, types),
+        ),
+        Value::Composite(composite) => {
+            let (name, rest) = rest.split_first()?;
+            let quire_semantic_value::declaration::CompositeShape::Record(fields) =
+                types.composite(composite.declaration())?.shape()
+            else {
+                return None;
+            };
+            let slot = fields.iter().position(|field| field.name() == name)?;
+            let quire_exact::FieldValue::Present(inner) = composite.slots().get(slot)? else {
+                return None;
+            };
+            below(
+                PathStep::Field(name.clone()),
+                violation_at(bound, inner, rest, types),
+            )
+        }
+        value => (rest.is_empty() && !bound.admits(value)).then(Vec::new),
+    }
+}
+
+/// The bounds of every member of `views`' packages (QSpec FR-154 "Unit
+/// bounds"): for a quantity of the unit `u` an object field, an operation
+/// parameter or result holds, directly, through aliases, as a sequence's
+/// items or as a field of a record it holds, every bound on `u` itself and
+/// every bound on an alias the quantity's type passes. A bound on an alias
+/// bounds no other member of `u`.
+pub(crate) fn member_bounds(views: &[ModelView]) -> Vec<MemberBound> {
+    let mut bounds = Vec::new();
+    for view in views {
+        let records = &view.view.domain_package().records;
+        let walk = Walk { records };
+        for record in records {
+            match record {
+                DomainPackageRecord::FieldMember(field)
+                    if matches!(
+                        walk.record(&field.owner),
+                        Some(DomainPackageRecord::ObjectType(_))
+                    ) =>
+                {
+                    walk.member(&field.key, &field.value_type, &mut Vec::new(), &mut bounds);
+                }
+                DomainPackageRecord::OperationMember(operation) => {
+                    for parameter in &operation.parameters {
+                        walk.member(
+                            &parameter.key,
+                            &parameter.value_type,
+                            &mut Vec::new(),
+                            &mut bounds,
+                        );
+                    }
+                    if let Some(result) = &operation.result {
+                        walk.member(
+                            &operation.key,
+                            &result.value_type,
+                            &mut Vec::new(),
+                            &mut bounds,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    bounds
+}
+
+/// The walk of one package's records for [`member_bounds`].
+struct Walk<'r> {
+    records: &'r [DomainPackageRecord],
+}
+
+impl Walk<'_> {
+    fn record(&self, key: &DeclarationKey) -> Option<&DomainPackageRecord> {
+        self.records.iter().find(|record| record.key() == key)
+    }
+
+    /// The bounds on the quantities a value of `value_type` holds at
+    /// `path` below `member`.
+    fn member(
+        &self,
+        member: &DeclarationKey,
+        value_type: &crate::model::domain_package::ValueTypeRef,
+        path: &mut Vec<String>,
+        bounds: &mut Vec<MemberBound>,
+    ) {
+        use crate::model::domain_package::ValueTypeRef;
+        let mut aliases = Vec::new();
+        let mut value_type = value_type;
+        let mut steps = 0_usize;
+        while let ValueTypeRef::Package(key) = value_type {
+            steps += 1;
+            if steps > self.records.len() {
+                return;
+            }
+            value_type = match self.record(key) {
+                Some(DomainPackageRecord::AliasType(alias)) => {
+                    aliases.push(key);
+                    &alias.target
+                }
+                Some(DomainPackageRecord::SequenceType(sequence)) => &sequence.items,
+                Some(DomainPackageRecord::RecordValueType(_))
+                    if path.len() < self.records.len() =>
+                {
+                    for field in self.records.iter().filter_map(|record| match record {
+                        DomainPackageRecord::FieldMember(field) if &field.owner == key => {
+                            Some(field)
+                        }
+                        _ => None,
+                    }) {
+                        let Some(name) = crate::model::intake::member_identity_name(
+                            &field.owner.node,
+                            &field.key.node,
+                        ) else {
+                            continue;
+                        };
+                        path.push(name.to_owned());
+                        self.member(member, &field.value_type, path, bounds);
+                        path.pop();
+                    }
+                    return;
+                }
+                _ => return,
+            };
+        }
+        let ValueTypeRef::Unit(unit) = value_type else {
+            return;
+        };
+        for record in self.records {
+            let DomainPackageRecord::ValueBound(bound) = record else {
+                continue;
+            };
+            let applies = match &bound.alias {
+                Some(alias) => aliases.contains(&alias),
+                None => bound.target == ValueTypeRef::Unit(unit.clone()),
+            };
+            if applies {
+                bounds.push(MemberBound {
+                    member: member.clone(),
+                    path: path.clone(),
+                    constraint: bound.key.clone(),
+                    upper: bound.upper,
+                    bound: bound.value.clone(),
+                });
+            }
+        }
+    }
 }
 
 /// One population of the selected models and its declared member types.
@@ -141,6 +382,12 @@ impl StateModel {
             limits,
             self.limits.ancestor_steps,
         )
+    }
+
+    /// The `min`/`max` bounds on the quantities each member of the
+    /// selected models holds (the `member_bounds` of its views).
+    pub fn member_bounds(&self) -> Vec<MemberBound> {
+        member_bounds(&self.views)
     }
 
     /// The [`Observation`] of `state`, named `identity`: the object

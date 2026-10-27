@@ -154,6 +154,9 @@ pub enum ModelCheckLimit {
     ZoneMaxAutomatonStates,
     /// EN-6's `max_zone_bytes`; setting `zone_check.max_zone_bytes`.
     ZoneMaxZoneBytes,
+    /// QSpec FR-415's bound on the live clocks of a timed state; setting
+    /// `model_check.max_clocks`.
+    MaxClocks,
     /// FR-245: the edges a zone certificate check reads.
     CertificateMaxEdges,
     /// FR-245: the bytes a zone certificate check reads.
@@ -203,6 +206,7 @@ impl ModelCheckLimit {
             Self::ZoneMaxSymbolicTransitions => "max_symbolic_transitions",
             Self::ZoneMaxAutomatonStates => "max_automaton_states",
             Self::ZoneMaxZoneBytes => "max_zone_bytes",
+            Self::MaxClocks => "max_clocks",
             Self::CertificateMaxEdges => "max_certificate_edges",
             Self::CertificateMaxBytes => "max_certificate_bytes",
         }
@@ -241,6 +245,7 @@ impl ModelCheckLimit {
             Self::ZoneMaxSymbolicTransitions => "zone_check.max_symbolic_transitions",
             Self::ZoneMaxAutomatonStates => "zone_check.max_automaton_states",
             Self::ZoneMaxZoneBytes => "zone_check.max_zone_bytes",
+            Self::MaxClocks => "model_check.max_clocks",
             Self::CertificateMaxEdges => "certificate_check.max_certificate_edges",
             Self::CertificateMaxBytes => "certificate_check.max_certificate_bytes",
         }
@@ -409,6 +414,7 @@ mod tests {
                 ("max_automaton_states", "zone_check.max_automaton_states")
             }
             ModelCheckLimit::ZoneMaxZoneBytes => ("max_zone_bytes", "zone_check.max_zone_bytes"),
+            ModelCheckLimit::MaxClocks => ("max_clocks", "model_check.max_clocks"),
             ModelCheckLimit::CertificateMaxEdges => (
                 "max_certificate_edges",
                 "certificate_check.max_certificate_edges",
@@ -450,6 +456,7 @@ mod tests {
             ModelCheckLimit::ZoneMaxSymbolicTransitions,
             ModelCheckLimit::ZoneMaxAutomatonStates,
             ModelCheckLimit::ZoneMaxZoneBytes,
+            ModelCheckLimit::MaxClocks,
             ModelCheckLimit::CertificateMaxEdges,
             ModelCheckLimit::CertificateMaxBytes,
         ];
