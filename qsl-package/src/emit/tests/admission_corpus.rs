@@ -112,7 +112,7 @@ enum Fixture {
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 27] = [
+    const ALL: [Self; 28] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
