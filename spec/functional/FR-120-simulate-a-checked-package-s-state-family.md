@@ -21,6 +21,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-115
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-215
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-230
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-181
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-013
@@ -399,7 +403,25 @@ every integer in the range; `Option<T>`, absent then each value of `T`;
 `Reference<T>`, each object of the state, or of the post-state for a field
 or result, whose most-specific type conforms to `T`; a sequence with a
 declared maximum `N`, every sequence of length 0 to `N` over its element
-domain. Every other type is an unbounded domain in `domains()`.
+domain; an enum, each member in declaration order (the rule FR-215 gives
+a record field of enum type, so that one record type has one domain in a model
+and in a protocol); a record or a tuple whose non-clock components all have a
+finite value domain, every value that gives each non-clock component a value
+of its domain, ordered with the first declared component most significant and
+each component in its own domain order (ADR-027 ST-11's "finite record
+domain", which FR-215 states for a record type). Its size is the product of
+its non-clock components' domain sizes. A component of type `Clock` or `Option<Clock>` is a
+clock place (FR-230) and not part of the value domain: it contributes no
+factor to the enumeration and does not make the record or tuple unbounded, and
+a record or tuple with no non-clock component has exactly one value. A component
+that is itself a clock-bearing record or tuple contributes its own non-clock
+domain by this rule. The explorer does
+not enumerate or write a clock place as a value; FR-230's reset of it is
+stated by the postcondition. A record or tuple with any non-clock component
+whose type has no finite domain by this rule is an unbounded domain, and every
+other type, a union included, is an unbounded domain in `domains()`: `Integer` with no range,
+`Text`, a collection with no declared maximum, a decimal, a quantity, a UUID
+or a Timestamp, for example (FR-120-AC-22 to FR-120-AC-24).
 
 ### Contract clauses
 
@@ -636,9 +658,16 @@ identity text of operation `op`.
 | FR-120-AC-19 | QSpec TC-196 D10's `B/size` clauses split across two linked source units (FR-480-AC-1), in both link orders and with either clause in either unit, give D10's one-unit results, with equal outcome and charges: `view_clauses` and the expansion read the member's own clauses from both units in ascending clause name. | Test (TC-472) |
 | FR-120-AC-20 | D10's `absent-key` form: with `pre PB1 using V on M::B::size { (lookup<M::A>(M::PX, self) absent undefined) = self }` and `pre PB2 using V on M::B::size { false }` over a closed population `PX` with no runtime members, a call of `size` for `d1` is `undefined` with reason `absent-key` after `dispatch.select` and `PB1`'s charges, with no `function.call`, and `PB2` and `PA` are not evaluated. With the two bodies' names swapped it is `undefined` with reason `precondition-false` after the false clause's and then `PA`'s charges, the lookup clause neither evaluated nor charged. | Test (TC-472) |
 | FR-120-AC-21 | FR-120-AC-6's runs with `CanInc`: under a meter budget whose `work_units` is 0 and every other counter at its default, the `Stopped` outcome's `ExpansionStop` names `EvaluationMeter` with counter `work_units`, the counter whose next charge was denied; with `max_candidates` 2 and `increment` with no clause, it names `MaxCandidates` and carries no counter. | Test (TC-472) |
+| FR-120-AC-22 | Over a model whose object type `Cell` (population `cells`, universe `{k1}`) declares `cfg: Cfg` (record `Cfg { on: Boolean, n: Int[0, 2] }`), `pr: Pr` (tuple `Pr(Boolean, Int[0, 1])`) and `w: Wrap` (record `Wrap { c: Cfg, o: Option<Boolean> }`), with an operation `put()` whose frame is `modifies cfg, pr, w` and no clause, each field's domain is finite and `domains()` lists no unbounded root for them. `cfg` has 6 values, ordered `on` first: (`false`, 0), (`false`, 1), (`false`, 2), (`true`, 0), (`true`, 1), (`true`, 2). `pr` has 4: (`false`, 0), (`false`, 1), (`true`, 0), (`true`, 1). `w` has 6 × 3 = 18 values, `c` first in `Cfg` order, `o` absent, then `false`, then `true`. An application of `put` from a state holding `k1` has 6 × 4 × 18 = 432 candidates, each counted against `max_candidates`. A record or tuple with `Option<Cfg>` or `Sequence<Cfg>[0, 1]` as a component has 7 values (`Option<Cfg>`: absent, then the 6; `Sequence<Cfg>[0, 1]`: the empty sequence, then the 6 one-element sequences). | Test (TC-1270) |
+| FR-120-AC-23 | Over AC-22's model with `ck: Timer` (record `Timer { x: Clock, n: Int[0, 3] }`) and `sw: Stopwatch` (record `Stopwatch { x: Clock, y: Clock }`) added, `Timer`'s value domain is the 4 values of `n`, `Int[0, 3]`, in ascending order, the clock `x` contributing no factor, and `Timer` does not make `ck` unbounded: `domains()` lists no unbounded root for `ck`. `Stopwatch` has exactly one value. A record `Mix { t: Timer, b: Boolean }` has 4 × 2 = 8 values, `t` most significant. With a postcondition `self.ck = Timer { x: 0 ms, n: 3 }` (FR-230-AC-11), a successor holds `n` 3 and resets `x`, so the record-literal reset has a step in exploration; no candidate is enumerated over a value of `x`. | Test (TC-1270) |
+| FR-120-AC-24 | Over AC-22's model with `op: Open` (record `Open { n: Integer, b: Boolean }`) and `tm: Tm` (record `Tm { x: Clock, label: Text }`) added, and a frame that grants `op` or `tm`: `Open`, a record with one unbounded non-clock component, and `Tm`, a record with a clock and an unbounded non-clock component, are each an unbounded domain in `domains()`, so `explore_model` and `sample_model` return `NotSimulated::RequiresBound` naming that root's `WireNodeId`, before any state is expanded; a clock component does not make either bounded. A record `Wrap2 { o: Open }` is unbounded by its nested component. | Test (TC-1270) |
 
 ## Dependencies
 
+- [FR-215](FR-215-implement-protocolsystem-as-a-transitionsystem.md): the
+  record value domain and its order for protocol binders (ADR-027 ST-2,
+  ST-11), which FR-120's record and tuple domain matches; FR-230 (clock
+  places, record-literal reset).
 - QSpec FR-181, its exploration contract, typed canonical form and AC-4 to
   AC-6; QSpec FR-013 (frames, including its Behavior's `modifies`, `creates`
   and `deletes` rules); QSpec FR-151 (the receiver, effective
