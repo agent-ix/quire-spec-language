@@ -4,8 +4,11 @@
 //!
 //! For each `over` instance in order, the zone graph is multiplied with the
 //! clause's negation automaton, read over positions
-//! ([`translate_position_negation`]). A vertex pairs a model state, an
-//! automaton state and a zone with:
+//! ([`qsl_eval::automaton::position_automaton`]): untimed for a clause with
+//! no timed interval, otherwise FR-242's timed automaton, whose clocks join
+//! the zone after the clock places, each guard read and each reset taken at
+//! the position. A vertex pairs a model state, an automaton state and a
+//! zone with:
 //!
 //! - its **cell**: for each clock constraint of a fairness-constrained
 //!   step's guard at the state, whether the clock is below, at or above the
@@ -34,10 +37,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use num_bigint::BigInt;
 use num_integer::Integer as _;
-use qsl_eval::automaton::{Atom, AutomatonError, Letter, PropertyAutomaton, StateId};
+use qsl_eval::automaton::{Atom, AutomatonError, ClockedEdge, Letter, PositionAutomaton, StateId};
 use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Vertex};
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::model::{GuardedStep, ModelSimState};
+use qsl_eval::simulation::model::{GuardedStep, ModelSimState, PlaceConstraint};
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_replay::{
     CounterexampleKind, FairnessMember, Lasso, TemporalCounterexample, UndefinedLocus,
@@ -104,6 +107,9 @@ pub(super) struct LiveEdge {
     pub(super) from: usize,
     pub(super) to: usize,
     pub(super) via: Via,
+    /// A position's claim-automaton transition, by index into the
+    /// product's `reads`.
+    pub(super) read: Option<usize>,
 }
 
 /// Where an undefined position is read: an initial state, by its index,
@@ -124,6 +130,21 @@ pub(super) struct Product {
     /// The edge that discovered each vertex.
     parent: Vec<Option<usize>>,
     passed: BTreeMap<Vec<u8>, Vec<usize>>,
+    /// The claim-automaton transitions positions took, each once.
+    pub(super) reads: Vec<ClockedEdge>,
+}
+
+impl Product {
+    /// The index of `read` in `reads`, added when new.
+    fn read(&mut self, read: &ClockedEdge) -> usize {
+        match self.reads.iter().position(|known| known == read) {
+            Some(at) => at,
+            None => {
+                self.reads.push(read.clone());
+                self.reads.len() - 1
+            }
+        }
+    }
 }
 
 /// A position's letter, or the first condition undefined there.
@@ -147,7 +168,7 @@ enum Found {
     /// A fair accepting cycle, none of which concretised.
     NotConcretised,
     /// No fair accepting cycle: why, by component.
-    Nothing(InstanceProof),
+    Nothing(Box<InstanceProof>),
 }
 
 /// FR-240's decision over every instance.
@@ -177,7 +198,7 @@ pub(super) struct InstanceProof {
 /// The run's view of one instance's product.
 struct Live<'p> {
     instance: &'p ModelInstance,
-    automaton: &'p mut PropertyAutomaton,
+    automaton: &'p mut PositionAutomaton,
     /// Whether the product reads no claim: one automaton state that reads
     /// every letter and accepts every run, for FR-240's vacuity test.
     universal: bool,
@@ -188,8 +209,8 @@ struct Live<'p> {
     readings: BTreeMap<(Vec<u8>, bool), Reading>,
     /// The cell atoms of each model state, by its key.
     atoms: BTreeMap<Vec<u8>, Vec<CellAtom>>,
-    /// The zone dimension: the reference clock, the clock places and, under
-    /// a dense source, `z`.
+    /// The zone dimension: the reference clock, the clock places, the
+    /// automaton's clocks and, under a dense source, `z`.
     dim: usize,
     lower: Vec<Option<BigInt>>,
     upper: Vec<Option<BigInt>>,
@@ -197,10 +218,18 @@ struct Live<'p> {
 }
 
 impl Live<'_> {
-    /// The states the automaton reads `letter` into from `q`.
-    fn successors(&mut self, q: StateId, letter: Letter) -> Result<Vec<StateId>, AutomatonError> {
+    /// The transitions the automaton reads `letter` by from `q`.
+    fn successors(
+        &mut self,
+        q: StateId,
+        letter: Letter,
+    ) -> Result<Vec<ClockedEdge>, AutomatonError> {
         if self.universal {
-            Ok(vec![q])
+            Ok(vec![ClockedEdge {
+                target: q,
+                guard: Vec::new(),
+                resets: Vec::new(),
+            }])
         } else {
             self.automaton.successors(q, letter)
         }
@@ -253,7 +282,7 @@ impl Run<'_, '_, '_> {
         found
     }
 
-    fn each_instance(&mut self, automaton: &mut PropertyAutomaton) -> Result<Liveness, Halt> {
+    fn each_instance(&mut self, automaton: &mut PositionAutomaton) -> Result<Liveness, Halt> {
         let claim = self
             .claim()
             .ok_or(ZoneCheckRefusal::Fault("liveness-claim"))?;
@@ -270,16 +299,22 @@ impl Run<'_, '_, '_> {
             constrained.insert(text.to_owned());
         }
         let dense = self.timed.tick_period().is_none();
-        let dim = self.timed.places().len() + 1 + usize::from(dense);
+        let dim = self.timed.places().len() + 1 + automaton.clock_count() + usize::from(dense);
         // The aM abstraction: one constant per clock, the greatest it is
-        // compared with, which bounds every cell atom too; `z` is compared
-        // with 1.
+        // compared with, which bounds every cell atom too; an automaton
+        // clock is compared with its interval's ends, and `z` with 1.
         let mut most: Vec<Option<BigInt>> = self
             .lower
             .iter()
             .zip(&self.upper)
             .map(|(lower, upper)| lower.clone().max(upper.clone()))
             .collect();
+        most.extend(
+            automaton
+                .constants()
+                .iter()
+                .map(|constant| Some(scaled(constant, &self.scale))),
+        );
         if dense {
             most.push(Some(self.scale.clone()));
         }
@@ -306,7 +341,7 @@ impl Run<'_, '_, '_> {
                     return Ok(Liveness::Violated(counterexample))
                 }
                 Found::NotConcretised => not_concretised = true,
-                Found::Nothing(proof) => proofs.push(proof),
+                Found::Nothing(proof) => proofs.push(*proof),
             }
         }
         if not_concretised {
@@ -411,13 +446,13 @@ impl Run<'_, '_, '_> {
         Ok(if passing {
             Found::NotConcretised
         } else {
-            Found::Nothing(InstanceProof {
+            Found::Nothing(Box::new(InstanceProof {
                 product: std::mem::take(&mut live.product),
                 analyses,
                 members,
                 automaton_sets: live.acceptance_sets(),
                 bounds: live.lower.clone(),
-            })
+            }))
         })
     }
 
@@ -597,6 +632,32 @@ impl Run<'_, '_, '_> {
         Ok(false)
     }
 
+    /// `zone` read by the claim-automaton transition `read` at a position:
+    /// held to its clock guard, then its clocks reset; `None` when empty.
+    fn read_at(&self, zone: &Dbm, read: &ClockedEdge) -> Result<Option<Dbm>, Halt> {
+        let base = self.timed.places().len();
+        let guard: Vec<PlaceConstraint> = read
+            .guard
+            .iter()
+            .map(|constraint| {
+                PlaceConstraint::new(
+                    base + constraint.place(),
+                    constraint.op(),
+                    constraint.bound().clone(),
+                )
+            })
+            .collect();
+        let mut zone = zone.clone();
+        constrain_at(&mut zone, &guard, &self.scale)?;
+        if zone.is_empty() {
+            return Ok(None);
+        }
+        for &clock in &read.resets {
+            zone.reset(base + 1 + clock, &BigInt::from(0))?;
+        }
+        Ok(Some(zone))
+    }
+
     /// Explore one instance's product breadth first: the counterexample of
     /// the first undefined position with a time-divergent continuation.
     fn build(&mut self, live: &mut Live<'_>) -> Result<Option<TemporalCounterexample>, Halt> {
@@ -615,23 +676,25 @@ impl Run<'_, '_, '_> {
                     continue;
                 }
             };
-            let targets = self.automaton(live.successors(live.start, letter))?;
-            for (cell, piece) in self.cells(live, &state, &zero)? {
-                let Some(zone) = self.close(live, &state, piece, &cell)? else {
+            for read in self.automaton(live.successors(live.start, letter))? {
+                let Some(read_zone) = self.read_at(&zero, &read)? else {
                     continue;
                 };
-                for &q in &targets {
+                for (cell, piece) in self.cells(live, &state, &read_zone)? {
+                    let Some(zone) = self.close(live, &state, piece, &cell)? else {
+                        continue;
+                    };
                     let vertex = LiveVertex {
                         state: state.clone(),
-                        q,
+                        q: read.target,
                         cell: cell.clone(),
-                        zone: zone.clone(),
+                        zone,
                         positioned: true,
                         divergent: false,
                         tail: false,
                         initial: Some(index),
                     };
-                    if let Some(new) = self.add_vertex(live, vertex, None)? {
+                    if let Some(new) = self.add_vertex(live, vertex, None, None)? {
                         queue.push_back(new);
                     }
                 }
@@ -730,23 +793,31 @@ impl Run<'_, '_, '_> {
                         continue;
                     }
                 };
-                let targets = self.automaton(live.successors(vertex.q, letter))?;
-                for (cell, piece) in self.cells(live, &post, &next)? {
-                    let Some(entered) = self.close(live, &post, piece, &cell)? else {
+                for read in self.automaton(live.successors(vertex.q, letter))? {
+                    let Some(read_zone) = self.read_at(&next, &read)? else {
                         continue;
                     };
-                    for &q in &targets {
+                    let index = live.product.read(&read);
+                    for (cell, piece) in self.cells(live, &post, &read_zone)? {
+                        let Some(entered) = self.close(live, &post, piece, &cell)? else {
+                            continue;
+                        };
                         let next = LiveVertex {
                             state: post.clone(),
-                            q,
+                            q: read.target,
                             cell: cell.clone(),
-                            zone: entered.clone(),
+                            zone: entered,
                             positioned: true,
                             divergent: !dense && tick,
                             tail: false,
                             initial: None,
                         };
-                        created.extend(self.add_vertex(live, next, Some((at, via)))?);
+                        created.extend(self.add_vertex(
+                            live,
+                            next,
+                            Some((at, via)),
+                            Some(index),
+                        )?);
                     }
                 }
             }
@@ -772,7 +843,7 @@ impl Run<'_, '_, '_> {
                     initial: None,
                     ..vertex.clone()
                 };
-                created.extend(self.add_vertex(live, next, Some((at, Via::Wait)))?);
+                created.extend(self.add_vertex(live, next, Some((at, Via::Wait)), None)?);
             }
         }
         if dense {
@@ -790,7 +861,7 @@ impl Run<'_, '_, '_> {
                         initial: None,
                         ..vertex.clone()
                     };
-                    created.extend(self.add_vertex(live, next, Some((at, Via::Diverge)))?);
+                    created.extend(self.add_vertex(live, next, Some((at, Via::Diverge)), None)?);
                 }
             }
         }
@@ -806,16 +877,24 @@ impl Run<'_, '_, '_> {
         };
         let dense = self.timed.tick_period().is_none();
         let mut created = Vec::new();
-        for q in self.automaton(live.successors(vertex.q, letter))? {
+        for read in self.automaton(live.successors(vertex.q, letter))? {
+            let Some(read_zone) = self.read_at(&vertex.zone, &read)? else {
+                continue;
+            };
+            let Some(zone) = self.close(live, &vertex.state, read_zone, &vertex.cell)? else {
+                continue;
+            };
+            let index = live.product.read(&read);
             let next = LiveVertex {
-                q,
+                q: read.target,
+                zone,
                 positioned: true,
                 divergent: !dense,
                 tail: true,
                 initial: None,
                 ..vertex.clone()
             };
-            created.extend(self.add_vertex(live, next, Some((at, Via::Stutter)))?);
+            created.extend(self.add_vertex(live, next, Some((at, Via::Stutter)), Some(index))?);
         }
         Ok(created)
     }
@@ -828,6 +907,7 @@ impl Run<'_, '_, '_> {
         live: &mut Live<'_>,
         vertex: LiveVertex,
         from: Option<(usize, Via)>,
+        read: Option<usize>,
     ) -> Result<Option<usize>, Halt> {
         let mut key = self.key(&vertex.state)?;
         key.extend_from_slice(
@@ -846,7 +926,7 @@ impl Run<'_, '_, '_> {
                     && held.alu_covered_by(&vertex.zone, &live.lower, &live.upper)?;
                 if same {
                     if let Some((from, via)) = from {
-                        self.add_edge(live, from, candidate, via)?;
+                        self.add_edge(live, from, candidate, via, read)?;
                     }
                     return Ok(None);
                 }
@@ -861,7 +941,7 @@ impl Run<'_, '_, '_> {
         live.product.parent.push(None);
         live.product.passed.entry(key).or_default().push(index);
         if let Some((from, via)) = from {
-            self.add_edge(live, from, index, via)?;
+            self.add_edge(live, from, index, via, read)?;
             live.product.parent[index] = Some(live.product.edges.len() - 1);
         }
         Ok(Some(index))
@@ -873,11 +953,17 @@ impl Run<'_, '_, '_> {
         from: usize,
         to: usize,
         via: Via,
+        read: Option<usize>,
     ) -> Result<(), Halt> {
         self.charge_edge()?;
         self.escape_edge();
         live.product.out[from].push(live.product.edges.len());
-        live.product.edges.push(LiveEdge { from, to, via });
+        live.product.edges.push(LiveEdge {
+            from,
+            to,
+            via,
+            read,
+        });
         Ok(())
     }
 
@@ -1054,17 +1140,16 @@ impl Run<'_, '_, '_> {
         locus: UndefinedLocus,
         cause: UndefinedCause,
     ) -> Result<Option<TemporalCounterexample>, Halt> {
-        let dense = self.timed.tick_period().is_none();
         let mut entered = zone.clone();
         self.settle_at(state, &mut entered, &self.scale.clone())?;
         if entered.is_empty() {
             return Ok(None);
         }
-        let entered = if dense {
-            entered.without_last_clock()
-        } else {
-            entered
-        };
+        // The undefined reading refutes whatever the claim automaton reads:
+        // its clocks and `z` are projected away.
+        while entered.dim() > self.timed.places().len() + 1 {
+            entered = entered.without_last_clock();
+        }
         let (scale, lower, upper) = (self.scale.clone(), self.lower.clone(), self.upper.clone());
         let escape = self.escape(state, &entered, &scale, &lower, &upper)?;
         if !escape.diverges {
@@ -1081,9 +1166,15 @@ impl Run<'_, '_, '_> {
                         from,
                         to: from,
                         via,
+                        read: None,
                     },
                     None,
                 )?);
+                // The automaton's reads are not the undefined position's.
+                for stage in &mut stages {
+                    stage.position.clear();
+                    stage.position_resets.clear();
+                }
                 (initial, stages)
             }
         };
@@ -1148,6 +1239,7 @@ impl Run<'_, '_, '_> {
                     .cloned()
                     .ok_or(ZoneCheckRefusal::Fault("edge-step"))?;
                 let post = step.post().clone();
+                let (position, position_resets) = self.position_read(live, edge.read);
                 Stage {
                     invariants,
                     elapses,
@@ -1161,7 +1253,8 @@ impl Run<'_, '_, '_> {
                         self.cell_zone(live, &post, &target.cell)?
                     },
                     step: Some((step, part)),
-                    position: Vec::new(),
+                    position,
+                    position_resets,
                     silent: false,
                     fixed,
                 }
@@ -1174,6 +1267,7 @@ impl Run<'_, '_, '_> {
                 piece: self.cell_zone(live, &target.state, &target.cell)?,
                 step: None,
                 position: Vec::new(),
+                position_resets: Vec::new(),
                 silent: true,
                 fixed,
             },
@@ -1181,6 +1275,38 @@ impl Run<'_, '_, '_> {
                 return Err(ZoneCheckRefusal::Fault("stage-edge").into());
             }
         })
+    }
+
+    /// The claim-automaton guard and resets a position's `read` takes, over
+    /// the concretisation's clocks: the clock places, then the automaton's.
+    fn position_read(
+        &self,
+        live: &Live<'_>,
+        read: Option<usize>,
+    ) -> (Vec<PlaceConstraint>, Vec<usize>) {
+        let base = self.timed.places().len();
+        let Some(read) = read.and_then(|read| live.product.reads.get(read)) else {
+            return (Vec::new(), Vec::new());
+        };
+        (
+            read.guard
+                .iter()
+                .map(|constraint| {
+                    PlaceConstraint::new(
+                        base + constraint.place(),
+                        constraint.op(),
+                        constraint.bound().clone(),
+                    )
+                })
+                .collect(),
+            read.resets.iter().map(|clock| base + clock).collect(),
+        )
+    }
+
+    /// The number of clocks a concretisation of `live`'s paths reads: the
+    /// clock places, then the automaton's.
+    fn path_clocks(&self, live: &Live<'_>) -> usize {
+        self.timed.places().len() + live.automaton.clock_count() * usize::from(!live.universal)
     }
 
     /// The zone over clock places, in the run's scale, of `cell` at
@@ -1234,7 +1360,7 @@ impl Run<'_, '_, '_> {
                 .position(|&edge| matches!(live.product.edges[edge].via, Via::Stutter))
                 .ok_or(ZoneCheckRefusal::Fault("idle-entry"))?;
             let (initial, stages) = self.stages_along(live, &stem[..tail])?;
-            let dim = self.timed.places().len();
+            let dim = self.path_clocks(live);
             let Ok(concrete) = concretise(self.timed, dim, &stages, &Target::Any, &self.scale)
             else {
                 return Ok(None);
@@ -1266,7 +1392,7 @@ impl Run<'_, '_, '_> {
         let mut loop_stages = Vec::with_capacity(rotated.len());
         for &edge in &rotated {
             let stage = self.stage(live, live.product.edges[edge], None)?;
-            let (part, resets) = match &stage.step {
+            let (part, mut resets) = match &stage.step {
                 Some((step, part)) => (
                     step.parts()
                         .get(*part)
@@ -1276,12 +1402,19 @@ impl Run<'_, '_, '_> {
                 ),
                 None => (Vec::new(), Vec::new()),
             };
+            resets.extend(
+                stage
+                    .position_resets
+                    .iter()
+                    .map(|&clock| (clock, Rational::from_integer(Integer::zero()))),
+            );
             loop_stages.push(LoopStage {
                 elapses: stage.elapses,
                 invariants: stage.invariants,
                 part,
                 resets,
                 target: stage.target,
+                position: stage.position,
                 before: stage.before,
                 piece: stage.piece,
             });
@@ -1312,7 +1445,7 @@ impl Run<'_, '_, '_> {
         }
         // The loop's entry: each clock it resets at the value the loop gives
         // it, each other clock past every constant (FR-236).
-        let places = self.timed.places().len();
+        let places = self.path_clocks(live);
         let mut values: Vec<Option<Rational>> = vec![None; places];
         for (stage, delay) in loop_stages.iter().zip(&delays) {
             for value in values.iter_mut().flatten() {
@@ -1324,7 +1457,13 @@ impl Run<'_, '_, '_> {
                 }
             }
         }
-        let ceiling = self.timed.max_constant();
+        let ceiling = live
+            .automaton
+            .all_constants()
+            .into_iter()
+            .chain([self.timed.max_constant()])
+            .max()
+            .unwrap_or_else(|| self.timed.max_constant());
         let mut at_entry = Dbm::universe(places + 1);
         for (place, value) in values.iter().enumerate() {
             match value {
@@ -1364,7 +1503,7 @@ impl Run<'_, '_, '_> {
             };
             let mut entering = at_entry.clone();
             if let Some(piece) = &last.piece {
-                super::search::intersect(&mut entering, piece)?;
+                super::search::intersect(&mut entering, &piece.widened(places + 1))?;
             }
             last.piece = Some(entering);
             stages.extend(copy.iter().cloned());

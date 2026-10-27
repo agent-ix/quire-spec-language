@@ -56,6 +56,7 @@ mod monitor;
 mod numbering;
 mod past;
 mod state;
+mod timed_claim;
 mod timed_window;
 mod translate;
 
@@ -80,6 +81,9 @@ pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
 pub use state::StateId;
+pub use timed_claim::{
+    has_timed_interval, position_automaton, ClockedEdge, PositionAutomaton, TimedClaim,
+};
 pub use timed_window::{
     bounded_window_verdict, Atoms, Read, Stamp, Undefined, WindowClaim, WindowFault, WindowRefusal,
     WindowState,

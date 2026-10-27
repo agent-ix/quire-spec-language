@@ -11,14 +11,17 @@
 //! `c.level` at each position.
 
 use ix_trace_rs::trace;
-use qsl_eval::automaton::{translate_position_negation, Atom, Letter};
+use std::collections::{BTreeMap, BTreeSet};
+
+use qsl_eval::automaton::{translate_position_negation, Atom, Letter, TimedClaim};
+use qsl_eval::simulation::model::ClockValuation;
 use qsl_eval::temporal::{
     evaluate, evaluate_timed_at, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
     TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace, UndefinedCause,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeSource,
+    check_clauses, Activation, CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeSource,
     PackageDeclarations, TemporalProfile, TimeSourceKind, SCALAR_LIMITS_UNLIMITED,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -693,4 +696,578 @@ fn the_position_negation_answers_to_the_timed_evaluator() {
             "{body}: {violated} violated"
         );
     }
+}
+
+/// A deterministic stream of pseudo-random numbers (xorshift64).
+struct Stream(u64);
+
+impl Stream {
+    fn below(&mut self, bound: u64) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0 % bound
+    }
+
+    fn pick<'a>(&mut self, choices: &[&'a str]) -> &'a str {
+        choices[usize::try_from(self.below(choices.len() as u64)).expect("small")]
+    }
+}
+
+/// An interval for a random operator: under a future operator one starting
+/// at a closed 0, or none; otherwise any.
+fn random_interval(stream: &mut Stream, nested: bool) -> &'static str {
+    if nested {
+        stream.pick(&["", "[0 ms, 1 ms]", "[0 ms, 2 ms)", "[0 ms, 0 ms]"])
+    } else {
+        stream.pick(&[
+            "",
+            "[0 ms, 1 ms]",
+            "[1 ms, 2 ms]",
+            "(0 ms, 1 ms]",
+            "(1 ms, 2 ms)",
+            "[1 ms, 1 ms]",
+        ])
+    }
+}
+
+/// A random past-only formula over `p` and `q`.
+fn random_past(stream: &mut Stream, depth: u32, nested: bool) -> String {
+    if depth == 0 || stream.below(3) == 0 {
+        return stream
+            .pick(&[
+                "holds(c.level = 1)",
+                "holds(c.level = 2)",
+                "not holds(c.level = 1)",
+            ])
+            .to_owned();
+    }
+    let interval = random_interval(stream, nested);
+    match stream.below(4) {
+        0 => format!(
+            "once{interval} ({})",
+            random_past(stream, depth - 1, nested)
+        ),
+        1 => format!(
+            "historically{interval} ({})",
+            random_past(stream, depth - 1, nested)
+        ),
+        2 => format!(
+            "({}) since{interval} ({})",
+            random_past(stream, depth - 1, nested),
+            random_past(stream, depth - 1, nested)
+        ),
+        _ => format!(
+            "({}) or ({})",
+            random_past(stream, depth - 1, nested),
+            random_past(stream, depth - 1, nested)
+        ),
+    }
+}
+
+/// A random timed formula over `p` (`c.level = 1`) and `q` (`c.level =
+/// 2`); `nested` under a future operator.
+fn random_formula(stream: &mut Stream, depth: u32, nested: bool) -> String {
+    if depth == 0 || stream.below(4) == 0 {
+        return match stream.below(4) {
+            0 => random_past(stream, 1, nested),
+            1 => "not holds(c.level = 2)".to_owned(),
+            2 => "holds(c.level = 1)".to_owned(),
+            _ => "holds(c.level = 2)".to_owned(),
+        };
+    }
+    let interval = random_interval(stream, nested);
+    let sub = |stream: &mut Stream| random_formula(stream, depth - 1, true);
+    match stream.below(8) {
+        0 => format!("eventually{interval} ({})", sub(stream)),
+        1 => format!("always{interval} ({})", sub(stream)),
+        2 => format!("({}) until{interval} ({})", sub(stream), sub(stream)),
+        3 => format!("({}) release{interval} ({})", sub(stream), sub(stream)),
+        4 => format!(
+            "({}) and ({})",
+            random_formula(stream, depth - 1, nested),
+            random_formula(stream, depth - 1, nested)
+        ),
+        5 => format!(
+            "({}) or ({})",
+            random_formula(stream, depth - 1, nested),
+            random_formula(stream, depth - 1, nested)
+        ),
+        6 => format!(
+            "({}) implies ({})",
+            random_formula(stream, depth - 1, nested),
+            random_formula(stream, depth - 1, nested)
+        ),
+        _ => format!("not ({})", random_formula(stream, depth - 1, nested)),
+    }
+}
+
+fn quarters(value: u64) -> Rational {
+    Rational::new(Integer::from(value), Integer::from(4_u64)).expect("a rational")
+}
+
+/// Whether `claim` accepts the timed lasso of `stamps` (quarters of a ms),
+/// letters `word`, re-entering `loop_start` `period` quarters after it:
+/// some reachable cycle of its run graph visits every acceptance set. Clock
+/// values past `ceiling` are held at `ceiling + 1`, which every guard reads
+/// alike.
+fn claim_accepts(
+    claim: &mut TimedClaim,
+    stamps: &[u64],
+    word: &[Letter],
+    loop_start: usize,
+    period: u64,
+) -> bool {
+    let ceiling = claim
+        .all_constants()
+        .into_iter()
+        .max()
+        .unwrap_or_else(|| Rational::from_integer(Integer::zero()));
+    let clocks = claim.clock_count();
+    // Clock values in quarters of a ms.
+    let after = |position: usize| -> (usize, u64) {
+        if position + 1 < stamps.len() {
+            (position + 1, stamps[position + 1] - stamps[position])
+        } else {
+            (loop_start, stamps[loop_start] + period - stamps[position])
+        }
+    };
+    type Key = (usize, usize, Vec<u64>);
+    let start = claim.initial().expect("the initial state");
+    let mut numbers: BTreeMap<Key, usize> = BTreeMap::new();
+    let mut nodes: Vec<Key> = Vec::new();
+    let mut edges: Vec<Vec<usize>> = Vec::new();
+    let first = (0, start.index(), vec![0_u64; clocks]);
+    numbers.insert(first.clone(), 0);
+    nodes.push(first);
+    edges.push(Vec::new());
+    let mut at = 0;
+    while at < nodes.len() {
+        let (position, q, values) = nodes[at].clone();
+        let state = claim.reached_state(q).expect("a reached state");
+        let valuation = ClockValuation::new(values.iter().copied().map(quarters).collect());
+        for edge in claim
+            .successors(state, word[position])
+            .expect("the automaton reads the letter")
+        {
+            if !edge
+                .guard
+                .iter()
+                .all(|constraint| constraint.holds(&valuation))
+            {
+                continue;
+            }
+            let (next, delay) = after(position);
+            let moved: Vec<u64> = values
+                .iter()
+                .enumerate()
+                .map(|(clock, value)| {
+                    let base = if edge.resets.contains(&clock) {
+                        0
+                    } else {
+                        *value
+                    };
+                    let advanced = base + delay;
+                    // Past the ceiling every guard reads a value alike.
+                    if quarters(advanced) > ceiling {
+                        (0..).find(|q| quarters(*q) > ceiling).unwrap_or(advanced)
+                    } else {
+                        advanced
+                    }
+                })
+                .collect();
+            let key = (next, edge.target.index(), moved);
+            let to = *numbers.entry(key.clone()).or_insert_with(|| {
+                nodes.push(key);
+                edges.push(Vec::new());
+                nodes.len() - 1
+            });
+            edges[at].push(to);
+        }
+        at += 1;
+    }
+    // A cycle visiting every acceptance set: within one strongly connected
+    // component of the reachable graph, by mutual reachability.
+    let reach: Vec<BTreeSet<usize>> = (0..nodes.len())
+        .map(|from| {
+            let mut seen = BTreeSet::new();
+            let mut stack = edges[from].clone();
+            while let Some(node) = stack.pop() {
+                if seen.insert(node) {
+                    stack.extend(edges[node].iter().copied());
+                }
+            }
+            seen
+        })
+        .collect();
+    (0..nodes.len()).any(|root| {
+        if !reach[root].contains(&root) {
+            return false;
+        }
+        let component: Vec<usize> = reach[root]
+            .iter()
+            .copied()
+            .filter(|node| reach[*node].contains(&root))
+            .collect();
+        (0..claim.acceptance_set_count()).all(|set| {
+            component.iter().any(|&node| {
+                let q = claim.reached_state(nodes[node].1).expect("a reached state");
+                claim.is_accepting_in(set, q)
+            })
+        })
+    })
+}
+
+/// FR-242 (TC-697): the timed claim automaton of the negation answers to
+/// the evaluator. For random timed-profile formulas over `p` and `q` that
+/// nest `eventually`, `always`, `until`, `release` and past operators (a
+/// nested interval starting at a closed 0, any interval at the origin), on
+/// random timed lassos of length at most 6 with stamps in steps of 1/4 ms,
+/// the automaton accepts a lasso exactly when the evaluator returns
+/// `false` on it.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn the_timed_claim_automaton_agrees_with_the_evaluator_on_random_lassos() {
+    let mut stream = Stream(0x9e37_79b9_7f4a_7c15);
+    let (mut formulas, mut held, mut violated) = (0, 0, 0);
+    while formulas < 200 {
+        let body = random_formula(&mut stream, 3, false);
+        if ![
+            "eventually",
+            "always",
+            "until",
+            "release",
+            "once",
+            "historically",
+            "since",
+        ]
+        .iter()
+        .any(|operator| body.contains(operator))
+        {
+            continue;
+        }
+        let fixture = timed(&body);
+        let mut claim = match TimedClaim::new(&fixture.clause, 1 << 20) {
+            Ok(claim) => claim,
+            Err(qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }) => continue,
+            Err(why) => panic!("{body}: {why}"),
+        };
+        formulas += 1;
+        let atom_levels = levels_of(&fixture, claim.atoms());
+        for _ in 0..80 {
+            let length = usize::try_from(stream.below(6) + 1).expect("small");
+            let loop_start = usize::try_from(stream.below(length as u64)).expect("small");
+            let mut stamps = vec![0_u64];
+            for _ in 1..length {
+                let last = *stamps.last().expect("a stamp");
+                stamps.push(last + stream.below(5));
+            }
+            let period = stamps[length - 1] - stamps[loop_start] + 1 + stream.below(4);
+            let levels: Vec<i64> = (0..length)
+                .map(|_| i64::try_from(stream.below(3)).expect("small"))
+                .collect();
+            let word: Vec<Letter> = levels
+                .iter()
+                .map(|level| letter_of(&atom_levels, *level))
+                .collect();
+            let trace = TimedTrace::lasso(
+                stamps.iter().copied().map(quarters).collect(),
+                u64::try_from(loop_start).expect("small"),
+                quarters(period),
+            )
+            .expect("a timed lasso");
+            let mut letters = Levels {
+                fixture: &fixture,
+                levels: levels.clone(),
+                undefined_at: None,
+            };
+            let outcome = evaluate_timed_at(
+                &fixture.clause,
+                &trace,
+                TemporalPosition::new(0),
+                &mut letters,
+                &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+            )
+            .expect("the lasso is readable");
+            let refuted = match outcome {
+                TemporalOutcome::Holds => false,
+                TemporalOutcome::Violated { .. } => true,
+                other => panic!("{body}: {other:?}"),
+            };
+            assert_eq!(
+                claim_accepts(&mut claim, &stamps, &word, loop_start, period),
+                refuted,
+                "{body} over stamps {stamps:?} (quarters), levels {levels:?}, loop to \
+                 {loop_start} after {period}"
+            );
+            held += usize::from(!refuted);
+            violated += usize::from(refuted);
+        }
+    }
+    assert!(
+        held > 100 && violated > 100,
+        "{held} held, {violated} violated"
+    );
+}
+
+/// FR-242-AC-1 (TC-697): for each of `eventually[0 ms, 3 ms] holds(q)`,
+/// `eventually[0 ms, 3 ms) holds(q)`, `holds(p) until(1 ms, 2 ms] holds(q)`
+/// and `always (holds(p) implies eventually[0 ms, 2 ms] holds(q))`, on
+/// 1,000 random timed lassos with stamps in steps of 1/4 ms and length at
+/// most 8, the timed claim automaton of the negation accepts exactly the
+/// lassos on which the evaluator returns `false`.
+#[trace("TC-697", "FR-242-AC-1")]
+#[test]
+fn the_mitl_vectors_agree_with_the_evaluator() {
+    let mut stream = Stream(0x5eed_1234_abcd_ef01);
+    for body in [
+        "eventually[0 ms, 3 ms] holds(c.level = 2)",
+        "eventually[0 ms, 3 ms) holds(c.level = 2)",
+        "holds(c.level = 1) until(1 ms, 2 ms] holds(c.level = 2)",
+        "always (holds(c.level = 1) implies eventually[0 ms, 2 ms] holds(c.level = 2))",
+    ] {
+        let fixture = timed(body);
+        let mut claim = TimedClaim::new(&fixture.clause, 1 << 20).expect("the clause translates");
+        let atom_levels = levels_of(&fixture, claim.atoms());
+        let (mut held, mut violated) = (0, 0);
+        for _ in 0..1_000 {
+            let length = usize::try_from(stream.below(8) + 1).expect("small");
+            let loop_start = usize::try_from(stream.below(length as u64)).expect("small");
+            let mut stamps = vec![0_u64];
+            for _ in 1..length {
+                let last = *stamps.last().expect("a stamp");
+                stamps.push(last + stream.below(5));
+            }
+            let period = stamps[length - 1] - stamps[loop_start] + 1 + stream.below(4);
+            let levels: Vec<i64> = (0..length)
+                .map(|_| i64::try_from(stream.below(3)).expect("small"))
+                .collect();
+            let word: Vec<Letter> = levels
+                .iter()
+                .map(|level| letter_of(&atom_levels, *level))
+                .collect();
+            let trace = TimedTrace::lasso(
+                stamps.iter().copied().map(quarters).collect(),
+                u64::try_from(loop_start).expect("small"),
+                quarters(period),
+            )
+            .expect("a timed lasso");
+            let mut letters = Levels {
+                fixture: &fixture,
+                levels: levels.clone(),
+                undefined_at: None,
+            };
+            let refuted = match evaluate_timed_at(
+                &fixture.clause,
+                &trace,
+                TemporalPosition::new(0),
+                &mut letters,
+                &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+            )
+            .expect("the lasso is readable")
+            {
+                TemporalOutcome::Holds => false,
+                TemporalOutcome::Violated { .. } => true,
+                other => panic!("{body}: {other:?}"),
+            };
+            assert_eq!(
+                claim_accepts(&mut claim, &stamps, &word, loop_start, period),
+                refuted,
+                "{body} over stamps {stamps:?} (quarters), levels {levels:?}, loop to \
+                 {loop_start} after {period}"
+            );
+            held += usize::from(!refuted);
+            violated += usize::from(refuted);
+        }
+        assert!(
+            held > 0 && violated > 0,
+            "{body}: {held} held, {violated} violated"
+        );
+    }
+}
+
+/// The level each atom of the letter reads, by atom.
+fn levels_of(fixture: &Fixture, atoms: &[FormulaNodeId]) -> Vec<i64> {
+    atoms
+        .iter()
+        .map(|node| {
+            let Some(FormulaNode::Holds { span }) =
+                fixture.clause.formula().nodes().get(node.index())
+            else {
+                panic!("an atom is a holds atom");
+            };
+            fixture.text[span.start..span.end]
+                .strip_prefix("holds(c.level = ")
+                .and_then(|rest| rest.strip_suffix(')'))
+                .and_then(|level| level.parse().ok())
+                .expect("a `holds(c.level = k)` atom")
+        })
+        .collect()
+}
+
+/// The letter of a position at `level`.
+fn letter_of(atom_levels: &[i64], level: i64) -> Letter {
+    atom_levels
+        .iter()
+        .enumerate()
+        .filter(|(_, atom)| **atom == level)
+        .fold(Letter::default(), |letter, (index, _)| {
+            letter.with(Atom::new(index).expect("a small atom"))
+        })
+}
+
+/// Whether the evaluator refutes `fixture`'s clause on the timed lasso of
+/// `stamps` (quarters), `levels`, re-entering `loop_start` `period`
+/// quarters after it: at position 0 under `on origin`; under `on each`, at
+/// some position. The evaluator reads a position past the represented
+/// trace at its settled loop copy, so the lasso is first written with its
+/// loop unrolled 12 times, the same timed word with every earlier copy
+/// represented: a past window of at most 3 ms over a loop of at least
+/// 1/4 ms has settled by then.
+fn evaluator_refutes(
+    fixture: &Fixture,
+    body: &str,
+    stamps: &[u64],
+    levels: &[i64],
+    loop_start: usize,
+    period: u64,
+) -> bool {
+    let each = matches!(fixture.clause.activation(), Activation::Each { .. });
+    let copies = if each { 12 } else { 0 };
+    let (mut long_stamps, mut long_levels) = (stamps.to_vec(), levels.to_vec());
+    for copy in 1..=copies {
+        for at in loop_start..stamps.len() {
+            long_stamps.push(stamps[at] + copy * period);
+            long_levels.push(levels[at]);
+        }
+    }
+    let long_start =
+        loop_start + usize::try_from(copies).expect("small") * (stamps.len() - loop_start);
+    let trace = TimedTrace::lasso(
+        long_stamps.iter().copied().map(quarters).collect(),
+        u64::try_from(long_start).expect("small"),
+        quarters(period),
+    )
+    .expect("a timed lasso");
+    let mut letters = Levels {
+        fixture,
+        levels: long_levels.clone(),
+        undefined_at: None,
+    };
+    let last = if each { long_stamps.len() } else { 1 };
+    (0..last).any(|position| {
+        match evaluate_timed_at(
+            &fixture.clause,
+            &trace,
+            TemporalPosition::new(u64::try_from(position).expect("small")),
+            &mut letters,
+            &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+        )
+        .expect("the lasso is readable")
+        {
+            TemporalOutcome::Holds => false,
+            TemporalOutcome::Violated { .. } => true,
+            other => panic!("{body} at {position}: {other:?}"),
+        }
+    })
+}
+
+/// The automaton of `fixture` against the evaluator on `lassos` random
+/// lassos of length at most `max_length`, as [`evaluator_refutes`] reads
+/// them: the numbers held and violated.
+fn agreement(
+    fixture: &Fixture,
+    body: &str,
+    stream: &mut Stream,
+    lassos: usize,
+    max_length: u64,
+) -> (usize, usize) {
+    let mut claim = TimedClaim::new(&fixture.clause, 1 << 20).expect("the clause translates");
+    let atom_levels = levels_of(fixture, claim.atoms());
+    let (mut held, mut violated) = (0, 0);
+    for _ in 0..lassos {
+        let length = usize::try_from(stream.below(max_length) + 1).expect("small");
+        let loop_start = usize::try_from(stream.below(length as u64)).expect("small");
+        let mut stamps = vec![0_u64];
+        for _ in 1..length {
+            let last = *stamps.last().expect("a stamp");
+            stamps.push(last + stream.below(5));
+        }
+        let period = stamps[length - 1] - stamps[loop_start] + 1 + stream.below(4);
+        let levels: Vec<i64> = (0..length)
+            .map(|_| i64::try_from(stream.below(3)).expect("small"))
+            .collect();
+        let word: Vec<Letter> = levels
+            .iter()
+            .map(|level| letter_of(&atom_levels, *level))
+            .collect();
+        let refuted = evaluator_refutes(fixture, body, &stamps, &levels, loop_start, period);
+        assert_eq!(
+            claim_accepts(&mut claim, &stamps, &word, loop_start, period),
+            refuted,
+            "{body} over stamps {stamps:?} (quarters), levels {levels:?}, loop to \
+             {loop_start} after {period}"
+        );
+        held += usize::from(!refuted);
+        violated += usize::from(refuted);
+    }
+    (held, violated)
+}
+
+/// FR-242 (TC-697, SR-1650002 FND-001): the one-clock subsumption rules,
+/// read where they decide. The negation of `eventually (p and
+/// eventually[0 ms, 1 ms] q)` restarts `always[0, 1]` at every `p`, kept
+/// once by the newer start; that of `eventually (p and (p until[0 ms,
+/// 1 ms] q))` restarts `release[0, 1]` alike; that of `eventually (p and
+/// always[0 ms, 1 ms] not q)` restarts `eventually[0, 1]`, kept by the older.
+/// Under `on origin` and `on each`, on 1,000 random timed lassos each, the
+/// automaton accepts exactly where the evaluator refutes the clause.
+/// Keeping the older `release` instead fails the first two at once.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn the_subsumption_rules_answer_to_the_evaluator() {
+    let mut stream = Stream(0x1650_5ab5_0000_0001);
+    for activation in ["on origin", "on each (q: M::Counter)"] {
+        for body in [
+            "eventually (holds(c.level = 1) and eventually[0 ms, 1 ms] holds(c.level = 2))",
+            "eventually (holds(c.level = 1) and \
+             (holds(c.level = 1) until[0 ms, 1 ms] holds(c.level = 2)))",
+            "eventually (holds(c.level = 1) and always[0 ms, 1 ms] not holds(c.level = 2))",
+        ] {
+            let fixture = timed_on(activation, body);
+            let (held, violated) = agreement(&fixture, body, &mut stream, 1_000, 8);
+            assert!(
+                held > 0 && violated > 0,
+                "{activation} {body}: {held} held, {violated} violated"
+            );
+        }
+    }
+}
+
+/// FR-242 (TC-697, SR-1650002 FND-004): the agreement test under `on
+/// each`, where every operator is read below the activating `until`. For
+/// 100 random formulas, on 40 random timed lassos each, the automaton
+/// accepts exactly where the evaluator refutes the clause at some position.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn the_timed_claim_automaton_agrees_under_each_activation() {
+    let mut stream = Stream(0x1650_eac4_0000_0002);
+    let (mut formulas, mut held, mut violated) = (0, 0, 0);
+    while formulas < 100 {
+        let body = random_formula(&mut stream, 3, true);
+        let fixture = timed_on("on each (q: M::Counter)", &body);
+        match TimedClaim::new(&fixture.clause, 1 << 20) {
+            Ok(_) => {}
+            Err(qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }) => continue,
+            Err(why) => panic!("{body}: {why}"),
+        }
+        formulas += 1;
+        let (more_held, more_violated) = agreement(&fixture, &body, &mut stream, 40, 6);
+        held += more_held;
+        violated += more_violated;
+    }
+    assert!(
+        held > 50 && violated > 50,
+        "{held} held, {violated} violated"
+    );
 }
