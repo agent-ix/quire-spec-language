@@ -39,3 +39,14 @@ Changes requested on FND-001 and FND-002: record them as deferred on a ticket, o
 
 - I re-read FR-230 "Collection-valued writes", FR-230-AC-20, FR-104 on `pre`/`post` reads, and STD-493 items 21 and 22.
 - The PR body claims were treated as data and re-measured with the probes in SR-1662001.
+
+## Dispositions
+
+Round 1. The head is c3110bf0a.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The record part of QSpec FR-181-AC-25 now executes: filtering out slot 0 moves slot 1's clocks to slot 0 with their values, and a fresh literal gives its constants (`a_collection_write_moves_each_clock_with_its_element`, plus my probes over Sequence, Set and Bag). The fresh front-insert half needs `flatten` over a nested literal, which is STD-493 item 29. |
+| FND-002 | fixed | A written Set or Bag slot takes the provenance of the element it holds, matched by value (`slot_provenance`). So slot identity follows element identity. Probe: a Set filter carried slot 1's clocks to slot 0. |
+| FND-003 | fixed | The `flatten` `AmbiguousLiteral` case is filed as STD-493 item 29 (c0227f3c, read back). |
+| FND-004 | fixed | Filed as STD-493 item 28 (bab3d3c9). |
