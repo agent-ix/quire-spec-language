@@ -121,6 +121,125 @@ fn qualify_compiles_a_language_vector_through_the_public_entry_point() {
 }
 
 #[test]
+#[trace("TC-875", "FR-350-AC-1", "FR-350-AC-8")]
+fn qualify_runs_a_call_vector_through_the_public_entry_point() {
+    let temp = tempfile::tempdir().unwrap();
+    let corpus = copy_fixture(&temp);
+    let source_path = corpus.join("inputs/native.native");
+    fs::write(
+        &source_path,
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction truth using v(b: Boolean): Boolean pure { b }\n",
+    )
+    .unwrap();
+    let source_bytes = fs::read(&source_path).unwrap();
+    let source = qsl_foundation::SourceIdentity::new(
+        "agent-ix",
+        "inputs/native.native",
+        "qualification",
+        "1",
+    );
+    let call = qsl_replay::Call {
+        function: "truth".into(),
+        arguments: vec![qsl_replay::CallArgument {
+            parameter: "b".into(),
+            value: quire_exact::Value::Boolean(true),
+        }],
+        accounting: qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS),
+        supplied: qsl_replay::read_supplied_limits(&serde_json::json!({
+            "admission_work_units": 100_000,
+            "conversion_work_units": 100_000,
+            "numeric_magnitude_bits": 100_000
+        }))
+        .unwrap(),
+    };
+    let outcome = qsl_replay::spine::run(
+        source,
+        "inputs/native.native",
+        &source_bytes,
+        &Default::default(),
+        &qsl_replay::DependencyInput::default(),
+        qsl_replay::SpineLimits::default(),
+        &call,
+        &qsl_replay::ObjectEnvironment::default(),
+        &qsl_replay::Cancel::new(),
+    )
+    .unwrap();
+    let expected = serde_json::from_slice(
+        &qsl_replay::OutcomeDocument::from_run(&Ok(outcome))
+            .to_bytes()
+            .unwrap(),
+    )
+    .unwrap();
+
+    let mut value: Value =
+        serde_json::from_slice(&fs::read(corpus.join("complete-v1.json")).unwrap()).unwrap();
+    value["coverage"]["primary"][0]["applicability"]["consumer_types"] =
+        serde_json::json!(["runtime"]);
+    value["vectors"][0]["applicability"]["consumer_types"] = serde_json::json!(["runtime"]);
+    value["vectors"][0]["subject"]["consumer_type"] = Value::String("runtime".into());
+    value["vectors"][0]["subject"]["operation"] = Value::String("run".into());
+    value["vectors"][0]["input"]["files"] = serde_json::json!([
+        {"kind":"source", "path":"inputs/native.native"},
+        {"kind":"call", "path":"inputs/call.json"}
+    ]);
+    value["vectors"][0]["expected"]["value"] = expected;
+    fs::write(
+        corpus.join("inputs/call.json"),
+        br#"{"function":"truth","arguments":[{"kind":"boolean","value":true}],"accounting":{}}"#,
+    )
+    .unwrap();
+    write_canonical(&corpus.join("complete-v1.json"), &value);
+
+    let output = run(&["qualify", "--corpus", corpus.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(0), "{}", utf8(&output.stderr));
+    let report: Value = serde_json::from_slice(&output.stdout).expect("JSON report");
+    assert_eq!(report["counts"]["passed"], 1, "{}", utf8(&output.stdout));
+    assert_eq!(report["capabilities"][0]["outcome"], "passed");
+}
+
+#[test]
+#[trace("TC-875", "FR-350-AC-1", "FR-350-AC-8")]
+fn qualify_refuses_ambiguous_run_inputs_instead_of_ignoring_them() {
+    let temp = tempfile::tempdir().unwrap();
+    let corpus = copy_fixture(&temp);
+    fs::write(
+        corpus.join("inputs/native.native"),
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction truth using v(b: Boolean): Boolean pure { b }\n",
+    )
+    .unwrap();
+    fs::write(
+        corpus.join("inputs/call.json"),
+        br#"{"function":"truth","arguments":[{"kind":"boolean","value":true}],"accounting":{}}"#,
+    )
+    .unwrap();
+    let mut value: Value =
+        serde_json::from_slice(&fs::read(corpus.join("complete-v1.json")).unwrap()).unwrap();
+    value["coverage"]["primary"][0]["applicability"]["consumer_types"] =
+        serde_json::json!(["runtime"]);
+    value["vectors"][0]["applicability"]["consumer_types"] = serde_json::json!(["runtime"]);
+    value["vectors"][0]["subject"]["consumer_type"] = Value::String("runtime".into());
+    value["vectors"][0]["subject"]["operation"] = Value::String("run".into());
+    value["vectors"][0]["input"]["files"] = serde_json::json!([
+        {"kind":"source", "path":"inputs/native.native"},
+        {"kind":"call", "path":"inputs/call.json"},
+        {"kind":"call", "path":"inputs/call.json"}
+    ]);
+    write_canonical(&corpus.join("complete-v1.json"), &value);
+
+    let output = run(&["qualify", "--corpus", corpus.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(1), "{}", utf8(&output.stderr));
+    let report: Value = serde_json::from_slice(&output.stdout).expect("JSON report");
+    assert_eq!(report["counts"]["tool-failure"], 1);
+    assert_eq!(report["capabilities"][0]["outcome"], "tool-failure");
+    assert_eq!(
+        report["capabilities"][0]["vectors"][0]["actual"]["code"],
+        "call-input"
+    );
+}
+
+#[test]
 #[trace("TC-881", "FR-353-AC-4")]
 fn qualify_refuses_a_schema_invalid_corpus_before_execution() {
     let temp = tempfile::tempdir().unwrap();
