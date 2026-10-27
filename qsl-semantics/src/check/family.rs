@@ -420,6 +420,14 @@ fn encode_expression(
                 out.write_str("integer");
                 out.write_str(&value.to_string());
             }
+            ExprNode::Float32(bits) => {
+                out.write_str("float32_bits");
+                out.write_str(&format!("{bits:08x}"));
+            }
+            ExprNode::Float64(bits) => {
+                out.write_str("float64_bits");
+                out.write_str(&format!("{bits:016x}"));
+            }
             ExprNode::Rational(numerator, denominator) => {
                 out.write_str("rational");
                 out.write_str(&numerator.to_string());
@@ -873,7 +881,7 @@ impl<'a> TargetTypes<'a> {
 /// [`super::CheckingLimits`] node charge at every entered node bounds
 /// nesting on both paths. Application traversal remains on the same
 /// explicit stack and does not create another per-node context or meter.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum Application<'a> {
     /// A call of the declared function at index `function`.
     Function {
@@ -899,6 +907,11 @@ pub(crate) enum Application<'a> {
         /// The function's checked signature in the library's graph; every
         /// type in it is package-independent.
         signature: &'a Signature,
+    },
+    /// The reserved IEEE square-root intrinsic.
+    IeeeSquareRoot {
+        /// Expected float type, when the surrounding expression supplies one.
+        expected: Option<ValueType>,
     },
 }
 
@@ -934,6 +947,13 @@ fn is_package_independent(value_type: &ValueType) -> bool {
     }
 }
 
+/// Whether `name` is the authored spelling of the IEEE square-root function.
+/// `#[string_edge]`: reads a written call name before it is resolved.
+#[ix_trace_rs::string_edge]
+fn is_ieee_sqrt(name: &str) -> bool {
+    name == "quire::value::ieee::sqrt"
+}
+
 impl<'a> Application<'a> {
     /// Resolve a call of `name` with `arity` arguments: a declared function
     /// callable by name, else a tuple constructor; refuses an arity
@@ -942,8 +962,26 @@ impl<'a> Application<'a> {
         typer: &Typer<'a>,
         name: &str,
         arity: usize,
+        hint: Option<&ValueType>,
         location: &CheckLocation,
     ) -> Result<Self, CheckRefusal> {
+        if is_ieee_sqrt(name) {
+            if arity != 1 {
+                return Err(CheckRefusal::ill_typed(
+                    location,
+                    IllTypedCause::TypeMismatch,
+                ));
+            }
+            if typer.scope().ieee_profile.is_none() {
+                return Err(CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::IeeeProfileNotAdmitted,
+                });
+            }
+            return Ok(Self::IeeeSquareRoot {
+                expected: hint.cloned(),
+            });
+        }
         if let Some((qualifier, member)) = name.split_once("::") {
             if let Some(import) = typer.scope().imported(qualifier) {
                 return Self::imported(import, member, arity, location);
@@ -1061,13 +1099,18 @@ impl<'a> Application<'a> {
     }
 
     /// The type the argument at `index` is checked against.
-    pub(crate) fn parameter(self, index: usize) -> Option<&'a ValueType> {
+    pub(crate) fn parameter(&self, index: usize) -> Option<ValueType> {
         match self {
             Self::Function { signature, .. } | Self::Imported { signature, .. } => signature
                 .parameters
                 .get(index)
-                .map(|(_, parameter)| parameter),
-            Self::Tuple { positions, .. } => positions.get(index),
+                .map(|(_, parameter)| parameter.clone()),
+            Self::Tuple { positions, .. } => positions.get(index).cloned(),
+            Self::IeeeSquareRoot { expected } => expected
+                .as_ref()
+                .filter(|value_type| matches!(value_type, ValueType::Float(_)))
+                .filter(|_| index == 0)
+                .cloned(),
         }
     }
 
@@ -1075,27 +1118,28 @@ impl<'a> Application<'a> {
     pub(crate) fn finish(
         self,
         arguments: Vec<super::ir::NodeId>,
+        argument_types: Vec<ValueType>,
         location: &CheckLocation,
-    ) -> Node {
+    ) -> Result<Node, CheckRefusal> {
         match self {
             // FR-093: the call's identity is the key of the `expression`
             // node `check::lowering` builds for it once its callee is keyed.
             Self::Function {
                 function,
                 signature,
-            } => Node {
+            } => Ok(Node {
                 kind: super::ir::NodeKind::Call {
                     function,
                     arguments,
                 },
                 value_type: signature.result.clone(),
                 location: location.clone(),
-            },
+            }),
             Self::Imported {
                 callee,
                 function,
                 signature,
-            } => Node {
+            } => Ok(Node {
                 kind: super::ir::NodeKind::ImportedCall {
                     callee,
                     function,
@@ -1103,15 +1147,34 @@ impl<'a> Application<'a> {
                 },
                 value_type: signature.result.clone(),
                 location: location.clone(),
-            },
-            Self::Tuple { declaration, .. } => Node {
+            }),
+            Self::Tuple { declaration, .. } => Ok(Node {
                 kind: super::ir::NodeKind::Tuple {
                     declaration,
                     arguments,
                 },
                 value_type: ValueType::Composite(declaration),
                 location: location.clone(),
-            },
+            }),
+            Self::IeeeSquareRoot { .. } => {
+                let [operand] = arguments.as_slice() else {
+                    return Err(CheckRefusal::ill_typed(
+                        location,
+                        IllTypedCause::TypeMismatch,
+                    ));
+                };
+                let [ValueType::Float(float)] = argument_types.as_slice() else {
+                    return Err(CheckRefusal::ill_typed(
+                        &location.child(0),
+                        IllTypedCause::TypeMismatch,
+                    ));
+                };
+                Ok(Node {
+                    kind: super::ir::NodeKind::IeeeSquareRoot(float.rounding(), *operand),
+                    value_type: ValueType::Float(*float),
+                    location: location.clone(),
+                })
+            }
         }
     }
 }
@@ -1917,7 +1980,6 @@ pub mod fixtures {
             C::CollectionKindMismatch,
             C::PopulationPair,
             C::ValueKindMismatch,
-            C::CallDepthExceeded,
             C::UnknownCheckedFunction,
             C::ForeignCheckedExpression,
             C::MeterBorrowConflict,
@@ -1948,43 +2010,6 @@ pub mod fixtures {
                 C::GeneratedTypeCheckRejected { cause },
                 C::GeneratedEqualityCheckRejected { cause },
             ]);
-        }
-        // The actual dependency enum is closed: adding a cause requires a fixture.
-        for cause in &cases {
-            match cause {
-                C::NativeIntegerCapacityBreach
-                | C::CollectionElementNotAdmitted
-                | C::DeferredResultNotAdmitted
-                | C::CanonicalKeyUnavailable
-                | C::BoundedDivisionExpected
-                | C::CollectionKindMismatch
-                | C::PopulationPair
-                | C::ValueKindMismatch
-                | C::CallDepthExceeded
-                | C::UnknownCheckedFunction
-                | C::ForeignCheckedExpression
-                | C::MeterBorrowConflict
-                | C::EqualityScheduleMismatch
-                | C::EqualityOperandSourceNotAdmitted
-                | C::EqualityOperandNonIntegralDecimal
-                | C::EqualityQuantityNonExactPlacement
-                | C::EqualityConversionShapeMismatch
-                | C::EqualityOperandTargetNotAdmitted
-                | C::EqualityUnitUnresolved
-                | C::EqualityEnumVariantUnresolved
-                | C::ExpectedIntegerPlacement
-                | C::GeneratedBodyPlaceholderInvoked
-                | C::GeneratedArgumentShapeMismatch
-                | C::GeneratedOperandKindUnsupported
-                | C::GeneratedUnexpectedOutcome
-                | C::GeneratedIntervalInvalid
-                | C::GeneratedEnvironmentRejected
-                | C::GeneratedDescriptorReconstructionFailed
-                | C::ScheduledComparisonRefused { .. }
-                | C::EqualityQuantityConversionRejected { .. }
-                | C::GeneratedTypeCheckRejected { .. }
-                | C::GeneratedEqualityCheckRejected { .. } => {}
-            }
         }
         cases
     }

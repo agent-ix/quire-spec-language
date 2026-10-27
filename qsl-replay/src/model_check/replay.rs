@@ -66,16 +66,19 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Meter, ScalarLimits};
+use quire_exact::{Meter, Rational, ScalarLimits};
 use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
+mod timed;
+
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, undefined_finding, CounterexampleKind, Lasso,
-    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
+    CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
 use crate::model_check::limits::ReachedLimit;
@@ -95,6 +98,45 @@ pub struct ModelTraceSubject {
     pub universes: Vec<PopulationUniverse>,
     /// The subject's expansion limits.
     pub expansion: ExpansionLimits,
+    /// FR-237: the timed reading the counterexample was found under; `None`
+    /// for an untimed subject, whose replay refuses every delay.
+    pub timed: Option<TimedReplay>,
+}
+
+/// FR-237: the timed reading of a model subject a replay re-executes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimedReplay {
+    /// The alias of the model whose time source and timed model the
+    /// subject is read under (FR-230), as `TimedSystem::new` names it.
+    pub model: String,
+    /// The bounds of the fresh exploration of a finite violation's endpoint
+    /// or a non-local time-lock (FR-101's `max_states` and
+    /// `max_transitions`).
+    pub exploration: qsl_eval::simulation::Limits,
+}
+
+/// What forbids a delay in a timed counterexample (FR-231 "Delay").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DelayBar {
+    /// The delay is negative.
+    Negative,
+    /// The source counts ticks, so only a delay of 0 is admissible.
+    TickSource,
+    /// The state is urgent.
+    Urgent,
+    /// The named time invariant fails at the delay's end.
+    TimeInvariant(String),
+}
+
+impl std::fmt::Display for DelayBar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Negative => f.write_str("negative"),
+            Self::TickSource => f.write_str("tick-source"),
+            Self::Urgent => f.write_str("urgent"),
+            Self::TimeInvariant(name) => write!(f, "time invariant `{name}`"),
+        }
+    }
 }
 
 /// FR-217's subject members beside FR-098's: the model subject's, the
@@ -142,6 +184,70 @@ pub enum ModelTraceRefusal {
         /// The step that carries it; `None` for the `final_delay`.
         step: Option<usize>,
     },
+    /// Over a timed subject, a step carries no `delay`, or a time-lock
+    /// counterexample no `final_delay` (FR-236).
+    #[error("invalid_runtime_input/invalid-value: the counterexample carries no delay at {step:?} over a timed subject")]
+    MissingDelay {
+        /// The step that carries none; `None` for the `final_delay`.
+        step: Option<usize>,
+    },
+    /// A delay that is not admissible at the timed state it starts from: a
+    /// time invariant fails during it, or the state is urgent, or the
+    /// source counts ticks (FR-231 "Delay"; FR-237).
+    #[error("invalid_runtime_input/invalid-value: the delay {delay} before {step:?} is not admissible ({bar})")]
+    DelayNotAdmissible {
+        /// The step it precedes; `None` for the `final_delay`.
+        step: Option<usize>,
+        /// The delay.
+        delay: Rational,
+        /// What forbids it.
+        bar: DelayBar,
+    },
+    /// A step's target time invariant fails after its resets (FR-237).
+    #[error("invalid_runtime_input/invalid-value: step {step} reaches a state its time invariant `{invariant}` forbids")]
+    TargetInvariant {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+        /// The time invariant that fails.
+        invariant: String,
+    },
+    /// Over a timed subject, a step's transition identity is enabled by its
+    /// data precondition, but no convex part of its clock guard holds after
+    /// the delay (FR-237).
+    #[error("invalid_runtime_input/invalid-value: step {step}'s clock guard {guards:?} does not hold after its delay")]
+    GuardFails {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+        /// Its transition identity.
+        transition: Box<ModelTransition>,
+        /// The precondition clauses whose clock guards apply.
+        guards: Vec<String>,
+    },
+    /// A counterexample that is not a time-lock carries a `final_delay`,
+    /// which FR-236 leaves `None` on every other kind.
+    #[error("invalid_runtime_input/invalid-value: a counterexample that is not a time-lock carries a final_delay")]
+    StrayFinalDelay,
+    /// A time-lock counterexample carries a lasso: a time-lock is a finite
+    /// prefix and its `final_delay` (FR-236).
+    #[error("invalid_runtime_input/invalid-value: a time-lock counterexample carries a lasso")]
+    TimeLockLasso,
+    /// A timed lasso whose loop takes no positive total delay, so it is no
+    /// time-divergent behaviour (ADR-026 CT-2; FR-237 "Lasso").
+    #[error("invalid_runtime_input/invalid-value: the loop entered at position {entry} takes no positive total delay")]
+    LoopZeroDelay {
+        /// The loop's entry position.
+        entry: usize,
+    },
+    /// A time-lock counterexample over an untimed subject, which has no
+    /// time to lock (FR-232).
+    #[error(
+        "invalid_runtime_input/invalid-value: a time-lock counterexample names an untimed subject"
+    )]
+    TimeLockUntimed,
+    /// The recompiled package's timed model does not build a timed subject
+    /// (FR-231).
+    #[error("invalid_runtime_input/invalid-value: the timed subject does not build: {0}")]
+    TimedSubject(qsl_eval::simulation::model::TimedSubjectRefusal),
     /// `initial_state` is not an index of the subject's initial states.
     #[error("invalid_runtime_input/invalid-value: initial state {index} of {count}")]
     InitialState {
@@ -369,6 +475,15 @@ impl ModelTraceRefusal {
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
             | Self::UntimedDelay { .. }
+            | Self::MissingDelay { .. }
+            | Self::DelayNotAdmissible { .. }
+            | Self::TargetInvariant { .. }
+            | Self::GuardFails { .. }
+            | Self::StrayFinalDelay
+            | Self::TimeLockLasso
+            | Self::LoopZeroDelay { .. }
+            | Self::TimeLockUntimed
+            | Self::TimedSubject(_)
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
@@ -405,6 +520,15 @@ impl ModelTraceRefusal {
             },
             Self::InitialState { .. }
             | Self::UntimedDelay { .. }
+            | Self::MissingDelay { .. }
+            | Self::DelayNotAdmissible { .. }
+            | Self::TargetInvariant { .. }
+            | Self::GuardFails { .. }
+            | Self::StrayFinalDelay
+            | Self::TimeLockLasso
+            | Self::LoopZeroDelay { .. }
+            | Self::TimeLockUntimed
+            | Self::TimedSubject(_)
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::SendRecordShape { .. }
@@ -582,9 +706,54 @@ pub fn replay_model_trace(
                 letters,
                 meter,
             });
-            settle(&system, envelope.family_payload(), formula)
+            match &subject.timed {
+                Some(reading) => timed::settle(
+                    &timed::timed_subject(&system, &reading.model)?,
+                    envelope.family_payload(),
+                    formula,
+                    &reading.exploration,
+                ),
+                None => settle(&system, envelope.family_payload(), formula),
+            }
         },
     )
+}
+
+/// FR-237: the replay of a counterexample over the timed subject `timed`,
+/// once [`replay_model_trace`] has recompiled the package, resolved the
+/// item (`clause`, `None` for a derived item) and re-admitted the subject:
+/// each delay, guard, post-state digest and time invariant is checked in
+/// exact arithmetic, a lasso's closure, total delay and fairness over time,
+/// the formula over the timed lasso, a finite violation's admitted
+/// endpoint and a time-lock's arm, the last two by a fresh exploration
+/// under `exploration`. `letters` reads the clause's atoms and `meter`
+/// bounds each evaluation. A reproduced lasso comes with its FR-133
+/// hints.
+///
+/// It skips FR-128's recompile, identity, fairness-set and admission
+/// checks and binds no `package_id`, so it is test support only: the
+/// production path is [`replay_model_trace`].
+///
+/// # Errors
+///
+/// [`ReplayRefusal`] as [`replay_model_trace`] refuses a timed
+/// counterexample.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn replay_timed_counterexample(
+    timed: &qsl_eval::simulation::model::TimedSystem<'_, '_>,
+    payload: &TemporalCounterexample,
+    clause: Option<&CheckedTemporalClause>,
+    letters: &dyn ModelLetters,
+    meter: ScalarLimits,
+    exploration: &qsl_eval::simulation::Limits,
+) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+    let formula = clause.map(|clause| FormulaReplay {
+        clause,
+        letters,
+        meter,
+    });
+    timed::settle(timed, payload, formula, exploration)
 }
 
 /// FR-217 (ADR-027 PX-2): replay `envelope`'s protocol counterexample over
@@ -732,6 +901,9 @@ impl ProtocolReplay<'_> {
         }
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
+            (CounterexampleKind::TimeLock, _) => {
+                return Err(refused(ModelTraceRefusal::TimeLockUntimed))
+            }
             (CounterexampleKind::Race(race), _) => {
                 if reproduces(
                     &steps,
@@ -876,13 +1048,16 @@ fn resolve_item<'p, T: SubjectTransition>(
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
     let (deadlock_node, deadlock_key) = deadlock_freedom_clause(package_id);
     let (race_node, race_key) = race_freedom_clause(package_id);
+    let (lock_node, lock_key) = time_lock_freedom_clause(package_id);
     let names = |node: WireNodeId, key: &OccurrenceKey| {
         envelope.clause_node() == node && envelope.occurrence_key() == key
     };
     let on_deadlock = names(deadlock_node, &deadlock_key);
     let on_race = names(race_node, &race_key);
+    let on_lock = names(lock_node, &lock_key);
     let (for_deadlock, for_race) = derived_items(envelope.family_payload());
-    if (on_deadlock && for_deadlock) || (on_race && for_race) {
+    let for_lock = matches!(envelope.family_payload().kind, CounterexampleKind::TimeLock);
+    if (on_deadlock && for_deadlock) || (on_race && for_race) || (on_lock && for_lock) {
         return Ok(None);
     }
     let identity_mismatch = |expected_node, expected_key| {
@@ -899,7 +1074,10 @@ fn resolve_item<'p, T: SubjectTransition>(
     if for_race {
         return Err(identity_mismatch(race_node, race_key));
     }
-    if on_deadlock || on_race {
+    if for_lock {
+        return Err(identity_mismatch(lock_node, lock_key));
+    }
+    if on_deadlock || on_race || on_lock {
         return Err(identity_mismatch(
             envelope.clause_node(),
             envelope.occurrence_key().clone(),
@@ -935,7 +1113,7 @@ fn derived_items<T: SubjectTransition>(payload: &TemporalCounterexample<T>) -> (
                 && !matches!(evaluation.site.locus, UndefinedLocus::Atom(_));
             (derived, derived)
         }
-        CounterexampleKind::Formula => (false, false),
+        CounterexampleKind::Formula | CounterexampleKind::TimeLock => (false, false),
     }
 }
 
@@ -1069,6 +1247,7 @@ fn settle(
     }
     match (&payload.kind, formula) {
         (CounterexampleKind::Race(_), _) => Err(refused(ModelTraceRefusal::RaceOverModel)),
+        (CounterexampleKind::TimeLock, _) => Err(refused(ModelTraceRefusal::TimeLockUntimed)),
         (CounterexampleKind::Deadlock, _) => {
             deadlock(system, payload, &positions, &steps).map(|settlement| (settlement, Vec::new()))
         }
@@ -1751,11 +1930,36 @@ fn unfair_member(
 /// order, that is enabled at a loop state and taken by no loop step is named
 /// `Each`. A terminal stutter loop, where nothing is enabled, gets none.
 fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFairnessHint> {
+    let states: Vec<HintState<'_>> = states
+        .iter()
+        .map(|state| HintState {
+            position: state.position,
+            enabled: &state.enabled,
+            taken: Some(&state.taken),
+        })
+        .collect();
+    hints_of(system, &states)
+}
+
+/// One loop position as FR-133 reads it: the identities enabled there (or,
+/// over time, during the delay that leaves it) and the one taken, `None`
+/// for an idle tail's stutter.
+pub(super) struct HintState<'s> {
+    pub(super) position: usize,
+    pub(super) enabled: &'s [ModelTransition],
+    pub(super) taken: Option<&'s ModelTransition>,
+}
+
+/// [`strong_hints`] over `states`.
+pub(super) fn hints_of(
+    system: &ModelSystem<'_>,
+    states: &[HintState<'_>],
+) -> Vec<StrongFairnessHint> {
     let mut hints = Vec::new();
     for (declaring, name, text) in system.operations() {
         let of_operation = |transition: &ModelTransition| transition.operation() == text;
         let taken =
-            |identity: &ModelTransition| states.iter().any(|state| state.taken == *identity);
+            |identity: &ModelTransition| states.iter().any(|state| state.taken == Some(identity));
         let first_enabled = |wanted: &dyn Fn(&ModelTransition) -> bool| {
             states
                 .iter()
@@ -1767,14 +1971,17 @@ fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFai
         let named = |granularity| {
             FairnessConstraint::new(FairnessKind::Strong, operation.clone(), granularity)
         };
-        let whole = first_enabled(&of_operation)
-            .filter(|_| !states.iter().any(|state| of_operation(&state.taken)));
+        let whole = first_enabled(&of_operation).filter(|_| {
+            !states
+                .iter()
+                .any(|state| state.taken.is_some_and(of_operation))
+        });
         let (suggested, identity, position) = if let Some(position) = whole {
             (named(FairnessGranularity::Whole), None, position)
         } else {
             let never_taken = states
                 .iter()
-                .flat_map(|state| &state.enabled)
+                .flat_map(|state| state.enabled)
                 .filter(|transition| of_operation(transition) && !taken(transition))
                 .min();
             let Some(identity) = never_taken else {

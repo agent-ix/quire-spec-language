@@ -219,6 +219,7 @@ pub(crate) fn type_condition(
         let ty = match node.node() {
             ExprNode::Boolean(_) => Ty::Boolean,
             ExprNode::Integer(_) => Ty::Integer,
+            ExprNode::Float32(_) | ExprNode::Float64(_) => Ty::Float,
             ExprNode::Rational(..) => Ty::Rational,
             ExprNode::String(_) => Ty::Text,
             ExprNode::Stutter => Ty::Label,

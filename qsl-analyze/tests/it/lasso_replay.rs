@@ -12,7 +12,9 @@
 //! since the payload carries neither member yet.
 
 use ix_trace_rs::trace;
-use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_analyze::model_check::{check_model, ModelCheckRequest};
+use qsl_eval::model_subject::ModelLetters;
+use qsl_eval::simulation::model::{ExpansionLimits, ModelSystem};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -68,6 +70,7 @@ pub(crate) fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) 
 
 pub(crate) fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
     ModelTraceSubject {
+        timed: None,
         initial: fixture.initial.clone(),
         universes: universe(&fixture.keys),
         expansion: ExpansionLimits {
@@ -167,6 +170,111 @@ fn a_lasso_reproduces_with_its_formula_false_on_the_unrolled_trace() {
     let payload = found(&fair, is_three);
     assert_eq!(payload.fairness.len(), 1);
     assert_eq!(reproduced(replay_with(&fair, payload, is_three)), Some(0));
+}
+
+/// FR-125-AC-18: the compiled on-each guard drives the infinite-trace run,
+/// and its finite counterexample prefix reproduces through production letters.
+#[trace("TC-520", "FR-125-AC-18")]
+#[test]
+fn a_guarded_on_each_prefix_replays_through_production_letters() {
+    use qsl_semantics::check::footprint::FootprintObject;
+
+    let document = document(false);
+    let clause = "temporal Reaches using t0 over (c: M::Counter) clock \"model-steps\" \
+                  on each (q: M::Counter) when (c.value >= 3) \
+                  { always holds(c.value <= 1) }\n";
+    let body = format!("{CONTRACT}{clause}");
+    let unit = unit_text(&document, &body).into_bytes();
+    let package = package_from_text(&document, std::str::from_utf8(&unit).expect("UTF-8 source"));
+    let clauses = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .map(|node| node.clause().clone())
+        .collect();
+    let mut documents = Documents::new(document.clone());
+    let initial = vec![documents.start("s0", &[("c", 0)])];
+    let fixture = Fixture {
+        package,
+        clauses,
+        documents,
+        initial,
+        keys: vec!["c"],
+        unit,
+    };
+
+    let model_subject = subject(
+        &fixture.package,
+        &fixture.documents,
+        fixture.initial.clone(),
+        &fixture.keys,
+        UNLIMITED,
+    );
+    let system = ModelSystem::new(model_subject.simulation).expect("the subject admits");
+    let node = &fixture.package.graph().temporal_clauses()[0];
+    let letters = system
+        .clause_letters(node)
+        .expect("the production letters build");
+    assert!(letters
+        .activation_reads()
+        .expect("the guard footprint is derived")
+        .iter()
+        .any(|read| matches!(
+            read,
+            qsl_semantics::check::footprint::SymbolicLocation::Field {
+                object: FootprintObject::Receiver,
+                ..
+            }
+        )));
+    let outcome = check_model(
+        ModelCheckRequest {
+            subject: subject(
+                &fixture.package,
+                &fixture.documents,
+                fixture.initial.clone(),
+                &fixture.keys,
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the liveness run completes");
+    let payload = match outcome {
+        ModelCheckOutcome::Violated { counterexample, .. } => counterexample.as_ref().clone(),
+        other => panic!("the activation guard refutes the clause: {other:?}"),
+    };
+    assert_eq!(payload.prefix.len(), 3);
+    let package_id = package_id(&fixture);
+    let (node_id, occurrence) = clause_identity(&fixture);
+    let wire = request(
+        &fixture.documents.document,
+        fixture.documents.snapshot_bytes(),
+        &fixture.unit,
+        package_id,
+    );
+    let envelope = envelope_at(&fixture.unit, package_id, payload, node_id, occurrence);
+    let result = replay_model_trace(
+        wire,
+        &subject_of(&fixture),
+        &envelope,
+        &letters,
+        ReplayLimits::default(),
+    )
+    .expect("the lasso replays");
+    assert_eq!(
+        result.settlement,
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: Some(3),
+        }
+    );
 }
 
 /// Verifies part of FR-128-AC-1: a finite prefix of a safety clause

@@ -371,7 +371,8 @@ impl AnalyzeRecord {
                 CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
                 CounterexampleKind::Formula
                 | CounterexampleKind::Deadlock
-                | CounterexampleKind::Race(_) => None,
+                | CounterexampleKind::Race(_)
+                | CounterexampleKind::TimeLock => None,
             });
         Some(match undefined {
             Some(evaluation) if matches!(terminal.value(), TerminalValue::Refuted) => {
