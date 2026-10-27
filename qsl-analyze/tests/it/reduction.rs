@@ -66,7 +66,7 @@ fn shape(symmetric: bool, max: u64) -> Shape {
 }
 
 /// §7.1's subject, annotated or not, from `starts`, with `clauses`.
-fn cycle(symmetric: bool, starts: &[[i64; 3]], clauses: &[Clause<'_>]) -> World {
+pub(crate) fn cycle(symmetric: bool, starts: &[[i64; 3]], clauses: &[Clause<'_>]) -> World {
     let starts: Vec<_> = starts.iter().map(|values| start(*values)).collect();
     World::new(shape(symmetric, 2), CYCLE, clauses, &starts, &KEYS)
 }
@@ -1267,12 +1267,13 @@ fn a_reduced_prefix_concretises_to_a_subject_path() {
 }
 
 /// FR-159-AC-4 (FR-159 "Identity"): over the annotated §7.1 subject, the
-/// request writer gives the request selecting `[[a, b, c]]` and the one
-/// selecting no reduction for the same claim different obligation
-/// identities, and so two items; partial-order reduction likewise. Two
-/// requests that differ only by the constraint `Low` versus none have one
-/// identity, and one item. The item carries its selection for
-/// negotiation.
+/// request selecting `[[a, b, c]]`, the one selecting partial-order
+/// reduction and the one selecting no reduction give one claim three
+/// obligation identities; requests that differ only by the constraint
+/// `Low` versus none give it one identity. Each request's item carries its
+/// own request's selection, so a constrained item never stands for an
+/// unconstrained one. After `ReductionNotPreserving` the outcome records no
+/// exploration statistics.
 #[trace("TC-583", "FR-159-AC-4")]
 #[test]
 fn reductions_but_the_constraint_enter_the_obligation_identity() {
@@ -1282,29 +1283,45 @@ fn reductions_but_the_constraint_enter_the_obligation_identity() {
     let [clause] = world.package.graph().temporal_clauses() else {
         panic!("one declared clause");
     };
-    let mut request = ModelRequest::new();
-    let mut write = |reductions: &Reductions| {
-        context
-            .author_reduced_clause(&mut request, clause, reductions)
-            .expect("the clause has a record")
+    let written = |reductions: Reductions| {
+        let mut request = ModelRequest::reduced(reductions);
+        let index = context
+            .author_clause(&mut request, clause)
+            .expect("the clause has a record");
+        let obligation = request.obligation(index).expect("written").clone();
+        let selected = request.items()[index.get()].reductions().to_vec();
+        (obligation, selected)
     };
-    let plain = write(&Reductions::default());
-    let symmetric = write(&symmetry(&[&["a", "b", "c"]]));
-    let ordered = write(&partial_order());
-    let constrained = write(&constraint("Low"));
-    let symmetric_again = write(&symmetry(&[&["a", "b", "c"]]));
+    let (plain, unreduced) = written(Reductions::default());
+    let (symmetric, by_symmetry) = written(symmetry(&[&["a", "b", "c"]]));
+    let (ordered, _) = written(partial_order());
+    let (constrained, by_constraint) = written(constraint("Low"));
     assert_ne!(plain, symmetric);
     assert_ne!(plain, ordered);
     assert_ne!(symmetric, ordered);
+    assert_eq!(plain.subject, symmetric.subject);
     assert_eq!(plain, constrained);
-    assert_eq!(symmetric, symmetric_again);
-    assert_eq!(request.items().len(), 3);
-    let obligation = |index| request.obligation(index).expect("written").clone();
-    assert_ne!(obligation(plain), obligation(symmetric));
-    assert_eq!(obligation(plain).subject, obligation(symmetric).subject);
-    assert_eq!(
-        request.items()[symmetric.get()].reductions(),
-        [ReductionKind::Symmetry]
+    assert_eq!(symmetric, written(symmetry(&[&["a", "b", "c"]])).0);
+    assert!(unreduced.is_empty());
+    assert_eq!(by_symmetry, [ReductionKind::Symmetry]);
+    assert_eq!(by_constraint, [ReductionKind::StateConstraint]);
+
+    let bounded = cycle(
+        true,
+        &[[0, 0, 0]],
+        &[Clause {
+            profile: BOUNDED,
+            formula: "always[0,2] holds(x.v = 0)",
+        }],
     );
-    assert!(request.items()[plain.get()].reductions().is_empty());
+    let outcome = run(
+        &bounded,
+        Some(0),
+        vec![atom(|v| Some(v == 0))],
+        partial_order(),
+    );
+    let ModelCheckOutcome::Reduction { stats, .. } = &outcome else {
+        panic!("expected a reduction cause, got {outcome:?}");
+    };
+    assert_eq!(*stats, RunStats::default());
 }

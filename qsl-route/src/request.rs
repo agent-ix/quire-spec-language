@@ -107,10 +107,10 @@ pub struct RequestItem {
 }
 
 impl RequestItem {
-    /// The reductions the item selects, in the order symmetry,
+    /// The reductions its request selects, in the order symmetry,
     /// partial-order, constraint (FR-159 Inputs), which negotiation routes
     /// by ([`crate::Registry::restrict_to_reductions`]); empty for an
-    /// unreduced item.
+    /// unreduced request.
     pub fn reductions(&self) -> &[ReductionKind] {
         &self.reductions
     }
@@ -241,6 +241,9 @@ impl CatalogCoded for BoundRefusal {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RequestWriter {
     items: Vec<RequestItem>,
+    /// The reductions the request selects, one selection for every item
+    /// (FR-159 Inputs).
+    reductions: Reductions,
 }
 
 impl RequestWriter {
@@ -249,27 +252,26 @@ impl RequestWriter {
         Self::default()
     }
 
+    /// An empty request selecting `reductions` (FR-159 Inputs): every item
+    /// it writes carries the selection.
+    pub fn reduced(reductions: Reductions) -> Self {
+        Self {
+            items: Vec::new(),
+            reductions,
+        }
+    }
+
+    /// The reductions the request selects.
+    pub fn reductions(&self) -> &Reductions {
+        &self.reductions
+    }
+
     /// Write the item for the claim at `occurrence` with
     /// `requirements` and no proof bounds. Its classification comes from
     /// the checked extent alone.
     pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
-        self.reduced_item(occurrence, requirements, &Reductions::default())
-    }
-
-    /// [`Self::item`] selecting `reductions` (FR-159 Inputs), which the
-    /// item carries for negotiation.
-    pub fn reduced_item(
-        &mut self,
-        occurrence: OccurrenceKey,
-        requirements: &Requirements,
-        reductions: &Reductions,
-    ) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        let index = self.push(occurrence, requirements, extent, Vec::new());
-        if let Some(item) = self.items.last_mut() {
-            item.reductions = reductions.selected();
-        }
-        index
+        self.push(occurrence, requirements, extent, Vec::new())
     }
 
     /// Write the bounded item for the claim at `occurrence` with
@@ -331,7 +333,7 @@ impl RequestWriter {
             extent,
             domains,
             unsupported: requirements.unsupported().cloned(),
-            reductions: Vec::new(),
+            reductions: self.reductions.selected(),
         });
         index
     }
@@ -414,6 +416,17 @@ pub struct RequirementItem {
 }
 
 impl RequirementItem {
+    /// The reduction this item settles V-8 `unsupported-requested-capability`
+    /// on (FR-159 "Capability"): the first selected reduction that emptied
+    /// its candidate set; `None` when a candidate advertises every
+    /// selected reduction, or the set was empty before they were read.
+    pub fn unsupported_reduction(&self) -> Option<ReductionKind> {
+        match &self.candidates {
+            CandidateOutcome::Candidates(set) => set.missing_reduction(),
+            CandidateOutcome::UnknownBackend(_) => None,
+        }
+    }
+
     /// The evidence kind a `probabilistic-satisfaction` item names (FR-075
     /// "Evidence kind of a probabilistic item"): always one of the two kinds
     /// for such an item the builder writes, and `None` for an item of any
@@ -634,6 +647,23 @@ pub fn items_with_evidence(
     named: Option<&BackendId>,
     selection: EvidenceSelection,
 ) -> Vec<RequirementItem> {
+    items_with_reductions(records, registry, named, selection, &Reductions::default())
+}
+
+/// [`items_with_evidence`] for a request selecting `reductions` (FR-159):
+/// each `temporal-satisfaction` item's candidates are restricted to the backends advertising every
+/// selected reduction ([`Registry::restrict_to_reductions`]), and an item
+/// the restriction leaves with none names the reduction it settles V-8 on
+/// ([`RequirementItem::unsupported_reduction`]).
+pub fn items_with_reductions(
+    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    registry: &Registry,
+    named: Option<&BackendId>,
+    selection: EvidenceSelection,
+    reductions: &Reductions,
+) -> Vec<RequirementItem> {
+    let selected: std::collections::BTreeSet<ReductionKind> =
+        reductions.selected().into_iter().collect();
     let probabilistic = |record: &RequirementRecord| {
         matches!(
             record.requirements().kind(),
@@ -670,6 +700,13 @@ pub fn items_with_evidence(
                 // FR-195: a probabilistic record always carries its
                 // evidence kind; one without has no backend to settle it.
                 CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named))
+            } else if requirements.kind() == Capability::TemporalSatisfaction {
+                // FR-382: reductions are a model-check item's; an item of
+                // any other kind is routed as if none were selected.
+                registry.restrict_to_reductions(
+                    candidates_of(requirements, evidence, registry, named),
+                    &selected,
+                )
             } else {
                 candidates_of(requirements, evidence, registry, named)
             },

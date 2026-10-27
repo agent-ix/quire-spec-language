@@ -15,6 +15,8 @@ use qsl_analyze::zone_check::manifest as en6;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::{BackendId, ReductionKind};
 use qsl_replay::UnavailabilityCause;
+use qsl_route::reductions::Reductions;
+use qsl_route::request::{items_with_reductions, EvidenceSelection};
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, FairnessKindsMember,
     ManifestDigest, ManifestMembers, Mode, ProviderOrigin, ReductionsDefect, RegistrationCause,
@@ -219,16 +221,15 @@ fn en1_entry(reductions: &[&str]) -> Json {
 
 /// FR-159-AC-5: EN-1's manifest entry, carrying `reductions` `["symmetry",
 /// "partial-order", "constraint"]`, validates against QSpec's
-/// backend-provider schema, read in place from `$QSPEC_DIR` with the
+/// backend-provider schema, read in place from `$QSPEC_DIR` (which the
+/// test requires) with the
 /// checked-package schema it refers to; the same
 /// entry with `state-constraint` in place of `constraint` fails it.
 #[trace("TC-583", "FR-159-AC-5")]
 #[test]
 fn en1_manifest_entry_validates_against_the_backend_provider_schema() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = std::env::var_os("QSPEC_DIR")
+        .expect("QSPEC_DIR names the QSpec checkout whose schema this reads");
     let read = |relative: &str| -> Json {
         let path = PathBuf::from(&qspec).join(relative);
         serde_json::from_slice(&std::fs::read(&path).expect("the schema reads"))
@@ -258,4 +259,80 @@ fn en1_manifest_entry_validates_against_the_backend_provider_schema() {
         "partial-order",
         "state-constraint"
     ])));
+}
+
+/// FR-159 "Capability" through the request writer's real path: the items
+/// of a checked package's requirement records, for a request selecting
+/// reductions, are restricted to the candidates advertising every one of
+/// them. With EN-6 alone registered, the §7.1 claim's item selecting
+/// partial-order reduction has no candidate and settles V-8 naming it;
+/// with EN-1 beside it, the item routes to EN-1 only; selecting symmetry
+/// keeps both.
+#[trace("TC-583", "FR-159-AC-3")]
+#[test]
+fn the_request_writer_restricts_each_item_by_its_reductions() {
+    let world = crate::reduction::cycle(
+        true,
+        &[[0, 0, 0]],
+        &[crate::reduction::infinite("always holds(x.v <= 2)")],
+    );
+    let records = world.package.graph().requirements();
+    let items = |registry: &Registry, reductions: Reductions| {
+        let items = items_with_reductions(
+            records,
+            registry,
+            None,
+            EvidenceSelection::Record,
+            &reductions,
+        );
+        let temporal: Vec<_> = items
+            .iter()
+            .filter(|item| item.kind() == Capability::TemporalSatisfaction)
+            .collect();
+        let [item] = &temporal[..] else {
+            panic!("one temporal record, one item: {items:?}");
+        };
+        let CandidateOutcome::Candidates(set) = item.candidates() else {
+            panic!("a computed candidate set");
+        };
+        let candidates: Vec<String> = set
+            .candidates()
+            .iter()
+            .map(|candidate| candidate.id().as_str().to_owned())
+            .collect();
+        (candidates, item.unsupported_reduction())
+    };
+    let por = Reductions {
+        partial_order: true,
+        ..Reductions::default()
+    };
+    let mut registry = Registry::new();
+    registry
+        .register(en6::descriptor(ProviderOrigin::Linked, digest(7)).expect("EN-6 admits"))
+        .expect("registered");
+    let (candidates, missing) = items(&registry, por.clone());
+    assert!(candidates.is_empty());
+    assert_eq!(missing, Some(PartialOrder));
+    assert_eq!(settled(missing), "unsupported-requested-capability");
+    registry
+        .register(en1::descriptor(ProviderOrigin::Linked, digest(8)).expect("EN-1 admits"))
+        .expect("registered");
+    assert_eq!(
+        items(&registry, por),
+        (vec![en1::BACKEND_ID.to_owned()], None)
+    );
+    let symmetric = Reductions {
+        symmetry: vec![qsl_route::reductions::SymmetryDeclaration {
+            population: crate::reduction_world::counters(),
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        }],
+        ..Reductions::default()
+    };
+    assert_eq!(
+        items(&registry, symmetric),
+        (
+            vec![en1::BACKEND_ID.to_owned(), en6::BACKEND_ID.to_owned()],
+            None
+        )
+    );
 }

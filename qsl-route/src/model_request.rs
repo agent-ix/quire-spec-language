@@ -40,39 +40,34 @@ impl<S: Clone + Eq> ModelRequest<S> {
         Self::default()
     }
 
+    /// An empty request selecting `reductions` (FR-159): one selection for
+    /// every item, so two items of one request never differ by it.
+    pub fn reduced(reductions: Reductions) -> Self {
+        Self {
+            writer: RequestWriter::reduced(reductions),
+            obligations: Vec::new(),
+        }
+    }
+
     /// Write the item for `item` with its `requirements`, and no proof
     /// bounds. The requirement record is the checked clause's alone
     /// (FR-336-AC-1), so the subject's universes reach only the item's
     /// obligation identity. An item whose obligation is already written is
     /// not written twice: the existing item's index is returned, so one
-    /// obligation has one index.
+    /// obligation has one index. The item carries the request's reductions,
+    /// and its obligation identity holds the symmetry declarations and the
+    /// partial-order selection beside the subject, never the constraint
+    /// (FR-159 "Identity", FR-158).
     pub fn authored(
         &mut self,
         item: &ModelTemporalItem<'_, S>,
         requirements: &Requirements,
     ) -> RequestIndex {
-        self.authored_reduced(item, requirements, &Reductions::default())
-    }
-
-    /// [`Self::authored`] selecting `reductions` (FR-159). The item carries
-    /// the selection for negotiation, and its obligation identity holds
-    /// the symmetry declarations and the partial-order selection beside the
-    /// subject, never the constraint ("Identity", FR-158): a reduced and an
-    /// unreduced request for one claim are two obligations and two indices,
-    /// and two requests differing only in their constraint are one.
-    pub fn authored_reduced(
-        &mut self,
-        item: &ModelTemporalItem<'_, S>,
-        requirements: &Requirements,
-        reductions: &Reductions,
-    ) -> RequestIndex {
-        let obligation = item.obligation().reduced(reductions);
+        let obligation = item.obligation().reduced(self.writer.reductions());
         if let Some(index) = self.index_of(&obligation) {
             return index;
         }
-        let index = self
-            .writer
-            .reduced_item(item.occurrence.clone(), requirements, reductions);
+        let index = self.writer.item(item.occurrence.clone(), requirements);
         self.obligations.push(obligation);
         index
     }
