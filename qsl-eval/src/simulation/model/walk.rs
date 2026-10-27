@@ -57,6 +57,21 @@ impl Budget {
             Ok(())
         }
     }
+    /// Count `count` candidates at once.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::charge`].
+    pub(super) fn charge_many(&mut self, count: usize) -> Result<(), ExpansionStop> {
+        self.used = self
+            .used
+            .saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
+        if self.used > self.max {
+            Err(exhausted(ExpansionLimit::MaxCandidates))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// One object of the expanded state.

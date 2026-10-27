@@ -96,7 +96,7 @@ pub use terminal::TerminalClass;
 pub use timed::{
     BehaviourLetters, BehaviourReading, ClockPlace, ClockValuation, DelayInterval, GuardedStep,
     MoveRefusal, PlaceConstraint, TimeLock, TimedBehaviour, TimedPosition, TimedSite, TimedState,
-    TimedStop, TimedSubjectRefusal, TimedSystem, TimedTerminalClass,
+    TimedStop, TimedSubjectRefusal, TimedSystem, TimedTerminalClass, DEFAULT_MAX_CLOCKS,
 };
 pub(crate) use walk::{Applied, Budget};
 

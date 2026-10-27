@@ -433,6 +433,54 @@ pub struct ScalarTypeRecord {
     pub domain: ScalarValueDomain,
 }
 
+/// A package `sequence` type (FCD's core kind `sequence`, QSpec FR-154): the
+/// unbounded sequence of its `items`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SequenceTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// The element type.
+    pub items: ValueTypeRef,
+}
+
+/// A package `alias` of a clock or a unit (FCD's core kind `alias`, FCD
+/// #315): the type its `target` names, under its own name (QSL FR-230
+/// "Clocks and resets", FR-230-AC-17).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AliasTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// The aliased type: `Clock` or a unit.
+    pub target: ValueTypeRef,
+}
+
+/// The type `value_type` names through the package's aliases and sequence
+/// types (QSpec FR-154): the type it ends at, and how many sequences it
+/// passes on the way. `None` for a chain that returns to a type it passed.
+pub(crate) fn unaliased<'r>(
+    mut value_type: &'r ValueTypeRef,
+    record: impl Fn(&DeclarationKey) -> Option<&'r DomainPackageRecord>,
+) -> Option<(&'r ValueTypeRef, usize)> {
+    let mut passed: Vec<&DeclarationKey> = Vec::new();
+    let mut sequences = 0;
+    while let ValueTypeRef::Package(key) = value_type {
+        let next = match record(key) {
+            Some(DomainPackageRecord::SequenceType(sequence)) => {
+                sequences += 1;
+                &sequence.items
+            }
+            Some(DomainPackageRecord::AliasType(alias)) => &alias.target,
+            _ => break,
+        };
+        if passed.contains(&key) {
+            return None;
+        }
+        passed.push(key);
+        value_type = next;
+    }
+    Some((value_type, sequences))
+}
+
 /// One operation parameter: `{key, value_type, multiplicity}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationParameterRecord {
@@ -848,6 +896,10 @@ pub enum DomainPackageRecord {
     PersistenceInterface(PersistenceInterfaceRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
+    /// A package sequence type (QSpec FR-154).
+    SequenceType(SequenceTypeRecord),
+    /// A package alias of a clock or a unit (FCD #315).
+    AliasType(AliasTypeRecord),
     /// An operation member of an object type.
     OperationMember(OperationMemberRecord),
     /// FCD FR-114 component (FR-152 Part candidate).
@@ -879,6 +931,8 @@ impl DomainPackageRecord {
             Self::Namespace(record) => &record.key,
             Self::PersistenceInterface(record) => &record.key,
             Self::ScalarType(record) => &record.key,
+            Self::SequenceType(record) => &record.key,
+            Self::AliasType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,

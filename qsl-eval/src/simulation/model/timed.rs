@@ -35,7 +35,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use qsl_semantics::check::{
     CheckedTimedPredicate, ClockConstraint, ClockId, ClockOp, ElementBinding, ModelTimeSource,
-    PlaceStep, TimeSourceKind, TimedModel, Urgency,
+    PlaceStep, QuantifiedFamily, SlotRef, TimeSourceKind, TimedModel, Urgency,
 };
 
 use super::encode::declaration_text;
@@ -305,6 +305,22 @@ pub enum TimedStop {
     Expansion(ExpansionStop),
     /// A timed member's predicate had no truth value at the state.
     Undecided(Box<UndecidedReading>),
+    /// The state's live clocks exceed `max_clocks` (FR-230 "Clock
+    /// collections", QSpec FR-415 "Cardinality bound"): the analysis stops
+    /// `limit-reached` naming `max_clocks`.
+    MaxClocks {
+        /// The bound, `model_check.max_clocks`.
+        max_clocks: u64,
+    },
+    /// A broken invariant of the place listing: the state holds an element
+    /// whose clocks have no place, though its live clocks are within
+    /// `max_clocks`. Never stepped over.
+    UnplacedElement {
+        /// The state's live clocks.
+        live: u64,
+        /// Those with a place.
+        placed: u64,
+    },
 }
 
 /// A timed member's predicate with no truth value at a state.
@@ -350,6 +366,14 @@ pub enum TimedSubjectRefusal {
         /// The precondition's name.
         clause: String,
     },
+    /// A clock lies under two collections with no declared maximum, whose
+    /// places cannot be listed within `max_clocks` for every state that
+    /// keeps its live clocks within it.
+    #[error("the clock `{clock}` lies under two collections with no declared maximum")]
+    NestedUnboundedCollection {
+        /// The clock place's name.
+        clock: String,
+    },
     /// A clock owner's population has no universe, so its clocks cannot be
     /// listed.
     #[error("the clocks of `{clock}` have no universe to range over")]
@@ -357,14 +381,24 @@ pub enum TimedSubjectRefusal {
         /// The clock field's name.
         clock: String,
     },
-    /// A clock lies in a collection that declares no maximum, so its slots
-    /// cannot be listed (FR-230 "Clock collections": `max: None`).
-    #[error("the clock `{clock}` lies in a collection with no declared maximum")]
-    UnboundedCollection {
-        /// The clock place's name.
-        clock: String,
-    },
 }
+
+/// The held slots of `constraint`; `None` when one is a family's template
+/// slot, which only [`TimedSystem::placed_at`] reads.
+fn held_slots(constraint: &ClockConstraint) -> Option<Vec<u64>> {
+    constraint
+        .slots()
+        .iter()
+        .map(|slot| match slot {
+            SlotRef::Held(slot) => Some(*slot),
+            SlotRef::Family => None,
+        })
+        .collect()
+}
+
+/// The default bound on the live clocks of a state: QSpec FR-415's
+/// `model_check.max_clocks`.
+pub const DEFAULT_MAX_CLOCKS: std::num::NonZeroU64 = std::num::NonZeroU64::MIN.saturating_add(1023);
 
 /// FR-231's timed subject over one model system.
 pub struct TimedSystem<'s, 'a> {
@@ -378,6 +412,11 @@ pub struct TimedSystem<'s, 'a> {
     urgent_operations: Vec<String>,
     /// The declaration identity text of a tick source's operation.
     tick: Option<(String, Rational)>,
+    /// The bound on the live clocks of a state (QSpec FR-415).
+    max_clocks: std::num::NonZeroU64,
+    /// Each clock field with each object of its owner's universe, to count
+    /// a state's live clocks by.
+    holders: Vec<ClockPlace>,
 }
 
 impl<'s, 'a> TimedSystem<'s, 'a> {
@@ -389,6 +428,26 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// guard part reads an operation parameter, or a clock owner has no
     /// universe.
     pub fn new(system: &'s ModelSystem<'a>, model: &str) -> Result<Self, TimedSubjectRefusal> {
+        Self::with_max_clocks(system, model, DEFAULT_MAX_CLOCKS)
+    }
+
+    /// [`Self::new`] under the bound `max_clocks` on the live clocks of a
+    /// state (QSpec FR-415 "Cardinality bound"): a state whose live clocks
+    /// exceed it stops [`TimedStop::MaxClocks`] when it is expanded. A
+    /// collection with no declared maximum (FR-230 "Clock collections":
+    /// `max: None`) lists, for each of its slots, as many places as one
+    /// element's clocks fit within `max_clocks` times over, so every state
+    /// within the bound has a place for each of its live clocks.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`], and [`TimedSubjectRefusal::NestedUnboundedCollection`]
+    /// for a clock under two collections with no declared maximum.
+    pub fn with_max_clocks(
+        system: &'s ModelSystem<'a>,
+        model: &str,
+        max_clocks: std::num::NonZeroU64,
+    ) -> Result<Self, TimedSubjectRefusal> {
         let graph = system.package.graph();
         let missing = || TimedSubjectRefusal::NoTimedModel {
             model: model.to_owned(),
@@ -436,17 +495,63 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             held.insert(owner, pairs.clone());
             Ok(pairs)
         };
-        let mut places = Vec::new();
-        for (clock, field) in timed.clock_fields() {
-            let maxima = field
-                .slots()
-                .map(|shape| shape.max.and_then(|max| usize::try_from(max).ok()))
-                .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| TimedSubjectRefusal::UnboundedCollection {
+        // The fewest clocks one element of each collection with no declared
+        // maximum holds, by owner and the path through that collection's
+        // slot: each clock below it times the declared minima of the
+        // collections between. Listing `max_clocks` over it slots, every
+        // state within `max_clocks` has a place for each live clock.
+        let mut per_element: std::collections::BTreeMap<(EffectiveId, Vec<PlaceStep>), u64> =
+            std::collections::BTreeMap::new();
+        for (_, field) in timed.clock_fields() {
+            let path = field.path();
+            let mut open = path
+                .iter()
+                .enumerate()
+                .filter(|(_, step)| matches!(step, PlaceStep::Slot(shape) if shape.max.is_none()));
+            let Some((at, _)) = open.next() else {
+                continue;
+            };
+            if open.next().is_some() {
+                return Err(TimedSubjectRefusal::NestedUnboundedCollection {
                     clock: field.name().to_owned(),
-                })?;
+                });
+            }
+            let below = path[at + 1..]
+                .iter()
+                .filter_map(|step| match step {
+                    PlaceStep::Slot(shape) => Some(shape.min),
+                    PlaceStep::Field(_) => None,
+                })
+                .fold(1_u64, u64::saturating_mul);
+            let held = per_element
+                .entry((field.owner(), path[..=at].to_vec()))
+                .or_insert(0);
+            *held = held.saturating_add(below);
+        }
+        let mut places = Vec::new();
+        let mut holders = Vec::new();
+        for (clock, field) in timed.clock_fields() {
+            // An undeclared slot lists as many elements as fit within
+            // `max_clocks`: a state holding more exceeds the bound.
+            let open = field
+                .path()
+                .iter()
+                .position(|step| matches!(step, PlaceStep::Slot(shape) if shape.max.is_none()));
+            let listed = open
+                .and_then(|at| per_element.get(&(field.owner(), field.path()[..=at].to_vec())))
+                .map_or(0, |held| max_clocks.get() / (*held).max(1));
+            let maxima: Vec<usize> = field
+                .slots()
+                .map(|shape| usize::try_from(shape.max.unwrap_or(listed)).unwrap_or(usize::MAX))
+                .collect();
             let slots = slot_vectors(&maxima);
             for (instance, object) in instances_of(field.owner(), field.name())? {
+                holders.push(ClockPlace {
+                    object: object.clone(),
+                    clock,
+                    slots: Vec::new(),
+                    instance: instance.clone(),
+                });
                 for slots in &slots {
                     places.push(ClockPlace {
                         object: object.clone(),
@@ -491,7 +596,100 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             objects,
             urgent_operations,
             tick,
+            max_clocks,
+            holders,
         })
+    }
+
+    /// The bound on the live clocks of a state.
+    pub fn max_clocks(&self) -> std::num::NonZeroU64 {
+        self.max_clocks
+    }
+
+    /// The live clocks of `state` (QSpec FR-415 "Cardinality bound"): for
+    /// each object the state holds and each clock field of its type, one
+    /// clock outside collections, and below a collection one for each
+    /// element it holds, whether or not the element has a listed place.
+    pub fn live_clocks(&self, state: &ModelSimState) -> u64 {
+        let typing = self.system.typing();
+        let mut live = 0_u64;
+        for holder in &self.holders {
+            let Some(field) = self.model.clock(holder.clock) else {
+                continue;
+            };
+            let Some(stored) = holder.stored(state) else {
+                continue;
+            };
+            // The steps through the innermost collection: the clock below
+            // it is no data component to read.
+            let through = field
+                .path()
+                .iter()
+                .rposition(|step| matches!(step, PlaceStep::Slot(_)))
+                .map_or(0, |last| last + 1);
+            if through == 0 {
+                live = live.saturating_add(1);
+                continue;
+            }
+            let Some(PlaceStep::Field(first)) = field.path().first() else {
+                continue;
+            };
+            let Ok(Some(fields)) = self.system.model.fields(&stored.type_identity) else {
+                continue;
+            };
+            let Some(value) = fields
+                .iter()
+                .find(|declared| declared.name == *first)
+                .and_then(|declared| stored.fields.get(&declared.key))
+            else {
+                continue;
+            };
+            // Every value the path reaches, element by element.
+            let mut pending = vec![(value, &field.path()[1..through])];
+            while let Some((value, rest)) = pending.pop() {
+                match rest.split_first() {
+                    None => live = live.saturating_add(1),
+                    Some((PlaceStep::Field(name), rest)) => {
+                        if let Some(next) = typing.component(value, name) {
+                            pending.push((next, rest));
+                        }
+                    }
+                    Some((PlaceStep::Slot(_), rest)) => {
+                        if let quire_exact::Value::Collection(collection) = value {
+                            pending.extend(
+                                collection.elements().iter().map(|element| (element, rest)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        live
+    }
+
+    /// [`TimedStop::MaxClocks`] when the live clocks of `state` exceed
+    /// `max_clocks`.
+    ///
+    /// # Errors
+    ///
+    /// [`TimedStop::UnplacedElement`] when a live clock has no place: the
+    /// listing is sized so that this never happens within the bound.
+    fn within_max_clocks(&self, state: &ModelSimState) -> Result<(), TimedStop> {
+        let live = self.live_clocks(state);
+        if live > self.max_clocks.get() {
+            return Err(TimedStop::MaxClocks {
+                max_clocks: self.max_clocks.get(),
+            });
+        }
+        let placed = self
+            .places
+            .iter()
+            .filter(|place| self.live(place, state))
+            .count() as u64;
+        if placed < live {
+            return Err(TimedStop::UnplacedElement { live, placed });
+        }
+        Ok(())
     }
 
     /// Whether a step of the model writes a clock collection whole (FR-230
@@ -781,6 +979,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// [`TimedStop`] when the state cannot be expanded or a guard part's
     /// predicate has no truth value.
     pub fn guarded_steps(&self, state: &ModelSimState) -> Result<Vec<GuardedStep>, TimedStop> {
+        self.within_max_clocks(state)?;
         let (expansion, enabled) = expand_enabled(self.system, state)?;
         let mut steps = Vec::new();
         for vector in enabled {
@@ -788,6 +987,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 let Some((transition, post)) = expansion.successors.get(position) else {
                     continue;
                 };
+                self.within_max_clocks(post)?;
                 let mut parts = vec![Vec::new()];
                 let mut guards = Vec::new();
                 for guard in self.model.guards() {
@@ -817,10 +1017,15 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             }
                         };
                         if data {
-                            clause_parts.push(self.placed(
+                            let base = self.placed(state, &vector.receiver, part.clocks())?;
+                            clause_parts.extend(self.instantiated(
                                 state,
                                 &vector.receiver,
-                                part.clocks(),
+                                part.families(),
+                                base,
+                                &|| TimedSite::Guard {
+                                    clause: guard.clause().to_owned(),
+                                },
                             )?);
                         }
                     }
@@ -859,8 +1064,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         };
                         let binding = ElementBinding::new(
                             selection.name().to_owned(),
-                            selection.field().to_owned(),
-                            slot,
+                            selection.path().to_vec(),
+                            SlotRef::Held(slot),
                         );
                         let Some(elements) =
                             self.elements(state, &vector.receiver, std::slice::from_ref(&binding))
@@ -1034,7 +1239,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 let place = self
                     .holder(state, receiver, constraint.via())
                     .and_then(|holder| {
-                        self.place_at(&holder, constraint.clock(), constraint.slots())
+                        self.place_at(&holder, constraint.clock(), &held_slots(constraint)?)
                     })
                     .filter(|place| {
                         constraint.via().is_empty()
@@ -1053,35 +1258,158 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .collect()
     }
 
+    /// The guard part `base` conjoined with each quantifier family of the
+    /// part, read at `state` (FR-230 "Quantified reads"): a family whose
+    /// collection holds `n` elements is read at each slot below `n`, every
+    /// slot enabling one of its template parts when it is `each`, some slot
+    /// otherwise. Each alternative is one conjunction of place constraints.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::placed`] and the data predicates of the template parts;
+    /// `resource_exhausted`/`insufficient-next-charge` naming
+    /// `max_candidates` when the alternatives, a product over the held
+    /// slots, would exceed the expansion's `max_candidates`.
+    fn instantiated(
+        &self,
+        state: &ModelSimState,
+        receiver: &ObjectReference,
+        families: &[QuantifiedFamily],
+        base: Vec<PlaceConstraint>,
+        site: &dyn Fn() -> TimedSite,
+    ) -> Result<Vec<Vec<PlaceConstraint>>, TimedStop> {
+        let mut alternatives = vec![base];
+        let mut budget = super::walk::Budget::new(self.system.limits.max_candidates);
+        for family in families {
+            let held = self.held(state, receiver, family.path());
+            let mut per_slot = Vec::with_capacity(held);
+            for slot in 0..held {
+                let slot = u64::try_from(slot).map_err(|_| stop(BROKEN))?;
+                let mut enabled = Vec::new();
+                for part in family.parts() {
+                    let elements: Vec<ElementBinding> = part
+                        .elements()
+                        .iter()
+                        .map(|binding| at_slot(binding, slot))
+                        .collect();
+                    let data = match (part.data(), self.elements(state, receiver, &elements)) {
+                        (None, _) => true,
+                        (Some(_), None) => false,
+                        (Some(data), Some(values)) => {
+                            self.about_one(state, data, receiver, values, site)?
+                        }
+                    };
+                    if data {
+                        enabled.push(self.placed_at(state, receiver, part.clocks(), slot)?);
+                    }
+                }
+                per_slot.push(enabled);
+            }
+            let options: Vec<Vec<Vec<PlaceConstraint>>> = if family.each() {
+                per_slot
+            } else {
+                vec![per_slot.into_iter().flatten().collect()]
+            };
+            for option in options {
+                budget
+                    .charge_many(alternatives.len().saturating_mul(option.len()))
+                    .map_err(TimedStop::Expansion)?;
+                alternatives = alternatives
+                    .iter()
+                    .flat_map(|left| {
+                        option
+                            .iter()
+                            .map(move |right| left.iter().chain(right).cloned().collect())
+                    })
+                    .collect();
+            }
+        }
+        Ok(alternatives)
+    }
+
+    /// How many elements the collection of `object` at `path` holds at
+    /// `state`.
+    fn held(&self, state: &ModelSimState, object: &ObjectReference, path: &[String]) -> usize {
+        self.collection(state, object, path)
+            .map_or(0, |collection| collection.elements().len())
+    }
+
+    /// [`Self::placed`] with each family slot of a constraint read at `slot`.
+    fn placed_at(
+        &self,
+        state: &ModelSimState,
+        receiver: &ObjectReference,
+        constraints: &[ClockConstraint],
+        slot: u64,
+    ) -> Result<Vec<PlaceConstraint>, ExpansionStop> {
+        constraints
+            .iter()
+            .map(|constraint| {
+                let slots: Vec<u64> = constraint
+                    .slots()
+                    .iter()
+                    .map(|held| match held {
+                        SlotRef::Family => slot,
+                        SlotRef::Held(held) => *held,
+                    })
+                    .collect();
+                let place = self
+                    .holder(state, receiver, constraint.via())
+                    .and_then(|holder| self.place_at(&holder, constraint.clock(), &slots))
+                    .ok_or_else(|| stop(BROKEN))?;
+                Ok(PlaceConstraint {
+                    place,
+                    op: constraint.op(),
+                    bound: constraint.bound().clone(),
+                })
+            })
+            .collect()
+    }
+
     /// The element each of `elements` names of `object` at `state`: the
-    /// value its collection field holds at its slot; `None` when the
-    /// collection does not hold one of the slots.
+    /// value its collection holds at its slot; `None` when the collection
+    /// does not hold one of the slots.
     fn elements(
         &self,
         state: &ModelSimState,
         object: &ObjectReference,
         elements: &[ElementBinding],
     ) -> Option<Vec<quire_exact::Value>> {
-        if elements.is_empty() {
-            return Some(Vec::new());
-        }
-        let model = &self.system.model;
-        let stored = self.stored(state, object)?;
-        let fields = model.fields(&stored.type_identity).ok()??;
         elements
             .iter()
             .map(|element| {
-                let field = fields.iter().find(|field| field.name == element.field())?;
-                let quire_exact::Value::Collection(collection) = stored.fields.get(&field.key)?
-                else {
-                    return None;
-                };
-                collection
+                self.collection(state, object, element.path())?
                     .elements()
-                    .get(usize::try_from(element.slot()).ok()?)
+                    .get(match element.slot() {
+                        SlotRef::Held(slot) => usize::try_from(slot).ok()?,
+                        SlotRef::Family => return None,
+                    })
                     .cloned()
             })
             .collect()
+    }
+
+    /// The collection `object` holds at `state` at the field path `path`:
+    /// its field, or a collection below a record field of it.
+    fn collection<'t>(
+        &self,
+        state: &'t ModelSimState,
+        object: &ObjectReference,
+        path: &[String],
+    ) -> Option<&'t quire_exact::CollectionValue> {
+        let (first, below) = path.split_first()?;
+        let stored = self.stored(state, object)?;
+        let fields = self.system.model.fields(&stored.type_identity).ok()??;
+        let field = fields.iter().find(|field| field.name == *first)?;
+        let typing = self.system.typing();
+        let mut value = stored.fields.get(&field.key)?;
+        for name in below {
+            value = typing.component(value, name)?;
+        }
+        match value {
+            quire_exact::Value::Collection(collection) => Some(collection),
+            _ => None,
+        }
     }
 
     /// The stored object `object` names at `state`: held under its key in
@@ -1646,4 +1974,17 @@ fn slot_vectors(maxima: &[usize]) -> Vec<Vec<usize>> {
             })
             .collect()
     })
+}
+
+/// `binding` read at `slot` when it names a family's template slot.
+fn at_slot(binding: &ElementBinding, slot: u64) -> ElementBinding {
+    if binding.slot() == SlotRef::Family {
+        ElementBinding::new(
+            binding.name().to_owned(),
+            binding.path().to_vec(),
+            SlotRef::Held(slot),
+        )
+    } else {
+        binding.clone()
+    }
 }

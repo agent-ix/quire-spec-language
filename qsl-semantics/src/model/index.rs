@@ -73,6 +73,9 @@ struct DeclFlags {
     non_root: bool,
     scalar_type: bool,
     record_value_type: bool,
+    /// A package `alias` or `sequence` type definition (FR-230 "Units",
+    /// "Clock collections").
+    core_type: bool,
     event_type: bool,
     variant_type: bool,
     state_machine: bool,
@@ -281,6 +284,12 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::ScalarType(_) | DomainPackageRecord::Population(_) => {
             vec![record.key()]
         }
+        DomainPackageRecord::SequenceType(sequence) => std::iter::once(&sequence.key)
+            .chain(sequence.items.as_package())
+            .collect(),
+        DomainPackageRecord::AliasType(alias) => std::iter::once(&alias.key)
+            .chain(alias.target.as_package())
+            .collect(),
     }
 }
 
@@ -696,6 +705,9 @@ impl RecordIndex {
                 DomainPackageRecord::PersistenceInterface(_) => {
                     index.flags[own.0].persistence_interface = true;
                 }
+                DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {
+                    index.flags[own.0].core_type = true;
+                }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
                     match &scalar.domain {
@@ -841,6 +853,12 @@ impl RecordIndex {
     /// Whether some `RecordValueType` record declares `key`.
     pub(crate) fn is_record_value_type(&self, key: &DeclarationKey) -> bool {
         self.flags(key).record_value_type
+    }
+
+    /// Whether a package `alias` or `sequence` type definition declares
+    /// `key`.
+    pub(crate) fn is_alias_or_sequence_type(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).core_type
     }
 
     /// Whether some `EventType` record declares `key`.

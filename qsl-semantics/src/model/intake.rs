@@ -48,14 +48,14 @@ use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
 
 use crate::model::domain_package::{
-    AllocationRecord, ClauseRecord, ComponentRecord, DeclaredSlot, DomainPackage,
+    AliasTypeRecord, AllocationRecord, ClauseRecord, ComponentRecord, DeclaredSlot, DomainPackage,
     DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
     OperationContractClause, OperationEffect, OperationMemberRecord, OperationParameterRecord,
     OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
     PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
-    ScalarValueDomain, ValueTypeRef, VariantRecord,
+    ScalarValueDomain, SequenceTypeRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -2963,6 +2963,12 @@ fn read_value_type_ref(
     allow_clock: bool,
 ) -> Result<ValueTypeRef, ModelRefusal> {
     if let Some(name) = type_ref.strip_prefix("ix://quire/unit/") {
+        // A unit of this package may be named by its package path too,
+        // `ix://quire/unit/<package>/<name>` (FR-230-AC-17).
+        let name = name
+            .strip_prefix(package)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .unwrap_or(name);
         if name.is_empty() || name.contains('/') {
             return Err(ctx.malformed_in(
                 "typeRef",
@@ -4219,9 +4225,72 @@ fn read_type_node(
             domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
         })]);
     }
+    if type_value.get("kind").and_then(Value::as_str) == Some("alias") {
+        // FCD #315: an alias of `ix://quire/native/Clock` or of a unit
+        // `ix://quire/unit/<name>` is that type under its own name
+        // (FR-230-AC-16, FR-230-AC-17). Its constraints give a clock time
+        // bounds and a quantity a domain (FR-230-AC-25, FR-230-AC-26), which
+        // this reader does not read yet: quire-exact has no bounded quantity.
+        let Some(target) = type_value.get("target").and_then(Value::as_str) else {
+            return Err(ctx.malformed_in("target", "missing or not a string").into());
+        };
+        let target = if target == "ix://quire/native/Clock" {
+            ValueTypeRef::Clock
+        } else if target.starts_with("ix://quire/unit/") {
+            read_value_type_ref(package, &ctx, target, false)?
+        } else {
+            return Err(ctx
+                .malformed_in(
+                    "target",
+                    format!("{target:?} is not a clock or a unit this reader aliases"),
+                )
+                .into());
+        };
+        if !ctx.array_field("fields")?.is_empty()
+            || !ctx.array_field("operations")?.is_empty()
+            || !ctx.array_field("relationships")?.is_empty()
+            || !ctx.array_field("supertypes")?.is_empty()
+            || !ctx.array_field("constraints")?.is_empty()
+        {
+            return Err(ctx
+                .malformed(
+                    "a clock or unit alias declares no fields, operations, relationships, supertypes, or constraints this reader reads",
+                )
+                .into());
+        }
+        return Ok(vec![DomainPackageRecord::AliasType(AliasTypeRecord {
+            key,
+            target,
+        })]);
+    }
+    if type_value.get("kind").and_then(Value::as_str) == Some("sequence") {
+        // FCD's core kind `sequence`: the sequence of its `items` (QSpec
+        // FR-154). It declares nothing else.
+        if !ctx.array_field("fields")?.is_empty()
+            || !ctx.array_field("operations")?.is_empty()
+            || !ctx.array_field("relationships")?.is_empty()
+            || !ctx.array_field("supertypes")?.is_empty()
+            || !ctx.array_field("constraints")?.is_empty()
+        {
+            return Err(ctx
+                .malformed(
+                    "a sequence type declares no fields, operations, relationships, supertypes, or constraints",
+                )
+                .into());
+        }
+        let Some(items) = type_value.get("items").and_then(Value::as_str) else {
+            return Err(ctx.malformed_in("items", "missing or not a string").into());
+        };
+        // A sequence of clocks is a clock collection (FR-230-AC-16).
+        let items = read_value_type_ref(package, &ctx, items, true)?;
+        return Ok(vec![DomainPackageRecord::SequenceType(
+            SequenceTypeRecord { key, items },
+        )]);
+    }
     if !type_value.get("kind").is_some_and(Value::is_object) {
         // Other bare-string core kinds remain outside this reader's declared
-        // FR-208 meanings. The Timestamp alias above is the explicit native
+        // FR-208 meanings: a `map` has no value type to read as (quire-exact
+        // has none). The Timestamp alias above is the explicit native
         // value-type exception required by FR-056-AC-17.
         return Err(ctx
             .malformed_in(
@@ -4372,6 +4441,8 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)
+        | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
@@ -4799,14 +4870,12 @@ pub fn read_domain_package(
                                     .clone(),
                             )
                         }
-                        Some(kind)
-                            if kind.as_str() == Some("alias")
-                                && node.get("target").and_then(Value::as_str)
-                                    == Some("ix://quire/native/Timestamp") =>
-                        {
-                            // This one FCD core alias has a reader admission but
-                            // no FR-208 construct meaning. `read_records` already
-                            // validates its exact native Timestamp shape.
+                        Some(kind) if kind.as_str() == Some("sequence") => None,
+                        Some(kind) if kind.as_str() == Some("alias") => {
+                            // The FCD core aliases (the native Timestamp, a
+                            // clock, a unit) have a reader admission but no
+                            // FR-208 construct meaning. `read_type_node`
+                            // validates their shapes.
                             None
                         }
                         _ => {
@@ -5896,6 +5965,64 @@ mod tests {
         assert_eq!(refusal.cause.as_str(), "malformed-declaration");
         let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &refusal.cause else {
             panic!("a malformed declaration: {refusal:?}");
+        };
+        assert_eq!(*member, MemberPath::type_definition().name("target"));
+    }
+
+    /// Part of FR-230-AC-26 (TC-685), its alias half, and of FR-230-AC-16
+    /// and FR-230-AC-17: an `alias` whose `target` is the unit
+    /// `ix://quire/unit/ms` or `ix://quire/native/Clock` is admitted as that
+    /// type under its own name. An alias of a package type, and an alias
+    /// with constraints, refuse `invalid_model_binding`/`malformed-declaration`
+    /// at `TypeDefinition.target` and the node. Not covered: AC-26's `min`
+    /// and `max` constraints giving `Level` a domain of quantities, which
+    /// quire-exact cannot hold (it has no bounded quantity value type).
+    #[trace("TC-685")]
+    #[test]
+    fn admits_an_alias_of_a_unit_or_a_clock() {
+        let alias = |name: &str, target: &str| {
+            wire_type(
+                &format!("ix://acme/orders/{name}"),
+                serde_json::json!("alias"),
+                serde_json::json!({"target": target}),
+            )
+        };
+        let read = |types: serde_json::Value| {
+            let document = wire_envelope("acme/orders", serde_json::json!([]), types).to_string();
+            read_records("acme/orders", &parse_document(document.as_bytes()))
+        };
+        assert_eq!(
+            read(serde_json::json!([
+                alias("Level", "ix://quire/unit/ms"),
+                alias("Stopwatch", "ix://quire/native/Clock"),
+            ]))
+            .expect("FCD admits a unit or clock alias"),
+            vec![
+                DomainPackageRecord::AliasType(AliasTypeRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Level"),
+                    target: ValueTypeRef::Unit("ms".to_owned()),
+                }),
+                DomainPackageRecord::AliasType(AliasTypeRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Stopwatch"),
+                    target: ValueTypeRef::Clock,
+                }),
+            ]
+        );
+        let mut bounded = alias("Level", "ix://quire/unit/ms");
+        bounded["constraints"] = serde_json::json!([{
+            "keyword": "max", "appliesTo": "ix://acme/orders/Level", "operands": {"value": "10"}
+        }]);
+        let refusals = read(serde_json::json!([bounded])).expect_err("constraints are not read");
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+        let refusals = read(serde_json::json!([
+            alias("Level", "ix://quire/unit/ms"),
+            alias("Other", "ix://acme/orders/Level"),
+        ]))
+        .expect_err("an alias of a package type is not read");
+        let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &refusals[0].cause
+        else {
+            panic!("a malformed declaration: {refusals:?}");
         };
         assert_eq!(*member, MemberPath::type_definition().name("target"));
     }

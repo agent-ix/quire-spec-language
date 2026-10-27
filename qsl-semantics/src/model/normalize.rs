@@ -2211,7 +2211,9 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::PersistenceInterface(_) => {}
-        DomainPackageRecord::ScalarType(_) => {}
+        DomainPackageRecord::ScalarType(_)
+        | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::AliasType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
             // FR-208:48,217-219 gives a persistence interface its own
             // operation signatures, distinct from object-type operations.
@@ -2240,6 +2242,7 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
+                        && !index.is_alias_or_sequence_type(value_type)
                     {
                         refusals.push(signature_type_refusal(
                             domain_package,
@@ -2256,6 +2259,7 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
+                        && !index.is_alias_or_sequence_type(value_type)
                     {
                         refusals.push(signature_type_refusal(
                             domain_package,
