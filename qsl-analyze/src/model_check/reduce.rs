@@ -18,9 +18,8 @@ use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::{
     EncodingRefusal, Permutation, SymmetryClass, SymmetryGroup, TransitionSystem,
 };
-use qsl_replay::{
-    ModelCheckItem, ReductionCause, ReductionKind, SymmetryBrokenCause, SymmetryRefusal,
-};
+use qsl_foundation::ReductionKind;
+use qsl_replay::{ModelCheckItem, ReductionCause, SymmetryBrokenCause, SymmetryRefusal};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
 

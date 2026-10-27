@@ -23,13 +23,13 @@ use qsl_eval::simulation::{
     SymmetryClass, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::ReductionKind;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
-    ProofBasis, ReachedLimit, ReductionCause, ReductionKind, ResultLabel, RunStats,
-    SettlementBasis, SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause,
-    UndefinedLocus,
+    ProofBasis, ReachedLimit, ReductionCause, ResultLabel, RunStats, SettlementBasis,
+    SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause, UndefinedLocus,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;

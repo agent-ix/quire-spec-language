@@ -42,10 +42,11 @@ use qsl_eval::simulation::{
     NotSimulated, Permutation, RequiresBound, SymmetryGroup, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
+use qsl_foundation::ReductionKind;
 use qsl_replay::{
-    AppliedReduction, CounterexampleKind, Lasso, ReductionCause, ReductionKind,
-    SymmetryBrokenCause, SymmetryRefusal, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    AppliedReduction, CounterexampleKind, Lasso, ReductionCause, SymmetryBrokenCause,
+    SymmetryRefusal, TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use qsl_semantics::check::{
     CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,

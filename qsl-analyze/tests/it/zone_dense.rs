@@ -11,9 +11,10 @@ use qsl_analyze::zone_check::{
 };
 use qsl_eval::simulation::model::TimedSystem;
 use qsl_eval::simulation::Permutation;
+use qsl_foundation::ReductionKind;
 use qsl_replay::{
     AppliedReduction, CertificateCheckLimits, ComponentReason, CounterexampleKind, ProofBasis,
-    ReductionKind, TerminalValue, UnavailabilityCause, ZoneCertificateVerdict,
+    TerminalValue, UnavailabilityCause, ZoneCertificateVerdict,
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational};
