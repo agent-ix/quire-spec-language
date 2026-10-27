@@ -44,6 +44,8 @@ enum Unit {
     /// `Guarded`, under the bounded profile: an `on each` clause activated
     /// where the counter's value is 1 (FR-337, FR-330).
     Guarded,
+    /// An on-each activation guard that becomes undefined at value 2.
+    GuardUndefined,
 }
 
 impl Unit {
@@ -51,7 +53,7 @@ impl Unit {
         match self {
             Self::Bounded => "profile t = \"quire.temporal.event-position.false-extension/v1\";\n",
             Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
-            Self::Undefined | Self::Guarded => {
+            Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
         }
@@ -78,6 +80,11 @@ impl Unit {
                 "temporal Guarded using t over (c: Counters::Counter) clock \"model-steps\" \
                  on each (q: Counters::Counter) when (q.value = 1) \
                  { eventually[0,1] holds(c.value = 2) }\n"
+            }
+            Self::GuardUndefined => {
+                "temporal GuardUndefined using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on each (q: Counters::Counter) when (3 mod (2 - q.value) >= 0) \
+                 { always[0,0] holds(c.value = c.value) }\n"
             }
         }
     }
@@ -346,6 +353,40 @@ fn replay_facade_preserves_and_matches_an_observed_undefined_value() {
             if undefined.at.index() == 2
     ));
     assert!(inconclusive.parity().is_some());
+}
+
+/// FR-331-AC-9: observed packets can name undefined atom evaluations, but
+/// cannot identify an undefined `on each` activation guard.
+#[trace("TC-847", "FR-331-AC-9")]
+#[test]
+fn an_observed_undefined_on_each_guard_settles_inconclusive() {
+    let cause = qsl_eval::temporal::UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero);
+    let packet = observed_replay_request(
+        "GuardUndefined",
+        Unit::GuardUndefined,
+        &[2, 0, 1],
+        None,
+        0,
+        ObservedReplayExpectation::Undefined(cause.clone()),
+    );
+    let replayed = crate::replay(packet, crate::ReplayLimits::default())
+        .expect("the observed guarded packet is admissible");
+    let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
+        panic!("the replay returns its observed-temporal arm");
+    };
+    assert_eq!(
+        replayed.settlement(),
+        crate::ObservedTemporalSettlement::Inconclusive,
+        "the packet has no activation locus"
+    );
+    assert_eq!(replayed.position().index(), 0);
+    assert!(matches!(
+        replayed.outcome(),
+        qsl_eval::temporal::TemporalOutcome::Undefined(undefined)
+            if undefined.at.index() == 0 && undefined.cause == cause
+    ));
+    assert_eq!(replayed.undefined_locus(), None);
+    assert!(replayed.parity().is_some());
 }
 
 #[trace("TC-847", "FR-331-AC-8")]
@@ -935,6 +976,32 @@ fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
     assert_eq!(constraint.operation().name(), "noop");
     assert_eq!(report.disposition.category(), Category::Unsupported);
     assert_eq!(exit_code(&report), 21);
+}
+
+/// FR-109-AC-13: a completed temporal verdict reports its consequent source
+/// events as the typed temporal refusal, not an empty list; a pending verdict
+/// completes no truth and reports them unavailable.
+#[trace("TC-1269", "FR-109-AC-13")]
+#[test]
+fn a_temporal_run_refuses_consequent_events_typed() {
+    use crate::spine::{ConsequentEventRefusal, ConsequentSourceEvents};
+    let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
+    assert_eq!(held.disposition.truth(), Some(true));
+    assert_eq!(
+        held.consequent_source_events,
+        ConsequentSourceEvents::Refused(ConsequentEventRefusal::Temporal)
+    );
+    let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
+    assert_eq!(
+        violated.consequent_source_events,
+        ConsequentSourceEvents::Refused(ConsequentEventRefusal::Temporal)
+    );
+    let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
+    assert_eq!(pending.disposition.truth(), None);
+    assert_eq!(
+        pending.consequent_source_events,
+        ConsequentSourceEvents::Unavailable
+    );
 }
 
 /// `Reaches` run at S6a on a lasso where it holds is evidence for that trace

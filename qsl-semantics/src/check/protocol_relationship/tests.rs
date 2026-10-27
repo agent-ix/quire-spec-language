@@ -373,19 +373,12 @@ fn bare(activation: &str, members: &str, finish: &str) -> String {
 #[test]
 fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
     use ProtocolConstruct as C;
-    let channel = "channel Pay from Seller to Seller carries M::Plain ordering unordered \
-                   delivery at-least-once capacity 2 overflow block;";
     let cases: Vec<(String, Vec<C>, &str)> = vec![
         (bare("on origin", "", "true"), vec![], ""),
         (
-            bare("on origin", channel, "true"),
-            vec![C::Channels],
-            "QSL-1125",
-        ),
-        (
             bare("on origin", "relationship Pipe = M::pipe;", "true"),
             vec![C::Relationships],
-            "QSL-1125",
+            "QSL-1141",
         ),
         (
             bare("on origin", "capture start: M::Total = view.total;", "true"),

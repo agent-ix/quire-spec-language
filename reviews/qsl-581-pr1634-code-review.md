@@ -103,3 +103,19 @@ Kani was not run, because `proofs.rs` and `reference.rs` are unchanged.
 | FND-010 | fixed | `timed_hints` reads FR-133's hints over time through `loop_enabled`. The test expects one strong `retry` hint at position 0. |
 | FND-011 | fixed | Moot. `timed/dbm.rs` is deleted, and the exploration now uses the FR-245 checker's `certificate::zone::Zone` (which has `includes` and Kani harnesses). Its new `extrapolate` is correct (`c > M_i` becomes `∞`, `c < -M_j` becomes `(-M_j, <)`, then close, and an empty zone stays in its one form), and `qsl_eval::fairness::components` returns every SCC, singletons included. The residual gap is FND-013. |
 | FND-012 | fixed | `TimedSubject` now carries the typed `TimedSubjectRefusal`. There is one `widen`, the variable is named `stack`, and the `unwrap_or(false)` is gone. |
+
+Round 2, head 93f9832a8 (fix commit 93f9832a8 on 2ebdc17a8). I verified this round in a fresh detached worktree with its own target.
+
+- **Kani:** under `locked-build --kani`, `extrapolate_dim_1`, `extrapolate_dim_2` and `extrapolate_dim_3` all verified (3/3, 0 of 1,809 checks failed).
+- **Tests:** zone lib tests passed 4/4, including the 600-zone differential test.
+- **Clippy:** `-p qsl-replay --all-targets -D warnings` exited 0.
+
+What the harness actually proves. The reference `extrapolate` restates the same entry-wise Extra_M rule on plain bounds, so pointwise agreement shows the encoding and the canonical closure keep the rule's exact point set. It does not prove the rule independently. The independent parts are these:
+
+- **Soundness.** No point of the zone is lost, so extrapolation only widens, which is the property the exploration relies on.
+- **Canonicity.** Closing the result changes nothing.
+- **Scope.** Points lie on a 1/6 grid up to ±32, so strict and non-strict bounds are told apart. Dimensions go up to 3, with bounds in [-8, 8].
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-013 | fixed | `reference::extrapolate` was added, and the Kani harnesses `extrapolate_dim_1`, `extrapolate_dim_2` and `extrapolate_dim_3` check pointwise agreement with the reference, no lost point and canonicity; I re-ran them and all three verified. `extrapolation_agrees_with_the_reference_on_a_grid` runs the same checks on 600 seeded zones. A wrong-length `max` is now `ZoneError::ExtrapolationLength { max, clocks }`. |

@@ -172,15 +172,15 @@ pub use model_check::graph_settle::{
 };
 pub use model_check::hyper_counterexample::{
     HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
-    HyperUndefined, StepMark,
+    HyperUndefined, MatchWitness, MatchWitnessCheck, StepMark,
 };
 pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
-pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
+pub use model_check::hyper_replay::{check_match_witness, replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::hyper_settle::{
     settle_hyper_check, settle_hyper_form, settle_hyper_smt, HyperRecord, HyperSettleRefusal,
     LimitOrigin, ProductMember, UsedLimit,
 };
-pub use model_check::hyper_smt_outcome::{HyperSmtOutcome, HyperSmtResult};
+pub use model_check::hyper_smt_outcome::{HyperSmtOutcome, HyperSmtResult, SmtMethod};
 pub use model_check::hyper_smt_query::{
     encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };

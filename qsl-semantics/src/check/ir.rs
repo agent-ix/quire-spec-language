@@ -831,6 +831,8 @@ pub enum NodeKind {
     /// FR-148 IEEE arithmetic of one width under the rounding mode the
     /// operand types carry (FR-091-OQ-4).
     Ieee(ArithmeticOperator, RoundingMode, NodeId, NodeId),
+    /// FR-148 IEEE square root under the operand's rounding mode.
+    IeeeSquareRoot(RoundingMode, NodeId),
     /// FR-142 quantity arithmetic; the result unit is the node type's.
     Quantity(ArithmeticOperator, NodeId, NodeId),
     /// An ordinary FR-140 conversion of a rational or decimal into `target`,
@@ -840,6 +842,9 @@ pub enum NodeKind {
     Order(OrderingOperator, OrderedKind, NodeId, NodeId),
     /// An FR-149 equality comparison under its checked schedule.
     Equality(EqualityOperator, Box<CheckedEquality>, NodeId, NodeId),
+    /// IEEE numeric equality: unlike node identity, this treats signed zeros
+    /// as equal and every NaN as unequal (FR-148/FR-322).
+    IeeeNumericEquality(NodeId, NodeId),
     /// A boolean connective with a skippable right operand.
     Connective(Connective, NodeId, NodeId),
     /// `not`.
@@ -1293,6 +1298,7 @@ impl NodeKind {
             | NodeKind::Quantity(_, left, right)
             | NodeKind::Order(_, _, left, right)
             | NodeKind::Equality(_, _, left, right)
+            | NodeKind::IeeeNumericEquality(left, right)
             | NodeKind::Connective(_, left, right)
             | NodeKind::Contains(left, right)
             | NodeKind::Reaches {
@@ -1305,6 +1311,7 @@ impl NodeKind {
                 target: right,
                 ..
             } => vec![*left, *right],
+            NodeKind::IeeeSquareRoot(_, operand) => vec![*operand],
             NodeKind::Call { arguments, .. }
             | NodeKind::ImportedCall { arguments, .. }
             | NodeKind::Tuple { arguments, .. }
