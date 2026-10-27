@@ -39,3 +39,48 @@ The on-each oracle copies changed to `12 / period + 2`. Past operators are still
 ## Verdict
 
 Not mergeable yet, for one reason only: FND-001, a small test addition inside this PR. There are no soundness bugs. FND-002 and SR-1667001's low findings can ride along.
+
+## Dispositions, round 1 (head 856f4f859)
+
+
+Round 1. Fix 090a00698; head 856f4f859, retargeted to main.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | I re-ran both mutants against `the_repeated_interval_forms_agree_with_the_evaluator`. Both now fail, and the head passes (182 s). |
+| FND-002 | fixed | `ClockLimit` is tested in qsl-eval (`[32,33]`: 130 clocks; `[100,101]`: at least 200), and in EN-6 and the checker. |
+
+**FND-001 mutant results.**
+- `release` capacity `m`: fails on `eventually (p and eventually[1 ms, 2 ms] q)`, stamps `[0,3,5,7,10]` quarters, loop to 3 after 7.
+- Both-open bound as `max(1, ceil)`: fails on `eventually always(1 ms, 2 ms) q`, stamps `[0,2,2]`, loop to 1 after 2.
+
+**Leaving out the ten-clock `always(1,2)` and `always[2,3]` forced starts is acceptable.** The forms that are present already cover each bound:
+- `release` `m + 1`: `p and eventually[1,2] q`, plus the both-open `(1,2)` and `[2,3]`;
+- `until` `2m + 1`: `eventually always[1,2] q`, and forced by `p and always[1,2] q`;
+- both-open `floor + 1`: `eventually always(1,2) q` and `p and eventually(1,2) q`;
+- past `m + 1`.
+
+Every capacity-minus-one mutant fails one of them. The two forms left out would only add another `until` instance of bounds that are already pinned.
+
+**Verdict: mergeable.**
+
+Gates at 856f4f859 (locked-build, jobs 4, `--all-features`, QSPEC_DIR at origin/main 60383a35):
+- fmt: exit 0.
+- qsl-eval `timed_trace`: 19/19.
+- qsl-analyze `zone_`: 91/91.
+- qsl-replay `certificate`: 27/27.
+- clippy on qsl-eval, qsl-analyze and qsl-replay with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: '("eventually (holds(c.level = 1) and eventually[1 ms, 2 ms] holds(c.level = 2))", 1_000), ... ("eventually always(1 ms, 2 ms) holds(c.level = 2)", 80),'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'Some(qsl_eval::automaton::AutomatonError::ClockLimit { clocks, limit: 64 })'
+```
+
++++
