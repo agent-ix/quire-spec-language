@@ -22,8 +22,14 @@ pub(super) fn model() -> Vec<u8> {
 /// A protocol `Flow` with `activation` and `members` before an empty `run`
 /// and a `finish`.
 fn flow(activation: &str, members: &str) -> String {
+    flow_over("M::Order", activation, members)
+}
+
+/// [`flow`] declared over the object type `over`: the clause's `owner_model`
+/// names that type's model declaration (QSpec FR-464).
+pub(super) fn flow_over(over: &str, activation: &str, members: &str) -> String {
     format!(
-        "protocol Flow using v over (input: Boolean) {activation} {{\n\
+        "protocol Flow using v over (input: {over}) {activation} {{\n\
          {members}\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
@@ -347,7 +353,7 @@ fn replicated_roles_emit_their_population_maximum_binder_and_lifetime() {
         "role Static on M::Person;\n\
          role Agent each M::Person from people max 3 lifetime workflow;\n\
          role Clerk each M::Person from people max 2 lifetime scope;\n\
-         role Guest each M::Order from orders max 1 lifetime until(input and Guest = Guest);",
+         role Guest each M::Order from orders max 1 lifetime until(input = input and Guest = Guest);",
     );
     let roles = set(&lowered.wire, "roles");
     assert_eq!(roles.len(), 4);
@@ -660,7 +666,7 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         };
         format!(
             "function ok using v(): Boolean pure {{ true }}\n\
-             protocol Flow using v over (input: Boolean) {activation} {{\n\
+             protocol Flow using v over (input: M::Order) {activation} {{\n\
              {captures}\n{BUYER}\n{members}\nrun {run}\nfinish End as (outcome: Boolean) {{ {finish} }};\n}}\n"
         )
     };
@@ -1023,7 +1029,7 @@ fn a_model_owned_fifo_key_refuses_typed_and_a_variant_is_carried() {
             )
             .replace("carries Boolean", &format!("carries {carries}"))
         );
-        flow("on origin", &members)
+        flow_over("M::Account", "on origin", &members)
     };
     for (carries, key) in [
         ("M::Tier", "m"),

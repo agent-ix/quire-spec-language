@@ -3603,7 +3603,7 @@ pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
 /// `semantic_graph.nodes`: the hashed projection is derived from them. Every
 /// `identity_preimage` field is left as the envelope's own, so a frame-only
 /// mutation changes no other identity input.
-fn refresh_frame_identity(envelope: &mut Value) {
+pub(crate) fn refresh_frame_identity(envelope: &mut Value) {
     envelope["package_id"]["digest"] = json!(derived_package_id(envelope).hex());
 }
 

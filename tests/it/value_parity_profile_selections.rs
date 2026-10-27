@@ -47,7 +47,7 @@ fn uc(document: &[u8]) -> String {
          profile p = \"quire.protocol.finite-global/v1\";\n\
          model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {{ always eventually holds(c.versionNumber = 2) }}\n\
-         protocol Flow using v over (input: Boolean) on origin {{\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
          run sequence Main {{ }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\

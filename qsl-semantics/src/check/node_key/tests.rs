@@ -318,6 +318,7 @@ fn keys_of(members: &[NodeInput<'_>], handles: &[NodeKey]) -> Result<GroupKeys, 
 /// The input of an application node inside a group.
 fn in_group<'a>(body: &'a BodyTerm) -> NodeInput<'a> {
     NodeInput {
+        owner_model: None,
         owner: None,
         node_tag: NodeTag::Expression,
         semantic_form: "binary",
@@ -559,6 +560,7 @@ fn a_counter_is_a_number_to_2_pow_53_minus_1_and_a_string_beyond() {
 
 fn node_input(body: &BodyTerm) -> NodeInput<'_> {
     NodeInput {
+        owner_model: None,
         owner: None,
         node_tag: NodeTag::Expression,
         semantic_form: "binary",
@@ -610,6 +612,7 @@ fn conformance_fr092_integer_encoding_vectors_match_qspec() {
             .as_ref()
             .unwrap_or_else(|| panic!("{name}: no recursion"));
         let input = NodeInput {
+            owner_model: None,
             semantic_type: Some(decoded.semantic_type.0),
             semantic_form: &decoded.semantic_form,
             ..node_input(&decoded.body)
@@ -660,6 +663,7 @@ fn a_one_member_group_keys_to_g1() {
     let handle = key(0x5a);
     let body = BodyTerm::aggregate(vec![MemberTerm::reference(handle)]);
     let node = NodeInput {
+        owner_model: None,
         owner: None,
         node_tag: NodeTag::CompositeType,
         semantic_form: "option",
@@ -953,6 +957,7 @@ fn conformance_fr334_collection_and_population_keys_match_qspec() {
     let key_of = |tag: NodeTag, form: &str, semantic_type: Option<NodeKey>, body: &BodyTerm| {
         node_key(
             &NodeInput {
+                owner_model: None,
                 owner: None,
                 node_tag: tag,
                 semantic_form: form,
@@ -1011,6 +1016,7 @@ fn empty_aggregate() -> BodyTerm {
 
 fn structural<'a>(body: &'a BodyTerm) -> NodeInput<'a> {
     NodeInput {
+        owner_model: None,
         owner: None,
         node_tag: NodeTag::ScalarType,
         semantic_form: "boolean",
@@ -1049,6 +1055,7 @@ fn an_owner_enters_a_declared_structural_key_only() {
     let declared = |owner: &Owner| {
         node_key(
             &NodeInput {
+                owner_model: None,
                 owner: Some(owner),
                 node_tag: NodeTag::CompositeType,
                 semantic_form: "record",
@@ -1080,6 +1087,7 @@ fn an_owner_enters_a_declared_structural_key_only() {
     assert_eq!(
         node_key(
             &NodeInput {
+                owner_model: None,
                 owner: Some(&u),
                 ..structural(&body)
             },
@@ -1090,6 +1098,7 @@ fn an_owner_enters_a_declared_structural_key_only() {
     assert_eq!(
         node_key(
             &NodeInput {
+                owner_model: None,
                 declaration: Some(&name),
                 ..structural(&body)
             },
@@ -1103,6 +1112,7 @@ fn an_owner_enters_a_declared_structural_key_only() {
     assert_eq!(
         node_key(
             &NodeInput {
+                owner_model: None,
                 owner: Some(&model),
                 declaration: Some(&name),
                 ..structural(&body)
@@ -1115,6 +1125,7 @@ fn an_owner_enters_a_declared_structural_key_only() {
     assert_eq!(
         node_key(
             &NodeInput {
+                owner_model: None,
                 owner: Some(&u),
                 declaration: Some(&name),
                 semantic_type: Some(key(3)),
@@ -1263,6 +1274,7 @@ fn a_union_value_is_keyed_by_the_application_preimage_and_a_tuple_value_is_not()
     let key_of = |form: &str| {
         node_key(
             &NodeInput {
+                owner_model: None,
                 owner: None,
                 node_tag: NodeTag::Value,
                 semantic_form: form,
@@ -1358,6 +1370,7 @@ fn conformance_fr440_union_value_keys_match_qspec_union_fixture() {
         )]);
         let keyed = node_key(
             &NodeInput {
+                owner_model: None,
                 owner: None,
                 node_tag: NodeTag::Value,
                 semantic_form: "union_value",
@@ -1379,5 +1392,39 @@ fn conformance_fr440_union_value_keys_match_qspec_union_fixture() {
         members,
         BTreeSet::from(["Empty".to_owned(), "Rect".to_owned()]),
         "the fixture holds the nullary and the reference-payload vector"
+    );
+}
+
+/// QSpec FR-464 "owner_model": a protocol clause's `owner_model` is a member of
+/// its `quire.application-node/v1` preimage as the node id, so a different
+/// owner is a different key; the member is present on a clause alone.
+#[test]
+fn owner_model_is_a_member_of_a_protocol_clauses_preimage_alone() {
+    let body = add(vec![argument(1)]);
+    let clause = |owner_model: Option<NodeKey>, form: &'static str| NodeInput {
+        owner_model,
+        node_tag: NodeTag::Protocol,
+        semantic_form: form,
+        semantic_type: Some(key(3)),
+        ..in_group(&body)
+    };
+    let keyed = |input: NodeInput<'_>| node_key(&input, IdentityLimits::default());
+    let first = keyed(clause(Some(key(7)), "protocol_clause")).expect("a clause keys");
+    let second = keyed(clause(Some(key(8)), "protocol_clause")).expect("a clause keys");
+    assert_ne!(first.key, second.key);
+    let text = String::from_utf8(first.preimage).expect("UTF-8");
+    let edge = format!(
+        r#""owner_model":{{"digest":"{}","domain":"quire.checked-semantic-node/v1"}}"#,
+        key(7)
+    );
+    assert!(text.contains(&edge), "{text}");
+    assert!(text.contains("quire.application-node/v1"), "{text}");
+    assert_eq!(
+        keyed(clause(None, "protocol_clause")),
+        Err(NodeKeyRefusal::OwnerModelPresence)
+    );
+    assert_eq!(
+        keyed(clause(Some(key(7)), "role")),
+        Err(NodeKeyRefusal::OwnerModelPresence)
     );
 }
