@@ -1006,7 +1006,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                 .cut(*id, &BTreeMap::new())
                 .map(|form| form.expression)
                 .ok_or_else(|| timed(self.located.outside(*id))),
-            DataLiteral::Formed(form) | DataLiteral::Element(form, _) => {
+            DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => {
                 Ok(form.expression.clone())
             }
         }

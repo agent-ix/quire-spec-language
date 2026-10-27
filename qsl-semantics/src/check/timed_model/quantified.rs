@@ -37,6 +37,8 @@ struct Quantifier<'f> {
     field: String,
     shape: CollectionShape,
     body: ExprId,
+    /// The quantifier's span.
+    span: qsl_foundation::Span,
 }
 
 /// The quantifier at node `id` when it ranges over a clock collection
@@ -77,6 +79,7 @@ fn quantifier<'f>(
         field: field.clone(),
         shape,
         body: *body,
+        span: located.span(id),
     })
 }
 
@@ -216,7 +219,7 @@ fn slot(
     budget: &mut PartBudget,
 ) -> Result<(Dnf, Dnf), CheckCause> {
     if !located.reads_clock(id) {
-        let literal = element_literal(located, id, quantifier.binder, binding)?;
+        let literal = element_literal(located, id, quantifier, binding)?;
         return Ok((
             vec![(vec![(literal.clone(), true)], Vec::new())],
             vec![(vec![(literal, false)], Vec::new())],
@@ -308,9 +311,9 @@ fn element_clock(
             _ => return None,
         }
     }
-    if steps.is_empty() {
-        return None;
-    }
+    // The element itself, a clock of a bare clock collection
+    // (`b: Bag<Clock>`, latent until the IR admits one: IR-1036), or a
+    // clock below it.
     steps.reverse();
     let position = clocks.fields.iter().position(|clock| {
         let [PlaceStep::Field(field), PlaceStep::Slot(_), below @ ..] = clock.path.as_slice()
@@ -333,11 +336,15 @@ fn element_clock(
 fn element_literal(
     located: &Located<'_>,
     id: ExprId,
-    binder: &str,
+    quantifier: &Quantifier<'_>,
     binding: &ElementBinding,
 ) -> Result<DataLiteral, CheckCause> {
-    let form = renamed(located, id, binder, &binding.name).map_err(timed)?;
-    Ok(DataLiteral::Element(Rc::new(form), binding.clone()))
+    let form = renamed(located, id, quantifier.binder, &binding.name).map_err(timed)?;
+    Ok(DataLiteral::Element(
+        Rc::new(form),
+        binding.clone(),
+        quantifier.span,
+    ))
 }
 
 /// Body node `id` with each free occurrence of `binder` renamed to `name`,
