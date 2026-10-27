@@ -427,7 +427,7 @@ fn a_prohibited_form_is_prohibited() {
 fn a_construct_without_a_node_yet_is_unsupported() {
     let refusal = check(vec![CheckCause::ProtocolReference(Box::new(
         ProtocolReferenceCause::NotEmitted {
-            construct: qsl_semantics::check::ProtocolConstruct::Captures,
+            construct: qsl_semantics::check::ProtocolConstruct::Terminal,
         },
     ))]);
     let classified = classify_refusal(&refusal);
