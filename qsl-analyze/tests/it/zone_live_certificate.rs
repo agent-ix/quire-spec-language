@@ -419,3 +419,40 @@ fn padding_edges_are_charged_against_the_edge_limit() {
         ))
     );
 }
+
+/// FR-245 (SR-1647001 FND-004): a component numbering nested 200,000
+/// levels deep clones, compares and prints without recursion over the
+/// depth, as a crafted certificate that reaches a caller may be.
+#[trace("TC-700")]
+#[test]
+fn a_deep_strong_nesting_clones_compares_and_prints() {
+    let member = FairnessMember {
+        constraint: 0,
+        transition: None,
+    };
+    let mut chain = Components {
+        numbering: vec![Some(0)],
+        reasons: vec![ComponentReason::Acyclic],
+    };
+    for _ in 0..200_000 {
+        chain = Components {
+            numbering: vec![Some(0)],
+            reasons: vec![ComponentReason::Strong {
+                constraints: vec![member.clone()],
+                nested: Box::new(chain),
+            }],
+        };
+    }
+    let copy = chain.clone();
+    assert_eq!(copy, chain);
+    let mut other = chain.clone();
+    other.numbering[0] = None;
+    assert_ne!(other, chain);
+    let printed = format!("{chain:?}");
+    assert!(
+        printed.starts_with("Components { levels: ["),
+        "{}",
+        &printed[..80]
+    );
+    assert_eq!(printed.matches("Strong(").count(), 200_000);
+}

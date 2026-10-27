@@ -59,3 +59,31 @@ Changes requested for FND-001. Bound the nesting (for example, reject a `Strong`
 - The idle-tail divergence change (`divergent: !dense`) keeps tail acceptance through the `z` resets.
 - Probe results are summarised above. The probes were reverted with `git checkout --`.
 - The baseline `zone_` integration tests pass (79).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | `Components` and `ComponentReason` still derive `Clone`, `Debug` and `PartialEq`, which recurse. The checker never clones, prints or compares a certificate's components, so the check is safe. A caller that clones or prints a crafted certificate before checking it would still overflow. Non-blocking: either note it on the type or make those impls iterative. | zone_certificate.rs 162-200 |
+
+## Dispositions
+
+Round 1. The head is 4842a64a5: fix commit 2967a403b, restacked base-only. Checked in a fresh worktree and target under locked-build at jobs 4:
+- `zone_` tests: 82/82 passed (79 baseline, plus the deep-nesting, padding and drift tests).
+- clippy `-p qsl-replay -p qsl-analyze --all-targets --all-features -D warnings`: exit 0.
+
+I re-ran the round-0 tamper probes, then reverted them:
+- relabelled reasons (Serve weak, strong and weak+idle): 0 implausible acceptances;
+- flipped marks: 0/36 accepted;
+- swapped `Wait`/`Diverge`: 0/99 accepted;
+- moved to a Violated sibling: `WitnessFails` at `ZoneComponent 9`, weak and strong;
+- moved to the no-fairness sibling: `InitialMissing`;
+- forged `Lock` divergence witnesses: `WitnessFails` at node 1.
+
+Every verdict is unchanged. My original 200,000-deep chain, and a 200,000-deep chain that repeats the same member set, are now both `Malformed` at `components`, with no overflow. `max_automaton_states: 1` stops the check with `LimitReached(MaxAutomatonStates, 1)`. The default is the shared `DEFAULT_MAX_AUTOMATON_STATES` (1,048,576), so it matches the engine's.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `components_bytes`, `numbering_ok` and `reasons` walk explicit stacks. `Components` has an iterative `Drop`. `numbering_ok` requires each nested numbering to number a strict subset of its own component (members only), so depth is bounded by the node count. Regression test: `a_strong_nesting_deeper_than_its_nodes_is_malformed`. |
+| FND-002 | fixed | The duplicate arm is gone. A new `CertificateCheckLimits::max_automaton_states` (default the shared engine constant) bounds the rebuilt automaton, for both the liveness and window paths, and stops the check with `Stopped(LimitReached(MaxAutomatonStates))`. FR-245's Inputs do not list this field; STD-493 8eafddf9 item 4 records that correctly. It is a real resource bound, not ceremony. |
+| FND-003 | fixed | Kept by design. FR-245 has no Malformed row for an edge that covers no successor; such edges are charged to `max_certificate_edges`, and `padding_edges_are_charged_against_the_edge_limit` pins that. |
