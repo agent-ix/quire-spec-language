@@ -43,10 +43,15 @@ use quire_checked::key::DeclarationKey;
 /// that select it.
 pub(super) type Places = Vec<(Vec<(DataLiteral, bool)>, Place)>;
 
-/// A clock place relative to the receiver: the reference fields walked from
-/// the receiver to the object holding the clock (none for the receiver's
-/// own clock), and the clock.
-pub(super) type Place = (Vec<PlaceStep>, ClockId);
+/// A clock place relative to the receiver.
+#[derive(Clone, Debug)]
+pub(super) struct Place {
+    /// The reference fields walked from the receiver to the object holding
+    /// the clock; none for the receiver's own clock.
+    pub(super) via: Vec<PlaceStep>,
+    /// The clock.
+    pub(super) clock: ClockId,
+}
 
 /// The unit's clock-reading declarations, by name.
 pub(crate) struct Declarations<'r> {
@@ -655,7 +660,13 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
         budget: &mut PartBudget,
     ) -> Result<Option<Places>, CheckCause> {
         if let Some(clock) = self.located.clock(id) {
-            return Ok(Some(vec![(Vec::new(), (Vec::new(), clock))]));
+            return Ok(Some(vec![(
+                Vec::new(),
+                Place {
+                    via: Vec::new(),
+                    clock,
+                },
+            )]));
         }
         match self.located.node(id) {
             Some(ExprNode::If {
@@ -1031,7 +1042,13 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
                     })
                     .map(ClockId)
                     .ok_or_else(not_a_place)?;
-                Ok(vec![(Vec::new(), (via.to_vec(), clock))])
+                Ok(vec![(
+                    Vec::new(),
+                    Place {
+                        via: via.to_vec(),
+                        clock,
+                    },
+                )])
             }
             Some(ExprNode::If {
                 condition,
@@ -1250,9 +1267,9 @@ fn guarded(places: Places, literal: (DataLiteral, bool)) -> Places {
 /// exhaustive (each place expression's branches partition its conditions),
 /// so the negation is the same places with each constraint negated.
 pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: Span) -> (Dnf, Dnf) {
-    let constraint = |(via, clock): &Place, op: ClockOp| ClockConstraint {
-        clock: *clock,
-        via: via.clone(),
+    let constraint = |place: &Place, op: ClockOp| ClockConstraint {
+        clock: place.clock,
+        via: place.via.clone(),
         op,
         bound: bound.clone(),
         span,

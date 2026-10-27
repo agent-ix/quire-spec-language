@@ -449,3 +449,66 @@ fn a_clock_through_a_reference_field_is_the_referenced_objects() {
         .collect();
     assert_eq!(vias, [&[PlaceStep::Field("peer".to_owned())][..]]);
 }
+
+/// Part of FR-230-AC-10 (TC-685), SR-1651 GA FND-002: `not (peer_clock(self)
+/// <= 2 ms)` checks to the negated constraint `x > 2` of the object
+/// `self.peer` refers to, its reference field carried into the negation;
+/// a clock read through an optional reference (`value(o.backup).x`,
+/// `backup?: Call`) or a multi-valued one (`o.peers.x`, `peers: Call [0,
+/// 2]`) is no place: the walk stops at the field, and the read has no
+/// data type (`ill_typed`/`type-mismatch` at the read).
+#[trace("TC-685")]
+#[test]
+fn a_negated_peer_clock_keeps_its_reference_and_other_references_refuse() {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields");
+    fields.push(field("peer", &package("Call")));
+    let mut backup = field("backup", &package("Call"));
+    backup["presence"] = json!("optional");
+    fields.push(backup);
+    let mut peers = field("peers", &package("Call"));
+    peers["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": false, "unique": true});
+    fields.push(peers);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let declaration = "function peer_clock using v(o: Config::Call): Clock pure { o.peer.x }\n";
+    let body = format!(
+        "{UNITS}{DENSE}{declaration}\
+         pre Far using v on Config::Call::reply {{ not (peer_clock(self) <= 2 ms) }}\n"
+    );
+    let graph = check(&document, &body).expect("a negated peer clock checks");
+    let model = timed(&graph);
+    let constraints: Vec<_> = model.guards()[0]
+        .parts()
+        .iter()
+        .flat_map(|part| part.clocks())
+        .map(|constraint| {
+            (
+                constraint.via(),
+                constraint.op(),
+                constraint.bound().clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        constraints,
+        [(
+            &[PlaceStep::Field("peer".to_owned())][..],
+            ClockOp::Greater,
+            exact(2, 1)
+        )]
+    );
+    for reader in ["value(o.backup).x", "o.peers.x"] {
+        let body = format!(
+            "{UNITS}{DENSE}function other_clock using v(o: Config::Call): Clock pure {{ {reader} }}\n\
+             pre Near using v on Config::Call::reply {{ other_clock(self) <= 2 ms }}\n"
+        );
+        let (cause, text) = refused(&document, &body);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::IllTyped, "type-mismatch", reader),
+        );
+    }
+}

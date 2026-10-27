@@ -621,13 +621,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             })?,
                         };
                         if data {
-                            // A part whose clock of another object names no
-                            // present object of the universe is not enabled.
-                            if let Some(placed) =
-                                self.placed(state, &vector.receiver, part.clocks())
-                            {
-                                clause_parts.push(placed);
-                            }
+                            clause_parts.push(self.placed(
+                                state,
+                                &vector.receiver,
+                                part.clocks(),
+                            )?);
                         }
                     }
                     parts = parts
@@ -695,23 +693,34 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// `constraints` of an operation's guard part over places, each of
     /// `receiver`'s own clock or of the object `receiver` reaches at `state`
-    /// through the constraint's reference fields (FR-230-AC-10); `None` when
-    /// such an object is no present object of the universe.
+    /// through the constraint's reference fields (FR-230-AC-10).
+    ///
+    /// # Errors
+    ///
+    /// A broken-invariant [`ExpansionStop`] when a reference field does not
+    /// resolve to a present object of the universe, which FR-120's closure
+    /// of a required single reference rules out.
     fn placed(
         &self,
         state: &ModelSimState,
         receiver: &ObjectReference,
         constraints: &[ClockConstraint],
-    ) -> Option<Vec<PlaceConstraint>> {
+    ) -> Result<Vec<PlaceConstraint>, ExpansionStop> {
         constraints
             .iter()
             .map(|constraint| {
-                let holder = self.holder(state, receiver, constraint.via())?;
-                let place = self.place(&holder, constraint.clock())?;
-                if !constraint.via().is_empty() && !self.places.get(place)?.present(state) {
-                    return None;
-                }
-                Some(PlaceConstraint {
+                let place = self
+                    .holder(state, receiver, constraint.via())
+                    .and_then(|holder| self.place(&holder, constraint.clock()))
+                    .filter(|place| {
+                        constraint.via().is_empty()
+                            || self
+                                .places
+                                .get(*place)
+                                .is_some_and(|held| held.present(state))
+                    })
+                    .ok_or_else(|| stop(BROKEN))?;
+                Ok(PlaceConstraint {
                     place,
                     op: constraint.op(),
                     bound: constraint.bound().clone(),
@@ -731,16 +740,15 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let model = &self.system.model;
         let mut at = object.clone();
         for PlaceStep::Field(name) in via {
-            let stored = state
-                .state()
-                .populations
-                .values()
-                .flat_map(|objects| objects.iter())
-                .find_map(|(key, stored)| {
-                    let reference = model.object_reference(&stored.type_identity, key).ok()?;
-                    (reference.universe() == at.universe() && reference.object() == at.object())
-                        .then_some(stored)
-                })?;
+            // The object is held under its key in the population whose
+            // objects its universe names.
+            let stored = state.state().populations.values().find_map(|objects| {
+                let stored = objects.get(at.object().as_str())?;
+                let reference = model
+                    .object_reference(&stored.type_identity, at.object().as_str())
+                    .ok()?;
+                (reference.universe() == at.universe()).then_some(stored)
+            })?;
             let fields = model.fields(&stored.type_identity).ok()??;
             let field = fields.iter().find(|field| field.name == *name)?;
             match stored.fields.get(&field.key)? {

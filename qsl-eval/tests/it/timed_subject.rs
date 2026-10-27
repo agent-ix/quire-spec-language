@@ -1388,10 +1388,29 @@ fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
 /// state's `self.peer` refers to: with `c1.peer = c2` and `c2.peer = c1`,
 /// `c1`'s `work` is guarded by `c2.x <= 2` and `c2`'s by `c1.x <= 2`, and
 /// after a delay of 3 and `c2`'s `send` resets `c2.x`, `c1`'s guard holds
-/// and `c2`'s does not.
+/// and `c2`'s does not. `own_clock(self.peer) <= 2 ms` of `function
+/// own_clock(o: Call): Clock { o.x }` reads the same places, and `not
+/// (peer_clock(self) <= 2 ms)` their negation (SR-1651 GA FND-002).
 #[trace("TC-685")]
 #[test]
 fn a_peer_clock_is_the_clock_of_the_referenced_object() {
+    // `peer_clock(self)`, `own_clock(self.peer)` and the negation of the
+    // first: each receiver's `work` is guarded by its peer's clock.
+    let peer_clock = "function peer_clock using v(o: M::Call): Clock pure { o.peer.x }\n";
+    let own_clock = "function own_clock using v(o: M::Call): Clock pure { o.x }\n";
+    for (declaration, guard, holds) in [
+        (peer_clock, "peer_clock(self) <= 2 ms", true),
+        (own_clock, "own_clock(self.peer) <= 2 ms", true),
+        (peer_clock, "not (peer_clock(self) <= 2 ms)", false),
+    ] {
+        peer_guarded_work(declaration, guard, holds);
+    }
+}
+
+/// [`a_peer_clock_is_the_clock_of_the_referenced_object`] over the guard
+/// `guard` of `work`, which reads the peer's clock `x <= 2` when `holds`
+/// and its negation otherwise.
+fn peer_guarded_work(declaration: &str, guard: &str, holds: bool) {
     let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
     document["types"][1]["fields"]
         .as_array_mut()
@@ -1408,10 +1427,10 @@ fn a_peer_clock_is_the_clock_of_the_referenced_object() {
         "",
         &only(
             &["send", "work"],
-            "function peer_clock using v(o: M::Call): Clock pure { o.peer.x }
-             pre Near using v on M::Call::work { peer_clock(self) <= 2 ms }
-             post Send using v on M::Call::send { self.x = 0 ms }
-",
+            &format!(
+                "{declaration}pre Near using v on M::Call::work {{ {guard} }}\n\
+                 post Send using v on M::Call::send {{ self.x = 0 ms }}\n"
+            ),
         ),
         json!([object("c1", "c2"), object("c2", "c1")]),
     );
@@ -1450,9 +1469,10 @@ fn a_peer_clock_is_the_clock_of_the_referenced_object() {
     assert_eq!(
         named,
         [
-            ("c1".to_owned(), "c2".to_owned(), true),
-            ("c2".to_owned(), "c1".to_owned(), true)
-        ]
+            ("c1".to_owned(), "c2".to_owned(), holds),
+            ("c2".to_owned(), "c1".to_owned(), holds)
+        ],
+        "{guard}"
     );
     let late = timed
         .delay(initial, &exact(3, 1))
@@ -1471,8 +1491,9 @@ fn a_peer_clock_is_the_clock_of_the_referenced_object() {
     assert_eq!(
         named,
         [
-            ("c1".to_owned(), "c2".to_owned(), true),
-            ("c2".to_owned(), "c1".to_owned(), false)
-        ]
+            ("c1".to_owned(), "c2".to_owned(), holds),
+            ("c2".to_owned(), "c1".to_owned(), !holds)
+        ],
+        "{guard}"
     );
 }
