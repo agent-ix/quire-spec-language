@@ -61,3 +61,114 @@ A quantifier over an unbounded collection nested inside another (`forall(a in ts
 ## Verdict
 
 **Not mergeable until FND-001 is fixed.** FND-001 is a silent truncation, exactly what the brief asked to rule out. FND-002 should be fixed in the same PR. FND-003 and FND-004 can ride along.
+
+## Dispositions, round 1 (head 75bc6c685)
+
+
+Round 1. Fix e79cd3b72; head 75bc6c685.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | **not fixed** | The 3/4/5 case is fixed, but the truncation remains when elements hold nested bounded collections. Details below. |
+| FND-002 | fixed | The family product is charged to `max_candidates` (`Budget::charge_many`), stopping `Expansion` `MaxCandidates`. |
+| FND-003 | fixed | The listing loop is gone. Each slot now lists `max_clocks / per_element`. |
+| FND-004 | fixed | `SlotRef::{Held, Family}` replaces the `u64::MAX` sentinel. |
+
+**FND-001: what is fixed.**
+- `live_clocks` counts every element's clocks plus the bounded places, and the stop fires when that count exceeds `max_clocks`.
+- A clock under two collections with no declared maximum is refused `NestedUnboundedCollection`.
+- `max_clocks` is `NonZeroU64`.
+- My earlier probe now stops `MaxClocks` at 3, 4 and 5, and steps at 7.
+
+**FND-001: what is not.** Slots are sized by `max_clocks / per_element`, and `per_element` takes every nested declared collection at its maximum. `live_clocks` counts the actual elements. So an element that holds fewer clocks than its maximum leaves states within the bound with elements that have no places.
+
+Probe: `hs: Sequence<Holder>` with no maximum, where `Holder { ts: Timer[0,2] }` and `Timer` holds `x` and `y`. So `per_element` is 4, and `max_clocks` 11 lists 2 slots.
+
+| `hs` held | `max_clocks` | live | places | Result |
+| --- | --- | --- | --- | --- |
+| 4 holders, 1 Timer each | 11 | 11 | 11, top slot 1 | **steps (4 steps)** |
+| 3 holders, 1 Timer each | 11 | 9 | 11, top slot 1 | **steps (4 steps)** |
+| 6 holders, 1 Timer each | 15 | 15 | 15, top slot 2 | **steps (4 steps)** |
+
+In each case the holders from slot 2 (or 3) up have clocks with no place, and the state steps. A within-bound state needs a slot for every element that can hold a clock. Fix: list `max_clocks / m` slots, where `m` is the fewest clocks an element can hold, at least 1 (that is, `max_clocks` itself whenever the element's clocks lie only in collections with a minimum of 0). Or stop when an element beyond the listing holds a live clock. Then add the `Holder` case as a test.
+
+Gates at 75bc6c685 (locked-build, jobs 4, `--all-features`):
+- fmt: exit 0.
+- qsl-eval `timed_subject`: 29/29.
+- qsl-semantics `clock_places`: 18/18.
+- qsl-semantics `intake`: 109/109.
+- qsl-analyze `zone_`: 89/89.
+- qsl-replay `model_check`: 6/6.
+- qsl-replay `certificate`: 27/27.
+- clippy with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: not-fixed
+  reason: 'listed = max_clocks / per_element takes nested declared collections at their maximum while live_clocks counts held elements: hs: Sequence<Holder> (Holder { ts: Timer[0,2] }, 4 clocks per element) at max_clocks 11 lists 2 slots; a state of 4 holders with one Timer each (11 live) steps with the clocks of holders 2 and 3 unplaced (also 3 holders/11 and 6 holders/15).'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'budget.charge_many(alternatives.len().saturating_mul(option.len())).map_err(TimedStop::Expansion)?;'
+- fnd: FND-003
+  outcome: fixed
+  after_excerpt: '.map_or(0, |held| max_clocks.get() / (*held).max(1));'
+- fnd: FND-004
+  outcome: fixed
+  after_excerpt: 'SlotRef::Held(slot) => Some(*slot), SlotRef::Family => None,'
+```
+
++++
+
+## Dispositions, round 2 (head f88cdae06)
+
+
+Round 2 (final). Fix f88cdae06.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Slots are sized by the fewest clocks an element holds (declared minima, floored at 1), and `within_max_clocks` adds an `UnplacedElement` backstop. No probe truncates. |
+
+**The backstop is sound.** `live()` and `live_clocks` walk the same path to the innermost collection, and each live place stands for exactly one counted clock. So `placed < live` holds exactly when some live clock has no place, and such a state stops; it never steps.
+
+**Probe results.** Every within-bound state places every live clock and steps; the over-bound state stops `MaxClocks`. `live` here is the count of live clocks, which in every case equals the count of live places.
+
+| Shape | Case | live | Result |
+| --- | --- | --- | --- |
+| Round-1 `Holder` (inner `[0,2]`) | 4×1 @11 | 11 | steps |
+| | 3×1 @11 | 9 | steps |
+| | 6×1 @15 | 15 | steps |
+| | 4×0 @11 | 3 | steps |
+| Inner `[1,2]` | 4×1 @11 | 11 | steps |
+| | 4×2 @11 | 19 | stops `MaxClocks` |
+| | 3×2 @15 | 15 | steps |
+| Inner `[1,3]` | 5×1 @13 | 13 | steps |
+| Direct clock `z` plus inner `[0,2]` | 4×0 @7 | 7 | steps |
+| | 2×2 @13 | 13 | steps |
+| Unbounded inner under bounded outer `hs[0,2]` | 2×3 @15 | 15 | steps |
+| | 2×2 @11 | 11 | steps |
+| | 1×5 @13 | 13 | steps |
+| | plus `z`, 2×2 @13 | 13 | steps |
+
+**Not blocking.** When an element can hold 0 clocks, the listing grows past `max_clocks`. Example: Holder with inner `[0,2]` at 11 lists 47 places, about `4 × max_clocks`, and EN-6's zone dimension is the place count. This is a cost, not a soundness issue.
+
+Gates at f88cdae06 (locked-build, jobs 4, `--all-features`):
+- fmt: exit 0.
+- qsl-eval `timed_subject`: 30/30.
+- qsl-analyze `zone_`: 89/89.
+- clippy on qsl-eval, qsl-analyze and qsl-replay with `-D warnings`: exit 0.
+
+**Verdict: mergeable.** All SR-1676001 and SR-1676002 findings are fixed.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: 'let placed = self.places.iter().filter(|place| self.live(place, state)).count() as u64; if placed < live { return Err(TimedStop::UnplacedElement { live, placed }); }'
+```
+
++++
