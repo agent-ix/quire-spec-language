@@ -58,6 +58,13 @@ pub enum AutomatonError {
     /// cannot track it as state (ADR-018 SM-6). Remaining work: QSL-878.
     #[error("a past operator's operand holds a future operator")]
     PastOverFuture,
+    /// A timed operator nested under a future operator has an interval
+    /// that does not start at a closed 0: its instances started at many
+    /// positions need more than one clock, which this construction does not
+    /// give yet: FR-242's MightyL translation of such intervals is
+    /// unbuilt. Remaining work: QSL-583 (583e).
+    #[error("a nested timed operator's interval does not start at a closed 0")]
+    NestedIntervalShape,
     /// The clause's profile has no property automaton.
     #[error("the {profile:?} profile has no property automaton")]
     ProfileNotTranslated {

@@ -34,6 +34,9 @@
 //!   IV-3's counter construction for interval operators: one counter per
 //!   occurrence for a lower bound of 0, and sets of open windows or offsets
 //!   otherwise.
+//! - [`WindowClaim`] is FR-242's TT-2 `BoundedWindow` claim automaton over
+//!   time stamps, which the zone search and the zone certificate checker
+//!   both build.
 //! - [`SafetyTranslation`] and [`BoundedTranslation`] are FR-338's canonical
 //!   translations of the safety items and the bounded single-interval clauses
 //!   EN-1 decides, whose states have the order-independent
@@ -53,6 +56,8 @@ mod monitor;
 mod numbering;
 mod past;
 mod state;
+mod timed_claim;
+mod timed_window;
 mod translate;
 
 pub use bounded::{bounded_shape, BoundedKind, BoundedState, BoundedTranslation};
@@ -76,7 +81,14 @@ pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
 pub use state::StateId;
+pub use timed_claim::{
+    has_timed_interval, position_automaton, ClockedEdge, PositionAutomaton, TimedClaim,
+};
+pub use timed_window::{
+    bounded_window_verdict, Atoms, Read, Stamp, Undefined, WindowClaim, WindowFault, WindowRefusal,
+    WindowState,
+};
 pub use translate::{
     translate, translate_body, translate_counted, translate_itself, translate_negation,
-    AtomSymmetry, AutomatonKind, PropertyAutomaton,
+    translate_position_negation, AtomSymmetry, AutomatonKind, PropertyAutomaton,
 };

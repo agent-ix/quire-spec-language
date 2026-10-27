@@ -22,7 +22,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    BinaryOperator, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
+    BinaryOperator, BinderKind, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
     ChannelOverflow, Expression, ExpressionForm, JoinPolicy, ParallelForm, ParameterForm,
     ProtocolDeclarationForm, ProtocolMemberForm, TypeFormHead,
 };
@@ -167,6 +167,7 @@ pub(super) fn check(
         }
     }
     refuse_duplicate_channels(&protocol.channels, &mut refusals);
+    refuse_fifo_binder_clashes(protocol, &mut refusals);
     check_messages(protocol, scope, &mut refusals);
 
     for parallel in &protocol.parallels {
@@ -462,6 +463,45 @@ fn check_messages(
                     expected: Box::new(expected),
                     actual: Box::new(actual),
                     span: binder.value_type.span,
+                }),
+            ));
+        }
+    }
+}
+
+/// FR-464 "Level": a FIFO channel's message binder is introduced at the
+/// binders readable at the clause (`C0`: `over`, the `each` trigger and the
+/// protocol captures), and two readable binders of one name refuse
+/// `ambiguous_declaration`/`ambiguous-name` at the binder that introduces
+/// the second, naming both.
+fn refuse_fifo_binder_clashes(
+    protocol: &ProtocolDeclarationForm,
+    refusals: &mut Vec<(Span, CheckRefusal)>,
+) {
+    let readable: BTreeMap<&str, Span> = protocol
+        .binders
+        .iter()
+        .filter(|binder| match binder.kind {
+            BinderKind::Input | BinderKind::ActivationParameter => true,
+            BinderKind::Capture => binder.scope.is_none(),
+            BinderKind::RecordBinder
+            | BinderKind::Trigger
+            | BinderKind::RetryParameter
+            | BinderKind::RecoveryParameter => false,
+        })
+        .map(|binder| (binder.name.name.as_str(), binder.name.span))
+        .collect();
+    for channel in &protocol.channels {
+        let ChannelOrdering::Fifo { binder, .. } = &channel.ordering.value else {
+            continue;
+        };
+        if let Some(&earlier) = readable.get(binder.name.name.as_str()) {
+            refusals.push((
+                binder.name.span,
+                refusal(ProtocolAnchorCause::Ambiguous {
+                    name: binder.name.name.clone(),
+                    loci: vec![earlier, binder.name.span],
+                    span: binder.name.span,
                 }),
             ));
         }
