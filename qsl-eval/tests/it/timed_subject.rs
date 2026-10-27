@@ -3424,3 +3424,93 @@ fn exploration_reaches_every_value_of_a_bounded_clock_collection() {
     };
     assert_eq!(stats.states, 85);
 }
+
+/// FR-120-AC-26 (TC-1270) with the STD-508 ruling on collections of bare
+/// clocks: `sk: Sequence<Clock>[0, 3]` has 4 values and `st: Set<Clock>`
+/// with no declared maximum 2, one for each element count, each a root no
+/// requires-bound check refuses; an initial state ranges over every count
+/// (4 and 2 initial states). From `sk` holding one clock at 5 ms, the
+/// candidate count 2 keeps 5 ms in slot 0 and holds a fresh 0 ms in slot 1.
+/// `Sequence<Clock>` with no declared maximum requires a bound.
+#[trace("TC-1270")]
+#[test]
+fn a_collection_of_bare_clocks_ranges_over_its_counts() {
+    use qsl_eval::simulation::TransitionSystem;
+
+    let clock = "ix://quire/native/Clock".to_owned();
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world_of = |name: &str, max: Option<u64>, ordered: bool, unique: bool| {
+        world_holding(
+            cells_document(
+                vec![],
+                vec![(name, clock.clone(), Some(shape(max, ordered, unique)))],
+                &[name],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": timer.clone()}),
+        )
+    };
+    let counts = |world: &World, name: &str| {
+        let held = system(world);
+        check_model_bounds(&held, BOUND_POSITIONS)
+            .unwrap_or_else(|refusal| panic!("{name} is bounded: {refusal:?}"));
+        (held.initial().len(), granted_values(world, "work", name))
+    };
+    let (initial, values) = counts(&world_of("sk", Some(3), true, false), "sk");
+    assert_eq!((initial, values.len()), (4, 4), "{values:?}");
+    assert!(values[3].contains("Integer(3)"), "{values:?}");
+    let (initial, values) = counts(&world_of("st", None, false, true), "st");
+    assert_eq!((initial, values.len()), (2, 2), "{values:?}");
+    let unbounded = world_of("sk", None, true, false);
+    assert!(matches!(
+        check_model_bounds(&system(&unbounded), BOUND_POSITIONS),
+        Err(NotSimulated::RequiresBound(_))
+    ));
+
+    // Positions keep their clocks; a new slot is fresh.
+    let world = world_of("sk", Some(3), true, false);
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/sk"),
+    };
+    let count = |state: &TimedState| {
+        state
+            .discrete()
+            .state()
+            .populations
+            .values()
+            .find_map(|objects| objects.get("c"))
+            .and_then(|object| object.fields.get(&key))
+            .map(|value| format!("{value:?}"))
+            .unwrap_or_default()
+    };
+    let one = timed
+        .initial()
+        .into_iter()
+        .find(|state| count(state).contains("Integer(1)"))
+        .expect("an initial state holding one clock");
+    let five = Rational::new(Integer::from(5_i64), Integer::from(1_i64)).expect("5");
+    let later = TimedState::new(one.discrete().clone(), one.clocks().delayed(&five));
+    let (_, two) = timed
+        .steps(&later)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(step, next)| {
+            step.operation().contains("Call/work\"") && count(next).contains("Integer(2)")
+        })
+        .expect("a step to two clocks");
+    let mut slots: Vec<(usize, Rational)> = timed
+        .places()
+        .iter()
+        .zip(two.clocks().values())
+        .filter(|(place, _)| timed.live(place, two.discrete()) && !place.slots().is_empty())
+        .map(|(place, value)| (place.slots()[0], value.clone()))
+        .collect();
+    slots.sort();
+    let zero = Rational::new(Integer::from(0_i64), Integer::from(1_i64)).expect("0");
+    assert_eq!(slots, [(0, five), (1, zero)]);
+}

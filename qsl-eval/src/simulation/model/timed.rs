@@ -634,7 +634,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let Some(PlaceStep::Field(first)) = field.path().first() else {
                 continue;
             };
-            let Ok(Some(fields)) = self.system.model.fields(&stored.type_identity) else {
+            let Some(fields) = self.system.fields.get(&stored.type_identity) else {
                 continue;
             };
             let Some(value) = fields
@@ -654,13 +654,19 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             pending.push((next, rest));
                         }
                     }
-                    Some((PlaceStep::Slot(_), rest)) => {
-                        if let quire_exact::Value::Collection(collection) = value {
+                    Some((PlaceStep::Slot(_), rest)) => match value {
+                        quire_exact::Value::Collection(collection) => {
                             pending.extend(
                                 collection.elements().iter().map(|element| (element, rest)),
                             );
                         }
-                    }
+                        // A collection of bare clocks: one live clock per
+                        // element its count member holds.
+                        quire_exact::Value::Integer(count) => {
+                            live = live.saturating_add(count.to_u64().unwrap_or(u64::MAX));
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
@@ -775,7 +781,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let Some(PlaceStep::Field(first)) = steps.next() else {
             return false;
         };
-        let Ok(Some(fields)) = self.system.model.fields(&stored.type_identity) else {
+        let Some(fields) = self.system.fields.get(&stored.type_identity) else {
             return false;
         };
         let Some(mut value) = fields
@@ -791,6 +797,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 PlaceStep::Slot(_) => match (value, slots.next()) {
                     (quire_exact::Value::Collection(collection), Some(slot)) => {
                         collection.elements().get(*slot)
+                    }
+                    // A collection of bare clocks: its count member
+                    // (FR-120-AC-26) holds the slots below it.
+                    (quire_exact::Value::Integer(count), Some(slot)) => {
+                        return quire_exact::Integer::from(*slot as u64) < *count;
                     }
                     _ => None,
                 },
@@ -1522,7 +1533,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     ) -> Option<&'t quire_exact::CollectionValue> {
         let (first, below) = path.split_first()?;
         let stored = self.stored(state, object)?;
-        let fields = self.system.model.fields(&stored.type_identity).ok()??;
+        let fields = self.system.fields.get(&stored.type_identity)?;
         let field = fields.iter().find(|field| field.name == *first)?;
         let typing = self.system.typing();
         let mut value = stored.fields.get(&field.key)?;

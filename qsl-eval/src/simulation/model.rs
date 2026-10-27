@@ -634,6 +634,66 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
+        // FR-120-AC-26 (STD-508 ruling): a collection of bare clocks holds no
+        // data, so its element count is an eval-side member of each object's
+        // state, `[min, max]` (a `Set<Clock>` at most 1), rooted, enumerated
+        // and read by the slot places like a field. It is in no written or
+        // admitted document. An initial state ranges over every count.
+        let mut counts: Vec<(DeclarationKey, StateField, u64, Option<u64>)> = Vec::new();
+        for timed in graph.timed_models() {
+            for clock in timed.clocks() {
+                let [qsl_semantics::check::PlaceStep::Field(name), qsl_semantics::check::PlaceStep::Slot(shape)] =
+                    clock.path()
+                else {
+                    continue;
+                };
+                let max = if shape.unique && !shape.ordered {
+                    Some(shape.max.unwrap_or(1).min(1))
+                } else {
+                    shape.max
+                };
+                let value_type = match max {
+                    Some(max) => quire_exact::IntegerInterval::new(
+                        quire_exact::Integer::from(shape.min.min(max)),
+                        quire_exact::Integer::from(max),
+                    )
+                    .map(ValueType::Int)
+                    .unwrap_or(ValueType::Integer),
+                    None => ValueType::Integer,
+                };
+                // The owner and every object type below it holds the count.
+                for (type_key, declared) in &fields {
+                    let below = model
+                        .type_identity(type_key)
+                        .is_some_and(|identity| types.conforms(identity, clock.owner()));
+                    let held = declared.iter().any(|field| field.key == *clock.field())
+                        || counts.iter().any(|(key, field, _, _)| {
+                            key == type_key && field.key == *clock.field()
+                        });
+                    if !below || held {
+                        continue;
+                    }
+                    counts.push((
+                        type_key.clone(),
+                        StateField {
+                            key: clock.field().clone(),
+                            name: name.clone(),
+                            value_type: value_type.clone(),
+                            optional: false,
+                        },
+                        shape.min,
+                        max,
+                    ));
+                }
+            }
+        }
+        for (type_key, field, _, _) in &counts {
+            if let Some(declared) = fields.get_mut(type_key) {
+                declared.push(field.clone());
+            }
+        }
+        let initial = with_clock_counts(initial, &counts);
+
         let record_orders = domain::record_orders(types, &model.record_orders());
         let mut member_bounds = model.member_bounds();
         member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
@@ -1450,4 +1510,56 @@ mod tests {
         assert_eq!(BROKEN.code(), "runtime_invariant");
         assert_eq!(BROKEN.cause(), "established-invariant-broken");
     }
+}
+
+/// Each of `initial` with every combination of the clock-collection counts
+/// `counts` on each object of the count's type: every count from `min` to
+/// `max`, or `min` alone with no maximum (such a root requires a bound).
+fn with_clock_counts(
+    initial: Vec<ModelSimState>,
+    counts: &[(DeclarationKey, StateField, u64, Option<u64>)],
+) -> Vec<ModelSimState> {
+    let mut states = initial;
+    for (type_key, field, min, max) in counts {
+        let range = *min..=max.unwrap_or(*min).max(*min);
+        let mut next = Vec::new();
+        for state in states {
+            let holders: Vec<(DeclarationKey, String)> = state
+                .state
+                .populations
+                .iter()
+                .flat_map(|(population, objects)| {
+                    objects
+                        .iter()
+                        .filter(|(_, object)| object.type_identity == *type_key)
+                        .map(move |(key, _)| (population.clone(), key.clone()))
+                })
+                .collect();
+            let mut partial = vec![state];
+            for (population, key) in &holders {
+                let mut grown = Vec::new();
+                for state in partial {
+                    for count in range.clone() {
+                        let mut held = state.clone();
+                        if let Some(object) = held
+                            .state
+                            .populations
+                            .get_mut(population)
+                            .and_then(|objects| objects.get_mut(key))
+                        {
+                            object.fields.insert(
+                                field.key.clone(),
+                                quire_exact::Value::Integer(quire_exact::Integer::from(count)),
+                            );
+                        }
+                        grown.push(held);
+                    }
+                }
+                partial = grown;
+            }
+            next.extend(partial);
+        }
+        states = next;
+    }
+    states
 }
