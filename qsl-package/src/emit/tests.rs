@@ -2585,11 +2585,21 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
 #[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
 #[test]
 fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
-    let root = model_root_node(
-        "acme/orders",
-        "179fb0d98f7f55094a03ad0e6166b604e6401bae90479f3073f6fe4b01a7af26",
-    )
-    .expect("the root derives");
+    let mut digest = [0_u8; 32];
+    for (byte, pair) in digest.iter_mut().zip(
+        "179fb0d98f7f55094a03ad0e6166b604e6401bae90479f3073f6fe4b01a7af26"
+            .as_bytes()
+            .chunks(2),
+    ) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
+    }
+    let row = qsl_semantics::model::domain_package::DomainPackageRef {
+        identity: "acme/orders".to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let root =
+        model_root_node(&row, qsl_foundation::IdentityLimits::default()).expect("the root derives");
     assert_eq!(
         root.node_id.digest.as_ref(),
         "ff388429ac907bffe149b81b0c1b3f4099f6075df486c96736455f39a88d3041"

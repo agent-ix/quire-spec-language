@@ -21,7 +21,8 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 use super::{identifiers, refuse, type_declaration, Lowering, NodeContent, NominalNode};
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
-    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
+    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, ModelRootOwner,
+    NodeTag, Owner,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::VariantTypeDeclaration;
@@ -783,23 +784,6 @@ impl AdmittedModel {
         let declaring = self.effective_id(&operation.owner)?;
         let name = crate::model::intake::member_identity_name(&operation.owner.node, &key.node)?;
         Some((declaring, name.to_owned()))
-    }
-
-    /// The content key of the package's sole state-machine declaration.
-    /// Refinement nodes use this key as their semantic type, independently
-    /// of the alias the checked unit gives the selected model.
-    pub(crate) fn state_machine_node_key(
-        &self,
-        identity: qsl_foundation::IdentityLimits,
-    ) -> Option<NodeKey> {
-        let mut machines = self.records.iter().filter_map(|(key, record)| {
-            matches!(record, DomainPackageRecord::StateMachine(_)).then_some(key)
-        });
-        let declaration = machines.next()?;
-        if machines.next().is_some() {
-            return None;
-        }
-        self.model_node_key(declaration, identity)
     }
 
     /// The declaring key of the package's sole state-machine record.
@@ -1586,6 +1570,48 @@ pub(super) fn model_node_content(
         owner: Some(Owner::Model(owner)),
         body: BodyTerm::aggregate(Vec::new()),
     }
+}
+
+/// QSpec FR-322 `model_root`: the key of the root of the selected model
+/// package `selection`, a function of its identity and digest alone. The one
+/// definition the refinement body and the package emitter both use.
+///
+/// # Errors
+///
+/// A refusal when the selection's identity is empty or the preimage has no
+/// key.
+pub fn model_root_key(
+    selection: &DomainPackageRef,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<NodeKey, ModelRootKeyError> {
+    let owner = ModelRootOwner::new(
+        selection.identity.clone(),
+        crate::model::key::hex(&selection.digest),
+    )
+    .map_err(|_| ModelRootKeyError::EmptyIdentity)?;
+    let content = NodeContent {
+        owner_model: None,
+        node_tag: NodeTag::Model,
+        semantic_form: "model_root",
+        semantic_type: None,
+        declaration: None,
+        owner: Some(Owner::ModelRoot(owner)),
+        body: BodyTerm::aggregate(Vec::new()),
+    };
+    crate::check::node_key::node_key(&content.input(), identity)
+        .map(|keyed| keyed.key)
+        .map_err(|error| ModelRootKeyError::Preimage(error.to_string()))
+}
+
+/// Why a selection has no `model_root` key.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ModelRootKeyError {
+    /// The selection's package identity is empty.
+    #[error("the selected model package's identity is empty")]
+    EmptyIdentity,
+    /// The root's preimage has no key.
+    #[error("the model root's preimage has no key: {0}")]
+    Preimage(String),
 }
 
 /// The content of a `relation`/`population` node (QSpec FR-322 "Population

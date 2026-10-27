@@ -676,6 +676,10 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
             identity: subject.identity().into(),
             node: subject.node().into(),
         },
+        Owner::ModelRoot(subject) => CheckedNodeOwner::ModelRoot {
+            identity: subject.identity().into(),
+            digest: subject.digest().into(),
+        },
     }
 }
 
@@ -1206,38 +1210,6 @@ fn empty_model_refinement_node(
     ))
 }
 
-/// A state-machine declaration selected from a checked domain package. The
-/// model record's content key is independent of the local alias.
-fn refinement_subject_node(
-    declaration: &quire_checked::key::DeclarationKey,
-    key: NodeKey,
-) -> CheckedSemanticNodeV2 {
-    let id = node_id(key);
-    CheckedSemanticNodeV2 {
-        owner_model: None,
-        node_id: id.clone(),
-        schema_version: GRAPH_V2.into(),
-        node_tag: CheckedNodeTag::Model.as_wire().into(),
-        semantic_form: "state_machine".into(),
-        semantic_type: id,
-        dependencies: Vec::new(),
-        occurrences: vec![CheckedOccurrence {
-            role: CheckedOccurrenceRole::Type,
-            ordinal: 0,
-        }],
-        recursion_group: None,
-        nominal_identity_preimage: None,
-        declaration: None,
-        owner: Some(CheckedNodeOwner::Model {
-            identity: declaration.package.as_str().into(),
-            node: declaration.node.as_str().into(),
-        }),
-        body: CheckedTerm::Aggregate {
-            members: Vec::new(),
-        },
-    }
-}
-
 /// `origin`'s role as FR-322 spells it.
 fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRole, EmitRefusal> {
     crate::checked_v2::occurrence_role(origin.role().as_str()).ok_or_else(|| {
@@ -1369,11 +1341,12 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
 fn append_model_roots(
     selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
     source: &RawSourceRef,
+    limits: qsl_foundation::IdentityLimits,
     nodes: &mut Vec<CheckedSemanticNodeV2>,
     source_map: &mut Vec<CheckedSourceMapEntry>,
 ) -> Result<(), EmitRefusal> {
     for selection in selections {
-        let root = model_root_node(&selection.identity, &hex(&selection.digest))?;
+        let root = model_root_node(selection, limits)?;
         source_map.push(CheckedSourceMapEntry {
             node_id: root.node_id.clone(),
             role: CheckedOccurrenceRole::Generated,
@@ -1389,20 +1362,22 @@ fn append_model_roots(
     Ok(())
 }
 
-/// The `model_root` node for one selection row, keyed through IR's public
-/// producer API. Its key depends on the row alone.
-fn model_root_node(identity: &str, digest: &str) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
-    let placeholder = CheckedNodeId {
-        domain: NODE_KEY_DOMAIN.into(),
-        digest: "model-root".into(),
-    };
-    let mut node = CheckedSemanticNodeV2 {
+/// The `model_root` node for one selection row. Its key is
+/// [`qsl_semantics::check::model_root_key`], the key a refinement over the
+/// model names.
+fn model_root_node(
+    selection: &qsl_semantics::model::domain_package::DomainPackageRef,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
+    let key = qsl_semantics::check::model_root_key(selection, identity).map_err(encoding)?;
+    let id = node_id(key);
+    Ok(CheckedSemanticNodeV2 {
         owner_model: None,
-        node_id: placeholder.clone(),
+        node_id: id.clone(),
         schema_version: GRAPH_V2.into(),
         node_tag: CheckedNodeTag::Model.as_wire().into(),
         semantic_form: "model_root".into(),
-        semantic_type: placeholder,
+        semantic_type: id,
         dependencies: Vec::new(),
         occurrences: vec![CheckedOccurrence {
             role: CheckedOccurrenceRole::Generated,
@@ -1412,27 +1387,13 @@ fn model_root_node(identity: &str, digest: &str) -> Result<CheckedSemanticNodeV2
         nominal_identity_preimage: None,
         declaration: None,
         owner: Some(CheckedNodeOwner::ModelRoot {
-            identity: identity.into(),
-            digest: digest.into(),
+            identity: selection.identity.as_str().into(),
+            digest: hex(&selection.digest).into(),
         }),
         body: CheckedTerm::Aggregate {
             members: Vec::new(),
         },
-    };
-    let candidates = derive_structural_candidates(
-        std::slice::from_ref(&node),
-        crate::checked::EMIT_LIMITS.max_bytes(),
-        u64::MAX,
-    )
-    .map_err(encoding)?;
-    let [candidate] = candidates.nodes() else {
-        return Err(EmitRefusal::TimedModelWriterInvariant(
-            "a model root must have one structural identity",
-        ));
-    };
-    node.node_id = candidate.candidate_node_id().clone();
-    node.semantic_type = node.node_id.clone();
-    Ok(node)
+    })
 }
 
 /// The unique digest-ascending reference targets directly named by a body.
@@ -1803,39 +1764,6 @@ fn emit_package_inner(
             .refinement_declaration_region(refinement)
             .filter(|region| region.start() < region.end())
             .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
-        for (declaration, key) in [
-            (
-                refinement.abstract_subject_declaration(),
-                refinement.abstract_subject_node(),
-            ),
-            (
-                refinement.concrete_subject_declaration(),
-                refinement.concrete_subject_node(),
-            ),
-        ] {
-            let declaration = declaration.ok_or(EmitRefusal::RefinementSubjectNotEmitted)?;
-            let key = key.ok_or(EmitRefusal::RefinementSubjectNotEmitted)?;
-            let node = refinement_subject_node(declaration, key);
-            if !nodes
-                .iter()
-                .any(|existing| existing.node_id == node.node_id)
-            {
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: node.node_id.clone(),
-                    role: CheckedOccurrenceRole::Type,
-                    ordinal: 0,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(region.source()),
-                        start: region.start(),
-                        end: region.end(),
-                    }],
-                });
-                let insertion = nodes.partition_point(|existing| {
-                    existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
-                });
-                nodes.insert(insertion, node);
-            }
-        }
         let (node, entries) = empty_model_refinement_node(refinement, &region)?;
         let insertion = nodes.partition_point(|existing| {
             existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
@@ -2038,6 +1966,7 @@ fn emit_package_inner(
     append_model_roots(
         graph.model_selections(),
         graph.source(),
+        qsl_foundation::IdentityLimits::default(),
         &mut nodes,
         &mut source_map,
     )?;

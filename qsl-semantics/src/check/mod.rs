@@ -213,8 +213,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause, NominalNode,
-    SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause,
+    ModelRootKeyError, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -3097,15 +3097,17 @@ impl PackageDeclarations {
                 .find(|model| model.alias() == Some(checked.abstract_model()));
             checked.abstract_subject_declaration =
                 abstract_model.and_then(AdmittedModel::state_machine_declaration);
-            checked.abstract_subject_node =
-                abstract_model.and_then(|model| model.state_machine_node_key(self.identity));
+            // QSpec FR-375: the refinement's subjects are the selected model
+            // packages' `model_root` nodes.
+            checked.abstract_subject_node = abstract_model
+                .and_then(|model| model_root_key(model.selection(), self.identity).ok());
             let concrete_model = models
                 .iter()
                 .find(|model| model.alias() == Some(checked.concrete_model()));
             checked.concrete_subject_declaration =
                 concrete_model.and_then(AdmittedModel::state_machine_declaration);
-            checked.concrete_subject_node =
-                concrete_model.and_then(|model| model.state_machine_node_key(self.identity));
+            checked.concrete_subject_node = concrete_model
+                .and_then(|model| model_root_key(model.selection(), self.identity).ok());
         }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
