@@ -1372,6 +1372,9 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {
         CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
         CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
+        // The request replay path constructs no registered host body. Body
+        // failures are surfaced unchanged by the checked application facade.
+        CallFailure::Body(_) => unreachable!("request replay registers no host bodies"),
         CallFailure::Storage { parameter, failure } => ReplayRefusal::Storage {
             position: parameter,
             failure,
