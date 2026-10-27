@@ -42,6 +42,11 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8 to FR-105-AC-11.
    both the attempt and `VersionUnchanged`, once with the attempt before the
    clause and once after it; compare the frame occurrence's region and its
    `(node id, role, ordinal)`.
+9. For accepted initialization and handler invariants and pre/post clauses,
+   compare each emitted execution point to the accepted ClauseBinding; mutate
+   its variant and anchor name independently, and compare the resulting
+   `state_clause` and `operation_anchor` identities. Include a protocol-only
+   attempt anchor with no execution point.
 
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
@@ -92,3 +97,7 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
   With both declarations, attempt-first selects the attempt reference and
   clause-first selects the clause reference. The frame occurrence's
   `(node_id, role, ordinal)` is identical after reordering.
+- Step 9: each accepted point exactly matches its accepted ClauseBinding; a
+  change to the variant or anchor name changes the affected node identity;
+  the operation clause's `state_clause` and `operation_anchor` carry the same
+  point. A protocol-only anchor omits it.

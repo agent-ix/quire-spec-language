@@ -91,3 +91,23 @@ Examined:
 - STD-493 comment fd83efcd.
 
 Gap analysis is SR-1643002.
+
+## Dispositions
+
+Round 1, head f3d9e57a9. It is not restacked: f3d9e57a9 is the fix commit on top of d853a40f8.
+
+I checked each fix in a fresh detached worktree and target, under locked-build at jobs 4:
+- `zone_` tests: 75/75 passed.
+- qsl-eval `timed_trace` tests: 14/14 passed.
+- qsl-analyze `lasso` unit tests: 3/3 passed.
+- clippy `-p qsl-analyze -p qsl-eval --all-targets --all-features -D warnings`: exit 0.
+
+I re-ran every round-0 liveness probe, then reverted them. All verdicts are unchanged, and every lasso replays. I also ran two new target-invariant probes:
+- **Reset breaking the target bound:** `serve` resets `x` to 2 into a phase holding `x <= 1`. With `serve` never enabled, the result is Violated with an idle tail, under weak fairness and with none.
+- **Enabled on `[2, 3]` only:** `serve` is guarded `x >= 2` into a phase holding `x <= 3`. The result is Violated with an idle tail under weak and strong fairness.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `Run::enabling_parts` conjoins each guard part with the target time invariants on the clocks the step does not reset, and returns no part when a reset value breaks a target bound. `enabled_at`, `atoms_of` (cell atoms) and `Run::enabled` all use it. The repro is now `enabledness_reads_the_target_time_invariants`: idle-tail and `ping`-loop variants, under weak and strong fairness, each Violated and replayed to `Reproduced`. The changed vacuity fixture keeps its intent. `serve` now resets `x` into phase 1 (`x <= 0`), so its target holds at every instant, and the `ping` loops stay unfair under `fair weak serve`. The old fixture had relied on the bug: without the reset, `serve` would be enabled only at `x = 0`. |
+| FND-002 | deferred | The behaviour is kept, and FR-240 "Vacuity" as written supports it: a proof is barred only when the initial state "reaches no fair time-divergent cycle and no quiescent state". The question is filed on STD-493 (comment fd83efcd, item 3), and the code now cites it. |
+| FND-003 | fixed | `MAX_CONSTRAINTS` is gone. The elimination is capped by the run's remaining `max_symbolic_transitions` (`transitions_left`), and passing the cap returns `NotConcretised::Exhausted`, which the liveness phase turns into `Stopped(LimitReached(MaxSymbolicTransitions))`. The unit test `an_elimination_past_its_cap_is_exhausted_not_infeasible` covers it. |

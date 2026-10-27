@@ -448,9 +448,8 @@ mod tests {
 
     /// Part of FR-241-AC-4 (TC-696): a loop of one step that resets `x`,
     /// with the delay constraints `d > 1` and `d < 1`, has no rational
-    /// solution. Not covered: the engine's `Undecided(LassoNotConcretized)`
-    /// with no other accepting cycle, which only a symbolic lasso the zone
-    /// graph does not give reaches.
+    /// solution. The engine's `Undecided(LassoNotConcretized)` over a
+    /// model is `zone_liveness::a_drifting_violation_has_no_periodic_counterexample`.
     #[ix_trace_rs::trace("TC-696")]
     #[test]
     fn an_unsatisfiable_loop_has_no_delays() {
