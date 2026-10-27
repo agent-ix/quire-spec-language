@@ -35,3 +35,12 @@ The deferrals are tracked:
 | --- | --- | --- | --- |
 | FND-001 | low | The checked form is a spec conflict. AC-10 says `peer_clock(self) <= 2 ms` "checks to the parts `c1.x <= 2` under `self.peer = c1` and `c2.x <= 2` under `self.peer = c2`", that is, one part per object, each with a data condition. S3 has no universe, so QSL instead checks to one part with `via = [peer]` and makes it concrete per state in `guarded_steps`. The semantics are the same, and the S3 test asserts the `via` form rather than AC-10's two parts. FR-230 should say that the universe-level parts are an evaluation-time reading, or define the checked form (`via`). File this on STD-493 next to item 9 (timed node bodies), which also has to carry `via` before S4 can emit such a guard. | FR-230-AC-10; qsl-semantics/tests/it/clock_places.rs (a_clock_through_a_reference_field_is_the_referenced_objects) |
 | FND-002 | low | Edge coverage. No test checks that `o.peer.x` through an optional or multi-valued reference is refused as not a place (the walk stops there). No test runs `own_clock(self.peer)` at qsl-eval. No test uses `peer_clock` in a negated guard position (`not (peer_clock(self) <= 2 ms)`), where `via` has to carry into the negated DNF. | qsl-semantics/src/check/lowering/model.rs:1158-1200; qsl-semantics/src/check/timed_model/reading.rs:1250-1272 |
+
+## Dispositions
+
+Round 1, head d10f8147c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Filed as STD-493 item 23 (2026-10-27 01:04). It asks FR-230 either to make AC-10's per-object parts an evaluation-time reading or to define the checked form (`via`), and asks item 9's timed node bodies to carry the reference path. This is a spec decision, not a QSL code change. |
+| FND-002 | fixed | `a_negated_peer_clock_keeps_its_reference_and_other_references_refuse` checks three things: `not (peer_clock(self) <= 2 ms)` gives `x > 2` via `[peer]`; `value(o.backup).x` through an optional reference refuses; and `o.peers.x` through a multi-valued reference refuses. The qsl-eval helper `peer_guarded_work` runs `own_clock(self.peer)` and the negated guard over `{c1, c2}`. |

@@ -67,3 +67,12 @@ passed (exit 0).
 | --- | --- | --- | --- |
 | FND-001 | low | `placed` drops a guard part, silently and as "not enabled", whenever the holder cannot be resolved: the referenced object is missing from the state, the field is missing, or its value is not a reference. The same drop applies to the negated part, so a guard and its negation can both be false. By FR-120's closure rule this cannot happen for a required single reference, so reaching it means the state is broken. Return a `TimedStop` broken-invariant fault instead of `None`. That way a defect elsewhere shows up instead of quietly removing transitions. | qsl-eval/src/simulation/model/timed.rs:621-631, 696-752 |
 | FND-002 | low | Rust efficiency and clarity. `holder` scans every object of every population and rebuilds each object's `ObjectReference` for every constraint of every state. A lookup by the reference's population and key would avoid that. `referenced_object` scans all package records on every call, and `path_kind` and `site_object` call it for each body node, which is the same pattern #1646 FND-004(c) cached for places. `Place = (Vec<PlaceStep>, ClockId)` is a tuple alias; a small struct with named fields `via` and `clock` would read better at the destructuring sites. | qsl-eval/src/simulation/model/timed.rs:724-752; qsl-semantics/src/check/lowering/model.rs:1158-1200; qsl-semantics/src/check/timed_model/reading.rs:44-49 |
+
+## Dispositions
+
+Round 1. The head is d10f8147c, restacked on #1646 f439558a7; the fix commit is d10f8147c on top of e2c58a57c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `placed` now returns `Result<_, ExpansionStop>` and stops with `BROKEN` when a holder cannot be resolved, or when a referenced place is not present, instead of dropping the part. The fix has no test, and that is acceptable. The branch can only run on a state where a required single reference names no present object, which FR-120's closure ("Every reference of a candidate names an object of the candidate") rules out for every admitted or explored state. Reaching it through the public API would mean building an inadmissible state. A test that has to forge broken internals would test the forgery, not a behaviour. |
+| FND-002 | fixed | `holder` now looks up `objects.get(key)` in each population instead of scanning every object. `referenced_object` reads `references`, which is computed once in `with_places`. `Place` is a struct with `via` and `clock`. |
