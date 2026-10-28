@@ -649,5 +649,5 @@ fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
         })
         .collect();
     assert_eq!(found, [ProtocolConstruct::PostTestRepeat]);
-    assert_eq!(found[0].tracking(), "STD-493");
+    assert_eq!(found[0].tracking(), "STD-539");
 }

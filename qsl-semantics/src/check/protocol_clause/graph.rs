@@ -525,8 +525,8 @@ fn cycles(
     refusals
 }
 
-/// One `declaration-form` refusal per `repeat` whose body does not
-/// necessarily step (QSpec FR-464 "Progress").
+/// The `declaration-form` refusal of the first `repeat`, in tree order,
+/// whose body does not necessarily step (QSpec FR-464 "Progress").
 pub(super) fn progress(
     protocol: &ProtocolDeclarationForm,
     tree: &CheckedControlTree,
@@ -599,6 +599,8 @@ pub(super) fn progress(
         if body.and_then(|body| steps.get(&body).copied()) == Some(true) {
             continue;
         }
+        // FR-464 "Progress": the first such `repeat` in tree order is
+        // refused, once.
         let span = form.name.span;
         refusals.push((
             span,
@@ -608,6 +610,7 @@ pub(super) fn progress(
                 span,
             }),
         ));
+        break;
     }
     refusals
 }
