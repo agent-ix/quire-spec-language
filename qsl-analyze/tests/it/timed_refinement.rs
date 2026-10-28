@@ -112,6 +112,7 @@ pub(crate) fn safety_request(world: &Refining) -> TimedRefinementRequest<'_, &'s
 pub(crate) fn safety(world: &Refining) -> TimedSafetyOutcome<&'static str> {
     check_timed_refinement(safety_request(world), &Cancel::new())
         .expect("EN-6 takes the refinement")
+        .safety
 }
 
 /// FR-245's request for checking a certificate of `world`'s one refinement.
@@ -331,7 +332,10 @@ fn trap_undo(trapped: bool) -> Refining {
 
 /// FR-145 over time (QSpec FR-430): `world`'s refinement counterexample
 /// `payload` replayed through FR-241's exact delays.
-fn replay(world: &Refining, payload: &TemporalCounterexample) -> RefinementTraceSettlement {
+pub(crate) fn replay(
+    world: &Refining,
+    payload: &TemporalCounterexample,
+) -> RefinementTraceSettlement {
     let [refinement] = world.package.graph().refinements() else {
         panic!("one refinement");
     };

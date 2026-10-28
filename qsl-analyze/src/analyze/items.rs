@@ -249,7 +249,7 @@ pub fn timed_refinement_item<'a, S: Clone + Eq + 'a>(
             let obligation = request.obligation.clone();
             match check_timed_refinement(request, cancel) {
                 Ok(outcome) => EngineReport::Zone(Box::new(settle_timed_refinement(
-                    &outcome,
+                    &outcome.safety,
                     cancel,
                     |proof| {
                         check_zone_certificate(
