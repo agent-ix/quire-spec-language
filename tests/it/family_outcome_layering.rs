@@ -692,8 +692,11 @@ fn no_shipped_dependency_enables_test_support() {
 }
 
 /// Layer A's `qsl-analyze` sits above the qualified core (ADR-011 §6.1,
-/// ADR-029 CB-3): no core crate (layers K to 6, SV, R and the tools) names
-/// it in any dependency table. In particular `qsl-replay`, whose zone
+/// ADR-029 CB-3): no qualified-core crate (layers K to 6, SV or R), nor any
+/// tools other than `xtask` and `qsl-inspect`, name it in any dependency
+/// table. `xtask` is outside the stage DAG and depends on it only for
+/// FR-489's provider snapshot. `qsl-inspect` is layer P and renders retained
+/// state-graph results. In particular `qsl-replay`, whose zone
 /// certificate checker keeps its own DBM separate from the zone engine's
 /// (ADR-026 CF-6, FR-245), cannot reach the engine's DBM through a
 /// dependency edge.
@@ -715,7 +718,6 @@ fn no_core_crate_depends_on_qsl_analyze() {
         "qsl-route",
         "qsl-eval",
         "qsl-replay",
-        "xtask",
         "arch-lint",
     ] {
         let package = packages
@@ -732,6 +734,32 @@ fn no_core_crate_depends_on_qsl_analyze() {
                     .iter()
                     .any(|dependency| dependency == "qsl-analyze"),
                 "{core} has a {kind} dependency on layer-A qsl-analyze"
+            );
+        }
+    }
+
+    // ADR-011 §6.1: xtask is build tooling, not part of the stage DAG, and no
+    // stage crate may depend on it. The root uses it only from its tests.
+    let root = packages
+        .iter()
+        .find(|package| package.name == "quire-spec-language")
+        .expect("cargo metadata lists the root crate");
+    assert!(
+        root.dev.iter().any(|dependency| dependency == "xtask"),
+        "the root test suite uses xtask through a dev dependency"
+    );
+    for package in &packages {
+        for (kind, dependencies) in [
+            ("normal", &package.normal),
+            ("dev", &package.dev),
+            ("build", &package.build),
+        ] {
+            let root_test_dependency = package.name == "quire-spec-language" && kind == "dev";
+            assert!(
+                root_test_dependency
+                    || !dependencies.iter().any(|dependency| dependency == "xtask"),
+                "{} has a {kind} dependency on off-DAG xtask",
+                package.name
             );
         }
     }

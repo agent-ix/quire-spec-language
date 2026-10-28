@@ -156,6 +156,14 @@ impl Engines {
         })
     }
 
+    /// The exact provider descriptors owned by these linked engines.
+    ///
+    /// The returned descriptors are borrowed from their engine instances;
+    /// callers cannot substitute a capability-only registration.
+    pub fn registrations(&self) -> impl ExactSizeIterator<Item = &BackendDescriptor> {
+        self.engines.iter().map(|engine| &engine.descriptor)
+    }
+
     /// Add `engine`.
     ///
     /// # Errors
@@ -658,6 +666,35 @@ mod tests {
             Settlement::Disposed(disposed) => disposed,
             Settlement::Terminal(terminal) => panic!("expected a disposition: {terminal:?}"),
         }
+    }
+
+    /// FR-489-AC-5: linked registrations are borrowed from the EN-1 and EN-4
+    /// engines and retain each engine's own identity and advertised kind.
+    #[trace("TC-1272", "FR-489-AC-5")]
+    #[test]
+    fn linked_engine_registrations_expose_the_owned_descriptors() {
+        let engines = Engines::qsl().expect("QSL's linked engine descriptors are admitted");
+        let registrations: Vec<_> = engines.registrations().collect();
+
+        assert_eq!(
+            registrations
+                .iter()
+                .map(|descriptor| descriptor.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-1", "en-4"]
+        );
+        let [en1, en4] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1 and EN-4");
+        };
+        assert!(registrations
+            .iter()
+            .all(|descriptor| descriptor.origin() == ProviderOrigin::Linked));
+        assert!(en1
+            .advertises()
+            .any(|(kind, _)| kind == Capability::TemporalSatisfaction));
+        assert!(en4
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as

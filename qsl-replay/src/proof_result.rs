@@ -15,13 +15,14 @@ use crate::execute::ReplayRefusal;
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::hybrid_replay::{HybridTrace, ReplayRecord};
 use crate::model_check::limits::ModelCheckLimit;
-use crate::model_check::state_graph::WitnessSource;
+use crate::model_check::state_graph::{StateGraphPropertyForm, WitnessSource};
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
 use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_foundation::RequestIndex;
@@ -639,6 +640,14 @@ pub enum InconclusiveCause {
     /// ([`ReplayRefusal::code`]). A fault is never this cause: it settles
     /// [`TerminalValue::Failed`].
     ReplayRefused(Code),
+    /// The named package identity differs from the identity recomputed from
+    /// the checked package (FR-282, FR-331).
+    StaleDependency {
+        /// The package identity the request or certificate names.
+        requested: DigestRecord,
+        /// The recompiled package identity.
+        recompiled: DigestRecord,
+    },
     /// `scalar_agrees`: a scalar-parity counterexample (FR-357), operator-
     /// or function-level, did not reproduce, because the exact outcome
     /// equals the generated one. The harness reported a divergence there is
@@ -690,6 +699,14 @@ pub enum InconclusiveCause {
         reduction: ReductionKind,
         /// The claim's property form.
         form: PropertyForm,
+    },
+    /// ADR-021 RV-2: a state-graph reduction's preservation-table row reads
+    /// "no" for the claim's form.
+    StateGraphReductionNotPreserving {
+        /// The first selected reduction the table refuses.
+        reduction: ReductionKind,
+        /// The state-graph claim's property form.
+        form: StateGraphPropertyForm,
     },
     /// ADR-021 RV-3: a symmetry declaration's initial states are not closed
     /// under its group.
@@ -810,6 +827,7 @@ impl InconclusiveCause {
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => REPLAY_PARITY_KIND,
             Self::ReplayRefused(_) => REPLAY_REFUSED_KIND,
+            Self::StaleDependency { .. } => "stale-dependency",
             Self::ScalarAgrees(_) => "scalar-agrees",
             Self::SolverInconclusive { .. } => "solver-inconclusive",
             Self::InsufficientHorizon { .. } => "insufficient-horizon",
@@ -818,6 +836,7 @@ impl InconclusiveCause {
             Self::LassoNotConcretized => "lasso-not-concretized",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
+            Self::StateGraphReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
             Self::ConstraintReached { .. } => "constraint-reached",
             Self::ReductionHorizon { .. } => "reduction-horizon",
@@ -846,6 +865,8 @@ impl InconclusiveCause {
             | Self::SolverInconclusive { .. }
             | Self::InsufficientHorizon { .. }
             | Self::ReductionNotPreserving { .. }
+            | Self::StateGraphReductionNotPreserving { .. }
+            | Self::StaleDependency { .. }
             | Self::ConstraintReached { .. }
             | Self::ReductionHorizon { .. }
             | Self::MemoryBoundReached { .. }
@@ -1042,6 +1063,13 @@ impl TerminalValue {
             ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => {
                 Self::Failed
             }
+            ReplayRefusal::PackageIdMismatch {
+                requested,
+                recompiled,
+            } => Self::Inconclusive(InconclusiveCause::StaleDependency {
+                requested: *requested,
+                recompiled: recompiled.record(),
+            }),
             _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
