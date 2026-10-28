@@ -536,9 +536,20 @@ impl Lowering<'_> {
                 "count",
                 self.integer_literal(Integer::from(*count), location)?,
             )),
-            // A predicate names a function, whose node is written after the
-            // protocols': the clause is refused before this (QSL-1186).
-            JoinPolicy::Predicate(_) => return Err(unchecked()),
+            // FR-466 "Control layouts": a reference to the `function` node,
+            // keyed before the protocol (FR-093). S3 checked its arity and
+            // types: one Boolean parameter per joined label, a Boolean
+            // result.
+            JoinPolicy::Predicate(_) => {
+                let function = protocol
+                    .checked
+                    .pending_predicate_joins
+                    .iter()
+                    .find(|join| join.node == control.node)
+                    .and_then(|join| self.functions.get(join.function).copied().flatten())
+                    .ok_or_else(unchecked)?;
+                join.push(member("predicate", LeafTerm::reference(function)));
+            }
         }
         let mut joined: Vec<&str> = form
             .labels

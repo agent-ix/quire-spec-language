@@ -1257,26 +1257,47 @@ fn tso_continue_and_nested_parallels_read_back() {
     assert_eq!(member(&branches[0], "body")["target"], inner["node_id"]);
 }
 
-/// A `parallel` whose join is a predicate names a function, whose node is
-/// written after the protocols': the clause is still refused
-/// `unsupported_construct`/`not-yet-implemented` naming `parallel`.
-#[trace("FR-092-AC-18", "TC-1021")]
+/// FR-466 "Control layouts" (FR-466-AC-4, AC-15): a `parallel` whose join
+/// is `predicate(both)` writes its `join` Group with the policy `predicate`
+/// and `predicate`, a reference to the `function` node `both` (keyed before
+/// the protocol, FR-093), whose two Boolean parameters, one per joined
+/// label, and Boolean result S3 checked; IR's reader admits the package.
+#[trace("FR-464-AC-1", "TC-1021")]
 #[test]
-fn a_predicate_join_is_not_written_yet() {
-    let text = format!(
-        "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{}",
-        parallel_flow(
-            "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
-             join predicate(both) [a, b];"
-        )
+fn a_predicate_join_references_its_function_and_reads_back() {
+    let lowered = lower_with(
+        model(),
+        PROFILES,
+        &format!(
+            "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{}",
+            parallel_flow(
+                "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+                 join predicate(both) [a, b];"
+            )
+        ),
     );
-    let refusals = checked(&text, false).expect_err(&text);
+    assert!(
+        lowered.ir.is_ok(),
+        "{:?}\n{}",
+        lowered.ir.err(),
+        lowered.text
+    );
+    assert!(lowered.verified, "{}", lowered.text);
+    let parallel = control_at(&lowered.wire, &["Flow", "run", "Main", "Par"]);
+    let join = argument(parallel, &PARALLEL, "join");
+    assert_eq!(member_names(join), ["policy", "predicate"]);
+    assert_eq!(lit(member(join, "policy")), "predicate");
+    let function = nodes(&lowered.wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == "both"
+        })
+        .expect("the function node");
+    assert_eq!(member(join, "predicate")["target"], function["node_id"]);
     assert_eq!(
-        refusals
-            .iter()
-            .map(|refusal| &refusal.cause)
-            .collect::<Vec<_>>(),
-        [&not_emitted(ProtocolConstruct::Control("parallel"))],
-        "{text}"
+        argument(parallel, &PARALLEL, "joined")["members"]
+            .as_array()
+            .map(|labels| labels.iter().map(lit).collect::<Vec<_>>()),
+        Some(vec!["a", "b"])
     );
 }

@@ -243,9 +243,14 @@ pub fn check(
             qsl_forms::JoinPolicy::Any => Some(CheckedJoinPolicy::Any),
             qsl_forms::JoinPolicy::Quorum(count) => Some(CheckedJoinPolicy::Quorum(*count)),
             qsl_forms::JoinPolicy::Predicate(name) => {
+                // `check_predicate_joins` refused a name that is no
+                // function signature.
+                let Some(function) = signatures.position(name) else {
+                    continue;
+                };
                 pending_predicate_joins.push(PendingPredicateJoin {
                     node,
-                    name: name.clone(),
+                    function,
                     joined: joined.clone(),
                     outstanding,
                 });

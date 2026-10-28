@@ -4598,10 +4598,7 @@ impl PackageDeclarations {
                 }]);
             };
             for pending in std::mem::take(&mut checked.pending_predicate_joins) {
-                let name = &pending.name;
-                let identity = signatures
-                    .position(name)
-                    .and_then(|index| identities.get(index).copied().flatten());
+                let identity = identities.get(pending.function).copied().flatten();
                 let Some(identity) = identity else {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
