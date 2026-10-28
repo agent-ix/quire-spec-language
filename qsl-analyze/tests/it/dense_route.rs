@@ -400,3 +400,43 @@ fn a_mixed_package_routes_each_record_by_its_own_subject() {
     assert_eq!(refined("Timed"), (true, vec![en6::BACKEND_ID.to_owned()]));
     assert_eq!(refined("Same"), (false, vec![en1::BACKEND_ID.to_owned()]));
 }
+
+/// FR-235-AC-5 and FR-281 end to end (TC-710, SR-1755002 FND-001):
+/// FR-239-AC-5's `Ticker` clause, whose division by zero is undefined at
+/// position 2, settles `refuted` on EN-6 through `analyze`; the record
+/// carries EN-6's counterexample, and its outcome item names the cause
+/// `undefined-evaluation` (`division-by-zero` at position 2), never the
+/// `undefined` label.
+#[trace("TC-710", "FR-235-AC-5")]
+#[test]
+fn an_undefined_timed_evaluation_settles_refuted_through_analyze() {
+    use qsl_replay::{CounterexampleKind, TerminalValue};
+    use quire_semantic_value::catalog::Category;
+    let record = analyzed(&crate::zone_search::ticker(false));
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(*terminal.value(), TerminalValue::Refuted);
+    assert_eq!(
+        terminal.backend().map(qsl_foundation::BackendId::as_str),
+        Some(en6::BACKEND_ID)
+    );
+    let counterexample = record
+        .counterexample()
+        .expect("the record carries EN-6's counterexample");
+    let CounterexampleKind::UndefinedEvaluation(undefined) = &counterexample.kind else {
+        panic!("an undefined evaluation: {:?}", counterexample.kind);
+    };
+    assert_eq!(undefined.site.position, 2);
+    let item = record.outcome_item().expect("an item");
+    assert_eq!(item.category(), Category::Violation);
+    let written = serde_json::to_value(&item).expect("writes");
+    assert_eq!(written["result"], "refuted");
+    assert_eq!(written["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(written["cause"]["cause"], "division-by-zero");
+    assert!(
+        written["cause"]["where"]
+            .as_str()
+            .is_some_and(|at| at.starts_with("position 2, state ")),
+        "{written}"
+    );
+    assert!(!written.to_string().contains("\"undefined\""));
+}
