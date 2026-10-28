@@ -803,7 +803,45 @@ impl ProtocolClasses {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
+
     use super::*;
+
+    /// An `on each` clause whose checked binders hold no trigger binder is a
+    /// broken checker invariant: the catalog refuses with an internal fault
+    /// naming it rather than writing an `activate` class with an empty
+    /// binder record (SR-1716 FND-001).
+    #[trace("FR-375-AC-27", "TC-310")]
+    #[test]
+    fn an_each_clause_without_its_trigger_binder_is_an_internal_fault() {
+        let classes = ProtocolClasses {
+            protocol: "Local".to_owned(),
+            nodes: BTreeMap::new(),
+            node_ids: BTreeMap::new(),
+            records: BTreeMap::new(),
+            channels: BTreeMap::new(),
+            roles: BTreeMap::new(),
+            activates: true,
+            trigger: None,
+            memory: BTreeSet::new(),
+            memory_models: BTreeSet::new(),
+            state_names: BTreeSet::new(),
+        };
+        assert_eq!(
+            classes.catalog_classes().expect_err("a broken invariant"),
+            quire_semantic_value::catalog::InternalFault::new(
+                "check.refinement-class-catalog",
+                "checked-each-clause-has-a-trigger-binder",
+            )
+        );
+        let origin = ProtocolClasses {
+            activates: false,
+            ..classes
+        };
+        assert!(origin
+            .catalog_classes()
+            .is_ok_and(|classes| classes.is_empty()));
+    }
 
     #[test]
     fn a_spelling_has_one_space_after_its_keyword_and_no_other_character() {

@@ -102,6 +102,10 @@ pub struct CheckedRepeat {
     /// Whether the guard reads a binder declared in this repeat's body.
     /// Such a repeat is post-test and executes its body before the first guard.
     pub post_test: bool,
+    /// Whether a `visible` entry, the invariant or the variant reads a
+    /// binder declared in this repeat's body. Only the guard decides
+    /// post-test semantics.
+    pub decisions_read_body: bool,
     /// The loop proof, when one is written.
     pub loop_proof: Option<CheckedLoopProof>,
     /// The checked `while` guard.
@@ -406,20 +410,35 @@ impl Checker<'_, '_> {
                     }
                     // A control's constraint or condition is lowered into the
                     // control's own node, so its tree is rooted at that
-                    // control's body site (FR-096).
-                    matches!(slot.kind, SlotKind::Constraint | SlotKind::Condition).then(|| {
-                        let path: Vec<String> = self
-                            .protocol
-                            .scope_names(declaration.scope)
-                            .into_iter()
-                            .map(|scope| scope.name.clone())
-                            .chain(std::iter::once(declaration.name.name.clone()))
-                            .collect();
-                        protocol_location(
+                    // control's body site (FR-096); a decision slot of a
+                    // `choice` or `repeat` at its own site, told apart by its
+                    // span.
+                    let path: Vec<String> = self
+                        .protocol
+                        .scope_names(declaration.scope)
+                        .into_iter()
+                        .map(|scope| scope.name.clone())
+                        .chain(std::iter::once(declaration.name.name.clone()))
+                        .collect();
+                    match slot.kind {
+                        SlotKind::Constraint | SlotKind::Condition => Some(protocol_location(
                             &self.protocol.name.name,
                             ProtocolSite::ControlBody(&path),
-                        )
-                    })
+                        )),
+                        SlotKind::Visible
+                        | SlotKind::Guard
+                        | SlotKind::Invariant
+                        | SlotKind::Variant => decision_span(slot.form).map(|span| {
+                            protocol_location(
+                                &self.protocol.name.name,
+                                ProtocolSite::Decision(&path, span),
+                            )
+                        }),
+                        SlotKind::Finish
+                        | SlotKind::Terminal
+                        | SlotKind::RelatedEnd
+                        | SlotKind::Lifetime => None,
+                    }
                 }),
             SlotOwner::Role(role) => self.protocol.roles.get(role).map(|role| {
                 protocol_location(
@@ -1196,11 +1215,16 @@ pub(crate) fn check(
     for repeat in &protocol.repeats {
         let node = repeat.declaration;
         let mut readable = flow.input(node);
-        let body_binders = checked
+        // The binders the body declares: those readable after it that were
+        // not readable at the repeat's entry.
+        let body_binders: BTreeSet<usize> = checked
             .controls
             .control(ProtocolNodeId(node))
             .and_then(|control| control.children.first())
-            .map_or_else(BTreeSet::new, |body| flow.output(body.0));
+            .map_or_else(BTreeSet::new, |body| flow.output(body.0))
+            .difference(&readable)
+            .copied()
+            .collect();
         readable.extend(body_binders.iter().copied());
         let before = checker.refusals.len();
         let mut decision = |checker: &mut Checker<'_, '_>,
@@ -1232,11 +1256,12 @@ pub(crate) fn check(
             Goal::Boolean,
             true,
         );
-        let post_test = guard.as_ref().is_some_and(|guard| {
-            guard.root().descendants().into_iter().any(|node| {
+        let reads_body = |body: &CheckedBody| {
+            body.root().descendants().into_iter().any(|node| {
                 matches!(node.kind(), NodeKind::Local(local) if body_binders.contains(local))
             })
-        });
+        };
+        let post_test = guard.as_ref().is_some_and(reads_body);
         if post_test && repeat.max.as_ref().is_some_and(|max| max.value == 0) {
             checker.refuse(ProtocolAnchorCause::RepeatMaxConflict {
                 repeat: repeat.name.name.clone(),
@@ -1273,6 +1298,12 @@ pub(crate) fn check(
             }
             Some(_) => None,
         };
+        let decisions_read_body = visible.iter().flatten().any(reads_body)
+            || loop_proof.as_ref().is_some_and(|proof| {
+                proof
+                    .as_ref()
+                    .is_some_and(|proof| reads_body(&proof.invariant) || reads_body(&proof.variant))
+            });
         let (Some(owner), Some(visible), Some(guard), Some(loop_proof)) = (
             role_index(protocol, &repeat.owner.name),
             visible.into_iter().collect::<Option<Vec<_>>>(),
@@ -1289,6 +1320,7 @@ pub(crate) fn check(
             visible,
             max: repeat.max.as_ref().map(|max| max.value),
             post_test,
+            decisions_read_body,
             loop_proof,
             guard,
         });
@@ -1852,6 +1884,12 @@ fn partition(
         failed,
         span: choice.name.span,
     }))
+}
+
+/// The span of a decision slot's whole expression: the site its tree is
+/// rooted at (FR-096).
+pub(crate) fn decision_span(form: &ExpressionForm) -> Option<Span> {
+    form.spans.span(form.spans.root())
 }
 
 #[cfg(test)]

@@ -692,8 +692,10 @@ fn no_shipped_dependency_enables_test_support() {
 }
 
 /// Layer A's `qsl-analyze` sits above the qualified core (ADR-011 §6.1,
-/// ADR-029 CB-3): no core crate (layers K to 6, SV, R and the tools) names
-/// it in any dependency table. In particular `qsl-replay`, whose zone
+/// ADR-029 CB-3): no qualified-core crate (layers K to 6, SV or R), nor any
+/// tool other than `xtask`, names it in any dependency table. `xtask` is
+/// outside the stage DAG and depends on it only for FR-489's provider
+/// snapshot. In particular `qsl-replay`, whose zone
 /// certificate checker keeps its own DBM separate from the zone engine's
 /// (ADR-026 CF-6, FR-245), cannot reach the engine's DBM through a
 /// dependency edge.
@@ -715,7 +717,6 @@ fn no_core_crate_depends_on_qsl_analyze() {
         "qsl-route",
         "qsl-eval",
         "qsl-replay",
-        "xtask",
         "arch-lint",
     ] {
         let package = packages
