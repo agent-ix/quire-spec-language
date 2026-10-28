@@ -962,6 +962,8 @@ struct ResetsDraft {
     writes: Vec<CollectionWrite>,
     drops: Vec<ClockId>,
     requires: Vec<(ClockId, bool)>,
+    /// Each requirement's span, beside `requires`.
+    require_spans: Vec<Span>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -1393,6 +1395,10 @@ struct Located<'f> {
     /// `Option<Clock>` place (`present(p)`, `p = absent`, `p != absent`):
     /// a data read of its presence, never a clock read.
     presence_first: Vec<bool>,
+    /// Whether every read under each node is `present(r.f)` of another
+    /// object's place: a data predicate of the guard's convex part,
+    /// typed through the place identity (FR-230-AC-51), never a clock read.
+    data_presence: Vec<bool>,
 }
 
 impl<'f> Located<'f> {
@@ -1416,6 +1422,7 @@ impl<'f> Located<'f> {
         let mut option = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut presence_first = vec![false; form.expression.len()];
+        let mut data_presence = vec![false; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
             for child in node.node().children() {
@@ -1444,12 +1451,17 @@ impl<'f> Located<'f> {
             };
             // `present(r.f)` of another object's place is a data read of its
             // presence, the typer's place presence: it reads no clock
-            // (FR-230 "Presence is derived", QSpec FR-322-AC-155).
+            // (FR-230 "Presence is derived", QSpec FR-322-AC-155). It is
+            // located like a presence read, so a clause that cannot take it
+            // as a data predicate refuses it at the read.
             if let ExprNode::Present(operand) = node.node() {
                 if foreign_place(*operand)
                     && option.get(operand.index()).copied().flatten().is_none()
                     && clocks.option(form, *operand, context).is_none()
                 {
+                    first[id.index()] = spans.get(id.index()).copied();
+                    presence_first[id.index()] = true;
+                    data_presence[id.index()] = true;
                     continue;
                 }
             }
@@ -1508,7 +1520,10 @@ impl<'f> Located<'f> {
             // traversal's binder (`e.n`, `e.x`): a clock or a clock-bearing
             // value is a read no constraint takes; a data part reads none.
             if let Some(path) = element_path(form, id, &parents) {
-                if clocks.reaches(&path, context) {
+                // A clock field of an object an element of a reference
+                // collection names (`c.v` of `c in self.peers`) is another
+                // object's place, as through any other path.
+                if clocks.reaches(&path, context) || clocks.foreign(form, id, context, &parents) {
                     first[id.index()] = spans.get(id.index()).copied();
                 }
                 continue;
@@ -1562,6 +1577,12 @@ impl<'f> Located<'f> {
                 first[id.index()] = first.get(child.index()).copied().flatten();
                 presence_first[id.index()] =
                     presence_first.get(child.index()).copied().unwrap_or(false);
+                data_presence[id.index()] = node
+                    .node()
+                    .children()
+                    .into_iter()
+                    .filter(|child| first.get(child.index()).copied().flatten().is_some())
+                    .all(|child| data_presence.get(child.index()).copied().unwrap_or(false));
             }
         }
         Some(Self {
@@ -1580,7 +1601,14 @@ impl<'f> Located<'f> {
             parameters,
             first,
             presence_first,
+            data_presence,
         })
+    }
+
+    /// Whether every read under `id` is `present(r.f)` of another object's
+    /// place: a data predicate, read through the place identity.
+    fn data_presence(&self, id: ExprId) -> bool {
+        self.data_presence.get(id.index()).copied().unwrap_or(false)
     }
 
     /// Whether `clock` is an `Option<Clock>` place.
@@ -1876,7 +1904,14 @@ fn guard(
         if quantified.contains(&id) {
             continue;
         }
-        let (pos, neg) = if !located.reads_clock(id) {
+        // A data predicate whose only reads are another object's presences
+        // is a data literal of the part, and leaves the clause the data
+        // reading takes (FR-230-AC-51).
+        let presence = located.data_presence(id);
+        if presence {
+            atoms.insert(id);
+        }
+        let (pos, neg) = if !located.reads_clock(id) || presence {
             (
                 vec![(vec![(DataLiteral::Site(id), true)], Vec::new())],
                 vec![(vec![(DataLiteral::Site(id), false)], Vec::new())],
@@ -2127,6 +2162,48 @@ struct ResetCut {
     option_writes: BTreeSet<ClockId>,
     /// The post-state presences the postcondition requires.
     requires: Vec<(ClockId, bool)>,
+    /// Each requirement's span, beside `requires`.
+    require_spans: Vec<Span>,
+}
+
+/// QSpec FR-415-AC-21: a postcondition that requires `present(p)` of a
+/// guarded place it does not write has no successor from a state where `p`
+/// is absent; where the operation's precondition establishes `p` absent
+/// (every part of one of its guards requires `p` absent), that is decided
+/// here and refuses `invalid_timed_model`/`clock-presence-unwritten` at the
+/// requirement.
+fn unwritten_presence(
+    resets: &[ResetsDraft],
+    guards: &[(usize, Vec<PartDraft>)],
+    state_clauses: &[StateClauseDeclaration],
+) -> Result<(), TemporalCause> {
+    for written in resets {
+        for (&(clock, present), &span) in written.requires.iter().zip(&written.require_spans) {
+            let writes = written.resets.iter().any(|reset| {
+                reset.clock == clock && reset.selection.is_none() && reset.parameter.is_none()
+            });
+            if !present || writes {
+                continue;
+            }
+            let absent = guards.iter().any(|(index, parts)| {
+                let same = state_clauses
+                    .get(*index)
+                    .and_then(|clause| clause.operation.as_ref())
+                    .is_some_and(|operation| {
+                        operation.declaring == written.operation.declaring
+                            && operation.declaration.name() == written.operation.declaration.name()
+                    });
+                same && !parts.is_empty()
+                    && parts
+                        .iter()
+                        .all(|part| part.presences.contains(&(clock, false)))
+            });
+            if absent {
+                return Err(TemporalCause::ClockPresenceUnwritten { span });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The post-state presence the top-level postcondition conjunct `id`
@@ -2175,12 +2252,18 @@ fn resets(
         if !located.reads_clock(conjunct) {
             continue;
         }
+        // Another object's presence in a postcondition is a reading of the
+        // post-state this slice does not take.
+        if located.data_presence(conjunct) {
+            return Err(located.outside(conjunct));
+        }
         // `present(self.v)`, `self.v != absent` or `not present(self.v)`: a
         // requirement on the post-state's presence, read as a data
         // predicate over it (FR-230 "Presence bit").
         if let Some(required) = post_presence(located, conjunct) {
             cut.leaves.insert(conjunct, ExprNode::Boolean(true));
             cut.requires.push(required);
+            cut.require_spans.push(located.span(conjunct));
             continue;
         }
         if let Some(reset) = quantified::reset(located, conjunct, clocks, clause.context, &written)?
@@ -3326,11 +3409,13 @@ fn prepare_models(
                             writes: cut.writes,
                             drops: cut.drops,
                             requires: cut.requires,
+                            require_spans: cut.require_spans,
                         });
                     }
                 }
             }
         }
+        unwritten_presence(&resets, &guards, state_clauses).map_err(timed)?;
         let mut invariants = Vec::new();
         let mut urgency_drafts = Vec::new();
         for form in &declarations {

@@ -799,9 +799,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// a union field's clock case constructor, makes it present, a drop
     /// (`self.v = absent`, a write of another case) makes it absent, and
     /// every other guarded place of an object `pre` holds keeps its
-    /// presence. A frame writing the field enumerates every value; this
-    /// keeps the written one, so a case switch no write makes leaves no
-    /// successor: there is no implicit reset (planner ruling, 2026-10-28).
+    /// presence, except that a union value may leave a clock case (QSpec
+    /// FR-415-AC-21). A frame writing the field enumerates every value; this
+    /// keeps the written one, so a case switch into a clock case that no
+    /// write makes leaves no successor: there is no implicit reset.
     fn bits_follow(
         &self,
         vector: &super::frames::EnabledVector,
@@ -859,7 +860,19 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 return !after;
             }
             let written = receiver && set.contains(&place.clock);
-            after == (written || before)
+            // QSpec FR-415-AC-21: a place becomes present only by a write
+            // of its clock. An `Option<Clock>` bit does not change unless
+            // written; a union value may leave its case, dropping the case's
+            // clock, but never enters a clock case unwritten.
+            let union = self
+                .model
+                .clock(place.clock)
+                .is_some_and(|field| !field.presence_bit());
+            if union {
+                !after || written || before
+            } else {
+                after == (written || before)
+            }
         })
     }
 
