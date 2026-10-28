@@ -1197,8 +1197,7 @@ fn a_refused_read_is_classified_in_the_order_the_criteria_state() {
 /// FR-092-AC-18, FR-383: a protocol with an `each` guard, a capture and a
 /// `compensate` template is never checked to a package without the template:
 /// with a protocol profile selected the production check refuses
-/// `NotEmitted` for the template and its controls, naming QSL-1127 and
-/// QSL-1126, and none for the guard and the capture, which are written.
+/// `NotEmitted` for the template and its controls, naming QSL-1127, and none for the guard and the capture, which are written.
 #[trace("FR-092-AC-18", "FR-383-AC-1")]
 #[test]
 fn a_compensation_refuses_the_protocol_naming_its_ticket_and_a_guard_and_a_capture_do_not() {
@@ -1221,14 +1220,6 @@ fn a_compensation_refuses_the_protocol_naming_its_ticket_and_a_guard_and_a_captu
             other => panic!("only NotEmitted refusals, got {other:?}"),
         })
         .collect();
-    assert_eq!(
-        constructs,
-        [
-            ProtocolConstruct::Compensations,
-            ProtocolConstruct::Control("attempt"),
-            ProtocolConstruct::Control("effect"),
-            ProtocolConstruct::Control("commit"),
-        ]
-    );
+    assert_eq!(constructs, [ProtocolConstruct::Compensations]);
     assert_eq!(constructs[0].tracking(), "QSL-1127");
 }

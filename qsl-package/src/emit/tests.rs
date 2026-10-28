@@ -50,6 +50,7 @@ mod population_bound;
 mod population_reference;
 mod probabilistic;
 mod protocol_captures;
+mod protocol_controls;
 mod protocol_graph;
 mod protocol_reference;
 mod protocol_terminal;

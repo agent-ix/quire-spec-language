@@ -1984,6 +1984,26 @@ fn emit_package_inner(
             profile_selections.push(selection);
         }
     }
+    // An `await` reads a clock role, so the lock selects the temporal profile
+    // the unit's header selects (QSpec FR-464 "Profiles and laws").
+    if graph
+        .protocols()
+        .iter()
+        .any(|protocol| !protocol.awaits.is_empty())
+    {
+        for profile in graph.temporal_profiles() {
+            let selection = CheckedSelection {
+                role: CheckedSelectionRole::TemporalProfile,
+                definition: CheckedArtifactRef {
+                    authority: "agent-ix".into(),
+                    identity: profile.identity().into(),
+                },
+            };
+            if !profile_selections.contains(&selection) {
+                profile_selections.push(selection);
+            }
+        }
+    }
     // The IEEE trigger includes a declared float with no IEEE application.
     // Keep the selected, admitted policy even when no node needs its law.
     if let Some(profile) = graph.scope().ieee_profile_selection() {

@@ -113,8 +113,8 @@ pub use model::{
     ModelRootKeyError, PlaceStep,
 };
 pub(crate) use protocol::{
-    compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
-    ProtocolSite,
+    compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
+    ProtocolInput, ProtocolSite,
 };
 pub(crate) use state::{
     protocol_attempt_operation_location, protocol_attempt_operation_site, state_operation_location,

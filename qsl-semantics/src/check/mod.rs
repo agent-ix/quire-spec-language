@@ -574,6 +574,10 @@ pub struct CheckedGraph {
     header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
+    /// FR-110: the temporal profiles the unit's header selects, in source
+    /// order. An emitted `await` reads a clock role, so the lock selects them
+    /// (QSpec FR-464 "Profiles and laws").
+    temporal_profiles: Vec<TemporalProfile>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
     time_units: time_units::TimeUnits,
     /// FR-104: every checked state clause, in declaration order.
@@ -2927,7 +2931,7 @@ impl PackageDeclarations {
                         protocol_profile.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
-                            checked.slots = slots;
+                            checked.slots = *slots;
                             nodes_used = used;
                         }
                         protocol_slots::Slots::Refused(slot_refusals) => {
@@ -3643,25 +3647,6 @@ impl PackageDeclarations {
             },
             Err(refusal) => refusals.push(refusal),
         }
-        // FR-135: the clause a refinement's rows select, by its node.
-        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
-            let Some(selected) = selected else {
-                continue;
-            };
-            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
-                Ok(key) => checked.concrete_protocol = Some(key),
-                // Under the test opt-in a protocol with an unwritten
-                // construct has no clause key, and is refused nowhere.
-                Err(refusal)
-                    if self.emit_unwritten_protocols
-                        && matches!(
-                            &refusal.cause,
-                            CheckCause::ProtocolReference(cause)
-                                if cause.construct().is_some()
-                        ) => {}
-                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
-            }
-        }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members
@@ -4127,6 +4112,66 @@ impl PackageDeclarations {
                         Err(refusal) => refusals.push(refusal),
                     }
                 }
+            }
+        }
+        // FR-092: the node of each protocol that holds an `attempt`, now that
+        // the operation anchors and state clauses its attempts name are keyed.
+        if refusals.is_empty() {
+            let attempts: Vec<Vec<lowering::AttemptNodes>> = protocol_bindings
+                .iter()
+                .zip(&lowered_attempts)
+                .map(|(bindings, lowered)| {
+                    bindings
+                        .iter()
+                        .zip(lowered)
+                        .filter_map(|(bound, lowered)| {
+                            let contracts = bound
+                                .contracts
+                                .iter()
+                                .map(|&index| {
+                                    lowered_clauses
+                                        .get(index)
+                                        .and_then(Option::as_ref)
+                                        .map(|clause| clause.key)
+                                })
+                                .collect::<Option<Vec<_>>>()?;
+                            Some(lowering::AttemptNodes {
+                                declaration: bound.declaration,
+                                anchor: lowered.as_ref()?.binding.anchor,
+                                contracts,
+                            })
+                        })
+                        .collect()
+                })
+                .collect();
+            match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols)
+            {
+                Ok(inputs) => {
+                    if let Err(refusal) = lowering.protocol_nodes_with_attempts(&inputs, &attempts)
+                    {
+                        refusals.push(refusal);
+                    }
+                }
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-135: the clause a refinement's rows select, by its node.
+        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
+            let Some(selected) = selected else {
+                continue;
+            };
+            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
+                Ok(key) => checked.concrete_protocol = Some(key),
+                // Under the test opt-in a protocol with an unwritten
+                // construct has no clause key, and is refused nowhere.
+                Err(refusal)
+                    if self.emit_unwritten_protocols
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct().is_some()
+                        ) => {}
+                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
         }
         // FR-337: each emitted temporal clause, after every function its
@@ -4963,6 +5008,11 @@ impl PackageDeclarations {
             model_selections,
             model_roots,
             header_layers,
+            temporal_profiles: self
+                .temporal_selections
+                .iter()
+                .map(|selection| selection.profile)
+                .collect(),
             time_sources: self.time_sources,
             time_units: time_units.clone(),
             state_clauses,
@@ -5302,6 +5352,11 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
+    /// The temporal profiles the unit's header selects, in source order.
+    pub fn temporal_profiles(&self) -> &[TemporalProfile] {
+        &self.temporal_profiles
+    }
+
     /// Checked time sources of this package, in declaration order.
     pub fn time_sources(&self) -> &[ModelTimeSource] {
         &self.time_sources
@@ -6089,6 +6144,17 @@ fn register_protocol_sites(
                 );
             }
             qsl_forms::ProtocolMemberForm::Scheduling(_) => {}
+        }
+    }
+    for body in &protocol.bodies {
+        if let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(body.owner))
+        {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::ControlBody(&control.path)),
+                body.expression.spans.clone(),
+            );
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {
