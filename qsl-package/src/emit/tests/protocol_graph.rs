@@ -1301,3 +1301,71 @@ fn a_predicate_join_references_its_function_and_reads_back() {
         Some(vec!["a", "b"])
     );
 }
+
+/// FR-466-AC-15 with FR-206-AC-11 (SR-1761002 FND-001): a predicate join
+/// whose labels are written out of ascending order, `[b, a]`, over the
+/// asymmetric `ahead(x, y) = x and not y`, writes `joined` ascending, so the
+/// function's `k`-th parameter binds the `k`-th label in that order, and
+/// reads back.
+#[trace("FR-464-AC-1", "TC-1021")]
+#[test]
+fn an_out_of_order_predicate_join_binds_by_ascending_label() {
+    let lowered = lower_with(
+        model(),
+        PROFILES,
+        &format!(
+            "function ahead using v(x: Boolean, y: Boolean): Boolean pure {{ x and not y }}\n{}",
+            parallel_flow(
+                "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+                 join predicate(ahead) [b, a];"
+            )
+        ),
+    );
+    assert!(
+        lowered.ir.is_ok(),
+        "{:?}\n{}",
+        lowered.ir.err(),
+        lowered.text
+    );
+    let parallel = control_at(&lowered.wire, &["Flow", "run", "Main", "Par"]);
+    assert_eq!(
+        argument(parallel, &PARALLEL, "joined")["members"]
+            .as_array()
+            .map(|labels| labels.iter().map(lit).collect::<Vec<_>>()),
+        Some(vec!["a", "b"])
+    );
+    let function = nodes(&lowered.wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == "ahead"
+        })
+        .expect("the function node");
+    assert_eq!(
+        member(argument(parallel, &PARALLEL, "join"), "predicate")["target"],
+        function["node_id"]
+    );
+}
+
+/// The written reference makes a cycle reachable (SR-1761002 FND-001): a
+/// predicate join's function that reads its own protocol refuses
+/// `ReferenceCycle`.
+#[trace("FR-092-AC-18", "TC-1021")]
+#[test]
+fn a_predicate_function_reading_its_protocol_is_a_reference_cycle() {
+    use super::protocol_reference::not_emitted;
+    use qsl_semantics::check::ProtocolConstruct;
+    let text = format!(
+        "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b and protocol Flow }}\n{}",
+        parallel_flow(
+            "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+             join predicate(both) [a, b];"
+        )
+    );
+    let refusals = checked(&text, false).expect_err(&text);
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.cause == not_emitted(ProtocolConstruct::ReferenceCycle)),
+        "{refusals:?}"
+    );
+}
