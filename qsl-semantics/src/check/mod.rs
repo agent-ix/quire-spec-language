@@ -6500,6 +6500,51 @@ fn register_protocol_sites(
             );
         }
     }
+    for (node, entries) in protocol
+        .choices
+        .iter()
+        .map(|choice| {
+            (
+                choice.declaration,
+                choice
+                    .visible
+                    .iter()
+                    .chain(choice.cases.iter().map(|case| &case.guard))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .chain(protocol.repeats.iter().map(|repeat| {
+            (
+                repeat.declaration,
+                repeat
+                    .visible
+                    .iter()
+                    .chain([&repeat.guard])
+                    .chain(
+                        repeat
+                            .loop_proof
+                            .iter()
+                            .flat_map(|proof| [&proof.invariant, &proof.variant]),
+                    )
+                    .collect(),
+            )
+        }))
+    {
+        let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(node))
+        else {
+            continue;
+        };
+        for entry in entries {
+            if let Some(span) = protocol_slots::decision_span(entry) {
+                site_spans.insert(
+                    protocol_site(name, ProtocolSite::Decision(&control.path, span)),
+                    entry.spans.clone(),
+                );
+            }
+        }
+    }
     let Some((finish, finish_name)) = &checked.finish else {
         return;
     };

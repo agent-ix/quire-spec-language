@@ -33,3 +33,11 @@ One low gap, which follows from SR-1755001 FND-001.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No test through `analyze` checks an EN-6 refutation's outcome item. An `UndefinedEvaluation` counterexample should come out as `refuted` with cause `undefined-evaluation`, as EN-1's analyze tests require. The SR-1755001 FND-001 drop would have been caught. | qsl-analyze/tests/it/zone_replay.rs:851, dense_route.rs:274-301 |
+
+## Dispositions
+
+Round 1, head 4177e8021.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `dense_route::an_undefined_timed_evaluation_settles_refuted_through_analyze` runs FR-239-AC-5's `Ticker` through `zone_item` and `analyze`. It asserts `refuted` on en-6, an `UndefinedEvaluation` counterexample at position 2 on the record, and an outcome item that is `refuted` with cause `undefined-evaluation`/`division-by-zero` at `position 2, state …`, category violation, never `undefined`. The test passes and kills the `zone_check: None` mutant. |

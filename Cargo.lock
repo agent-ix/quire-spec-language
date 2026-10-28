@@ -2657,6 +2657,7 @@ dependencies = [
  "jsonschema 0.17.1",
  "logos",
  "proc-macro2",
+ "qsl-analyze",
  "qsl-cst",
  "qsl-foundation",
  "qsl-replay",

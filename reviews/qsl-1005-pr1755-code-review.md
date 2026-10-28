@@ -47,3 +47,15 @@ At 9516a8585, `dense_route` and `timed_refinement` pass 20/20.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | `EngineReport::Zone` settles with `model_check: None`, so the analyze record drops the zone record and its counterexample. An EN-6 refutation by `UndefinedEvaluation` therefore writes a plain `refuted` outcome item, without FR-235 V-4's and FR-281's cause `UndefinedEvaluation{where, cause}`. | qsl-analyze/src/analyze.rs:546-559, 386-404 |
+
+## Dispositions
+
+Round 1, head 4177e8021.
+
+Gates (`--all-features`, debug info off):
+- qsl-analyze `dense_route` and `analyze`: 17 pass.
+- qsl-analyze clippy `-D warnings`: exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `AnalyzeRecord` now carries `zone_check: Option<Box<ZoneCheckRecord>>`, set to `Some(zone)` for `EngineReport::Zone`. The new `counterexample()` reads EN-1's record, then EN-6's, and `outcome_item` reads the undefined evaluation through it. When I set `zone_check` back to `None` as a mutant, `an_undefined_timed_evaluation_settles_refuted_through_analyze` fails (exit 101). |

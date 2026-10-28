@@ -59,6 +59,7 @@ mod protocol_reference;
 mod protocol_terminal;
 mod reachability;
 mod receiver_frames;
+mod refinement_adverse;
 mod refinement_rows;
 mod state_graph_claim;
 mod state_transition;

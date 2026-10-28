@@ -22,7 +22,6 @@ use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
-use qsl_foundation::diagnostic::Code;
 use qsl_replay::{
     check_closure, check_components, settle_model_check, CertificateLocus, CertificateRejection,
     CertificateRequest, CertificateRule, Certification, ClosureCertificate, ClosureRefusal,
@@ -267,7 +266,10 @@ fn a_certificate_from_another_package_is_stale_before_any_component_rule() {
     );
     assert_eq!(
         record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+            requested: foreign.record(),
+            recompiled: recompiled.record(),
+        })
     );
 }
 

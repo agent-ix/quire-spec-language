@@ -224,8 +224,8 @@ pub use model_check::smt_query::{
 };
 pub use model_check::state_graph::{
     GraphEvidence, GraphEvidenceEnvelope, GraphUndefined, GraphWitness, LassoWitness, ModelLasso,
-    ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, TrapClosure,
-    WitnessPath, WitnessSource,
+    ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
+    StateGraphPropertyForm, TrapClosure, WitnessPath, WitnessSource,
 };
 pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,

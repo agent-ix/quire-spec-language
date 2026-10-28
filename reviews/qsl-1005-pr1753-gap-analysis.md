@@ -38,3 +38,12 @@ Gaps:
 ## Verdict
 
 Mergeable. Both findings are low.
+
+## Dispositions
+
+Round 1, head 1f9e11e6b (also merged into #1755 at 9516a8585). At 9516a8585, `dense_route` and `timed_refinement` pass 20/20, with `--all-features` and debug info off.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Moved to subticket QSL-1205 ("write requests for derived deadlock-freedom and time-lock-freedom items", Backlog, parent QSL-1005). No request writer emits derived items yet, so a production consumer of their dense marks is that ticket's work, not this PR's. |
+| FND-002 | fixed | `dense_route::a_mixed_package_routes_each_record_by_its_own_subject` holds the dense `M` and the untimed `A` in one package and routes everything in one `items_from_requirements` call. The clause over `M` routes to `[en-6]` (dense). The clause over `A` routes to `[en-1, en-6]` (not dense). The timed refinement `Timed` routes to `[en-6]`, and the untimed refinement `Same` (A by A) routes to `[en-1]`. The test passes. |

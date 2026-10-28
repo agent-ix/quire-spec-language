@@ -512,7 +512,9 @@ fn settle<T: SubjectTransition>(
             Ok(ModelTraceReplayResult {
                 package_id: replayed,
                 ..
-            }) if !replayed.matches(package_id) => Row::stale(),
+            }) if !replayed.matches(package_id) => {
+                Row::stale_dependency(*package_id, replayed.record())
+            }
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
                 hints: replayed_hints,
@@ -666,11 +668,24 @@ impl Row {
         Self::inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
     }
 
+    /// A package identity mismatch whose two sides are known (FR-282,
+    /// FR-331).
+    pub(super) fn stale_dependency(requested: DigestRecord, recompiled: DigestRecord) -> Self {
+        Self::inconclusive(InconclusiveCause::StaleDependency {
+            requested,
+            recompiled,
+        })
+    }
+
     /// A refused replay: `ReplayRefused` with its code, or `failed` for a
     /// fault.
     pub(super) fn refused(refusal: &ReplayRefusal) -> Self {
         match refusal {
             ReplayRefusal::Fault(_) => Self::failed(),
+            ReplayRefusal::PackageIdMismatch {
+                requested,
+                recompiled,
+            } => Self::stale_dependency(*requested, recompiled.record()),
             refusal => Self::inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
@@ -699,7 +714,10 @@ impl Row {
     ) -> Self {
         match check {
             Ok(TemporalCertificateCheck::Accepted) => accepted(),
-            Ok(TemporalCertificateCheck::PackageMismatch { .. }) => Self::stale(),
+            Ok(TemporalCertificateCheck::PackageMismatch {
+                certificate,
+                recompiled,
+            }) => Self::stale_dependency(certificate.record(), recompiled.record()),
             Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
                 Self::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
             }
@@ -740,8 +758,24 @@ impl Row {
         cancel: &Cancel,
         check: impl FnOnce() -> Self,
     ) -> Self {
-        match emitted_package_id(package, cancel) {
-            Some(checked) if checked != *package_id => Self::stale(),
+        Self::bound_after_emission(
+            package_id,
+            cancel,
+            || emitted_package_id(package, cancel),
+            check,
+        )
+    }
+
+    /// Settle after the boundary's package emission, keeping the non-emitting
+    /// row testable without constructing an invalid `CheckedPackage`.
+    fn bound_after_emission(
+        package_id: &DigestRecord,
+        cancel: &Cancel,
+        emission: impl FnOnce() -> Option<DigestRecord>,
+        check: impl FnOnce() -> Self,
+    ) -> Self {
+        match emission() {
+            Some(checked) if checked != *package_id => Self::stale_dependency(*package_id, checked),
             Some(_) => check(),
             None => match cancel.cause() {
                 Some(source) => Self::incomplete(IncompleteCause::Cancelled { source }, None),
@@ -757,4 +791,33 @@ fn emitted_package_id(package: &CheckedPackage, cancel: &Cancel) -> Option<Diges
     qsl_package::emit_checked_with_cancel(package, cancel)
         .ok()
         .map(|emission| emission.package().package_id().record())
+}
+
+#[cfg(test)]
+mod bound_tests {
+    use super::*;
+
+    /// FR-282: a package the emission boundary refuses to write cannot stand
+    /// behind a certificate result.
+    #[ix_trace_rs::trace("FR-169-AC-10")]
+    #[test]
+    fn a_non_emitting_package_fails_before_certificate_check() {
+        let package_id = DigestRecord::mint(
+            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
+            [1; 32],
+        );
+        let checked = std::cell::Cell::new(false);
+        let row = Row::bound_after_emission(
+            &package_id,
+            &Cancel::new(),
+            || None,
+            || {
+                checked.set(true);
+                Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+            },
+        );
+
+        assert_eq!(row.value, TerminalValue::Failed);
+        assert!(!checked.get(), "a failed emission must not check evidence");
+    }
 }
