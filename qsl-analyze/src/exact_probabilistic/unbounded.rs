@@ -3,7 +3,7 @@
 //! UR-4). The worklist and linear solver here are engine-owned; the replay
 //! checker will implement its own recomputation.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use qsl_semantics::check::{ProbForm, ReachTarget};
 use quire_exact::{Integer, Rational};
@@ -311,52 +311,89 @@ fn evaluate_chain(
         positions[state] = Some(row);
     }
     let size = unknown.len();
-    let mut matrix = vec![vec![zero(); size + 1]; size];
+    let mut matrix = vec![BTreeMap::new(); size];
     for (row, state) in unknown.iter().copied().enumerate() {
-        matrix[row][row] = one();
+        add_coefficient(&mut matrix[row], row, one());
         for (target, probability) in &transitions[state] {
             if targets[*target] {
-                matrix[row][size] = matrix[row][size].add(probability);
+                add_coefficient(&mut matrix[row], size, probability.clone());
             } else if let Some(column) = positions[*target] {
-                matrix[row][column] = matrix[row][column].sub(probability);
+                add_coefficient(&mut matrix[row], column, zero().sub(probability));
             }
         }
     }
     gaussian_elimination(&mut matrix)?;
     for (row, state) in unknown.into_iter().enumerate() {
-        values[state] = matrix[row][size].clone();
+        values[state] = matrix[row]
+            .get(&size)
+            .cloned()
+            .ok_or(ReachabilityFault::SingularSystem)?;
     }
     Ok(values)
 }
 
-fn gaussian_elimination(matrix: &mut [Vec<Rational>]) -> Result<(), ReachabilityFault> {
+fn gaussian_elimination(matrix: &mut [BTreeMap<usize, Rational>]) -> Result<(), ReachabilityFault> {
     let size = matrix.len();
     for column in 0..size {
         let pivot = (column..size)
-            .find(|row| !matrix[*row][column].is_zero())
+            .find(|row| {
+                matrix[*row]
+                    .get(&column)
+                    .is_some_and(|value| !value.is_zero())
+            })
             .ok_or(ReachabilityFault::SingularSystem)?;
         matrix.swap(column, pivot);
-        let divisor = matrix[column][column].clone();
-        for value in &mut matrix[column][column..=size] {
-            *value = value
+        let divisor = matrix[column]
+            .get(&column)
+            .cloned()
+            .ok_or(ReachabilityFault::SingularSystem)?;
+        let pivot_columns = matrix[column]
+            .range(column..=size)
+            .map(|(index, value)| (*index, value.clone()))
+            .collect::<Vec<_>>();
+        for (index, value) in pivot_columns {
+            let normalized = value
                 .div(&divisor)
                 .ok_or(ReachabilityFault::SingularSystem)?;
+            matrix[column].insert(index, normalized);
         }
         let pivot_row = matrix[column].clone();
         for (row_index, row_values) in matrix.iter_mut().enumerate() {
-            if row_index == column || row_values[column].is_zero() {
+            if row_index == column {
                 continue;
             }
-            let factor = row_values[column].clone();
-            for (value, pivot_value) in row_values[column..=size]
-                .iter_mut()
-                .zip(&pivot_row[column..=size])
-            {
-                *value = value.sub(&factor.mul(pivot_value));
+            let Some(factor) = row_values.get(&column).cloned() else {
+                continue;
+            };
+            if factor.is_zero() {
+                continue;
+            }
+            for (index, pivot_value) in &pivot_row {
+                if *index < column {
+                    continue;
+                }
+                let current = row_values.get(index).cloned().unwrap_or_else(zero);
+                let updated = current.sub(&factor.mul(pivot_value));
+                if updated.is_zero() {
+                    row_values.remove(index);
+                } else {
+                    row_values.insert(*index, updated);
+                }
             }
         }
     }
     Ok(())
+}
+
+fn add_coefficient(row: &mut BTreeMap<usize, Rational>, column: usize, value: Rational) {
+    let updated = row
+        .get(&column)
+        .map_or(value.clone(), |current| current.add(&value));
+    if updated.is_zero() {
+        row.remove(&column);
+    } else {
+        row.insert(column, updated);
+    }
 }
 
 fn selected_edges<'a>(
@@ -538,6 +575,36 @@ mod tests {
         let result = reachability(&graph, &[false, true, false], Extremum::Minimum, 1)
             .expect("a transient DTMC system has a unique solution");
         assert_eq!(result.value(ProbStateId(0)), Some(&ratio(1, 2)));
+    }
+
+    #[test]
+    fn zero_probability_edges_do_not_make_a_target_reachable() {
+        let graph = product(
+            ProductKind::Dtmc,
+            vec![
+                edge(0, 0, 0, Rational::from_integer(Integer::one())),
+                edge(0, 1, 1, Rational::from_integer(Integer::zero())),
+            ],
+        );
+        let result = reachability(&graph, &[false, true, false], Extremum::Minimum, 1)
+            .expect("zero-probability edges do not enter the linear system");
+        assert_eq!(result.value(ProbStateId(0)), Some(&zero()));
+    }
+
+    #[test]
+    fn dtmc_policy_equations_solve_multiple_transient_states() {
+        let graph = product(
+            ProductKind::Dtmc,
+            vec![
+                edge(0, 0, 1, Rational::from_integer(Integer::one())),
+                edge(1, 1, 1, ratio(1, 2)),
+                edge(1, 1, 2, ratio(1, 2)),
+            ],
+        );
+        let result = reachability(&graph, &[false, false, true], Extremum::Minimum, 0)
+            .expect("the sparse transient system is solved exactly");
+        assert_eq!(result.value(ProbStateId(0)), Some(&one()));
+        assert_eq!(result.value(ProbStateId(1)), Some(&one()));
     }
 
     #[test]
