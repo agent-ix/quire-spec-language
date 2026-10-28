@@ -2532,3 +2532,87 @@ fn another_objects_presence_is_a_data_read() {
         (Code::IllTyped, "type-mismatch")
     );
 }
+
+/// FR-230-AC-19 and AC-41 (TC-685), S3's part: `q: Sequence<Option<Clock>>[0,
+/// 2]` (a presence-optional `Clock` field of multiplicity `[0, 2]`) checks
+/// under a dense source to the place `q.[slot]`, guarded by the element's
+/// presence bit, whose `resolved_path` rows are those of QSpec's presence
+/// place `q`: `Sequence<Option<ix://quire/native/Clock>>` bounded `[0, 2]`
+/// and its slot `Option<ix://quire/native/Clock>`. An unbounded one, whose
+/// bits the timed system cannot enumerate, is still not checked.
+#[trace("TC-685")]
+#[test]
+fn a_sequence_of_option_clocks_is_a_place_with_a_bit() {
+    let with = |upper: Option<u64>| {
+        let mut document: Value =
+            serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+        let mut q = field("q", "ix://quire/native/Clock");
+        q["presence"] = json!("optional");
+        q["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+        if let Some(upper) = upper {
+            q["multiplicity"]["upper"] = json!(upper);
+        }
+        document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(q);
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let graph = check(&with(Some(2)), &format!("{UNITS}{DENSE}"))
+        .unwrap_or_else(|refusals| panic!("q checks: {refusals:?}"));
+    let model = timed(&graph);
+    let q = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "q.[slot]")
+        .unwrap_or_else(|| panic!("q's place: {:?}", model.clocks()));
+    assert!(q.presence_bit());
+    let rows: Vec<(&str, &str, &str, &str, &str, &str)> = q
+        .resolved_path()
+        .iter()
+        .map(|row| {
+            (
+                row.declaring_type.as_str(),
+                row.member_identity.as_str(),
+                row.member_type.as_str(),
+                row.collection_kind.as_str(),
+                row.minimum.as_str(),
+                row.maximum.as_str(),
+            )
+        })
+        .collect();
+    let call = package("Call");
+    let q_identity = format!("{call}/q");
+    assert_eq!(
+        rows,
+        [
+            (
+                call.as_str(),
+                q_identity.as_str(),
+                "Sequence<Option<ix://quire/native/Clock>>",
+                "sequence",
+                "0",
+                "2"
+            ),
+            (
+                "Option<ix://quire/native/Clock>",
+                "Sequence<Option<ix://quire/native/Clock>>[slot]",
+                "Option<ix://quire/native/Clock>",
+                "none",
+                "",
+                ""
+            ),
+        ]
+    );
+    let refusals = check(&with(None), &format!("{UNITS}{DENSE}")).expect_err("not checked");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::TimedNotChecked { .. },
+                ..
+            }]
+        ),
+        "{refusals:?}"
+    );
+}

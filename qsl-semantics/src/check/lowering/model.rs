@@ -1213,6 +1213,14 @@ impl AdmittedModel {
         // or `Option` around the type it holds.
         let declared = self.rendered(&field.value_type);
         let member_type = if !single(field) {
+            // An optional collection member holds optional elements:
+            // `q: Sequence<Option<Clock>>[0, 2]` (QSpec FR-322's
+            // timed-slot-selector vectors, the presence place `q`).
+            let element = if matches!(field.presence, quire_exact::Presence::Optional) {
+                format!("Option<{declared}>")
+            } else {
+                declared
+            };
             collection_type(
                 CollectionShape {
                     ordered: field.multiplicity.ordered,
@@ -1220,7 +1228,7 @@ impl AdmittedModel {
                     min: field.multiplicity.lower,
                     max: field.multiplicity.upper,
                 },
-                &declared,
+                &element,
             )
         } else if matches!(field.presence, quire_exact::Presence::Optional) {
             format!("Option<{declared}>")

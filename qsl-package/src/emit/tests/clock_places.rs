@@ -332,7 +332,8 @@ fn a_template_slot_place_reads_back() {
 /// package sequence type `Ticks` of `Clock`, and the fields of QSpec's
 /// timed-slot-selector vectors: `ts: Sequence<Timer>[0, 3]` (SL-01), `g:
 /// Sequence<Ticks>` unbounded, the `Sequence<Sequence<Clock>>` of SL-05,
-/// and `s: Sequence<Clock>` unbounded (SL-08).
+/// `s: Sequence<Clock>` unbounded (SL-08), and the presence places `v:
+/// Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]`.
 fn vector_document() -> Vec<u8> {
     const PREFIX: &str = "ix://example/config-version";
     let mut document: Value =
@@ -400,13 +401,32 @@ fn vector_document() -> Vec<u8> {
         "ix://quire/native/Clock",
         unbounded,
     ));
+    for (name, multiplicity) in [
+        (
+            "v",
+            json!({"lower": 1, "upper": 1, "ordered": false, "unique": true}),
+        ),
+        (
+            "q",
+            json!({"lower": 0, "upper": 2, "ordered": true, "unique": false}),
+        ),
+    ] {
+        let mut held = field(
+            "ConfigVersion",
+            name,
+            "ix://quire/native/Clock",
+            multiplicity,
+        );
+        held["presence"] = json!("optional");
+        fields.push(held);
+    }
     serde_json::to_vec(&document).expect("the fixture stays JSON")
 }
 
 /// QSpec FR-322-AC-148/149 conformance (TC-685 step 33): the emitted
 /// template places of `ts`, `g` and `s` equal the `node` of the published
-/// timed-slot-selector vectors SL-01, SL-05 and SL-08 (body and
-/// dependencies), once the vectors' `acme/orders` model node digest and
+/// timed-slot-selector vectors SL-01, SL-05 and SL-08, and those of `v` and
+/// `q` the vectors' presence places `v` and `q` (body and dependencies), once the vectors' `acme/orders` model node digest and
 /// type identities are read as this package's. Reads the vectors from
 /// `$QSPEC_DIR` (skipped, and passing, when it is unset; `make
 /// conformance` requires it); nothing of QSpec is copied here.
@@ -444,19 +464,33 @@ fn conformance_the_template_places_match_the_slot_selector_vectors() {
     let vector_model = vectors["type_nodes"]["model"]
         .as_str()
         .expect("the model digest");
-    for (case, name) in [("SL-01", "ts"), ("SL-05", "g"), ("SL-08", "s")] {
+    let published_node = |case: &str| {
+        vectors["cases"]
+            .as_array()
+            .expect("cases")
+            .iter()
+            .find(|vector| vector["id"] == case)
+            .map(|vector| vector["node"].clone())
+            .or_else(|| {
+                let place = case.strip_prefix("presence ")?;
+                Some(vectors["presence"]["places"][place]["node"].clone())
+            })
+            .filter(|node| !node.is_null())
+            .unwrap_or_else(|| panic!("{case} is published"))
+    };
+    for (case, name) in [
+        ("SL-01", "ts"),
+        ("SL-05", "g"),
+        ("SL-08", "s"),
+        ("presence v", "v"),
+        ("presence q", "q"),
+    ] {
         let emitted = place(name);
         let model = member(&emitted["body"], "model")["target"]["digest"]
             .as_str()
             .expect("a model reference")
             .to_owned();
-        let published = vectors["cases"]
-            .as_array()
-            .expect("cases")
-            .iter()
-            .find(|vector| vector["id"] == case)
-            .unwrap_or_else(|| panic!("{case} is published"));
-        let read = serde_json::to_string(&published["node"])
+        let read = serde_json::to_string(&published_node(case))
             .expect("JSON")
             .replace(vector_model, &model)
             .replace(

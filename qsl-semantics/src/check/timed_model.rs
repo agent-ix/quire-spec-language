@@ -640,6 +640,20 @@ pub(crate) struct PresencePlace {
     pub(crate) case: Option<String>,
 }
 
+/// Whether a place with a presence bit at `path` is one the timed
+/// system holds the bit of: an `Option<Clock>` field, or an element of a
+/// `Sequence<Option<Clock>>` field with a declared maximum, one bit for each
+/// slot (FR-230 "Presence bit", FR-230-AC-41/42).
+fn bit_path(path: &[PlaceStep]) -> bool {
+    match path {
+        [PlaceStep::Field(_)] => true,
+        [PlaceStep::Field(_), PlaceStep::Slot(shape)] => {
+            shape.ordered && !shape.unique && shape.max.is_some()
+        }
+        _ => false,
+    }
+}
+
 /// The guarded places of `clocks` a predicate names `r.f` or `r.f.c`:
 /// an `Option<Clock>` field of the object, or a clock case of its union
 /// field.
@@ -3163,9 +3177,11 @@ fn prepare_models(
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
                 // A place under an optional member is guarded by a presence
                 // FR-230 does not yet give S3 a reading of (STD-493 item
-                // 17).
+                // 17), except an `Option<Clock>`, a union case and an
+                // element of a bounded `Sequence<Option<Clock>>`, whose
+                // presences are bits or data.
                 if AdmittedModel::clock_places(model).iter().any(|place| {
-                    place.optional && !((place.bit && place.path.len() == 1) || place.case)
+                    place.optional && !((place.bit && bit_path(&place.path)) || place.case)
                 }) {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,

@@ -4371,6 +4371,159 @@ fn a_permutation_renames_a_clock_place_argument() {
     );
 }
 
+/// `Call` with `q: Sequence<Option<Clock>>[0, 2]` (a presence-optional
+/// `Clock` field of multiplicity `[0, 2]`), `work` writing the fields
+/// `granted`.
+fn option_sequence_world(granted: &[&str], body: &str) -> World {
+    let mut document: Json = serde_json::from_slice(&cells_document(
+        vec![],
+        vec![(
+            "q",
+            "ix://quire/native/Clock".to_owned(),
+            Some(json!({"lower": 0, "upper": 2, "ordered": true, "unique": false})),
+        )],
+        granted,
+        &[],
+    ))
+    .expect("JSON");
+    for field in document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+    {
+        if field["name"] == "q" {
+            field["presence"] = json!("optional");
+        }
+    }
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(&["work"], body),
+        json!({"t": timer}),
+    )
+}
+
+/// The presence bits of `c`'s `q` at `state`, one for each element.
+fn option_bits(state: &TimedState) -> Vec<bool> {
+    let quire_exact::Value::Collection(bits) = field_of(state, "c", "q") else {
+        panic!("q holds its bits");
+    };
+    bits.elements()
+        .iter()
+        .map(|bit| matches!(bit, quire_exact::Value::Boolean(true)))
+        .collect()
+}
+
+/// FR-230-AC-41, AC-42 and AC-46 (TC-685), the timed subject's part, over
+/// `q: Sequence<Option<Clock>>[0, 2]`: each element holds a presence bit,
+/// so the initial states are every count from 0 to 2 with every bit of
+/// each element, `1 + 2 + 4 = 7` of them in ascending count. An element is
+/// live exactly while its bit is set, and every present initial clock is 0.
+/// Each state has its own key, which writes each element's option shell,
+/// `null` when absent and a `Clock` shell when present, so two states that
+/// differ only in one bit have different keys.
+#[trace("TC-685")]
+#[test]
+fn a_sequence_of_option_clocks_holds_one_bit_per_element() {
+    let world = option_sequence_world(&[], "");
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let bits: Vec<Vec<bool>> = initial.iter().map(option_bits).collect();
+    assert_eq!(
+        bits,
+        [
+            vec![],
+            vec![false],
+            vec![true],
+            vec![false, false],
+            vec![false, true],
+            vec![true, false],
+            vec![true, true],
+        ]
+    );
+    let slot_of = |place: &qsl_eval::simulation::model::ClockPlace| {
+        timed
+            .model()
+            .clock(place.clock())
+            .is_some_and(|clock| clock.name() == "q.[slot]")
+    };
+    for state in &initial {
+        let live: Vec<bool> = timed
+            .places()
+            .iter()
+            .filter(|place| slot_of(place))
+            .map(|place| timed.live(place, state.discrete()))
+            .collect();
+        let mut expected = option_bits(state);
+        expected.resize(live.len(), false);
+        assert_eq!(live, expected, "{:?}", option_bits(state));
+        for (at, place) in timed.places().iter().enumerate() {
+            if slot_of(place) && timed.live(place, state.discrete()) {
+                assert_eq!(state.clocks().get(at), Some(&exact(0, 1)));
+            }
+        }
+    }
+    let keys: std::collections::BTreeSet<Vec<u8>> = initial
+        .iter()
+        .map(|state| held.state_key(state.discrete()).expect("a key").0)
+        .collect();
+    assert_eq!(keys.len(), 7);
+    let (mixed, _) = held.state_key(initial[5].discrete()).expect("a key");
+    let text = String::from_utf8(mixed).expect("UTF-8");
+    assert_eq!(
+        (
+            text.matches(r#"{"type":"option","value":null}"#).count(),
+            text.matches(
+                r#"{"type":"option","value":{"components":[],"name":"Clock","type":"tuple"}}"#
+            )
+            .count()
+        ),
+        (1, 1),
+        "{text}"
+    );
+}
+
+/// FR-230 "Presence bit" (TC-685), no implicit reset or drop of an
+/// element of `q: Sequence<Option<Clock>>[0, 2]`: `work`, whose frame
+/// writes `q` and which resets no clock, keeps the bit of every element the
+/// collection still holds; the elements it adds take either bit.
+#[trace("TC-685")]
+#[test]
+fn an_option_element_keeps_its_bit_without_a_write() {
+    let world = option_sequence_world(&["q"], "");
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    for state in &initial {
+        let before = option_bits(state);
+        let after: Vec<Vec<bool>> = timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| option_bits(&next))
+            .collect();
+        assert!(!after.is_empty(), "{before:?}");
+        for bits in &after {
+            let kept = bits.len().min(before.len());
+            assert_eq!(bits[..kept], before[..kept], "{before:?} -> {bits:?}");
+        }
+        if before.len() < 2 {
+            let grown: std::collections::BTreeSet<bool> = after
+                .iter()
+                .filter(|bits| bits.len() == before.len() + 1)
+                .map(|bits| bits[before.len()])
+                .collect();
+            assert_eq!(
+                grown.len(),
+                2,
+                "{before:?}: an added element takes either bit"
+            );
+        }
+    }
+}
+
 /// FR-230-AC-46, AC-47 and AC-48 (TC-685), the bare-clock collections: a
 /// pure-clock collection's initial element count ranges over `[min, max]`,
 /// one initial state each. `s: Sequence<Clock>[1, 3]` gives 3, `b:

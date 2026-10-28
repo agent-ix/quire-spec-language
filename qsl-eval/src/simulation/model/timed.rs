@@ -666,6 +666,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let mut pending = vec![(value, &field.path()[1..through])];
             while let Some((value, rest)) = pending.pop() {
                 match rest.split_first() {
+                    // An element of a `Sequence<Option<Clock>>` is live
+                    // while its bit is set.
+                    None if field.presence_bit()
+                        && !matches!(value, quire_exact::Value::Boolean(true)) => {}
                     None => live = live.saturating_add(1),
                     Some((PlaceStep::Field(name), rest)) => {
                         if let Some(next) = typing.component(value, name) {
@@ -833,14 +837,16 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         self.places.iter().all(|place| {
             // An `Option<Clock>` place, or a union case's clock outside
             // collections: guarded by its presence.
-            let guarded = self.model.clock(place.clock).is_some_and(|field| {
-                field.presence_bit()
-                    || (place.slots.is_empty()
-                        && field
+            // An element of a `Sequence<Option<Clock>>` follows once the
+            // step's resets are known ([`Self::slot_bits_follow`]).
+            let guarded = place.slots.is_empty()
+                && self.model.clock(place.clock).is_some_and(|field| {
+                    field.presence_bit()
+                        || field
                             .path()
                             .iter()
-                            .any(|step| matches!(step, PlaceStep::Union(_))))
-            });
+                            .any(|step| matches!(step, PlaceStep::Union(_)))
+                });
             if !guarded {
                 return true;
             }
@@ -878,6 +884,47 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 ))
             })
             .collect()
+    }
+
+    /// Whether every element of a `Sequence<Option<Clock>>` that its
+    /// collection holds at both `pre` and `post` keeps its presence bit,
+    /// unless `resets` resets its place, which makes it present (FR-230
+    /// "Presence bit"; no implicit reset or drop, as of an `Option<Clock>`
+    /// field). An element the step adds or removes follows the collection.
+    fn slot_bits_follow(
+        &self,
+        pre: &ModelSimState,
+        post: &ModelSimState,
+        resets: &[(usize, Rational)],
+    ) -> bool {
+        let bits = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| match place
+            .stored(state)?
+            .fields
+            .get(field)?
+        {
+            quire_exact::Value::Collection(bits) => Some(bits.elements().len()),
+            _ => None,
+        };
+        self.places.iter().enumerate().all(|(at, place)| {
+            let Some(field) = self
+                .model
+                .clock(place.clock)
+                .filter(|field| field.presence_bit())
+            else {
+                return true;
+            };
+            let [slot] = place.slots[..] else {
+                return true;
+            };
+            let held = |state: &ModelSimState| {
+                bits(state, place, field.field()).is_some_and(|len| slot < len)
+            };
+            if !held(pre) || !held(post) {
+                return true;
+            }
+            let (before, after) = (self.live(place, pre), self.live(place, post));
+            before == after || (after && resets.iter().any(|(reset, _)| *reset == at))
+        })
     }
 
     /// Whether each `Option<Clock>` place of `object` in `presences` is
@@ -933,7 +980,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         };
         // An `Option<Clock>` place is live while its presence bit is set
         // (FR-230 "Presence bit").
-        if field.presence_bit() {
+        if field.presence_bit() && place.slots.is_empty() {
             return matches!(
                 stored.fields.get(field.field()),
                 Some(quire_exact::Value::Boolean(true))
@@ -992,7 +1039,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 None => return false,
             }
         }
-        true
+        // An element of a `Sequence<Option<Clock>>` is live while the
+        // collection holds it and its bit is set (FR-230-AC-41).
+        !field.presence_bit() || matches!(value, quire_exact::Value::Boolean(true))
     }
 
     /// The initial timed states: each initial model state with every clock 0.
@@ -1456,6 +1505,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                                 resets.push((place, reset.value().clone()));
                             }
                         }
+                    }
+                    if !self.slot_bits_follow(state, post, &resets) {
+                        continue;
                     }
                     // A clock whose object or slot the step makes live takes
                     // the constant of its write, 0 when the step writes none
