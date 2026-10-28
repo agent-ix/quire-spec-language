@@ -442,6 +442,17 @@ impl CheckedGraph {
         )
     }
 
+    /// The region of `refinement`'s authored step row `source` (its
+    /// position among the authored rows, QSpec FR-375-AC-22).
+    pub fn refinement_step_region(
+        &self,
+        refinement: &super::CheckedRefinement,
+        source: usize,
+    ) -> Option<SourceRegion> {
+        let span = refinement.step_sources().get(source)?.span();
+        region(&self.source, self.embedding.as_deref(), span)
+    }
+
     /// The own declaration span of a function parameter occurrence. Reads
     /// of the same keyed parameter in a body have their expression locations.
     pub fn parameter_span(

@@ -9,14 +9,16 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::MemoryModelName;
 use quire_checked::key::DeclarationKey;
-use quire_exact::ValueType;
+use quire_exact::{NodeKey, ValueType};
 
+use super::protocol::MemoryStepKind;
 use super::ProtocolNodeId;
 
 /// The checked identity that owns one declared refinement step class.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RefinementCatalogNode {
-    /// An operation declared by one of the selected model's object types.
+    /// An effective operation of one of the selected model's operation
+    /// owners: the owner's declaration, whose model node is the class node.
     Operation(DeclarationKey),
     /// A class declared by a static protocol control node.
     ProtocolNode {
@@ -43,9 +45,6 @@ pub enum RefinementCatalogNode {
     Trigger(String),
 }
 
-/// The spelling of the memory class every source-default model defines.
-pub(super) const MEMORY_DRAIN: &str = "memory drain";
-
 /// The unique, ordered catalog key: (`class`, `memory_model`) compared as
 /// UTF-8 bytes, class first.
 pub(super) type CatalogKey = (String, &'static str);
@@ -57,7 +56,7 @@ pub struct RefinementCatalogClass {
     node: Option<RefinementCatalogNode>,
     binder_types: Vec<ValueType>,
     memory_model: Option<MemoryModelName>,
-    drain: Option<&'static str>,
+    memory_step: Option<MemoryStepKind>,
 }
 
 /// The sole drain operation of a `memory drain` class (FR-375-AC-23).
@@ -83,7 +82,16 @@ impl RefinementCatalogClass {
     /// The sole drain operation of a `memory drain` class (FR-375-AC-23):
     /// the store-buffer flush, a no-op under `sc`. Other classes have none.
     pub fn drain(&self) -> Option<&'static str> {
-        self.drain
+        match self.memory_step? {
+            MemoryStepKind::Drain => Some(STORE_BUFFER_FLUSH),
+            MemoryStepKind::Flush => None,
+        }
+    }
+
+    /// The memory step kind of a memory class, by construction: `drain` or
+    /// `flush`. Declared classes have none.
+    pub fn memory_step(&self) -> Option<MemoryStepKind> {
+        self.memory_step
     }
 
     /// The catalog ordering key (FR-375-AC-26): the alias-free `class`
@@ -110,26 +118,20 @@ impl RefinementCatalogClass {
             node: Some(node),
             binder_types,
             memory_model: None,
-            drain: None,
+            memory_step: None,
         }
     }
 
-    pub(super) fn memory(class: String, memory_model: MemoryModelName) -> Self {
+    /// The `memory <kind>` class of `memory_model`, carrying its typed step
+    /// kind (and, for `drain`, its store-buffer flush) by construction
+    /// rather than by class spelling.
+    pub(super) fn memory(kind: MemoryStepKind, memory_model: MemoryModelName) -> Self {
         Self {
-            class,
+            class: format!("memory {}", kind.label()),
             node: None,
             binder_types: Vec::new(),
             memory_model: Some(memory_model),
-            drain: None,
-        }
-    }
-
-    /// The `memory drain` class of `memory_model`, carrying its store-buffer
-    /// flush operation by construction rather than by class spelling.
-    pub(super) fn memory_drain(memory_model: MemoryModelName) -> Self {
-        Self {
-            drain: Some(STORE_BUFFER_FLUSH),
-            ..Self::memory(MEMORY_DRAIN.to_owned(), memory_model)
+            memory_step: Some(kind),
         }
     }
 }
@@ -164,6 +166,82 @@ impl RefinementClassCatalog {
     }
 }
 
+/// One catalog class lowered to the package graph's node keys (FR-375).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KeyedCatalogClass {
+    /// A declared class: its node and its binder types, in binder-record
+    /// order.
+    Declared {
+        /// Alias-free class spelling.
+        class: String,
+        /// The class node's key.
+        node: NodeKey,
+        /// The binder types' node keys.
+        binder_types: Vec<NodeKey>,
+    },
+    /// A source-default memory class, which has no node.
+    Memory(KeyedMemoryClass),
+}
+
+/// A source-default memory class of a keyed catalog.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyedMemoryClass {
+    /// `memory drain` of one source-default model.
+    Drain(MemoryModelName),
+    /// `memory flush`, a `tso` class.
+    Flush,
+}
+
+impl KeyedCatalogClass {
+    /// Alias-free class spelling.
+    pub fn class(&self) -> &str {
+        match self {
+            Self::Declared { class, .. } => class,
+            Self::Memory(KeyedMemoryClass::Drain(_)) => "memory drain",
+            Self::Memory(KeyedMemoryClass::Flush) => "memory flush",
+        }
+    }
+}
+
+/// A refinement's class catalog lowered to node keys, each side in the
+/// checked catalog's canonical order.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct KeyedClassCatalog {
+    pub(crate) concrete: Vec<KeyedCatalogClass>,
+    pub(crate) abstract_side: Vec<KeyedCatalogClass>,
+}
+
+impl KeyedClassCatalog {
+    /// Concrete classes.
+    pub fn concrete(&self) -> &[KeyedCatalogClass] {
+        &self.concrete
+    }
+
+    /// Abstract classes.
+    pub fn abstract_side(&self) -> &[KeyedCatalogClass] {
+        &self.abstract_side
+    }
+
+    /// Every class node and binder-type key, ascending and once each: the
+    /// catalog's share of the refinement node's local `dependencies`.
+    pub fn node_keys(&self) -> Vec<NodeKey> {
+        let keys: std::collections::BTreeSet<NodeKey> = self
+            .concrete
+            .iter()
+            .chain(&self.abstract_side)
+            .flat_map(|class| match class {
+                KeyedCatalogClass::Declared {
+                    node, binder_types, ..
+                } => std::iter::once(*node)
+                    .chain(binder_types.iter().copied())
+                    .collect(),
+                KeyedCatalogClass::Memory(_) => Vec::new(),
+            })
+            .collect();
+        keys.into_iter().collect()
+    }
+}
+
 fn canonical(mut classes: Vec<RefinementCatalogClass>) -> Vec<RefinementCatalogClass> {
     let model =
         |class: &RefinementCatalogClass| class.memory_model.map_or("", MemoryModelName::label);
@@ -174,8 +252,14 @@ fn canonical(mut classes: Vec<RefinementCatalogClass>) -> Vec<RefinementCatalogC
     classes
 }
 
-/// Add the selected model's declared operation classes, preserving each
-/// checked operation key and its parameter types.
+/// Add the selected model's operation classes: one per effective operation
+/// of each operation owner (object type, state machine or process), named
+/// `<Owner>::<operation>` and keyed by the owner's declaration, so an
+/// operation an ancestor declares is a class of every owner that inherits it
+/// (QSpec FR-375 "The concrete catalog covers the selected concrete model's
+/// operation classes"). The binder record is FR-432's attempt record:
+/// the owner's reference type, each parameter's type, then the result type
+/// when one is declared.
 pub(super) fn add_model_operations(
     classes: &mut BTreeMap<CatalogKey, RefinementCatalogClass>,
     alias: &str,
@@ -183,60 +267,47 @@ pub(super) fn add_model_operations(
     operations: &crate::model::operation::OperationTable,
     types: &quire_semantic_value::declaration::TypeEnvironment,
 ) -> Result<(), quire_semantic_value::catalog::InternalFault> {
-    if model.alias() != Some(alias) {
-        return Err(quire_semantic_value::catalog::InternalFault::new(
+    let fault = |invariant: &'static str| {
+        quire_semantic_value::catalog::InternalFault::new(
             "check.refinement-class-catalog",
-            "selected-model-alias-matches-catalog-subject",
-        ));
+            invariant,
+        )
+    };
+    if model.alias() != Some(alias) {
+        return Err(fault("selected-model-alias-matches-catalog-subject"));
     }
-    for (owner_key, owner) in model.object_types() {
+    for (owner_key, owner) in model.operation_owners() {
         if types.object_type(owner).is_none() {
-            return Err(quire_semantic_value::catalog::InternalFault::new(
-                "check.refinement-class-catalog",
-                "selected-model-object-has-checked-type",
-            ));
+            return Err(fault("selected-model-object-has-checked-type"));
+        }
+        if owner_key.package != model.selection().identity {
+            return Err(fault("operation-owner-belongs-to-selected-model"));
         }
         let Some(owner_name) =
             crate::model::intake::type_identity_segment(&owner_key.package, &owner_key.node)
         else {
-            return Err(quire_semantic_value::catalog::InternalFault::new(
-                "check.refinement-class-catalog",
+            return Err(fault(
                 "selected-model-object-has-alias-free-identity-segment",
             ));
         };
-        for operation in operations.declared_by(owner) {
-            let operation_key = model.operation_key(&crate::check::state_clause::ClauseOperation {
-                declaring: owner,
-                declaration: operation.clone(),
-            });
-            let Some(operation_key) = operation_key else {
-                return Err(quire_semantic_value::catalog::InternalFault::new(
-                    "check.refinement-class-catalog",
-                    "selected-model-operation-has-declaration-key",
-                ));
-            };
-            if operation_key.package != model.selection().identity {
-                return Err(quire_semantic_value::catalog::InternalFault::new(
-                    "check.refinement-class-catalog",
-                    "operation-key-belongs-to-selected-model",
-                ));
-            }
+        for (_, operation) in operations.effective(types, owner) {
             let class = format!("{owner_name}::{}", operation.name());
-            let binder_types = operation
-                .parameters()
-                .iter()
-                .map(|(_, value_type)| value_type.clone())
+            let binder_types = std::iter::once(ValueType::Reference(owner))
+                .chain(
+                    operation
+                        .parameters()
+                        .iter()
+                        .map(|(_, value_type)| value_type.clone()),
+                )
+                .chain(operation.result().cloned())
                 .collect();
             let entry = RefinementCatalogClass::declared(
-                class.clone(),
-                RefinementCatalogNode::Operation(operation_key.clone()),
+                class,
+                RefinementCatalogNode::Operation(owner_key.clone()),
                 binder_types,
             );
             if classes.insert(entry.catalog_key(), entry).is_some() {
-                return Err(quire_semantic_value::catalog::InternalFault::new(
-                    "check.refinement-class-catalog",
-                    "selected-model-operation-classes-are-unique",
-                ));
+                return Err(fault("selected-model-operation-classes-are-unique"));
             }
         }
     }

@@ -14,12 +14,17 @@
 //!
 //! A node is keyed after every node it names: its children, and the control
 //! a `receive`, an `effect` or an `await` is anchored at, which may follow it
-//! in the tree. `choice`, `parallel` and `repeat` are not written here
+//! in the tree. A `parallel` is written with FR-466's layout, except one
+//! whose join is a predicate, which names a function; `choice` and `repeat`
+//! are not written here
 //! ([`ProtocolConstruct::Control`](crate::check::refusal::ProtocolConstruct)).
+//! A `branch` is no node: its body is held by its `parallel`, and is
+//! declared at the `parallel`'s declaration followed by its own name
+//! (QSpec FR-464 "Control tree").
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{AnchorSite, ProtocolNodeKind};
+use qsl_forms::{AnchorSite, JoinPolicy, Outstanding, ProtocolNodeKind};
 use quire_exact::{Integer, NodeKey};
 
 use super::super::{fault, Binder, Binders, Lowering};
@@ -29,9 +34,9 @@ use super::{
 use crate::check::ir::CheckedBody;
 use crate::check::node_key::{
     BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, Operation, OperationLaw,
-    Operator, TupleTerm,
+    Operator, TupleMember, TupleTerm,
 };
-use crate::check::protocol_clause::ProtocolNodeId;
+use crate::check::protocol_clause::{CheckedControl, CheckedControlTree, ProtocolNodeId};
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::value::member::Member;
 
@@ -81,6 +86,7 @@ pub(super) struct RunInputs<'a> {
 pub(super) struct Run {
     pub(super) root: NodeKey,
     pub(super) readable: Vec<Binder>,
+    /// Every control's node, by its declaration.
     pub(super) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
 }
 
@@ -180,14 +186,21 @@ impl Lowering<'_> {
             controls.own.insert(control.node, binder);
         }
 
+        let declarations = control_declarations(name, tree);
         let mut keys: BTreeMap<ProtocolNodeId, NodeKey> = BTreeMap::new();
         for node in controls.build_order()? {
             let control = tree.control(node).ok_or_else(unchecked)?;
-            let location = protocol_location(name, ProtocolSite::Control(&control.path));
-            let mut declaration = vec![identifier(name, &location)?, identifier("run", &location)?];
-            for segment in &control.path {
-                declaration.push(identifier(segment, &location)?);
+            // A branch's body is held by its `parallel`, which reads it.
+            if control.kind == ProtocolNodeKind::Branch {
+                continue;
             }
+            let location = protocol_location(name, ProtocolSite::Control(&control.path));
+            let declaration = declarations
+                .get(&node)
+                .ok_or_else(unchecked)?
+                .iter()
+                .map(|segment| identifier(segment, &location))
+                .collect::<Result<Vec<_>, _>>()?;
             let (operator, arguments) =
                 self.control_arguments(&controls, node, &keys, &location)?;
             let key = self.protocol_member(
@@ -458,15 +471,105 @@ impl Lowering<'_> {
                     ],
                 )
             }
+            ProtocolNodeKind::Parallel => (
+                "parallel",
+                self.parallel_arguments(protocol, control, keys, location)?,
+            ),
             // Not written yet: refused before any node is built.
             ProtocolNodeKind::Choice
-            | ProtocolNodeKind::Parallel
             | ProtocolNodeKind::Repeat
             | ProtocolNodeKind::Branch
             | ProtocolNodeKind::Case
             | ProtocolNodeKind::Finish
             | ProtocolNodeKind::CompensateTemplate => return Err(unchecked()),
         })
+    }
+
+    /// The arguments of the `parallel` `control` (FR-466 "Control layouts"):
+    /// the `memory` the source writes, the `branches` sorted by label as
+    /// UTF-8 bytes, each with its body's key in `keys`, the `join` Group,
+    /// the `joined` labels in ascending order, and the written
+    /// `outstanding` rule. An absent optional is the empty Group.
+    fn parallel_arguments(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        control: &CheckedControl,
+        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        location: &quire_semantic_value::location::Location,
+    ) -> Result<Vec<MemberTerm>, CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let form = protocol
+            .form
+            .parallels
+            .iter()
+            .find(|parallel| parallel.declaration == control.node.0)
+            .ok_or_else(unchecked)?;
+        let mut branches: Vec<(&str, NodeKey)> = Vec::with_capacity(control.children.len());
+        for branch in &control.children {
+            let branch = protocol
+                .checked
+                .controls
+                .control(*branch)
+                .filter(|branch| branch.kind == ProtocolNodeKind::Branch)
+                .ok_or_else(unchecked)?;
+            let [body] = branch.children[..] else {
+                return Err(unchecked());
+            };
+            let body = keys.get(&body).copied().ok_or_else(unchecked)?;
+            branches.push((branch.name.as_str(), body));
+        }
+        branches.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+        let mut records = Vec::with_capacity(branches.len());
+        for (label, body) in branches {
+            records.push(TupleMember::Group(GroupTerm::new(vec![
+                member("label", self.text_literal(label, location)?),
+                member("body", LeafTerm::reference(body)),
+            ])));
+        }
+        let mut join = vec![member(
+            "policy",
+            self.text_literal(join_text(&form.join.value), location)?,
+        )];
+        match &form.join.value {
+            JoinPolicy::All | JoinPolicy::Any => {}
+            JoinPolicy::Quorum(count) => join.push(member(
+                "count",
+                self.integer_literal(Integer::from(*count), location)?,
+            )),
+            // A predicate names a function, whose node is written after the
+            // protocols': the clause is refused before this (QSL-1186).
+            JoinPolicy::Predicate(_) => return Err(unchecked()),
+        }
+        let mut joined: Vec<&str> = form
+            .labels
+            .iter()
+            .map(|label| label.name.as_str())
+            .collect();
+        joined.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+        joined.dedup();
+        let joined = joined
+            .into_iter()
+            .map(|label| self.text_literal(label, location).map(GroupMember::Leaf))
+            .collect::<Result<Vec<_>, _>>()?;
+        let memory = match &form.memory {
+            None => empty_group(),
+            Some(memory) => BindingValue::Group(GroupTerm::new(vec![GroupMember::Leaf(
+                self.text_literal(memory.value.label(), location)?,
+            )])),
+        };
+        let outstanding = match &form.outstanding {
+            None => empty_group(),
+            Some(outstanding) => BindingValue::Group(GroupTerm::new(vec![GroupMember::Leaf(
+                self.text_literal(outstanding_text(outstanding.value), location)?,
+            )])),
+        };
+        Ok(vec![
+            MemberTerm::binding("memory", memory),
+            MemberTerm::binding("branches", BindingValue::Tuple(TupleTerm::new(records))),
+            MemberTerm::binding("join", BindingValue::Group(GroupTerm::new(join))),
+            MemberTerm::binding("joined", BindingValue::Group(GroupTerm::new(joined))),
+            MemberTerm::binding("outstanding", outstanding),
+        ])
     }
 
     /// The constraint or condition of the control `node`, lowered over the
@@ -491,6 +594,58 @@ impl Lowering<'_> {
         }
         let mut binders = Binders::new(&controls.slot_names, &scope);
         self.expression(body.root(), &mut binders)
+    }
+}
+
+/// Each control's declaration path (FR-464 "Control tree"): the root's is
+/// `P`, `run` and its name, and every other control's is its holder's
+/// followed by its own name. A `branch` or a `case` is no node: its body's
+/// holder is the `parallel` or `choice` that holds it.
+fn control_declarations(
+    protocol: &str,
+    tree: &CheckedControlTree,
+) -> BTreeMap<ProtocolNodeId, Vec<String>> {
+    let mut holder: BTreeMap<ProtocolNodeId, Vec<String>> = BTreeMap::new();
+    let mut declarations = BTreeMap::new();
+    for (index, control) in tree.controls.iter().enumerate() {
+        let base = match holder.remove(&control.node) {
+            Some(base) => base,
+            None if index == 0 => vec![protocol.to_owned(), "run".to_owned()],
+            None => continue,
+        };
+        let mut own = base.clone();
+        own.push(control.name.clone());
+        let held = if matches!(
+            control.kind,
+            ProtocolNodeKind::Branch | ProtocolNodeKind::Case
+        ) {
+            base
+        } else {
+            own.clone()
+        };
+        for child in &control.children {
+            holder.insert(*child, held.clone());
+        }
+        declarations.insert(control.node, own);
+    }
+    declarations
+}
+
+/// A join's `policy` text (FR-466 "Control layouts").
+fn join_text(policy: &JoinPolicy) -> &'static str {
+    match policy {
+        JoinPolicy::All => "all",
+        JoinPolicy::Any => "any",
+        JoinPolicy::Quorum(_) => "quorum",
+        JoinPolicy::Predicate(_) => "predicate",
+    }
+}
+
+/// A `parallel`'s `outstanding` text.
+const fn outstanding_text(outstanding: Outstanding) -> &'static str {
+    match outstanding {
+        Outstanding::Continue => "continue",
+        Outstanding::Cancel => "cancel",
     }
 }
 

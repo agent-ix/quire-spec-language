@@ -62,6 +62,7 @@ mod reachability;
 mod receiver_frames;
 mod refinement_rows;
 mod state_graph_claim;
+mod state_transition;
 mod temporal_clause;
 mod terminal;
 mod timed_source;

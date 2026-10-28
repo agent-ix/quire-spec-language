@@ -23,8 +23,10 @@ use setup::{admitted, origin, Declaration, EVENT_POSITION, FIXED_SAMPLE, TIMESTA
 enum Row {
     /// Timestamped-event finite window.
     FiniteWindow,
-    /// Any bounded past operator reachable from the root.
-    PastOperator,
+    /// A bounded past operator reachable and no future one, false-extension profile.
+    PastOnly,
+    /// Both a bounded past and a bounded future operator reachable.
+    MixedDirection,
     /// Event-position, a bounded future operator, complete surrounding execution.
     EventComplete,
     /// Event-position, a bounded future operator, open surrounding execution.
@@ -36,9 +38,10 @@ enum Row {
 }
 
 /// Every row the table has; the control requires each one to be reachable.
-const ROWS: [Row; 6] = [
+const ROWS: [Row; 7] = [
     Row::FiniteWindow,
-    Row::PastOperator,
+    Row::PastOnly,
+    Row::MixedDirection,
     Row::EventComplete,
     Row::EventOpen,
     Row::FixedSampleFuture,
@@ -52,7 +55,8 @@ fn keys(row: Row, profile: &str, operators: Operators, surrounding: Closure) -> 
     let bounded_future = operators.future && !operators.past;
     match row {
         Row::FiniteWindow => profile == TIMESTAMPED_WINDOW,
-        Row::PastOperator => operators.past,
+        Row::PastOnly => false_extension && operators.past && !operators.future,
+        Row::MixedDirection => operators.past && operators.future,
         Row::EventComplete => {
             profile == EVENT_POSITION && bounded_future && surrounding == Closure::Closed
         }
@@ -90,7 +94,16 @@ struct Case {
 /// The operator kinds reachable from the declaration's root, read from the
 /// admitted arena rather than from the authored text.
 fn operators(package: &AdmittedPackage, declaration: usize) -> Operators {
-    Operators::of(&package.package().declarations[declaration].temporal)
+    let declaration = &package.package().declarations[declaration];
+    Operators::of(&declaration.temporal, root(declaration))
+}
+
+/// The arena index of a temporal declaration's root node.
+fn root(declaration: &w::Declaration) -> usize {
+    let w::Body::Temporal { root, .. } = &declaration.body else {
+        panic!("a temporal declaration has a temporal body");
+    };
+    root.index as usize
 }
 
 /// Require a disposition to be exactly what the table says.
@@ -135,18 +148,267 @@ fn cases() -> Vec<Case> {
             expect: Expect::Unsupported(&[Unmatched::FiniteWindow]),
         },
         Case {
-            row: Row::PastOperator,
+            row: Row::PastOnly,
             profile: EVENT_POSITION,
             body: "once[0,1] holds(view.ready)",
             surrounding: Closure::Closed,
-            expect: Expect::Unsupported(&[Unmatched::PastOperator]),
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
         },
         Case {
-            row: Row::PastOperator,
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "once[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "historically[0,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "historically[0,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "historically[0,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
             profile: FIXED_SAMPLE,
             body: "historically[0,2] holds(view.ready)",
             surrounding: Closure::Open,
-            expect: Expect::Unsupported(&[Unmatched::PastOperator]),
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "once[0,1] eventually[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: FIXED_SAMPLE,
+            body: "always[0,1] historically[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) since[1,2] holds(view.ready) and eventually[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) until[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) release[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) until[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) release[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "(holds(view.ready) until[0,1] holds(view.ready)) or historically[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "(holds(view.ready) release[0,1] holds(view.ready)) or historically[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::FixedSampleFuture,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) until[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.closed-trace/v1",
+                total_sample_valuation: true,
+            },
+        },
+        Case {
+            row: Row::FixedSampleFuture,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) release[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.closed-trace/v1",
+                total_sample_valuation: true,
+            },
+        },
+        Case {
+            row: Row::FixedSampleFuture,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) until[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.online-prefix/v1",
+                total_sample_valuation: true,
+            },
+        },
+        Case {
+            row: Row::EventComplete,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) release[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.closed-trace/v1",
+                total_sample_valuation: false,
+            },
         },
         Case {
             row: Row::EventComplete,
@@ -302,9 +564,9 @@ fn the_disposition_follows_the_three_inputs_and_nothing_else() {
 }
 
 /// FR-045-AC-2: a timestamped-event request names the finite-window dimension
-/// and a bounded-past request names the past-operator dimension, under every
-/// profile. Neither carries a substitute formula, profile or clock, and no index
-/// conversion is inferred for the timestamped request.
+/// and a mixed past/future request names the mixed-direction dimension. Neither
+/// carries a substitute formula, profile or clock, and no index conversion is
+/// inferred for the timestamped request.
 #[trace("TC-125", "FR-045-AC-2")]
 #[test]
 fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
@@ -328,19 +590,26 @@ fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
         },
     );
 
+    // Mixed direction names its own dimension, never the past operator alone.
     for (profile, body) in [
-        (EVENT_POSITION, "once[0,1] holds(view.ready)"),
-        (FIXED_SAMPLE, "once[0,1] holds(view.ready)"),
-        (TIMESTAMPED_WINDOW, "historically[0,2] holds(view.ready)"),
+        (
+            EVENT_POSITION,
+            "once[0,1] eventually[0,1] holds(view.ready)",
+        ),
+        (
+            FIXED_SAMPLE,
+            "always[0,1] historically[0,1] holds(view.ready)",
+        ),
     ] {
         admitted(&origin("Due", profile, body), |package, at| {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Unsupported { dimensions } = &classified.support else {
-                panic!("{profile}: a bounded past operator has no TL target");
+                panic!("{profile}: a mixed-direction request has no TL target");
             };
-            assert!(
-                dimensions.contains(&Unmatched::PastOperator),
-                "{profile}: the past-operator dimension is named",
+            assert_eq!(
+                dimensions.as_slice(),
+                [Unmatched::MixedDirection],
+                "{profile}: the mixed-direction dimension alone",
             );
             assert_eq!(
                 classified.retained.profile.identity(),
@@ -349,6 +618,25 @@ fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
             );
         });
     }
+
+    // A finite-window past-only request is unsupported on the finite-window
+    // dimension alone; it does not borrow the past-only target.
+    admitted(
+        &origin(
+            "Due",
+            TIMESTAMPED_WINDOW,
+            "historically[0,2] holds(view.ready)",
+        ),
+        |package, at| {
+            let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
+            assert_eq!(
+                classified.support,
+                Support::Unsupported {
+                    dimensions: vec![Unmatched::FiniteWindow]
+                },
+            );
+        },
+    );
 }
 
 /// FR-045-AC-3: an unsupported result retains the native declaration subject,
@@ -403,7 +691,11 @@ fn an_unsupported_result_retains_the_native_subject_and_changes_nothing() {
 #[test]
 fn a_doubly_unmatched_declaration_names_both_dimensions() {
     admitted(
-        &origin("Due", TIMESTAMPED_WINDOW, "once[0,1] holds(view.ready)"),
+        &origin(
+            "Due",
+            TIMESTAMPED_WINDOW,
+            "once[0,1] eventually[0,1] holds(view.ready)",
+        ),
         |package, at| {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Unsupported { dimensions } = &classified.support else {
@@ -411,7 +703,7 @@ fn a_doubly_unmatched_declaration_names_both_dimensions() {
             };
             assert_eq!(
                 dimensions.as_slice(),
-                [Unmatched::FiniteWindow, Unmatched::PastOperator],
+                [Unmatched::FiniteWindow, Unmatched::MixedDirection],
                 "both unmatched dimensions, not one summary cause",
             );
         },
@@ -495,4 +787,65 @@ fn equal_formula_bytes_under_different_profiles_classify_differently() {
             });
         }
     });
+}
+
+/// FR-045-AC-1: only operators reachable from the declaration's root count. The
+/// arena may hold nodes the root never reaches, and admission does not refuse
+/// them (`unreachable_temporal_nodes_are_admitted`), so detection itself must
+/// ignore them: an unreferenced future node beside a past-only root leaves the
+/// request past-only, and an unreferenced past node beside a future-only root
+/// leaves it future-only.
+#[trace("TC-125", "FR-045-AC-1")]
+#[test]
+fn operators_unreachable_from_the_root_are_not_detected() {
+    // A copy of the admitted root with its operator swapped to the other
+    // direction, appended where no node refers to it.
+    let unreferenced = |root: &w::Temporal, operator: w::TemporalUnary, original_node: u32| {
+        let mut stray = root.clone();
+        stray.original_node = original_node;
+        let w::TemporalOperation::Unary { operator: slot, .. } = &mut stray.operation else {
+            panic!("the root of a single-operator body is a unary operator");
+        };
+        *slot = operator;
+        stray
+    };
+    for (body, reachable, stray) in [
+        (
+            "once[0,1] holds(view.ready)",
+            Operators {
+                future: false,
+                past: true,
+            },
+            w::TemporalUnary::Eventually,
+        ),
+        (
+            "eventually[0,1] holds(view.ready)",
+            Operators {
+                future: true,
+                past: false,
+            },
+            w::TemporalUnary::Once,
+        ),
+    ] {
+        admitted(&origin("Due", EVENT_POSITION, body), |package, at| {
+            let declaration = &package.package().declarations[at];
+            assert_eq!(operators(package, at), reachable, "{body}: as admitted");
+            let mut arena = declaration.temporal.clone();
+            arena.push(unreferenced(&arena[root(declaration)], stray, 1_000));
+            assert_eq!(
+                Operators::of(&arena, root(declaration)),
+                reachable,
+                "{body}: an unreferenced {stray:?} node is not reachable",
+            );
+            let all = arena.len() - 1;
+            assert_eq!(
+                Operators::of(&arena, all),
+                Operators {
+                    future: stray == w::TemporalUnary::Eventually,
+                    past: stray == w::TemporalUnary::Once,
+                },
+                "{body}: rooted at the stray node, it is reachable",
+            );
+        });
+    }
 }
