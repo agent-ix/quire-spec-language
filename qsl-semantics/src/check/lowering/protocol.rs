@@ -16,7 +16,7 @@
 //!
 //! What this writes is what QSL can prove IR admits. A protocol that names a
 //! construct whose node is not written yet (a role, a channel, a `choice`,
-//! `parallel` or `repeat`, a `terminal` member, a requirement, a
+//! `parallel` or `repeat`, a `terminal` member, a
 //! compensation, a protocol reference written directly in a capture, guard,
 //! terminal, control or `finish` body) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
@@ -197,7 +197,8 @@ impl ProtocolInput<'_> {
             unemitted.push(ProtocolConstruct::ChannelCarriesBounded);
         }
         if !form.requirements.is_empty() {
-            unemitted.push(ProtocolConstruct::Requirements);
+            // The target temporal nodes are keyed after the first protocol
+            // pass and are attached in `protocol_nodes_after_temporal`.
         }
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
@@ -343,6 +344,13 @@ fn bounded_carries(carries: &ValueType) -> bool {
 /// and each channel's node by its name.
 type ChannelNodes = (Vec<NodeKey>, Vec<NodeKey>, Vec<(String, NodeKey)>);
 
+/// The already-keyed nodes a protocol clause includes as set members.
+struct ProtocolMembers<'a> {
+    attempts: &'a [AttemptNodes],
+    compensations: &'a [CompensationNodes],
+    requirements: &'a [NodeKey],
+}
+
 /// The operations of a protocol's `channel` and `queue` nodes.
 struct ChannelOperations {
     channel: Operation,
@@ -411,6 +419,8 @@ impl Lowering<'_> {
     /// node yet, so a reference to one that is not keyed refuses.
     pub(crate) fn begin_protocols(&mut self, count: usize) {
         self.protocol_keys = vec![ProtocolKey::Unkeyed; count];
+        self.protocol_attempts = vec![Vec::new(); count];
+        self.protocol_compensations = vec![Vec::new(); count];
     }
 
     /// Lower and key the `index`-th protocol, recording its one
@@ -469,7 +479,21 @@ impl Lowering<'_> {
             self.set_protocol_key(index, ProtocolKey::AfterClauses);
             return Ok(Vec::new());
         }
-        match self.protocol_node(protocol, &law, owner, &[], &[], &location) {
+        if !protocol.checked.requirements.is_empty() {
+            self.set_protocol_key(index, ProtocolKey::AfterTemporal);
+            return Ok(Vec::new());
+        }
+        match self.protocol_node(
+            protocol,
+            &law,
+            owner,
+            ProtocolMembers {
+                attempts: &[],
+                compensations: &[],
+                requirements: &[],
+            },
+            &location,
+        ) {
             Ok(key) => {
                 self.set_protocol_key(index, ProtocolKey::Keyed(key));
                 Ok(Vec::new())
@@ -496,15 +520,21 @@ impl Lowering<'_> {
         }
     }
 
-    /// The nodes of the protocols that hold an `attempt`, written once the
-    /// state clauses and operation anchors they name are (`attempts[i]` is
-    /// the `i`-th protocol's). Each is refused or keyed as the rest are.
+    /// Retain attempt and compensation nodes and write clauses that hold an
+    /// `attempt` once their state clauses and operation anchors are keyed.
+    /// Clauses with temporal requirements remain open until those temporal
+    /// clause nodes are keyed as well.
     pub(crate) fn protocol_nodes_with_attempts(
         &mut self,
         protocols: &[ProtocolInput<'_>],
         attempts: &[Vec<AttemptNodes>],
         compensations: &[Vec<CompensationNodes>],
     ) -> Result<(), CheckRefusal> {
+        for index in 0..protocols.len() {
+            self.protocol_attempts[index] = attempts.get(index).cloned().unwrap_or_default();
+            self.protocol_compensations[index] =
+                compensations.get(index).cloned().unwrap_or_default();
+        }
         for (index, protocol) in protocols.iter().enumerate() {
             if !matches!(
                 self.protocol_keys.get(index),
@@ -519,8 +549,70 @@ impl Lowering<'_> {
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
             let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
             let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
-            let key =
-                self.protocol_node(protocol, &law, owner, nodes, compensation_nodes, &location)?;
+            if !protocol.checked.requirements.is_empty() {
+                self.protocol_keys[index] = ProtocolKey::AfterTemporal;
+                continue;
+            }
+            let key = self.protocol_node(
+                protocol,
+                &law,
+                owner,
+                ProtocolMembers {
+                    attempts: nodes,
+                    compensations: compensation_nodes,
+                    requirements: &[],
+                },
+                &location,
+            )?;
+            self.protocol_keys[index] = ProtocolKey::Keyed(key);
+        }
+        Ok(())
+    }
+
+    /// Finish protocol clauses that require temporal nodes, after those nodes
+    /// have been keyed. Their exact declaration positions select the targets.
+    pub(crate) fn protocol_nodes_after_temporal(
+        &mut self,
+        protocols: &[ProtocolInput<'_>],
+        temporal_keys: &[(usize, NodeKey)],
+    ) -> Result<(), CheckRefusal> {
+        let by_position: BTreeMap<usize, NodeKey> = temporal_keys.iter().copied().collect();
+        for (index, protocol) in protocols.iter().enumerate() {
+            if !matches!(
+                self.protocol_keys.get(index),
+                Some(ProtocolKey::AfterTemporal)
+            ) {
+                continue;
+            }
+            let location = protocol.location();
+            let law = self.law(LawRole::ProtocolProfile, &location)?;
+            let owner = self
+                .owner_model_object(protocol)
+                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
+            let requirements = protocol
+                .checked
+                .requirements
+                .iter()
+                .map(|requirement| {
+                    by_position
+                        .get(&requirement.temporal)
+                        .copied()
+                        .ok_or_else(|| fault(&location, KeyFault::UnkeyableRequirements))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let attempts = self.protocol_attempts[index].clone();
+            let compensations = self.protocol_compensations[index].clone();
+            let key = self.protocol_node(
+                protocol,
+                &law,
+                owner,
+                ProtocolMembers {
+                    attempts: &attempts,
+                    compensations: &compensations,
+                    requirements: &requirements,
+                },
+                &location,
+            )?;
             self.protocol_keys[index] = ProtocolKey::Keyed(key);
         }
         Ok(())
@@ -671,8 +763,7 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
         owner: EffectiveId,
-        attempts: &[AttemptNodes],
-        compensation_nodes: &[CompensationNodes],
+        members: ProtocolMembers<'_>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
@@ -725,7 +816,7 @@ impl Lowering<'_> {
                 law,
                 roles: &roles_by_name,
                 channels: &named_channels,
-                attempts,
+                attempts: members.attempts,
                 clause_binders: &readable,
                 boolean,
             },
@@ -738,7 +829,7 @@ impl Lowering<'_> {
             &run.nodes,
             &readable,
             boolean,
-            compensation_nodes,
+            members.compensations,
         )?;
         let named_roles: BTreeMap<String, NodeKey> = roles_by_name.iter().cloned().collect();
         let finish = self.finish_node(protocol, &operation("finish")?, &run.readable, boolean)?;
@@ -797,7 +888,12 @@ impl Lowering<'_> {
                         "queues",
                         BindingValue::Group(GroupTerm::references(queues)),
                     ),
-                    MemberTerm::binding("requirements", empty_group()),
+                    MemberTerm::binding(
+                        "requirements",
+                        BindingValue::Group(GroupTerm::references(sorted(
+                            members.requirements.iter().copied(),
+                        ))),
+                    ),
                     MemberTerm::binding(
                         "compensations",
                         BindingValue::Group(GroupTerm::references(compensations)),
@@ -1807,6 +1903,9 @@ impl Lowering<'_> {
                 ProtocolConstruct::ReferenceToAttemptProtocol,
                 location,
             )),
+            Some(ProtocolKey::AfterTemporal) => {
+                Err(not_emitted(ProtocolConstruct::Requirements, location))
+            }
             Some(ProtocolKey::Unselected) | None => Err(refuse(
                 location,
                 CheckCause::MissingSelection {
@@ -1978,6 +2077,9 @@ pub(super) enum ProtocolKey {
     /// The protocol holds an `attempt`: its node is written once the state
     /// clauses it lists are ([`Lowering::protocol_nodes_with_attempts`]).
     AfterClauses,
+    /// The protocol's required temporal clause nodes are keyed in the
+    /// temporal lowering pass.
+    AfterTemporal,
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),

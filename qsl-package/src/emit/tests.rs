@@ -56,6 +56,7 @@ mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
 mod protocol_reference;
+mod protocol_requirements;
 mod protocol_terminal;
 mod reachability;
 mod receiver_frames;

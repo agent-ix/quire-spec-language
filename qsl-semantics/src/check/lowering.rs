@@ -688,6 +688,10 @@ pub(crate) struct Lowering<'a> {
     /// The member keys of each keyed protocol clause, by clause name: the
     /// nodes a refinement class catalog names (FR-375).
     protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    /// Attempts and compensation nodes retained for clauses delayed until
+    /// their required temporal clause keys are available.
+    protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
+    protocol_compensations: Vec<Vec<protocol::CompensationNodes>>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -1608,6 +1612,8 @@ impl<'a> Lowering<'a> {
             bound_sites: BTreeSet::new(),
             protocol_keys: Vec::new(),
             protocol_members: BTreeMap::new(),
+            protocol_attempts: Vec::new(),
+            protocol_compensations: Vec::new(),
         }
     }
 

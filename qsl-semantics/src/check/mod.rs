@@ -4388,6 +4388,51 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        if lowered_temporal.len() == checked_temporal.len() {
+            let temporal_keys: Vec<(usize, quire_exact::NodeKey)> = checked_temporal
+                .iter()
+                .zip(&lowered_temporal)
+                .map(|((index, _, _), lowered)| (*index, lowered.key))
+                .collect();
+            match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols)
+            {
+                Ok(inputs) => {
+                    if let Err(refusal) =
+                        lowering.protocol_nodes_after_temporal(&inputs, &temporal_keys)
+                    {
+                        refusals.push(refusal);
+                    }
+                }
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-135: the clause a refinement's rows select, by its node. This
+        // follows temporal lowering because a selected protocol may require
+        // one of those clause nodes.
+        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
+            let Some(selected) = selected else {
+                continue;
+            };
+            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
+                Ok(key) => checked.concrete_protocol = Some(key),
+                Err(refusal)
+                    if self.emit_unwritten_protocols
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct().is_some()
+                        ) => {}
+                Err(refusal)
+                    if !attempt_nodes_written
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct()
+                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
+                        ) => {}
+                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
+            }
+        }
         // FR-488: each emitted hyper clause over `behaviours`, after every
         // function its conditions may call.
         let mut lowered_hyper = Vec::with_capacity(checked_hyper.len());
