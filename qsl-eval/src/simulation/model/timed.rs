@@ -1379,6 +1379,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 name,
                 context,
                 alternatives,
+                ..
             } = urgency
             {
                 let holding = self.holding(state, alternatives, *context, &|| {

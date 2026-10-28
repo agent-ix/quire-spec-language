@@ -513,3 +513,183 @@ fn conformance_the_template_places_match_the_slot_selector_vectors() {
         assert_eq!(digests(&emitted), digests(&published), "{case}");
     }
 }
+
+/// [`read_back`] of the unit with `body` after [`clocked_unit`]'s text.
+fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>, String> {
+    let packages = qsl_semantics::model::intake::package_input([document]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let graph = assemble_with_models(clocked_unit(&packages, body).as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
+        .expect("a fresh evidence key");
+    let read = read_checked_package_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
+    )
+    .map_err(|failure| format!("{failure:?}"))?;
+    CheckedTimedModel::from_admitted(&read.into_value().admitted).map_err(str::to_owned)
+}
+
+/// FR-230-AC-53 (TC-685 step 36), QSpec FR-322 "Timed-model nodes": a
+/// model whose only timed members are its clock and two `urgent`
+/// declarations emits, in declared order, an `urgency` of kind `when` whose
+/// predicate is the checked expression node of `self.versionNumber > 0`
+/// (reading `self` through a `parameter` node), and one of kind `operation`
+/// naming the model node and `attemptUpdate`; I2 admits both and reads them
+/// back.
+#[trace("TC-685", "FR-230-AC-53")]
+#[test]
+fn urgency_declarations_emit_and_read_back() {
+    let typed = read_back_with(
+        &clocked_document_with(false),
+        "urgent Busy when { self.versionNumber > 0 };\n\
+         urgent Prompt Config::ConfigVersion::attemptUpdate;\n",
+    )
+    .unwrap_or_else(|failure| panic!("the I2 read admits the urgency: {failure}"));
+    let [timed] = typed.as_slice() else {
+        panic!("one timed model reads back");
+    };
+    let [when, operation] = timed.urgencies.as_slice() else {
+        panic!("two urgencies: {:?}", timed.urgencies);
+    };
+    let crate::checked_v2::CheckedUrgency::When { .. } = when else {
+        panic!("the first is `when`: {when:?}");
+    };
+    let crate::checked_v2::CheckedUrgency::Operation {
+        model,
+        operation_name,
+        ..
+    } = operation
+    else {
+        panic!("the second is `operation`: {operation:?}");
+    };
+    assert_eq!(operation_name, "attemptUpdate");
+    assert_eq!(model, &timed.model);
+}
+
+/// FR-230-AC-53 (TC-685 step 36): the emitted `when` urgency references the
+/// expression node of its predicate, a Boolean `>` application whose
+/// operand reads `self` through a level-0 `parameter` node, and both
+/// urgency nodes are located at their own declarations, in ascending
+/// order in the root's `urgencies`.
+#[trace("TC-685", "FR-230-AC-53")]
+#[test]
+fn an_urgency_predicate_is_a_located_expression_node() {
+    let document = clocked_document_with(false);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let body = "urgent Prompt Config::ConfigVersion::attemptUpdate;\n\
+                urgent Busy when { self.versionNumber > 0 };\n";
+    let unit = clocked_unit(&packages, body);
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let by_id = |digest: &Value| {
+        nodes(&wire)
+            .iter()
+            .find(|node| &node["node_id"]["digest"] == digest)
+            .unwrap_or_else(|| panic!("node {digest}"))
+    };
+    let [root] = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "timed_model")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one timed root");
+    };
+    let listed: Vec<&Value> = member(&root["body"], "urgencies")["members"]
+        .as_array()
+        .expect("urgencies")
+        .iter()
+        .map(|reference| by_id(&reference["target"]["digest"]))
+        .collect();
+    let starts: Vec<u64> = listed
+        .iter()
+        .map(|node| {
+            wire["source_map"]
+                .as_array()
+                .expect("source map")
+                .iter()
+                .find(|entry| entry["node_id"] == node["node_id"])
+                .and_then(|entry| entry["regions"][0]["start"].as_u64())
+                .expect("a located urgency")
+        })
+        .collect();
+    let at = |text: &str| unit.find(text).expect("declared") as u64;
+    assert_eq!(starts, [at("urgent Prompt"), at("urgent Busy")]);
+    let kinds: Vec<&Value> = listed
+        .iter()
+        .map(|node| &member(&node["body"], "kind")["value"])
+        .collect();
+    assert_eq!(kinds, [&json!("operation"), &json!("when")]);
+    let predicate = by_id(&member(&listed[1]["body"], "predicate")["target"]["digest"]);
+    assert_eq!(predicate["node_tag"], "expression");
+    let located = wire["source_map"]
+        .as_array()
+        .expect("source map")
+        .iter()
+        .find(|entry| entry["node_id"] == predicate["node_id"])
+        .and_then(|entry| entry["regions"][0]["start"].as_u64())
+        .expect("a located predicate");
+    assert!(
+        located >= at("self.versionNumber > 0") && located < at("self.versionNumber > 0") + 22,
+        "{located}"
+    );
+    let reads_self = nodes(&wire).iter().any(|node| {
+        node["semantic_form"] == "parameter"
+            && member(&node["body"], "name")["value"] == "self"
+            && member(&node["body"], "level")["value"] == "0"
+    });
+    assert!(reads_self, "self is a level-0 parameter node");
+}
+
+/// FR-230-AC-50 and AC-53 (TC-685 step 36): an `urgent when` whose
+/// predicate reads a clock presence is not written yet, so its model is
+/// refused `TimedModelNotEmitted`, never emitted without the urgency.
+#[trace("TC-685")]
+#[test]
+fn an_urgency_reading_a_presence_is_not_emitted() {
+    let mut document: Value = serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields");
+    let mut v = fields.last().expect("x").clone();
+    let identity = "ix://example/config-version/ConfigVersion/v";
+    v["identity"] = json!(identity);
+    v["name"] = json!("v");
+    v["presence"] = json!("optional");
+    v["origin"]["generated"]["generatorIdentity"] = json!(identity);
+    v["origin"]["generated"]["inputIdentities"] = json!([identity]);
+    fields.push(v);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let unit = clocked_unit(&packages, "urgent Armed when { present(self.v) };\n");
+    let refusals = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("a presence urgency is not written yet");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            qsl_semantics::check::CheckCause::Temporal(cause)
+                if matches!(**cause, qsl_semantics::check::TemporalCause::TimedModelNotEmitted { .. })
+        )),
+        "{refusals:?}"
+    );
+}

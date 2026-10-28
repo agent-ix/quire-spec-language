@@ -527,6 +527,24 @@ pub struct ClauseDeclarations<'a> {
         Option<&'a std::cell::RefCell<quire_semantic_value::declaration::PendingTypeEnvironment>>,
 }
 
+impl<'a> ClauseDeclarations<'a> {
+    /// A copy of these declarations, for a clause checked at another
+    /// location (`ClauseDeclarations { location, ..declarations.at() }`).
+    pub(crate) fn at(&self) -> Self {
+        Self {
+            scope: self.scope,
+            signatures: self.signatures,
+            dispatch_tables: self.dispatch_tables,
+            models: self.models,
+            checking_limits: self.checking_limits,
+            location: self.location,
+            nodes_used: self.nodes_used,
+            cancel: self.cancel,
+            staged: self.staged,
+        }
+    }
+}
+
 /// One population domain of a requested item (FR-104 "Requirements"): the
 /// population's own declared member object type (never the clause's
 /// context, which may be one of its proper subtypes, SR-736 FND-010) and
