@@ -78,7 +78,8 @@ is written `bounds`.
 
 | Failure | `rule` | `at` |
 | --- | --- | --- |
-| A required member is absent: `components` for a CF-2 form, `divergence` for the time-lock-freedom item | `Malformed` | `CertificateMember` naming it |
+| A required member is absent: `components` for a CF-2 form, `divergence` for the time-lock-freedom item, `positions` or `refinement` for a refinement form | `Malformed` | `CertificateMember` naming it |
+| In a refinement form, `check_step` fails on an edge whose target is not a `locked` node | `StepFails` | `ZoneEdge` of that edge |
 | The certificate's LU bounds are below the bounds the checker computes | `Malformed` | `CertificateMember("bounds")` |
 | No node of the initial discrete state covers the initial symbolic state | `InitialMissing` | `ModelState` of the initial discrete state |
 | A node has no listed edge for an enabled identity, or a successor is not covered by its edge's named target | `SuccessorMissing` | `ZoneNode` of that node |
@@ -94,6 +95,15 @@ is written `bounds`.
 - If the certificate's obligation identity differs from `item` or from the
   recompiled item's identity, then the checker SHALL refuse `stale_dependency`/`content-mismatch`, naming both
   identities.
+- **Refinement form.** For a certificate with `refinement` present
+  (FR-244 "Refinement form") the checker SHALL recompile and check both
+  packages by FR-098's rules, refuse `stale_dependency`/`content-mismatch`
+  when the refinement node, either package or the obligation differs from
+  the item's (FR-144 "Certificate identity"), and replace the claim
+  automaton and its badness test by `check_step` (FR-141) on each edge, its
+  own code, run on the positions the certificate lists. It SHALL take a
+  `locked` node's closure on concrete steps only. Every other check below
+  applies unchanged.
 - The checker SHALL recompute every successor of every node by every
   enabled transition identity with DBM code separate from EN-6's.
 - The checker SHALL check each of the following:
@@ -142,6 +152,8 @@ is written `bounds`.
 | FR-245-AC-5 | FR-244-AC-4's certificate is `Accepted`; the same certificate with the `locked` mark removed is `Rejected` `BadState` at the bad node; a certificate for the variant in which `ping` resets `x` that marks `(B, x <= 1)` `locked` is `Rejected` `BadState` at that `locked` node, from which the `ping` cycle of positive total delay is reachable. | Test (TC-700) |
 | FR-245-AC-6 | The checker's DBM code is separate from EN-6's: no crate of layers K to 6, SV or R, and no tool crate, names `qsl-analyze` in its normal, dev or build dependencies, so `qsl-replay`'s checker cannot call the engine's DBM (ADR-026 CF-6). | Test (TC-700) |
 | FR-245-AC-7 | Rejection rules and loci for AC-2's tamperings: the node removed rejects `SuccessorMissing` at the `ZoneNode` whose edge named it; the shrunk target, `SuccessorMissing` at the edge's source node; the lowered LU bound, `Malformed` at `CertificateMember("bounds")`; the backward edge, `BackwardEdge` at its `ZoneEdge`; the wrong component reason, `WitnessFails` at its `ZoneComponent`; the bad node, `BadState` at its `ZoneNode`; the cut `admitted` path, `WitnessFails` at its last node. A CF-2 certificate without `components` rejects `Malformed` at `CertificateMember("components")` before any successor is recomputed, and one whose initial node does not cover the initial symbolic state rejects `InitialMissing` at the `ModelState` of the initial discrete state. Each rejection is written with QSpec FR-331's rule spelling at its zone node, zone edge, zone component, State or certificate member form. | Test (TC-1197) |
+
+| FR-245-AC-8 | FR-244-AC-5's certificates are each `Accepted`. The refinement certificate of FR-430-AC-6 with the `locked` mark removed from the post-state of `undo` is `Rejected` `StepFails` at the `ZoneEdge` of the `undo` edge; the `TReq` certificate with `positions` removed is `Rejected` `Malformed` at `CertificateMember("positions")` before any successor is recomputed; checked against a refinement item over another abstract package it refuses `stale_dependency`/`content-mismatch`. | Test (TC-700) |
 
 ## Dependencies
 

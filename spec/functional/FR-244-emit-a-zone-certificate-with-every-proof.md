@@ -13,6 +13,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-240
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-149
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-430
+    type: depends_on
 ---
 # FR-244: Emit a zone certificate with every zone-engine proof
 
@@ -25,7 +29,8 @@ carries a reachability certificate; a liveness form and the
 time-lock-freedom item add a component numbering with each component's
 reason. Every certificate carries a witness that the subject admits a
 time-divergent behaviour (ADR-026 TD-6) and the obligation identity of the
-item it proves.
+item it proves. A timed refinement's safety half (FR-430) is such a
+proof: its `Holds` carries the same certificate over the refinement product.
 
 ## Use case
 
@@ -51,6 +56,14 @@ pub struct ZoneCertificate {
     pub components: Option<Vec<CertComponent>>, // CF-2 forms only
     pub divergence: Option<Vec<DivergenceWitness>>, // time-lock-freedom item only
     pub admitted: DivergenceWitness,            // every proof: TD-6 vacuity witness
+    pub refinement: Option<RefinementPart>,     // refinement form only
+}
+
+pub struct RefinementPart {                     // FR-430
+    pub refinement: NodeKey,                    // FR-149
+    pub concrete_package: PackageId,
+    pub abstract_package: PackageId,
+    pub positions: Vec<CertifiedPosition>,      // FR-149's type, unchanged
 }
 ```
 
@@ -83,6 +96,25 @@ pub struct ZoneCertificate {
   certificate edges from the node that covers the initial symbolic state
   to a quiescent node or to a node of a component with a cycle of positive
   total delay, so the proof is not vacuous (ADR-026 TD-6, CF-1).
+- **Refinement form.** For the safety half of a refinement whose concrete
+  model is timed (FR-430), the certificate SHALL be this same
+  `ZoneCertificate` with `refinement` present and the reachability part read
+  over the refinement product, with these and only these differences:
+  - a node's second component is an index into `refinement.positions`
+    (FR-149's `CertifiedPosition`: concrete state key, history values,
+    sorted abstract states) in place of a claim-automaton state, and a
+    `locked` node entered by a failing step has no position;
+  - every edge is a discrete step (a delay is never an edge), and no node is
+    bad by an automaton state: instead, `check_step` (FR-141) SHALL pass on
+    every edge between two positioned nodes, the target's position being the
+    one `check_step` yields, and the only edge it may fail on is an edge into
+    a `locked` node, the post-state of the failing step (FR-430);
+  - `refinement`, `concrete_package` and `abstract_package` SHALL be those
+    of the item, as FR-149 requires of its certificate;
+  - the `locked` node's forward closure is concrete steps only and is not
+    judged by `check_step`.
+  The certificate has no other new member, and the obligation identity is
+  the refinement item's.
 - The certificate SHALL carry the obligation identity of the item, the
   canonical identity digest that binds it to the exact subject and claim.
 - The certificate SHALL be canonical: nodes in discovery order, edges in
@@ -96,6 +128,8 @@ pub struct ZoneCertificate {
 | FR-244-AC-2 | FR-240-AC-1's liveness proof returns a certificate with components in which every edge respects the numbering and each component names its reason; FR-240-AC-2's fair proof names `fair weak serve` as the reason of the component that holds the `idle` loop. | Test (TC-699) |
 | FR-244-AC-3 | The time-lock-freedom item over the unmodified `Rpc` returns a certificate whose divergence part names, for every node, a path to a quiescent node. Two runs give byte-equal certificates. | Test (TC-699) |
 | FR-244-AC-4 | Over a `Lock` model (one object with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with no guard; `time invariant when phase = B { x <= 1 ms }`; `ping`, enabled in `B`, changes no data field), `always holds(c.phase = A)` is proved, and its certificate lists the node `(B, x <= 1)` marked `locked`, with `ping` edges that stay in `B` and reach no quiescent node and no cycle of positive total delay. | Test (TC-699) |
+
+| FR-244-AC-5 | The safety half of FR-430-AC-1's `TReq` refinement returns a certificate with `refinement` present, each node's second component an index into `positions`, every edge a discrete `send` step, an `admitted` path, and the refinement item's obligation identity; FR-245 accepts it. FR-430-AC-6's `Holds` certificate lists the post-state of `undo` as a `locked` node with no position, entered by the failing `undo` edge. Two runs give byte-equal certificates. | Test (TC-699) |
 
 ## Dependencies
 

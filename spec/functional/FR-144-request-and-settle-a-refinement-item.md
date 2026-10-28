@@ -126,7 +126,10 @@ beside it as a separate item.
 - The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
-  `proved` only after FR-149's checker accepts its certificate; a rejection
+  `proved` only after FR-149's checker accepts its certificate; for a
+  concrete subject that declares `time dense`, the certificate is the zone
+  certificate of FR-244's refinement form and the checker is FR-245's
+  (FR-430); a rejection
   SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
   V-7 naming the limit, a cancelled check V-7 naming the cancellation, and a check stopped by an expansion that names no limit V-7 `ResourceExhausted` (ADR-020 CT-3).
 - **Certificate identity.** Before it calls FR-149's checker, FR-144 SHALL refuse

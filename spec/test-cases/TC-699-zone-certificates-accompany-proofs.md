@@ -12,7 +12,7 @@ relationships:
 
 Verify the reachability, Büchi and divergence parts of zone certificates and their canonical bytes.
 
-Scope: FR-244-AC-1 to FR-244-AC-3, FR-244-AC-4.
+Scope: FR-244-AC-1 to FR-244-AC-3, FR-244-AC-4, FR-244-AC-5.
 
 ## Test Procedure
 
@@ -22,6 +22,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 2. Produce the certificates of FR-240-AC-1 and AC-2's proofs.
 3. Produce the time-lock-freedom certificate over `Rpc` twice.
 4. Prove `always holds(c.phase = A)` over `Lock` and read its certificate.
+5. Prove the safety half of FR-430-AC-1's `TReq` refinement and of FR-430-AC-6's `dead` refinement on the zone search and read their refinement-form certificates, twice (FR-244-AC-5).
 
 Tag the tests `#[trace("TC-699", "FR-244-AC-n")]`.
 
@@ -31,3 +32,4 @@ Tag the tests `#[trace("TC-699", "FR-244-AC-n")]`.
 - Step 2: components respecting the numbering, each with its reason; `fair weak serve` named for the `idle` component.
 - Step 3: a divergence path to a quiescent node for every node; byte-equal bytes.
 - Step 4: `Holds`, with `(B, x <= 1)` listed as a `locked` node whose edges reach no quiescent node and no positive-delay cycle.
+- Step 5: a refinement-form certificate (`refinement` present, positions indexed, discrete edges only, `admitted` path, the refinement item's identity), the `undo` post-state a `locked` node with no position; byte-equal across two runs.
