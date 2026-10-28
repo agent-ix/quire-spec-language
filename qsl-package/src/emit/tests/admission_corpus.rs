@@ -2078,7 +2078,7 @@ fn quantity_literal_nodes_are_referenced_by_their_operations() {
 /// `Option<Reference<_>>`, whose row is a nested reference row the default
 /// build does not support), and its operations are `operations`, each
 /// shaped as `attemptUpdate` is.
-fn rows_refinement(rows: &str, operations: &[&str]) -> (String, Vec<Vec<u8>>) {
+pub(super) fn rows_refinement(rows: &str, operations: &[&str]) -> (String, Vec<Vec<u8>>) {
     rows_refinement_with(rows, operations, false)
 }
 
@@ -2142,7 +2142,7 @@ fn rows_refinement_with(rows: &str, operations: &[&str], flag: bool) -> (String,
 }
 
 /// The population and object rows of every [`rows_refinement`].
-const MAPS: &str = "population A::config_history from C::config_history;\n\
+pub(super) const MAPS: &str = "population A::config_history from C::config_history;\n\
     object A::ConfigVersion from C::ConfigVersion { versionNumber = self.versionNumber; }";
 
 /// `rows` over the operations `operations`, checked and emitted, with the
@@ -2465,7 +2465,7 @@ fn protocol_rows(rows: &[&str]) -> (String, Vec<Vec<u8>>) {
 }
 
 /// [`protocol_rows`] whose concrete protocol `Impl` runs `run`.
-fn protocol_rows_running(run: &str, rows: &[&str]) -> (String, Vec<Vec<u8>>) {
+pub(super) fn protocol_rows_running(run: &str, rows: &[&str]) -> (String, Vec<Vec<u8>>) {
     let (unit, documents) = protocol_subject();
     let unit = unit.replace(
         "refinement R using inf abstract A::Local concrete C {}",
@@ -2486,7 +2486,7 @@ fn protocol_rows_running(run: &str, rows: &[&str]) -> (String, Vec<Vec<u8>>) {
 
 /// The protocol-subject rows of [`protocol_rows`]: the finish, then the
 /// channel's two classes.
-const PROTOCOL_ROWS: [&str; 3] = [
+pub(super) const PROTOCOL_ROWS: [&str; 3] = [
     "step lose C::Impl::ch -> stutter;",
     "step C::Impl::Done -> stutter;",
     "step duplicate C::Impl::ch -> stutter;",
@@ -2686,4 +2686,119 @@ fn memory_rows_read_back() {
     let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
     let admitted = read(&emitted);
     assert!(admitted.is_ok(), "the memory rows read back: {admitted:?}");
+}
+
+/// IR's verdict on `envelope`, a rewrite of `emitted`'s package, with the
+/// refinement node at `position` rekeyed from its closed
+/// `quire.refinement-node/v1` preimage and the frame identity refreshed.
+fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> String {
+    let mut envelope = envelope.clone();
+    let node = &envelope["semantic_graph"]["nodes"][position];
+    let old = node["node_id"]["digest"]
+        .as_str()
+        .expect("a digest")
+        .to_owned();
+    let preimage = json!({
+        "version": "quire.refinement-node/v1",
+        "semantic_type": node["semantic_type"],
+        "body": node["body"],
+    });
+    let new = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
+        .expect("the preimage encodes")
+        .to_string();
+    let text = serde_json::to_string(&envelope)
+        .expect("the envelope serializes")
+        .replace(&old, &new);
+    envelope = serde_json::from_str(&text).expect("the envelope parses");
+    crate::checked_v2::tests::refresh_frame_identity(&mut envelope);
+    let mut evidence = read_evidence(&emitted.emission);
+    for document in &emitted.documents {
+        evidence
+            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .expect("a fresh evidence key");
+    }
+    match quire_contract_model::read_checked_package(
+        &jcs(&envelope),
+        quire_contract_model::CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => "admitted".to_owned(),
+        quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
+            "{:?} at {} ({:?})",
+            refusal.code,
+            refusal.path.as_ref().map_or("-", |path| path.as_str()),
+            refusal.cause
+        ),
+        other => format!("{other:?}"),
+    }
+}
+
+/// QSpec FR-375-AC-21's refusal half over QSL's admitted population and
+/// object rows, every identity recomputed so each join is reached: a
+/// wrong-kind object-row type key and a wrong-kind `semantic_type` refuse
+/// `invalid_model_binding`/`malformed-declaration` at that member, and an
+/// absent local `abstract` key refuses `missing_declaration`/`missing-name`.
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_member() {
+    let (emitted, _) = emit_rows(MAPS, &[]);
+    let wire = wire(&emitted.emission);
+    let position = nodes(&wire)
+        .iter()
+        .position(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node");
+    assert_eq!(refinement_verdict(&emitted, &wire, position), "admitted");
+    let at = |member: &str| format!("/semantic_graph/nodes/{position}/{member}");
+    let population =
+        wire["semantic_graph"]["nodes"][position]["body"]["populations"][0]["concrete"].clone();
+
+    // The object type, now named by no member, leaves the dependencies.
+    let mut object_type = wire.clone();
+    let node = &mut object_type["semantic_graph"]["nodes"][position];
+    let concrete_type = node["body"]["objects"][0]["concrete_type"].clone();
+    node["body"]["objects"][0]["concrete_type"] = population.clone();
+    node["dependencies"]
+        .as_array_mut()
+        .expect("dependencies")
+        .retain(|dependency| *dependency != concrete_type);
+    let verdict = refinement_verdict(&emitted, &object_type, position);
+    assert!(
+        verdict.starts_with("InvalidModelBinding at ")
+            && verdict.contains(&at("body/objects/0/concrete_type"))
+            && verdict.ends_with("(Some(MalformedDeclaration))"),
+        "{verdict}"
+    );
+
+    let mut semantic_type = wire.clone();
+    semantic_type["semantic_graph"]["nodes"][position]["semantic_type"] = population;
+    let verdict = refinement_verdict(&emitted, &semantic_type, position);
+    assert!(
+        verdict.starts_with("InvalidModelBinding at ")
+            && verdict.contains(&at("semantic_type"))
+            && verdict.ends_with("(Some(MalformedDeclaration))"),
+        "{verdict}"
+    );
+
+    let mut absent = wire.clone();
+    let root = absent["semantic_graph"]["nodes"][position]["body"]["abstract"]["digest"]
+        .as_str()
+        .expect("a local abstract key")
+        .to_owned();
+    let missing = "0".repeat(64);
+    let node = &mut absent["semantic_graph"]["nodes"][position];
+    node["body"]["abstract"]["digest"] = json!(missing);
+    for dependency in node["dependencies"].as_array_mut().expect("dependencies") {
+        if dependency["digest"] == root {
+            dependency["digest"] = json!(missing);
+        }
+    }
+    node["dependencies"]
+        .as_array_mut()
+        .expect("dependencies")
+        .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    let verdict = refinement_verdict(&emitted, &absent, position);
+    assert!(
+        verdict.starts_with("MissingDeclaration at ") && verdict.ends_with("(Some(MissingName))"),
+        "{verdict}"
+    );
 }
