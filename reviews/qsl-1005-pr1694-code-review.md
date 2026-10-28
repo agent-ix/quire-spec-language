@@ -47,3 +47,45 @@ Ticket: QSL-1005. Head reviewed: 5c7b8371d, scoped to the diff against `origin/q
 ## Verdict
 
 **Not mergeable.** FND-001 is a false refutation by EN-6. FND-002 should be fixed in the same PR.
+
+## Dispositions, round 1 (head ec07fbeab)
+
+
+Round 1. Fix 5c7b8371d..ec07fbeab, built to QSL #1697 (STD-516).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | TV-1 is now judged at the failing step's post-state: `escape(successor.state, successor.zone)`. Details below. |
+| FND-002 | fixed | `timed_model::first_clock_read` resolves a read by place path. The PR's `a_rows_clock_read_is_found_by_its_place_path` and `a_clock_read_through_a_predicate_or_function_is_refused_at_the_call` pass: `self.t.n` and `self.note.x` are admitted; `self.t.x`, `near(self.x, 3 ms)` and `pick(...)` are refused `expression-form`. My earlier predicate-over-`c.x` probe is still refused (`ill_typed` at `c.x`). |
+
+**FND-001 in detail.**
+- A failing initial state refutes only if it can diverge; otherwise it settles TD-6 `NoAdmittedBehaviour`.
+- `Holds` requires an initial node that diverges.
+- `Undetermined` stays `Undecided`.
+- Concretisation ends at a point within `escape.to_quiescent`'s pre-path, or a checked least-delay point; otherwise it settles `LassoNotConcretized`.
+- **Probe re-run:** my send@1 / undo@0 dead-trap model now **Holds** (2 symbolic states). Without the invariant it is Violated, with `StutterChanged{2}`.
+- **Mutant:** reverting to `node_escape(node)`, the pre-state test, fails `a_failing_step_refutes_only_where_its_post_state_can_diverge` (AC-6).
+
+**Verdict: mergeable.**
+
+Gates at ec07fbeab (locked-build, jobs 4, `--all-features`, debug info off, QSPEC_DIR=qspec-e3d48d76):
+- fmt: exit 0.
+- qsl-analyze `timed_refinement` / `zone_`: 113/113.
+- qsl-semantics `refinement`: 85/85.
+- qsl-replay `refinement`: 43/43; `model_check`: 6/6.
+- root `refinement` / `family_outcome_layering`: 10/10.
+- clippy with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: 'let escape = run.escape(&successor.state, &successor.zone, &scale, &lower, &upper)?; if !escape.diverges { continue; }'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'if let Some(span) = super::timed_model::first_clock_read(expression, self.concrete_side.model, self.declarations.models, self.clock_reading, *object) {'
+```
+
++++

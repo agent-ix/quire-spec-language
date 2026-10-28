@@ -35,3 +35,45 @@ Ticket: QSL-1005. Head reviewed: 5c7b8371d. Method: each AC checked against its 
 ## Verdict
 
 **Not mergeable together with SR-1694001.**
+
+## Dispositions, round 1 (head ec07fbeab)
+
+
+Round 1. Fix 5c7b8371d..ec07fbeab.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `replay_timed_refinement_trace`: the prefix is re-run over time by FR-237's rules, `check_initial` / `check_step` run along it, and a fresh closure is explored from the failing step's post point (`Divergent` reproduces, `Locked` is inconclusive). A forged early delay is refused (PR test). Details below. |
+| FND-002 | fixed | `a_failing_undo_refutes_only_where_time_can_diverge` asserts the AC-2 positions, the trap model's time-lock-freedom refutation, and `Inconclusive` on the trapped model. |
+
+**FND-001: trying to forge a Reproduced replay.**
+- EN-6's counterexample from my open dead-trap variant (send@1, undo@0) replays as `Reproduced{StutterChanged{2}}` on the open model.
+- Forged onto the trapped model, where the half holds, it replays as `Inconclusive(proved: Violation, replayed: Success)`.
+- A forgery cannot reproduce on a model that holds. Reproduction needs a prefix that re-executes with admissible delays, guards and invariants, and ends at a failing step whose post point has a time-divergent continuation. That is an admitted violating behaviour.
+- The two failures without a position (`Divergence`, `AbstractUnfair`) are lasso-only, and the timed replay refuses lassos.
+
+**The certificate moves to 1005c.** The PR body says so: "Holds is uncertified in this PR ... That certificate and its checker are built in QSL-1005c. Until then `TimedSafetyOutcome::Holds` carries no certificate, so nothing settles `proved` from it."
+
+**Verdict: mergeable.** No findings remain open on SR-1694001 or SR-1694002.
+
+Gates at ec07fbeab (locked-build, jobs 4, `--all-features`, debug info off, QSPEC_DIR=qspec-e3d48d76):
+- fmt: exit 0.
+- qsl-analyze `timed_refinement` / `zone_`: 113/113.
+- qsl-semantics `refinement`: 85/85.
+- qsl-replay `refinement`: 43/43; `model_check`: 6/6.
+- root `refinement` / `family_outcome_layering`: 10/10.
+- clippy with `-D warnings`: exit 0.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: 'Ok(match explore(&timed, point, exploration) { Ok(Closure::Divergent) => settlement, Ok(Closure::Locked) => RefinementTraceSettlement::Inconclusive(disagreement(Category::Success)),'
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'fn a_failing_undo_refutes_only_where_time_can_diverge()'
+```
+
++++
