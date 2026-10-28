@@ -564,6 +564,7 @@ pub struct ClockResets {
     operation: ClauseOperation,
     resets: Vec<ClockReset>,
     writes: Vec<CollectionWrite>,
+    drops: Vec<ClockId>,
 }
 
 impl ClockResets {
@@ -586,6 +587,13 @@ impl ClockResets {
     /// "Collection-valued writes").
     pub fn writes(&self) -> &[CollectionWrite] {
         &self.writes
+    }
+
+    /// The `Option<Clock>` places of the receiver the postcondition drops,
+    /// `self.v = absent` (FR-230 "Presence bit"): each becomes absent, its
+    /// clock unconstrained, and no clock is reset.
+    pub fn drops(&self) -> &[ClockId] {
+        &self.drops
     }
 }
 
@@ -855,6 +863,7 @@ struct ResetsDraft {
     context: EffectiveId,
     resets: Vec<ResetDraft>,
     writes: Vec<CollectionWrite>,
+    drops: Vec<ClockId>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -1863,7 +1872,7 @@ enum ClauseClocks {
     /// A precondition's guard parts.
     Guard(Vec<PartDraft>),
     /// A postcondition's resets.
-    Resets(Vec<ResetDraft>, Vec<CollectionWrite>),
+    Resets(Vec<ResetDraft>, Vec<CollectionWrite>, Vec<ClockId>),
 }
 
 /// What a postcondition's resets cut from its body: each reset conjunct,
@@ -1877,6 +1886,8 @@ struct ResetCut {
     literals: BTreeSet<ExprId>,
     resets: Vec<ResetDraft>,
     writes: Vec<CollectionWrite>,
+    /// The `Option<Clock>` places the postcondition drops.
+    drops: Vec<ClockId>,
 }
 
 /// The resets of a postcondition: each top-level conjunct `self.x = c` that
@@ -1966,6 +1977,20 @@ fn resets(
         // FR-230 "Presence bit": `self.v = c` of an `Option<Clock>` makes
         // the place present and resets its clock to `c`.
         if let Some(clock) = located.option(*left) {
+            let in_frame = clocks
+                .fields
+                .get(clock.0)
+                .is_some_and(|field| written.contains(&field.field));
+            // `self.v = absent` drops the place: absent, its clock
+            // unconstrained, and no reset.
+            if matches!(located.node(*right), Some(ExprNode::Absent)) {
+                if !in_frame {
+                    return Err(TemporalCause::ClockWrite { span });
+                }
+                cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+                cut.drops.push(clock);
+                continue;
+            }
             if located.reads_clock(*right) {
                 return Err(TemporalCause::ClockWrite { span });
             }
@@ -2378,7 +2403,10 @@ fn read_clause(
                 }));
             }
             removed = cut.removed;
-            (cut.leaves, ClauseClocks::Resets(cut.resets, cut.writes))
+            (
+                cut.leaves,
+                ClauseClocks::Resets(cut.resets, cut.writes, cut.drops),
+            )
         }
     };
     let rewritten = form
@@ -2869,16 +2897,18 @@ fn prepare_models(
                     }
                     guards.push((index, parts));
                 }
-                ClauseClocks::Resets(written, writes) => {
-                    if let (false, Some(operation)) =
-                        (written.is_empty() && writes.is_empty(), &clause.operation)
-                    {
+                ClauseClocks::Resets(written, writes, drops) => {
+                    if let (false, Some(operation)) = (
+                        written.is_empty() && writes.is_empty() && drops.is_empty(),
+                        &clause.operation,
+                    ) {
                         resets.push(ResetsDraft {
                             clause: clause.name.clone(),
                             operation: operation.clone(),
                             context: clause.context,
                             resets: written,
                             writes,
+                            drops,
                         });
                     }
                 }
@@ -3223,6 +3253,7 @@ pub(crate) fn check(
                 operation: written.operation,
                 resets: checked,
                 writes: written.writes,
+                drops: written.drops,
             });
         }
         models.push(TimedModel {

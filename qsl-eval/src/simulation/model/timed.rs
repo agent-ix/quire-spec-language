@@ -782,16 +782,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// Whether the presence bits of `post` are the ones `vector`'s step
     /// writes (FR-230 "Presence bit"): a reset of an `Option<Clock>` of the
-    /// receiver makes it present, and every other bit of an object `pre`
-    /// holds keeps its value. A frame writing the field enumerates both
-    /// values of the bit; this keeps the written one.
+    /// receiver makes it present, a drop (`self.v = absent`) makes it
+    /// absent, and every other bit of an object `pre` holds keeps its value.
+    /// A frame writing the field enumerates both values of the bit; this
+    /// keeps the written one.
     fn bits_follow(
         &self,
         vector: &super::frames::EnabledVector,
         pre: &ModelSimState,
         post: &ModelSimState,
     ) -> bool {
-        let set: Vec<ClockId> = self
+        let clauses: Vec<_> = self
             .model
             .resets()
             .iter()
@@ -799,9 +800,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 resets.operation().declaring == vector.declaring
                     && resets.operation().declaration.name() == vector.name
             })
+            .collect();
+        let set: Vec<ClockId> = clauses
+            .iter()
             .flat_map(|resets| resets.resets())
             .filter(|reset| reset.selection().is_none() && reset.parameter().is_none())
             .map(|reset| reset.clock())
+            .collect();
+        let dropped: Vec<ClockId> = clauses
+            .iter()
+            .flat_map(|resets| resets.drops())
+            .copied()
             .collect();
         let bit = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| {
             place.stored(state).map(|stored| {
@@ -825,7 +834,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             ) else {
                 return true;
             };
-            let written = place.holds(&vector.receiver) && set.contains(&place.clock);
+            let receiver = place.holds(&vector.receiver);
+            if receiver && dropped.contains(&place.clock) {
+                return !after;
+            }
+            let written = receiver && set.contains(&place.clock);
             after == (written || before)
         })
     }

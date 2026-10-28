@@ -2028,3 +2028,76 @@ fn an_option_clock_reads_its_presence_bit() {
         );
     }
 }
+
+/// The STD-493 ruling on FR-230 "Presence bit" (TC-685): `absent` is an
+/// option literal typed by the `Option<T>` its context expects. It checks
+/// as an equality operand on either side of an `Option<Integer>` and as a
+/// function body whose result is `Option<Integer>`; where an `Integer` is
+/// expected it refuses `ill_typed`/`type-mismatch`, and with no expected
+/// type (`absent = absent`) it refuses `ill_typed` as an ambiguous literal.
+#[trace("TC-685")]
+#[test]
+fn absent_takes_the_option_type_its_context_expects() {
+    use qsl_semantics::check::CheckCause;
+    use quire_exact::IllTypedCause;
+
+    let document = rpc_document_with(&["x"], false);
+    for function in [
+        "function f using v(o: Option<Integer>): Boolean pure { o = absent }\n",
+        "function f using v(o: Option<Integer>): Boolean pure { absent != o }\n",
+        "function f using v(): Option<Integer> pure { absent }\n",
+    ] {
+        if let Err(refusals) = check(&document, &format!("{UNITS}{DENSE}{function}")) {
+            panic!("{function}: {refusals:?}");
+        }
+    }
+    for (function, expected) in [
+        (
+            "function f using v(): Integer pure { absent }\n",
+            IllTypedCause::TypeMismatch,
+        ),
+        (
+            "function f using v(): Boolean pure { absent = absent }\n",
+            IllTypedCause::AmbiguousLiteral,
+        ),
+    ] {
+        let refusals = check(&document, &format!("{UNITS}{DENSE}{function}"))
+            .expect_err("absent needs an expected option type");
+        assert!(
+            refusals
+                .iter()
+                .any(|refusal| refusal.cause == CheckCause::IllTyped(expected)),
+            "{function}: {refusals:?}"
+        );
+    }
+}
+
+/// FR-230-AC-12 (TC-685), the drop: `self.v = absent` over `v:
+/// Option<Clock>` records a drop of `v` and no reset; with a frame not
+/// naming `v` it refuses `invalid_timed_model`/`clock-write`.
+#[trace("TC-685")]
+#[test]
+fn absent_drops_an_option_clock() {
+    let document = option_clock_document();
+    let body =
+        format!("{UNITS}{DENSE}post Disarm using v on Config::Call::bump {{ self.v = absent }}\n");
+    let graph = check(&document, &body).expect("the drop checks");
+    let model = timed(&graph);
+    let (v, _) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "v")
+        .expect("v is a place");
+    let [resets] = model.resets() else {
+        panic!("one postcondition");
+    };
+    assert_eq!(resets.drops(), [v]);
+    assert!(resets.resets().is_empty());
+
+    let reply =
+        format!("{UNITS}{DENSE}post Disarm using v on Config::Call::reply {{ self.v = absent }}\n");
+    let (cause, text) = refused(&document, &reply);
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (Code::InvalidTimedModel, "clock-write", "self.v = absent")
+    );
+}

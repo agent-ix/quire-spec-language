@@ -4634,3 +4634,45 @@ fn a_write_makes_an_option_clock_present() {
     assert!(timed.live(&timed.places()[v], next.discrete()));
     assert_eq!(next.clocks().get(v), Some(&exact(0, 1)));
 }
+
+/// FR-230-AC-12 (TC-685), the drop: `self.v = absent` makes `v` absent and
+/// resets no clock. From the present initial state `work` reaches the one
+/// state with `v` absent, no longer a live clock, with its state key
+/// writing `v`'s `null` option shell; from the absent state it keeps `v`
+/// absent.
+#[trace("TC-685")]
+#[test]
+fn absent_drops_an_option_clock() {
+    let world = world_over(
+        option_clock_document(),
+        "",
+        &only(
+            &["work"],
+            "post Disarm using v on M::Call::work { self.v = absent }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let v = timed
+        .places()
+        .iter()
+        .position(|place| {
+            timed
+                .model()
+                .clock(place.clock())
+                .is_some_and(|clock| clock.name() == "v")
+        })
+        .expect("v's place");
+    for initial in timed.initial() {
+        let steps = timed.steps(&initial).expect("decided");
+        let [(step, next)] = &steps[..] else {
+            panic!("one step: {steps:?}");
+        };
+        assert!(step.resets().is_empty());
+        assert!(!timed.live(&timed.places()[v], next.discrete()));
+        assert_eq!(timed.live_clocks(next.discrete()), 1);
+        let key =
+            String::from_utf8(held.state_key(next.discrete()).expect("a key").0).expect("UTF-8");
+        assert!(key.contains(r#"{"name":"v","value":{"type":"option","value":null}}"#));
+    }
+}

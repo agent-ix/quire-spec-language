@@ -4534,8 +4534,9 @@ impl<'a> Lowering<'a> {
         Ok(LowerStep::Descend(step))
     }
 
-    /// A literal's node: `value`/`literal` for a Boolean, integer, rational
-    /// or quantity, the enum member's nominal node for an enum member.
+    /// A literal's node: `value`/`literal` for a Boolean, integer, rational,
+    /// quantity or absent option, the enum member's nominal node for an
+    /// enum member.
     fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
@@ -4557,6 +4558,9 @@ impl<'a> Lowering<'a> {
             // FR-093-AC-33: a quantity literal is a `quantity` literal typed
             // by its unit's node; the magnitude is already reduced.
             Value::Quantity(quantity) => LiteralValue::Quantity(quantity.magnitude().clone()),
+            // `absent` (STD-493 ruling): QSpec FR-322's `none` literal,
+            // typed by its option node.
+            Value::Option(option) if option.payload().is_none() => LiteralValue::None,
             Value::Decimal(_)
             | Value::Text(_)
             | Value::Option(_)
