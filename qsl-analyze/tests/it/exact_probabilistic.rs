@@ -594,7 +594,7 @@ const COIN: &str = "probabilistic Dropped using ev on M over (c: M::Coin) under 
 /// dropped when `b = 0` and the claim's `c.v` then reads `absent-key`
 /// undefined. The path is `drop` with `b = 0`, probability 1/2, at
 /// position 1.
-#[trace("TC-641", "FR-196-AC-5")]
+#[trace("TC-641", "FR-196-AC-5", "FR-196-AC-12")]
 #[test]
 fn an_undefined_state_stops_the_build_with_its_path() {
     let world = World::new(&prob_world::coin(COIN));
@@ -621,6 +621,10 @@ fn an_undefined_state_stops_the_build_with_its_path() {
     assert_eq!(step.probability, ratio(1, 2));
     assert_eq!(path.probability, ratio(1, 2));
     assert_eq!(path.position, 1);
+    assert_eq!(step.target, path.key);
+    assert!(step.resolved.is_none());
+    assert_eq!(path.binding, path.key.binding);
+    assert!(path.key.pending.is_none());
     assert!(matches!(path.read, UndefinedRead::Atom(_)));
     assert!(matches!(
         path.cause,
@@ -676,6 +680,8 @@ fn the_undefined_path_lists_every_step_in_order() {
 
 const GHOST: &str = "probabilistic Ghost using ev on M over (c: M::Coin) under Even on origin \
      { probability >= 0.5 [ always[0,3] holds(c.v = 0) ] }\n\
+     probabilistic GhostSteps using ev on M over (c: M::Coin) under Even on origin \
+     { probability >= 0.5 [ steps from holds(c.v = 0) until holds(c.v = 1) within 3 <= 3 ] }\n\
      probabilistic GhostFrom using inf on M over (c: M::Coin) under Even on origin \
      { probability >= 0.5 [ holds(c.v = 0) until holds(c.v = 1) ] }\n\
      probabilistic GhostTarget using inf on M over (c: M::Coin) under Even on origin \
@@ -686,7 +692,7 @@ const GHOST: &str = "probabilistic Ghost using ev on M over (c: M::Coin) under E
 /// instance ends the build. The second instance has no object in the initial
 /// snapshot, so its predicate is undefined at position 0, with no step to
 /// it.
-#[trace("TC-641")]
+#[trace("TC-641", "FR-196-AC-13")]
 #[test]
 fn an_instance_undefined_at_an_initial_state_ends_at_position_zero() {
     let world = World::with_universe(&prob_world::coin(GHOST), &["c", "ghost"]);
@@ -699,8 +705,45 @@ fn an_instance_undefined_at_an_initial_state_ends_at_position_zero() {
     };
     assert!(path.steps.is_empty());
     assert_eq!(path.position, 0);
+    assert_eq!(path.initial, 0);
     assert_eq!(path.probability, ratio(1, 1));
+    assert_eq!(path.binding, path.key.binding);
+    assert!(path
+        .key
+        .monitor
+        .is_some_and(|monitor| matches!(monitor, MonitorState::Formula(FormulaState::Running(_)))));
+    assert!(path.key.accumulator.is_none());
+    assert!(path.key.pending.is_none());
+    assert!(!path.key.model.is_empty());
     assert!(matches!(path.read, UndefinedRead::Atom(_)));
+    assert!(matches!(
+        &path.binding,
+        Some(binding) if binding.key == "ghost"
+    ));
+    let ProbBuild::Undefined(path) = build_product(
+        world.request("GhostSteps", ModelCheckLimits::default()),
+        &Cancel::new(),
+    )
+    .expect("the initial measure read is undefined") else {
+        panic!("an undefined measure read");
+    };
+    assert_eq!(path.position, 0);
+    assert_eq!(path.initial, 0);
+    assert!(matches!(
+        path.key.monitor,
+        Some(MonitorState::Measure {
+            remaining: 3,
+            phase: MeasurePhase::Inactive
+        })
+    ));
+    assert_eq!(
+        path.key.accumulator,
+        Some(Accumulator::Steps {
+            activated: false,
+            amount: Amount::Exact(ratio(0, 1))
+        })
+    );
+    assert!(path.key.pending.is_none());
     // An unbounded form names the role of the predicate that has no value.
     for (claim, role) in [
         ("GhostFrom", PredicateRole::From),
@@ -1536,7 +1579,7 @@ const TOSS: &str = "probabilistic Tossed using ev on M over (c: M::Coin) under e
 /// Checks FR-196 "Behavior", SCH-2: an undefined path over every scheduler names
 /// the post-state the scheduler took at a draw with several post-states, so
 /// it replays to one state.
-#[trace("TC-641")]
+#[trace("TC-641", "FR-196-AC-12")]
 #[test]
 fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
     let world = World::new(&prob_world::tossed_coin(TOSS));
@@ -1553,10 +1596,11 @@ fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
     assert_eq!(path.position, 1);
     assert_eq!(step.probability, ratio(1, 2));
     let resolved = step.resolved.as_ref().expect("the post-state taken");
-    // The coin is gone: a model state of the claim-free product, and not the
-    // initial one.
+    // The coin is gone: a complete product key for the selected post-state,
+    // and not the initial one.
     let plain = built(&world, "Plain");
     let initial = &plain.states[start(&plain).index()].model;
-    assert_ne!(resolved, initial);
-    assert!(plain.states.iter().any(|key| key.model == *resolved));
+    assert_ne!(&resolved.model, initial);
+    assert!(plain.states.iter().any(|key| key.model == resolved.model));
+    assert_eq!(step.target, *resolved);
 }

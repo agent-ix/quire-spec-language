@@ -2022,7 +2022,10 @@ enum AliasStep<'e> {
 /// Whether an expression takes its type from its context.
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
-        ExprNode::Integer(_) | ExprNode::Rational(..) | ExprNode::Collection { .. } => true,
+        ExprNode::Integer(_)
+        | ExprNode::Rational(..)
+        | ExprNode::Collection { .. }
+        | ExprNode::Absent => true,
         ExprNode::Negate(operand) => matches!(expression.at(*operand).node(), ExprNode::Integer(_)),
         ExprNode::Binary {
             operator: BinaryOperator::Divide,
@@ -2608,6 +2611,31 @@ impl<'a> Typer<'a> {
         match &collection.value_type {
             ValueType::Collection(collection_type) => Ok(collection_type.element().clone()),
             _ => Err(mismatch(&collection.location)),
+        }
+    }
+
+    /// `absent`: the absent option of the `Option<T>` its context expects
+    /// (FR-230 "Presence bit"; STD-493 ruling: an `absent` option literal
+    /// typed by context). With no expected type it is ambiguous; where no
+    /// option is expected it is a type mismatch.
+    fn absent_literal(
+        &self,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        match hint {
+            None => Err(CheckRefusal::ill_typed(
+                location,
+                IllTypedCause::AmbiguousLiteral,
+            )),
+            Some(ValueType::Option(payload)) => Ok(node(
+                NodeKind::Literal(CheckedLiteral(quire_exact::OptionValue::none(
+                    (**payload).clone(),
+                ))),
+                ValueType::Option(payload.clone()),
+                location,
+            )),
+            Some(_) => Err(mismatch(location)),
         }
     }
 
