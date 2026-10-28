@@ -136,6 +136,9 @@ pub enum CertificateLocus {
     ZoneEdge {
         /// The edge's position.
         edge: u64,
+        /// What `check_step` returned, for a refinement form's `StepFails`
+        /// (FR-245, as FR-149's locus carries it).
+        verdict: Option<Box<FailedStep>>,
     },
     /// A zone certificate component, by its index (FR-245).
     ZoneComponent {
@@ -238,9 +241,12 @@ impl Serialize for CertificateLocus {
                 object.serialize_field("node", &node.to_string())?;
                 object.end()
             }
-            Self::ZoneEdge { edge } => {
-                let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
+            Self::ZoneEdge { edge, verdict } => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 2)?;
                 object.serialize_field("edge", &edge.to_string())?;
+                if let Some(verdict) = verdict {
+                    object.serialize_field("verdict", verdict.as_ref())?;
+                }
                 object.end()
             }
             Self::ZoneComponent { component } => {

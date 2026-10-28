@@ -104,7 +104,7 @@ use quire_exact::{Cancel, Integer, Meter, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::closure::CertificateRejection;
-use super::simulation::{CertifiedPosition, EvaluationOutcome};
+use super::simulation::{CertifiedPosition, EvaluationOutcome, FailedStep, UndeterminedStep};
 use super::zone::{LuBounds, Zone, ZoneError};
 use super::{CertificateLocus, CertificateMember, CertificateRule};
 use crate::model_check::identity::node_occurrence;
@@ -777,6 +777,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     abstract_system: &opened.abstract_system,
                     part,
                     known: vec![None; certificate.nodes.len()],
+                    failed_initial: vec![false; certificate.nodes.len()],
                 }),
             )
         }
@@ -997,6 +998,9 @@ struct RefineCheck<'c, 'a> {
     abstract_system: &'c ModelSystem<'a>,
     part: &'c RefinementPart,
     known: Vec<Option<RefinementPosition>>,
+    /// The initial nodes whose `check_initial` failed: each must be a
+    /// time-locked `locked` entry (FR-430 TV-1, per initial state).
+    failed_initial: Vec<bool>,
 }
 
 impl<O> Checker<'_, '_, O> {
@@ -1425,7 +1429,9 @@ impl<O> Checker<'_, '_, O> {
 
     /// FR-245 "Refinement form": `check_initial` passes on the concrete
     /// initial state `index`, `state`, with exactly node `node`'s
-    /// position; a failing one is rejected the same way.
+    /// position; a failing one stands only at a `locked` node at the
+    /// reserved index, which must be time-locked (checked with the nodes),
+    /// and is rejected the same way otherwise.
     fn initial_position(
         &mut self,
         node: usize,
@@ -1446,12 +1452,18 @@ impl<O> Checker<'_, '_, O> {
         let post = match verdict {
             StepVerdict::Passes { post, .. } => post,
             verdict => {
-                return Err(refine_stop(concrete, &verdict).unwrap_or_else(|| {
-                    Halt::Verdict(ZoneCertificateVerdict::Rejected(CertificateRejection {
-                        rule: CertificateRule::InitialMismatch,
-                        at: at_node(node),
-                    }))
-                }))
+                if let Some(stop) = refine_stop(concrete, &verdict) {
+                    return Err(stop);
+                }
+                let listed = &self.certificate.nodes[node];
+                let locked = matches!(verdict, StepVerdict::Fails(_) | StepVerdict::Undefined(_))
+                    && listed.locked
+                    && listed.automaton_state == refine.part.positions.len();
+                if locked {
+                    refine.failed_initial[node] = true;
+                    return Ok(());
+                }
+                return reject(CertificateRule::InitialMismatch, at_node(node));
             }
         };
         let listed = refine
@@ -1489,9 +1501,11 @@ impl<O> Checker<'_, '_, O> {
             .taken
             .get(index)
             .ok_or(fault(CheckerFault::UnreachedNode))?;
-        let at = CertificateLocus::ZoneEdge {
+        let edge_at = |verdict| CertificateLocus::ZoneEdge {
             edge: u64::try_from(index).unwrap_or(u64::MAX),
+            verdict,
         };
+        let at = edge_at(None);
         let Some(pre) = refine.known[from].clone() else {
             // The locked region: concrete steps only.
             if target.automaton_state != reserved || taken.is_some() {
@@ -1542,10 +1556,21 @@ impl<O> Checker<'_, '_, O> {
                 // Only the failing step's post-state, the locked region's
                 // entry, may follow a failing edge (FR-430 TV-1).
                 if target.locked && target.automaton_state == reserved && taken.is_none() {
-                    Ok(())
-                } else {
-                    reject(CertificateRule::StepFails, at)
+                    return Ok(());
                 }
+                let failed = match verdict {
+                    StepVerdict::Fails(failure) => FailedStep::Fails(failure),
+                    StepVerdict::Undefined(evaluation) => {
+                        FailedStep::Undefined(Box::new(evaluation))
+                    }
+                    StepVerdict::Undetermined(undetermined) => {
+                        FailedStep::Undetermined(UndeterminedStep::new(undetermined))
+                    }
+                    StepVerdict::Passes { .. }
+                    | StepVerdict::Stopped(_)
+                    | StepVerdict::Fault(_) => return Err(fault(CheckerFault::UnreachedNode)),
+                };
+                reject(CertificateRule::StepFails, edge_at(Some(Box::new(failed))))
             }
             StepVerdict::Stopped(_) | StepVerdict::Fault(_) => Err(refine_stop(concrete, &verdict)
                 .unwrap_or_else(|| fault(CheckerFault::UnreachedNode))),
@@ -1625,6 +1650,19 @@ impl<O> Checker<'_, '_, O> {
             for index in self.leaving[node].clone() {
                 let edge = &certificate.edges[index];
                 let target = &certificate.nodes[edge.to];
+                // FR-245 "Refinement form": `check_step` runs on the edge
+                // before the DBM checks, on the successor of its transition
+                // and post-state.
+                if self.refine.is_some() {
+                    let discrete = successors.iter().find(|successor| {
+                        successor.step.as_ref().map(GuardedStep::transition)
+                            == edge.transition.as_ref()
+                            && successor.digest == target.state_key
+                    });
+                    if let Some(successor) = discrete {
+                        self.refine_edge(index, node, successor)?;
+                    }
+                }
                 for (position, successor) in successors.iter().enumerate() {
                     let same = successor.step.as_ref().map(GuardedStep::transition)
                         == edge.transition.as_ref()
@@ -1639,7 +1677,6 @@ impl<O> Checker<'_, '_, O> {
                             None => true,
                         };
                     if same && self.binds(target.automaton_state, successor.q) {
-                        self.refine_edge(index, node, successor)?;
                         self.covers[index] = Some(position);
                         if self.states[edge.to].is_none() {
                             let post = successor
@@ -1834,7 +1871,18 @@ impl<O> Checker<'_, '_, O> {
         let listed = &self.certificate.nodes[node];
         if listed.locked {
             if divergent[node] {
-                return reject(CertificateRule::BadState, at_node(node));
+                // A failing initial state that time can leave is no
+                // vacuous failure.
+                let failed_initial = self
+                    .refine
+                    .as_ref()
+                    .is_some_and(|refine| refine.failed_initial[node]);
+                let rule = if failed_initial {
+                    CertificateRule::InitialMismatch
+                } else {
+                    CertificateRule::BadState
+                };
+                return reject(rule, at_node(node));
             }
         } else if self.bad(node)? {
             return reject(CertificateRule::BadState, at_node(node));
@@ -2541,8 +2589,9 @@ fn computed_bounds(
 }
 
 /// The size a check charges against `max_certificate_bytes`: each node's
-/// key and zone cells, each edge, the LU bounds, the witnesses and the
-/// component numbering, at their integers' magnitudes. It bounds the certificate's in-memory reading,
+/// key and zone cells, each edge, the LU bounds, the witnesses, the
+/// component numbering and the refinement part, at their integers'
+/// magnitudes. It bounds the certificate's in-memory reading,
 /// not an encoding: FR-418's byte encoding of the certificate does not
 /// exist yet (spec gap STD-493).
 fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
@@ -2578,9 +2627,35 @@ fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
     for witness in certificate.divergence.iter().flatten() {
         parts = parts.saturating_add(witness_bytes(witness));
     }
+    if let Some(refinement) = &certificate.refinement {
+        parts = parts.saturating_add(refinement_bytes(refinement));
+    }
     bytes
         .saturating_add(edges.saturating_mul(48))
         .saturating_add(parts)
+}
+
+/// [`certificate_bytes`] of a refinement part: each position's digests,
+/// each 40, and history key, and each edge's `taken`, 8 and each abstract
+/// transition 48.
+fn refinement_bytes(refinement: &RefinementPart) -> u64 {
+    let widen = |count: usize| u64::try_from(count).unwrap_or(u64::MAX);
+    let mut bytes = 0_u64;
+    for position in &refinement.positions {
+        bytes = bytes
+            .saturating_add(widen(position.abstract_states.len() + 1).saturating_mul(40))
+            .saturating_add(widen(position.history.len()));
+    }
+    for taken in &refinement.taken {
+        let transitions = match taken {
+            Some(Taken::Abstract(transitions)) => transitions.len(),
+            Some(Taken::Stutter) | None => 0,
+        };
+        bytes = bytes
+            .saturating_add(8)
+            .saturating_add(widen(transitions).saturating_mul(48));
+    }
+    bytes
 }
 
 /// [`certificate_bytes`] of a divergence witness: its edges, each 8.
