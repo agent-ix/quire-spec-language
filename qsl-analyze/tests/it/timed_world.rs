@@ -416,8 +416,8 @@ pub(crate) struct Refining {
     pub(crate) package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    /// `M`'s initial state.
-    pub(crate) concrete_initial: DocumentRef,
+    /// `M`'s initial states, in index order.
+    concrete_initials: Vec<DocumentRef>,
     /// `A`'s initial state.
     pub(crate) abstract_initial: DocumentRef,
 }
@@ -516,57 +516,98 @@ pub(crate) fn refining_from(
                 .collect::<Vec<_>>()
         })?;
     let mut snapshots = BTreeMap::new();
-    let mut snapshot = |package: &str, document: &[u8], name: &str, inflight: bool| {
-        let digest = packages
-            .iter()
-            .find(|(_, bytes)| bytes.as_slice() == document)
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned");
-        let identity = |suffix: &str| format!("ix://{package}/{suffix}");
-        let snapshot = json!({
-            "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
-            "observation": "current",
-            "model": {"identity": package, "version": "1.0.0",
-                "digest": format!("sha256-jcs:{digest}")},
-            "anchor": {"kind": "initialization", "name": "start"},
-            "populations": [{"population": identity("calls"), "complete": true,
-                "objects": [{"key": "c", "type": identity("Call"),
-                    "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": inflight},
-                        "late": {"boolean": false}, "retried": {"boolean": false}}}]}],
-        });
-        let bytes = snapshot.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        snapshots.insert(digest, bytes);
-        DocumentRef {
-            authority: "test".to_owned(),
-            identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
-            digest,
-        }
-    };
     let abstract_initial = snapshot(
-        &abstract_package,
-        abstract_document,
+        &packages,
+        &mut snapshots,
+        (&abstract_package, abstract_document),
         "a0",
-        abstract_inflight,
+        [abstract_inflight, false, false],
     );
-    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0", false);
+    let concrete_initial = snapshot(
+        &packages,
+        &mut snapshots,
+        (PACKAGE, concrete_document),
+        "m0",
+        [false; 3],
+    );
     Ok(Refining {
         package: CheckedPackage::link(graph),
         packages,
         snapshots,
-        concrete_initial,
+        concrete_initials: vec![concrete_initial],
         abstract_initial,
     })
 }
 
+/// The snapshot `name` of the model `package` (its `document`) whose one
+/// object `c` has `phase` 0 and `inflight`, `late` and `retried` as
+/// `flags` gives them, stored in `snapshots`.
+fn snapshot(
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    (package, document): (&str, &[u8]),
+    name: &str,
+    [inflight, late, retried]: [bool; 3],
+) -> DocumentRef {
+    let digest = packages
+        .iter()
+        .find(|(_, bytes)| bytes.as_slice() == document)
+        .map(|(digest, _)| hex(digest))
+        .expect("the package is provisioned");
+    let identity = |suffix: &str| format!("ix://{package}/{suffix}");
+    let snapshot = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
+            "revision": "fixture:1"},
+        "observation": "current",
+        "model": {"identity": package, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{digest}")},
+        "anchor": {"kind": "initialization", "name": "start"},
+        "populations": [{"population": identity("calls"), "complete": true,
+            "objects": [{"key": "c", "type": identity("Call"),
+                "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": inflight},
+                    "late": {"boolean": late}, "retried": {"boolean": retried}}}]}],
+    });
+    let bytes = snapshot.to_string().into_bytes();
+    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+        .expect("canonical fixture")
+        .as_bytes();
+    snapshots.insert(digest, bytes);
+    DocumentRef {
+        authority: "test".to_owned(),
+        identity: name.to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "fixture:1".to_owned(),
+        digest,
+    }
+}
+
 impl Refining {
+    /// This world with `M`'s initial states replaced by one per entry of
+    /// `states`, in order: `c`'s `inflight`, `late` and `retried`.
+    /// `concrete_document` is `M`'s package.
+    pub(crate) fn with_concrete_initials(
+        mut self,
+        concrete_document: &[u8],
+        states: &[[bool; 3]],
+    ) -> Self {
+        self.concrete_initials = states
+            .iter()
+            .enumerate()
+            .map(|(index, &state)| {
+                snapshot(
+                    &self.packages,
+                    &mut self.snapshots,
+                    (PACKAGE, concrete_document),
+                    &format!("m{index}"),
+                    state,
+                )
+            })
+            .collect();
+        self
+    }
+
     /// FR-120's request of the concrete model `M` over the universe `{c}`.
     pub(crate) fn concrete_request(&self) -> ModelSimulationRequest<'_> {
         ModelSimulationRequest {
@@ -574,7 +615,7 @@ impl Refining {
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
             snapshots: &self.snapshots,
-            initial: vec![self.concrete_initial.clone()],
+            initial: self.concrete_initials.clone(),
             universes: vec![PopulationUniverse {
                 population: DeclarationKey {
                     package: PACKAGE.to_owned(),

@@ -21,6 +21,7 @@ use crate::automaton::dnf::Dnf;
 use crate::automaton::formula::{PastKind, Window};
 use crate::automaton::key::SubjectKind;
 use crate::automaton::key_state::{DistanceBucket, HistoryOperand, PastMemory, PastOperator};
+use crate::simulation::model::encode::Enc;
 
 /// The lower-bound-0 part of a past operator.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -48,6 +49,67 @@ pub(super) struct Memory {
     pub(super) buckets: Vec<(u64, u64, [bool; 2])>,
     /// The recurrence result before the oldest retained open-shift bucket.
     pub(super) tail: bool,
+}
+
+impl Memory {
+    /// Canonical state data, independent of the transition system's
+    /// materialization order.
+    pub(super) fn key_value(&self) -> Enc {
+        let base = match self.base {
+            Base::Flag(value) => Enc::Array(vec![Enc::text("flag"), Enc::Bool(value)]),
+            Base::Age(counter) => Enc::Array(vec![
+                Enc::text("age"),
+                counter
+                    .age()
+                    .map_or(Enc::Null, |age| Enc::text(age.to_string())),
+            ]),
+        };
+        let ranges = |ranges: &[(u64, u64)]| {
+            Enc::Array(
+                ranges
+                    .iter()
+                    .map(|(first, last)| {
+                        Enc::Array(vec![
+                            Enc::text(first.to_string()),
+                            Enc::text(last.to_string()),
+                        ])
+                    })
+                    .collect(),
+            )
+        };
+        let history = Enc::Array(
+            self.history
+                .iter()
+                .map(|(first, last, guard, witness)| {
+                    Enc::Array(vec![
+                        Enc::text(first.to_string()),
+                        Enc::text(last.to_string()),
+                        Enc::Bool(*guard),
+                        Enc::Bool(*witness),
+                    ])
+                })
+                .collect(),
+        );
+        let buckets = Enc::Array(
+            self.buckets
+                .iter()
+                .map(|(first, last, transform)| {
+                    Enc::Array(vec![
+                        Enc::text(first.to_string()),
+                        Enc::text(last.to_string()),
+                        Enc::Array(transform.iter().copied().map(Enc::Bool).collect()),
+                    ])
+                })
+                .collect(),
+        );
+        Enc::Array(vec![
+            base,
+            ranges(&self.ages),
+            history,
+            buckets,
+            Enc::Bool(self.tail),
+        ])
+    }
 }
 
 /// One case of a past operator's step: the letters that cause it, whether

@@ -352,8 +352,7 @@ Other directories:
 combinations, docs and the architecture lints. It reads the standard's test
 vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). The hosted
 native compiler CI runs only on manual dispatch, so run the gate before opening
-a pull request. The separate pull request language-boundary check
-reports only whether new executable paths respect the Rust containment rule.
+a pull request.
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 Contributions require the [CLA](CLA.md).
@@ -361,4 +360,4 @@ Contributions require the [CLA](CLA.md).
 ## License
 
 QSL is licensed under [AGPL-3.0-or-later](LICENSE). Fixtures keep their
-`AGPL-3.0-only` headers. See [LICENSE-DECISION.md](LICENSE-DECISION.md).
+`AGPL-3.0-only` headers.

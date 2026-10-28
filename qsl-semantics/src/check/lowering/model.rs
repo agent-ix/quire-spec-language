@@ -43,6 +43,10 @@ use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 pub enum PlaceStep {
     /// A field, by its member name.
     Field(String),
+    /// The payload of the union case named, whose place is guarded by the
+    /// case: live while the value is that case (FR-230 "Records, tuples and
+    /// unions").
+    Union(String),
     /// A slot of the collection the steps before it reach: each element
     /// the collection holds is one slot (FR-230 "Clock collections").
     Slot(CollectionShape),
@@ -81,9 +85,81 @@ pub(crate) struct PackagePlace {
     /// the path: an `Option<Clock>`, whose presence is a bit (FR-230
     /// "Presence bit").
     pub(crate) bit: bool,
+    /// Whether the place is a union case's payload directly under the
+    /// object's field, guarded by the case (FR-230 "Records, tuples and
+    /// unions"), with no other guard on its path.
+    pub(crate) case: bool,
     /// The clock aliases the member holding the clock is typed by, directly
     /// or as a sequence's items, each alias of an alias on the chain.
     pub(crate) aliases: Vec<DeclarationKey>,
+    /// The identity of the object type declaring the place's field: the
+    /// declaring type of the first resolved row.
+    pub(crate) declaring: String,
+    /// For each path step, the declared member type it reaches, rendered
+    /// (`Sequence<ix://p/Timer>`, `Option<ix://quire/native/Clock>`), and
+    /// the member identity of a field step (QSpec FR-322 "Timed-model
+    /// nodes", `resolved_path`).
+    pub(crate) members: Vec<(String, Option<String>)>,
+}
+
+/// One row of a clock place's `resolved_path` (QSpec FR-322 "Timed-model
+/// nodes"): for one path step, its declaring type, the member it resolves
+/// to and that member's declared type, and for a step a slot follows, the
+/// collection's kind and bounds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlaceRow {
+    /// The declaring object, record, variant or collection type.
+    pub declaring_type: String,
+    /// The member identity: a field's declaration key, `<type>/union/<case>`
+    /// or `<collection>[slot]`.
+    pub member_identity: String,
+    /// The member's declared type, rendered.
+    pub member_type: String,
+    /// `sequence`, `set`, `bag`, `ordered_set` when a slot step follows,
+    /// else `none`.
+    pub collection_kind: String,
+    /// The collection's minimum when a slot step follows, else empty.
+    pub minimum: String,
+    /// The collection's maximum (`unbounded` with none) when a slot step
+    /// follows, else empty.
+    pub maximum: String,
+}
+
+/// The wire name of a collection of `shape` (QSpec FR-322 `slot` step).
+pub fn collection_kind(shape: CollectionShape) -> &'static str {
+    match (shape.ordered, shape.unique) {
+        (true, false) => "sequence",
+        (false, true) => "set",
+        (false, false) => "bag",
+        (true, true) => "ordered_set",
+    }
+}
+
+/// `inner` wrapped in the collection type of `shape`.
+fn collection_type(shape: CollectionShape, inner: &str) -> String {
+    let kind = match (shape.ordered, shape.unique) {
+        (true, false) => "Sequence",
+        (false, true) => "Set",
+        (false, false) => "Bag",
+        (true, true) => "OrderedSet",
+    };
+    format!("{kind}<{inner}>")
+}
+
+/// The element type of the rendered collection type `rendered`, read
+/// through an `Option<..>` around it (QSL FR-230-AC-19's `o:
+/// Option<Sequence<Clock>[0, 2]>`). A string edge: `rendered` is the
+/// `resolved_path` row text this module renders.
+#[ix_trace_rs::string_edge]
+fn element_type(rendered: &str) -> &str {
+    let rendered = rendered
+        .strip_prefix("Option<")
+        .and_then(|inner| inner.strip_suffix('>'))
+        .unwrap_or(rendered);
+    ["Sequence<", "Set<", "Bag<", "OrderedSet<"]
+        .iter()
+        .find_map(|prefix| rendered.strip_prefix(prefix)?.strip_suffix('>'))
+        .unwrap_or(rendered)
 }
 
 /// Whether `field` holds one value: multiplicity `[1, 1]`, not a collection.
@@ -98,12 +174,56 @@ pub(crate) fn strictly_below(place: &[PlaceStep], path: &[PlaceStep]) -> bool {
 }
 
 impl PackagePlace {
+    /// The place's `resolved_path` rows, one for each path step (QSpec
+    /// FR-322 "Timed-model nodes").
+    pub(crate) fn rows(&self) -> Vec<PlaceRow> {
+        let mut rows: Vec<PlaceRow> = Vec::with_capacity(self.path.len());
+        for (index, step) in self.path.iter().enumerate() {
+            let previous = rows.last().map(|row| row.member_type.clone());
+            let (member_type, identity) = self.members.get(index).cloned().unwrap_or_default();
+            let (declaring_type, member_identity) = match step {
+                PlaceStep::Field(_) => (
+                    previous.unwrap_or_else(|| self.declaring.clone()),
+                    identity.unwrap_or_default(),
+                ),
+                PlaceStep::Slot(_) => {
+                    let parent = previous.unwrap_or_default();
+                    (element_type(&parent).to_owned(), format!("{parent}[slot]"))
+                }
+                PlaceStep::Union(case) => {
+                    let declaring = previous.unwrap_or_default();
+                    let identity = format!("{declaring}/union/{case}");
+                    (declaring, identity)
+                }
+            };
+            let (collection_kind, minimum, maximum) = match self.path.get(index + 1) {
+                Some(PlaceStep::Slot(shape)) => (
+                    collection_kind(*shape).to_owned(),
+                    shape.min.to_string(),
+                    shape
+                        .max
+                        .map_or_else(|| "unbounded".to_owned(), |max| max.to_string()),
+                ),
+                _ => ("none".to_owned(), String::new(), String::new()),
+            };
+            rows.push(PlaceRow {
+                declaring_type,
+                member_identity,
+                member_type,
+                collection_kind,
+                minimum,
+                maximum,
+            });
+        }
+        rows
+    }
+
     /// The place's path written with `.` between its steps.
     pub(crate) fn name(&self) -> String {
         self.path
             .iter()
             .map(|step| match step {
-                PlaceStep::Field(name) => name.as_str(),
+                PlaceStep::Field(name) | PlaceStep::Union(name) => name.as_str(),
                 PlaceStep::Slot(_) => "[slot]",
             })
             .collect::<Vec<_>>()
@@ -1034,11 +1154,48 @@ impl AdmittedModel {
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
                 bit: false,
+                case: false,
                 aliases: Vec::new(),
+                declaring: field.owner.node.clone(),
+                members: Vec::new(),
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
         }
         places
+    }
+
+    /// `value_type` rendered for a `resolved_path` row (QSpec FR-322
+    /// "Timed-model nodes"): `Clock` and natives by their `ix://quire/native`
+    /// identity, a package type by its identity, an alias as the type it
+    /// aliases and a package sequence type as `Sequence<items>`.
+    fn rendered(&self, value_type: &crate::model::domain_package::ValueTypeRef) -> String {
+        use crate::model::domain_package::ValueTypeRef;
+        let mut wrappers = 0_usize;
+        let mut named = value_type;
+        let mut steps = 0_usize;
+        let base = loop {
+            steps += 1;
+            match named {
+                ValueTypeRef::Clock => break "ix://quire/native/Clock".to_owned(),
+                ValueTypeRef::Native(native) => {
+                    break format!("ix://quire/native/{}", native.as_str())
+                }
+                ValueTypeRef::Unit(name) => break name.clone(),
+                ValueTypeRef::Package(key) => match self.records.get(key) {
+                    Some(DomainPackageRecord::AliasType(alias)) if steps <= self.records.len() => {
+                        named = &alias.target;
+                    }
+                    Some(DomainPackageRecord::SequenceType(sequence))
+                        if steps <= self.records.len() && sequence.items != *named =>
+                    {
+                        wrappers += 1;
+                        named = &sequence.items;
+                    }
+                    _ => break key.node.clone(),
+                },
+            }
+        };
+        (0..wrappers).fold(base, |inner, _| format!("Sequence<{inner}>"))
     }
 
     /// The places a member `field` holds below `at`, which already names the
@@ -1052,6 +1209,35 @@ impl AdmittedModel {
         places: &mut Vec<PackagePlace>,
     ) {
         use crate::model::domain_package::ValueTypeRef;
+        // The field step's row: the member's declared type, its collection
+        // or `Option` around the type it holds.
+        let declared = self.rendered(&field.value_type);
+        let member_type = if !single(field) {
+            // An optional collection member holds optional elements:
+            // `q: Sequence<Option<Clock>>[0, 2]` (QSpec FR-322's
+            // timed-slot-selector vectors, the presence place `q`).
+            let element = if matches!(field.presence, quire_exact::Presence::Optional) {
+                format!("Option<{declared}>")
+            } else {
+                declared
+            };
+            collection_type(
+                CollectionShape {
+                    ordered: field.multiplicity.ordered,
+                    unique: field.multiplicity.unique,
+                    min: field.multiplicity.lower,
+                    max: field.multiplicity.upper,
+                },
+                &element,
+            )
+        } else if matches!(field.presence, quire_exact::Presence::Optional) {
+            format!("Option<{declared}>")
+        } else {
+            declared
+        };
+        at.members
+            .push((member_type.clone(), Some(field.key.node.clone())));
+        let mut reached = member_type;
         if !single(field) {
             at.path.push(PlaceStep::Slot(CollectionShape {
                 ordered: field.multiplicity.ordered,
@@ -1059,6 +1245,8 @@ impl AdmittedModel {
                 min: field.multiplicity.lower,
                 max: field.multiplicity.upper,
             }));
+            reached = element_type(&reached).to_owned();
+            at.members.push((reached.clone(), None));
         }
         let above = at.optional;
         let own = matches!(field.presence, quire_exact::Presence::Optional);
@@ -1097,6 +1285,8 @@ impl AdmittedModel {
                 min: 0,
                 max: None,
             }));
+            reached = element_type(&reached).to_owned();
+            at.members.push((reached.clone(), None));
         }
         let key = match value_type {
             ValueTypeRef::Clock => {
@@ -1108,6 +1298,31 @@ impl AdmittedModel {
             ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => return,
         };
         match self.records.get(key) {
+            // A variant type: each case whose payload is `Clock` is a place
+            // guarded by the case.
+            Some(DomainPackageRecord::Enum(variant_type)) => {
+                for record in self.records.values() {
+                    let DomainPackageRecord::Variant(case) = record else {
+                        continue;
+                    };
+                    let clock = case.owner == variant_type.key
+                        && case.payload_type.as_ref().is_some_and(|payload| {
+                            crate::model::domain_package::unaliased(payload, |key| {
+                                self.records.get(key)
+                            }) == Some((&ValueTypeRef::Clock, 0))
+                        });
+                    if clock {
+                        let mut below = at.clone();
+                        below.path.push(PlaceStep::Union(case.case.clone()));
+                        below
+                            .members
+                            .push(("ix://quire/native/Clock".to_owned(), None));
+                        below.case = !below.optional && below.path.len() == 2;
+                        below.optional = true;
+                        places.push(below);
+                    }
+                }
+            }
             Some(DomainPackageRecord::RecordValueType(_)) if !visiting.contains(&key) => {
                 visiting.push(key);
                 for record in self.records.values() {

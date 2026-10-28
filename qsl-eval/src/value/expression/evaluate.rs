@@ -2104,6 +2104,34 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 Value::Boolean(option.payload().is_some())
             }
+            // FR-415-AC-20: every (some) element's presence bit the timed
+            // system recorded for the owner's `Sequence<Option<Clock>>`.
+            NodeKind::SlotPresence { field, all, .. } => {
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("slot-presence-reference-expected"));
+                };
+                let bits = self
+                    .objects_for(node)?
+                    .slot_presences(&reference, &field.name)
+                    .ok_or_else(|| invariant("slot-presence-unrecorded"))?;
+                Value::Boolean(if *all {
+                    bits.iter().all(|bit| *bit)
+                } else {
+                    bits.iter().any(|bit| *bit)
+                })
+            }
+            // FR-230 "Presence is derived": the presence the timed system
+            // recorded for the owner's place.
+            NodeKind::PlacePresence { field, case, .. } => {
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("place-presence-reference-expected"));
+                };
+                let present = self
+                    .objects_for(node)?
+                    .place_presence(&reference, &field.name, case.as_deref())
+                    .ok_or_else(|| invariant("place-presence-unrecorded"))?;
+                Value::Boolean(present)
+            }
             NodeKind::Value(_) => {
                 let Value::Option(option) = self.pop()? else {
                     return Err(invariant("option-value-expected"));

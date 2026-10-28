@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 
 use qsl_semantics::check::StatePredicate;
+use qsl_semantics::model::object_environment::PlacePresences;
 use quire_exact::{Meter, ObjectReference};
 use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::location::Location;
@@ -64,11 +65,12 @@ impl ModelSystem<'_> {
             .iter()
             .map(|(predicate, over)| (*predicate, *over, Vec::new()))
             .collect();
-        self.state_predicates_with(state, &bound)
+        self.state_predicates_with(state, &bound, PlacePresences::default())
     }
 
     /// [`Self::state_predicates`] with each predicate's slots after `over`
-    /// bound to its further values, in order.
+    /// bound to its further values, in order, and `presence` the presence of
+    /// each guarded clock place a timed predicate reads.
     ///
     /// # Errors
     ///
@@ -77,8 +79,10 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
         predicates: &[(&P, Option<&ObjectReference>, Vec<quire_exact::Value>)],
+        presence: PlacePresences,
     ) -> Result<Vec<PredicateReading>, ExpansionStop> {
-        let walk = walk_of(self, state, None)?;
+        let mut walk = walk_of(self, state, None)?;
+        walk.observation.environment.set_place_presence(presence);
         let mut readings = Vec::with_capacity(predicates.len());
         for (predicate, over, further) in predicates {
             let bound = match over {

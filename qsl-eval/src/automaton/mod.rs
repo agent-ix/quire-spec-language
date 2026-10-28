@@ -19,7 +19,8 @@
 //! - [`Numbering`] numbers states in the order the caller reaches them, under
 //!   the `max_automaton_states` bound (ADR-018 IV-6), with checked
 //!   arithmetic. The number is storage local to one explored graph and never
-//!   a state's identity (ADR-018 §12).
+//!   a state's identity (ADR-018 §12); [`PropertyAutomaton::state_key`]
+//!   encodes a reached configuration independently of that number.
 //! - [`translate`] builds a [`PropertyAutomaton`] from a checked temporal
 //!   clause (ADR-018 SM-6): a deterministic finite monitor for a bounded
 //!   clause, the automaton of an infinite-trace safety formula for the

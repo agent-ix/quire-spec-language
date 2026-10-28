@@ -2364,10 +2364,8 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         .expect("fixture text key value")
         .node_id
         .clone();
-    let super::timed_model::ClockPathStep::Slot {
-        selector: super::timed_model::ClockSlotSelector::Key(selector),
-        ..
-    } = &mut changed_path.clock_places[0].path[1]
+    let super::timed_model::ClockPathStep::Slot { selector, .. } =
+        &mut changed_path.clock_places[0].path[1]
     else {
         panic!("fixture clock path has a map key selector");
     };
@@ -2408,6 +2406,32 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             "{case} changes package identity"
         );
         let (_, outcome) = read_fixture_wire(&wire);
+        if case == "path" {
+            // FR-322-AC-148: a slot selector is the symbolic type node of its
+            // domain. The fixture's map admits only the one `Text` type node,
+            // so a literal-key path has no valid read-back: it rekeys the
+            // place and I2 refuses it as a malformed clock place.
+            let rekeyed = wire["semantic_graph"]["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|node| node["semantic_form"] == "clock_place")
+                .expect("emitted clock place");
+            assert_ne!(
+                rekeyed["node_id"],
+                serde_json::to_value(id_for(&admitted, "clock_place")).unwrap(),
+                "path changes its node key"
+            );
+            assert!(
+                matches!(
+                    &outcome,
+                    Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
+                        if refusal.cause == Some(CheckedPackageRefusalCause::MalformedClockPlace)
+                ),
+                "a literal slot selector is refused as a malformed clock place: {outcome:?}"
+            );
+            continue;
+        }
         let Read::Verified {
             admitted: reread_package,
             timed_models: reread,
@@ -2421,7 +2445,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         };
         let changed_form = match case {
             "unit" => "time_source",
-            "path" => "clock_place",
+            "path" => unreachable!("the path case returns before read-back"),
             "bound" | "comparison" => "clock_constraint",
             "reset" => "clock_reset",
             _ => unreachable!(),

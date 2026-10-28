@@ -908,6 +908,32 @@ pub enum NodeKind {
     },
     /// Whether an `Option` operand holds a value.
     Present(NodeId),
+    /// `present(r.f)` (or `present(r.f.c)` for the union case `c`) of the
+    /// guarded clock place `f` of the object `r` refers to: whether the
+    /// place is present at the state, a `Boolean` data predicate and never
+    /// a clock read (FR-230 "Presence is derived", QSpec FR-322-AC-155).
+    PlacePresence {
+        /// The owner object's reference.
+        reference: NodeId,
+        /// The field holding the place, by its declaring object type and
+        /// name.
+        field: FieldRef,
+        /// The union case whose payload is the place; `None` for an
+        /// `Option<Clock>` field.
+        case: Option<String>,
+    },
+    /// `forall(e in r.q: present(e))` (`all`) or `exists(..)` of the
+    /// `Sequence<Option<Clock>>` place `q` of the object `r` refers to:
+    /// whether every (some) element the collection holds is present, a
+    /// `Boolean` data predicate (QSpec FR-415-AC-20).
+    SlotPresence {
+        /// The owner object's reference.
+        reference: NodeId,
+        /// The collection field, by its declaring object type and name.
+        field: FieldRef,
+        /// Whether every element must be present (`forall`).
+        all: bool,
+    },
     /// The payload of an `Option` operand.
     Value(NodeId),
     /// A call of a function of this package. Its checked identity is the
@@ -1286,6 +1312,12 @@ impl NodeKind {
                 reference: operand, ..
             }
             | NodeKind::Present(operand)
+            | NodeKind::PlacePresence {
+                reference: operand, ..
+            }
+            | NodeKind::SlotPresence {
+                reference: operand, ..
+            }
             | NodeKind::Value(operand)
             | NodeKind::ConvertCollection { operand, .. }
             | NodeKind::ConvertScalar(_, operand)

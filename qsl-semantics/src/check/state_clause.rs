@@ -224,6 +224,7 @@ impl StateClauseDeclaration {
             context_population: self.context_population,
             frame_population: self.frame_population,
             binders: &[],
+            presence_places: &[],
             body: &self.body,
         }
     }
@@ -261,6 +262,9 @@ pub(crate) struct ClauseView<'a> {
     /// Further parameters after the operation's: the collection elements a
     /// timed guard part reads (FR-230 "Quantified reads"); none elsewhere.
     pub(crate) binders: &'a [(String, ValueType)],
+    /// The guarded clock places `present(r.f)` may read of an object `r`
+    /// (FR-230 "Presence is derived"); none outside a timed predicate.
+    pub(crate) presence_places: &'a [super::timed_model::PresencePlace],
     pub(crate) body: &'a Expression,
 }
 
@@ -829,6 +833,9 @@ fn check_clause_in(
     .with_context(cx.reborrow(input.scope));
     if let Some(named) = named.clone() {
         typer = typer.with_named_populations(named);
+    }
+    if !form.presence_places.is_empty() {
+        typer = typer.with_presence_places(form.presence_places.to_vec());
     }
     bind_parameters(&mut typer, &parameters, location)?;
     let mut parent_projections = BTreeMap::new();
