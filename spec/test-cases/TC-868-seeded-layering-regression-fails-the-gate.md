@@ -16,7 +16,7 @@ Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-11.
+Scope: FR-345-AC-4 to FR-345-AC-11 and AC-13.
 
 ## Test Procedure
 
@@ -67,8 +67,9 @@ quire-contract-codegen's `negotiate_*`.
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
 7. Run step 1's corpus without the E6 `distinguishing` entry and without the temporal `witness` entry.
-8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
-   then over a copy with one `witness` entry removed.
+8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`.
+   Capture the CLI exit code and JSON report. Then run the target over a copy
+   of the corpus with one `witness` entry removed.
 9. From a root-package test, call `compare` over `REAL_CORPUS` with the
    FR-278 composition, QSL's registry snapshot and a test negotiation
    function that settles every request `supported`; then call it without a
@@ -118,9 +119,13 @@ Each expected result is a literal in the test. Tag the test
   `entry.json` path and the member `expected`, with every other entry still
   compiled. Each verdict tool failure, exit 30.
 - Step 7: exactly two tool-failure results, one naming E6 / `distinguishing` and one naming `quire.temporal.complete/v1` / `witness`; verdict tool failure, exit 30 (FR-345-AC-11).
-- Step 8: the make target over the real corpus exits non-zero with verdict
-  unsupported, exit 21, because no witness negotiation function is supplied;
-  the gate run over the copy exits non-zero with tool-failure exit 30.
+- Step 8, with all six witness units admitted and each layer's candidate set
+  non-empty: the CLI exits 21 and reports `unsupported`; each of the six layer
+  results is `unresolved (unsupported)` with reason `not-negotiated` and its
+  candidate backend identities. The Make target exits 0 only for that exit
+  code and report. A different CLI exit code or report makes the Make target
+  fail. With one required witness absent, the CLI reports a tool-failure
+  result and exits 30, and the Make target fails.
 - Step 9: the negotiated call gives verdict success, matches the case, layer
   and edge results of `make refinement-layering`, and requests each layer's
   witness once per candidate. The call without a negotiation function makes
