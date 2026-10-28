@@ -92,6 +92,7 @@ mod hybrid;
 mod hyper;
 mod model;
 mod protocol;
+mod refinement_rows;
 mod state;
 mod state_graph;
 mod temporal;

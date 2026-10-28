@@ -424,7 +424,7 @@ impl Lowering<'_> {
     /// operation name), however many clauses name it (their contents are
     /// equal, so their keys are, but the occurrence is minted once per
     /// operation identity, not per node -- see [`Lowering::frame_occurrence`]).
-    fn operation_anchor(
+    pub(super) fn operation_anchor(
         &mut self,
         anchor: &AnchorInput<'_>,
         point: Option<&AcceptedPoint>,
@@ -589,7 +589,7 @@ impl Lowering<'_> {
 
     /// A frame `modifies` field entry: the field member `field`'s declaring
     /// object type node and its member name.
-    fn frame_field(
+    pub(super) fn frame_field(
         &mut self,
         field: &DeclarationKey,
         location: &Location,
