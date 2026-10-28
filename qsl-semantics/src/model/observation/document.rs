@@ -1427,7 +1427,7 @@ fn admit_leaf(
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
         }
-        (RawForm::Native(native), value_type) => admit_native(native, value_type),
+        (RawForm::Native(native), value_type) => admit_native(native, value_type, references.types),
         _ => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
@@ -1435,15 +1435,16 @@ fn admit_leaf(
     }
 }
 
-/// A native payload object's kind and payload text, once its envelope is
-/// sound. The first defect refuses, in FR-106's native order: a `kind` that
-/// is not text (`wrong-value-kind`), a `kind` that names no native kind
+/// A native payload object's kind once its envelope is sound (FR-106 checks
+/// 1 to 5). The first defect refuses, in FR-106's native order: a `kind`
+/// that is not text (`wrong-value-kind`), a `kind` that names no native kind
 /// (`invalid-value`, the members unexamined), a missing payload member
-/// (`missing-member`), an unknown member (`unknown-member`, the first in
-/// document order), and a payload that is not text (`wrong-value-kind`).
-/// Each names the member.
+/// (`missing-member`, the first missing in the kind's order), an unknown
+/// member (`unknown-member`, the first in document order), and a payload
+/// member that is not text, or, for a Quantity's `magnitude`, not an object
+/// (`wrong-value-kind`). Each names the member.
 #[ix_trace_rs::string_edge]
-fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), AdmissionRecord> {
+fn native_payload(native: RawNative<'_>) -> Result<NativeKind, AdmissionRecord> {
     let refuse = |cause: &'static str, member: &str| {
         admission_record(Code::InvalidRuntimeInput, cause).with("member", member.to_owned())
     };
@@ -1452,56 +1453,195 @@ fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), Admission
         RawNativeKind::Unknown => return Err(refuse("invalid-value", "kind")),
         RawNativeKind::Known(kind) => kind,
     };
-    let member = match kind {
-        NativeKind::String | NativeKind::Uuid | NativeKind::Text => "text",
-        NativeKind::Timestamp => "nanoseconds",
+    let payload: &[&str] = match kind {
+        NativeKind::String | NativeKind::Uuid | NativeKind::Text => &["text"],
+        NativeKind::Timestamp => &["nanoseconds"],
+        NativeKind::Rational => &["numerator", "denominator"],
+        NativeKind::Decimal => &["coefficient", "scale"],
+        NativeKind::Quantity => &["unit", "magnitude"],
     };
-    let Some((_, payload)) = native.members().find(|(name, _)| *name == member) else {
-        return Err(refuse("missing-member", member));
-    };
-    if let Some((unknown, _)) = native.members().find(|(name, _)| *name != member) {
+    if let Some(missing) = payload
+        .iter()
+        .find(|member| !native.members().any(|(name, _)| name == **member))
+    {
+        return Err(refuse("missing-member", missing));
+    }
+    if let Some((unknown, _)) = native.members().find(|(name, _)| !payload.contains(name)) {
         return Err(refuse("unknown-member", unknown));
     }
-    payload
-        .map(|text| (kind, text))
-        .ok_or_else(|| refuse("wrong-value-kind", member))
+    for (name, text) in native.members() {
+        let object = kind == NativeKind::Quantity && name == "magnitude";
+        if object != text.is_none() || (object && native.object(name).is_none()) {
+            return Err(refuse("wrong-value-kind", name));
+        }
+    }
+    Ok(kind)
+}
+
+/// The text of `native`'s member `name`, which [`native_payload`] found.
+#[ix_trace_rs::string_edge]
+fn payload_text<'v>(native: RawNative<'v>, name: &str) -> &'v str {
+    native
+        .members()
+        .find_map(|(held, text)| (held == name).then_some(text).flatten())
+        .unwrap_or_default()
+}
+
+/// A Rational object's normalized value (FR-106 "A Rational value"):
+/// `invalid-value` naming a member not in FR-038's integer spelling, or a
+/// zero `denominator`.
+pub(super) fn rational_payload(
+    native: RawNative<'_>,
+) -> Result<quire_exact::Rational, AdmissionRecord> {
+    let invalid = |member: &'static str| {
+        admission_record(Code::InvalidRuntimeInput, "invalid-value").with("member", member)
+    };
+    let integer = |member: &'static str| {
+        payload_text(native, member)
+            .parse::<Integer>()
+            .map_err(|_| invalid(member))
+    };
+    let numerator = integer("numerator")?;
+    let denominator = integer("denominator")?;
+    quire_exact::Rational::new(numerator, denominator).map_err(|_| invalid("denominator"))
+}
+
+/// A Decimal object's exact value: `invalid-value` naming a `coefficient`
+/// not in FR-038's integer spelling, or a `scale` that is not a
+/// nonnegative integer at most `4294967295`.
+fn decimal_payload(native: RawNative<'_>) -> Result<quire_exact::Rational, AdmissionRecord> {
+    let invalid = |member: &'static str| {
+        admission_record(Code::InvalidRuntimeInput, "invalid-value").with("member", member)
+    };
+    let coefficient = payload_text(native, "coefficient")
+        .parse::<Integer>()
+        .map_err(|_| invalid("coefficient"))?;
+    let scale = payload_text(native, "scale")
+        .parse::<Integer>()
+        .ok()
+        .filter(|scale| scale.to_string() == payload_text(native, "scale"))
+        .and_then(|scale| scale.to_u64())
+        .and_then(|scale| u32::try_from(scale).ok())
+        .ok_or_else(|| invalid("scale"))?;
+    Ok(quire_exact::DecimalRepresentation::new(coefficient, scale).to_rational())
+}
+
+/// A Quantity's `magnitude` object read as its exact rational (FR-106 "A
+/// Quantity value"): a Rational or a Decimal object, each by its own rules,
+/// with no declared bound. A refusal names the member inside the magnitude,
+/// at the path `magnitude`.
+pub(super) fn quantity_magnitude(
+    magnitude: RawNative<'_>,
+) -> Result<quire_exact::Rational, AdmissionRecord> {
+    let at = |record: AdmissionRecord| record.at(vec![PathStep::Field("magnitude".to_owned())]);
+    match native_payload(magnitude).map_err(at)? {
+        NativeKind::Rational => rational_payload(magnitude).map_err(at),
+        NativeKind::Decimal => decimal_payload(magnitude).map_err(at),
+        NativeKind::String
+        | NativeKind::Uuid
+        | NativeKind::Timestamp
+        | NativeKind::Text
+        | NativeKind::Quantity => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )
+        .with("member", "magnitude")),
+    }
+}
+
+/// The qualified name of the declared unit `unit` in `types`, segments
+/// joined by `::`, or `None` for a unit with no declared name.
+pub(crate) fn unit_name(types: &TypeEnvironment, unit: quire_exact::UnitId) -> Option<String> {
+    types
+        .units()
+        .nominal_node(unit.as_bytes())
+        .map(|node| node.declaration.qualified_declaration.join("::"))
 }
 
 /// A native payload object admitted as a value of `value_type` (FR-106's
 /// native order): the envelope ([`native_payload`]), then the slot's fit
 /// (`wrong-value-kind`), then, for a UUID or a Timestamp, the kernel's
 /// canonical constructor (`invalid-value` naming the payload member, with
-/// the kernel's class) and, for a Text, its profile length ([`admit_text`]).
-/// A String has every Unicode scalar sequence as a value, so it has no
-/// payload refusal.
+/// the kernel's class), for a Text, its profile length ([`admit_text`]),
+/// for a Rational, its normalized value in the declared domain, and for a
+/// Quantity, its unit (the qualified name of the slot's unit, else
+/// `wrong-value-kind` naming `unit`) and its magnitude
+/// ([`quantity_magnitude`]). A String has every Unicode scalar sequence as a
+/// value, so it has no payload refusal.
+#[ix_trace_rs::string_edge]
 fn admit_native(
     native: RawNative<'_>,
     value_type: &quire_exact::ValueType,
+    types: &TypeEnvironment,
 ) -> Result<Value, AdmissionRecord> {
-    let (kind, payload) = native_payload(native)?;
+    let kind = native_payload(native)?;
     let invalid = |refusal: quire_exact::ConstructionRefusal, member: &'static str| {
         admission_record(Code::InvalidRuntimeInput, "invalid-value")
             .with("member", member)
             .kernel_class(refusal.cause)
     };
+    let wrong = |member: &'static str| {
+        admission_record(Code::InvalidRuntimeInput, "wrong-value-kind").with("member", member)
+    };
     match (kind, value_type) {
         (NativeKind::String, quire_exact::ValueType::String) => {
-            Ok(Value::String(payload.to_owned()))
+            Ok(Value::String(payload_text(native, "text").to_owned()))
         }
         (NativeKind::Uuid, quire_exact::ValueType::Uuid) => {
-            quire_exact::Uuid::from_canonical_text(payload)
+            quire_exact::Uuid::from_canonical_text(payload_text(native, "text"))
                 .map(Value::Uuid)
                 .map_err(|refusal| invalid(refusal, "text"))
         }
         (NativeKind::Timestamp, quire_exact::ValueType::Timestamp) => {
-            quire_exact::Timestamp::from_canonical_text(payload)
+            quire_exact::Timestamp::from_canonical_text(payload_text(native, "nanoseconds"))
                 .map(Value::Timestamp)
                 .map_err(|refusal| invalid(refusal, "nanoseconds"))
         }
-        (NativeKind::Text, quire_exact::ValueType::Text(declared)) => admit_text(payload, declared),
-        // Type fit (check 6) refuses every other pairing before any length.
+        (NativeKind::Text, quire_exact::ValueType::Text(declared)) => {
+            admit_text(payload_text(native, "text"), declared)
+        }
+        (NativeKind::Rational, quire_exact::ValueType::Rational(domain)) => {
+            let value = rational_payload(native)?;
+            if domain.contains(&value) {
+                Ok(Value::Rational(value))
+            } else {
+                // FR-106-AC-56: the declared type and the normalized pair.
+                Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
+                    .with(
+                        "expected",
+                        format!(
+                            "Rational[{}, {}; {}, {}]",
+                            domain.numerator().lower(),
+                            domain.numerator().upper(),
+                            domain.denominator().lower(),
+                            domain.denominator().upper()
+                        ),
+                    )
+                    .with("actual", value.to_string()))
+            }
+        }
+        (NativeKind::Quantity, quire_exact::ValueType::Quantity(unit)) => {
+            if unit_name(types, *unit).as_deref() != Some(payload_text(native, "unit")) {
+                return Err(wrong("unit"));
+            }
+            let magnitude = native
+                .object("magnitude")
+                .ok_or_else(|| wrong("magnitude"))?;
+            Ok(Value::Quantity(quire_exact::Quantity::new(
+                quantity_magnitude(magnitude)?,
+                *unit,
+            )))
+        }
+        // Type fit (check 6) refuses every other pairing before any length,
+        // naming no member (FR-106-AC-35).
         (
-            NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp | NativeKind::Text,
+            NativeKind::String
+            | NativeKind::Uuid
+            | NativeKind::Timestamp
+            | NativeKind::Text
+            | NativeKind::Quantity
+            | NativeKind::Rational
+            | NativeKind::Decimal,
             quire_exact::ValueType::Boolean
             | quire_exact::ValueType::Integer
             | quire_exact::ValueType::Int(_)
@@ -1878,7 +2018,14 @@ fn admit_value<'a: 'w, 'w>(
                     (form, value_type) => {
                         let value =
                             admit_leaf(references, form, value_type, witness.as_deref_mut())
-                                .map_err(|record| record.at(path.clone()))?;
+                                .map_err(|record| {
+                                    // A refusal inside a payload object (a
+                                    // Quantity's magnitude) names its own
+                                    // steps below the value.
+                                    let mut full = path.clone();
+                                    full.extend(record.path.iter().cloned());
+                                    record.at(full)
+                                })?;
                         done.push(FieldValue::Present(value));
                     }
                 }
@@ -3874,7 +4021,7 @@ mod tests {
         let RawForm::Native(native) = object.form() else {
             panic!("a native object");
         };
-        admit_native(native, slot)
+        admit_native(native, slot, &TypeEnvironment::default())
     }
 
     /// The retained sequence of an admitted Text value.
@@ -3990,7 +4137,7 @@ mod tests {
             let RawForm::Native(native) = object_value.form() else {
                 panic!("a native object: {object}");
             };
-            let Err(record) = admit_native(native, &title()) else {
+            let Err(record) = admit_native(native, &title(), &TypeEnvironment::default()) else {
                 panic!("a refusal: {object}");
             };
             assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
@@ -4014,7 +4161,8 @@ mod tests {
         let RawForm::Native(native) = string_object.form() else {
             panic!("a native object");
         };
-        let refusal = admit_native(native, &title()).expect_err("a String fits no Text slot");
+        let refusal = admit_native(native, &title(), &TypeEnvironment::default())
+            .expect_err("a String fits no Text slot");
         assert_eq!(refusal.code, Code::InvalidRuntimeInput);
         assert_eq!(refusal.cause, "wrong-value-kind");
         assert!(!refusal.fields.contains_key("member"));
@@ -4035,7 +4183,12 @@ mod tests {
         let RawForm::Native(native) = broken.form() else {
             panic!("a native object");
         };
-        let refusal = admit_native(native, &quire_exact::ValueType::Uuid).expect_err("refused");
+        let refusal = admit_native(
+            native,
+            &quire_exact::ValueType::Uuid,
+            &TypeEnvironment::default(),
+        )
+        .expect_err("refused");
         assert_eq!(refusal.cause, "wrong-value-kind");
         assert_eq!(
             refusal.fields.get("member").map(String::as_str),
@@ -4069,6 +4222,176 @@ mod tests {
             assert_eq!(field("member"), Some("text"));
             assert_eq!(field("expected"), Some(expected));
             assert_eq!(field("actual"), Some(measured.to_string().as_str()));
+        }
+    }
+
+    /// `Rational[-10, 10; 1, 12]`, the declared domain of FR-106-AC-55 and
+    /// FR-106-AC-56 (a domain package cannot declare it, so the slot is built
+    /// directly).
+    fn rational_slot() -> quire_exact::ValueType {
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::new(Integer::from(low), Integer::from(high))
+                .expect("a non-empty interval")
+        };
+        quire_exact::ValueType::Rational(
+            quire_exact::RationalDomain::new(interval(-10, 10), interval(1, 12))
+                .expect("the denominators are at least one"),
+        )
+    }
+
+    /// The object `object` admitted into `slot` with no declared unit.
+    fn admit_object(object: &str, slot: &quire_exact::ValueType) -> Result<Value, AdmissionRecord> {
+        let value = snapshot(object);
+        let RawForm::Native(native) = value.form() else {
+            panic!("a native object: {object}");
+        };
+        admit_native(native, slot, &TypeEnvironment::default())
+    }
+
+    /// The Rational object `numerator` / `denominator`.
+    fn rational_object(numerator: &str, denominator: &str) -> String {
+        serde_json::json!({"kind": "rational", "numerator": numerator, "denominator": denominator})
+            .to_string()
+    }
+
+    fn rational_of(numerator: i64, denominator: i64) -> quire_exact::Rational {
+        quire_exact::Rational::new(Integer::from(numerator), Integer::from(denominator))
+            .expect("a nonzero denominator")
+    }
+
+    /// Part of FR-106-AC-55 (TC-1171): a Rational object admits as its
+    /// normalized value (`2`/`4` as `1`/`2`, `-1`/`-2` as `1`/`2`, `0`/`-7`
+    /// as `0`/`1`), and the boundary values `-10`/`1` and `10`/`1` admit.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_rational_object_admits_as_its_normalized_value() {
+        for (numerator, denominator, expected) in [
+            ("2", "4", rational_of(1, 2)),
+            ("-1", "-2", rational_of(1, 2)),
+            ("0", "-7", rational_of(0, 1)),
+            ("-10", "1", rational_of(-10, 1)),
+            ("10", "1", rational_of(10, 1)),
+        ] {
+            let admitted = admit_object(&rational_object(numerator, denominator), &rational_slot());
+            let Ok(Value::Rational(value)) = &admitted else {
+                panic!("{numerator}/{denominator}: a Rational, not {admitted:?}");
+            };
+            assert_eq!(value, &expected, "{numerator}/{denominator}");
+        }
+    }
+
+    /// Part of FR-106-AC-56 (TC-1171): a Rational outside the declared domain
+    /// refuses `invalid-value` naming the declared type (`expected`) and the
+    /// normalized pair (`actual`); `22`/`2` normalizes to `11`/`1` first.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_rational_outside_its_domain_refuses_with_the_normalized_pair() {
+        for (numerator, denominator, actual) in [
+            ("11", "1", "11/1"),
+            ("22", "2", "11/1"),
+            ("1", "13", "1/13"),
+        ] {
+            let refusal = admit_object(&rational_object(numerator, denominator), &rational_slot())
+                .expect_err("outside the domain");
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "invalid-value");
+            let field = |name: &str| refusal.fields.get(name).map(String::as_str);
+            assert_eq!(field("expected"), Some("Rational[-10, 10; 1, 12]"));
+            assert_eq!(field("actual"), Some(actual), "{numerator}/{denominator}");
+        }
+    }
+
+    /// Part of FR-106-AC-56 (TC-1171): each defective Rational object
+    /// refuses with its cause naming the defective member: a zero
+    /// denominator or a noncanonical integer spelling `invalid-value`, a
+    /// numeric denominator `wrong-value-kind`, a missing denominator
+    /// `missing-member`, an added `unit` `unknown-member` and a `kind`
+    /// spelled `Rational` `invalid-value`.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_defective_rational_object_refuses_naming_its_member() {
+        for (object, cause, member) in [
+            (
+                r#"{"kind":"rational","numerator":"1","denominator":"0"}"#,
+                "invalid-value",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"0","denominator":"0"}"#,
+                "invalid-value",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"01","denominator":"2"}"#,
+                "invalid-value",
+                "numerator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"+1","denominator":"2"}"#,
+                "invalid-value",
+                "numerator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"-0","denominator":"2"}"#,
+                "invalid-value",
+                "numerator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"1","denominator":2}"#,
+                "wrong-value-kind",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"1"}"#,
+                "missing-member",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"1","denominator":"2","unit":"s"}"#,
+                "unknown-member",
+                "unit",
+            ),
+            (
+                r#"{"kind":"Rational","numerator":"1","denominator":"2"}"#,
+                "invalid-value",
+                "kind",
+            ),
+        ] {
+            let refusal = admit_object(object, &rational_slot()).expect_err(object);
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput, "{object}");
+            assert_eq!(refusal.cause, cause, "{object}");
+            assert_eq!(
+                refusal.fields.get("member").map(String::as_str),
+                Some(member),
+                "{object}"
+            );
+        }
+    }
+
+    /// Part of FR-106-AC-56 and FR-106-AC-59 (TC-1171): a Decimal or a
+    /// Quantity object in a Rational slot, a Rational object in a Float64
+    /// slot and a Rational object in a Quantity slot each refuse
+    /// `wrong-value-kind`.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_rational_fits_only_a_rational_slot() {
+        let float64 = quire_exact::ValueType::Float(quire_exact::FloatType::new(
+            quire_exact::IeeeWidth::Binary64,
+            quire_exact::RoundingMode::Exact,
+        ));
+        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound([1; 32]));
+        let decimal = r#"{"kind":"decimal","coefficient":"5","scale":"1"}"#;
+        let in_quantity = r#"{"kind":"quantity","unit":"s","magnitude":{"kind":"rational","numerator":"1","denominator":"2"}}"#;
+        let rational = rational_object("1", "2");
+        for (object, slot, place) in [
+            (decimal, rational_slot(), "Decimal in Rational"),
+            (in_quantity, rational_slot(), "Quantity in Rational"),
+            (rational.as_str(), float64, "Rational in Float64"),
+            (rational.as_str(), quantity, "Rational in Quantity"),
+        ] {
+            let refusal = admit_object(object, &slot).expect_err(place);
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput, "{place}");
+            assert_eq!(refusal.cause, "wrong-value-kind", "{place}");
         }
     }
 

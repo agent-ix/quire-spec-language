@@ -35,6 +35,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 mod abstraction;
 mod admission_corpus;
 mod child_composite;
+mod control_node;
 mod converted_equality;
 mod deep_bodies;
 mod envelope_adoption;
@@ -3195,6 +3196,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
             presence: Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("ConfigVersion/attemptUpdate"),

@@ -390,6 +390,49 @@ impl StateModel {
         member_bounds(&self.views)
     }
 
+    /// Each selected record value type's field names in declaration order
+    /// (each field's `position`), by the record's node key: the order of its
+    /// components in an enumerated value domain (FR-120, FR-215). The
+    /// record's slots stay name-sorted.
+    pub fn record_orders(&self) -> BTreeMap<quire_exact::NodeKey, Vec<String>> {
+        let unbounded = qsl_foundation::IdentityLimits {
+            input_bytes: u64::MAX,
+        };
+        let mut orders = BTreeMap::new();
+        for view in &self.views {
+            let records = &view.view.domain_package().records;
+            for record in records {
+                let DomainPackageRecord::RecordValueType(declared) = record else {
+                    continue;
+                };
+                let Ok(Some(node)) = crate::check::record_node_key(record, unbounded) else {
+                    continue;
+                };
+                let mut fields: Vec<(usize, &str)> = records
+                    .iter()
+                    .filter_map(|record| match record {
+                        DomainPackageRecord::FieldMember(field) if field.owner == declared.key => {
+                            crate::model::intake::member_identity_name(
+                                &declared.key.node,
+                                &field.key.node,
+                            )
+                            .map(|name| (field.position, name))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                fields.sort_unstable();
+                orders.entry(node).or_insert_with(|| {
+                    fields
+                        .into_iter()
+                        .map(|(_, name)| name.to_owned())
+                        .collect()
+                });
+            }
+        }
+        orders
+    }
+
     /// The [`Observation`] of `state`, named `identity`: the object
     /// environment of every object with every field value, and every listed
     /// population complete.

@@ -103,7 +103,7 @@ fn argument_domains(
                 .support(application.declaring, &application.name, position)
             {
                 Some(support) => Some(Domain::Listed(support.values())),
-                None => Domain::of(value_type, &references, system.types),
+                None => Domain::of(value_type, &references, system.types, &system.record_orders),
             }
         })
         .collect::<Option<Vec<_>>>()
@@ -652,8 +652,13 @@ impl Run<'_, '_, '_> {
                 {
                     continue;
                 }
-                let domain = Domain::of(&field.value_type, &post_references, system.types)
-                    .ok_or_else(|| stop(BROKEN))?;
+                let domain = Domain::of(
+                    &field.value_type,
+                    &post_references,
+                    system.types,
+                    &system.record_orders,
+                )
+                .ok_or_else(|| stop(BROKEN))?;
                 dimensions.push(Dimension {
                     population: member.population.clone(),
                     key: member.key.clone(),
@@ -874,7 +879,12 @@ impl Run<'_, '_, '_> {
                 // A field with no finite domain (an `Integer`, a string, an
                 // unbounded collection) is bounded by no frame that grants it,
                 // so it cannot be written here.
-                let Some(domain) = Domain::of(&field.value_type, &references, system.types) else {
+                let Some(domain) = Domain::of(
+                    &field.value_type,
+                    &references,
+                    system.types,
+                    &system.record_orders,
+                ) else {
                     continue;
                 };
                 let mut different: Option<Option<Value>> = None;
@@ -1011,8 +1021,13 @@ impl Run<'_, '_, '_> {
         let Some(result_type) = self.application.declaration.result() else {
             return Ok(None);
         };
-        let domain = Domain::of(result_type, post_references, self.walk.system.types)
-            .ok_or_else(|| stop(BROKEN))?;
+        let domain = Domain::of(
+            result_type,
+            post_references,
+            self.walk.system.types,
+            &self.walk.system.record_orders,
+        )
+        .ok_or_else(|| stop(BROKEN))?;
         if domain.len() > RESULT_ORDER_LIMIT {
             return Err(stop(EXHAUSTED));
         }
@@ -1166,15 +1181,14 @@ impl Run<'_, '_, '_> {
         Ok((candidate, written))
     }
 
-    /// The value `write` of the postcondition `info` computes with
-    /// `candidate` as the post-state, and its occurrences.
-    fn computed(
+    /// The observations of the postcondition `info` with `candidate` as
+    /// the post-state.
+    fn post_observations(
         &self,
         candidate: &ModelState,
         delta: &Delta,
         info: &ClauseInfo,
-        write: &CollectionWrite,
-    ) -> Result<(Value, Vec<(Value, Provenance)>), ExpansionStop> {
+    ) -> Result<AdmittedObservations, ExpansionStop> {
         let system = self.walk.system;
         let state_key = encode::model_key(&system.model, candidate, system.typing());
         let (_, digest) =
@@ -1184,7 +1198,7 @@ impl Run<'_, '_, '_> {
             .observation(candidate, state_document(&digest))
             .map_err(|_| stop(BROKEN))?;
         let effect = self.effect_of(candidate, delta)?;
-        let observations = AdmittedObservations {
+        Ok(AdmittedObservations {
             usage: AdmissionUsage::default(),
             clause: info.identity,
             current: None,
@@ -1199,7 +1213,20 @@ impl Run<'_, '_, '_> {
             result: None,
             created: effect.created,
             deleted: effect.deleted,
-        };
+        })
+    }
+
+    /// The value `write` of the postcondition `info` computes with
+    /// `candidate` as the post-state, and its occurrences.
+    fn computed(
+        &self,
+        candidate: &ModelState,
+        delta: &Delta,
+        info: &ClauseInfo,
+        write: &CollectionWrite,
+    ) -> Result<(Value, Vec<(Value, Provenance)>), ExpansionStop> {
+        let system = self.walk.system;
+        let observations = self.post_observations(candidate, delta, info)?;
         match system.package.evaluate_collection_write(
             &info.qualified,
             &observations,

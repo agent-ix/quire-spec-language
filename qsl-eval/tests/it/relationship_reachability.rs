@@ -136,6 +136,7 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
             presence: Presence::Optional,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
         DomainPackageRecord::Population(PopulationRecord {
             key: key("orders"),

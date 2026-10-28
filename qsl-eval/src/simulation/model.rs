@@ -61,7 +61,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::model_subject::ModelInstance;
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
-use crate::simulation::footprint::Footprint;
+use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::protocol::WeakAccessShape;
@@ -329,6 +329,19 @@ pub enum ModelFinding {
     /// EN-1 found one or more weak-memory access shapes at this reachable
     /// protocol state (FR-220, ADR-025 MA-4).
     WeakAccessShape(Box<WeakAccessShape>),
+    /// EN-1 deferred a local ordered access until reachable-state
+    /// classification completes (FR-220).
+    WeakAccessDeferred {
+        /// The names this attempt transition accesses while classified local.
+        names: Vec<Location>,
+        /// The local-ordering mismatch to report if no name is shared.
+        shape: Box<WeakAccessShape>,
+    },
+    /// EN-1 classified this name shared in a reachable state (FR-220).
+    WeakAccessShared {
+        /// The canonical model location shared by enabled footprints.
+        location: Location,
+    },
     /// An invariant was false for an object of the state.
     InvariantViolated {
         /// The clause's name.
@@ -444,6 +457,12 @@ pub struct ModelSystem<'a> {
     /// QSpec FR-154's unit bounds on fields, each an invariant of every
     /// state, in ascending constraint order.
     member_bounds: Vec<qsl_semantics::model::state::MemberBound>,
+    /// Each record's slots in declaration order, for its enumerated domain
+    /// (FR-120, FR-215).
+    pub(crate) record_orders: domain::RecordOrders,
+    /// Whether FR-120's bound check admits the system ([`Self::bounded`]),
+    /// found once.
+    bounded: std::sync::OnceLock<bool>,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -468,6 +487,15 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// Whether FR-120's requires-bound check ([`check_model_bounds`])
+    /// admits this system: every root of [`Self::domains`] is bounded.
+    /// Every expansion entry point runs that check before expanding.
+    pub(crate) fn bounded(&self) -> bool {
+        *self
+            .bounded
+            .get_or_init(|| check_model_bounds(self, crate::simulation::BOUND_POSITIONS).is_ok())
+    }
+
     /// The declarations every value of this system is encoded under: the
     /// package's record, tuple, union and variant types (FR-181).
     pub(crate) fn typing(&self) -> encode::Typing<'a> {
@@ -631,6 +659,7 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
+        let record_orders = domain::record_orders(types, &model.record_orders());
         let mut member_bounds = model.member_bounds();
         member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
         // A field's bounds, read on each state; a parameter's and a result's
@@ -664,6 +693,8 @@ impl<'a> ModelSystem<'a> {
             declaring: std::sync::Mutex::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
+            record_orders,
+            bounded: std::sync::OnceLock::new(),
         };
         system.check_rewards()?;
         Ok(system)
@@ -863,6 +894,10 @@ impl<'a> ModelSystem<'a> {
                 || domain::enumerable(value_type)
             {
                 value_type.clone()
+            } else if domain::finite(value_type, self.types) {
+                // A finite enum, record or tuple (STD-508), its extent
+                // read whole.
+                ValueType::Boolean
             } else {
                 ValueType::Integer
             };

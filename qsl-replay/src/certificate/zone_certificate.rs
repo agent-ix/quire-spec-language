@@ -674,7 +674,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
     let timed = TimedSystem::with_max_clocks(&system, request.model, request.max_clocks)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
-    if timed.writes_collections() {
+    if timed.carries_clocks() {
         return Err(ZoneCertificateRefusal::CarriedClocks);
     }
     let mut live = None;

@@ -201,6 +201,7 @@ fn optional_reference_field(owner: &str, name: &str, target: &str) -> DomainPack
         presence: Presence::Optional,
         subsets: Vec::new(),
         redefines: None,
+        position: 0,
     })
 }
 

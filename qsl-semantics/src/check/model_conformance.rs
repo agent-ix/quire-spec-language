@@ -299,6 +299,7 @@ mod tests {
                     presence: Presence::Required,
                     subsets: Vec::new(),
                     redefines,
+                    position: 0,
                 }));
             }
         }

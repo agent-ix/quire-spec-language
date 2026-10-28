@@ -1782,7 +1782,7 @@ fn clock_control_profile(
         })
         .find(|(path, _)| {
             nodes.iter().any(|node| {
-                &*node.semantic_form == "control"
+                is_control_node(node)
                     && node.declaration.as_ref().is_some_and(|declaration| {
                         declaration
                             .qualified_name
@@ -1793,6 +1793,14 @@ fn clock_control_profile(
             })
         })
         .map(|(_, profile)| profile)
+}
+
+/// Whether a written node is a protocol `control`, decoded through IR's closed
+/// vocabulary rather than compared by spelling.
+fn is_control_node(node: &CheckedSemanticNodeV2) -> bool {
+    CheckedNodeTag::from_wire(&node.node_tag)
+        .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+        == Some(CheckedNodeKind::Protocol(ProtocolForm::Control))
 }
 
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
