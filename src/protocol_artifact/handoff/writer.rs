@@ -438,9 +438,9 @@ pub enum Error {
         /// The authored declaration name.
         name: String,
         /// The selected operation's anchor.
-        expected: ir::AnchorName,
+        expected: ir::ExecutionPointName,
         /// The anchor the precondition names.
-        actual: ir::AnchorName,
+        actual: ir::ExecutionPointName,
     },
     /// A postcondition names another operation's anchor.
     #[error(
@@ -450,9 +450,9 @@ pub enum Error {
         /// The authored declaration name.
         name: String,
         /// The selected operation's anchor.
-        expected: ir::AnchorName,
+        expected: ir::ExecutionPointName,
         /// The anchor the postcondition names.
-        actual: ir::AnchorName,
+        actual: ir::ExecutionPointName,
     },
     /// The authored inventory exceeds the wire index range.
     #[error("the authored recipe inventory exceeds the wire index range")]
@@ -870,7 +870,7 @@ impl<'a> TryFrom<&'a crate::native_model::OperationRole> for WorkflowApply<'a> {
 }
 
 struct OperationSelection {
-    anchor: ir::AnchorName,
+    anchor: ir::ExecutionPointName,
     export: w::ExportRef,
 }
 
@@ -897,7 +897,7 @@ impl OperationSelection {
             },
         )?;
         Ok(Self {
-            anchor: operation.anchor.clone(),
+            anchor: operation.anchor.clone().into(),
             export: w::ExportRef {
                 model: 0,
                 export: u32::try_from(preceding).map_err(|_| Error::InventoryLimit)?,
@@ -928,7 +928,9 @@ impl UnitInput {
                     clause: ir::ClauseId::new(clause.clause).map_err(Error::Identifier)?,
                     execution_point: match clause.execution {
                         AuthoredExecution::Handler => ir::ExecutionPoint::Handler {
-                            name: ir::AnchorName::new("validate").map_err(Error::Identifier)?,
+                            name: ir::AnchorName::new("validate")
+                                .map_err(Error::Identifier)?
+                                .into(),
                         },
                         AuthoredExecution::Pre => ir::ExecutionPoint::Pre {
                             operation: operation.anchor.clone(),
