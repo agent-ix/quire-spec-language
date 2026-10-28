@@ -10,8 +10,8 @@ use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
 use quire_exact::Cancel;
 
 use crate::timed_world::{
-    document, ident, timers_document, wire_field, wire_type, world_built, world_holding, World,
-    DENSE, PACKAGE, PLACEHOLDER,
+    document, ident, timers_document, wire_field, wire_type, world_holding, World, DENSE, PACKAGE,
+    PLACEHOLDER,
 };
 use crate::zone_search::{
     claim, deadlock, deadlock_result, operations, time_lock_item, violated, INFINITE,
