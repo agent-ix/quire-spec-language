@@ -774,8 +774,11 @@ fn reduced_candidates(
 }
 
 /// The candidate outcome of one item's `requirements`: backends of its
-/// capability kind that advertise every fairness kind it uses (FR-134). An
-/// item the writer disposes `Unsupported` has no candidate (FR-234).
+/// capability kind that advertise every fairness kind it uses (FR-134) and,
+/// for an item over a `time dense` subject, decide one (FR-243); a
+/// refinement record over any other subject goes to the explicit-state
+/// engines alone (FR-144). An item the writer disposes `Unsupported` has no
+/// candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
     evidence: Option<EvidenceKind>,
@@ -793,6 +796,15 @@ fn candidates_of(
             &Default::default(),
             requirements.hybrid_dynamics(),
         ),
+    };
+    let refinement = matches!(
+        requirements.property_form(),
+        Some(quire_semantic_value::fairness::PropertyForm::Refinement { .. })
+    );
+    let outcome = if refinement && !requirements.dense_time() {
+        registry.restrict_to_untimed_refinement(outcome)
+    } else {
+        registry.restrict_to_dense_time(outcome, requirements.dense_time())
     };
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).

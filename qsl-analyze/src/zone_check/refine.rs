@@ -38,9 +38,9 @@
 //! does not apply, since its explicit successors ignore clock guards.
 //!
 //! This is the safety half only. Remaining work on QSL-1005: the liveness
-//! half over a timed concrete subject (ADR-026 TS-4), and the route of a
-//! refinement record whose concrete subject declares `time dense` to EN-6,
-//! which waits on the refinement node identity (QSL-544, IR-1014).
+//! half over a timed concrete subject (ADR-026 TS-4). A refinement record
+//! whose concrete subject declares `time dense` routes here (FR-430): S3
+//! marks it dense and negotiation keeps EN-6 alone.
 
 use std::collections::{BTreeMap, VecDeque};
 

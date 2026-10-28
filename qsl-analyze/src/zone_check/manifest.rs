@@ -40,7 +40,9 @@ pub const FAIRNESS_KINDS: [FairnessLabel<'static>; 2] =
 pub const REDUCTIONS: [&str; 1] = [ReductionKind::Symmetry.as_str()];
 
 /// EN-6's routed descriptor, converted from [`ADVERTISED`], [`DOMAINS`],
-/// [`FAIRNESS_KINDS`] and [`REDUCTIONS`] by FR-288's conversion. `origin`
+/// [`FAIRNESS_KINDS`] and [`REDUCTIONS`] by FR-288's conversion, and
+/// marked as deciding a `time dense` subject, so an item over one routes to
+/// EN-6 alone (QSL FR-243, FR-430). `origin`
 /// and `manifest_digest` are the host's facts (ADR-029 PV-1).
 ///
 /// # Errors
@@ -64,4 +66,5 @@ pub fn descriptor(
             reductions: Some(&REDUCTIONS),
         },
     )
+    .map(BackendDescriptor::with_dense_time)
 }

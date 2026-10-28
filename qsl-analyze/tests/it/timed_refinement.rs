@@ -31,13 +31,13 @@ use crate::timed_world::{
 
 /// FR-430-AC-1's untimed `Req`: the object `c` (here `Call`) with `sent`
 /// (here `inflight`), and `send` setting it.
-fn req() -> Vec<u8> {
+pub(crate) fn req() -> Vec<u8> {
     renamed_package(&document(&[], &[("send", &["inflight"])]), "test/req")
 }
 
 /// FR-430-AC-1's timed `TReq`: `Req` with the clock `x`, `send` guarded
 /// `x >= 1`.
-fn treq() -> Vec<u8> {
+pub(crate) fn treq() -> Vec<u8> {
     document(&["x"], &[("send", &["inflight"])])
 }
 
@@ -78,12 +78,12 @@ fn safety(world: &Refining) -> TimedSafetyOutcome {
     .expect("EN-6 takes the refinement")
 }
 
-const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
+pub(crate) const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
      pre MSend using v on M::Call::send { self.x >= 1 ms }\n\
      post MSent using v on M::Call::send { self.inflight }\n";
 
 /// The refinement of `A` by `M` with the field row `inflight = {row}`.
-fn refinement(row: &str) -> String {
+pub(crate) fn refinement(row: &str) -> String {
     format!(
         "refinement Timed using inf abstract A concrete M {{\n\
          population A::calls from M::calls;\n\
@@ -106,6 +106,56 @@ fn unit(row: &str) -> Result<Refining, Vec<(String, String, String)>> {
 fn s3_admits_a_timed_concrete_model_under_an_untimed_abstract_one() {
     let world = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
     assert_eq!(world.package.graph().refinements().len(), 1);
+}
+
+/// FR-430-AC-1's routing half: the timed `TReq`'s refinement record is
+/// marked dense and routes to EN-6 alone with EN-1 and EN-6 registered, and
+/// the deadlock-freedom item it brings for `M` does too.
+#[trace("TC-1170", "FR-430-AC-1")]
+#[test]
+fn the_timed_refinement_record_routes_to_en6_alone() {
+    use qsl_analyze::zone_check::manifest as en6;
+    use qsl_route::deadlock::{deadlock_freedom_items, ModelRefinementItem};
+    use qsl_route::request::items_from_requirements;
+
+    let world = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let graph = world.package.graph();
+    let [refinement] = graph.refinements() else {
+        panic!("one refinement");
+    };
+    let occurrence = refinement
+        .requirement_occurrence()
+        .expect("the refinement has a record");
+    let record = graph.requirements().get(occurrence).expect("its record");
+    assert!(record.requirements().dense_time());
+    let registry = crate::dense_route::registry();
+    let items = items_from_requirements(graph.requirements(), &registry, None);
+    let item = items
+        .iter()
+        .find(|item| item.occurrence() == occurrence)
+        .expect("the record's item");
+    assert_eq!(
+        crate::dense_route::ids(item.candidates()),
+        [en6::BACKEND_ID]
+    );
+
+    let subject = "treq";
+    let initial = [world.abstract_initial.clone()];
+    let derived = deadlock_freedom_items(
+        &[],
+        &[ModelRefinementItem {
+            refinement,
+            subject: &subject,
+            abstract_initial: &initial,
+            package: graph,
+        }],
+        &[],
+        |_| vec!["M".to_owned()],
+    );
+    let [deadlock] = derived.as_slice() else {
+        panic!("one deadlock-freedom item: {derived:?}");
+    };
+    assert!(deadlock.dense_time());
 }
 
 #[trace("TC-1170", "FR-430-AC-1")]
