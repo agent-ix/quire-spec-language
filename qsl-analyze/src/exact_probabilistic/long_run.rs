@@ -308,6 +308,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![true], vec![false]],
+            fairness: vec![],
         };
         let unweighted = long_run_fraction(&product, &[true, false], None)
             .expect("a positive recurrent component has a stationary distribution");

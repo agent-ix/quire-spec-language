@@ -4,6 +4,7 @@
 use std::collections::VecDeque;
 
 use super::{ProbProduct, ProbStateId, ProductAction, ProductKind};
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 /// The maximal end components of an MDP product, or bottom strongly connected
 /// components of a DTMC product.
@@ -41,6 +42,196 @@ pub fn bottom_components(product: &ProbProduct) -> Vec<Vec<ProbStateId>> {
 /// every positive-probability successor stays in the component.
 pub fn maximal_end_components(product: &ProbProduct) -> Vec<Vec<ProbStateId>> {
     maximal_end_components_avoiding(product, &vec![false; product.states.len()])
+}
+
+/// One maximal fair end component of an EN-5 product (FR-200 FS-3, FS-4).
+#[derive(Clone, Debug)]
+pub struct FairEndComponent {
+    /// Its states, in canonical product order.
+    pub states: Vec<ProbStateId>,
+    /// Every action whose positive-probability successors stay in this
+    /// component, grouped by source state and canonical action order.
+    pub actions: Vec<(ProbStateId, ProductAction)>,
+}
+
+/// Compute the maximal fair end components of a probabilistic product by
+/// refining its maximal end components under the claim's fairness set.
+pub fn maximal_fair_end_components(product: &ProbProduct) -> Vec<FairEndComponent> {
+    maximal_fair_end_components_avoiding(product, &vec![false; product.states.len()])
+}
+
+/// Compute fair end components after excluding objective-absorbing or
+/// otherwise ineligible states, such as the target states of reachability.
+pub fn maximal_fair_end_components_avoiding(
+    product: &ProbProduct,
+    excluded: &[bool],
+) -> Vec<FairEndComponent> {
+    if product.kind != ProductKind::Mdp {
+        return Vec::new();
+    }
+    if excluded.len() != product.states.len() {
+        return Vec::new();
+    }
+    let classes = fairness_classes(product);
+    let mut pending = maximal_end_components_avoiding(product, excluded);
+    let mut fair = Vec::new();
+    while let Some(component) = pending.pop() {
+        let mut included = vec![false; product.states.len()];
+        for state in &component {
+            included[state.index()] = true;
+        }
+        let mut changed = false;
+        for class in &classes {
+            let enabled = component
+                .iter()
+                .copied()
+                .filter(|state| has_action(product, *state, class))
+                .collect::<Vec<_>>();
+            let taken = component.iter().copied().any(|state| {
+                internal_action_groups(product, state, &included)
+                    .iter()
+                    .any(|(action, _, _)| class.matches(action))
+            });
+            if taken {
+                continue;
+            }
+            match class.kind {
+                FairnessKind::Weak if enabled.len() == component.len() => {
+                    changed = true;
+                    break;
+                }
+                FairnessKind::Strong if !enabled.is_empty() => {
+                    for state in enabled {
+                        included[state.index()] = false;
+                    }
+                    let excluded = included.iter().map(|member| !member).collect::<Vec<_>>();
+                    pending.extend(maximal_end_components_avoiding(product, &excluded));
+                    changed = true;
+                    break;
+                }
+                FairnessKind::Weak | FairnessKind::Strong => {}
+            }
+        }
+        if changed {
+            continue;
+        }
+        let actions = component
+            .iter()
+            .copied()
+            .flat_map(|state| {
+                internal_action_groups(product, state, &included)
+                    .into_iter()
+                    .map(move |(action, _, _)| (state, action))
+            })
+            .collect();
+        fair.push(FairEndComponent {
+            states: component,
+            actions,
+        });
+    }
+    fair.sort_by(|left, right| left.states[0].cmp(&right.states[0]));
+    fair
+}
+
+#[derive(Clone)]
+struct FairActionClass {
+    operation: String,
+    identity: Option<qsl_eval::simulation::model::ScheduledIdentity>,
+    kind: FairnessKind,
+}
+
+impl FairActionClass {
+    fn matches(&self, action: &ProductAction) -> bool {
+        let ProductAction::Identity(identity) = action else {
+            return false;
+        };
+        identity.operation == self.operation
+            && self
+                .identity
+                .as_ref()
+                .is_none_or(|member| member == identity)
+    }
+}
+
+fn fairness_classes(product: &ProbProduct) -> Vec<FairActionClass> {
+    let mut classes = Vec::new();
+    for fairness in &product.fairness {
+        match fairness.constraint.granularity() {
+            FairnessGranularity::Whole => classes.push(FairActionClass {
+                operation: fairness.operation.clone(),
+                identity: None,
+                kind: fairness.constraint.kind(),
+            }),
+            FairnessGranularity::Each => {
+                let mut identities = Vec::new();
+                for edge in &product.edges {
+                    let Some(identity) = edge.action.as_ref() else {
+                        continue;
+                    };
+                    if identity.operation == fairness.operation
+                        && !identities.iter().any(|known| known == identity)
+                    {
+                        identities.push(identity.clone());
+                    }
+                }
+                classes.extend(identities.into_iter().map(|identity| FairActionClass {
+                    operation: fairness.operation.clone(),
+                    identity: Some(identity),
+                    kind: fairness.constraint.kind(),
+                }));
+            }
+        }
+    }
+    classes
+}
+
+fn has_action(product: &ProbProduct, state: ProbStateId, class: &FairActionClass) -> bool {
+    action_groups(product, state)
+        .iter()
+        .any(|(action, _, _)| class.matches(action))
+}
+
+fn action_groups(product: &ProbProduct, state: ProbStateId) -> Vec<(ProductAction, usize, usize)> {
+    let edges = product.outgoing(state);
+    let base = product.edges.partition_point(|edge| edge.from < state);
+    let mut groups = Vec::new();
+    let mut cursor = 0;
+    while cursor < edges.len() {
+        let first = &edges[cursor];
+        let mut end = cursor + 1;
+        while end < edges.len() && same_action(&first.choice, &edges[end].choice) {
+            end += 1;
+        }
+        groups.push((first.choice.clone(), base + cursor, base + end));
+        cursor = end;
+    }
+    groups
+}
+
+fn internal_action_groups(
+    product: &ProbProduct,
+    state: ProbStateId,
+    component: &[bool],
+) -> Vec<(ProductAction, usize, usize)> {
+    action_groups(product, state)
+        .into_iter()
+        .filter(|(_, start, end)| {
+            let positive = product.edges[*start..*end]
+                .iter()
+                .filter(|edge| !edge.probability.is_zero())
+                .collect::<Vec<_>>();
+            !positive.is_empty() && positive.iter().all(|edge| component[edge.to.index()])
+        })
+        .collect()
+}
+
+fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
+    match (left, right) {
+        (ProductAction::Identity(left), ProductAction::Identity(right)) => left == right,
+        (ProductAction::PostState(left), ProductAction::PostState(right)) => left == right,
+        (ProductAction::TerminalStutter, ProductAction::TerminalStutter) => true,
+        _ => false,
+    }
 }
 
 /// Maximal end components in the induced MDP after excluding selected states.
@@ -229,15 +420,6 @@ fn as_state_ids(component: Vec<usize>) -> Vec<ProbStateId> {
     component.into_iter().map(ProbStateId).collect()
 }
 
-fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
-    match (left, right) {
-        (ProductAction::Identity(left), ProductAction::Identity(right)) => left == right,
-        (ProductAction::PostState(left), ProductAction::PostState(right)) => left == right,
-        (ProductAction::TerminalStutter, ProductAction::TerminalStutter) => true,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,6 +463,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![]; count],
+            fairness: vec![],
         }
     }
 

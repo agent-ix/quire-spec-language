@@ -704,6 +704,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![], vec![], vec![]],
+            fairness: vec![],
         };
         let values = backward_induction(
             &product,
@@ -723,6 +724,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![], vec![], vec![]],
+            fairness: vec![],
         };
         let values = backward_induction_bounds(
             &product,
@@ -746,6 +748,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![], vec![], vec![]],
+            fairness: vec![],
         };
         let terminal = [None, Some(one()), Some(zero())];
         let exact = finite_solution(
@@ -783,6 +786,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![]],
+            fairness: vec![],
         };
         assert_eq!(
             backward_induction(&product, &[None], Extremum::Minimum),
@@ -881,6 +885,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![], vec![], vec![]],
+            fairness: vec![],
         };
         product
             .edges

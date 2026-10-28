@@ -57,6 +57,7 @@ use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Rational, Value};
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::fairness::FairnessConstraint;
 use std::cmp::Ordering;
 
 /// A state handle in one product, assigned in discovery order.
@@ -319,6 +320,17 @@ pub struct ProbEdge {
     pub rewards: Vec<(quire_exact::Identifier, Value)>,
 }
 
+/// One checked fairness constraint and the declaration identity text used by
+/// the product's scheduled actions.
+#[derive(Clone, Debug)]
+pub struct ProductFairness {
+    /// The checked constraint, including its weak/strong and whole/each
+    /// members.
+    pub constraint: FairnessConstraint,
+    /// FR-181 identity text of the constrained operation.
+    pub operation: String,
+}
+
 /// A built product.
 #[derive(Clone, Debug)]
 pub struct ProbProduct {
@@ -340,6 +352,8 @@ pub struct ProbProduct {
     /// `B` of a reachability claim, `B` of an expected reward, `P` of a
     /// long-run fraction. Empty for a bounded form.
     pub labels: Vec<Vec<bool>>,
+    /// The claim's resolved fairness set and its FR-181 operation identities.
+    pub fairness: Vec<ProductFairness>,
 }
 
 impl ProbProduct {

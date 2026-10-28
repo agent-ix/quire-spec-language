@@ -860,6 +860,7 @@ mod tests {
             initial: vec![],
             decided: vec![],
             labels: vec![vec![], vec![], vec![]],
+            fairness: vec![],
         }
     }
 

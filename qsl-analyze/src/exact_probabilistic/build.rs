@@ -22,8 +22,8 @@ use quire_semantic_value::catalog::InternalFault;
 use super::plan::{Plan, PlanFault, Reads};
 use super::{
     Accumulator, PathStep, Pending, ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId,
-    ProductAction, ProductKind, ProductRefusal, ProductRequest, ProductStop, UndefinedPath,
-    UndefinedRead,
+    ProductAction, ProductFairness, ProductKind, ProductRefusal, ProductRequest, ProductStop,
+    UndefinedPath, UndefinedRead,
 };
 use super::{FormulaState, MonitorState};
 
@@ -76,10 +76,27 @@ pub fn build_product(
                 .collect::<Result<Vec<_>, ProductRefusal>>()?
         }
     };
+    let fairness = claim
+        .fairness
+        .iter()
+        .map(|constraint| {
+            let operation = system
+                .operation_text(
+                    constraint.operation().declaring_type(),
+                    constraint.operation().name(),
+                )
+                .ok_or_else(|| fault("a-checked-fairness-operation-is-admitted"))?;
+            Ok(ProductFairness {
+                constraint: constraint.clone(),
+                operation: operation.to_owned(),
+            })
+        })
+        .collect::<Result<Vec<_>, ProductRefusal>>()?;
     let builder = Builder {
         system: &system,
         workload,
         kind,
+        fairness,
         plan,
         reads,
         bindings,
@@ -194,6 +211,7 @@ struct Builder<'r, 'c> {
     system: &'r ModelSystem<'r>,
     workload: Option<&'r Workload>,
     kind: ProductKind,
+    fairness: Vec<ProductFairness>,
     plan: Plan<'c>,
     reads: Reads<'c>,
     /// Each `over` binding, with the reference its predicates are read for.
@@ -291,6 +309,7 @@ impl Builder<'_, '_> {
             initial,
             decided,
             labels,
+            fairness: self.fairness,
         }
     }
 

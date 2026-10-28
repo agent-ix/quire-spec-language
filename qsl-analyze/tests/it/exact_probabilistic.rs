@@ -6,6 +6,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
+use qsl_analyze::exact_probabilistic::graph::maximal_fair_end_components;
 use qsl_analyze::exact_probabilistic::{
     backward_induction, build_product, expected_reward, finite_solution, reach_form,
     terminal_values, Accumulator, Amount, ExtendedRational, Extremum, FinitePayoff, FiniteSolution,
@@ -1069,6 +1070,40 @@ fn an_unbounded_form_labels_the_model_states() {
     assert_eq!(until.kind, ProductKind::Dtmc);
     // `A` then `B`: not yet done, then done.
     assert_eq!(until.labels, [[true, false], [false, true]]);
+}
+
+/// FR-200-AC-1 (TC-635): refinement removes the wait-only component when the
+/// claim requires the enabled `flip` operation to occur strongly fairly.
+#[trace("TC-635", "FR-200-AC-1")]
+#[test]
+fn fair_end_component_refinement_removes_a_strongly_unfair_wait_loop() {
+    let world = World::new(&prob_world::process(REACH));
+    let unfair = built(&world, "Terminates");
+    let fair = built(&world, "FairTerminates");
+
+    let unfair_components = maximal_fair_end_components(&unfair);
+    let wait_component = unfair_components
+        .iter()
+        .find(|component| component.states.contains(&start(&unfair)))
+        .expect("without a fairness constraint the live wait loop is an end component");
+    assert_eq!(wait_component.actions.len(), 1);
+    let ProductAction::Identity(action) = &wait_component.actions[0].1 else {
+        panic!("the fair end component contains its model action");
+    };
+    assert!(action.operation.contains("wait"));
+
+    let targets = fair
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    assert!(
+        qsl_analyze::exact_probabilistic::graph::maximal_fair_end_components_avoiding(
+            &fair, &targets
+        )
+        .is_empty(),
+        "the only target-free end component avoids the strongly fair flip"
+    );
 }
 
 const COST: &str = "probabilistic Cost using ev on M over (m: M::Msg) under Even on origin \
