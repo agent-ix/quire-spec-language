@@ -7,6 +7,7 @@ use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::intake::SelectedModels;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::location::Origin;
 
 fn check(
     declarations: &str,
@@ -50,9 +51,13 @@ fn some_with_a_payload_outside_the_element_type_refuses_at_the_call() {
         &refusal.cause,
         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
     ));
+    assert!(matches!(
+        &refusal.location.origin,
+        Origin::Body { function, index: 0, .. } if function == "bad"
+    ));
     assert!(
-        !refusal.location.path().is_empty(),
-        "the call is the failing expression: {:?}",
+        refusal.location.path().is_empty(),
+        "Some(x) is the root body expression: {:?}",
         refusal.location
     );
 }
