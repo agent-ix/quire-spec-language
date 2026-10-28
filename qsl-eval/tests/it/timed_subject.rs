@@ -5341,8 +5341,9 @@ fn the_clock_presence_frame_vectors_step_as_published() {
     };
     let mut ran = 0;
     // Each vector's observed result: its successors, or its refusal.
-    let mut results: BTreeMap<String, Result<Vec<(bool, Option<Rational>)>, String>> =
-        BTreeMap::new();
+    // The successors' presence and clock, or the refusal.
+    type Outcome = Result<Vec<(bool, Option<Rational>)>, String>;
+    let mut results: BTreeMap<String, Outcome> = BTreeMap::new();
     for vector in vectors["cases"].as_array().expect("cases") {
         let id = vector["id"].as_str().expect("an id");
         let union = vector["form"] == "union";
