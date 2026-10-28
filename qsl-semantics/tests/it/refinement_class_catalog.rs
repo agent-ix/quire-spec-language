@@ -249,10 +249,10 @@ fn an_each_clause_has_an_activate_class_with_the_trigger_record() {
     assert!(!classes(catalog.concrete()).contains(&"activate Local"));
 }
 
-/// A contributing clause whose class node is not written yet (a
-/// `parallel`, QSL-1186) leaves the catalog unlowered: the refinement has
-/// its checked catalog but no keyed one, so it is not in the V2 emission
-/// slice.
+/// A contributing clause that is not written yet (it holds a `choice`,
+/// QSL-1186) has no node for its classes, so it leaves the catalog
+/// unlowered: the refinement has its checked catalog but no keyed one, so
+/// it is not in the V2 emission slice.
 #[trace("FR-375-AC-23", "TC-310")]
 #[test]
 fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
@@ -260,8 +260,9 @@ fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
     let local = LOCAL.replace(
         "run sequence Main { }",
         "run sequence Main {\n\
-         parallel par { branch pl sequence PL { } branch pr sequence PR { } } \
-         join all [pl, pr];\n\
+         attempt Try by w on Impl::Counter::peek contracts [] as (r: Boolean) { true };\n\
+         choice Pick by w visible () { case yes when { true } sequence A { } \
+         case no when { false } sequence B { } }\n\
          }",
     );
     let spec = counter_spec();
@@ -278,7 +279,7 @@ fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
         .unwrap_or_else(|refusals| panic!("{refusals:?}"));
     let refinement = the_refinement(&graph);
     let catalog = refinement.class_catalog().expect("a checked catalog");
-    assert!(classes(catalog.concrete()).contains(&"fork Local::par"));
+    assert!(classes(catalog.concrete()).contains(&"Local::Try"));
     assert!(refinement.class_catalog_keys().is_none());
     assert!(!refinement.v2_emittable());
 }
