@@ -452,6 +452,9 @@ pub struct ModelSystem<'a> {
     /// and the collection's `min` and `max` (`None` with no declared
     /// maximum).
     pub(crate) clock_counts: Vec<ClockCount>,
+    /// Whether FR-120's bound check admits the system ([`Self::bounded`]),
+    /// found once.
+    bounded: std::sync::OnceLock<bool>,
 }
 
 /// One element-count member of a pure-clock collection: the object type
@@ -480,6 +483,33 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// Every field some operation's frame grants: the fields it writes and
+    /// every field of a type it creates.
+    fn granted(&self) -> BTreeSet<DeclarationKey> {
+        let mut granted = BTreeSet::new();
+        for declaration in self.types.object_types() {
+            for operation in self.operations.declared_by(declaration.key()) {
+                let effect = operation.effect();
+                granted.extend(effect.written_fields().cloned());
+                for created in self.creatable_types(effect) {
+                    if let Some(type_fields) = self.fields.get(&created) {
+                        granted.extend(type_fields.iter().map(|field| field.key.clone()));
+                    }
+                }
+            }
+        }
+        granted
+    }
+
+    /// Whether FR-120's requires-bound check ([`check_model_bounds`])
+    /// admits this system: every root of [`Self::domains`] is bounded.
+    /// Every expansion entry point runs that check before expanding.
+    pub(crate) fn bounded(&self) -> bool {
+        *self
+            .bounded
+            .get_or_init(|| check_model_bounds(self, crate::simulation::BOUND_POSITIONS).is_ok())
+    }
+
     /// The declarations every value of this system is encoded under: the
     /// package's record, tuple, union and variant types (FR-181).
     pub(crate) fn typing(&self) -> encode::Typing<'a> {
@@ -743,6 +773,7 @@ impl<'a> ModelSystem<'a> {
             member_bounds,
             record_orders,
             clock_counts: counts,
+            bounded: std::sync::OnceLock::new(),
         };
         system.check_rewards()?;
         Ok(system)
@@ -951,7 +982,6 @@ impl<'a> ModelSystem<'a> {
             };
             roots.push((WireNodeId::from_digest(*digest.as_bytes()), bounded));
         };
-        let mut granted: BTreeSet<DeclarationKey> = BTreeSet::new();
         for declaration in self.types.object_types() {
             for operation in self.operations.declared_by(declaration.key()) {
                 let Some(owner) = self.model.type_key(declaration.key()) else {
@@ -989,15 +1019,9 @@ impl<'a> ModelSystem<'a> {
                         result,
                     );
                 }
-                let effect = operation.effect();
-                granted.extend(effect.written_fields().cloned());
-                for created in self.creatable_types(effect) {
-                    if let Some(type_fields) = self.fields.get(&created) {
-                        granted.extend(type_fields.iter().map(|field| field.key.clone()));
-                    }
-                }
             }
         }
+        let granted = self.granted();
         let field_types: BTreeMap<&DeclarationKey, ValueType> = self
             .fields
             .values()
@@ -1014,17 +1038,11 @@ impl<'a> ModelSystem<'a> {
                 )
             })
             .collect();
+        // A pure-clock collection's count is a root only where a frame
+        // grants it: with no declared maximum it is then unbounded. An
+        // ungranted one ranges its initial count up to `max_clocks` (FR-230
+        // "Initial element count").
         for key in &granted {
-            // A pure-clock collection's count with no declared maximum is
-            // bounded by `max_clocks`, not by a domain (FR-230 "Initial
-            // element count").
-            let unbounded_count = self
-                .clock_counts
-                .iter()
-                .any(|(_, field, _, max)| field.key == *key && max.is_none());
-            if unbounded_count {
-                continue;
-            }
             if let Some(value_type) = field_types.get(key) {
                 root(declaration_enc(key), value_type);
             }

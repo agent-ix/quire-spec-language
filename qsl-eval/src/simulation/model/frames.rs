@@ -36,7 +36,7 @@ use super::{
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
-use crate::value::{CheckedPackageEvaluation, Provenance, WrittenCollection, WrittenValue};
+use crate::value::{CheckedPackageEvaluation, Provenance, WrittenCollection};
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::CollectionWrite;
 use quire_exact::Meter;
@@ -681,7 +681,6 @@ impl Run<'_, '_, '_> {
                 // a broken internal invariant.
                 return Err(stop(BROKEN));
             };
-            let candidate = self.data_writes(candidate, &delta)?;
             self.complete(
                 self.collection_writes(candidate, &delta)?,
                 &delta,
@@ -1217,153 +1216,6 @@ impl Run<'_, '_, '_> {
         })
     }
 
-    /// FR-120 "Successors": the writes of the receiver's fields with no
-    /// finite domain, executed rather than enumerated. A field a
-    /// postcondition conjunct `self.f = E` writes takes `E`'s value
-    /// computed with `candidate` as the post-state, which must compute the
-    /// same value again over the state it writes, so it is a function of
-    /// the pre-state and the enumerated fields; a write the frame does not
-    /// grant leaves `candidate`, whose postcondition is then false. A field
-    /// the frame grants on an object of the state with no such conjunct is
-    /// unbounded nondeterminism the expansion cannot list.
-    ///
-    /// # Errors
-    ///
-    /// `unsupported_construct`/`write-not-computed` for a granted field with
-    /// no finite domain and no computed write, or a write with no value or
-    /// that is no function of the pre-state.
-    fn data_writes(
-        &self,
-        mut candidate: ModelState,
-        delta: &Delta,
-    ) -> Result<ModelState, ExpansionStop> {
-        let system = self.walk.system;
-        let references = self.walk.references();
-        let effect = self.application.declaration.effect();
-        // Clock-bearing collections are written by `collection_writes`.
-        // A clock collection whose slots a reset by selection resets keeps
-        // its data: FR-230's reset writes the clocks of the slots it
-        // selects, and the frame grants the collection for them.
-        let selected: BTreeSet<&DeclarationKey> = system
-            .package
-            .graph()
-            .timed_models()
-            .iter()
-            .flat_map(|model| {
-                model
-                    .resets()
-                    .iter()
-                    .filter(|resets| {
-                        self.postconditions
-                            .iter()
-                            .any(|info| resets.clause() == info.name)
-                    })
-                    .flat_map(|resets| resets.resets())
-                    .filter(|reset| reset.selection().is_some())
-                    .filter_map(|reset| model.clock(reset.clock()))
-                    .map(|clock| clock.field())
-            })
-            .collect();
-        let carried: BTreeSet<&str> = system
-            .package
-            .graph()
-            .timed_models()
-            .iter()
-            .flat_map(|model| model.resets())
-            .filter(|resets| {
-                self.postconditions
-                    .iter()
-                    .any(|info| resets.clause() == info.name)
-            })
-            .flat_map(|resets| resets.writes())
-            .map(CollectionWrite::field)
-            .collect();
-        for row in &self.walk.rows {
-            let receiver = row.reference == self.row.reference;
-            let type_key = system
-                .model
-                .type_key(row.type_id())
-                .ok_or_else(|| stop(BROKEN))?;
-            let fields = system.fields.get(type_key).ok_or_else(|| stop(BROKEN))?;
-            for field in fields {
-                if Domain::of(
-                    &field.value_type,
-                    &references,
-                    system.types,
-                    &system.record_orders,
-                )
-                .is_some()
-                    || (receiver && selected.contains(&field.key))
-                    || carried.contains(field.name.as_str())
-                {
-                    continue;
-                }
-                let granted = effect.modifies.contains(&field.key)
-                    || (receiver && effect.receiver_modifies.contains(&field.key));
-                if !granted {
-                    continue;
-                }
-                if !receiver {
-                    return Err(stop(WRITE_NOT_COMPUTED));
-                }
-                let mut written = None;
-                for info in self.postconditions {
-                    if let Some(value) = self.written(&candidate, delta, info, &field.name)? {
-                        written = Some((info, value));
-                        break;
-                    }
-                }
-                let Some((info, value)) = written else {
-                    return Err(stop(WRITE_NOT_COMPUTED));
-                };
-                let mut next = candidate.clone();
-                next.populations
-                    .get_mut(&row.population)
-                    .and_then(|objects| objects.get_mut(&row.key))
-                    .ok_or_else(|| stop(BROKEN))?
-                    .fields
-                    .insert(field.key.clone(), value.clone());
-                if self.decide(&next)?.is_err() {
-                    continue;
-                }
-                let again = self
-                    .written(&next, delta, info, &field.name)?
-                    .ok_or_else(|| stop(BROKEN))?;
-                if !values_equal(&again, &value) {
-                    return Err(stop(WRITE_NOT_COMPUTED));
-                }
-                candidate = next;
-            }
-        }
-        Ok(candidate)
-    }
-
-    /// The value the conjunct `self.field = E` of the postcondition `info`
-    /// writes with `candidate` as the post-state; `None` when `info` has no
-    /// such conjunct.
-    fn written(
-        &self,
-        candidate: &ModelState,
-        delta: &Delta,
-        info: &ClauseInfo,
-        field: &str,
-    ) -> Result<Option<Value>, ExpansionStop> {
-        let system = self.walk.system;
-        let observations = self.post_observations(candidate, delta, info)?;
-        match system.package.evaluate_write(
-            &info.qualified,
-            &observations,
-            field,
-            &mut Meter::new(system.meter),
-        ) {
-            Ok(None) => Ok(None),
-            Ok(Some(WrittenValue::Computed(value))) => Ok(Some(value)),
-            Ok(Some(WrittenValue::Undecided(_) | WrittenValue::ReadsPostState)) | Err(_) => {
-                Err(stop(WRITE_NOT_COMPUTED))
-            }
-        }
-    }
-
     /// The value `write` of the postcondition `info` computes with
     /// `candidate` as the post-state, and its occurrences.
     fn computed(
@@ -1530,11 +1382,6 @@ fn collect_references<'v>(value: &'v Value, out: &mut Vec<&'v ObjectReference>) 
 /// "Collection-valued writes"): the step is refused, never dropped.
 pub(crate) const COLLECTION_WRITE: CatalogCode =
     CatalogCode::new("unsupported_construct", "collection-write-not-computed");
-
-/// FR-120 "Successors": a write of a field with no finite domain that the
-/// expansion cannot compute from the pre-state.
-const WRITE_NOT_COMPUTED: CatalogCode =
-    CatalogCode::new("unsupported_construct", "write-not-computed");
 
 /// The provenance of each slot of `value`: the `k`-th slot equal to a value
 /// is the `k`-th occurrence equal to it, so a `Set` or `OrderedSet` keeps

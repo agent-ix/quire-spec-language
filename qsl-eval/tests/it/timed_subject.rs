@@ -1540,6 +1540,29 @@ fn timer_collection_document(upper: Option<u64>, ordered: bool, unique: bool) ->
     serde_json::to_vec(&document).expect("JSON")
 }
 
+/// `document` with no operation granting `fields` and `spawn` creating no
+/// `Call`: a collection with no declared maximum that no step writes, so
+/// FR-120's bound check admits the model and only `max_clocks` bounds its
+/// live clocks.
+fn ungranted(document: Vec<u8>, fields: &[&str]) -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&document).expect("JSON");
+    let named: Vec<String> = fields
+        .iter()
+        .map(|field| ident(&format!("Call/{field}")))
+        .collect();
+    for operation in document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        operation["frame"]["creates"] = json!([]);
+        operation["frame"]["modifies"]
+            .as_array_mut()
+            .expect("a frame")
+            .retain(|granted| !named.iter().any(|name| granted == name));
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
 /// Part of FR-230-AC-19 and FR-230-AC-23 (TC-685), the record parts: with
 /// `ts: Sequence<Timer>` of at most 2 elements, an object holds one clock of
 /// `ts.[slot].x` and of `ts.[slot].y` for each slot up to the maximum, 7
@@ -1654,11 +1677,11 @@ fn an_unbounded_collection_is_bounded_by_max_clocks() {
         |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
     let holding = |held: usize| {
         world_holding(
-            timer_sequence_document(None),
+            ungranted(timer_sequence_document(None), &["ts"]),
             "",
             &only(
                 &["send"],
-                "post Send using v on M::Call::send { self.phase = 1 and self.ts = pre(self.ts) }\n",
+                "post Send using v on M::Call::send { self.phase = 1 }\n",
             ),
             json!({"t": timer("0"), "ts": {"sequence": vec![timer("1"); held]}}),
         )
@@ -1778,7 +1801,7 @@ fn an_unbounded_quantified_guard_reads_each_held_slot() {
         |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
     let guarded = |guard: &str| -> (Vec<GuardParts>, Vec<GuardParts>) {
         let world = world_holding(
-            timer_sequence_document(None),
+            ungranted(timer_sequence_document(None), &["ts"]),
             "",
             &only(
                 &["work"],
@@ -1850,8 +1873,8 @@ fn an_unbounded_quantified_guard_reads_each_held_slot() {
 /// Part of FR-230-AC-21 (TC-685), "Resets by selection" over a universe:
 /// from `ts = [Timer { n: 2 }, Timer { n: 1 }]` after a delay of 3, `send`
 /// with `forall(e in self.ts: e.n > 1 implies e.x = 0 ms)` resets the clock
-/// `x` of slot 0, whose element has `n = 2`, and keeps slot 1's and every
-/// other clock at 3.
+/// `x` of each post-state slot whose element has `n > 1`, and keeps every
+/// other clock at 3: in the successor keeping `ts`, slot 0 alone.
 #[trace("TC-685")]
 #[test]
 fn a_forall_reset_writes_the_selected_slots() {
@@ -1868,7 +1891,7 @@ fn a_forall_reset_writes_the_selected_slots() {
     );
     let held = system(&world);
     let timed = TimedSystem::new(&held, "M").expect("a timed subject");
-    assert!(!timed.writes_collections());
+    assert!(!timed.carries_clocks());
     let [initial] = &timed.initial()[..] else {
         panic!("one initial state");
     };
@@ -1877,43 +1900,63 @@ fn a_forall_reset_writes_the_selected_slots() {
         .expect("decided")
         .expect("no invariant bounds the delay");
     let steps = timed.steps(&later).expect("the state steps");
-    assert!(!steps.is_empty());
+    let key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/ts"),
+    };
+    // `send` grants `ts`, so its successors range over every value of it;
+    // the one keeping `[n 2, n 1]` resets slot 0 alone.
+    let mut kept = 0;
     for (step, post) in &steps {
         assert!(step.operation().contains("Call/send\""));
-        let values: Vec<(String, Vec<usize>, Rational)> = timed
+        let held = post
+            .discrete()
+            .state()
+            .populations
+            .values()
+            .find_map(|objects| objects.get("c"))
+            .and_then(|object| object.fields.get(&key))
+            .map(|value| format!("{value:?}"))
+            .unwrap_or_default();
+        let ns: Vec<&str> = held
+            .split("Integer(Integer(")
+            .skip(1)
+            .filter_map(|rest| rest.split(')').next())
+            .collect();
+        // Each live slot: reset where its post-state element has `n > 1`,
+        // at 3 otherwise (a sequence slot keeps its position's clock).
+        let values: Vec<(Vec<usize>, Rational)> = timed
             .places()
             .iter()
             .zip(post.clocks().values())
-            .map(|(place, value)| {
-                (
-                    timed
-                        .model()
-                        .clock(place.clock())
-                        .expect("a clock")
-                        .name()
-                        .to_owned(),
-                    place.slots().to_vec(),
-                    value.clone(),
-                )
+            .filter(|(place, _)| {
+                timed.live(place, post.discrete())
+                    && timed.model().clock(place.clock()).expect("a clock").name() == "ts.[slot].x"
             })
-            .filter(|(name, _, _)| name == "ts.[slot].x")
+            .map(|(place, value)| (place.slots().to_vec(), value.clone()))
             .collect();
-        assert_eq!(
-            values,
-            [
-                ("ts.[slot].x".to_owned(), vec![0], exact(0, 1)),
-                ("ts.[slot].x".to_owned(), vec![1], exact(3, 1)),
-            ]
-        );
-        assert_eq!(
-            post.clocks()
-                .values()
-                .iter()
-                .filter(|value| **value == exact(3, 1))
-                .count(),
-            timed.places().len() - 1
-        );
+        let expected: Vec<(Vec<usize>, Rational)> = ns
+            .iter()
+            .enumerate()
+            .map(|(slot, n)| {
+                let reset = n.parse::<u64>().expect("an n") > 1;
+                (vec![slot], if reset { exact(0, 1) } else { exact(3, 1) })
+            })
+            .collect();
+        assert_eq!(values, expected, "{held}");
+        if ns == ["2", "1"] {
+            kept += 1;
+            assert_eq!(
+                post.clocks()
+                    .values()
+                    .iter()
+                    .filter(|value| **value == exact(3, 1))
+                    .count(),
+                timed.places().len() - 1
+            );
+        }
     }
+    assert!(kept > 0);
 }
 
 /// Part of FR-230-AC-19 (TC-685), SR-1655002 FND-004: a `Set<Timer>[0, 3]`
@@ -2042,7 +2085,7 @@ fn only_step(timed: &TimedSystem<'_, '_>, state: &TimedState, operation: &str) -
 /// 4`), slot 1 no longer live. A `send` writing the literal
 /// `sequence[Timer { x: 2 ms, y: 5 ms, n: 3 }]` gives the fresh slot 0 its
 /// literal's constants. The model writes a collection, which
-/// `writes_collections` reports so that a zone analysis refuses it by name;
+/// `carries_clocks` reports so that a zone analysis refuses it by name;
 /// a model with only resets by selection does not. Not covered: a fresh
 /// insert at the front, which
 /// AC-20 spells with `flatten` over a nested literal that does not type
@@ -2075,7 +2118,7 @@ fn a_collection_write_moves_each_clock_with_its_element() {
     };
     // A zone over places maps no carried clock, so zone analyses refuse
     // the model by name.
-    assert!(timed.writes_collections());
+    assert!(timed.carries_clocks());
     let sent = only_step(&timed, &delayed(initial, 3), "send");
     let at = |name: &str, slot: usize, value: i64| (name.to_owned(), slot, exact(value, 1));
     assert_eq!(
@@ -2364,7 +2407,7 @@ fn a_family_product_is_charged_against_max_candidates() {
         |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
     let expanded = |held: usize| {
         let world = world_holding(
-            timer_sequence_document(None),
+            ungranted(timer_sequence_document(None), &["ts"]),
             "",
             &only(
                 &["work"],
@@ -2431,7 +2474,7 @@ fn an_unbounded_collection_of_records_places_every_live_clock() {
         [(3, 11, true), (4, 11, true), (5, 11, false), (6, 15, true)]
     {
         let world = world_holding(
-            holders_document(),
+            ungranted(holders_document(), &[]),
             "",
             &only(
                 &["send"],
@@ -2471,20 +2514,15 @@ fn an_unbounded_collection_of_records_places_every_live_clock() {
 
 /// FR-120 "Successors" (TC-472), STD-493 item 21's ruling: a field a frame
 /// grants takes every value of its domain, a record or tuple of finite data
-/// components included, and a field with no finite domain takes the value a
-/// postcondition conjunct `self.f = E` computes, never silently its
-/// pre-state value. From `t = Timer { n: 0 }`, `send` (frame `phase`,
+/// components included. From `t = Timer { n: 0 }`, `send` (frame `phase`,
 /// `inflight`, `late`, `x`, `t`) with the postcondition `self.phase = 1`
 /// has 16 successors, one for each `inflight`, `late` and `t.n` (`Phase`
-/// holds 4 values), and with `self.t.n = pre(self.t.n)` too has 4. A field
-/// `h: Holder { k: Integer }`, whose `k` has no finite domain, granted by
-/// `send` and left free stops `unsupported_construct`/`write-not-computed`,
-/// and `self.h = M::Holder { k: pre(self.h).k + 1 }` writes `k = 1`; so does
-/// a free `count: Integer`, and `self.count = pre(self.count) + 2` writes
-/// 5 from 3. A field `ds:
-/// Sequence<Quantity<ms>>` with no declared maximum: `self.ds =
-/// sequence[5 ms, 11 ms]` writes it (it gave no successor before), `self.ds
-/// = self.ds` (no function of the pre-state) stops `write-not-computed`.
+/// holds 4 values), and with `self.t.n = pre(self.t.n)` too has 4. A granted
+/// field with no finite domain (`h: Holder { k: Integer }`, `ds:
+/// Sequence<Quantity<ms>>` with no declared maximum, `count: Integer`) is an
+/// unbounded root, so the bound check refuses the model with
+/// `NotSimulated::RequiresBound` and so does building a timed subject over
+/// it: no expansion meets such a field.
 #[trace("TC-472")]
 #[test]
 fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
@@ -2537,45 +2575,7 @@ fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
         }
         serde_json::to_vec(&document).expect("JSON")
     };
-    let holder =
-        |k: &str| json!({"record": {"type": ident("Holder"), "fields": {"k": {"integer": k}}}});
-    let written = |post: &str| {
-        let world = world_holding(
-            document.clone(),
-            "",
-            &only(&["send"], &format!("post Send using v on M::Call::send {{ self.phase = 1 and self.inflight and self.late and self.t.n = pre(self.t.n) and {post} }}\n")),
-            json!({"t": timer.clone(), "h": holder("0"), "ds": {"sequence": []},
-                "count": {"integer": "3"}}),
-        );
-        let held = system(&world);
-        let initial = held.initial().remove(0);
-        held.successors(&initial).map(|expansion| {
-            expansion
-                .successors
-                .into_iter()
-                .map(|(_, post)| {
-                    let object = post
-                        .state()
-                        .populations
-                        .values()
-                        .find_map(|objects| objects.get("c"))
-                        .expect("c")
-                        .clone();
-                    let field = |name: &str| {
-                        object
-                            .fields
-                            .get(&DeclarationKey {
-                                package: PACKAGE.to_owned(),
-                                node: ident(&format!("Call/{name}")),
-                            })
-                            .map(|value| format!("{value:?}"))
-                            .unwrap_or_default()
-                    };
-                    (field("h"), field("ds"), field("count"))
-                })
-                .collect::<Vec<_>>()
-        })
-    };
+    let holder = json!({"record": {"type": ident("Holder"), "fields": {"k": {"integer": "0"}}}});
     // FR-120-AC-25: each of these fields is an unbounded root, so an
     // analysis settles `NotSimulated::RequiresBound` before expanding.
     {
@@ -2583,7 +2583,7 @@ fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
             document.clone(),
             "",
             &only(&["send"], ""),
-            json!({"t": timer.clone(), "h": holder("0"), "ds": {"sequence": []},
+            json!({"t": timer.clone(), "h": holder, "ds": {"sequence": []},
                 "count": {"integer": "3"}}),
         );
         let held = system(&world);
@@ -2592,39 +2592,16 @@ fn a_granted_field_ranges_over_its_finite_domain_or_stops() {
             panic!("h, ds and count require a bound");
         };
         assert_eq!(format!("{:?}", bound.domains).matches("Node {").count(), 3);
+        // A timed subject is built only to be expanded, so it refuses too.
+        assert!(matches!(
+            TimedSystem::new(&held, "M"),
+            Err(
+                qsl_eval::simulation::model::TimedSubjectRefusal::NotSimulated(
+                    NotSimulated::RequiresBound(_)
+                )
+            )
+        ));
     }
-    let not_computed = Err(qsl_eval::simulation::ExpansionStop {
-        cause: CatalogCode::new("unsupported_construct", "write-not-computed"),
-        limit: None,
-    });
-    assert_eq!(
-        written("self.ds = sequence[5 ms] and self.count = 0").map(|posts| posts.len()),
-        not_computed.map(|_: ()| 0)
-    );
-    assert_eq!(
-        written("self.h = M::Holder { k: 0 } and self.ds = sequence[5 ms]")
-            .map(|posts| posts.len()),
-        not_computed.map(|_: ()| 0)
-    );
-    let posts = written(
-        "self.h = M::Holder { k: pre(self.h).k + 1 } and self.ds = sequence[5 ms, 11 ms] \
-         and self.count = pre(self.count) + 2",
-    )
-    .expect("the state expands");
-    let [(h, ds, count)] = &posts[..] else {
-        panic!("one successor: {posts:?}");
-    };
-    assert!(h.contains("Integer(1)"), "{h}");
-    assert!(count.contains("Integer(5)"), "{count}");
-    assert!(
-        ds.contains("Integer(5)") && ds.contains("Integer(11)"),
-        "{ds}"
-    );
-    assert_eq!(
-        written("self.h = M::Holder { k: 0 } and self.ds = self.ds and self.count = 0")
-            .map(|posts| posts.len()),
-        not_computed.map(|_: ()| 0)
-    );
 }
 
 /// TC-1270: a scalar type `Int[0, max]` named `name`.
@@ -2902,8 +2879,9 @@ fn a_record_of_finite_components_is_a_finite_domain() {
 /// FR-120-AC-25 (TC-1270): a granted record with an unbounded non-clock
 /// component, `op: Open { n: Integer, b: Boolean }`, `tm: Tm { x: Clock, k:
 /// Integer }` (its clock does not bound it) and `wr: Wrap2 { o: Open }`, is
-/// an unbounded root: `explore_model` returns `NotSimulated::RequiresBound`
-/// naming one domain, before any state is expanded. Not covered: the union
+/// an unbounded root: `explore_model` and `sample_model` return
+/// `NotSimulated::RequiresBound` naming one domain, before any state is
+/// expanded. Not covered: the union
 /// `U { a, b(Boolean) }`, whose payload case QSL's package intake refuses
 /// (`Variant.payloadType`).
 #[trace("TC-1270", "FR-120-AC-25")]
@@ -2965,6 +2943,28 @@ fn a_record_with_an_unbounded_component_requires_a_bound() {
             1,
             "{granted}: {:?}",
             bound.domains
+        );
+        let sampler = qsl_foundation::selection::DefinitionRef::new(
+            "agent-ix",
+            "quire.simulation.sampler/v1",
+        )
+        .expect("a valid DefinitionRef");
+        let sampled = qsl_eval::simulation::model::sample_model(
+            &held,
+            BOUND_POSITIONS,
+            &sampler,
+            424_242,
+            0,
+            4,
+        );
+        assert!(
+            matches!(
+                sampled,
+                Err(qsl_eval::simulation::model::ModelSampleError::NotSimulated(
+                    NotSimulated::RequiresBound(_)
+                ))
+            ),
+            "{granted}: {sampled:?}"
         );
     }
 }
@@ -3080,15 +3080,13 @@ fn initial_refusal(world: &World) -> String {
 /// `invalid-value` naming `denominator` at the path `0`, `magnitude`, and a
 /// Decimal `scale` `"-1"` `invalid-value` naming `scale`; an initial `4 ms`
 /// refuses `invalid-value` naming the constraint, `max` and `3` at element
-/// 0. From `[1/2 ms]`, `send` writing `self.ds = sequence[5 ms]` steps to a
-/// state whose expansion finds the bound's `InvariantViolated`, and one
-/// writing `sequence[2 ms]` finds nothing.
+/// 0. Not covered: a stepped quantity, which needs a granted quantity field
+/// with a finite domain; a quantity's magnitude has none, so FR-120's bound
+/// check refuses every model whose step could write one.
 #[trace("TC-685")]
 #[test]
-fn a_unit_bound_is_checked_on_supplied_and_stepped_quantities() {
-    use qsl_eval::simulation::model::ModelFinding;
+fn a_unit_bound_is_checked_on_supplied_quantities() {
     use qsl_eval::simulation::TransitionSystem;
-
     let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
     let world_with = |ds: Json, post: &str| {
         world_holding(
@@ -3151,26 +3149,6 @@ fn a_unit_bound_is_checked_on_supplied_and_stepped_quantities() {
         refusal.contains("Index(0), Field(\"magnitude\")"),
         "{refusal}"
     );
-
-    let findings = |post: &str| {
-        let world = world_with(json!([ms(ratio("1", "2"))]), post);
-        let held = system(&world);
-        let initial = held.initial().remove(0);
-        let expansion = held.successors(&initial).expect("the state expands");
-        let [(_, next)] = &expansion.successors[..] else {
-            panic!("one successor: {}", expansion.successors.len());
-        };
-        held.successors(next).expect("the step expands").findings
-    };
-    let violated = findings("self.ds = sequence[5 ms]");
-    assert!(
-        matches!(
-            &violated[..],
-            [ModelFinding::InvariantViolated { clause, .. }] if clause.ends_with("Call/constraints/max")
-        ),
-        "{violated:?}"
-    );
-    assert_eq!(findings("self.ds = sequence[2 ms]"), Vec::new());
 }
 
 /// A multiplicity `{lower, upper, ordered, unique}`; no `upper` when `max`
@@ -3425,13 +3403,482 @@ fn exploration_reaches_every_value_of_a_bounded_clock_collection() {
     assert_eq!(stats.states, 85);
 }
 
+/// The live clocks of `object`'s places whose clock name starts `prefix`
+/// and ends `.x` at `state`, each with its slots and value, in place order.
+fn clocks_under(
+    timed: &TimedSystem<'_, '_>,
+    state: &TimedState,
+    object: &str,
+    prefix: &str,
+) -> Vec<(Vec<usize>, Rational)> {
+    timed
+        .places()
+        .iter()
+        .zip(state.clocks().values())
+        .filter(|(place, _)| {
+            place.object().object().as_str() == object
+                && timed.live(place, state.discrete())
+                && timed.model().clock(place.clock()).is_some_and(|clock| {
+                    clock.name().starts_with(prefix) && clock.name().ends_with(".x")
+                })
+        })
+        .map(|(place, value)| (place.slots().to_vec(), value.clone()))
+        .collect()
+}
+
+/// The `n` of each `Timer` in the debug text of `value`, in order.
+fn timer_ns(value: &quire_exact::Value) -> Vec<String> {
+    format!("{value:?}")
+        .split("Integer(Integer(")
+        .skip(1)
+        .filter_map(|rest| rest.split(')').next())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The value of `object`'s field `field` at `state`.
+fn field_of<'s>(state: &'s TimedState, object: &str, field: &str) -> &'s quire_exact::Value {
+    let key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident(&format!("Call/{field}")),
+    };
+    state
+        .discrete()
+        .state()
+        .populations
+        .values()
+        .find_map(|objects| objects.get(object))
+        .and_then(|stored| stored.fields.get(&key))
+        .expect("the field is held")
+}
+
+/// FR-120-AC-26 (TC-1270), SR-1688001 FND-001: set and bag elements keep
+/// their clocks by equal data on every object of the state, not only on
+/// the receiver. With `c` and `d` each holding `g = {n 1}` at 5 ms, a `work`
+/// step of `c` whose candidate leaves `c` unchanged and gives `d` `{n 0, n
+/// 1}` holds `d`'s `n 1` at 5 ms and its fresh `n 0` at 0. A `Bag` matches
+/// equal elements one to one in ascending slot order: from `{n 1}` at 5 ms
+/// the candidate `{n 1, n 1}` holds 5 ms in slot 0 and 0 in slot 1.
+#[trace("TC-1270")]
+#[test]
+fn set_and_bag_elements_keep_their_clocks_on_every_object() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let fields = |key: &str| {
+        json!({"key": key, "type": ident("Call"),
+            "fields": initial_fields(json!({"t": timer("0"), "g": {"set": [timer("1")]}}))})
+    };
+    let world = world_of(
+        cells_document(
+            vec![],
+            vec![("g", ident("Timer"), Some(shape(Some(2), false, true)))],
+            &["g"],
+            &[],
+        ),
+        "",
+        &only(&["work"], ""),
+        json!([fields("c"), fields("d")]),
+    );
+    let held = system_over(&world, &["c", "d"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(5, 1)),
+    );
+    let mut seen = 0;
+    for (step, next) in timed.steps(&later).expect("the state expands") {
+        if !step.operation().contains("Call/work\"") || step.receiver().object().as_str() != "c" {
+            continue;
+        }
+        if timer_ns(field_of(&next, "c", "g")) != ["1"]
+            || timer_ns(field_of(&next, "d", "g")) != ["0", "1"]
+        {
+            continue;
+        }
+        seen += 1;
+        assert_eq!(
+            clocks_under(&timed, &next, "c", "g."),
+            [(vec![0], exact(5, 1))]
+        );
+        assert_eq!(
+            clocks_under(&timed, &next, "d", "g."),
+            [(vec![0], exact(0, 1)), (vec![1], exact(5, 1))]
+        );
+    }
+    assert!(seen > 0, "a step gives d {{n 0, n 1}}");
+
+    let world = world_holding(
+        cells_document(
+            vec![],
+            vec![("g", ident("Timer"), Some(shape(Some(2), false, false)))],
+            &["g"],
+            &[],
+        ),
+        "",
+        &only(&["work"], ""),
+        json!({"t": timer("0"), "g": {"bag": [timer("1")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(5, 1)),
+    );
+    let (_, twice) = timed
+        .steps(&later)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(_, next)| timer_ns(field_of(next, "c", "g")) == ["1", "1"])
+        .expect("a step to {n 1, n 1}");
+    assert_eq!(
+        clocks_under(&timed, &twice, "c", "g."),
+        [(vec![0], exact(5, 1)), (vec![1], exact(0, 1))]
+    );
+}
+
+/// FR-120-AC-26 (TC-1270), SR-1688001 FND-001: matching reads every
+/// collection on a clock's path. A set below a record field, `r: Rack { s:
+/// Set<Timer>[0, 2] }`, from `r.s = {n 1}` at 5 ms to the candidate `{n 0,
+/// n 1}` holds `n 1` at 5 and `n 0` at 0. A clock below a nested collection
+/// of a moved element moves with it: `g: Set<Holder>[0, 2]` with `Holder {
+/// ts: Sequence<Timer>[0, 1] }`, from `{Holder [n 1]}` at 5 ms to the
+/// candidate `{Holder [], Holder [n 1]}` holds the `ts[0].x` of the element
+/// holding `[n 1]` at 5.
+#[trace("TC-1270")]
+#[test]
+fn matching_reads_every_collection_on_the_clock_path() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let member = |owner: &str, name: &str, multiplicity: Json| {
+        let mut member = wire_field(name, &ident("Timer"));
+        let identity = format!("{}/{name}", ident(owner));
+        member["identity"] = json!(identity);
+        member["origin"] = origin(&identity);
+        member["multiplicity"] = multiplicity;
+        member
+    };
+    let rack = wire_type(
+        &ident("Rack"),
+        "value_record",
+        json!({"fields": [member("Rack", "s", shape(Some(2), false, true))]}),
+    );
+    let holder = wire_type(
+        &ident("Holder"),
+        "value_record",
+        json!({"fields": [member("Holder", "ts", shape(Some(1), true, false))]}),
+    );
+
+    let world = world_holding(
+        cells_document(vec![rack], vec![("r", ident("Rack"), None)], &["r"], &[]),
+        "",
+        &only(&["work"], ""),
+        json!({"t": timer("0"),
+            "r": {"record": {"type": ident("Rack"), "fields": {"s": {"set": [timer("1")]}}}}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(5, 1)),
+    );
+    let (_, grown) = timed
+        .steps(&later)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(_, next)| timer_ns(field_of(next, "c", "r")) == ["0", "1"])
+        .expect("a step to r.s = {n 0, n 1}");
+    assert_eq!(
+        clocks_under(&timed, &grown, "c", "r.s."),
+        [(vec![0], exact(0, 1)), (vec![1], exact(5, 1))]
+    );
+
+    let world = world_holding(
+        cells_document(
+            vec![holder],
+            vec![("g", ident("Holder"), Some(shape(Some(2), false, true)))],
+            &["g"],
+            &[],
+        ),
+        "",
+        &only(&["work"], ""),
+        json!({"t": timer("0"), "g": {"set": [
+            {"record": {"type": ident("Holder"), "fields": {"ts": {"sequence": [timer("1")]}}}}
+        ]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = TimedState::new(
+        initial.discrete().clone(),
+        initial.clocks().delayed(&exact(5, 1)),
+    );
+    let (_, moved) = timed
+        .steps(&later)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(_, next)| {
+            let quire_exact::Value::Collection(holders) = field_of(next, "c", "g") else {
+                return false;
+            };
+            holders.elements().len() == 2 && timer_ns(field_of(next, "c", "g")) == ["1"]
+        })
+        .expect("a step to {Holder [], Holder [n 1]}");
+    let quire_exact::Value::Collection(holders) = field_of(&moved, "c", "g") else {
+        panic!("g holds a set");
+    };
+    let at = holders
+        .elements()
+        .iter()
+        .position(|element| timer_ns(element) == ["1"])
+        .expect("the element holding [n 1]");
+    assert_eq!(
+        clocks_under(&timed, &moved, "c", "g."),
+        [(vec![at, 0], exact(5, 1))]
+    );
+}
+
+/// FR-230-AC-21 (TC-685), SR-1688001 FND-002: a reset by selection writes
+/// the post-state element its predicate selects, after the step's matching
+/// carries. From `g = {n 1, n 2}` at 3 ms, `work` with `forall(e in self.g:
+/// e.n > 1 implies e.x = 0 ms)` gives the candidate `{n 2}` `n 2` at 0,
+/// `{n 2, n 3}` both at 0 (`n 3` fresh and selected), and `{n 1, n 2}` `n
+/// 1` at 3 and `n 2` at 0.
+#[trace("TC-685")]
+#[test]
+fn a_selection_reset_writes_the_post_state_element() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let world = world_holding(
+        cells_document(
+            vec![],
+            vec![("g", ident("Timer"), Some(shape(Some(2), false, true)))],
+            &["g"],
+            &[],
+        ),
+        "",
+        &only(
+            &["work"],
+            "post Work using v on M::Call::work { forall(e in self.g: e.n > 1 implies e.x = 0 ms) }\n",
+        ),
+        json!({"t": timer("0"), "g": {"set": [timer("1"), timer("2")]}}),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state");
+    };
+    let later = timed
+        .delay(initial, &exact(3, 1))
+        .expect("decided")
+        .expect("no invariant bounds the delay");
+    let steps = timed.steps(&later).expect("the state steps");
+    let after = |ns: &[&str]| {
+        let (_, next) = steps
+            .iter()
+            .find(|(step, next)| {
+                step.operation().contains("Call/work\"") && timer_ns(field_of(next, "c", "g")) == ns
+            })
+            .unwrap_or_else(|| panic!("a step to {ns:?}"));
+        clocks_under(&timed, next, "c", "g.")
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(after(&["2"]), [exact(0, 1)]);
+    assert_eq!(after(&["2", "3"]), [exact(0, 1), exact(0, 1)]);
+    assert_eq!(after(&["1", "2"]), [exact(3, 1), exact(0, 1)]);
+}
+
+/// The FR-120-AC-22/AC-24 fixture: `Cfg`, `Wrap`, `Stopwatch` and `Mix` on
+/// `Call` as fields `cfg`, `w`, `sw` and `mx`, beside `t: Timer`, with `work`
+/// granting `granted` and the further unit text `body`.
+fn retime_world(granted: &[&str], body: &str) -> World {
+    let int2 = ident("Int2");
+    let types = vec![
+        record_type(
+            "Cfg",
+            &[
+                ("on", "ix://quire/native/Boolean", false),
+                ("n", &int2, false),
+            ],
+        ),
+        record_type(
+            "Wrap",
+            &[
+                ("c", &ident("Cfg"), false),
+                ("o", "ix://quire/native/Boolean", true),
+            ],
+        ),
+        record_type(
+            "Stopwatch",
+            &[
+                ("x", "ix://quire/native/Clock", false),
+                ("y", "ix://quire/native/Clock", false),
+            ],
+        ),
+        record_type(
+            "Mix",
+            &[
+                ("t", &ident("Timer"), false),
+                ("b", "ix://quire/native/Boolean", false),
+            ],
+        ),
+    ];
+    let cfg = json!({"record": {"type": ident("Cfg"), "fields": {
+        "on": {"boolean": false}, "n": {"integer": "0"}}}});
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    world_holding(
+        cells_document(
+            types,
+            vec![
+                ("cfg", ident("Cfg"), None),
+                ("w", ident("Wrap"), None),
+                ("sw", ident("Stopwatch"), None),
+                ("mx", ident("Mix"), None),
+            ],
+            granted,
+            &[],
+        ),
+        "",
+        &only(&["work"], body),
+        json!({
+            "t": timer.clone(),
+            "cfg": cfg.clone(),
+            "w": {"record": {"type": ident("Wrap"), "fields": {"c": cfg, "o": {"absent": {}}}}},
+            "sw": {"record": {"type": ident("Stopwatch"), "fields": {}}},
+            "mx": {"record": {"type": ident("Mix"), "fields": {"t": timer, "b": {"boolean": false}}}},
+        }),
+    )
+}
+
+/// FR-120-AC-22 (TC-1270): `work` granting `cfg` (6 values), `t` (4) and
+/// `w` (18) has 6 × 4 × 18 = 432 candidates, each counted against
+/// `max_candidates`: under the default bound it has 432 successors, and
+/// under `max_candidates` 431 it stops `resource_exhausted` naming
+/// `max_candidates`. The tuple `Pr` of AC-22 cannot be declared in a domain
+/// package, so `t` stands in for its 4 values.
+#[trace("TC-1270")]
+#[test]
+fn every_candidate_of_a_record_product_is_charged() {
+    use qsl_eval::simulation::TransitionSystem;
+
+    let world = retime_world(&["cfg", "t", "w"], "");
+    let held = system(&world);
+    check_model_bounds(&held, BOUND_POSITIONS).expect("cfg, t and w are bounded");
+    let initial = held.initial().remove(0);
+    let work = held
+        .successors(&initial)
+        .expect("the state expands")
+        .successors
+        .into_iter()
+        .filter(|(transition, _)| format!("{transition:?}").contains("Call/work"))
+        .count();
+    assert_eq!(work, 432);
+    let limited = system_limited(&world, &["c"], 431);
+    let initial = limited.initial().remove(0);
+    let stopped = limited
+        .successors(&initial)
+        .map(|expansion| expansion.successors.len());
+    let Err(stop) = stopped else {
+        panic!("431 candidates stop: {stopped:?}");
+    };
+    assert_eq!(
+        stop.limit,
+        Some(qsl_eval::simulation::ExpansionLimit::MaxCandidates)
+    );
+}
+
+/// FR-120-AC-24 (TC-1270), the successor half: `work` granting `t`, `sw`
+/// and `mx` with the postcondition `self.t = M::Timer { x: 0 ms, y: 0 ms,
+/// n: 3 }` (this fixture's `Timer` has two clocks), from a state 5 ms in,
+/// has successors that each hold `t.n` 3 with `t.x` and `t.y` reset to 0,
+/// while `sw.x`, `sw.y`, `mx.t.x` and every other clock keep 5
+/// ms; with no postcondition every successor keeps every clock at 5 ms,
+/// and no successor ranges over a clock value.
+#[trace("TC-1270")]
+#[test]
+fn a_granted_record_keeps_its_clocks_unless_reset() {
+    let clocks_after = |body: &str| {
+        let world = retime_world(&["t", "sw", "mx"], body);
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let later = TimedState::new(
+            initial.discrete().clone(),
+            initial.clocks().delayed(&exact(5, 1)),
+        );
+        timed
+            .steps(&later)
+            .expect("the state expands")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work\""))
+            .map(|(_, next)| {
+                let clocks: Vec<(String, Rational)> = timed
+                    .places()
+                    .iter()
+                    .zip(next.clocks().values())
+                    .filter(|(place, _)| timed.live(place, next.discrete()))
+                    .map(|(place, value)| {
+                        (
+                            timed
+                                .model()
+                                .clock(place.clock())
+                                .expect("a clock")
+                                .name()
+                                .to_owned(),
+                            value.clone(),
+                        )
+                    })
+                    .collect();
+                (timer_ns(field_of(&next, "c", "t")), clocks)
+            })
+            .collect::<Vec<_>>()
+    };
+    let reset = clocks_after(
+        "post Retime using v on M::Call::work { self.t = M::Timer { x: 0 ms, y: 0 ms, n: 3 } }\n",
+    );
+    assert!(!reset.is_empty());
+    for (n, clocks) in &reset {
+        assert_eq!(n, &["3"], "{clocks:?}");
+        for (name, value) in clocks {
+            let expected = if name == "t.x" || name == "t.y" {
+                exact(0, 1)
+            } else {
+                exact(5, 1)
+            };
+            assert_eq!(value, &expected, "{name}");
+        }
+    }
+    let kept = clocks_after("");
+    // 4 values of `t`, 1 of `sw`, 8 of `mx`: one successor each.
+    assert_eq!(kept.len(), 32);
+    assert!(kept
+        .iter()
+        .all(|(_, clocks)| clocks.iter().all(|(_, value)| *value == exact(5, 1))));
+}
+
 /// FR-120-AC-26 (TC-1270) with the STD-508 ruling on collections of bare
 /// clocks: `sk: Sequence<Clock>[0, 3]` has 4 values and `st: Set<Clock>`
 /// with no declared maximum 2, one for each element count, each a root no
 /// requires-bound check refuses; an initial state ranges over every count
 /// (4 and 2 initial states). From `sk` holding one clock at 5 ms, the
 /// candidate count 2 keeps 5 ms in slot 0 and holds a fresh 0 ms in slot 1.
-/// `Sequence<Clock>` with no declared maximum requires a bound.
+/// A frame-granted `Sequence<Clock>` with no declared maximum is an
+/// unbounded frame-granted value, so it requires a bound (FR-120; FR-230's
+/// `[min, ∞)` initial range is for an ungranted one).
 #[trace("TC-1270")]
 #[test]
 fn a_collection_of_bare_clocks_ranges_over_its_counts() {
@@ -3623,4 +4070,82 @@ fn a_clock_parameter_has_one_instance_per_place() {
     let one = Rational::new(Integer::from(1_i64), Integer::from(1_i64)).expect("1");
     let later = TimedState::new(initial.discrete().clone(), initial.clocks().delayed(&one));
     assert_eq!(timed.steps(&later).expect("expands").len(), 2 * live);
+}
+
+/// FR-230-AC-46, AC-47 and AC-48 (TC-685), the bare-clock collections: a
+/// pure-clock collection's initial element count ranges over `[min, max]`,
+/// one initial state each. `s: Sequence<Clock>[1, 3]` gives 3, `b:
+/// Bag<Clock>[0, 2]` 3; a set holds at most one bare clock, so `t:
+/// Set<Clock>[0, 5]` and `o: OrderedSet<Clock>[0, 5]` give 2, and
+/// `Set<Clock>[2, 5]` none. With no declared maximum and no frame granting
+/// it, `u: Sequence<Clock>`'s initial states run in ascending count from 0
+/// while the live clocks (`t.x`, `t.y`, `x` and one per element) stay
+/// within `max_clocks` 5, then one past it: counts 0, 1, 2 and 3, the last
+/// stopping `MaxClocks` when expanded; the bound check admits the model.
+/// Not covered: AC-46's `Sequence<Stopwatch>` and `Sequence<Option<Clock>>`
+/// (580q) and AC-47's `Map`, which a domain package cannot declare.
+#[trace("TC-685")]
+#[test]
+fn a_bare_clock_collection_ranges_its_initial_count() {
+    let clock = "ix://quire/native/Clock".to_owned();
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world_of = |min: u64, max: Option<u64>, ordered: bool, unique: bool, granted: &[&str]| {
+        let mut multiplicity = json!({"lower": min, "ordered": ordered, "unique": unique});
+        if let Some(max) = max {
+            multiplicity["upper"] = json!(max);
+        }
+        world_holding(
+            cells_document(
+                vec![],
+                vec![("u", clock.clone(), Some(multiplicity))],
+                granted,
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": timer.clone()}),
+        )
+    };
+    let counts = |world: &World, max_clocks: u64| {
+        let held = system(world);
+        check_model_bounds(&held, BOUND_POSITIONS).expect("the model is bounded");
+        let timed = TimedSystem::with_max_clocks(
+            &held,
+            "M",
+            std::num::NonZeroU64::new(max_clocks).expect("positive"),
+        )
+        .expect("a timed subject");
+        timed
+            .initial()
+            .iter()
+            .map(|state| format!("{:?}", field_of(state, "c", "u")))
+            .collect::<Vec<_>>()
+    };
+    let integer = |count: u64| format!("{:?}", quire_exact::Value::Integer(Integer::from(count)));
+    for (min, max, ordered, unique, expected) in [
+        (1, Some(3), true, false, vec![1, 2, 3]),
+        (0, Some(2), false, false, vec![0, 1, 2]),
+        (0, Some(5), false, true, vec![0, 1]),
+        (0, Some(5), true, true, vec![0, 1]),
+        (2, Some(5), false, true, vec![]),
+    ] {
+        let world = world_of(min, max, ordered, unique, &["u"]);
+        assert_eq!(
+            counts(&world, 1024),
+            expected.into_iter().map(integer).collect::<Vec<_>>(),
+            "[{min}, {max:?}] ordered {ordered} unique {unique}"
+        );
+    }
+
+    let world = world_of(0, None, true, false, &[]);
+    assert_eq!(counts(&world, 5), (0..=3).map(integer).collect::<Vec<_>>());
+    let held = system(&world);
+    let timed = TimedSystem::with_max_clocks(&held, "M", std::num::NonZeroU64::new(5).expect("5"))
+        .expect("a timed subject");
+    let initial = timed.initial();
+    assert!(timed.steps(&initial[2]).is_ok());
+    assert_eq!(
+        timed.steps(&initial[3]).err(),
+        Some(TimedStop::MaxClocks { max_clocks: 5 })
+    );
 }

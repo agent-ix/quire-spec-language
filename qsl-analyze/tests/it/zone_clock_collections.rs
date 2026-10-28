@@ -60,3 +60,57 @@ fn the_zone_search_reads_the_clocks_of_a_granted_collection() {
         "a deadlock is reached: {outcome:?}"
     );
 }
+
+/// SR-1688001 FND-003 and SR-1671001 FND-005: a step over a granted
+/// `Set<Timer>[0, 2]` or `Bag<Timer>[0, 2]` matches elements by equal data
+/// and may carry a clock to another slot, which a zone over places does not
+/// map yet (QSL-1162). EN-6 refuses the model `CarriedClocks` before any
+/// state is explored, whatever the item.
+#[trace("TC-1270")]
+#[test]
+fn the_zone_search_refuses_a_set_or_bag_of_clocked_elements() {
+    use qsl_analyze::zone_check::{
+        check_timed_model, ZoneCheckItem, ZoneCheckRefusal, ZoneCheckRequest,
+    };
+    use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
+    use qsl_route::deadlock::{ItemObligation, ObligationKind};
+
+    for (unique, empty) in [(true, "set"), (false, "bag")] {
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&timers_document(2, &[("grow", &["ts"])])).expect("JSON");
+        let fields = document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields");
+        let ts = fields
+            .iter_mut()
+            .find(|field| field["name"] == "ts")
+            .expect("ts");
+        ts["multiplicity"]["ordered"] = serde_json::json!(false);
+        ts["multiplicity"]["unique"] = serde_json::json!(unique);
+        let world = world_holding(
+            document.to_string().as_bytes(),
+            INFINITE,
+            &format!("{DENSE}pre Grow using v on M::Call::grow {{ true }}\n"),
+            &serde_json::json!({"ts": {empty: []}}),
+        );
+        let system: ModelSystem<'_> = world.system();
+        let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+        assert!(timed.carries_clocks());
+        let refused = check_timed_model(
+            ZoneCheckRequest {
+                subject: &timed,
+                item: ZoneCheckItem::DeadlockFreedom,
+                obligation: ItemObligation {
+                    subject: "c",
+                    kind: ObligationKind::DeadlockFreedom,
+                },
+                limits: ZoneCheckLimits::default(),
+            },
+            &Cancel::new(),
+        );
+        assert!(
+            matches!(refused, Err(ZoneCheckRefusal::CarriedClocks)),
+            "{empty}: {refused:?}"
+        );
+    }
+}

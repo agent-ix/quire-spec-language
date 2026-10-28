@@ -80,7 +80,7 @@ pub(crate) fn explore(
     start: &TimedState,
     limits: &Limits,
 ) -> Result<Closure, ExploreStop> {
-    if timed.writes_collections() {
+    if timed.carries_clocks() {
         return Err(ExploreStop::CarriedClocks);
     }
     match timed.tick_period() {

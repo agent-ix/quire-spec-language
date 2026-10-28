@@ -29,10 +29,9 @@ use std::collections::{BTreeMap, VecDeque};
 use num_bigint::BigInt;
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
-    check_model_bounds, GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop,
-    TimedSystem,
+    GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop, TimedSystem,
 };
-use qsl_eval::simulation::{NotSimulated, RequiresBound, BOUND_POSITIONS};
+use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
     CounterexampleKind, Lasso, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
@@ -376,12 +375,10 @@ pub fn check_timed_model<S: Clone>(
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
-    if request.subject.writes_collections() {
+    if request.subject.carries_clocks() {
         return Err(ZoneCheckRefusal::CarriedClocks);
     }
-    // FR-239: an unbounded population root refuses before any state is
-    // explored, as FR-126 states.
-    check_model_bounds(request.subject.system(), BOUND_POSITIONS).map_err(not_simulated)?;
+    // FR-239's bound check ran when the timed subject was built.
     let mut window = None;
     let mut live = None;
     let judged = match request.item {
