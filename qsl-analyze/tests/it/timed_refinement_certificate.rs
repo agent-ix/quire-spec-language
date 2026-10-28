@@ -319,7 +319,8 @@ fn a_heavy_refinement_certificate_checked_over_the_budget_stops() {
                 },
                 &Cancel::new(),
             )
-            .expect("EN-6 takes the refinement"),
+            .expect("EN-6 takes the refinement")
+            .safety,
             TimedSafetyOutcome::Holds { .. }
         )
     };
@@ -677,7 +678,8 @@ fn a_time_locked_failing_initial_state_is_a_locked_initial_node() {
         },
         &Cancel::new(),
     )
-    .expect("EN-6 takes the refinement");
+    .expect("EN-6 takes the refinement")
+    .safety;
     let TimedSafetyOutcome::Holds { certificate, .. } = outcome else {
         panic!("the safety half holds: {outcome:?}");
     };
