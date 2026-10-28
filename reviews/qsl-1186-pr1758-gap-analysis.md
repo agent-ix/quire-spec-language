@@ -38,3 +38,12 @@ Cross-PR note: STD-539 makes repeat-through-repeat a supported capability. #1737
 ## Verdict
 
 Mergeable. Both findings are low.
+
+## Dispositions
+
+Round 1, head 5cc21dacd.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_nested_repeat_in_a_choice_case_follows_the_rule`: case `work` steps through an event and case `more` is a nested `repeat Inner` (stepping body, `exhausted` check). `max 0` refuses `NoProgress` at `Outer` only; `max 1` checks. It passes. |
+| FND-002 | fixed | `deeper_nesting_refuses_the_first_repeat_once` covers two cases. `Outer { Mid { Inner max 0 } }` refuses `Outer` alone. `Mid max 1` with a `check`-only body and `Inner` reached through Mid's in-body `exhausted` also refuses `Outer`, so that repeat is no step of `Mid`. It passes, and it fails with the `break` removed. |

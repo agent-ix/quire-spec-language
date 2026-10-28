@@ -65,3 +65,15 @@ Gates at 8dcb8e559 (locked-build, jobs 4, `--all-features`, debug info off):
 ## Verdict
 
 Mergeable. FND-001 is low and pre-existing.
+
+## Dispositions
+
+Round 1, head 5cc21dacd. This head merges main, including #1737; the fix itself is commit 5cc21dacd.
+
+Gates (`--all-features`, debug info off):
+- qsl-semantics `protocol`/`repeat`: lib 173, it 38.
+- qsl-semantics clippy `-D warnings`: exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `progress` now breaks after the first refusal, so the first non-stepping `repeat` in tree order (`tree.controls`, parents before children) is refused once. FR-464 "Progress" and FR-464-AC-21/AC-23 name that refusal in the singular ("the first such `repeat` in tree order"), so a non-stepping repeat in a sibling subtree needs no refusal of its own: the protocol is already refused. Removing the `break` makes `deeper_nesting_refuses_the_first_repeat_once` fail (exit 101). |
