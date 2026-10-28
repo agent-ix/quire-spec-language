@@ -77,6 +77,7 @@ pub(crate) fn safety(world: &Refining) -> TimedSafetyOutcome<String> {
         &Cancel::new(),
     )
     .expect("EN-6 takes the refinement")
+    .safety
 }
 
 pub(crate) const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\

@@ -365,7 +365,8 @@ pub(crate) type TimedPrefix = (Vec<Position>, Vec<TimedState>);
 
 /// QSpec FR-430: `payload`'s prefix re-executed over time by FR-237's rules
 /// (each delay admissible, each step enabled after it, each post-state
-/// digest the recorded one, each target invariant holding): every
+/// digest the recorded one, each target invariant holding), a lasso's loop
+/// closing with a positive total delay: every
 /// position's discrete state with its digest, and its timed state; `None`
 /// when the subject cannot decide a step.
 ///
@@ -382,11 +383,15 @@ pub(crate) fn timed_prefix(
     let system = timed.system();
     let mut positions = Vec::with_capacity(replayed.len());
     let mut states = Vec::with_capacity(replayed.len());
-    for position in replayed {
+    for position in &replayed {
         let state = position.state.discrete().clone();
         let digest = digest_of(system, &state)?;
         positions.push(Position { state, digest });
-        states.push(position.state);
+        states.push(position.state.clone());
+    }
+    // A lasso's loop closes over time (FR-237 "Lasso").
+    if let Some(lasso) = payload.lasso {
+        close_loop(timed, &replayed, &positions, lasso)?;
     }
     Ok(Some((positions, states)))
 }

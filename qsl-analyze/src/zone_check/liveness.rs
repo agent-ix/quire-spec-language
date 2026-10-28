@@ -44,7 +44,7 @@ use qsl_eval::simulation::model::{GuardedStep, ModelSimState, PlaceConstraint};
 use qsl_eval::simulation::Permutation;
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_replay::{
-    CounterexampleKind, FairnessMember, Lasso, TemporalCounterexample, UndefinedLocus,
+    CounterexampleKind, FairnessMember, Lasso, ModelStep, TemporalCounterexample, UndefinedLocus,
 };
 use qsl_semantics::check::CaptureSite;
 use quire_exact::{Integer, Meter, Rational};
@@ -61,7 +61,7 @@ use crate::model_check::fair_walk::{fairness_constraints, FairModel};
 
 /// Where a clock lies against one constant of its state's cells.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum Sign {
+pub(super) enum Sign {
     Below,
     At,
     Above,
@@ -69,7 +69,28 @@ enum Sign {
 
 /// One constant a cell compares a clock with: the zone clock and the scaled
 /// constant.
-type CellAtom = (usize, BigInt);
+pub(super) type CellAtom = (usize, BigInt);
+
+/// The cells of a product's model states (EZ-6): the operations whose
+/// enabledness the cells decide, and each state's cell atoms, computed
+/// once.
+pub(super) struct Cells {
+    /// The operation texts the fairness constrains.
+    constrained: BTreeSet<String>,
+    /// The cell atoms of each model state, by its key.
+    atoms: BTreeMap<Vec<u8>, Vec<CellAtom>>,
+}
+
+impl Cells {
+    /// The cells that decide the enabledness of the operations
+    /// `constrained`.
+    pub(super) fn new(constrained: BTreeSet<String>) -> Self {
+        Self {
+            constrained,
+            atoms: BTreeMap::new(),
+        }
+    }
+}
 
 /// One vertex of the product.
 #[derive(Clone, Debug)]
@@ -205,11 +226,9 @@ struct Live<'p> {
     universal: bool,
     start: StateId,
     capture: CaptureSite,
-    /// The operation texts the clause's fairness constrains.
-    constrained: BTreeSet<String>,
+    /// The cells of the operations the clause's fairness constrains.
+    cells: Cells,
     readings: BTreeMap<(Vec<u8>, bool), Reading>,
-    /// The cell atoms of each model state, by its key.
-    atoms: BTreeMap<Vec<u8>, Vec<CellAtom>>,
     /// The zone dimension: the reference clock, the clock places, the
     /// automaton's clocks and, under a dense source, `z`.
     dim: usize,
@@ -329,9 +348,8 @@ impl Run<'_, '_, '_> {
                 universal: false,
                 start,
                 capture,
-                constrained: constrained.clone(),
+                cells: Cells::new(constrained.clone()),
                 readings: BTreeMap::new(),
-                atoms: BTreeMap::new(),
                 dim,
                 lower: most.clone(),
                 upper: most.clone(),
@@ -359,9 +377,8 @@ impl Run<'_, '_, '_> {
                 universal: true,
                 start,
                 capture: CaptureSite::Never,
-                constrained,
+                cells: Cells::new(constrained),
                 readings: BTreeMap::new(),
-                atoms: BTreeMap::new(),
                 dim,
                 lower: most.clone(),
                 upper: most,
@@ -492,7 +509,7 @@ impl Run<'_, '_, '_> {
             let steps = self.steps_for(&vertex.state)?;
             let mut enabled = Vec::new();
             for step in &steps {
-                if self.enabled_at(vertex, step)? {
+                if self.enabled_at(&vertex.zone, step)? {
                     enabled.push(number(step.transition()));
                 }
             }
@@ -619,10 +636,9 @@ impl Run<'_, '_, '_> {
     /// convex part of its guard holds and its target's time invariants
     /// would): at every one, for a fairness-constrained step, whose
     /// enabledness its cell decides.
-    fn enabled_at(&mut self, vertex: &LiveVertex, step: &GuardedStep) -> Result<bool, Halt> {
+    pub(super) fn enabled_at(&mut self, zone: &Dbm, step: &GuardedStep) -> Result<bool, Halt> {
         // An idle-tail vertex reads its zone too: a step the tail does not
         // take may still be enabled there.
-        let zone = vertex.zone.clone();
         for part in self.enabling_parts(step)? {
             let mut at = zone.clone();
             constrain_at(&mut at, &part, &self.scale)?;
@@ -681,8 +697,8 @@ impl Run<'_, '_, '_> {
                 let Some(read_zone) = self.read_at(&zero, &read)? else {
                     continue;
                 };
-                for (cell, piece) in self.cells(live, &state, &read_zone)? {
-                    let Some(zone) = self.close(live, &state, piece, &cell)? else {
+                for (cell, piece) in self.split(&mut live.cells, &state, &read_zone)? {
+                    let Some(zone) = self.close(&mut live.cells, &state, piece, &cell)? else {
                         continue;
                     };
                     let vertex = LiveVertex {
@@ -799,8 +815,9 @@ impl Run<'_, '_, '_> {
                         continue;
                     };
                     let index = live.product.read(&read);
-                    for (cell, piece) in self.cells(live, &post, &read_zone)? {
-                        let Some(entered) = self.close(live, &post, piece, &cell)? else {
+                    for (cell, piece) in self.split(&mut live.cells, &post, &read_zone)? {
+                        let Some(entered) = self.close(&mut live.cells, &post, piece, &cell)?
+                        else {
                             continue;
                         };
                         let next = LiveVertex {
@@ -829,11 +846,11 @@ impl Run<'_, '_, '_> {
             let mut later = zone.clone();
             later.up();
             constrain_at(&mut later, &invariants, &scale)?;
-            for (cell, piece) in self.cells(live, &state, &later)? {
+            for (cell, piece) in self.split(&mut live.cells, &state, &later)? {
                 if !next_cell(&vertex.cell, &cell) {
                     continue;
                 }
-                let Some(entered) = self.close(live, &state, piece, &cell)? else {
+                let Some(entered) = self.close(&mut live.cells, &state, piece, &cell)? else {
                     continue;
                 };
                 let next = LiveVertex {
@@ -854,7 +871,7 @@ impl Run<'_, '_, '_> {
             reset.constrain(0, z, Bound::le(-scale.clone()))?;
             if !reset.is_empty() {
                 reset.reset(z, &BigInt::from(0))?;
-                if let Some(entered) = self.close(live, &state, reset, &vertex.cell)? {
+                if let Some(entered) = self.close(&mut live.cells, &state, reset, &vertex.cell)? {
                     let next = LiveVertex {
                         zone: entered,
                         positioned: false,
@@ -882,7 +899,8 @@ impl Run<'_, '_, '_> {
             let Some(read_zone) = self.read_at(&vertex.zone, &read)? else {
                 continue;
             };
-            let Some(zone) = self.close(live, &vertex.state, read_zone, &vertex.cell)? else {
+            let Some(zone) = self.close(&mut live.cells, &vertex.state, read_zone, &vertex.cell)?
+            else {
                 continue;
             };
             let index = live.product.read(&read);
@@ -974,16 +992,16 @@ impl Run<'_, '_, '_> {
     /// computed once.
     fn atoms_of(
         &mut self,
-        live: &mut Live<'_>,
+        cells: &mut Cells,
         state: &ModelSimState,
     ) -> Result<Vec<CellAtom>, Halt> {
         let key = self.key(state)?;
-        if let Some(atoms) = live.atoms.get(&key) {
+        if let Some(atoms) = cells.atoms.get(&key) {
             return Ok(atoms.clone());
         }
         let mut atoms = BTreeSet::new();
         for step in self.steps_for(state)? {
-            if !live.constrained.contains(step.operation()) {
+            if !cells.constrained.contains(step.operation()) {
                 continue;
             }
             for part in self.enabling_parts(&step)? {
@@ -996,18 +1014,18 @@ impl Run<'_, '_, '_> {
             }
         }
         let atoms: Vec<CellAtom> = atoms.into_iter().collect();
-        live.atoms.insert(key, atoms.clone());
+        cells.atoms.insert(key, atoms.clone());
         Ok(atoms)
     }
 
     /// `zone` split into its cells at `state`, in sign order.
-    fn cells(
+    pub(super) fn split(
         &mut self,
-        live: &mut Live<'_>,
+        cells: &mut Cells,
         state: &ModelSimState,
         zone: &Dbm,
     ) -> Result<Vec<(Vec<Sign>, Dbm)>, Halt> {
-        let atoms = self.atoms_of(live, state)?;
+        let atoms = self.atoms_of(cells, state)?;
         let mut pieces = vec![(Vec::new(), zone.clone())];
         for atom in &atoms {
             let mut split = Vec::with_capacity(pieces.len() * 3);
@@ -1029,14 +1047,14 @@ impl Run<'_, '_, '_> {
 
     /// `piece` held to `state`'s invariants and to `cell`, and let time
     /// elapse within them; `None` when empty.
-    fn close(
+    pub(super) fn close(
         &mut self,
-        live: &mut Live<'_>,
+        cells: &mut Cells,
         state: &ModelSimState,
         mut piece: Dbm,
         cell: &[Sign],
     ) -> Result<Option<Dbm>, Halt> {
-        let atoms = self.atoms_of(live, state)?;
+        let atoms = self.atoms_of(cells, state)?;
         let invariants = self.timed(self.timed.invariants(state))?;
         let hold = |zone: &mut Dbm| -> Result<(), Halt> {
             constrain_at(zone, &invariants, &self.scale)?;
@@ -1251,13 +1269,13 @@ impl Run<'_, '_, '_> {
                     invariants,
                     elapses,
                     target: self.timed(self.timed.invariants(&post))?,
-                    before: self.cell_zone(live, &source.state, &source.cell)?,
+                    before: self.cell_zone(&mut live.cells, &source.state, &source.cell)?,
                     piece: if edge.to == edge.from {
                         // An undefined position's own: its cell is not
                         // known.
                         None
                     } else {
-                        self.cell_zone(live, &post, &target.cell)?
+                        self.cell_zone(&mut live.cells, &post, &target.cell)?
                     },
                     step: Some((step, part)),
                     position,
@@ -1271,7 +1289,7 @@ impl Run<'_, '_, '_> {
                 elapses,
                 target: invariants,
                 before: None,
-                piece: self.cell_zone(live, &target.state, &target.cell)?,
+                piece: self.cell_zone(&mut live.cells, &target.state, &target.cell)?,
                 step: None,
                 position: Vec::new(),
                 position_resets: Vec::new(),
@@ -1318,13 +1336,13 @@ impl Run<'_, '_, '_> {
 
     /// The zone over clock places, in the run's scale, of `cell` at
     /// `state`; `None` with no cell atom.
-    fn cell_zone(
+    pub(super) fn cell_zone(
         &mut self,
-        live: &mut Live<'_>,
+        cells: &mut Cells,
         state: &ModelSimState,
         cell: &[Sign],
     ) -> Result<Option<Dbm>, Halt> {
-        let atoms = self.atoms_of(live, state)?;
+        let atoms = self.atoms_of(cells, state)?;
         if atoms.is_empty() {
             return Ok(None);
         }
@@ -1395,10 +1413,49 @@ impl Run<'_, '_, '_> {
             .copied()
             .filter(|&edge| !matches!(live.product.edges[edge].via, Via::Diverge))
             .collect();
-        let dense = self.timed.tick_period().is_none();
-        let mut loop_stages = Vec::with_capacity(rotated.len());
+        let (initial, stem) = self.stages_along(live, &stem)?;
+        let mut cycle = Vec::with_capacity(rotated.len());
         for &edge in &rotated {
-            let stage = self.stage(live, live.product.edges[edge], None)?;
+            cycle.push(self.stage(live, live.product.edges[edge], None)?);
+        }
+        let places = self.path_clocks(live);
+        let ceiling = live
+            .automaton
+            .all_constants()
+            .into_iter()
+            .chain([self.timed.max_constant()])
+            .max()
+            .unwrap_or_else(|| self.timed.max_constant());
+        Ok(self
+            .timed_lasso(places, &ceiling, stem, &cycle)?
+            .map(|(prefix, entry)| {
+                counterexample(
+                    initial,
+                    prefix,
+                    Lasso {
+                        entry,
+                        terminal_stutter: false,
+                    },
+                )
+            }))
+    }
+
+    /// FR-241: the timed lasso of the stem `stem` and the loop `cycle`, the
+    /// stages over `places` clocks, each clock the loop never resets past
+    /// `ceiling` at its entry: its prefix and the entry's position, or
+    /// `None` when it does not concretise. The loop's first stage follows
+    /// a position; with an empty stem, the initial position.
+    pub(super) fn timed_lasso(
+        &mut self,
+        places: usize,
+        ceiling: &Rational,
+        mut stem_stages: Vec<Stage>,
+        cycle: &[Stage],
+    ) -> Result<Option<(Vec<ModelStep>, usize)>, Halt> {
+        let dense = self.timed.tick_period().is_none();
+        let mut loop_stages = Vec::with_capacity(cycle.len());
+        for stage in cycle {
+            let stage = stage.clone();
             let (part, mut resets) = match &stage.step {
                 Some((step, part)) => (
                     step.parts()
@@ -1440,10 +1497,12 @@ impl Run<'_, '_, '_> {
             factor.lcm(delay.denominator().as_big())
         });
         let fine = &self.scale * &factor;
-        let (initial, mut stem_stages) = self.stages_along(live, &stem)?;
-        let mut copy = Vec::with_capacity(rotated.len());
-        for (&edge, delay) in rotated.iter().zip(&delays) {
-            copy.push(self.stage(live, live.product.edges[edge], Some(scaled(delay, &fine)))?);
+        let mut copy = Vec::with_capacity(cycle.len());
+        for (stage, delay) in cycle.iter().zip(&delays) {
+            copy.push(Stage {
+                fixed: Some(scaled(delay, &fine)),
+                ..stage.clone()
+            });
         }
         for stage in stem_stages.iter_mut().chain(copy.iter_mut()) {
             for zone in [&mut stage.before, &mut stage.piece].into_iter().flatten() {
@@ -1452,7 +1511,6 @@ impl Run<'_, '_, '_> {
         }
         // The loop's entry: each clock it resets at the value the loop gives
         // it, each other clock past every constant (FR-236).
-        let places = self.path_clocks(live);
         let mut values: Vec<Option<Rational>> = vec![None; places];
         for (stage, delay) in loop_stages.iter().zip(&delays) {
             for value in values.iter_mut().flatten() {
@@ -1464,13 +1522,6 @@ impl Run<'_, '_, '_> {
                 }
             }
         }
-        let ceiling = live
-            .automaton
-            .all_constants()
-            .into_iter()
-            .chain([self.timed.max_constant()])
-            .max()
-            .unwrap_or_else(|| self.timed.max_constant());
         let mut at_entry = Dbm::universe(places + 1);
         for (place, value) in values.iter().enumerate() {
             match value {
@@ -1479,7 +1530,7 @@ impl Run<'_, '_, '_> {
                     at_entry.constrain(place + 1, 0, Bound::le(value.clone()))?;
                     at_entry.constrain(0, place + 1, Bound::le(-value))?;
                 }
-                None => at_entry.constrain(0, place + 1, Bound::lt(-scaled(&ceiling, &fine)))?,
+                None => at_entry.constrain(0, place + 1, Bound::lt(-scaled(ceiling, &fine)))?,
             }
         }
         let total = delays
@@ -1506,7 +1557,16 @@ impl Run<'_, '_, '_> {
             }
             let positions = stages.iter().filter(|stage| stage.step.is_some()).count();
             let Some(last) = stages.last_mut() else {
-                return Err(ZoneCheckRefusal::Fault("lasso-stem").into());
+                // An empty stem: the loop enters at the initial state, whose
+                // clocks are 0, so every clock is one the loop resets to 0.
+                let zero = Rational::from_integer(Integer::zero());
+                if values.iter().all(|value| value.as_ref() == Some(&zero)) {
+                    if let Ok(concrete) = concretise(self.timed, places, &copy, &Target::Any, &fine)
+                    {
+                        return Ok(Some((concrete.prefix, 0)));
+                    }
+                }
+                continue;
             };
             let mut entering = at_entry.clone();
             if let Some(piece) = &last.piece {
@@ -1517,21 +1577,14 @@ impl Run<'_, '_, '_> {
             let Ok(concrete) = concretise(self.timed, places, &stages, &Target::Any, &fine) else {
                 continue;
             };
-            return Ok(Some(counterexample(
-                initial,
-                concrete.prefix,
-                Lasso {
-                    entry: positions,
-                    terminal_stutter: false,
-                },
-            )));
+            return Ok(Some((concrete.prefix, positions)));
         }
         Ok(None)
     }
 }
 
 /// Hold `zone` to `atom`'s side `sign`.
-fn within(zone: &mut Dbm, (clock, value): &CellAtom, sign: Sign) -> Result<(), Halt> {
+pub(super) fn within(zone: &mut Dbm, (clock, value): &CellAtom, sign: Sign) -> Result<(), Halt> {
     match sign {
         Sign::Below => zone.constrain(*clock, 0, Bound::lt(value.clone()))?,
         Sign::At => {
@@ -1547,7 +1600,7 @@ fn within(zone: &mut Dbm, (clock, value): &CellAtom, sign: Sign) -> Result<(), H
 /// from a cell with clocks at their constants, those clocks pass them and
 /// no other changes; from one with none, some clocks reach their next
 /// constants and no other changes.
-fn next_cell(from: &[Sign], to: &[Sign]) -> bool {
+pub(super) fn next_cell(from: &[Sign], to: &[Sign]) -> bool {
     let at = from.contains(&Sign::At);
     let mut changed = false;
     for (before, after) in from.iter().zip(to) {
