@@ -171,9 +171,9 @@ pub use refinement::{
     ObjectRow, PopulationRow, PopulationUse, PopulationValue, ProtocolStepKind,
     RefinementCatalogClass, RefinementCatalogNode, RefinementCause, RefinementClassCatalog,
     RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin, RefinementRefusal,
-    RefinementStepSource, RefinementSupport, RefinementThreadTarget, RefinementV2EncodingError,
-    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
-    UnsupportedFeature,
+    RefinementStepSource, RefinementSupport, RefinementThreadTarget, RefinementV2Emission,
+    RefinementV2EncodingError, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel,
+    StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -4504,6 +4504,27 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-375: each refinement's rows, keyed once its catalog is, each
+        // row expression located at its own site. A refinement whose
+        // catalog names a node not written yet, or a row a form with no
+        // node, is not emitted, so its rows are not keyed.
+        for checked in &mut refinements {
+            if (checked.class_catalog.is_some() && checked.class_catalog_keys.is_none())
+                || !checked.rows_have_nodes()
+            {
+                continue;
+            }
+            for row in checked.rows() {
+                site_spans.insert(row.site.clone(), row.spans.clone());
+            }
+            let location = root(Origin::TypeDeclaration {
+                name: refinement_origin(checked.name()),
+            });
+            match lowering.refinement_rows(checked, &location) {
+                Ok(rows) => checked.row_keys = Some(rows),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         let lowered = lowering.finish(&lowering::generated_location());
         // FR-380: a population node's `Type` occurrences take their ordinals
         // in ascending source order, whichever writer recorded one first.
@@ -5182,7 +5203,7 @@ impl PackageDeclarations {
                         ))),
                     });
                 };
-                (!checked.v2_row_empty_body()).then(|| {
+                (!checked.v2_emittable()).then(|| {
                     refinement::not_emitted(
                         declaration.form.name.name.clone(),
                         declaration.form.span,

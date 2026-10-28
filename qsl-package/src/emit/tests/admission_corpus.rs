@@ -479,8 +479,14 @@ fn document_digest(document: &[u8]) -> String {
 /// The spine fixture's object package with one minimal, independent state
 /// machine added, under `package`'s identity.
 fn state_machine_document(package: &str) -> Vec<u8> {
-    let base = String::from_utf8(SPINE_MODEL_DOCUMENT.to_vec()).expect("fixture UTF-8");
-    let base = base.replace("acme/orders", package);
+    with_state_machine(SPINE_MODEL_DOCUMENT, "acme/orders", package)
+}
+
+/// The document `base`, its identity `from` renamed `package`, with one
+/// minimal, independent state machine added.
+fn with_state_machine(base: &[u8], from: &str, package: &str) -> Vec<u8> {
+    let base = String::from_utf8(base.to_vec()).expect("fixture UTF-8");
+    let base = base.replace(from, package);
     let mut document: serde_json::Value =
         serde_json::from_str(&base).expect("the spine model document is JSON");
     let identity = format!("ix://{package}/Lifecycle");
@@ -2064,4 +2070,620 @@ fn quantity_literal_nodes_are_referenced_by_their_operations() {
     );
     assert!(is_quantity_literal(target(&written, &arguments[1]), "3"));
     assert!(read(&emitted).is_ok());
+}
+
+/// Two copies of the config-version model, each with a state machine, as
+/// the abstract `A` and concrete `C` of a refinement `R` written by `rows`.
+/// `ConfigVersion` keeps only its `versionNumber` field (`parent` is an
+/// `Option<Reference<_>>`, whose row is a nested reference row the default
+/// build does not support), and its operations are `operations`, each
+/// shaped as `attemptUpdate` is.
+fn rows_refinement(rows: &str, operations: &[&str]) -> (String, Vec<Vec<u8>>) {
+    rows_refinement_with(rows, operations, false)
+}
+
+/// [`rows_refinement`], each operation taking one required Boolean
+/// parameter `flag` when `flag` holds.
+fn rows_refinement_with(rows: &str, operations: &[&str], flag: bool) -> (String, Vec<Vec<u8>>) {
+    let mut document: Value =
+        serde_json::from_str(config_version_unit::DOMAIN_PACKAGE).expect("the model is JSON");
+    for object in document["types"].as_array_mut().expect("types") {
+        if let Some(fields) = object.get_mut("fields").and_then(Value::as_array_mut) {
+            fields.retain(|field| field["name"] != "parent");
+        }
+        if let Some(declared) = object.get_mut("operations").and_then(Value::as_array_mut) {
+            let Some(template) = declared.first().cloned() else {
+                continue;
+            };
+            *declared = operations
+                .iter()
+                .map(|name| {
+                    let mut operation = template.clone();
+                    operation["name"] = json!(name);
+                    operation["identity"] =
+                        json!(format!("ix://example/config-version/ConfigVersion/{name}"));
+                    if flag {
+                        let identity =
+                            format!("ix://example/config-version/ConfigVersion/{name}/flag");
+                        operation["params"] = json!([{
+                            "identity": identity,
+                            "name": "flag",
+                            "typeRef": "ix://quire/native/Boolean",
+                            "presence": "required",
+                            "nullable": false,
+                            "defaultKind": "none",
+                            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                            "origin": {"generated": {
+                                "generatorIdentity": identity,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [identity],
+                            }},
+                        }]);
+                    }
+                    operation
+                })
+                .collect();
+        }
+    }
+    let base = serde_json::to_vec(&document).expect("the model serializes");
+    let abstract_document =
+        with_state_machine(&base, "example/config-version", "example/rows-abstract");
+    let concrete_document =
+        with_state_machine(&base, "example/config-version", "example/rows-concrete");
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"example/rows-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model C = \"example/rows-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         refinement R using inf abstract A concrete C {{\n{rows}\n}}\n",
+        document_digest(&abstract_document),
+        document_digest(&concrete_document),
+    );
+    (unit, vec![abstract_document, concrete_document])
+}
+
+/// The population and object rows of every [`rows_refinement`].
+const MAPS: &str = "population A::config_history from C::config_history;\n\
+    object A::ConfigVersion from C::ConfigVersion { versionNumber = self.versionNumber; }";
+
+/// `rows` over the operations `operations`, checked and emitted, with the
+/// unit's text.
+fn emit_rows(rows: &str, operations: &[&str]) -> (Emitted, String) {
+    let (unit, documents) = rows_refinement(rows, operations);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement with rows emits");
+    (
+        Emitted {
+            package,
+            emission,
+            documents,
+        },
+        unit,
+    )
+}
+
+/// The `[start, end)` of `needle` in `text`.
+fn span_of(text: &str, needle: &str) -> (u64, u64) {
+    let start = text
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle} in {text}"));
+    let start = u64::try_from(start).expect("an offset");
+    (
+        start,
+        start + u64::try_from(needle.len()).expect("a length"),
+    )
+}
+
+/// QSpec FR-375 rows (FR-375-AC-21, AC-24): a population row names both
+/// population nodes and an object row both object-type nodes and each field
+/// by name with its expression over the concrete object (`self`, FR-341's
+/// level-0 `parameter`); the node depends on each, and IR's reader admits
+/// the package. A model with no operation needs no step row, and with
+/// every abstract field mapped the owner is proof-eligible: one `generated`
+/// occurrence, at its declaration.
+#[trace("FR-375-AC-21", "FR-375-AC-24", "FR-322-AC-88", "TC-310")]
+#[test]
+fn population_and_object_rows_read_back() {
+    let (emitted, _) = emit_rows(MAPS, &[]);
+    let node = refinement_node(&emitted.emission);
+    let body = &node["body"];
+    let population = &body["populations"][0];
+    let object = &body["objects"][0];
+    let field = &object["fields"][0];
+    assert_eq!(field["name"], "versionNumber");
+    assert_eq!(field["expression"]["term"], "reference");
+    let dependencies = node["dependencies"].as_array().expect("dependencies");
+    for key in [
+        &population["abstract"],
+        &population["concrete"],
+        &object["abstract_type"],
+        &object["concrete_type"],
+        &field["expression"]["target"],
+    ] {
+        assert!(dependencies.contains(key), "{key} in {dependencies:?}");
+    }
+    assert_eq!(
+        node["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}, {"role": "generated", "ordinal": 0}])
+    );
+    assert!(wire(&emitted.emission)
+        .get("refinement_step_rows")
+        .is_none());
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// QSpec FR-375-AC-22, FR-322-AC-88 and AC-128 (AC-87 does not apply: QSL
+/// derives no node per step row, the rows are members of the owner's
+/// body): each step row has
+/// one `refinement_step_rows` entry at its own source row, keyed by the
+/// owner and its canonical ordinal, and a proof-eligible owner a
+/// `generated` occurrence per row (ordinal `i + 1` at row `i`'s region)
+/// beside the one at its declaration. Writing the rows in the other order
+/// moves the regions but not the `steps` order, the node id or the
+/// package id.
+#[trace("FR-375-AC-22", "FR-322-AC-88", "FR-322-AC-128", "TC-310", "TC-233")]
+#[test]
+fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
+    let operations = ["attemptUpdate", "rollback"];
+    let update = "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);";
+    let rollback = "step C::ConfigVersion::rollback -> stutter;";
+    let (forward, forward_unit) = emit_rows(&format!("{MAPS}\n{update}\n{rollback}"), &operations);
+    let (reversed, reversed_unit) =
+        emit_rows(&format!("{MAPS}\n{rollback}\n{update}"), &operations);
+    let (forward_node, reversed_node) = (
+        refinement_node(&forward.emission),
+        refinement_node(&reversed.emission),
+    );
+    assert_eq!(forward_node["node_id"], reversed_node["node_id"]);
+    assert_eq!(forward_node["body"], reversed_node["body"]);
+    assert_eq!(
+        wire(&forward.emission)["package_id"],
+        wire(&reversed.emission)["package_id"]
+    );
+    let classes: Vec<&str> = forward_node["body"]["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|step| step["source_class"].as_str().expect("a class"))
+        .collect();
+    assert_eq!(
+        classes,
+        ["ConfigVersion::attemptUpdate", "ConfigVersion::rollback"]
+    );
+    for (emitted, unit, node) in [
+        (&forward, &forward_unit, &forward_node),
+        (&reversed, &reversed_unit, &reversed_node),
+    ] {
+        let written = wire(&emitted.emission);
+        let rows = written["refinement_step_rows"]
+            .as_array()
+            .expect("a step-row sidecar");
+        let at = |row: &str| span_of(unit, row);
+        let expected = [at(update), at(rollback)];
+        assert_eq!(rows.len(), 2);
+        for (ordinal, (row, (start, end))) in rows.iter().zip(expected).enumerate() {
+            assert_eq!(row["node_id"], node["node_id"]);
+            assert_eq!(row["ordinal"], ordinal);
+            assert_eq!(
+                (row["region"]["start"].clone(), row["region"]["end"].clone()),
+                (json!(start), json!(end))
+            );
+        }
+        let generated: Vec<(u64, u64, u64)> = written["source_map"]
+            .as_array()
+            .expect("source map")
+            .iter()
+            .filter(|entry| entry["node_id"] == node["node_id"] && entry["role"] == "generated")
+            .map(|entry| {
+                (
+                    entry["ordinal"].as_u64().expect("an ordinal"),
+                    entry["regions"][0]["start"].as_u64().expect("a start"),
+                    entry["regions"][0]["end"].as_u64().expect("an end"),
+                )
+            })
+            .collect();
+        let declaration = span_of(unit, "refinement R");
+        assert_eq!(generated.len(), 3, "{generated:?}");
+        assert_eq!(generated[0].1, declaration.0);
+        assert_eq!((generated[1].1, generated[1].2), expected[0]);
+        assert_eq!((generated[2].1, generated[2].2), expected[1]);
+    }
+}
+
+/// The refusals of [`rows_refinement`] over `rows`, which must not check.
+fn refused_rows(rows: &str, operations: &[&str]) -> Vec<qsl_semantics::check::CheckCause> {
+    let (unit, documents) = rows_refinement(rows, operations);
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .map(|_| ())
+        .expect_err("the refinement is not emitted")
+        .into_iter()
+        .map(|refusal| refusal.cause)
+        .collect()
+}
+
+/// A row whose expression reads a whole concrete population or builds a
+/// `seq` has no node form (STD-493), like a `history` row: the
+/// refinement refuses `RefinementNotEmitted` naming it, never a fault or a
+/// malformed package.
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+fn whole_population_and_seq_rows_are_not_emitted() {
+    for field in [
+        "versionNumber = count(s in C::config_history where s.versionNumber = 1);",
+        "versionNumber = if size(seq(i in 0 .. 1: i)) = 2 then self.versionNumber \
+         else self.versionNumber;",
+    ] {
+        let rows = format!(
+            "population A::config_history from C::config_history;\n\
+             object A::ConfigVersion from C::ConfigVersion {{ {field} }}"
+        );
+        let refusals = refused_rows(&rows, &[]);
+        assert!(
+            matches!(
+                &refusals[..],
+                [qsl_semantics::check::CheckCause::RefinementNotEmitted { name, .. }] if name == "R"
+            ),
+            "{field}: {refusals:?}"
+        );
+    }
+}
+
+/// QSpec FR-341 row binders (SR-1735002 FND-002): over an operation with a
+/// Boolean parameter `flag`, a step row binds `self` at level 0 and `flag`
+/// at level 1, each a `parameter` node, whether the row passes `flag`,
+/// `not flag` or leaves it open (`_`).
+#[trace("FR-375-AC-22", "TC-310")]
+#[test]
+fn a_row_parameter_above_self_binds_at_level_one() {
+    for arguments in ["(self, flag)", "(self, not flag)", "(self, _)"] {
+        let step = format!(
+            "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate{arguments};"
+        );
+        let (unit, documents) =
+            rows_refinement_with(&format!("{MAPS}\n{step}"), &["attemptUpdate"], true);
+        let package = modelled_with_documents(&unit, &documents, Vec::new());
+        let emission = emit_checked(&package).expect("the refinement emits");
+        let mut parameters: Vec<(String, String)> = wire(&emission)["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .filter(|node| node["semantic_form"] == "parameter")
+            .map(|parameter| {
+                let text = |name: &str| {
+                    super::protocol_graph::member(&parameter["body"], name)["value"]
+                        .as_str()
+                        .expect("a literal")
+                        .to_owned()
+                };
+                (text("name"), text("level"))
+            })
+            .filter(|(name, _)| name == "self" || name == "flag")
+            .collect();
+        parameters.sort();
+        parameters.dedup();
+        assert_eq!(
+            parameters,
+            [
+                ("flag".to_owned(), "1".to_owned()),
+                ("self".to_owned(), "0".to_owned())
+            ],
+            "{arguments}"
+        );
+        // The read-back waits on IR-1077 (`operation_rows_read_back`).
+    }
+}
+
+/// QSpec FR-322-AC-129: an owner that is not proof-eligible (an `any`
+/// step) still carries every step row's region, and no `generated`
+/// occurrence.
+#[trace("FR-322-AC-129", "TC-233", "TC-310")]
+#[test]
+fn an_ineligible_owner_has_step_rows_and_no_generated_occurrence() {
+    let row = "step C::ConfigVersion::attemptUpdate -> any;";
+    let (emitted, unit) = emit_rows(&format!("{MAPS}\n{row}"), &["attemptUpdate"]);
+    let node = refinement_node(&emitted.emission);
+    assert_eq!(
+        node["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}])
+    );
+    assert_eq!(node["body"]["steps"][0]["target"], json!({"kind": "any"}));
+    let written = wire(&emitted.emission);
+    let (start, end) = span_of(&unit, row);
+    assert_eq!(written["refinement_step_rows"][0]["region"]["start"], start);
+    assert_eq!(written["refinement_step_rows"][0]["region"]["end"], end);
+}
+
+/// QSpec FR-375 `assume` and `ensure`: each names its operation's
+/// `operation_anchor` with the written kind and granularity, and an
+/// operation's step row names that anchor as its `source_node` (no class
+/// catalog), and an abstract target's operation its own anchor.
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+fn fairness_and_operation_rows_name_operation_anchors() {
+    let (emitted, _) = emit_rows(
+        &format!(
+            "{MAPS}\n\
+             step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);\n\
+             assume fair weak each C::ConfigVersion::attemptUpdate;\n\
+             ensure fair strong whole A::ConfigVersion::attemptUpdate;"
+        ),
+        &["attemptUpdate"],
+    );
+    let written = wire(&emitted.emission);
+    let node = refinement_node(&emitted.emission);
+    let anchor = |key: &Value| {
+        nodes(&written)
+            .iter()
+            .find(|candidate| candidate["node_id"] == *key)
+            .unwrap_or_else(|| panic!("a node {key}"))["semantic_form"]
+            .clone()
+    };
+    let body = &node["body"];
+    let assume = &body["assume"][0];
+    assert_eq!(
+        (&assume["kind"], &assume["granularity"]),
+        (&json!("weak"), &json!("each"))
+    );
+    assert_eq!(anchor(&assume["operation"]), "operation_anchor");
+    let ensure = &body["ensure"][0];
+    assert_eq!(
+        (&ensure["kind"], &ensure["granularity"]),
+        (&json!("strong"), &json!("whole"))
+    );
+    assert_eq!(anchor(&ensure["operation"]), "operation_anchor");
+    let step = &body["steps"][0];
+    assert_eq!(step["source_node"], assume["operation"]);
+    assert_eq!(step["target"]["operation"], ensure["operation"]);
+    assert_eq!(anchor(&step["target"]["receiver"]["target"]), "parameter");
+}
+
+/// The step, `assume` and `ensure` rows read back once IR resolves an
+/// `operation_anchor` against its declaring type (IR-1077).
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+#[ignore = "IR-1077: IR requires a row's operation_anchor context to be the model root"]
+fn operation_rows_read_back() {
+    let (emitted, _) = emit_rows(
+        &format!(
+            "{MAPS}\n\
+             step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);\n\
+             assume fair weak each C::ConfigVersion::attemptUpdate;"
+        ),
+        &["attemptUpdate"],
+    );
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// A protocol subject `A::Local` refined by the concrete protocol `Impl`,
+/// whose step rows are `rows`.
+fn protocol_rows(rows: &[&str]) -> (String, Vec<Vec<u8>>) {
+    protocol_rows_running("sequence Main { }", rows)
+}
+
+/// [`protocol_rows`] whose concrete protocol `Impl` runs `run`.
+fn protocol_rows_running(run: &str, rows: &[&str]) -> (String, Vec<Vec<u8>>) {
+    let (unit, documents) = protocol_subject();
+    let unit = unit.replace(
+        "refinement R using inf abstract A::Local concrete C {}",
+        &format!(
+            "protocol Impl using p over (input: C::Widget) on origin {{\n\
+             role w on C::Widget;\n\
+             channel ch from w to w carries Boolean ordering unordered delivery unknown \
+             capacity 2 overflow block;\n\
+             run {run}\n\
+             finish Done as (d: Boolean) {{ true }};\n\
+             }}\n\
+             refinement R using inf abstract A::Local concrete C {{\n{}\n}}",
+            rows.join("\n")
+        ),
+    );
+    (unit, documents)
+}
+
+/// The protocol-subject rows of [`protocol_rows`]: the finish, then the
+/// channel's two classes.
+const PROTOCOL_ROWS: [&str; 3] = [
+    "step lose C::Impl::ch -> stutter;",
+    "step C::Impl::Done -> stutter;",
+    "step duplicate C::Impl::ch -> stutter;",
+];
+
+/// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject's
+/// `steps` are ordered by their node's digest, rows of one node by their
+/// alias-free class spelling (`duplicate Impl::ch` before `lose Impl::ch`),
+/// each naming its class catalog node, whatever order they are written in.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn protocol_step_rows_order_by_node_then_class_spelling() {
+    let steps = |rows: &[&str]| {
+        let (unit, documents) = protocol_rows(rows);
+        let package = modelled_with_documents(&unit, &documents, Vec::new());
+        let emission = emit_checked(&package).expect("the protocol rows emit");
+        let node = refinement_node(&emission);
+        let catalog = node["body"]["class_catalog"]["concrete"].clone();
+        (node["body"]["steps"].clone(), catalog)
+    };
+    let (written, catalog) = steps(&PROTOCOL_ROWS);
+    let steps_of = |steps: &Value| -> Vec<(String, String)> {
+        steps
+            .as_array()
+            .expect("steps")
+            .iter()
+            .map(|step| {
+                (
+                    step["source_node"]["digest"]
+                        .as_str()
+                        .expect("a node")
+                        .to_owned(),
+                    step["source_class"].as_str().expect("a class").to_owned(),
+                )
+            })
+            .collect()
+    };
+    let ordered = steps_of(&written);
+    let mut sorted = ordered.clone();
+    sorted.sort();
+    assert_eq!(ordered, sorted);
+    let classes: Vec<&str> = ordered.iter().map(|(_, class)| class.as_str()).collect();
+    let duplicate = classes
+        .iter()
+        .position(|class| *class == "duplicate Impl::ch");
+    let lose = classes.iter().position(|class| *class == "lose Impl::ch");
+    assert!(duplicate < lose && lose.is_some(), "{classes:?}");
+    for step in written.as_array().expect("steps") {
+        let entry = catalog
+            .as_array()
+            .expect("a concrete catalog")
+            .iter()
+            .find(|entry| entry["class"] == step["source_class"])
+            .unwrap_or_else(|| panic!("{} is catalogued", step["source_class"]));
+        assert_eq!(entry["node"], step["source_node"]);
+    }
+    let reversed: Vec<&str> = PROTOCOL_ROWS.iter().rev().copied().collect();
+    assert_eq!(steps(&reversed).0, written);
+}
+
+/// A protocol subject's step rows read back once IR's catalog rebuild
+/// agrees with FR-375 (IR-874).
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn protocol_step_rows_read_back() {
+    let (unit, documents) = protocol_rows(&PROTOCOL_ROWS);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol rows emit");
+    let admitted = read(&Emitted {
+        package,
+        emission,
+        documents,
+    });
+    assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// [`PROTOCOL_ROWS`] with a `tso` parallel `Par` in `Impl`'s run: its
+/// `fork`/`join` rows and the `memory drain` and `memory flush` rows.
+const MEMORY_RUN: &str = "sequence Main { parallel Par memory tso { branch a sequence Ay { } \
+     branch b sequence Bee { } } join all [a, b]; }";
+const MEMORY_ROWS: [&str; 7] = [
+    "step memory flush -> stutter;",
+    "step lose C::Impl::ch -> stutter;",
+    "step fork C::Impl::Par -> stutter;",
+    "step memory drain -> stutter;",
+    "step C::Impl::Done -> stutter;",
+    "step join C::Impl::Par -> stutter;",
+    "step duplicate C::Impl::ch -> stutter;",
+];
+
+/// The checked package and emission of [`protocol_rows_running`].
+fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
+    let (unit, documents) = protocol_rows_running(run, rows);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the memory rows emit");
+    Emitted {
+        package,
+        emission,
+        documents,
+    }
+}
+
+/// QSpec FR-375-AC-19 (the memory rows, QSL-1181 7ce810ed): the `memory`
+/// rows come after every declaration-naming row, `drain` before `flush`,
+/// neither with a `source_node`; writing the rows in another order changes
+/// neither the node id nor the package id.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn memory_rows_go_last_drain_before_flush() {
+    let forward = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let reversed: Vec<&str> = MEMORY_ROWS.iter().rev().copied().collect();
+    let reversed = memory_emission(MEMORY_RUN, &reversed);
+    let node = refinement_node(&forward.emission);
+    let steps = node["body"]["steps"].as_array().expect("steps");
+    let tail: Vec<&Value> = steps[steps.len() - 2..].iter().collect();
+    assert_eq!(
+        tail.iter()
+            .map(|step| step["source_class"].as_str().expect("a class"))
+            .collect::<Vec<_>>(),
+        ["memory drain", "memory flush"]
+    );
+    for step in &tail {
+        assert!(step.get("source_node").is_none(), "{step}");
+    }
+    for step in &steps[..steps.len() - 2] {
+        assert!(step.get("source_node").is_some(), "{step}");
+    }
+    assert_eq!(
+        refinement_node(&reversed.emission)["node_id"],
+        node["node_id"]
+    );
+    assert_eq!(
+        wire(&reversed.emission)["package_id"],
+        wire(&forward.emission)["package_id"]
+    );
+}
+
+/// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
+/// `sc`, `tso` and `ra` (and a second `sc`), the concrete catalog holds
+/// `memory drain` once per model in the order `ra`, `sc`, `tso`, each with
+/// `drain: store-buffer-flush` and no `node` or `binder_types`, then
+/// `memory flush` once for `tso`.
+#[trace("FR-375-AC-23", "FR-375-AC-26", "TC-310")]
+#[test]
+fn memory_catalog_entries_are_one_drain_per_model_then_flush() {
+    let parallel = |name: &str, memory: &str| {
+        format!(
+            "parallel {name} memory {memory} {{ branch a sequence {name}A {{ }} \
+             branch b sequence {name}B {{ }} }} join all [a, b];"
+        )
+    };
+    let run = format!(
+        "sequence Main {{ {} {} {} {} }}",
+        parallel("Sc", "sc"),
+        parallel("Tso", "tso"),
+        parallel("Ra", "ra"),
+        parallel("Again", "sc"),
+    );
+    let mut rows: Vec<String> = PROTOCOL_ROWS.iter().map(|row| (*row).to_owned()).collect();
+    for name in ["Sc", "Tso", "Ra", "Again"] {
+        rows.push(format!("step fork C::Impl::{name} -> stutter;"));
+        rows.push(format!("step join C::Impl::{name} -> stutter;"));
+    }
+    rows.push("step memory drain -> stutter;".to_owned());
+    rows.push("step memory flush -> stutter;".to_owned());
+    let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+    let emitted = memory_emission(&run, &rows);
+    let node = refinement_node(&emitted.emission);
+    let memory: Vec<&Value> = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("a concrete catalog")
+        .iter()
+        .filter(|entry| {
+            entry["class"]
+                .as_str()
+                .is_some_and(|class| class.starts_with("memory "))
+        })
+        .collect();
+    assert_eq!(
+        memory,
+        [
+            &json!({"class": "memory drain", "memory_model": "ra", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory drain", "memory_model": "sc", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory drain", "memory_model": "tso", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory flush", "memory_model": "tso"}),
+        ]
+    );
+}
+
+/// The memory rows and catalog entries read back once IR's catalog rebuild
+/// agrees with FR-375 (IR-874).
+#[trace("FR-375-AC-19", "FR-375-AC-26", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn memory_rows_read_back() {
+    let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the memory rows read back: {admitted:?}");
 }
