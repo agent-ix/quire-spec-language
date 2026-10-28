@@ -34,7 +34,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     Capability, CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember,
-    TerminalDeclaration, TerminalMode,
+    TerminalDeclaration,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_semantic_value::fairness::PropertyForm;
@@ -213,21 +213,12 @@ impl<S: Clone> DeadlockFreedomItem<S> {
     }
 }
 
-/// Whether `package`'s state model opts out of the deadlock-freedom item:
-/// a selected model declares `terminal any`.
-fn opts_out(package: &CheckedGraph) -> bool {
-    package
-        .terminal_nodes()
-        .iter()
-        .any(|terminal| terminal.mode == TerminalMode::Any)
-}
-
-/// Whether `refinement`'s concrete model declares `terminal any` in
-/// `package`: only that declaration opts the refinement's subject out, and
-/// the abstract model's has no effect on it (ADR-020 RS-9).
-fn concrete_opts_out(package: &CheckedGraph, refinement: &CheckedRefinement) -> bool {
+/// Whether one of the models `models` of `package` declares `terminal any`:
+/// only a subject's own models opt it out of the deadlock-freedom item, and
+/// another model's declaration has no effect on it.
+fn opts_out(package: &CheckedGraph, models: &[String]) -> bool {
     package.terminals().iter().any(|terminal| {
-        terminal.model() == refinement.concrete_model()
+        models.iter().any(|model| model == terminal.model())
             && matches!(terminal.declaration(), TerminalDeclaration::Any)
     })
 }
@@ -236,25 +227,35 @@ fn concrete_opts_out(package: &CheckedGraph, refinement: &CheckedRefinement) -> 
 /// temporal, refinement and state-graph items over model subjects. There is
 /// one per distinct subject, ordered by temporal-item order, then
 /// refinement-item order, then state-graph-item order, and none for a subject
-/// whose state model declares `terminal any`. A refinement item brings its
-/// concrete subject's item and none for its abstract subject.
+/// one of whose own models declares `terminal any`. `models_of` gives the
+/// model aliases a subject ranges over, as [`time_lock_freedom_items`]
+/// reads them. A refinement item brings its concrete subject's item, opted
+/// out only by its concrete model's `terminal any`, and none for its
+/// abstract subject (ADR-020 RS-9).
 pub fn deadlock_freedom_items<S: Clone + Eq>(
     temporal: &[ModelTemporalItem<'_, S>],
     refinements: &[ModelRefinementItem<'_, S>],
     state_graph: &[ModelStateGraphItem<'_, S>],
+    models_of: impl Fn(&S) -> Vec<String>,
 ) -> Vec<DeadlockFreedomItem<S>> {
-    let temporal = temporal
-        .iter()
-        .map(|item| (item.subject, opts_out(item.package)));
+    let temporal = temporal.iter().map(|item| {
+        (
+            item.subject,
+            opts_out(item.package, &models_of(item.subject)),
+        )
+    });
     let refinements = refinements.iter().map(|item| {
         (
             item.subject,
-            concrete_opts_out(item.package, item.refinement),
+            opts_out(item.package, &[item.refinement.concrete_model().to_owned()]),
         )
     });
-    let state_graph = state_graph
-        .iter()
-        .map(|item| (item.subject, opts_out(item.package)));
+    let state_graph = state_graph.iter().map(|item| {
+        (
+            item.subject,
+            opts_out(item.package, &models_of(item.subject)),
+        )
+    });
     let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
     for (subject, opted_out) in temporal.chain(refinements).chain(state_graph) {
         if opted_out || derived.iter().any(|seen| seen.subject == *subject) {

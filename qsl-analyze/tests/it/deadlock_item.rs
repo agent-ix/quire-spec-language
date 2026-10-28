@@ -26,6 +26,11 @@ struct Subject {
     initial: DocumentRef,
 }
 
+/// Every subject here ranges over the one model `M`.
+fn over_m<S>(_: &S) -> Vec<String> {
+    vec!["M".to_owned()]
+}
+
 fn occurrence(byte: u8) -> OccurrenceKey {
     OccurrenceKey::new(
         WireNodeId::from_digest([byte; 32]),
@@ -57,7 +62,7 @@ fn derived(terminal: &str) -> (Vec<ItemObligation<Subject>>, Vec<ItemObligation<
         },
     ];
     let authored = items.iter().map(ModelTemporalItem::obligation).collect();
-    let derived = deadlock_freedom_items(&items, &[], &[]);
+    let derived = deadlock_freedom_items(&items, &[], &[], over_m);
     for item in &derived {
         assert_eq!(item.subject(), &subject);
         assert_eq!(item.property_form(), PropertyForm::ReachableInvariant);
@@ -122,7 +127,7 @@ fn state_graph_items_share_the_subject_deadlock_item() {
         package: checked.graph(),
     }];
 
-    let derived = deadlock_freedom_items(&temporal, &[], &state_graph);
+    let derived = deadlock_freedom_items(&temporal, &[], &state_graph, over_m);
     assert_eq!(derived.len(), 1, "equal subjects share one derived item");
     assert_eq!(derived[0].subject(), &subject);
     assert_eq!(
@@ -138,7 +143,7 @@ fn state_graph_items_share_the_subject_deadlock_item() {
         subject: &graph_only_subject,
         package: checked.graph(),
     }];
-    let graph_only_derived = deadlock_freedom_items(&[], &[], &graph_only);
+    let graph_only_derived = deadlock_freedom_items(&[], &[], &graph_only, over_m);
     assert_eq!(
         graph_only_derived.len(),
         1,
@@ -154,5 +159,5 @@ fn state_graph_items_share_the_subject_deadlock_item() {
         subject: &subject,
         package: opted_out.graph(),
     }];
-    assert!(deadlock_freedom_items(&[], &[], &graph_only).is_empty());
+    assert!(deadlock_freedom_items(&[], &[], &graph_only, over_m).is_empty());
 }
