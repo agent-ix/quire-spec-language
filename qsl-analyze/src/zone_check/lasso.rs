@@ -19,6 +19,8 @@
 //! bounded set, otherwise its lower end plus one unit. The solution is a
 //! function of the loop.
 
+use std::collections::BTreeSet;
+
 use num_bigint::BigInt;
 use qsl_eval::simulation::model::PlaceConstraint;
 use qsl_semantics::check::ClockOp;
@@ -39,6 +41,8 @@ pub(super) struct LoopStage {
     pub part: Vec<PlaceConstraint>,
     /// The step's resets, place and value, in order.
     pub resets: Vec<(usize, Rational)>,
+    /// The step's simultaneous clock copies, destination and source place.
+    pub carries: Vec<(usize, usize)>,
     /// The time invariants after the position.
     pub target: Vec<PlaceConstraint>,
     /// A claim automaton's guard on its own clocks at the position, read
@@ -144,35 +148,64 @@ impl System<'_> {
         self.stages.len()
     }
 
-    /// `Σ d` over positions `(from, to]`, cyclically, `from` a position
-    /// index whose step happened before `to`'s delay.
-    fn delays_between(&self, from: usize, to: usize) -> Form {
+    /// The time over `distance` positions ending at `end`, where the span
+    /// may cross the loop more than once because a carried clock can follow
+    /// another clock's earlier value.
+    fn delays_back(&self, distance: usize, end: usize) -> Form {
         let m = self.m();
-        let at = |k: usize| Form::prefix(m, Some(k));
-        if from < to {
-            at(to).minus(&at(from))
-        } else {
-            // From `from` round the end of the loop and on to `to`.
-            at(m - 1).minus(&at(from)).plus(&at(to))
+        let laps = distance / m;
+        let remainder = distance % m;
+        let mut span = Form::constant(m, zero());
+        if laps > 0 {
+            let whole = Form::prefix(m, Some(m - 1));
+            let factor =
+                Rational::from_integer(Integer::from(u64::try_from(laps).unwrap_or(u64::MAX)));
+            span = span.plus(&whole.times(&factor));
         }
+        for offset in 0..remainder {
+            let at = (end + m - offset) % m;
+            let current = Form::prefix(m, Some(at));
+            let previous = at
+                .checked_sub(1)
+                .map(|index| Form::prefix(m, Some(index)))
+                .unwrap_or_else(|| Form::constant(m, zero()));
+            span = span.plus(&current.minus(&previous));
+        }
+        span
     }
 
     /// Clock `place`'s value just before position `k`'s step, after its
     /// delay.
     fn before(&self, place: usize, k: usize) -> Value {
         let m = self.m();
-        for back in 1..=m {
-            let j = (k + m - back) % m;
+        let mut clock = place;
+        let mut at = k;
+        let mut distance = 0;
+        let mut seen = BTreeSet::new();
+        loop {
+            if !seen.insert((at, clock)) {
+                return Value::Above;
+            }
+            let j = (at + m - 1) % m;
+            distance += 1;
             if let Some((_, value)) = self.stages[j]
                 .resets
                 .iter()
                 .rev()
-                .find(|(reset, _)| *reset == place)
+                .find(|(reset, _)| *reset == clock)
             {
-                return Value::Form(self.delays_between(j, k).shifted(value));
+                return Value::Form(self.delays_back(distance, k).shifted(value));
             }
+            if let Some((_, source)) = self.stages[j]
+                .carries
+                .iter()
+                .rev()
+                .find(|(target, _)| *target == clock)
+            {
+                clock = *source;
+            }
+            at = j;
         }
-        Value::Above
     }
 
     /// Clock `place`'s value just after position `k`'s step.
@@ -184,7 +217,15 @@ impl System<'_> {
             .find(|(reset, _)| *reset == place)
         {
             Some((_, value)) => Value::Form(Form::constant(self.m(), value.clone())),
-            None => self.before(place, k),
+            None => match self.stages[k]
+                .carries
+                .iter()
+                .rev()
+                .find(|(target, _)| *target == place)
+            {
+                Some((_, source)) => self.before(*source, k),
+                None => self.before(place, k),
+            },
         }
     }
 
@@ -439,6 +480,7 @@ mod tests {
             invariants: Vec::new(),
             part,
             resets,
+            carries: Vec::new(),
             target: Vec::new(),
             position: Vec::new(),
             before: None,
@@ -464,6 +506,30 @@ mod tests {
             solve_loop(&loop_, &BigInt::from(1), true, u64::MAX),
             Err(NotConcretised::Infeasible)
         ));
+    }
+
+    /// A carried clock retains the source clock's pre-step value through a
+    /// loop, while a simultaneous reset starts the source clock afresh.
+    /// Thus `x <- y; y = 0` and the guard `x >= 3` require a loop delay of
+    /// at least 3/2: the carried `x` accumulates both loop delays since the
+    /// prior reset of `y`.
+    #[ix_trace_rs::trace("TC-696", "FR-241-AC-4")]
+    #[test]
+    fn a_carried_clock_uses_the_source_value_in_a_loop() {
+        let mut loop_ = stage(
+            vec![PlaceConstraint::new(
+                0,
+                ClockOp::GreaterOrEqual,
+                exact(3, 1),
+            )],
+            vec![(1, exact(0, 1))],
+        );
+        loop_.carries.push((0, 1));
+        assert_eq!(
+            solve_loop(&[loop_], &BigInt::from(1), true, u64::MAX)
+                .expect("the carried-clock loop is feasible"),
+            [exact(3, 2)]
+        );
     }
 
     /// FR-241's rule on a loop: a step resetting `x` guarded by `x >= 1`
