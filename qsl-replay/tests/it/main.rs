@@ -2,6 +2,7 @@
 //! Integration tests that reach `qsl-replay` through its public facade only.
 
 mod category_facade;
+mod checked_body_failure;
 mod compile_ieee_profile;
 mod compile_protocol_profile;
 mod format_outcome_facade;

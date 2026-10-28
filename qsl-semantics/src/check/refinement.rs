@@ -942,8 +942,6 @@ pub struct CheckedRefinement {
     /// selections after protocol refinement resolution.
     pub(crate) abstract_subject_node: Option<NodeKey>,
     pub(crate) concrete_subject_node: Option<NodeKey>,
-    pub(crate) abstract_subject_declaration: Option<DeclarationKey>,
-    pub(crate) concrete_subject_declaration: Option<DeclarationKey>,
     /// The full authored declaration region used by the V2 relation-node
     /// occurrence and source map.
     pub(crate) declaration_span: Span,
@@ -1019,24 +1017,14 @@ impl CheckedRefinement {
         self.concrete_protocol
     }
 
-    /// The model node that keys this refinement's abstract state machine.
+    /// The abstract model's `model_root` node (QSpec FR-375).
     pub fn abstract_subject_node(&self) -> Option<NodeKey> {
         self.abstract_subject_node
     }
 
-    /// The model node that keys this refinement's concrete state machine.
+    /// The concrete model's `model_root` node (QSpec FR-375).
     pub fn concrete_subject_node(&self) -> Option<NodeKey> {
         self.concrete_subject_node
-    }
-
-    /// The abstract state-machine's declaring package and record key.
-    pub fn abstract_subject_declaration(&self) -> Option<&DeclarationKey> {
-        self.abstract_subject_declaration.as_ref()
-    }
-
-    /// The concrete state-machine's declaring package and record key.
-    pub fn concrete_subject_declaration(&self) -> Option<&DeclarationKey> {
-        self.concrete_subject_declaration.as_ref()
     }
 
     /// The authored refinement declaration span.
@@ -1380,6 +1368,7 @@ fn holds_reference(
         ValueType::Reference(_) => Ok(true),
         ValueType::Option(payload) => holds_reference(types, payload, seen),
         ValueType::Collection(collection) => holds_reference(types, collection.element(), seen),
+        ValueType::Map(map) => holds_reference(types, map.values(), seen),
         ValueType::Composite(key) => {
             if seen.contains(key) {
                 return Ok(false);
@@ -1399,7 +1388,20 @@ fn holds_reference(
                 ),
             }
         }
-        _ => Ok(false),
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::Text(_)
+        | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp
+        | ValueType::Enum(_)
+        | ValueType::Population(_) => Ok(false),
     }
 }
 
@@ -1419,7 +1421,25 @@ fn lift(lifting: &BTreeMap<EffectiveId, EffectiveId>, value_type: &ValueType) ->
                 collection.bound(),
             ))
         }
-        other => other.clone(),
+        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            lift(lifting, map.values()),
+            map.bound(),
+        ))),
+        other @ (ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::Text(_)
+        | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp
+        | ValueType::Enum(_)
+        | ValueType::Composite(_)
+        | ValueType::Population(_)) => other.clone(),
     }
 }
 
@@ -1650,8 +1670,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
-        abstract_subject_declaration: None,
-        concrete_subject_declaration: None,
         declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported
@@ -3291,5 +3309,67 @@ mod tests {
             &ValueType::option(record(money)),
             &ValueType::option(record(money))
         ));
+    }
+    fn reference(byte: u8) -> ValueType {
+        ValueType::Reference(quire_exact::EffectiveId::from_digest([byte; 32]))
+    }
+
+    fn map_of(values: ValueType, bound: Option<quire_exact::CardinalityBound>) -> ValueType {
+        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            values, bound,
+        )))
+    }
+
+    /// FR-135: a reference nested in a map's values is not lifted by the
+    /// object map, so it is a refinement feature the build does not check,
+    /// as one nested in an option or a collection is. A map of a value
+    /// without a reference, and a bounded quantity, hold none. No QSL
+    /// criterion pins the map arm itself.
+    #[test]
+    fn a_reference_in_a_map_value_is_a_nested_reference() {
+        let types = TypeEnvironment::new([], []).expect("an empty environment");
+        assert_eq!(
+            nests_reference(&types, &map_of(reference(1), None)),
+            Ok(true)
+        );
+        assert_eq!(
+            nests_reference(&types, &map_of(map_of(reference(1), None), None)),
+            Ok(true)
+        );
+        assert_eq!(
+            nests_reference(&types, &map_of(ValueType::Boolean, None)),
+            Ok(false)
+        );
+        let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+            quire_exact::BoundedQuantityType::new(
+                quire_exact::UnitId::compound([5; 32]),
+                None,
+                None,
+            )
+            .expect("in the unit"),
+        ));
+        assert_eq!(nests_reference(&types, &bounded), Ok(false));
+    }
+
+    /// ADR-020 RM-3: the object map lifts a reference at any depth in a map's
+    /// values, and the map keeps its bound; a bounded quantity is unchanged.
+    #[test]
+    fn lifting_reaches_a_reference_inside_a_map_value() {
+        let abstract_type = quire_exact::EffectiveId::from_digest([1; 32]);
+        let concrete = quire_exact::EffectiveId::from_digest([2; 32]);
+        let lifting = BTreeMap::from([(abstract_type, concrete)]);
+        let bound = quire_exact::CardinalityBound::new(1, 3).expect("a bound");
+        assert_eq!(
+            lift(&lifting, &map_of(reference(1), Some(bound))),
+            map_of(reference(2), Some(bound))
+        );
+        assert_eq!(
+            lift(&lifting, &map_of(map_of(reference(1), None), None)),
+            map_of(map_of(reference(2), None), None)
+        );
+        assert_eq!(
+            lift(&lifting, &map_of(ValueType::Boolean, None)),
+            map_of(ValueType::Boolean, None)
+        );
     }
 }

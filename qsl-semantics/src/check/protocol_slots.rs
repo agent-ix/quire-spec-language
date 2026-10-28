@@ -382,6 +382,10 @@ impl Checker<'_, '_> {
         // their own node, so each tree is rooted at that node's own site
         // (FR-096); every other slot keeps the clause location.
         let site_location = match slot.owner {
+            SlotOwner::Clause if slot.kind == SlotKind::Terminal => Some(protocol_location(
+                &self.protocol.name.name,
+                ProtocolSite::TerminalBody,
+            )),
             SlotOwner::Node(node) => self
                 .protocol
                 .declarations

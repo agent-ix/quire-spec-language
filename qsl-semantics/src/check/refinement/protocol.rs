@@ -79,8 +79,11 @@ pub enum RoleStepKind {
 /// An internal step of a memory model (ADR-027 ST-10, SE-1 d).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MemoryStepKind {
-    /// `tso`'s `flush` of a store buffer (ADR-025 TSO-4). `sc` and `ra` have
-    /// no internal step.
+    /// The `drain` of a thread's pending writes, a class of every
+    /// source-default model (QSpec FR-375 "Checked class catalog"): `tso`'s
+    /// store-buffer flush in FIFO order, a no-op under `sc` and `ra`.
+    Drain,
+    /// `tso`'s `flush` of the oldest buffered write (ADR-025 TSO-4).
     Flush,
 }
 
@@ -88,15 +91,27 @@ impl MemoryStepKind {
     /// The kind's spelling in a `memory <kind>` row.
     pub fn label(self) -> &'static str {
         match self {
+            Self::Drain => "drain",
             Self::Flush => "flush",
         }
     }
 
-    /// The internal step kinds of `model`.
+    /// The internal step kinds of `model`: `drain` for every source-default
+    /// model, and `flush` for `tso`.
     fn of_model(model: MemoryModelName) -> &'static [Self] {
         match model {
-            MemoryModelName::Sc | MemoryModelName::Ra => &[],
-            MemoryModelName::Tso => &[Self::Flush],
+            MemoryModelName::Sc | MemoryModelName::Ra => &[Self::Drain],
+            MemoryModelName::Tso => &[Self::Drain, Self::Flush],
+        }
+    }
+
+    /// What a refinement needs of the kind: a row of its own for `flush`.
+    /// A `drain` row is admitted and not yet required: the AC that makes
+    /// it mandatory (FR-432's "nothing defaults") is pending in QSpec.
+    fn need(self) -> Need {
+        match self {
+            Self::Drain => Need::Optional,
+            Self::Flush => Need::Row,
         }
     }
 }
@@ -361,6 +376,8 @@ struct Entry {
 enum Need {
     /// A row of its own.
     Row,
+    /// A row of its own may name it; none is required.
+    Optional,
     /// A row of its own, or the row of this concrete operation.
     OrOperation(Option<DeclarationKey>),
 }
@@ -578,7 +595,7 @@ fn entries(clause: &ProtocolClause<'_>, concrete: &AdmittedModel) -> Vec<Entry> 
         keyword: None,
         name: kind.label().to_owned(),
         row: RowClass::Memory,
-        need: Need::Row,
+        need: kind.need(),
     }));
     entries
 }
@@ -993,6 +1010,7 @@ impl<'a> Checker<'_, 'a> {
             let covered = first_rows.iter().any(|(class, _)| *class == entry.class);
             let by_operation = match &entry.need {
                 Need::Row => false,
+                Need::Optional => true,
                 Need::OrOperation(operation) => operation
                     .as_ref()
                     .is_some_and(|operation| written.contains(operation)),

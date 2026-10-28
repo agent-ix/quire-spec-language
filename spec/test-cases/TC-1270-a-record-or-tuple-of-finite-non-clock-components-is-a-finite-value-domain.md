@@ -52,9 +52,10 @@ domain value. Read domains through `ModelSystem::domains`, successors through
    expand the initial state; repeat with no postcondition. In another model,
    grant `Sequence<Timer>[0, 1]` and `Sequence<Clock>[0, 1]` fields (bounded, step 5).
 4. Add `op: Open` (`Open { n: Integer, b: Boolean }`), `tm: Tm`
-   (`Tm { x: Clock, k: Integer }`), `wr: Wrap2` (`Wrap2 { o: Open }`) and
-   `u: U` (union `U { a, b(Boolean) }`) as fields, each granted by a frame, one
-   at a time. Call `explore_model` and `sample_model`.
+   (`Tm { x: Clock, k: Integer }`) and `wr: Wrap2` (`Wrap2 { o: Open }`) as
+   fields, each granted by a frame, one at a time. In a separate model package,
+   add `Choice` with nullary case `Empty` and case `Enabled(Boolean)`; grant a
+   `choice: Choice` field by a frame. Call `explore_model` and `sample_model`.
 
 5. In a separate model declare `time dense unit ms`, the types `Cfg` and `Open`
    of steps 1 and 4, `Tick { x: Clock }` and `Timer { x: Clock, n: Int[0, 3] }`,
@@ -91,10 +92,13 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   with `ck.n` 3 and `x` reset, `sw` unchanged, and no candidate ranges over a
   value of `x`. With no postcondition each clock keeps its pre-state value. The
   `Sequence<Timer>[0, 1]` and `Sequence<Clock>[0, 1]` fields are bounded roots (AC-26).
-- Step 4: each of `op`, `tm`, `wr` and `u` is an unbounded root.
+- Step 4: each of `op`, `tm` and `wr` is an unbounded root.
   `explore_model` returns `NotSimulated::RequiresBound` and `sample_model`
   `ModelSampleError::NotSimulated(RequiresBound)`, each naming that field's
   `WireNodeId`, with no state expanded. `tm`'s clock does not make it bounded.
+  `choice` has three values in order: `Empty`, `Enabled(false)`,
+  `Enabled(true)`, and adds no unbounded root. Replacing the payload type with
+  unbounded `Integer` makes `choice` unbounded.
 - Step 5 (FR-120-AC-26): `sc` has 43 values, by length and then
   lexicographically with the first element most significant; `st`, `sk` and `so`
   have 4 each; `sr21` has 21 and `sr85` has 85, ordered by length and then by
