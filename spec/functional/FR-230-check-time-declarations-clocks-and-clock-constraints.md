@@ -331,9 +331,11 @@ ill-formed use.
   SHALL range over absent and present; this is an over-approximation, sound
   for every-behaviour families and optimistic for possibility families, and the
   number of initial states grows as 2 to the power of those places, times the
-  count ranges of "Initial element count". `present(p)` of a guarded place SHALL check as a `Boolean`
-  data predicate over the place's presence (its bit or its data), read through the data-predicate path and never
-  as a clock read; the recorded guard carries it as a data predicate of its
+  count ranges of "Initial element count". `present(p)` of a guarded place
+  SHALL check as a `Boolean` data predicate over the place's presence (its
+  runtime state bit, which is not a package member, or its data), read through
+  the data-predicate path and never as a clock read; the recorded guard carries
+  it as a data predicate of its
   convex part.
   **Presence is derived.** `present(p)` is the derived Boolean predicate of
   QSpec FR-415 "Presence is derived" and FR-322 "Timed-model nodes" (Presence),
