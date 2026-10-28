@@ -349,7 +349,7 @@ fn bounded_carries(carries: &ValueType) -> bool {
 type ChannelNodes = (Vec<NodeKey>, Vec<NodeKey>, Vec<(String, NodeKey)>);
 
 /// The already-keyed nodes a protocol clause includes as set members.
-struct ProtocolMembers<'a> {
+struct ProtocolClauseMembers<'a> {
     attempts: &'a [AttemptNodes],
     compensations: &'a [CompensationNodes],
     requirements: &'a [NodeKey],
@@ -511,7 +511,7 @@ impl Lowering<'_> {
             protocol,
             &law,
             owner,
-            ProtocolMembers {
+            ProtocolClauseMembers {
                 attempts: &[],
                 compensations: &[],
                 requirements: &requirements,
@@ -577,7 +577,7 @@ impl Lowering<'_> {
                 protocol,
                 &law,
                 owner,
-                ProtocolMembers {
+                ProtocolClauseMembers {
                     attempts: nodes,
                     compensations: compensation_nodes,
                     requirements: &requirements,
@@ -734,7 +734,7 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
         owner: EffectiveId,
-        members: ProtocolMembers<'_>,
+        members: ProtocolClauseMembers<'_>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name = protocol.form.name.name.as_str();

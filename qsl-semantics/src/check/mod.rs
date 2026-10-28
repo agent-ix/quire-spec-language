@@ -4394,37 +4394,18 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
-        // FR-337: each emitted temporal clause, after every function its
-        // conditions may call, minting its node identity and recording its
-        // `claim` occurrence.
-        let mut lowered_temporal = Vec::with_capacity(checked_temporal.len());
-        for (index, checked, conditions) in &checked_temporal {
-            match lowering.temporal_clause(&lowering::TemporalClauseInput {
-                index: *index,
-                clause: checked,
-                conditions,
-            }) {
-                Ok(lowered) => lowered_temporal.push(lowered),
-                Err(refusal) => refusals.push(refusal),
-            }
-        }
-        if lowered_temporal.len() == checked_temporal.len() {
-            let temporal_keys: Vec<(usize, quire_exact::NodeKey)> = checked_temporal
+        // FR-375: a protocol subject's abstract side names the emitted
+        // protocol clause node. Resolve it after dependency-ordered protocol
+        // lowering (and after attempt-bearing clauses receive their nodes).
+        for checked in &mut refinements {
+            let AbstractSide::Protocol { clause } = &checked.abstract_side else {
+                continue;
+            };
+            checked.abstract_protocol = self
+                .protocols
                 .iter()
-                .zip(&lowered_temporal)
-                .map(|((index, _, _), lowered)| (*index, lowered.key))
-                .collect();
-            match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols)
-            {
-                Ok(inputs) => {
-                    if let Err(refusal) =
-                        lowering.protocol_nodes_after_temporal(&inputs, &temporal_keys)
-                    {
-                        refusals.push(refusal);
-                    }
-                }
-                Err(refusal) => refusals.push(refusal),
-            }
+                .position(|protocol| protocol.name.name == *clause)
+                .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
         }
         // FR-135: the clause a refinement's rows select, by its node. This
         // follows temporal lowering because a selected protocol may require
