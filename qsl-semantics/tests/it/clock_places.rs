@@ -2736,3 +2736,53 @@ fn a_presence_the_precondition_denies_and_nothing_writes_refuses() {
         .unwrap_or_else(|refusals| panic!("{place} written: {refusals:?}"));
     }
 }
+
+/// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), S3's part: over
+/// `q: Sequence<Option<Clock>>[0, 2]`, `forall(e in self.q : present(e))`
+/// and `exists(e in self.q : present(e))` are data predicates of the
+/// elements' presences, never clock reads: a time invariant's `when`, an
+/// `urgent when` and a guard (one convex part whose data reads it) check,
+/// and so does the quantifier over another object's `q`
+/// (`self.peer.q`). `present(self.q)` with no element is no presence of a
+/// place and refuses.
+#[trace("TC-685")]
+#[test]
+fn quantified_presence_over_an_option_sequence_is_a_data_predicate() {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mut q = field("q", "ix://quire/native/Clock");
+    q["presence"] = json!("optional");
+    q["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields");
+    fields.push(q);
+    fields.push(field("peer", &package("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    for body in [
+        "time invariant All when { forall(e in self.q : present(e)) } { self.x <= 5 ms }\n",
+        "urgent U when { exists(e in self.q : present(e)) };\n",
+        "time invariant Peer when { forall(e in self.peer.q : present(e)) } { self.x <= 5 ms }\n",
+    ] {
+        check(&document, &format!("{UNITS}{DENSE}{body}"))
+            .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    }
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre G using v on Config::Call::bump {{ forall(e in self.q : present(e)) and self.x >= 1 ms }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("the guard: {refusals:?}"));
+    let model = timed(&graph);
+    let [part] = model.guards()[0].parts() else {
+        panic!("one part");
+    };
+    assert!(part.data().is_some());
+    assert_eq!(part.clocks().len(), 1);
+    assert!(check(
+        &document,
+        &format!("{UNITS}{DENSE}urgent U when {{ present(self.q) }};\n"),
+    )
+    .is_err());
+}

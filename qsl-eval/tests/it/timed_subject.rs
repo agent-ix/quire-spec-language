@@ -4524,6 +4524,41 @@ fn an_option_element_keeps_its_bit_without_a_write() {
     }
 }
 
+/// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), the timed
+/// subject's part: over `q: Sequence<Option<Clock>>[0, 2]`, `forall(e in
+/// self.q : present(e))` holds exactly where every element `q` holds is
+/// present, an empty `q` included, and `exists(e in self.q : present(e))`
+/// where some is. A time invariant `when` the first bounds `x` there, and
+/// `urgent Due when` the second is urgent there, in each of the seven
+/// initial states.
+#[trace("TC-685")]
+#[test]
+fn quantified_presence_reads_the_element_bits() {
+    let world = option_sequence_world(
+        &[],
+        "time invariant All when { forall(e in self.q : present(e)) } { self.x <= 5 ms }\n\
+         urgent Due when { exists(e in self.q : present(e)) };\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    assert_eq!(initial.len(), 7);
+    for state in &initial {
+        let bits = option_bits(state);
+        let bounded = timed
+            .invariants(state.discrete())
+            .expect("decided")
+            .iter()
+            .any(|bound| bound.bound() == &exact(5, 1));
+        assert_eq!(bounded, bits.iter().all(|bit| *bit), "{bits:?}");
+        assert_eq!(
+            timed.is_urgent(state.discrete()).expect("decided"),
+            bits.iter().any(|bit| *bit),
+            "{bits:?}"
+        );
+    }
+}
+
 /// FR-230-AC-46, AC-47 and AC-48 (TC-685), the bare-clock collections: a
 /// pure-clock collection's initial element count ranges over `[min, max]`,
 /// one initial state each. `s: Sequence<Clock>[1, 3]` gives 3, `b:

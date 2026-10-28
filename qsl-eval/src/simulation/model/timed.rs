@@ -881,7 +881,36 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// what `present(r.f)` of another object reads (FR-230 "Presence is
     /// derived").
     fn place_presences(&self, state: &ModelSimState) -> PlacePresences {
-        self.places
+        // FR-415-AC-20: each `Sequence<Option<Clock>>`'s element bits, which
+        // `forall(e in r.q: present(e))` reads.
+        let mut slots = std::collections::BTreeMap::new();
+        for holder in &self.holders {
+            let Some(field) = self
+                .model
+                .clock(holder.clock)
+                .filter(|field| field.presence_bit())
+            else {
+                continue;
+            };
+            let [PlaceStep::Field(name), PlaceStep::Slot(_)] = field.path() else {
+                continue;
+            };
+            let Some(quire_exact::Value::Collection(bits)) = holder
+                .stored(state)
+                .and_then(|stored| stored.fields.get(field.field()))
+            else {
+                continue;
+            };
+            slots.insert(
+                (holder.object.clone(), name.clone()),
+                bits.elements()
+                    .iter()
+                    .map(|bit| matches!(bit, quire_exact::Value::Boolean(true)))
+                    .collect(),
+            );
+        }
+        let places = self
+            .places
             .iter()
             .filter(|place| place.slots.is_empty())
             .filter_map(|place| {
@@ -896,7 +925,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     self.live(place, state),
                 ))
             })
-            .collect()
+            .collect();
+        PlacePresences { places, slots }
     }
 
     /// Whether every element of a `Sequence<Option<Clock>>` that its

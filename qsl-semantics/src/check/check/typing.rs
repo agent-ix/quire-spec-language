@@ -239,6 +239,10 @@ enum Frame<'e, 'r> {
     /// field's name, the union case, and the `present` node's location;
     /// admits the typed owner `r` (FR-230 "Presence is derived").
     PlacePresence(&'e str, Option<&'e str>, Location),
+    /// `forall(e in r.q: present(e))` (`true`) or `exists(..)` over a
+    /// `Sequence<Option<Clock>>` place: the field, the quantifier and the
+    /// query's location; admits the typed owner `r` (FR-415-AC-20).
+    SlotPresence(&'e str, bool, Location),
     Attribute(Box<AttributeFrame<'e>>),
     Application(Box<ApplicationFrame<'e, 'r>>),
     Record(Box<RecordFrame<'e, 'r>>),
@@ -1369,6 +1373,14 @@ impl<'a> Typer<'a> {
                 source,
                 body,
             } => {
+                // `forall(e in r.q: present(e))` over a
+                // `Sequence<Option<Clock>>` place: its owner is typed, the
+                // place is no value (QSpec FR-415-AC-20).
+                if let Some((owner, field, all)) = self.slot_presence_operand(expression) {
+                    let owner_location = location.child(0).child(0);
+                    frames.push(Frame::SlotPresence(field, all, location));
+                    return Ok(Step::Descend(Goal::Infer(owner, None, owner_location)));
+                }
                 let source_location = location.child(0);
                 // FR-391: a quantifier ranges over a named population.
                 let domain = match query {
@@ -2067,6 +2079,9 @@ impl<'a> Typer<'a> {
                     .map(Step::Typed)
             }
             Frame::Field(field, location) => self.field(typed, field, &location).map(Step::Typed),
+            Frame::SlotPresence(field, all, location) => self
+                .slot_presence(typed, field, all, &location)
+                .map(Step::Typed),
             Frame::PlacePresence(field, case, location) => self
                 .place_presence(typed, field, case, &location)
                 .map(Step::Typed),

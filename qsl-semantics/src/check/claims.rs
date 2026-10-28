@@ -418,6 +418,7 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Navigate { .. }
         | NodeKind::Present(_)
         | NodeKind::PlacePresence { .. }
+        | NodeKind::SlotPresence { .. }
         | NodeKind::Value(_)
         | NodeKind::Call { .. }
         | NodeKind::ImportedCall { .. }

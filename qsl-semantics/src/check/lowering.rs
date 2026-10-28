@@ -3573,6 +3573,7 @@ impl<'a> Lowering<'a> {
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
             | NodeKind::PlacePresence { .. }
+            | NodeKind::SlotPresence { .. }
             | NodeKind::Seq { .. } => {
                 return Err(refuse(
                     node.location(),

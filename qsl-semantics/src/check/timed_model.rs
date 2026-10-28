@@ -638,6 +638,35 @@ pub(crate) struct PresencePlace {
     pub(crate) owner: EffectiveId,
     pub(crate) field: String,
     pub(crate) case: Option<String>,
+    /// Whether the place is the element of a `Sequence<Option<Clock>>`
+    /// field, whose presences `forall(e in r.f: present(e))` reads.
+    pub(crate) slot: bool,
+}
+
+/// `forall(e in c: present(e))` or `exists(e in c: present(e))` at
+/// `query`: whether it is `forall`, its collection operand and its binder.
+pub(crate) fn slot_presence_query(query: qsl_forms::ExprRef<'_>) -> Option<(bool, ExprId, &str)> {
+    let ExprNode::Query {
+        query: kind,
+        binder,
+        source,
+        body,
+    } = query.node()
+    else {
+        return None;
+    };
+    let all = match kind {
+        qsl_forms::BinderQuery::Forall => true,
+        qsl_forms::BinderQuery::Exists => false,
+        _ => return None,
+    };
+    let ExprNode::Present(operand) = query.at(*body).node() else {
+        return None;
+    };
+    let ExprNode::Name(name) = query.at(*operand).node() else {
+        return None;
+    };
+    (name.segments.len() == 1 && name.name == *binder).then_some((all, *source, binder.as_str()))
 }
 
 /// Whether a place with a presence bit at `path` is one the timed
@@ -666,11 +695,19 @@ fn presence_places(clocks: &[ClockField]) -> Vec<PresencePlace> {
                 owner: clock.owner,
                 field: field.clone(),
                 case: None,
+                slot: false,
             }),
             [PlaceStep::Field(field), PlaceStep::Union(case)] => Some(PresencePlace {
                 owner: clock.owner,
                 field: field.clone(),
                 case: Some(case.clone()),
+                slot: false,
+            }),
+            [PlaceStep::Field(field), PlaceStep::Slot(_)] if clock.bit => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: None,
+                slot: true,
             }),
             _ => None,
         })
@@ -1047,6 +1084,25 @@ impl Clocks<'_> {
                     && self.model.conforms(context, clock.owner)
             })
             .map(ClockId)
+    }
+
+    /// The collection operand of `id` of `form` when it is `forall(e in
+    /// r.q: present(e))` or `exists(e in r.q: present(e))`, `q` a
+    /// `Sequence<Option<Clock>>` field of some object type of the model.
+    fn slot_presences(&self, form: &ExpressionForm, id: ExprId) -> Option<ExprId> {
+        slot_presence_query(form.expression.at(id)).and_then(|(_, source, _)| {
+            let ExprNode::Field { field, .. } = form.expression.get(source)?.node() else {
+                return None;
+            };
+            self.fields
+                .iter()
+                .any(|clock| {
+                    clock.bit
+                        && matches!(clock.path.as_slice(),
+                            [PlaceStep::Field(name), PlaceStep::Slot(_)] if name == field)
+                })
+                .then_some(source)
+        })
     }
 
     /// Whether `id` of `form` is `r.f`, `f` an `Option<Clock>` field, or
@@ -1449,6 +1505,16 @@ impl<'f> Located<'f> {
                     || clocks.option(form, operand, context).is_some()
                     || foreign_place(operand)
             };
+            // `forall(e in r.q: present(e))` / `exists(..)` over a
+            // `Sequence<Option<Clock>>`: a data read of its elements'
+            // presences, never a clock read (QSpec FR-415-AC-20, STD-526
+            // PR-03).
+            if clocks.slot_presences(form, id).is_some() {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                data_presence[id.index()] = true;
+                continue;
+            }
             // `present(r.f)` of another object's place is a data read of its
             // presence, the typer's place presence: it reads no clock
             // (FR-230 "Presence is derived", QSpec FR-322-AC-155). It is
