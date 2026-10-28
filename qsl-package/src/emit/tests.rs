@@ -52,6 +52,7 @@ mod probabilistic;
 mod protocol_captures;
 mod protocol_graph;
 mod protocol_reference;
+mod protocol_terminal;
 mod reachability;
 mod receiver_frames;
 mod refinement_rows;

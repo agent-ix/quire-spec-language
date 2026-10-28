@@ -129,7 +129,7 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Control("attempt"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
         (ProtocolConstruct::Compensations, "QSL-1127"),
-        (ProtocolConstruct::Terminal, "QSL-1121f"),
+        (ProtocolConstruct::TerminalReadsDeclaration, "QSL-1121g"),
         (ProtocolConstruct::FinishReadsDeclaration, "QSL-1121g"),
         (ProtocolConstruct::CaptureReadsDeclaration, "QSL-1121g"),
         (
@@ -542,22 +542,11 @@ fn the_roles_set_does_not_follow_source_order() {
     assert_eq!(in_order, roles_of(&source(widget, gadget)));
 }
 
-/// FR-092-AC-18: a terminal member refuses at the protocol, naming the
-/// construct, never writing the protocol without it; a role on a whole model
-/// refuses as the IR gap it is.
+/// FR-092-AC-18: a role on a whole model refuses as the IR gap it is,
+/// naming the construct, never writing the protocol without it.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn constructs_without_a_node_yet_refuse_naming_the_construct() {
-    let flow = |extra: &str, activation: &str| {
-        selecting(&format!(
-            "protocol Flow using v over (input: M::Gadget) {activation} {{\n\
-             role R on M::Gadget;\n\
-             {extra}\n\
-             run sequence Main {{ }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}\n"
-        ))
-    };
     let causes = |text: &str| -> Vec<CheckCause> {
         refusals(text)
             .into_iter()
@@ -575,10 +564,6 @@ fn constructs_without_a_node_yet_refuse_naming_the_construct() {
         [not_emitted(ProtocolConstruct::WholeModelRole)]
     );
     assert_eq!(ProtocolConstruct::WholeModelRole.tracking(), "IR-874");
-    assert_eq!(
-        causes(&flow("terminal any;", "on origin")),
-        [not_emitted(ProtocolConstruct::Terminal)]
-    );
 }
 
 /// FR-464 "Term shapes": a `sequence`'s `children` are an ordered list whose
