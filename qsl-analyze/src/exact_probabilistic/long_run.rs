@@ -99,8 +99,8 @@ fn stationary_distribution(
     }
     let size = states.len();
     let mut matrix = vec![BTreeMap::new(); size];
-    for row in 0..size.saturating_sub(1) {
-        add(&mut matrix[row], row, one());
+    for (row_index, row) in matrix.iter_mut().enumerate().take(size.saturating_sub(1)) {
+        add(row, row_index, one());
     }
     for (source_position, source) in states.iter().copied().enumerate() {
         let edges = product.outgoing(source);
