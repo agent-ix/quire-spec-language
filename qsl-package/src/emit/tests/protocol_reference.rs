@@ -132,13 +132,7 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Control("choice"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
         (ProtocolConstruct::Compensations, "QSL-1127"),
-        (ProtocolConstruct::TerminalReadsDeclaration, "QSL-1121g"),
-        (ProtocolConstruct::FinishReadsDeclaration, "QSL-1121g"),
-        (ProtocolConstruct::CaptureReadsDeclaration, "QSL-1121g"),
-        (
-            ProtocolConstruct::ActivationGuardReadsDeclaration,
-            "QSL-1121g",
-        ),
+        (ProtocolConstruct::ReferenceCycle, "QSL-844"),
     ] {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
     }

@@ -1794,14 +1794,15 @@ fn clock_control_profile(
         .chain(compensations)
         .find(|(path, _)| {
             nodes.iter().any(|node| {
-                is_control_node(node) || is_compensation_node(node)
-                    && node.declaration.as_ref().is_some_and(|declaration| {
-                        declaration
-                            .qualified_name
-                            .iter()
-                            .map(AsRef::as_ref)
-                            .eq(path.iter().copied())
-                    })
+                is_control_node(node)
+                    || is_compensation_node(node)
+                        && node.declaration.as_ref().is_some_and(|declaration| {
+                            declaration
+                                .qualified_name
+                                .iter()
+                                .map(AsRef::as_ref)
+                                .eq(path.iter().copied())
+                        })
             })
         })
         .map(|(_, profile)| profile)

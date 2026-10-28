@@ -1211,8 +1211,14 @@ fn a_compensation_with_each_guard_and_capture_checks_as_a_template() {
     assert_eq!(protocol.name, "Refunds");
     assert_eq!(protocol.obligations.compensations.len(), 1);
     assert_eq!(protocol.obligations.compensations[0].name, "Refund");
-    assert_eq!(protocol.obligations.compensations[0].registration_captures, [1]);
-    assert_eq!(protocol.obligations.compensations[0].activation_captures, [2]);
+    assert_eq!(
+        protocol.obligations.compensations[0].registration_captures,
+        [1]
+    );
+    assert_eq!(
+        protocol.obligations.compensations[0].activation_captures,
+        [2]
+    );
     assert!(matches!(
         protocol.obligations.activation,
         super::CheckedActivation::OnEach { guard: Some(_), .. }

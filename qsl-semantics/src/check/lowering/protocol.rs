@@ -17,7 +17,8 @@
 //! What this writes is what QSL can prove IR admits. A protocol that names a
 //! construct whose node is not written yet (a role, a channel, a `choice`,
 //! `parallel` or `repeat`, a `terminal` member, a requirement, a
-//! compensation, a capture, guard or control body that names a function) is refused with that construct named
+//! compensation, a protocol reference written directly in a capture, guard,
+//! terminal, control or `finish` body) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
@@ -39,7 +40,7 @@ pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
-use crate::check::ir::{CheckedNode, NodeKind};
+use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
@@ -170,7 +171,6 @@ impl ProtocolInput<'_> {
     fn unemitted(&self) -> Vec<ProtocolConstruct> {
         let form = self.form;
         let slots = &self.checked.slots;
-        let finish_node = self.checked.finish.as_ref().map(|(node, _)| *node);
         let mut unemitted = Vec::new();
         if self
             .checked
@@ -207,41 +207,17 @@ impl ProtocolInput<'_> {
                 unemitted.push(ProtocolConstruct::Control(control.kind.label()));
             }
         }
-        if self.checked.obligations.captures.iter().any(|capture| {
-            capture.owner == CaptureOwner::Protocol && reads_declaration(capture.initializer.root())
-        }) {
-            unemitted.push(ProtocolConstruct::CaptureReadsDeclaration);
-        }
-        if matches!(
-            &self.checked.obligations.activation,
-            CheckedActivation::OnEach { guard: Some(guard), .. }
-                if reads_declaration(guard.root())
-        ) {
-            unemitted.push(ProtocolConstruct::ActivationGuardReadsDeclaration);
-        }
-        if matches!(
-            &slots.terminal,
-            CheckedTerminalMember::When(body) if reads_declaration(body.root())
-        ) {
-            unemitted.push(ProtocolConstruct::TerminalReadsDeclaration);
+        if self
+            .body_roots()
+            .iter()
+            .any(|root| !root.protocol_references().is_empty())
+        {
+            unemitted.push(ProtocolConstruct::ProtocolReferenceInBody);
         }
         if matches!(form.activation, ActivationForm::Each { .. })
             && matches!(&slots.terminal, CheckedTerminalMember::When(body) if body.reads_local(0))
         {
             unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
-        }
-        if slots
-            .bodies
-            .iter()
-            .any(|body| reads_declaration(body.body.root()) && Some(body.node) != finish_node)
-        {
-            unemitted.push(ProtocolConstruct::ControlReadsDeclaration);
-        }
-        if self
-            .finish_body()
-            .is_some_and(|body| reads_declaration(body.root()))
-        {
-            unemitted.push(ProtocolConstruct::FinishReadsDeclaration);
         }
         unemitted
     }
@@ -265,6 +241,61 @@ impl ProtocolInput<'_> {
             .iter()
             .find(|body| body.node == *finish)
             .map(|body| &body.body)
+    }
+
+    /// The root of every expression tree the protocol's slots hold: its
+    /// capture initializers (the protocol's and each compensation template's),
+    /// each template's trigger guard, retry relation and recovery predicate,
+    /// its `each` guard, its `terminal when`
+    /// condition, and each control and `finish` body.
+    fn body_roots(&self) -> Vec<CheckedNode<'_>> {
+        let obligations = &self.checked.obligations;
+        let mut roots: Vec<CheckedNode<'_>> = obligations
+            .captures
+            .iter()
+            .map(|capture| capture.initializer.root())
+            .collect();
+        for template in &obligations.compensations {
+            roots.push(template.guard.root());
+            roots.push(template.retry.relation.root());
+            roots.push(template.recover.predicate.root());
+        }
+        if let CheckedActivation::OnEach {
+            guard: Some(guard), ..
+        } = &obligations.activation
+        {
+            roots.push(guard.root());
+        }
+        if let CheckedTerminalMember::When(body) = &self.checked.slots.terminal {
+            roots.push(body.root());
+        }
+        roots.extend(
+            self.checked
+                .slots
+                .bodies
+                .iter()
+                .map(|body| body.body.root()),
+        );
+        roots
+    }
+
+    /// The functions this protocol's bodies call and the protocols they
+    /// refer to, each by declaration index, ascending and once. Each is a
+    /// node the protocol's own key hashes, so it is keyed before this
+    /// protocol is (FR-093 `Call` row, FR-464 `protocol_reference`).
+    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>) {
+        let roots = self.body_roots();
+        let mut functions = Vec::new();
+        let mut protocols = Vec::new();
+        for root in roots {
+            functions.extend(root.callees());
+            protocols.extend(root.protocol_references());
+        }
+        for list in [&mut functions, &mut protocols] {
+            list.sort_unstable();
+            list.dedup();
+        }
+        (functions, protocols)
     }
 }
 
@@ -294,18 +325,6 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Map(_)
         | ValueType::Population(_) => false,
     }
-}
-
-/// Whether `body` reads a declaration whose node is written after the
-/// protocols': a function it calls, a dispatch it makes or a protocol it
-/// refers to.
-fn reads_declaration(body: CheckedNode<'_>) -> bool {
-    body.descendants().into_iter().any(|node| {
-        matches!(
-            node.kind(),
-            NodeKind::Call { .. } | NodeKind::Dispatch { .. } | NodeKind::ProtocolReference { .. }
-        )
-    })
 }
 
 /// A protocol's channel nodes and queue nodes, each set ascending by digest,
@@ -376,64 +395,93 @@ fn not_emitted(construct: ProtocolConstruct, location: &Location) -> CheckRefusa
 }
 
 impl Lowering<'_> {
-    /// Lower and key each protocol of `protocols`, in declaration order,
-    /// recording its one `declaration` occurrence. A package that selects no
-    /// protocol profile has no `protocol_profile` law to carry (ADR-011
-    /// §2.4): no node is built and nothing is refused, so the unit is as it
-    /// was before protocol nodes; a reference to a protocol refuses
-    /// `missing-selection`. With a profile selected, a protocol that names a
-    /// construct whose node is not written yet refuses at its declaration,
-    /// once for each such construct
-    /// (`unsupported_construct`/`not-yet-implemented`), and so does a
-    /// reference to it.
-    pub(crate) fn protocol_nodes(
+    /// Start the protocols' keys: none of the `count` declarations has a
+    /// node yet, so a reference to one that is not keyed refuses.
+    pub(crate) fn begin_protocols(&mut self, count: usize) {
+        self.protocol_keys = vec![ProtocolKey::Unkeyed; count];
+    }
+
+    /// Lower and key the `index`-th protocol, recording its one
+    /// `declaration` occurrence. A package that selects no protocol profile
+    /// has no `protocol_profile` law to carry (ADR-011 §2.4): no node is
+    /// built and nothing is refused, so the unit is as it was before
+    /// protocol nodes; a reference to a protocol refuses `missing-selection`.
+    /// With a profile selected, a protocol that names a construct whose node
+    /// is not written yet refuses at its declaration, once for each such
+    /// construct (`unsupported_construct`/`not-yet-implemented`), and so
+    /// does a reference to it. `cyclic` is whether the protocol belongs to a
+    /// cyclic component of function calls and protocol references
+    /// ([`ProtocolConstruct::ReferenceCycle`]). Every function and protocol
+    /// the protocol's bodies name must be keyed first (FR-093): the caller
+    /// lowers the unit in dependency order.
+    pub(crate) fn protocol_node_step(
         &mut self,
-        protocols: &[ProtocolInput<'_>],
+        index: usize,
+        protocol: &ProtocolInput<'_>,
+        cyclic: bool,
     ) -> Result<Vec<CheckRefusal>, CheckRefusal> {
-        let mut keys = Vec::with_capacity(protocols.len());
-        let mut refusals = Vec::new();
-        for protocol in protocols {
-            let location = protocol.location();
-            let law = match self.law(LawRole::ProtocolProfile, &location) {
-                Ok(law) => law,
-                Err(CheckRefusal {
-                    cause: CheckCause::MissingSelection { .. },
-                    ..
-                }) => {
-                    keys.push(ProtocolKey::Unselected);
-                    continue;
-                }
-                Err(other) => return Err(other),
-            };
-            let mut unemitted = protocol.unemitted();
-            if self.fifo_key_unstable(protocol, &location)? {
-                unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
+        let location = protocol.location();
+        let law = match self.law(LawRole::ProtocolProfile, &location) {
+            Ok(law) => law,
+            Err(CheckRefusal {
+                cause: CheckCause::MissingSelection { .. },
+                ..
+            }) => {
+                self.set_protocol_key(index, ProtocolKey::Unselected);
+                return Ok(Vec::new());
             }
-            let owner = self.owner_model_object(protocol);
-            if owner.is_none() {
-                unemitted.push(ProtocolConstruct::NoOwnerModel);
-            }
-            if let Some(first) = unemitted.first() {
-                refusals.extend(
-                    unemitted
-                        .iter()
-                        .map(|construct| not_emitted(*construct, &location)),
-                );
-                keys.push(ProtocolKey::NotEmitted(*first));
-                continue;
-            }
-            let Some(owner) = owner else {
-                return Err(fault(&location, KeyFault::UncheckedProtocolFact));
-            };
-            if protocol.has_attempt() {
-                keys.push(ProtocolKey::AfterClauses);
-                continue;
-            }
-            let key = self.protocol_node(protocol, &law, owner, &[], &[], &location)?;
-            keys.push(ProtocolKey::Keyed(key));
+            Err(other) => return Err(other),
+        };
+        let mut unemitted = protocol.unemitted();
+        if cyclic {
+            unemitted.push(ProtocolConstruct::ReferenceCycle);
         }
-        self.protocol_keys = keys;
-        Ok(refusals)
+        if self.fifo_key_unstable(protocol, &location)? {
+            unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
+        }
+        let owner = self.owner_model_object(protocol);
+        if owner.is_none() {
+            unemitted.push(ProtocolConstruct::NoOwnerModel);
+        }
+        if let Some(first) = unemitted.first() {
+            self.set_protocol_key(index, ProtocolKey::NotEmitted(*first));
+            return Ok(unemitted
+                .iter()
+                .map(|construct| not_emitted(*construct, &location))
+                .collect());
+        }
+        let Some(owner) = owner else {
+            return Err(fault(&location, KeyFault::UncheckedProtocolFact));
+        };
+        if protocol.has_attempt() {
+            self.set_protocol_key(index, ProtocolKey::AfterClauses);
+            return Ok(Vec::new());
+        }
+        match self.protocol_node(protocol, &law, owner, &[], &[], &location) {
+            Ok(key) => {
+                self.set_protocol_key(index, ProtocolKey::Keyed(key));
+                Ok(Vec::new())
+            }
+            // A protocol this one refers to has no node (its refusal is
+            // reported at its own declaration): this one has none either,
+            // and the reference is refused where it stands.
+            Err(refusal) => match &refusal.cause {
+                CheckCause::ProtocolReference(cause) if cause.construct().is_some() => {
+                    if let Some(construct) = cause.construct() {
+                        self.set_protocol_key(index, ProtocolKey::NotEmitted(construct));
+                    }
+                    Ok(vec![refusal])
+                }
+                _ => Err(refusal),
+            },
+        }
+    }
+
+    /// Record the `index`-th protocol's key.
+    fn set_protocol_key(&mut self, index: usize, key: ProtocolKey) {
+        if let Some(slot) = self.protocol_keys.get_mut(index) {
+            *slot = key;
+        }
     }
 
     /// The nodes of the protocols that hold an `attempt`, written once the
@@ -1722,6 +1770,12 @@ impl Lowering<'_> {
         match self.protocol_keys.get(protocol) {
             Some(ProtocolKey::Keyed(key)) => Ok(*key),
             Some(ProtocolKey::NotEmitted(construct)) => Err(not_emitted(*construct, location)),
+            Some(ProtocolKey::Unkeyed) => Err(refuse(
+                location,
+                CheckCause::UnsupportedFeature {
+                    loci: vec![location.clone()],
+                },
+            )),
             Some(ProtocolKey::AfterClauses) => Err(not_emitted(
                 ProtocolConstruct::ReferenceToAttemptProtocol,
                 location,
@@ -1743,6 +1797,9 @@ pub(super) enum ProtocolKey {
     Keyed(NodeKey),
     /// The package selects no protocol profile.
     Unselected,
+    /// Its node is not keyed yet, or its lowering was refused and the
+    /// refusal is reported.
+    Unkeyed,
     /// The protocol holds an `attempt`: its node is written once the state
     /// clauses it lists are ([`Lowering::protocol_nodes_with_attempts`]).
     AfterClauses,
