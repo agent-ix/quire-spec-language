@@ -6735,7 +6735,24 @@ mod tests {
                         "owner_ref",
                         "ix://acme/orders/FR-001",
                     )],
-                    "operations": [],
+                    "operations": [{
+                        "identity": "ix://acme/orders/OP-001/find_by_id",
+                        "name": "find_by_id",
+                        "params": [wire_field(
+                            "ix://acme/orders/OP-001/find_by_id/created_at",
+                            "created_at",
+                            "ix://acme/orders/FR-001",
+                        )],
+                        "pre": [],
+                        "post": [],
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": "ix://acme/orders/OP-001/find_by_id",
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": ["ix://acme/orders/OP-001/find_by_id"],
+                            }
+                        },
+                    }],
                 }),
             ),
         ]);
@@ -6763,6 +6780,8 @@ mod tests {
         assert!(keys.contains("ix://acme/orders/FR-001"));
         assert!(keys.contains("ix://acme/orders/OP-001"));
         assert!(keys.contains("ix://acme/orders/OP-001/owner_ref"));
+        assert!(keys.contains("ix://acme/orders/OP-001/find_by_id"));
+        assert!(keys.contains("ix://acme/orders/OP-001/find_by_id/created_at"));
 
         let owner_ref = records
             .iter()
@@ -6782,6 +6801,22 @@ mod tests {
                 node: "ix://acme/orders/FR-001".to_owned(),
             }),
             "owner_ref resolves to the hyphenated FR-001 declaration"
+        );
+
+        let find_by_id = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation)
+                    if operation.key.node == "ix://acme/orders/OP-001/find_by_id" =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the OP-001 operation is retained under its authored name");
+        assert_eq!(
+            find_by_id.parameters[0].key.node, "ix://acme/orders/OP-001/find_by_id/created_at",
+            "the operation parameter identity keeps its authored underscore name"
         );
     }
 
