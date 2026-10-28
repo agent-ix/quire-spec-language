@@ -34,7 +34,7 @@ mod items;
 
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::StatisticalRecord;
-use qsl_replay::CounterexampleKind;
+use qsl_replay::{CounterexampleKind, TemporalCounterexample};
 use qsl_replay::{
     DeclineCode, IncompleteCause, ModelCheckRecord, OutcomeItem, ProofRefusalCause, TerminalRecord,
     TerminalValue, UndefinedEvaluation,
@@ -45,9 +45,13 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
-pub use items::{hyper_form_item, model_item, statistical_item, ModelItem};
+pub use items::{
+    hyper_form_item, model_item, statistical_item, timed_refinement_item, zone_item, ModelItem,
+    RefinementReplayFn, TimedItem, TimedRefinementItem,
+};
 
-use crate::{model_check, statistical};
+use crate::zone_check::ZoneCheckRecord;
+use crate::{model_check, statistical, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
@@ -70,6 +74,16 @@ impl Engine {
     /// Only if the registry's admission rules refuse EN-1's own manifest.
     pub fn model_check() -> Result<Self, RegistrationRefusal> {
         model_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+    }
+
+    /// EN-6, the zone engine, which decides items over a `time dense`
+    /// subject (FR-243).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse EN-6's own manifest.
+    pub fn zone_check() -> Result<Self, RegistrationRefusal> {
+        zone_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
     }
 
     /// EN-4, the statistical engine.
@@ -125,7 +139,8 @@ pub struct Engines {
 }
 
 impl Engines {
-    /// The layer-A engines `analyze` has an item adapter for: EN-1 and EN-4.
+    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4 and
+    /// EN-6.
     ///
     /// # Errors
     ///
@@ -133,7 +148,11 @@ impl Engines {
     /// manifest.
     pub fn qsl() -> Result<Self, RegistrationRefusal> {
         Ok(Self {
-            engines: vec![Engine::model_check()?, Engine::statistical()?],
+            engines: vec![
+                Engine::model_check()?,
+                Engine::statistical()?,
+                Engine::zone_check()?,
+            ],
         })
     }
 
@@ -247,6 +266,9 @@ pub(crate) enum EngineReport {
     Model(Box<ModelCheckRecord>),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
+    /// EN-6's record, settled by FR-235's map, or a timed refinement's by
+    /// FR-144's rows over EN-6's causes.
+    Zone(Box<ZoneCheckRecord>),
     /// The engine refused the item, and its settlement map gives the refusal
     /// no terminal record.
     Refused(Refusal),
@@ -343,6 +365,8 @@ pub struct AnalyzeRecord {
     pub settlement: Settlement,
     /// EN-1's full record, carrying the counterexample of a `refuted` item.
     pub model_check: Option<Box<ModelCheckRecord>>,
+    /// EN-6's full record, carrying the counterexample of a `refuted` item.
+    pub zone_check: Option<Box<ZoneCheckRecord>>,
 }
 
 /// How an item settled.
@@ -363,6 +387,19 @@ impl AnalyzeRecord {
         }
     }
 
+    /// The counterexample a `refuted` item carries, from whichever engine
+    /// settled it.
+    pub fn counterexample(&self) -> Option<&TemporalCounterexample> {
+        self.model_check
+            .as_ref()
+            .and_then(|record| record.counterexample.as_ref())
+            .or_else(|| {
+                self.zone_check
+                    .as_ref()
+                    .and_then(|record| record.counterexample.as_ref())
+            })
+    }
+
     /// The outcome item (FR-286) this record writes. An item refuted by a
     /// claim evaluation undefined at a state is `refuted`, category
     /// violation, with cause `undefined-evaluation` naming that state and
@@ -371,17 +408,15 @@ impl AnalyzeRecord {
     /// from its own disposition and diagnostic.
     pub fn outcome_item(&self) -> Option<OutcomeItem> {
         let terminal = self.terminal()?;
-        let undefined = self
-            .model_check
-            .as_ref()
-            .and_then(|record| record.counterexample.as_ref())
-            .and_then(|counterexample| match &counterexample.kind {
-                CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
-                CounterexampleKind::Formula
-                | CounterexampleKind::Deadlock
-                | CounterexampleKind::Race(_)
-                | CounterexampleKind::TimeLock => None,
-            });
+        let undefined =
+            self.counterexample()
+                .and_then(|counterexample| match &counterexample.kind {
+                    CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
+                    CounterexampleKind::Formula
+                    | CounterexampleKind::Deadlock
+                    | CounterexampleKind::Race(_)
+                    | CounterexampleKind::TimeLock => None,
+                });
         Some(match undefined {
             Some(evaluation) if matches!(terminal.value(), TerminalValue::Refuted) => {
                 undefined_item(self.request_index, evaluation)
@@ -432,6 +467,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         request_index: index,
         settlement,
         model_check: None,
+        zone_check: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -504,6 +540,7 @@ fn settle(
         request_index: index,
         settlement,
         model_check,
+        zone_check: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -529,6 +566,22 @@ fn settle(
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
+        EngineReport::Zone(zone) => AnalyzeRecord {
+            request_index: index,
+            // A refuted value without its reproduced counterexample is an
+            // engine fault, never a verdict.
+            settlement: terminal(
+                TerminalRecord::of_model_settlement(
+                    index,
+                    backend.clone(),
+                    zone.value.clone(),
+                    zone.counterexample.as_ref(),
+                )
+                .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
+            ),
+            model_check: None,
+            zone_check: Some(zone),
+        },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
                 index, backend, cause, code, diagnostic,

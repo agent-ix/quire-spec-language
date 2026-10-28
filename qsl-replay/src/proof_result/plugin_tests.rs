@@ -293,6 +293,27 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
             },
         ),
         (
+            json!({"type": "reduction-not-preserving", "form": "possible", "reduction": "symmetry"}),
+            InconclusiveCause::StateGraphReductionNotPreserving {
+                reduction: ReductionKind::Symmetry,
+                form: crate::StateGraphPropertyForm::Possible,
+            },
+        ),
+        (
+            json!({"type": "reduction-not-preserving", "form": "always-possible", "reduction": "partial-order"}),
+            InconclusiveCause::StateGraphReductionNotPreserving {
+                reduction: ReductionKind::PartialOrder,
+                form: crate::StateGraphPropertyForm::AlwaysPossible,
+            },
+        ),
+        (
+            json!({"type": "reduction-not-preserving", "form": "unique-path", "reduction": "symmetry"}),
+            InconclusiveCause::StateGraphReductionNotPreserving {
+                reduction: ReductionKind::Symmetry,
+                form: crate::StateGraphPropertyForm::UniquePath,
+            },
+        ),
+        (
             json!({"type": "reduction-not-preserving", "form": {"refinement": {"liveness": false}}, "reduction": "constraint"}),
             InconclusiveCause::ReductionNotPreserving {
                 reduction: ReductionKind::StateConstraint,

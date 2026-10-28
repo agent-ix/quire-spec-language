@@ -1318,6 +1318,83 @@ fn text_of(key: &qsl_eval::automaton::AutomatonStateKey) -> String {
     String::from_utf8(key.as_bytes().to_vec()).expect("a key is UTF-8")
 }
 
+/// FR-163 needs one state identity for every property-automaton kind. The
+/// key follows the reached configuration, not the automaton's local
+/// `StateId`, so different discovery orders write the same set of keys.
+#[trace("FR-338-AC-4", "FR-338-AC-7")]
+#[test]
+fn property_automaton_keys_are_independent_of_state_numbering() {
+    fn reached_keys(body: &str, profile: &str, reverse: bool) -> BTreeMap<Vec<u8>, usize> {
+        let fixture = fixture(profile, "c: Counter", "on origin", body);
+        let mut automaton =
+            qsl_eval::automaton::translate(&fixture.clause, 256).expect("the clause translates");
+        let initial = automaton.initial().expect("initial state fits");
+        assert_eq!(
+            automaton.state_key(initial, 0),
+            Err(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { limit: 0 })
+        );
+        let mut pending = vec![initial];
+        let mut reached = BTreeSet::new();
+        let mut keys = BTreeMap::new();
+        while let Some(state) = pending.pop() {
+            if !reached.insert(state) {
+                continue;
+            }
+            let key = automaton
+                .state_key(state, 1 << 20)
+                .expect("a reached state has a canonical key");
+            keys.insert(key.as_bytes().to_vec(), state.index());
+            let atom_count = automaton.atoms().len() + usize::from(automaton.uncounted().is_some());
+            let letters: Box<dyn Iterator<Item = u64>> = if reverse {
+                Box::new((0..(1_u64 << atom_count)).rev())
+            } else {
+                Box::new(0..(1_u64 << atom_count))
+            };
+            for bits in letters {
+                let mut letter = Letter::from_bits(bits);
+                if let Some(uncounted) = automaton.uncounted() {
+                    letter = letter.with(uncounted);
+                }
+                pending.extend(
+                    automaton
+                        .successors(state, letter)
+                        .expect("successors materialize"),
+                );
+            }
+        }
+        keys
+    }
+
+    for (body, profile) in [
+        ("eventually[0,2] holds(c.level = 1)", EVENT),
+        ("always holds(c.level = 1)", INFINITE),
+        (
+            "always eventually (holds(c.level = 1) and once[1,1] holds(c.level = 2))",
+            INFINITE,
+        ),
+    ] {
+        let forward = reached_keys(body, profile, false);
+        let reverse = reached_keys(body, profile, true);
+        assert_eq!(
+            forward.keys().collect::<Vec<_>>(),
+            reverse.keys().collect::<Vec<_>>()
+        );
+    }
+    let forward = reached_keys(
+        "always eventually (holds(c.level = 1) and once[1,1] holds(c.level = 2))",
+        INFINITE,
+        false,
+    );
+    let reverse = reached_keys(
+        "always eventually (holds(c.level = 1) and once[1,1] holds(c.level = 2))",
+        INFINITE,
+        true,
+    );
+    assert!(forward
+        .iter()
+        .any(|(key, first)| { reverse.get(key).is_some_and(|second| second != first) }));
+}
+
 /// FR-338 TP-4: each reached PropertyAutomaton StateId resolves to a
 /// context-admitted structural key, including past history for both subject
 /// key algebras.

@@ -34,7 +34,7 @@ use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::CancelCause;
 use quire_semantic_value::catalog::Category;
 use serde::{Serialize, Serializer};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::state_graph::WitnessSource;
@@ -277,6 +277,28 @@ pub struct ItemCause {
     /// A `recovery-view` cause's template, by its qualified name.
     #[serde(skip_serializing_if = "Option::is_none")]
     predicate: Option<String>,
+    /// The requested package identity of `stale-dependency`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested: Option<PackageIdentity>,
+    /// The recompiled package identity of `stale-dependency`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recompiled: Option<PackageIdentity>,
+}
+
+/// A `quire.package.semantic/v2` identity on FR-331's stale-dependency cause.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PackageIdentity {
+    domain: &'static str,
+    digest: String,
+}
+
+impl From<&DigestRecord> for PackageIdentity {
+    fn from(record: &DigestRecord) -> Self {
+        Self {
+            domain: record.domain().as_str(),
+            digest: record.hex(),
+        }
+    }
 }
 
 /// One `weak-access-shape` failure in an item cause.
@@ -381,6 +403,8 @@ impl ItemCause {
             states: None,
             failures: None,
             predicate: None,
+            requested: None,
+            recompiled: None,
         }
     }
 
@@ -439,6 +463,12 @@ impl ItemCause {
                 item.reduction = Some(reduction.as_str());
                 item.form = Some(wire_form(*form));
             }
+            ReportedInconclusiveCause::Cause(
+                InconclusiveCause::StateGraphReductionNotPreserving { reduction, form },
+            ) => {
+                item.reduction = Some(reduction.as_str());
+                item.form = Some(WireForm::Named(form.as_str()));
+            }
             ReportedInconclusiveCause::Cause(InconclusiveCause::SymmetryBroken {
                 population,
                 cause: SymmetryBrokenCause::InitialStatesNotClosed { initial, generator },
@@ -489,6 +519,13 @@ impl ItemCause {
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayRefused(code)) => {
                 item.code = Some(code.as_str().to_owned());
             }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::StaleDependency {
+                requested,
+                recompiled,
+            }) => {
+                item.requested = Some(requested.into());
+                item.recompiled = Some(recompiled.into());
+            }
             // The kind alone: the claim identity and outcome stay on the
             // typed cause, which holds them for the caller.
             ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
@@ -517,8 +554,34 @@ pub struct OutcomeItem {
     /// `undecided`.
     #[serde(skip_serializing_if = "Option::is_none")]
     measured: Option<&'static str>,
+    /// The state-graph settlement method, when this item came from FR-391.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method: Option<&'static str>,
+    /// The state-graph search horizon, a method parameter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_depth: Option<Option<u64>>,
+    /// The state-graph phase-0 seed actually used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seed: Option<u64>,
+    /// The number of state-graph witness walks per initial state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    witness_samples: Option<u64>,
+    /// The effective state-graph limits used by the run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits: Option<BTreeMap<&'static str, u64>>,
+    /// The state-graph limit reached, when the run stopped at one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit_reached: Option<ReachedLimitWire>,
     #[serde(serialize_with = "category_str")]
     category: Category,
+}
+
+/// A reached state-graph limit on FR-331's accounting record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+struct ReachedLimitWire {
+    limit: &'static str,
+    value: u64,
+    setting: &'static str,
 }
 
 /// The catalogued reason of an undefined value: the kernel's own spelling,
@@ -686,8 +749,38 @@ impl OutcomeItem {
             basis,
             certification,
             measured,
+            method: None,
+            max_depth: None,
+            seed: None,
+            witness_samples: None,
+            limits: None,
+            limit_reached: None,
             category: value.category(),
         }
+    }
+
+    /// The FR-331 item for one settled state-graph claim instance, including
+    /// FR-391's method parameters and effective run limits.
+    pub fn from_state_graph(request_index: RequestIndex, record: &crate::StateGraphRecord) -> Self {
+        let terminal = TerminalRecord::from_value(request_index, record.value.clone());
+        let mut item = Self::from_terminal(&terminal);
+        item.method = Some(record.method);
+        item.max_depth = Some(record.max_depth);
+        item.seed = Some(record.seed);
+        item.witness_samples = Some(record.witness_samples);
+        item.limits = Some(
+            record
+                .limits
+                .iter()
+                .map(|(limit, value)| (limit.as_str(), *value))
+                .collect(),
+        );
+        item.limit_reached = record.limit_reached.map(|reached| ReachedLimitWire {
+            limit: reached.limit.as_str(),
+            value: reached.value,
+            setting: reached.limit.setting(),
+        });
+        item
     }
 
     /// The item whose claim evaluated to an undefined value at `at` for
@@ -704,6 +797,12 @@ impl OutcomeItem {
             basis: None,
             certification: None,
             measured: None,
+            method: None,
+            max_depth: None,
+            seed: None,
+            witness_samples: None,
+            limits: None,
+            limit_reached: None,
             category: Category::Violation,
         }
     }
@@ -2050,6 +2149,8 @@ mod tests {
             proved: Verdict::from_category(Category::Success),
             replayed: Verdict::from_category(Category::Violation),
         };
+        let requested = DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]);
+        let recompiled = DigestRecord::mint(DigestDomain::PackageSemanticV2, [2; 32]);
         let cases = [
             (
                 TerminalValue::Declined {
@@ -2073,6 +2174,36 @@ mod tests {
                     Code::StaleDependency,
                 )),
                 json!({"result": "inconclusive", "cause": {"kind": "replay-refused", "code": "stale_dependency"}, "category": "inconclusive"}),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+                    requested,
+                    recompiled,
+                }),
+                json!({
+                    "result": "inconclusive",
+                    "cause": {
+                        "kind": "stale-dependency",
+                        "requested": {"domain": "quire.package.semantic/v2", "digest": requested.hex()},
+                        "recompiled": {"domain": "quire.package.semantic/v2", "digest": recompiled.hex()},
+                    },
+                    "category": "inconclusive",
+                }),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::StateGraphReductionNotPreserving {
+                    reduction: qsl_foundation::ReductionKind::Symmetry,
+                    form: crate::StateGraphPropertyForm::UniquePath,
+                }),
+                json!({
+                    "result": "inconclusive",
+                    "cause": {
+                        "kind": "reduction-not-preserving",
+                        "reduction": "symmetry",
+                        "form": "unique-path",
+                    },
+                    "category": "inconclusive",
+                }),
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(

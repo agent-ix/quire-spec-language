@@ -54,7 +54,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 use crate::check::{Capability, HyperForm, HyperUnsupported};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
-use quire_semantic_value::fairness::FairnessKind;
+use quire_semantic_value::fairness::{FairnessKind, PropertyForm};
 
 /// The non-empty set of an item's unbounded domains, each with its kind,
 /// in [`DomainKey`] order.
@@ -161,6 +161,8 @@ pub struct Requirements {
     model_subject: bool,
     hybrid_dynamics: bool,
     evidence: Option<ClaimEvidence>,
+    property_form: Option<PropertyForm>,
+    dense_time: bool,
 }
 
 impl Requirements {
@@ -174,7 +176,37 @@ impl Requirements {
             model_subject: false,
             hybrid_dynamics: false,
             evidence: None,
+            property_form: None,
+            dense_time: false,
         }
+    }
+
+    /// The requirements of an item over a `time dense` subject (QSL FR-243,
+    /// FR-430): negotiation routes it to the engines that decide one (EN-6).
+    /// The mark is QSL's own; the item's wire `requirements` do not carry it.
+    #[must_use]
+    pub fn over_dense_time(mut self) -> Self {
+        self.dense_time = true;
+        self
+    }
+
+    /// Whether the item is over a `time dense` subject.
+    pub fn dense_time(&self) -> bool {
+        self.dense_time
+    }
+
+    /// The requirements with the property form the record is routed and
+    /// settled as (FR-144: a refinement's TP-5 `Refinement` form).
+    #[must_use]
+    pub fn with_property_form(mut self, form: PropertyForm) -> Self {
+        self.property_form = Some(form);
+        self
+    }
+
+    /// The property form the record carries; `None` for a record whose form
+    /// is read from its checked node (a temporal clause's) or that has none.
+    pub fn property_form(&self) -> Option<PropertyForm> {
+        self.property_form
     }
 
     /// The requirements of a checked hyper form, including its model

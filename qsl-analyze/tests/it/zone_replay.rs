@@ -440,7 +440,7 @@ fn a_non_local_time_lock_reproduces_by_fresh_exploration() {
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateVerdict::Accepted,
+        |_| Ok(ZoneCertificateVerdict::Accepted),
         |payload| replay_on(&world, payload, true, &Limits::default()).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -541,7 +541,7 @@ fn settle(
         ZoneItem::Outcome(outcome),
         &package_id(),
         &Cancel::new(),
-        |_| check,
+        |_| Ok(check),
         |_| result.map(replayed),
     )
 }
@@ -654,7 +654,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         ZoneItem::Outcome(&refuted),
         &qsl_semantics::library::PackageId::of_preimage(b"another").record(),
         &Cancel::new(),
-        |_| ZoneCertificateVerdict::Accepted,
+        |_| Ok(ZoneCertificateVerdict::Accepted),
         |_| Ok(replayed(reproduced.clone())),
     );
     assert_eq!(
@@ -669,7 +669,7 @@ fn each_timed_verdict_row_settles_as_stated() {
         ZoneItem::Outcome(&cancelled),
         &package_id(),
         &cancel,
-        |_| ZoneCertificateVerdict::Accepted,
+        |_| Ok(ZoneCertificateVerdict::Accepted),
         |_| Err(fault()),
     );
     assert!(
@@ -725,7 +725,7 @@ fn a_timed_refutation_settles_through_its_replay() {
             ZoneItem::Outcome(outcome),
             &package_id(),
             &Cancel::new(),
-            |_| ZoneCertificateVerdict::Accepted,
+            |_| Ok(ZoneCertificateVerdict::Accepted),
             |payload| replay(&three, payload).map(replayed),
         )
     };
@@ -759,7 +759,7 @@ fn a_timed_refutation_settles_through_its_replay() {
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateVerdict::Accepted,
+        |_| Ok(ZoneCertificateVerdict::Accepted),
         |payload| replay_on(&locked, payload, true, &Limits::default()).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
@@ -808,7 +808,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         ZoneItem::Unsupported(&disposed),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateVerdict::Accepted,
+        |_| Ok(ZoneCertificateVerdict::Accepted),
         |_| Err(fault()),
     );
     assert_eq!(record.label, ResultLabel::Unsupported);
@@ -851,7 +851,7 @@ fn an_undefined_timed_evaluation_settles_refuted() {
         ZoneItem::Outcome(&outcome),
         &package_id(),
         &Cancel::new(),
-        |_| ZoneCertificateVerdict::Accepted,
+        |_| Ok(ZoneCertificateVerdict::Accepted),
         |payload| replay(&world, payload).map(replayed),
     );
     assert_eq!(record.value, TerminalValue::Refuted);
