@@ -2923,6 +2923,17 @@ impl PackageDeclarations {
                     match obligations {
                         protocol_obligation::Obligations::Checked(checked_obligations, used) => {
                             checked.obligations = *checked_obligations;
+                            for (template, form) in checked
+                                .obligations
+                                .compensations
+                                .iter_mut()
+                                .zip(&protocol.compensations)
+                            {
+                                template.temporal_profile = temporal_aliases
+                                    .iter()
+                                    .find(|(alias, _)| *alias == form.using.alias)
+                                    .map(|(_, profile)| *profile);
+                            }
                             nodes_used = used;
                         }
                         protocol_obligation::Obligations::Refused(obligation_refusals) => {
@@ -4172,10 +4183,29 @@ impl PackageDeclarations {
                         .collect()
                 })
                 .collect();
+            let compensations: Vec<Vec<lowering::CompensationNodes>> = checked_protocols
+                .iter()
+                .zip(&lowered_templates)
+                .map(|(checked, lowered)| {
+                    checked
+                        .obligations
+                        .compensations
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(declaration, _)| {
+                            Some(lowering::CompensationNodes {
+                                declaration,
+                                anchor: lowered.get(declaration)?.as_ref()?.binding.anchor,
+                            })
+                        })
+                        .collect()
+                })
+                .collect();
             match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols)
             {
                 Ok(inputs) => {
-                    if let Err(refusal) = lowering.protocol_nodes_with_attempts(&inputs, &attempts)
+                    if let Err(refusal) =
+                        lowering.protocol_nodes_with_attempts(&inputs, &attempts, &compensations)
                     {
                         refusals.push(refusal);
                     }
@@ -6147,6 +6177,52 @@ fn register_protocol_sites(
                 key.spans.clone(),
             );
         }
+    }
+    for template in &protocol.compensations {
+        let template_name = template.name.name.as_str();
+        type_spans.insert(
+            protocol_site(name, ProtocolSite::Compensation(template_name)),
+            template.name.span,
+        );
+        for (index, capture) in template.registration_captures.iter().enumerate() {
+            site_spans.insert(
+                protocol_site(
+                    name,
+                    ProtocolSite::CompensationBody(template_name, "registration-capture", index),
+                ),
+                capture.value.spans.clone(),
+            );
+        }
+        site_spans.insert(
+            protocol_site(
+                name,
+                ProtocolSite::CompensationBody(template_name, "trigger-guard", 0),
+            ),
+            template.guard.spans.clone(),
+        );
+        for (index, capture) in template.activation_captures.iter().enumerate() {
+            site_spans.insert(
+                protocol_site(
+                    name,
+                    ProtocolSite::CompensationBody(template_name, "activation-capture", index),
+                ),
+                capture.value.spans.clone(),
+            );
+        }
+        site_spans.insert(
+            protocol_site(
+                name,
+                ProtocolSite::CompensationBody(template_name, "retry", 0),
+            ),
+            template.retry.relation.spans.clone(),
+        );
+        site_spans.insert(
+            protocol_site(
+                name,
+                ProtocolSite::CompensationBody(template_name, "recovery", 0),
+            ),
+            template.recover.predicate.spans.clone(),
+        );
     }
     for control in &checked.controls.controls {
         if let Some(declaration) = protocol.declarations.get(control.node.0) {
