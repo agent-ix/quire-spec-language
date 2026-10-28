@@ -829,6 +829,20 @@ struct Successor {
     read: Option<ClockedEdge>,
 }
 
+fn equivalent_successor(left: &Successor, right: &Successor) -> bool {
+    left.step.as_ref().map(GuardedStep::transition)
+        == right.step.as_ref().map(GuardedStep::transition)
+        && left.part == right.part
+        && left.horizon == right.horizon
+        && left.digest == right.digest
+        && left.q == right.q
+        && left.zone == right.zone
+        && left.silent == right.silent
+        && left.mark == right.mark
+        && left.cell == right.cell
+        && left.read == right.read
+}
+
 struct Checker<'c, 'a, O> {
     timed: &'c TimedSystem<'c, 'a>,
     claim: Option<Claim<'c>>,
@@ -1557,6 +1571,28 @@ impl<O> Checker<'_, '_, O> {
             if let Some(position) = self.covers[index] {
                 covered[position] = true;
             }
+        }
+        let successors = self.successors[node]
+            .as_ref()
+            .expect("a reached node has recomputed successors");
+        // A set or bag assignment can produce several semantically equal
+        // guarded steps (for example, equal element matches). The certificate
+        // edge schema names their transition, guard part and resulting
+        // symbolic state, so one matching edge covers all duplicate
+        // recomputations with that same observable successor.
+        let witnesses: Vec<usize> = covered
+            .iter()
+            .enumerate()
+            .filter_map(|(position, &covered)| covered.then_some(position))
+            .collect();
+        for position in 0..successors.len() {
+            if covered[position] {
+                continue;
+            }
+            let successor = &successors[position];
+            covered[position] = witnesses
+                .iter()
+                .any(|&other| equivalent_successor(successor, &successors[other]));
         }
         if covered.iter().any(|&covered| !covered) {
             return reject(CertificateRule::SuccessorMissing, at_node(node));
