@@ -49,10 +49,10 @@ use qsl_replay::{
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::Cancel;
+use quire_exact::{Cancel, Rational};
 use quire_semantic_value::catalog::InternalFault;
 
-use super::concretise::{concretise, Stage, Target};
+use super::concretise::{concretise, Concrete, Stage, Target};
 use super::search::{
     not_simulated, widen, Arrival, Halt, Judged, Run, Searched, ZoneCheckLimits, ZoneCheckRefusal,
     ZoneStats, ZoneStop, ZoneUndecided,
@@ -478,8 +478,59 @@ impl Product<'_, '_> {
         });
         let concrete = concretise(run.timed, run.dim() - 1, &stages, &Target::Any, &run.scale)
             .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
+        // ADR-026 TV-1 at the concrete point: the valuation the failing step
+        // is taken from has a time-divergent continuation, which replay
+        // checks again (FR-145 over FR-237). FR-241 names no cause for a
+        // finite path with no such concretisation; `LassoNotConcretized`
+        // is reused, as for a claim (spec gap STD-493).
+        let point = pre_point(run, lifted.initial, &stages, &concrete.prefix)?;
+        if !run.point_diverges(state, &point)? {
+            return Err(run.undecided(ZoneUndecided::LassoNotConcretized));
+        }
         Ok(refuted(lifted.initial, concrete.prefix, failure, kind))
     }
+}
+
+/// The valuation the last step of `prefix`, along `stages` from initial
+/// state `initial`, is taken from: every clock from its initial value, each
+/// delay elapsed and each earlier step's resets applied, then the last
+/// delay.
+fn pre_point(
+    run: &Run<'_, '_, '_>,
+    initial: usize,
+    stages: &[Stage],
+    prefix: &[qsl_replay::ModelStep],
+) -> Result<Concrete, Halt> {
+    let start = run
+        .timed
+        .initial()
+        .into_iter()
+        .nth(initial)
+        .ok_or(ZoneCheckRefusal::Fault("refinement-initial"))?;
+    if stages.len() != prefix.len() {
+        return Err(ZoneCheckRefusal::Fault("refinement-stage-per-step").into());
+    }
+    let mut clocks = start.clocks().clone();
+    let last = prefix.len().saturating_sub(1);
+    for (index, (stage, step)) in stages.iter().zip(prefix).enumerate() {
+        let delay = step
+            .delay
+            .as_ref()
+            .ok_or(ZoneCheckRefusal::Fault("refinement-delay"))?;
+        clocks = clocks.delayed(delay);
+        if index < last {
+            let (guarded, _) = stage
+                .step
+                .as_ref()
+                .ok_or(ZoneCheckRefusal::Fault("refinement-stage-step"))?;
+            clocks = guarded.reset(&clocks);
+        }
+    }
+    Ok(Concrete {
+        prefix: Vec::new(),
+        last_clocks: clocks.values().to_vec(),
+        last_stamp: Rational::from_integer(quire_exact::Integer::zero()),
+    })
 }
 
 /// The counterexample from initial state `initial` along `prefix` to a

@@ -359,6 +359,38 @@ fn replay_prefix(
     Ok(Some(positions))
 }
 
+/// Each replayed position's discrete state with its digest, and its timed
+/// state.
+pub(crate) type TimedPrefix = (Vec<Position>, Vec<TimedState>);
+
+/// QSpec FR-430: `payload`'s prefix re-executed over time by FR-237's rules
+/// (each delay admissible, each step enabled after it, each post-state
+/// digest the recorded one, each target invariant holding): every
+/// position's discrete state with its digest, and its timed state; `None`
+/// when the subject cannot decide a step.
+///
+/// # Errors
+///
+/// As FR-237's prefix replay refuses.
+pub(crate) fn timed_prefix(
+    timed: &TimedSystem<'_, '_>,
+    payload: &TemporalCounterexample,
+) -> Result<Option<TimedPrefix>, ReplayRefusal> {
+    let Some(replayed) = replay_prefix(timed, payload)? else {
+        return Ok(None);
+    };
+    let system = timed.system();
+    let mut positions = Vec::with_capacity(replayed.len());
+    let mut states = Vec::with_capacity(replayed.len());
+    for position in replayed {
+        let state = position.state.discrete().clone();
+        let digest = digest_of(system, &state)?;
+        positions.push(Position { state, digest });
+        states.push(position.state);
+    }
+    Ok(Some((positions, states)))
+}
+
 fn timed_digest(
     timed: &TimedSystem<'_, '_>,
     state: &TimedState,

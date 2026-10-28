@@ -200,7 +200,9 @@ pub use model_check::limits::{
 pub use model_check::outcome::{
     MemoryCause, ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause,
 };
-pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
+pub use model_check::refinement_replay::{
+    replay_refinement_trace, replay_timed_refinement_trace, RefinementTraceSettlement,
+};
 pub use model_check::refinement_settle::{
     settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
 };
