@@ -3194,6 +3194,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
             presence: Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("ConfigVersion/attemptUpdate"),

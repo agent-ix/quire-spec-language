@@ -92,6 +92,7 @@ fn field_member_with_presence(
         presence,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
+        position: 0,
     })
 }
 

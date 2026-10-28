@@ -190,7 +190,7 @@ pub fn check_timed_refinement(
     check_model_bounds(&abstract_system, BOUND_POSITIONS).map_err(not_simulated)?;
     let timed = TimedSystem::new(&concrete, refinement.concrete_model())
         .map_err(TimedRefinementRefusal::Timed)?;
-    if timed.writes_collections() {
+    if timed.carries_clocks() {
         return Err(ZoneCheckRefusal::CarriedClocks.into());
     }
     let mut run = Run::new(

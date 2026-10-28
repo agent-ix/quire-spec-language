@@ -95,6 +95,7 @@ fn field_member_redefining(
         presence: quire_exact::Presence::Required,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
+        position: 0,
     })
 }
 
@@ -133,6 +134,7 @@ fn field_member_mult_redefining(
         presence: quire_exact::Presence::Required,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
+        position: 0,
     })
 }
 
@@ -2707,6 +2709,7 @@ fn ordering_bundle() -> DomainPackage {
                 presence: quire_exact::Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
+                position: 0,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.unordered"),
@@ -2721,6 +2724,7 @@ fn ordering_bundle() -> DomainPackage {
                 presence: quire_exact::Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
+                position: 0,
             }),
             population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],

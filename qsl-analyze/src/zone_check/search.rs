@@ -35,12 +35,9 @@ use std::collections::{BTreeMap, VecDeque};
 use num_bigint::BigInt;
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
-    check_model_bounds, GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop,
-    TimedSystem,
+    GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop, TimedSystem,
 };
-use qsl_eval::simulation::{
-    NotSimulated, Permutation, RequiresBound, SymmetryGroup, BOUND_POSITIONS,
-};
+use qsl_eval::simulation::{NotSimulated, Permutation, RequiresBound, SymmetryGroup};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::ReductionKind;
 use qsl_replay::{
@@ -449,7 +446,7 @@ pub fn check_timed_model<S: Clone>(
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
-    if request.subject.writes_collections() {
+    if request.subject.carries_clocks() {
         return Err(ZoneCheckRefusal::CarriedClocks);
     }
     // QSpec FR-430: EN-6 applies symmetry and no other reduction, so a
@@ -464,10 +461,8 @@ pub fn check_timed_model<S: Clone>(
     {
         return Ok(reduced(ZoneReduction::Unsupported { reduction }));
     }
-    // FR-239: an unbounded population root refuses before any state is
-    // explored, as FR-126 states.
+    // FR-239's bound check ran when the timed subject was built.
     let system = request.subject.system();
-    check_model_bounds(system, BOUND_POSITIONS).map_err(not_simulated)?;
     let mut symmetric = !reductions.symmetry.is_empty();
     // EN-6 applies symmetry to its search only: the time-lock search and
     // the liveness product read the unreduced graph's edges, so an item
@@ -2212,14 +2207,36 @@ pub(super) fn intersect(zone: &mut Dbm, other: &Dbm) -> Result<(), DbmError> {
 }
 
 /// The parts of `zone` no zone of `covers` holds, as zones whose union is
-/// `zone` minus the union of `covers`.
+/// `zone` minus the union of `covers`. Equal covers count once: many steps
+/// share one guard (a granted collection's candidates each give a step),
+/// and the subtraction splits once per cover.
 pub(super) fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
+    let mut distinct: Vec<Dbm> = Vec::with_capacity(covers.len());
+    for cover in covers {
+        if !distinct.contains(cover) {
+            distinct.push(cover.clone());
+        }
+    }
+    subtract(zone, &distinct)
+}
+
+/// [`uncovered`] over covers already distinct: a cover that holds all of
+/// `zone` leaves nothing, and one disjoint from it is skipped.
+fn subtract(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
     if zone.is_empty() {
         return Ok(Vec::new());
     }
     let Some((first, rest)) = covers.split_first() else {
         return Ok(vec![zone.clone()]);
     };
+    if first.includes(zone)? {
+        return Ok(Vec::new());
+    }
+    let mut meet = zone.clone();
+    intersect(&mut meet, first)?;
+    if meet.is_empty() {
+        return subtract(zone, rest);
+    }
     let mut parts = Vec::new();
     for i in 0..zone.dim() {
         for j in 0..zone.dim() {
@@ -2240,7 +2257,7 @@ pub(super) fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError
                 Bound::lt(-value)
             };
             outside.constrain(j, i, negation)?;
-            parts.extend(uncovered(&outside, rest)?);
+            parts.extend(subtract(&outside, rest)?);
         }
     }
     Ok(parts)
@@ -2273,16 +2290,23 @@ fn scaled_bounds(
             upper[clock].push(bound.clone());
         }
     };
-    for guard in model.guards() {
-        for part in guard.parts() {
-            for constraint in part.clocks() {
-                record(
-                    constraint.clock().index(),
-                    constraint.op(),
-                    constraint.bound(),
-                );
-            }
+    // Every guard part, and every part of a quantifier family below one
+    // (FR-230 "Quantified reads"): a family's template constrains each slot
+    // place of its clock.
+    let mut parts: Vec<&qsl_semantics::check::ConvexPart> = model
+        .guards()
+        .iter()
+        .flat_map(|guard| guard.parts())
+        .collect();
+    while let Some(part) = parts.pop() {
+        for constraint in part.clocks() {
+            record(
+                constraint.clock().index(),
+                constraint.op(),
+                constraint.bound(),
+            );
         }
+        parts.extend(part.families().iter().flat_map(|family| family.parts()));
     }
     for invariant in model.invariants() {
         for constraint in invariant.bounds() {

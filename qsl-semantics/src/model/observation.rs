@@ -736,6 +736,13 @@ pub enum NativeKind {
     /// `"text"`: admitted only into a `Text[min, max; profile]` slot; every
     /// other slot refuses it `wrong-value-kind` (FR-106-AC-35).
     Text,
+    /// `"quantity"`: admitted only into a `Quantity<u>` slot of its unit
+    /// (FR-106 "A Quantity value").
+    Quantity,
+    /// `"rational"`: read only as a Quantity's magnitude.
+    Rational,
+    /// `"decimal"`: read only as a Quantity's magnitude.
+    Decimal,
 }
 
 /// A native payload object's `kind` member as read.
@@ -756,6 +763,9 @@ pub enum RawNativeKind {
 struct NativeObject {
     kind: RawNativeKind,
     members: Vec<(String, Option<String>)>,
+    /// Each member that is itself a payload object (a Quantity's
+    /// `magnitude`), by name; it is also in `members`, with no text.
+    objects: Vec<(String, NativeObject)>,
 }
 
 /// A native payload object as read (see [`RawForm::Native`]).
@@ -763,6 +773,7 @@ struct NativeObject {
 pub struct RawNative<'v> {
     kind: RawNativeKind,
     members: &'v [(String, Option<String>)],
+    objects: &'v [(String, NativeObject)],
 }
 
 impl<'v> RawNative<'v> {
@@ -778,6 +789,26 @@ impl<'v> RawNative<'v> {
         self.members
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_deref()))
+    }
+
+    /// The member `name` when it is itself a payload object.
+    #[must_use]
+    #[ix_trace_rs::string_edge]
+    pub fn object(self, name: &str) -> Option<RawNative<'v>> {
+        self.objects
+            .iter()
+            .find(|(held, _)| held == name)
+            .map(|(_, object)| object.as_raw())
+    }
+}
+
+impl NativeObject {
+    fn as_raw(&self) -> RawNative<'_> {
+        RawNative {
+            kind: self.kind,
+            members: &self.members,
+            objects: &self.objects,
+        }
     }
 }
 
@@ -859,7 +890,39 @@ impl SnapshotValue {
     /// object is held as read.
     #[must_use]
     pub fn native(kind: RawNativeKind, members: Vec<(String, Option<String>)>) -> Self {
-        Self::single(RawNode::Native(NativeObject { kind, members }))
+        Self::single(RawNode::Native(NativeObject {
+            kind,
+            members,
+            objects: Vec::new(),
+        }))
+    }
+
+    /// A Quantity object over the unit named `unit` and the normalized
+    /// Rational `magnitude` (FR-106 "A Quantity value").
+    #[must_use]
+    pub fn quantity(unit: String, magnitude: &quire_exact::Rational) -> Self {
+        let rational = NativeObject {
+            kind: RawNativeKind::Known(NativeKind::Rational),
+            members: vec![
+                (
+                    "numerator".to_owned(),
+                    Some(magnitude.numerator().to_string()),
+                ),
+                (
+                    "denominator".to_owned(),
+                    Some(magnitude.denominator().to_string()),
+                ),
+            ],
+            objects: Vec::new(),
+        };
+        Self::single(RawNode::Native(NativeObject {
+            kind: RawNativeKind::Known(NativeKind::Quantity),
+            members: vec![
+                ("unit".to_owned(), Some(unit)),
+                ("magnitude".to_owned(), None),
+            ],
+            objects: vec![("magnitude".to_owned(), rational)],
+        }))
     }
 
     /// `{"absent": {}}`.
@@ -967,10 +1030,7 @@ impl SnapshotValue {
         match &self.nodes[index] {
             RawNode::Boolean(value) => RawForm::Boolean(*value),
             RawNode::Integer(spelling) => RawForm::Integer(spelling),
-            RawNode::Native(native) => RawForm::Native(RawNative {
-                kind: native.kind,
-                members: &native.members,
-            }),
+            RawNode::Native(native) => RawForm::Native(native.as_raw()),
             RawNode::Absent => RawForm::Absent,
             RawNode::Present(inner) => RawForm::Present(RawValue {
                 arena: self,
@@ -1018,6 +1078,17 @@ pub(super) fn retained_text(declared: &quire_exact::TextType, payload: &str) -> 
         Some(form) => form.apply(payload).collect(),
         None => payload.to_owned(),
     }
+}
+
+/// A Quantity object's unit text and exact magnitude, or `None` when it is
+/// not one admission reads.
+#[ix_trace_rs::string_edge]
+fn quantity_identity(native: RawNative<'_>) -> Option<(&str, quire_exact::Rational)> {
+    let unit = native
+        .members()
+        .find_map(|(name, text)| (name == "unit").then_some(text).flatten())?;
+    let magnitude = document::quantity_magnitude(native.object("magnitude")?).ok()?;
+    Some((unit, magnitude))
 }
 
 /// A Text object's `text` member, if it is a string.
@@ -1141,6 +1212,38 @@ fn structure_identity<'t>(
                                 bytes.extend_from_slice(&interner.len().to_le_bytes());
                             }
                         },
+                        (_, RawNativeKind::Known(NativeKind::Rational)) => {
+                            match document::rational_payload(native) {
+                                // One value whatever its spelling (FR-106 "A
+                                // Rational value").
+                                Ok(value) => {
+                                    bytes[0] = b'Q';
+                                    text(&mut bytes, &value.numerator().to_string());
+                                    text(&mut bytes, &value.denominator().to_string());
+                                }
+                                Err(_) => {
+                                    bytes[0] = b'!';
+                                    bytes.extend_from_slice(&interner.len().to_le_bytes());
+                                }
+                            }
+                        }
+                        (_, RawNativeKind::Known(NativeKind::Quantity)) => {
+                            match quantity_identity(native) {
+                                // One value whatever its magnitude's spelling
+                                // (FR-106 "A Quantity value").
+                                Some((unit, magnitude)) => {
+                                    bytes[0] = b'q';
+                                    text(&mut bytes, unit);
+                                    text(&mut bytes, &magnitude.numerator().to_string());
+                                    text(&mut bytes, &magnitude.denominator().to_string());
+                                }
+                                // A Quantity admission refuses equals nothing.
+                                None => {
+                                    bytes[0] = b'!';
+                                    bytes.extend_from_slice(&interner.len().to_le_bytes());
+                                }
+                            }
+                        }
                         _ => {
                             text(&mut bytes, &format!("{:?}", native.kind));
                             for (name, member) in native.members() {

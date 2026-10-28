@@ -110,7 +110,23 @@ fn text_replay() -> Replay {
     replay_of(fixture::text_document(), text_fields())
 }
 
+/// The Quantity fixture (FR-106-AC-59): `Item` also holding `reach` of the
+/// unit `ms`, which its source unit declares.
+fn quantity_replay() -> Replay {
+    replay_with(
+        fixture::quantity_document(),
+        quantity_fields(),
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n",
+    )
+}
+
 fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
+    replay_with(document, base, "")
+}
+
+/// [`replay_of`] with `declarations` added to the source unit.
+fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) -> Replay {
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -121,6 +137,7 @@ fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         {declarations}\
          function keep using v(): Boolean pure {{ true }}\n",
         package = fixture::PACKAGE,
     );
@@ -2567,4 +2584,195 @@ fn the_frame_and_the_limits_see_collections_by_value() {
         ),
         used - 1,
     );
+}
+
+// ---------------------------------------------------------------------------
+// TC-1171: Quantity (FR-106-AC-59)
+// ---------------------------------------------------------------------------
+
+/// The field values of the Quantity fixture: the base fields, `reach` one
+/// millisecond.
+fn quantity_fields() -> Vec<(String, Value)> {
+    let mut fields = base_fields();
+    fields.push(("reach".to_owned(), ms(ratio("1", "1"))));
+    fields
+}
+
+/// A Quantity object of `ms` with `magnitude`.
+fn ms(magnitude: Value) -> Value {
+    json!({"kind": "quantity", "unit": "ms", "magnitude": magnitude})
+}
+
+/// A Rational magnitude `numerator` / `denominator`.
+fn ratio(numerator: &str, denominator: &str) -> Value {
+    json!({"kind": "rational", "numerator": numerator, "denominator": denominator})
+}
+
+/// The Decimal magnitude `5` scaled by `1`, that is `1`/`2`.
+fn half_as_decimal() -> Value {
+    json!({"kind": "decimal", "coefficient": "5", "scale": "1"})
+}
+
+/// The refusal of the Quantity fixture where `field` holds `value`.
+fn refused_quantity(
+    replay: &Replay,
+    field: &str,
+    value: Value,
+) -> qsl_semantics::model::observation::AdmissionRecord {
+    record_of(replay.admit(
+        &with(quantity_fields(), field, value),
+        ObservationLimits::default(),
+    ))
+}
+
+/// The exact value of an admitted Quantity: its magnitude as `numerator/denominator`.
+fn magnitude_of(value: &Datum) -> String {
+    let Datum::Quantity(quantity) = value else {
+        panic!("a Quantity, not {value:?}");
+    };
+    quantity.magnitude().to_string()
+}
+
+/// Part of FR-106-AC-59 (TC-1171): a Quantity whose magnitude is the Rational
+/// `3`/`6` admits as `1`/`2` of its unit, and the Decimal magnitude `5`
+/// scaled by `1` is the same value.
+#[trace("TC-1171")]
+#[test]
+fn a_quantity_admits_a_rational_or_a_decimal_magnitude_as_one_value() {
+    let replay = quantity_replay();
+    let rational = replay
+        .admit(
+            &with(quantity_fields(), "reach", ms(ratio("3", "6"))),
+            ObservationLimits::default(),
+        )
+        .unwrap_or_else(|failure| panic!("the Rational magnitude admits: {failure:?}"));
+    let decimal = replay
+        .admit(
+            &with(quantity_fields(), "reach", ms(half_as_decimal())),
+            ObservationLimits::default(),
+        )
+        .unwrap_or_else(|failure| panic!("the Decimal magnitude admits: {failure:?}"));
+    assert_eq!(magnitude_of(&replay.value(&rational, "reach")), "1/2");
+    assert!(same(
+        &replay.value(&rational, "reach"),
+        &replay.value(&decimal, "reach")
+    ));
+}
+
+/// Part of FR-106-AC-59 (TC-1171): a post `reach` that is the other spelling
+/// of the pre magnitude is no change and holds without a grant, while a post
+/// magnitude of `2`/`3` violates the frame with `unauthorized-change` naming
+/// `reach`.
+#[trace("TC-1171")]
+#[test]
+fn the_frame_compares_a_quantity_by_its_exact_magnitude() {
+    let replay = quantity_replay();
+    let pre = with(quantity_fields(), "reach", ms(ratio("3", "6")));
+    let same_value = with(quantity_fields(), "reach", ms(half_as_decimal()));
+    assert_eq!(
+        replay.frame_from("hold", &pre, &same_value),
+        FrameVerdict::Holds
+    );
+    let other = with(quantity_fields(), "reach", ms(ratio("2", "3")));
+    let FrameVerdict::Violation(witness) = replay.frame_from("hold", &pre, &other) else {
+        panic!("a different magnitude violates the frame");
+    };
+    assert_eq!(witness.code, Code::FrameViolation);
+    assert_eq!(witness.cause, "unauthorized-change");
+    assert!(writes(&witness.change, "reach"), "{:?}", witness.change);
+}
+
+/// Part of FR-106-AC-59 (TC-1171): a defective Quantity object refuses
+/// `invalid_runtime_input` with its cause, naming the defective member:
+/// a missing `unit` or `magnitude` `missing-member`, an added `bits`
+/// `unknown-member`, a `magnitude` that is a String object, an integer or a
+/// JSON string, and a `unit` that is a JSON number or another unit,
+/// `wrong-value-kind`.
+#[trace("TC-1171")]
+#[test]
+fn a_defective_quantity_object_refuses_naming_its_member() {
+    let replay = quantity_replay();
+    let half = ratio("1", "2");
+    for (object, cause, member) in [
+        (
+            json!({"kind": "quantity", "magnitude": half}),
+            "missing-member",
+            "unit",
+        ),
+        (
+            json!({"kind": "quantity", "unit": "ms"}),
+            "missing-member",
+            "magnitude",
+        ),
+        (
+            json!({"kind": "quantity", "unit": "ms", "magnitude": half, "bits": "1"}),
+            "unknown-member",
+            "bits",
+        ),
+        (ms(string("1")), "wrong-value-kind", "magnitude"),
+        (ms(integer("1")), "wrong-value-kind", "magnitude"),
+        (ms(json!("1")), "wrong-value-kind", "magnitude"),
+        (
+            json!({"kind": "quantity", "unit": 1, "magnitude": half}),
+            "wrong-value-kind",
+            "unit",
+        ),
+        (
+            json!({"kind": "quantity", "unit": "s", "magnitude": half}),
+            "wrong-value-kind",
+            "unit",
+        ),
+    ] {
+        let record = refused_quantity(&replay, "reach", object.clone());
+        assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
+        assert_eq!(record.cause, cause, "{object}");
+        assert_eq!(
+            record.fields.get("member").map(String::as_str),
+            Some(member),
+            "{object}"
+        );
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some("reach"),
+            "{object}"
+        );
+    }
+}
+
+/// Part of FR-106-AC-59 (TC-1171): a defective magnitude refuses
+/// `invalid-value` naming the member inside it at the path `magnitude`, a
+/// Quantity object in a Rational slot is covered with the Rational slots, and
+/// a Decimal magnitude far outside any bound admits.
+#[trace("TC-1171")]
+#[test]
+fn a_defective_magnitude_refuses_at_the_path_magnitude() {
+    let replay = quantity_replay();
+    for (magnitude, member) in [
+        (ratio("1", "0"), "denominator"),
+        (
+            json!({"kind": "decimal", "coefficient": "5", "scale": "-1"}),
+            "scale",
+        ),
+    ] {
+        let record = refused_quantity(&replay, "reach", ms(magnitude.clone()));
+        assert_eq!(record.cause, "invalid-value", "{magnitude}");
+        assert_eq!(
+            record.fields.get("member").map(String::as_str),
+            Some(member),
+            "{magnitude}"
+        );
+        assert_eq!(
+            record.path,
+            [PathStep::Field("magnitude".to_owned())],
+            "{magnitude}"
+        );
+    }
+    let huge =
+        json!({"kind": "decimal", "coefficient": "123456789012345678901234567890", "scale": "0"});
+    replay
+        .admit(
+            &with(quantity_fields(), "reach", ms(huge)),
+            ObservationLimits::default(),
+        )
+        .expect("a Quantity magnitude has no declared bound");
 }

@@ -83,8 +83,7 @@ pub fn m_actor_model() -> SelectedModel {
                 },
                 presence: quire_exact::Presence::Required,
                 subsets: Vec::new(),
-                redefines: None,
-            }),
+                redefines: None, position: 0, }),
             // A second operation, so FR-114-AC-3's "a `pre` clause of a
             // different operation" case has one to anchor at.
             DomainPackageRecord::OperationMember(OperationMemberRecord {

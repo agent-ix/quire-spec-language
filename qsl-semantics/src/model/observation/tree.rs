@@ -213,23 +213,10 @@ pub(super) fn read_raw_value<E>(
         // the payload, not as the single tag the other forms use. They are
         // kept as read, every defect included, so admission judges them in
         // the native payload order.
-        if let Some(kind) = object.member("kind") {
-            let kind = match kind.as_str() {
-                None => RawNativeKind::NotText,
-                Some("string") => RawNativeKind::Known(NativeKind::String),
-                Some("uuid") => RawNativeKind::Known(NativeKind::Uuid),
-                Some("timestamp") => RawNativeKind::Known(NativeKind::Timestamp),
-                Some("text") => RawNativeKind::Known(NativeKind::Text),
-                Some(_) => RawNativeKind::Unknown,
-            };
-            let members = object
-                .iter()
-                .filter(|(name, _)| *name != "kind")
-                .map(|(name, value)| (name.to_owned(), value.as_str().map(str::to_owned)))
-                .collect();
+        if object.member("kind").is_some() {
             finished = Some(push(
                 &mut nodes,
-                RawNode::Native(NativeObject { kind, members }),
+                RawNode::Native(native_object(object, false)),
             ));
             continue;
         }
@@ -376,5 +363,47 @@ pub(super) fn read_raw_value<E>(
             }
             _ => return Ok(None),
         }
+    }
+}
+
+/// A native payload object as read: its `kind`, every other member's text in
+/// document order, and, at the top level, each member that is itself a
+/// payload object (a Quantity's `magnitude`, a Rational or a Decimal object)
+/// read one level down.
+#[ix_trace_rs::string_edge]
+fn native_object(object: Object<'_>, nested: bool) -> NativeObject {
+    let kind = match object.member("kind").map(|kind| kind.as_str()) {
+        None | Some(None) => RawNativeKind::NotText,
+        Some(Some("string")) => RawNativeKind::Known(NativeKind::String),
+        Some(Some("uuid")) => RawNativeKind::Known(NativeKind::Uuid),
+        Some(Some("timestamp")) => RawNativeKind::Known(NativeKind::Timestamp),
+        Some(Some("text")) => RawNativeKind::Known(NativeKind::Text),
+        Some(Some("quantity")) => RawNativeKind::Known(NativeKind::Quantity),
+        Some(Some("rational")) => RawNativeKind::Known(NativeKind::Rational),
+        Some(Some("decimal")) => RawNativeKind::Known(NativeKind::Decimal),
+        Some(Some(_)) => RawNativeKind::Unknown,
+    };
+    let members = object
+        .iter()
+        .filter(|(name, _)| *name != "kind")
+        .map(|(name, value)| (name.to_owned(), value.as_str().map(str::to_owned)))
+        .collect();
+    let objects = if nested {
+        Vec::new()
+    } else {
+        object
+            .iter()
+            .filter(|(name, _)| *name != "kind")
+            .filter_map(|(name, value)| {
+                let inner = value.as_object()?;
+                inner.member("kind")?;
+                Some((name.to_owned(), native_object(inner, true)))
+            })
+            .collect()
+    };
+    NativeObject {
+        kind,
+        members,
+        objects,
     }
 }
