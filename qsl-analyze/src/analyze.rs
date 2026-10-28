@@ -573,6 +573,7 @@ mod tests {
                     fairness_kinds: Some(qsl_route::FairnessKindsMember::List(&[])),
                     evidence_kinds: None,
                     memory_models: None,
+                    reductions: None,
                 },
             )
             .expect("a well-formed test engine"),

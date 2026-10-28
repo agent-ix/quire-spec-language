@@ -1060,6 +1060,48 @@ impl Clocks<'_> {
     }
 }
 
+/// The clock fields of `model`'s clock places.
+fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
+    AdmittedModel::clock_places(model)
+        .iter()
+        .map(|place| ClockField {
+            owner: place.owner,
+            field: place.field.clone(),
+            name: place.name(),
+            path: place.path.clone(),
+            aliases: place.aliases.clone(),
+            bit: place.bit,
+        })
+        .collect()
+}
+
+/// QSpec FR-430: the span of the first clock read in `form`, an expression
+/// about an object of `model`'s type `context`, by FR-230's reading of the
+/// clock places of the object: `self.x` for a clock place `x`, a
+/// clock-bearing value read whole, a call of one of `clock_reading`, or a
+/// clock read through another object; never a data field of a
+/// clock-bearing record (`self.t.n`), nor a field that is a clock of no
+/// place of the object. `None` when it reads none.
+pub(crate) fn first_clock_read(
+    form: &ExpressionForm,
+    model: &AdmittedModel,
+    models: &[AdmittedModel],
+    clock_reading: &[super::assemble::ClockReadingDeclaration],
+    context: EffectiveId,
+) -> Option<Span> {
+    let units = TimeUnits::default();
+    let declarations = reading::Declarations::new(clock_reading, models);
+    let clocks = Clocks {
+        model,
+        fields: clock_fields(model),
+        units: &units,
+        target: None,
+        rational_bits: 0,
+        declarations: &declarations,
+    };
+    Located::of(form, &clocks, context)?.first(form.expression.root_id())
+}
+
 /// The record-field path `f.g…` of `self.f.g…` at `id` of `form`, the
 /// object's field first; `None` when `id` is no such path.
 fn self_path(form: &ExpressionForm, id: ExprId) -> Option<Vec<PlaceStep>> {
@@ -2548,17 +2590,7 @@ fn prepare_models(
         })
     };
     let clocks_of = |model| {
-        let fields = AdmittedModel::clock_places(model)
-            .iter()
-            .map(|place| ClockField {
-                owner: place.owner,
-                field: place.field.clone(),
-                name: place.name(),
-                path: place.path.clone(),
-                aliases: place.aliases.clone(),
-                bit: place.bit,
-            })
-            .collect();
+        let fields = clock_fields(model);
         let target = source_of(model)
             .and_then(|source| inputs.units.target(&source.unit).ok())
             .flatten();

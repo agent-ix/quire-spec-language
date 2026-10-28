@@ -167,6 +167,7 @@ fn admit(
             fairness_kinds: member,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
 }
@@ -189,6 +190,7 @@ fn manifest(id: &str, seed: u8, labels: &[FairnessLabel<'_>]) -> BackendDescript
             fairness_kinds: Some(FairnessKindsMember::List(labels)),
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
     .expect("a valid manifest")

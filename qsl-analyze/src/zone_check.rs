@@ -8,7 +8,9 @@
 //! FR-240's liveness phase on a symbolic product, and counterexamples,
 //! finite or lassos, concretised to exact delays (FR-241). A proof
 //! carries `qsl_replay`'s [`qsl_replay::ZoneCertificate`] (FR-244), which
-//! the core checks with its own code (FR-245).
+//! the core checks with its own code (FR-245). [`check_timed_refinement`]
+//! decides the safety half of a refinement whose concrete model is timed
+//! on the same search, with FR-142's discrete product (QSpec FR-430).
 
 mod certificate;
 mod concretise;
@@ -17,16 +19,23 @@ mod divergence;
 mod lasso;
 mod live_certificate;
 mod liveness;
+mod refine;
 mod scale;
 mod search;
 mod settle;
 mod time_lock;
 
 pub use certificate::certificate_item;
+pub use refine::{
+    check_timed_refinement, TimedRefinementRefusal, TimedRefinementRequest, TimedRefinementStop,
+    TimedRefinementUndecided, TimedSafetyOutcome,
+};
+pub mod manifest;
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
 pub use search::{
-    check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
-    ZoneCheckRefusal, ZoneCheckRequest, ZoneStats, ZoneStop, ZoneUndecided,
+    canonical_symbolic_state, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
+    ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneReduction, ZoneStats, ZoneStop,
+    ZoneUndecided,
 };
 pub use settle::{settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED};

@@ -13,6 +13,7 @@ use qsl_foundation::RequestIndex;
 use qsl_semantics::family::Requirements;
 
 use crate::deadlock::{ItemObligation, ModelTemporalItem};
+use crate::reductions::Reductions;
 use crate::request::{RequestItem, RequestWriter};
 
 /// The items of one request over model subjects `S`, in index order, each
@@ -39,18 +40,30 @@ impl<S: Clone + Eq> ModelRequest<S> {
         Self::default()
     }
 
+    /// An empty request selecting `reductions` (FR-159): one selection for
+    /// every item, so two items of one request never differ by it.
+    pub fn reduced(reductions: Reductions) -> Self {
+        Self {
+            writer: RequestWriter::reduced(reductions),
+            obligations: Vec::new(),
+        }
+    }
+
     /// Write the item for `item` with its `requirements`, and no proof
     /// bounds. The requirement record is the checked clause's alone
     /// (FR-336-AC-1), so the subject's universes reach only the item's
     /// obligation identity. An item whose obligation is already written is
     /// not written twice: the existing item's index is returned, so one
-    /// obligation has one index.
+    /// obligation has one index. The item carries the request's reductions,
+    /// and its obligation identity holds the symmetry declarations and the
+    /// partial-order selection beside the subject, never the constraint
+    /// (FR-159 "Identity", FR-158).
     pub fn authored(
         &mut self,
         item: &ModelTemporalItem<'_, S>,
         requirements: &Requirements,
     ) -> RequestIndex {
-        let obligation = item.obligation();
+        let obligation = item.obligation().reduced(self.writer.reductions());
         if let Some(index) = self.index_of(&obligation) {
             return index;
         }

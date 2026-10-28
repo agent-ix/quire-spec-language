@@ -796,8 +796,16 @@ pub enum ProtocolConstruct {
     /// protocol: the clause is written before the functions are, so the
     /// guard cannot name them yet. QSL-1121g.
     ActivationGuardReadsDeclaration,
-    /// A `terminal` member (FR-465 "Terminal"): QSL-1121f.
-    Terminal,
+    /// A `terminal when` condition that calls a function or refers to a
+    /// protocol: the node is written before the functions are, so the
+    /// condition cannot name them yet. QSL-1121g.
+    TerminalReadsDeclaration,
+    /// A `terminal when` condition that reads `over` under `activation on
+    /// each`. QSpec FR-464 stage `terminal` and vector TC-947 TM11 admit it,
+    /// but IR's reader (`protocol_body.rs` `check_finish_terminal`, at
+    /// 8b49bd4 and c103a5e) lets only an `origin` protocol's terminal read
+    /// `over`, so the package would be refused: IR-1069.
+    TerminalReadsOverUnderEach,
     /// A `relationship` member (FR-464 "Clause body"): a real model package
     /// cannot name a relationship yet, so the clause `relationships` set is
     /// unproved against IR's reader: QSL-1141.
@@ -832,10 +840,11 @@ impl ProtocolConstruct {
     pub const fn tracking(self) -> &'static str {
         match self {
             Self::WholeModelRole => "IR-874",
+            Self::TerminalReadsOverUnderEach => "IR-1069",
             Self::Control(_) => "QSL-1126",
             Self::Requirements | Self::Compensations => "QSL-1127",
-            Self::Terminal => "QSL-1121f",
             Self::FinishReadsDeclaration
+            | Self::TerminalReadsDeclaration
             | Self::CaptureReadsDeclaration
             | Self::ActivationGuardReadsDeclaration => "QSL-1121g",
             Self::ChannelCarriesBounded => "QSL-1137",
@@ -2739,6 +2748,8 @@ pub enum KeyFault {
     /// Two admitted domain packages share this identity: a check selects
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
+    /// A selected model package's `model_root` node has no key.
+    ModelRootKey(super::lowering::ModelRootKeyError),
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),
@@ -2790,6 +2801,7 @@ impl KeyFault {
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::IeeeProfileAdmission(_) => "catalog-ieee-profile-admitted",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
+            Self::ModelRootKey(_) => "model-root-keyed",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
             Self::UncheckedLimit(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",

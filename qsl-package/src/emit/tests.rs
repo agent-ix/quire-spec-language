@@ -52,6 +52,7 @@ mod probabilistic;
 mod protocol_captures;
 mod protocol_graph;
 mod protocol_reference;
+mod protocol_terminal;
 mod reachability;
 mod receiver_frames;
 mod refinement_rows;
@@ -2520,13 +2521,47 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     };
     let emitted: BTreeSet<String> = nodes(&wire)
         .iter()
-        .filter(|node| node["node_tag"] == "model")
+        .filter(|node| node["node_tag"] == "model" && node["semantic_form"] != "model_root")
         .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(
         emitted,
         BTreeSet::from([model_key("Gadget"), model_key("Widget")])
     );
+    // QSpec FR-322-AC-132/134/136: exactly one `model_root` for the one row,
+    // last in graph order with its `generated` source-map entry last, keyed by
+    // the row alone (`{identity, digest}`), never by the alias.
+    let root_key = sha256_hex(
+        format!(
+            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{digest}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
+        )
+        .as_bytes(),
+    );
+    let graph = nodes(&wire);
+    assert_eq!(
+        graph
+            .iter()
+            .filter(|node| node["semantic_form"] == "model_root")
+            .count(),
+        1
+    );
+    let root = graph.last().expect("a graph");
+    assert_eq!(root["semantic_form"], "model_root");
+    assert_eq!(root["node_id"]["digest"], root_key);
+    assert_eq!(root["semantic_type"], root["node_id"]);
+    assert_eq!(
+        root["owner"],
+        json!({"kind": "model_root", "identity": "acme/orders", "digest": digest})
+    );
+    assert_eq!(root["dependencies"], json!([]));
+    assert_eq!(
+        root["occurrences"],
+        json!([{"role": "generated", "ordinal": 0}])
+    );
+    let last_entry = wire["source_map"].as_array().unwrap().last().unwrap();
+    assert_eq!(last_entry["node_id"], root["node_id"]);
+    assert_eq!(last_entry["role"], "generated");
+    assert_eq!(last_entry["ordinal"], 0);
     match read {
         Read::Verified { package, .. } => {
             assert_eq!(package.package_id(), emission.package.package_id());
@@ -2544,6 +2579,34 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     // Adverse: evidence naming another document refuses the read.
     let (.., other) = emit_model_unit(&unit, Some(&"0".repeat(64)));
     assert!(matches!(other, Read::Refused(_)));
+}
+
+/// QSpec FR-322-AC-134: the root derived for QSpec's published `acme/orders`
+/// row has the key the published `positive-all-families` fixture carries.
+#[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
+#[test]
+fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
+    let mut digest = [0_u8; 32];
+    for (byte, pair) in digest.iter_mut().zip(
+        "179fb0d98f7f55094a03ad0e6166b604e6401bae90479f3073f6fe4b01a7af26"
+            .as_bytes()
+            .chunks(2),
+    ) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
+    }
+    let row = qsl_semantics::model::domain_package::DomainPackageRef {
+        identity: "acme/orders".to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let key = qsl_semantics::check::model_root_key(&row, qsl_foundation::IdentityLimits::default())
+        .expect("the root derives");
+    let root = model_root_node(&row, key);
+    assert_eq!(
+        root.node_id.digest.as_ref(),
+        "ff388429ac907bffe149b81b0c1b3f4099f6075df486c96736455f39a88d3041"
+    );
+    assert_eq!(root.semantic_type, root.node_id);
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the whole spine-model fixture,
