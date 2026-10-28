@@ -61,3 +61,11 @@ New this round:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-002 | medium | `unwritten_presence` counts only resets with no parameter: `bump(c: Clock)` whose range is `[v, x]` with `pre { not present(self.v) }` and `post { c = 0 ms and present(self.v) }` refuses `clock-presence-unwritten`, though binding `c` to `v` writes `v` and has a successor | FR-415-AC-21 |
+
+## Dispositions (round 2)
+
+Round 2, head 64cf0b329 (fix adec3561f).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-002 | fixed | A `Clock` parameter reset whose range holds the place counts as writing it: `bump(c: Clock)` over `[v, x]` with `pre { not present(self.v) }` and `post { c = 0 ms and present(self.v) }` checks; with `v` outside the frame (range `[x]`) it still refuses `clock-presence-unwritten`; eval decides per instance (c bound to v steps with v present at 0, c bound to x has no successor) |
