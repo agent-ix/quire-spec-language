@@ -18,9 +18,9 @@ use qsl_foundation::Span;
 use crate::check::{
     observation, step_row_refs, step_simulation_records, AbstractSide, CheckCause, CheckRefusal,
     CheckedGraph, CheckedRefinement, LabelStep, MemoryStepKind, PackageDeclarations,
-    ProtocolStepKind, RefinementCause, RefinementFairnessOrigin, RefinementRefusal,
-    RefinementThreadTarget, RowClass, RowObservation, StepClass, StepLabel, StepRowRefusal,
-    UnsupportedFeature,
+    ProtocolStepKind, RefinementCatalogNode, RefinementCause, RefinementFairnessOrigin,
+    RefinementRefusal, RefinementThreadTarget, RowClass, RowObservation, StepClass, StepLabel,
+    StepRowRefusal, UnsupportedFeature,
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -506,9 +506,9 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
             RowObservation::Internal
         ]
     );
-    // `Fill` holds constructs S4 writes no node for yet (QSL-1126):
-    // it has no clause key until it does.
-    assert!(refinement.concrete_protocol().is_none());
+    // `Fill`'s whole graph is written (its `parallel` since QSL-1186), so
+    // its clause key is recorded.
+    assert!(refinement.concrete_protocol().is_some());
 }
 
 /// Selection half of FR-135-AC-10 (the header grammar is not built): the rows
@@ -518,12 +518,10 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
 /// first row that names the clause.
 #[trace("TC-541", "FR-136-AC-6", "TC-540", "FR-135-AC-10")]
 #[test]
-fn the_rows_select_the_concrete_protocol_and_an_unwritten_clause_has_no_node_yet() {
+fn the_rows_select_the_concrete_protocol_and_record_its_node() {
     let graph = checks(&unit(&fill(""), ROWS));
     let protocol = only_refinement(&graph).concrete_protocol();
-    // `Fill` holds constructs S4 writes no node for yet (QSL-1126):
-    // no clause key is recorded until it does.
-    assert!(protocol.is_none());
+    assert!(protocol.is_some());
     // The same key whichever way the clause and the refinement are ordered.
     let reversed = header(true) + &refinement(ROWS) + &fill("");
     assert_eq!(
@@ -1620,12 +1618,11 @@ fn refinements_keep_ordered_s3_refusals_before_protocol_coverage() {
     );
 }
 
-/// Two refinements of one unit, over two protocols that hold constructs S4
-/// writes no node for yet, each select their own clause and record no node;
-/// the key behaviour over a written protocol is `qsl-analyze`'s.
+/// Two refinements of one unit, over two protocols, each select their own
+/// clause and record its node.
 #[trace("TC-541", "FR-136-AC-6")]
 #[test]
-fn each_refinement_selects_its_own_unwritten_clause_and_records_no_node() {
+fn each_refinement_selects_its_own_clause_and_records_its_node() {
     let other = fill("").replace("protocol Fill", "protocol Other");
     let other_rows = ROWS.replace("M::Fill", "M::Other");
     let text = header(true)
@@ -1639,9 +1636,12 @@ fn each_refinement_selects_its_own_unwritten_clause_and_records_no_node() {
     };
     assert_eq!(over_fill.name(), "OverFill");
     assert_eq!(over_other.name(), "OverOther");
-    // Both protocols hold constructs S4 writes no node for yet.
-    assert!(over_fill.concrete_protocol().is_none());
-    assert!(over_other.concrete_protocol().is_none());
+    let (fill_key, other_key) = (
+        over_fill.concrete_protocol(),
+        over_other.concrete_protocol(),
+    );
+    assert!(fill_key.is_some() && other_key.is_some());
+    assert_ne!(fill_key, other_key);
 }
 
 /// Every subset of `Fill`'s candidate rows gives the verdict and the missing
@@ -1932,7 +1932,7 @@ fn a_concrete_protocol_refines_an_abstract_protocol() {
             clause: "Seq".to_owned()
         }
     );
-    assert!(refinement.concrete_protocol().is_none());
+    assert!(refinement.concrete_protocol().is_some());
     assert!(refinement.abstract_internal().is_empty());
     let observed: Vec<RowObservation> = refinement.steps().iter().map(observation).collect();
     let node = RowObservation::Visible {
@@ -2031,6 +2031,50 @@ fn a_refused_abstract_clause_reports_alone_over_a_concrete_protocol() {
             "the clause's refusals alone: {found:?}"
         );
     }
+}
+
+/// FR-375-AC-28 (STD-524): the catalog carries the `effect` node `Applied`
+/// and the `commit` node `Committed` as `event`-kind classes spelled by
+/// their bare paths, each with its node and binder record, and the template
+/// `Refund`'s `cend` on the template node, whose binder types are empty.
+///
+/// The `cend` assertion cannot yet fail on its own: QSL gives a template's
+/// `cattempt` no binder record (FR-432's binder-record table defines none
+/// for it; filed on STD-493), so a `cend` sharing the template's record
+/// would also be empty. It bites once a template has a record.
+#[trace("TC-310", "FR-375-AC-28")]
+#[test]
+fn effect_commit_and_cend_classes_are_catalogued() {
+    let graph = checks(&unit(REFUNDS, REFUND_ROWS));
+    let catalog = only_refinement(&graph)
+        .class_catalog()
+        .expect("the concrete protocol contributes a catalog");
+    let class = |name: &str| {
+        catalog
+            .concrete()
+            .iter()
+            .find(|class| class.class() == name)
+            .unwrap_or_else(|| panic!("the class {name}"))
+    };
+    let protocol_node = |name: &str| match class(name).node() {
+        Some(RefinementCatalogNode::ProtocolNode { protocol, node }) => {
+            assert_eq!(protocol, "Refunds", "{name}");
+            *node
+        }
+        other => panic!("{name}: a protocol node, got {other:?}"),
+    };
+    let (applied, committed) = (
+        protocol_node("Refunds::Applied"),
+        protocol_node("Refunds::Committed"),
+    );
+    assert_ne!(applied, committed);
+    assert!(!class("Refunds::Applied").binder_types().is_empty());
+    assert!(!class("Refunds::Committed").binder_types().is_empty());
+    assert_eq!(
+        protocol_node("cend Refunds::Refund"),
+        protocol_node("Refunds::Refund")
+    );
+    assert!(class("cend Refunds::Refund").binder_types().is_empty());
 }
 
 /// `check_text` without the test opt-in that tolerates unwritten protocol

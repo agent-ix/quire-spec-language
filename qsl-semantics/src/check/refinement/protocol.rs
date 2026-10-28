@@ -98,7 +98,7 @@ impl MemoryStepKind {
 
     /// The internal step kinds of `model`: `drain` for every source-default
     /// model, and `flush` for `tso`.
-    fn of_model(model: MemoryModelName) -> &'static [Self] {
+    pub(super) fn of_model(model: MemoryModelName) -> &'static [Self] {
         match model {
             MemoryModelName::Sc | MemoryModelName::Ra => &[Self::Drain],
             MemoryModelName::Tso => &[Self::Drain, Self::Flush],
@@ -368,6 +368,20 @@ struct Entry {
     /// The kind of row a refusal for a missing row names.
     row: RowClass,
     need: Need,
+}
+
+impl Entry {
+    /// The class's alias-free spelling (QSpec FR-432 with `<C>::` removed),
+    /// as the class catalog spells it: `[keyword ]<protocol>::<name>`,
+    /// `activate <protocol>` or `memory <kind>`.
+    fn spelling(&self, protocol: &str) -> String {
+        match (&self.class, self.keyword) {
+            (StepClass::MemoryStep(_), _) => format!("memory {}", self.name),
+            (StepClass::Trigger, _) => format!("activate {protocol}"),
+            (_, Some(keyword)) => format!("{} {protocol}::{}", keyword.as_str(), self.name),
+            (_, None) => format!("{protocol}::{}", self.name),
+        }
+    }
 }
 
 /// What covers a class.
@@ -1002,6 +1016,7 @@ impl<'a> Checker<'_, 'a> {
                 StepRow {
                     class: entry.class.clone(),
                     target,
+                    spelling: entry.spelling(&protocol),
                 },
             ));
         }

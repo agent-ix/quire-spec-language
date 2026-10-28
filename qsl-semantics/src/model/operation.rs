@@ -141,6 +141,34 @@ impl OperationTable {
         self.0.get(&owner).map_or(&[], Vec::as_slice)
     }
 
+    /// Every operation of the object type's effective view under `types`, by
+    /// name in ascending UTF-8 byte order: each name the type or one of its
+    /// ancestors declares that [`Self::resolve`] resolves to one
+    /// declaration. A name whose declarations are ambiguous has no effective
+    /// operation.
+    pub fn effective(
+        &self,
+        types: &TypeEnvironment,
+        object_type: EffectiveId,
+    ) -> Vec<(EffectiveId, &OperationDeclaration)> {
+        let names: std::collections::BTreeSet<&str> = self
+            .0
+            .iter()
+            .filter(|(declaring, _)| types.conforms(object_type, **declaring))
+            .flat_map(|(_, operations)| operations.iter().map(OperationDeclaration::name))
+            .collect();
+        names
+            .into_iter()
+            .filter_map(|name| match self.resolve(types, object_type, name) {
+                OperationLookup::Declared {
+                    declaring,
+                    operation,
+                } => Some((declaring, operation)),
+                OperationLookup::Missing | OperationLookup::Ambiguous(_) => None,
+            })
+            .collect()
+    }
+
     /// The operation `name` resolves to in the object type's effective view
     /// under `types` (FR-103, FR-104): declared by the type itself or by an
     /// ancestor, visible on a subtype as a field is, and keeping its

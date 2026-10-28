@@ -1066,3 +1066,217 @@ fn assert_keyed_refusal(
         .count();
     assert_eq!(clauses, 0, "{text}");
 }
+
+/// `Flow` over [`model`] whose `run` holds the `parallel` control `Par`.
+fn parallel_flow(parallel: &str) -> String {
+    format!(
+        "protocol Flow using v over (input: M::Order) on origin {{\n\
+         {BUYER}\n\
+         run sequence Main {{\n{parallel}\n}}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// The `control` node of `wire` whose declaration is `path`.
+fn control_at<'w>(wire: &'w Value, path: &[&str]) -> &'w Value {
+    nodes(wire)
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "control"
+                && node["declaration"]["qualified_name"] == json!(path)
+        })
+        .unwrap_or_else(|| panic!("a control at {path:?}"))
+}
+
+const PARALLEL: [&str; 5] = ["memory", "branches", "join", "joined", "outstanding"];
+
+/// FR-466 "Control layouts" (FR-464-AC-1, AC-2): a `parallel` writes its
+/// `memory` as the source writes it, its `branches` sorted by label as UTF-8
+/// bytes with each body's control, its `join` Group, its `joined` labels in
+/// ascending order and its `outstanding` rule; a branch body is declared at
+/// the `parallel`'s declaration and its own name (the branch label is no
+/// segment); and IR's reader admits each package.
+#[trace("FR-464-AC-1", "FR-464-AC-2", "TC-1021")]
+#[test]
+fn a_parallel_of_sequences_emits_its_layout_and_reads_back() {
+    let lowered = lower_with(
+        model(),
+        PROFILES,
+        &parallel_flow(
+            "parallel Par memory sc { branch b sequence Bee { } branch a sequence Ay { } } \
+             join quorum(1) [b, a] outstanding cancel;",
+        ),
+    );
+    assert!(
+        lowered.ir.is_ok(),
+        "{:?}\n{}",
+        lowered.ir.err(),
+        lowered.text
+    );
+    assert!(lowered.verified, "{}", lowered.text);
+    let wire = &lowered.wire;
+    let parallel = control_at(wire, &["Flow", "run", "Main", "Par"]);
+    let ay = control_at(wire, &["Flow", "run", "Main", "Par", "Ay"]);
+    let bee = control_at(wire, &["Flow", "run", "Main", "Par", "Bee"]);
+    assert_eq!(
+        lit(&argument(parallel, &PARALLEL, "memory")["members"][0]),
+        "sc"
+    );
+    let branches = argument(parallel, &PARALLEL, "branches")["members"]
+        .as_array()
+        .expect("branch records");
+    let labels: Vec<&str> = branches
+        .iter()
+        .map(|branch| lit(member(branch, "label")))
+        .collect();
+    assert_eq!(labels, ["a", "b"]);
+    assert_eq!(member(&branches[0], "body")["target"], ay["node_id"]);
+    assert_eq!(member(&branches[1], "body")["target"], bee["node_id"]);
+    let join = argument(parallel, &PARALLEL, "join");
+    assert_eq!(member_names(join), ["policy", "count"]);
+    assert_eq!(lit(member(join, "policy")), "quorum");
+    let joined: Vec<&str> = argument(parallel, &PARALLEL, "joined")["members"]
+        .as_array()
+        .expect("joined labels")
+        .iter()
+        .map(lit)
+        .collect();
+    assert_eq!(joined, ["a", "b"]);
+    assert_eq!(
+        lit(&argument(parallel, &PARALLEL, "outstanding")["members"][0]),
+        "cancel"
+    );
+
+    // Unwritten optionals are the empty Group; `all` has only its policy.
+    let plain = lower_with(
+        model(),
+        PROFILES,
+        &parallel_flow(
+            "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } join all [a, b];",
+        ),
+    );
+    assert!(plain.ir.is_ok(), "{:?}\n{}", plain.ir.err(), plain.text);
+    let parallel = control_at(&plain.wire, &["Flow", "run", "Main", "Par"]);
+    assert_eq!(
+        argument(parallel, &PARALLEL, "memory")["members"],
+        json!([])
+    );
+    assert_eq!(
+        argument(parallel, &PARALLEL, "outstanding")["members"],
+        json!([])
+    );
+    assert_eq!(
+        member_names(argument(parallel, &PARALLEL, "join")),
+        ["policy"]
+    );
+}
+
+/// A `parallel` under `tso` with an `all` join, one with `outstanding
+/// continue`, and a `parallel` nested in each holder position (inside a
+/// branch's `sequence`, and as a branch's body) each read back; a nested
+/// control is declared at its holder's declaration and its own name, so a
+/// branch label is no segment at any depth (FR-464 "Control tree").
+#[trace("FR-464-AC-1", "FR-464-AC-2", "TC-1021")]
+#[test]
+fn tso_continue_and_nested_parallels_read_back() {
+    let read = |parallel: &str| {
+        let lowered = lower_with(model(), PROFILES, &parallel_flow(parallel));
+        assert!(
+            lowered.ir.is_ok(),
+            "{:?}\n{}",
+            lowered.ir.err(),
+            lowered.text
+        );
+        assert!(lowered.verified, "{}", lowered.text);
+        lowered.wire
+    };
+
+    let tso = read(
+        "parallel Par memory tso { branch a sequence Ay { } branch b sequence Bee { } } \
+         join all [a, b];",
+    );
+    let parallel = control_at(&tso, &["Flow", "run", "Main", "Par"]);
+    assert_eq!(
+        lit(&argument(parallel, &PARALLEL, "memory")["members"][0]),
+        "tso"
+    );
+    assert_eq!(
+        lit(member(argument(parallel, &PARALLEL, "join"), "policy")),
+        "all"
+    );
+
+    let continued = read(
+        "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+         join any [a] outstanding continue;",
+    );
+    let parallel = control_at(&continued, &["Flow", "run", "Main", "Par"]);
+    assert_eq!(
+        lit(&argument(parallel, &PARALLEL, "outstanding")["members"][0]),
+        "continue"
+    );
+    assert_eq!(
+        lit(member(argument(parallel, &PARALLEL, "join"), "policy")),
+        "any"
+    );
+
+    // Inside a branch's `sequence`: `In` is held by `Ay`.
+    let in_sequence = read(
+        "parallel Par { branch a sequence Ay { parallel In { branch x sequence X { } \
+         branch y sequence Y { } } join any [y]; } branch b sequence Bee { } } \
+         join all [a, b];",
+    );
+    let ay = control_at(&in_sequence, &["Flow", "run", "Main", "Par", "Ay"]);
+    let inner = control_at(&in_sequence, &["Flow", "run", "Main", "Par", "Ay", "In"]);
+    let x = control_at(
+        &in_sequence,
+        &["Flow", "run", "Main", "Par", "Ay", "In", "X"],
+    );
+    assert_eq!(
+        argument(ay, &["children"], "children")["members"],
+        json!([{"term": "reference", "target": inner["node_id"]}])
+    );
+    let branches = argument(inner, &PARALLEL, "branches")["members"]
+        .as_array()
+        .expect("branch records");
+    assert_eq!(member(&branches[0], "body")["target"], x["node_id"]);
+
+    // As a branch's body: `In` is held by `Par` directly.
+    let as_body = read(
+        "parallel Par { branch a parallel In { branch x sequence X { } \
+         branch y sequence Y { } } join all [x, y]; branch b sequence Bee { } } \
+         join all [a, b];",
+    );
+    let outer = control_at(&as_body, &["Flow", "run", "Main", "Par"]);
+    let inner = control_at(&as_body, &["Flow", "run", "Main", "Par", "In"]);
+    control_at(&as_body, &["Flow", "run", "Main", "Par", "In", "X"]);
+    let branches = argument(outer, &PARALLEL, "branches")["members"]
+        .as_array()
+        .expect("branch records");
+    assert_eq!(lit(member(&branches[0], "label")), "a");
+    assert_eq!(member(&branches[0], "body")["target"], inner["node_id"]);
+}
+
+/// A `parallel` whose join is a predicate names a function, whose node is
+/// written after the protocols': the clause is still refused
+/// `unsupported_construct`/`not-yet-implemented` naming `parallel`.
+#[trace("FR-092-AC-18", "TC-1021")]
+#[test]
+fn a_predicate_join_is_not_written_yet() {
+    let text = format!(
+        "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{}",
+        parallel_flow(
+            "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+             join predicate(both) [a, b];"
+        )
+    );
+    let refusals = checked(&text, false).expect_err(&text);
+    assert_eq!(
+        refusals
+            .iter()
+            .map(|refusal| &refusal.cause)
+            .collect::<Vec<_>>(),
+        [&not_emitted(ProtocolConstruct::Control("parallel"))],
+        "{text}"
+    );
+}
