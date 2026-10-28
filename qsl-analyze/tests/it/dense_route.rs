@@ -325,3 +325,78 @@ fn an_untimed_refinement_record_routes_to_explicit_state_alone() {
         .expect("the record's item");
     assert_eq!(ids(item.candidates()), [en1::BACKEND_ID]);
 }
+
+/// FR-243 with FR-144 (TC-698, SR-1753002 FND-002): one package holding the
+/// dense `M` and the untimed `A` routes each record by its own subject, in
+/// one `items_from_requirements` call: the clause over `M` and the timed
+/// refinement of `A` by `M` to EN-6 alone, the clause over `A` to both
+/// engines, and the untimed refinement of `A` by `A` to explicit-state
+/// alone.
+#[trace("TC-698", "FR-243-AC-1")]
+#[trace("TC-549", "FR-144-AC-1")]
+#[test]
+fn a_mixed_package_routes_each_record_by_its_own_subject() {
+    use crate::timed_refinement::{refinement, req, treq, CONTRACTS};
+    use crate::timed_world::{refining, DENSE};
+    let clauses = "temporal DenseClause using inf over (c: M::Call) clock \"model-steps\" on \
+         origin { always holds(not c.late) }\n\
+         temporal UntimedClause using inf over (c: A::Call) clock \"model-steps\" on \
+         origin { always holds(not c.late) }\n";
+    let untimed = "refinement Same using inf abstract A concrete A {\n\
+         population A::calls from A::calls;\n\
+         object A::Call from A::Call { phase = self.phase; inflight = self.inflight; late = self.late; retried = self.retried; }\n\
+         step A::Call::send -> A::Call::send(self);\n\
+         }\n";
+    let world = refining(
+        &req(),
+        &treq(),
+        &format!(
+            "{DENSE}{CONTRACTS}{}{untimed}{clauses}",
+            refinement("self.inflight")
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let graph = world.package.graph();
+    let records = graph.requirements();
+    let items = items_from_requirements(records, &registry(), None);
+    let route = |occurrence: &qsl_foundation::source::provenance::OccurrenceKey| {
+        let dense = records
+            .get(occurrence)
+            .expect("its record")
+            .requirements()
+            .dense_time();
+        let item = items
+            .iter()
+            .find(|item| item.occurrence() == occurrence)
+            .expect("its item");
+        (dense, ids(item.candidates()))
+    };
+    let clause = |name: &str| {
+        let node = graph
+            .temporal_clauses()
+            .iter()
+            .find(|node| node.clause().name() == name)
+            .unwrap_or_else(|| panic!("the clause {name}"));
+        route(&node_occurrence(node))
+    };
+    let refined = |name: &str| {
+        let refinement = graph
+            .refinements()
+            .iter()
+            .find(|refinement| refinement.name() == name)
+            .unwrap_or_else(|| panic!("the refinement {name}"));
+        route(
+            refinement
+                .requirement_occurrence()
+                .expect("the refinement has a record"),
+        )
+    };
+    let both = vec![en1::BACKEND_ID.to_owned(), en6::BACKEND_ID.to_owned()];
+    assert_eq!(
+        clause("DenseClause"),
+        (true, vec![en6::BACKEND_ID.to_owned()])
+    );
+    assert_eq!(clause("UntimedClause"), (false, both));
+    assert_eq!(refined("Timed"), (true, vec![en6::BACKEND_ID.to_owned()]));
+    assert_eq!(refined("Same"), (false, vec![en1::BACKEND_ID.to_owned()]));
+}
