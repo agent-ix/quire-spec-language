@@ -58,13 +58,27 @@ pub enum AutomatonError {
     /// cannot track it as state (ADR-018 SM-6). Remaining work: QSL-878.
     #[error("a past operator's operand holds a future operator")]
     PastOverFuture,
-    /// A timed operator nested under a future operator has an interval
-    /// that does not start at a closed 0: its instances started at many
-    /// positions need more than one clock, which this construction does not
-    /// give yet: FR-242's MightyL translation of such intervals is
-    /// unbuilt. Remaining work: QSL-583 (583e).
-    #[error("a nested timed operator's interval does not start at a closed 0")]
-    NestedIntervalShape,
+    /// A punctual interval on an operator the negation starts at many
+    /// positions, or on a past operator read below a future one. No timed
+    /// automaton accepts such a negation in general: the timed regular
+    /// languages are not closed under complement, and the set of words in
+    /// which no two events lie exactly one unit apart is not timed regular
+    /// (Alur and Dill, "A theory of timed automata", 1994). FR-242 reads
+    /// TT-3 and TT-4 with no punctual interval (FR-234 disposes of them);
+    /// such an interval reaches this automaton only in a TT-2 window.
+    #[error("a punctual interval is started or read at many positions")]
+    RepeatedPunctualInterval,
+    /// The construction needs more automaton clocks than it builds: each
+    /// interval operator started at many positions takes two clocks per
+    /// copy, and its copies grow with `a / (b - a)`.
+    #[error("the claim automaton needs at least {clocks} clocks, above its limit of {limit}")]
+    ClockLimit {
+        /// The clocks the construction needs, or, for an interval refused
+        /// before its copies are counted, a lower bound on them, saturated.
+        clocks: usize,
+        /// The limit.
+        limit: usize,
+    },
     /// The clause's profile has no property automaton.
     #[error("the {profile:?} profile has no property automaton")]
     ProfileNotTranslated {
