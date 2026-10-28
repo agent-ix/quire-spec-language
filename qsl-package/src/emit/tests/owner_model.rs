@@ -315,7 +315,9 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                 }
             }),
             true,
-            format!("IllTyped at {clause_path}/owner_model (Some(OperatorIneligible))"),
+            format!(
+                "InvalidModelBinding at {clause_path}/owner_model (Some(MalformedDeclaration))"
+            ),
         ),
         (
             "the target is no node of the graph",

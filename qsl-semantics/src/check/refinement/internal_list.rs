@@ -19,7 +19,7 @@ use serde_json::Value;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
-use super::catalog::{RefinementCatalogClass, RefinementCatalogNode, MEMORY_DRAIN};
+use super::catalog::{RefinementCatalogClass, RefinementCatalogNode};
 use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_slots::CheckedLifetime;
 
@@ -695,7 +695,7 @@ impl ProtocolClasses {
         }
         let mut memory = Vec::new();
         for model in &self.memory_models {
-            let drain = RefinementCatalogClass::memory(MEMORY_DRAIN.to_owned(), *model);
+            let drain = RefinementCatalogClass::memory_drain(*model);
             memory.push(drain);
             if let Some(kind) = memory_step(*model) {
                 let class = RefinementCatalogClass::memory(format!("memory {kind}"), *model);
