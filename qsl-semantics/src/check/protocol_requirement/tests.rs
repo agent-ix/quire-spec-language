@@ -294,30 +294,19 @@ fn a_requirement_whose_clause_reaches_its_protocol_is_a_cycle() {
     assert!(found.is_empty(), "{found:?}");
 }
 
-/// FR-092-AC-18, FR-383: a protocol that requires a temporal clause is never
-/// checked to a package without its `requirements` set: with a protocol
-/// profile selected it refuses `NotEmitted`, naming the requirement and
-/// QSL-1127.
-#[trace("FR-092-AC-18", "FR-383-AC-1")]
+/// FR-218-AC-16: a temporal requirement binds to the clause's declaration
+/// position and no longer refuses when that clause is emitted.
+#[trace("FR-218-AC-16")]
 #[test]
-fn a_requirement_refuses_the_protocol_naming_its_ticket() {
-    use crate::check::refusal::{ProtocolConstruct, ProtocolReferenceCause};
+fn an_emitted_requirement_keeps_its_temporal_clause_position() {
     let unit = format!(
         "profile pp = \"quire.protocol.finite-global/v1\";\n{}{}",
         temporal("Due", "true"),
         protocol("Fill", "requires temporal Due;")
     );
-    let (_, assembled) = assemble(&unit);
-    let causes: Vec<_> = assembled
-        .check(CheckingLimits::default())
-        .map(|_| ())
-        .expect_err("the protocol refuses")
-        .into_iter()
-        .map(|refusal| refusal.cause)
-        .collect();
-    let not_emitted = |construct| {
-        CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }))
-    };
-    assert_eq!(causes, [not_emitted(ProtocolConstruct::Requirements)]);
-    assert_eq!(ProtocolConstruct::Requirements.tracking(), "QSL-1127");
+    let checked = requirements(&unit, "Fill").expect("the emitted requirement resolves");
+    assert_eq!(checked.len(), 1);
+    assert_eq!(checked[0].temporal, 0);
+    let (_, refusals) = protocol_refusals(&unit);
+    assert!(refusals.is_empty(), "{refusals:?}");
 }
