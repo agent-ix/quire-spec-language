@@ -682,6 +682,9 @@ pub(crate) struct Lowering<'a> {
     /// What lowering holds for each checked protocol declaration, by its
     /// index in the unit's protocols (FR-092).
     protocol_keys: Vec<protocol::ProtocolKey>,
+    /// The member keys of each keyed protocol clause, by clause name: the
+    /// nodes a refinement class catalog names (FR-375).
+    protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -1601,6 +1604,7 @@ impl<'a> Lowering<'a> {
             population_nodes: BTreeSet::new(),
             bound_sites: BTreeSet::new(),
             protocol_keys: Vec::new(),
+            protocol_members: BTreeMap::new(),
         }
     }
 

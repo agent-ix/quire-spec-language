@@ -1251,7 +1251,17 @@ fn empty_model_refinement_node(
             regions: vec![source_region.clone()],
         })
         .collect();
-    let mut dependencies = vec![abstract_node];
+    // QSpec FR-375: every local catalog node and binder type is a
+    // dependency of the refinement.
+    let mut dependencies: Vec<CheckedNodeId> = std::iter::once(abstract_node)
+        .chain(
+            refinement
+                .class_catalog_keys()
+                .into_iter()
+                .flat_map(|catalog| catalog.node_keys())
+                .map(node_id),
+        )
+        .collect();
     dependencies.sort();
     dependencies.dedup();
     Ok((

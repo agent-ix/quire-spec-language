@@ -34,7 +34,10 @@ mod step_label;
 
 use std::collections::BTreeMap;
 
-pub use catalog::{RefinementCatalogClass, RefinementCatalogNode, RefinementClassCatalog};
+pub use catalog::{
+    KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, RefinementCatalogClass,
+    RefinementCatalogNode, RefinementClassCatalog,
+};
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
 pub(crate) use internal_list::{NodeClass, ParsedLists, ProtocolClasses};
@@ -544,7 +547,8 @@ impl PopulationUse {
 }
 
 impl CheckedRefinement {
-    /// The typed V2 body and key for a row-empty model refinement.
+    /// The typed V2 body and key for a row-empty model refinement, with its
+    /// lowered class catalog.
     /// Construction remains in the check core; the package writer can
     /// serialize the checked body without depending on JSON or minting a
     /// semantic identity.
@@ -573,10 +577,48 @@ impl CheckedRefinement {
             ensure: Vec::new(),
             protocol: None,
             abstract_internal: None,
-            class_catalog: None,
+            class_catalog: self.class_catalog_keys.as_ref().map(v2_class_catalog),
         };
         let identity = Self::v2_identity(concrete_subject, &body)?;
         Ok((identity, body))
+    }
+
+    /// FR-375: the class catalog of a model-abstract refinement, rebuilt
+    /// once the unit's protocol clauses are checked, so the protocol clauses
+    /// over the concrete model contribute their classes even when no step
+    /// row selects one. The refinement's own check ran before any clause
+    /// was checked.
+    pub(crate) fn catalog_concrete_protocols(
+        &mut self,
+        declarations: &ClauseDeclarations<'_>,
+        protocols: &[ProtocolView<'_>],
+    ) -> Result<(), InternalFault> {
+        if self.abstract_side != AbstractSide::Model {
+            return Ok(());
+        }
+        let model = |alias: &str| {
+            declarations
+                .models
+                .iter()
+                .find(|model| model.alias() == Some(alias))
+                .ok_or_else(|| {
+                    InternalFault::new(
+                        "check.refinement-class-catalog",
+                        "the-models-of-a-refinement-are-admitted",
+                    )
+                })
+        };
+        self.class_catalog = catalog::build(catalog::CatalogBuildInput {
+            concrete_alias: &self.concrete_model,
+            concrete_model: model(&self.concrete_model)?,
+            abstract_alias: &self.abstract_model,
+            abstract_model: model(&self.abstract_model)?,
+            abstract_classes: None,
+            declarations,
+            protocols,
+            has_abstract_protocol: false,
+        })?;
+        Ok(())
     }
 
     /// QSpec FR-375's canonical relation-node identity construction: the
@@ -596,9 +638,10 @@ impl CheckedRefinement {
         Ok(NodeKey::from_digest(*digest.as_bytes()))
     }
 
-    /// Whether this declaration is in the first V2 emission slice: a model
-    /// subject whose checked base body has no authored mappings. Later
-    /// slices admit mapped model and protocol subjects.
+    /// Whether this declaration is in the current V2 emission slice: a model
+    /// abstract subject whose checked base body has no authored mappings,
+    /// with its class catalog, when it has one, lowered to node keys.
+    /// Later slices admit mapped model and protocol subjects.
     pub fn v2_empty_model_body(&self) -> bool {
         self.abstract_side == AbstractSide::Model
             && self.abstract_internal.is_empty()
@@ -608,7 +651,7 @@ impl CheckedRefinement {
             && self.history.is_empty()
             && self.concrete_fairness.is_empty()
             && self.abstract_fairness.is_empty()
-            && self.class_catalog.is_none()
+            && self.class_catalog.is_some() == self.class_catalog_keys.is_some()
             && self.abstract_subject_node.is_some()
             && self.concrete_subject_node.is_some()
     }
@@ -687,6 +730,67 @@ pub enum RefinementV2EncodingError {
     Body(serde_json::Error),
     /// The FR-375 identity preimage could not be canonically encoded.
     Identity(quire_canonical::Error),
+}
+
+/// QSpec FR-375's `class_catalog` member: each declared class's node and
+/// binder types as local node references (the abstract side's as
+/// `RefinementKey::Local`, its model being selected by this package), and
+/// each memory class as its closed memory entry.
+fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::RefinementClassCatalog {
+    use quire_contract_model::{
+        RefinementAbstractClass, RefinementConcreteClass, RefinementDrain, RefinementKey,
+        RefinementMemoryClass, RefinementMemoryModel, RefinementTsoModel,
+    };
+    let memory = |class: KeyedMemoryClass| match class {
+        KeyedMemoryClass::Drain(model) => RefinementMemoryClass::Drain {
+            memory_model: match model {
+                qsl_foundation::MemoryModelName::Sc => RefinementMemoryModel::Sc,
+                qsl_foundation::MemoryModelName::Tso => RefinementMemoryModel::Tso,
+                qsl_foundation::MemoryModelName::Ra => RefinementMemoryModel::Ra,
+            },
+            drain: RefinementDrain::StoreBufferFlush,
+        },
+        KeyedMemoryClass::Flush => RefinementMemoryClass::Flush {
+            memory_model: RefinementTsoModel::Tso,
+        },
+    };
+    quire_contract_model::RefinementClassCatalog {
+        concrete: catalog
+            .concrete()
+            .iter()
+            .map(|class| match class {
+                KeyedCatalogClass::Declared {
+                    class,
+                    node,
+                    binder_types,
+                } => RefinementConcreteClass::Declared {
+                    class: class.as_str().into(),
+                    node: v2_node_id(*node),
+                    binder_types: binder_types.iter().copied().map(v2_node_id).collect(),
+                },
+                KeyedCatalogClass::Memory(class) => RefinementConcreteClass::Memory(memory(*class)),
+            })
+            .collect(),
+        r#abstract: catalog
+            .abstract_side()
+            .iter()
+            .map(|class| match class {
+                KeyedCatalogClass::Declared {
+                    class,
+                    node,
+                    binder_types,
+                } => RefinementAbstractClass::Declared {
+                    class: class.as_str().into(),
+                    node: RefinementKey::Local(v2_node_id(*node)),
+                    binder_types: binder_types
+                        .iter()
+                        .map(|key| RefinementKey::Local(v2_node_id(*key)))
+                        .collect(),
+                },
+                KeyedCatalogClass::Memory(class) => RefinementAbstractClass::Memory(memory(*class)),
+            })
+            .collect(),
+    }
 }
 
 /// `key` as a V2 graph node id.
@@ -954,6 +1058,10 @@ pub struct CheckedRefinement {
     /// The complete checked classes of protocol or memory subjects, derived
     /// independently of the authored step rows (FR-375, QSpec FR-464).
     pub(crate) class_catalog: Option<RefinementClassCatalog>,
+    /// [`Self::class_catalog`] lowered to the package graph's node keys,
+    /// once every class node is minted; absent while a contributing
+    /// protocol clause has no node.
+    pub(crate) class_catalog_keys: Option<KeyedClassCatalog>,
     /// The protocol clause the step rows select; absent for a model subject.
     /// The clause's node exists once the unit's protocol nodes are minted
     /// (FR-092), so the pipeline fills it after the check.
@@ -1057,6 +1165,12 @@ impl CheckedRefinement {
     /// have no catalog.
     pub fn class_catalog(&self) -> Option<&RefinementClassCatalog> {
         self.class_catalog.as_ref()
+    }
+
+    /// The class catalog lowered to node keys, when every class node of it
+    /// is in the package graph.
+    pub fn class_catalog_keys(&self) -> Option<&KeyedClassCatalog> {
+        self.class_catalog_keys.as_ref()
     }
 
     /// The history rows, in source order (FR-138).
@@ -1699,6 +1813,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         abstract_fairness,
         concrete_object_types,
         class_catalog,
+        class_catalog_keys: None,
         concrete_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
