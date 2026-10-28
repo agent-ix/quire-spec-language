@@ -236,6 +236,9 @@ pub(crate) struct LoweredAttempt {
 pub(crate) struct LoweredClause {
     /// The `state_clause` node: the clause's identity.
     pub(crate) key: NodeKey,
+    /// The lowered Boolean condition node the `state_clause` application
+    /// holds as its third argument.
+    pub(crate) condition: NodeKey,
     /// Each parameter's `value`/`parameter` node, in slot order.
     pub(crate) parameters: Vec<NodeKey>,
     /// The anchor and frame nodes of the operation a `pre` or `post` clause
@@ -358,7 +361,7 @@ impl Lowering<'_> {
                 vec![
                     MemberTerm::Group(GroupTerm::references(parameters.iter().copied())),
                     MemberTerm::reference(anchor),
-                    MemberTerm::Leaf(condition),
+                    MemberTerm::Leaf(condition.clone()),
                 ],
             ),
         )?;
@@ -371,8 +374,21 @@ impl Lowering<'_> {
             self.record(object, OccurrenceRole::Type, location.clone());
             population_objects.push(object);
         }
+        let condition = match condition {
+            LeafTerm::Reference { target } => target.0,
+            LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
+                return Err(fault(
+                    location,
+                    KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
+                        "S4",
+                        "state-clause-condition-is-a-node",
+                    )),
+                ))
+            }
+        };
         Ok(LoweredClause {
             key,
+            condition,
             parameters,
             binding,
             boolean,
@@ -589,7 +605,7 @@ impl Lowering<'_> {
 
     /// A frame `modifies` field entry: the field member `field`'s declaring
     /// object type node and its member name.
-    fn frame_field(
+    pub(super) fn frame_field(
         &mut self,
         field: &DeclarationKey,
         location: &Location,

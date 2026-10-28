@@ -4200,6 +4200,33 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-105 "Boolean model-field transitions": the derived
+        // `state`/`transition` node of each eligible (operation, Boolean
+        // field) pair, from the lowered `pre` and `post` clauses.
+        if refusals.is_empty() {
+            let transition_clauses: Vec<lowering::TransitionClause<'_>> = state_clause_forms
+                .iter()
+                .zip(&lowered_clauses)
+                .zip(&clause_locations)
+                .filter_map(|((form, lowered), location)| {
+                    let operation = form.operation.as_ref()?;
+                    Some(lowering::TransitionClause {
+                        kind: form.kind,
+                        name: form.name.as_str(),
+                        source_order: form.spans.declaration.start,
+                        location,
+                        context: form.context,
+                        declaring: operation.declaring,
+                        operation: &operation.declaration,
+                        has_execution_point: form.execution_point.is_some(),
+                        lowered: lowered.as_ref()?,
+                    })
+                })
+                .collect();
+            if let Err(refusal) = lowering.state_transitions(&transition_clauses) {
+                refusals.push(refusal);
+            }
+        }
         // FR-092: the node of each protocol that holds an `attempt`, now that
         // the operation anchors and state clauses its attempts name are keyed.
         let attempt_nodes_written = refusals.is_empty();
