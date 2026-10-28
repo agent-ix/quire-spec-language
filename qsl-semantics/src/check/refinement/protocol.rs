@@ -105,14 +105,12 @@ impl MemoryStepKind {
         }
     }
 
-    /// What a refinement needs of the kind: a row of its own for `flush`.
-    /// A `drain` row is admitted and not yet required: the AC that makes
-    /// it mandatory (FR-432's "nothing defaults") is pending in QSpec.
+    /// What a refinement needs of the kind: a row of its own, for `drain`
+    /// as for `flush` (FR-432-AC-22: the drain class is catalogued for every
+    /// source-default model and nothing defaults, so its row is mandatory
+    /// even under `sc`, where the class is a no-op).
     fn need(self) -> Need {
-        match self {
-            Self::Drain => Need::Optional,
-            Self::Flush => Need::Row,
-        }
+        Need::Row
     }
 }
 
@@ -376,8 +374,6 @@ struct Entry {
 enum Need {
     /// A row of its own.
     Row,
-    /// A row of its own may name it; none is required.
-    Optional,
     /// A row of its own, or the row of this concrete operation.
     OrOperation(Option<DeclarationKey>),
 }
@@ -1013,7 +1009,6 @@ impl<'a> Checker<'_, 'a> {
             let covered = first_rows.iter().any(|(class, _)| *class == entry.class);
             let by_operation = match &entry.need {
                 Need::Row => false,
-                Need::Optional => true,
                 Need::OrOperation(operation) => operation
                     .as_ref()
                     .is_some_and(|operation| written.contains(operation)),
