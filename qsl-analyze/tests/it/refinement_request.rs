@@ -9,8 +9,7 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
     open_systems, replay_refinement_trace, settle_refinement_safety, ModelCheckLimits,
-    RefinementFailure, SafetyOutcome, SimulationCertificateRequest, SubjectIdentity,
-    TerminalValue,
+    RefinementFailure, SafetyOutcome, SimulationCertificateRequest, SubjectIdentity, TerminalValue,
 };
 use qsl_route::deadlock::{deadlock_freedom_items, ModelRefinementItem, ObligationKind};
 use qsl_route::model_request::ModelRequest;
@@ -70,7 +69,10 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
             requirements.property_form(),
             Some(PropertyForm::Refinement { liveness })
         );
-        assert_eq!(world.refinement().property_form(), PropertyForm::Refinement { liveness });
+        assert_eq!(
+            world.refinement().property_form(),
+            PropertyForm::Refinement { liveness }
+        );
         let records = world.package().graph().requirements();
         let at_node = records
             .keys()
@@ -151,10 +153,18 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
 
     let mut request = ModelRequest::new();
     let first = context
-        .author_refinement(&mut request, world.refinement(), std::slice::from_ref(&zero))
+        .author_refinement(
+            &mut request,
+            world.refinement(),
+            std::slice::from_ref(&zero),
+        )
         .expect("the record is written");
     let again = context
-        .author_refinement(&mut request, world.refinement(), std::slice::from_ref(&zero))
+        .author_refinement(
+            &mut request,
+            world.refinement(),
+            std::slice::from_ref(&zero),
+        )
         .expect("the record is written");
     let second = context
         .author_refinement(&mut request, world.refinement(), std::slice::from_ref(&one))
@@ -171,7 +181,10 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
     else {
         panic!("a refinement obligation: {b:?}");
     };
-    assert_eq!(Some(occurrence), world.refinement().requirement_occurrence());
+    assert_eq!(
+        Some(occurrence),
+        world.refinement().requirement_occurrence()
+    );
     assert_eq!(abstract_initial.iter().collect::<Vec<_>>(), [&one]);
     let item = &request.items()[second.get()];
     assert_eq!(

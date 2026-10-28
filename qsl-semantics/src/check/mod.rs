@@ -4498,7 +4498,7 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
             // FR-144: the `Boolean` result bound of the refinement's record.
-            match lowering.type_node(&ValueType::Boolean, &location) {
+            match lowering.refinement_result_type(&location) {
                 Ok(boolean) => {
                     refinement_booleans.insert(checked.name().to_owned(), boolean);
                 }
@@ -5053,10 +5053,13 @@ impl PackageDeclarations {
                 claims::wire(boolean),
                 references::ModelReferences::new(Default::default(), [], None),
             );
+            // Two refinements of one meaning share one node and so one
+            // record; S4 refuses the pair naming both (FR-375).
             match requirements.entry(occurrence.clone()) {
                 std::collections::btree_map::Entry::Vacant(slot) => {
                     slot.insert(record);
                 }
+                std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {}
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
             checked.requirement = Some(occurrence);
