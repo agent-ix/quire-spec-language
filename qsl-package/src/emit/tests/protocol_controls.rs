@@ -942,10 +942,12 @@ fn choices_and_repeats_nest_in_each_other_and_read_back() {
 /// A post-test `repeat`, whose guard reads a binder its body declares, has
 /// no FR-466 node form (the guard reads the repeat's entry only); nor has a
 /// literal or bare-binder `visible` entry (FR-466 lists `expression`
-/// nodes), nor a repeat that steps only through a nested repeat (FR-464
-/// "Progress" counts no repeat as stepping), nor a repeat whose `visible`
+/// nodes), nor a repeat whose `visible`
 /// entry, invariant or variant reads a body binder; a guard that refers to
-/// a protocol directly is not written yet either. Each refuses the protocol
+/// a protocol directly is not written yet either; QSpec #481 (STD-539)
+/// settles these as non-encodings. A repeat that steps only through a
+/// nested repeat has a node form (FR-464 "Nested `repeat` rule") but is
+/// withheld until IR's reader decides that rule (IR-1100). Each refuses the protocol
 /// `unsupported_construct`/`not-yet-implemented` naming the construct.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
@@ -956,7 +958,7 @@ fn decisions_without_a_node_form_are_not_written() {
     let cases = [
         (
             ProtocolConstruct::PostTestRepeat,
-            "STD-493",
+            "STD-539",
             deciding(
                 "sequence Main { repeat Loop by Seller visible (got.ok) while { not got.ok } \
                  sequence Body { send Placed via Ch as (placed: Ack) { true }; \
@@ -965,7 +967,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::VisibleEntryNotAnExpression,
-            "STD-493",
+            "STD-539",
             flow(
                 "sequence Main { event E by Buyer as (e: Boolean) { true }; \
                  repeat Loop by Buyer visible (e) while { e } \
@@ -974,7 +976,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::RepeatDecisionReadsBody,
-            "STD-493",
+            "STD-539",
             deciding(
                 "sequence Main { repeat Loop by Seller visible (got.ok) while { true } \
                  sequence Body { send Placed via Ch as (placed: Ack) { true }; \
@@ -983,7 +985,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::RepeatDecisionReadsBody,
-            "STD-493",
+            "STD-539",
             deciding(
                 "sequence Main { repeat Loop by Seller visible () invariant { got.ok } \
                  variant { 1 } while { true } sequence Body { send Placed via Ch as (placed: Ack) { true }; \
@@ -992,7 +994,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::RepeatDecisionReadsBody,
-            "STD-493",
+            "STD-539",
             deciding(
                 "sequence Main { repeat Loop by Seller visible () invariant { true } \
                  variant { if got.ok then 1 else 0 } while { true } sequence Body { send Placed via Ch as (placed: Ack) { true }; \
@@ -1001,7 +1003,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::RepeatStepsThroughRepeat,
-            "STD-493",
+            "IR-1100",
             flow(
                 "sequence Main { repeat Loop by Buyer visible () while { true } \
                  choice Pick by Buyer visible () { \
@@ -1012,7 +1014,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::RepeatStepsThroughRepeat,
-            "STD-493",
+            "IR-1100",
             flow(
                 "sequence Main { repeat Loop by Buyer visible () while { true } \
                  repeat Inner by Buyer visible () while { true } \
@@ -1021,7 +1023,7 @@ fn decisions_without_a_node_form_are_not_written() {
         ),
         (
             ProtocolConstruct::VisibleEntryNotAnExpression,
-            "STD-493",
+            "STD-539",
             flow(
                 "sequence Main { repeat Loop by Buyer visible (true) while { true } \
                  sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",

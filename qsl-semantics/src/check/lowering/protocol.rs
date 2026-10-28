@@ -269,9 +269,11 @@ impl ProtocolInput<'_> {
         unemitted
     }
 
-    /// Whether some `repeat`'s body does not necessarily step by QSpec
-    /// FR-464 "Progress", which counts no `repeat` as stepping: S3 admitted
-    /// it through a nested repeat whose guard cannot be false.
+    /// Whether some `repeat`'s body does not necessarily step when no
+    /// `repeat` counts as stepping: S3 admitted it through a nested repeat
+    /// whose exit is infeasible (QSpec FR-464 "Nested `repeat` rule",
+    /// STD-539). It is withheld until IR's reader decides that rule
+    /// (IR-1100).
     fn repeat_steps_through_repeat(&self) -> bool {
         use ProtocolNodeKind as K;
         let tree = &self.checked.controls;
