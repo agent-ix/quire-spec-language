@@ -61,6 +61,7 @@ pub fn descriptor(
             fairness_kinds: None,
             evidence_kinds: Some(&EVIDENCE_KINDS),
             memory_models: None,
+            reductions: None,
         },
     )
 }

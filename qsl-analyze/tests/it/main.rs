@@ -50,6 +50,7 @@ mod rc11_oracle;
 mod rc11_support;
 mod reduction;
 mod reduction_differential;
+mod reduction_manifest;
 mod reduction_world;
 #[path = "../../../tests/support/refinement_aux.rs"]
 mod refinement_aux;

@@ -15,11 +15,12 @@
 //! horizon or at a limit is not compared; none of these runs sets either.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{ModelCheckRefusal, Reductions, SymmetryDeclaration};
+use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_replay::{
     CounterexampleKind, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement,
     TemporalCounterexample,
 };
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 
 use crate::partial_order::{OPENS, REACHES_TWO};
 use crate::por_world::{self, gate, ring, Guard};

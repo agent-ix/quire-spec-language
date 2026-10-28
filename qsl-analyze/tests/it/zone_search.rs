@@ -5,7 +5,6 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::Reductions;
 use qsl_analyze::zone_check::{
     certificate_item, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
@@ -23,6 +22,7 @@ use qsl_replay::{
     ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
+use qsl_route::reductions::Reductions;
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{FormulaNode, FormulaNodeId};
 use quire_exact::{Cancel, Integer, Meter, Rational, Undefined};
@@ -158,6 +158,7 @@ pub(crate) fn claim_with(
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits,
             reductions,
@@ -190,6 +191,7 @@ pub(crate) fn deadlock_result(
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::DeadlockFreedom,
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
             reductions,
@@ -223,6 +225,7 @@ pub(crate) fn time_lock_item_with(
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::TimeLockFreedom,
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits,
             reductions,
@@ -1281,6 +1284,7 @@ fn a_request_obligation_must_be_its_items() {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::DeadlockFreedom,
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
             reductions: &Reductions::default(),
@@ -1295,6 +1299,7 @@ fn a_request_obligation_must_be_its_items() {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(&world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
             reductions: &Reductions::default(),
@@ -1350,6 +1355,7 @@ pub(crate) fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
             reductions: &Reductions::default(),
@@ -1507,6 +1513,7 @@ pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
             reductions: &Reductions::default(),
@@ -1623,6 +1630,7 @@ fn a_claim_past_the_clock_limit_is_refused_alike() {
     certificate.obligation = ItemObligation {
         subject: SUBJECT,
         kind: ObligationKind::Authored(claim_occurrence(&wide)),
+        reductions: qsl_route::reductions::ObligationReductions::default(),
     };
     let checked = check(&wide, &certificate, CertificateCheckLimits::default());
     assert!(

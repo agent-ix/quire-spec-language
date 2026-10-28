@@ -23,6 +23,7 @@ mod settle;
 mod time_lock;
 
 pub use certificate::certificate_item;
+pub mod manifest;
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
 pub use search::{

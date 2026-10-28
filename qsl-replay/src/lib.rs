@@ -261,10 +261,9 @@ pub use proof_result::{
     DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis,
     ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
-    ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
-    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
-    WeakAccessFailure,
+    ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
+    StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault, WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
