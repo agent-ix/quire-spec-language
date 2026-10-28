@@ -220,6 +220,7 @@ pub(crate) fn type_condition(
         let lowered = matches!(env.site, Site::Atom);
         let ty = match node.node() {
             ExprNode::Boolean(_) => Ty::Boolean,
+            ExprNode::Absent => Ty::Unknown,
             ExprNode::Integer(_) => Ty::Integer,
             ExprNode::Float32(_) | ExprNode::Float64(_) => Ty::Float,
             ExprNode::Rational(..) => Ty::Rational,
