@@ -2,7 +2,7 @@
 
 For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
 
-Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
+Read README.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
 retired; remaining non-temporal work belongs to the current `quire-agent-a/b/c`
