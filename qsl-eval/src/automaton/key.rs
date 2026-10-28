@@ -64,7 +64,7 @@ const RACE_FREEDOM: &str = "race-freedom";
 /// order is ascending unsigned lexicographic octet order.
 ///
 /// A [`SafetyTranslation`] builds a key by encoding one of its states or by
-/// admitting octets against its context. [`PropertyAutomaton::state_key`]
+/// admitting octets against its context. [`PropertyAutomaton::state_key`](super::PropertyAutomaton::state_key)
 /// uses the same type for reached bounded, safety and liveness states.
 /// [`AutomatonStateKey::imported`]
 /// wraps octets read from a certificate as they arrived: such a key is
