@@ -4659,6 +4659,131 @@ fn present_reads_the_bit_in_invariants_bounds_and_urgency() {
     assert!(timed.is_urgent(present.discrete()).expect("decided"));
 }
 
+/// FR-230 "Presence bit" (TC-685), the timed subject's part of a
+/// postcondition presence requirement: `work`, whose postcondition is
+/// `present(self.v)` and which writes no clock, steps only from the state
+/// with `v` present, keeping it; with `not present(self.v)` only from the
+/// absent state.
+#[trace("TC-685")]
+#[test]
+fn a_postcondition_presence_filters_the_successors() {
+    for (post, from_present) in [("present(self.v)", true), ("not present(self.v)", false)] {
+        let world = world_over(
+            option_clock_document(),
+            "",
+            &only(
+                &["work"],
+                &format!("post Kept using v on M::Call::work {{ {post} }}\n"),
+            ),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let initial = timed.initial();
+        let [absent, present] = &initial[..] else {
+            panic!("two initial states: {initial:?}");
+        };
+        let v = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("v's place");
+        let work = |state: &TimedState| {
+            timed
+                .steps(state)
+                .expect("decided")
+                .into_iter()
+                .filter(|(step, _)| step.operation().contains("Call/work"))
+                .map(|(_, next)| timed.live(&timed.places()[v], next.discrete()))
+                .collect::<Vec<_>>()
+        };
+        let (from, other) = if from_present {
+            (present, absent)
+        } else {
+            (absent, present)
+        };
+        assert!(work(other).is_empty(), "{post}");
+        let kept = work(from);
+        assert!(!kept.is_empty(), "{post}");
+        assert!(kept.iter().all(|live| *live == from_present), "{post}");
+    }
+}
+
+/// FR-230 "Presence bit" (TC-685), SR-1743001 FND-001 and SR-1743002
+/// FND-001: the successors of `work`, which writes `v`'s frame, from the
+/// absent and the present initial state, as `v`'s presence in each. A
+/// requirement contradicting a write leaves no successor, in either
+/// conjunct order; `not (self.v = absent)` requires `v` present as `self.v
+/// != absent` does; with no postcondition the frame keeps each bit, since
+/// nothing resets or drops `v` implicitly.
+#[trace("TC-685")]
+#[test]
+fn a_presence_requirement_contradicting_a_write_leaves_no_successor() {
+    let none: &[bool] = &[];
+    for (post, from_absent, from_present) in [
+        ("self.v = absent and present(self.v)", none, none),
+        ("present(self.v) and self.v = absent", none, none),
+        ("self.v = 0 ms and not present(self.v)", none, none),
+        ("not present(self.v) and self.v = 0 ms", none, none),
+        ("present(self.v) and not present(self.v)", none, none),
+        (
+            "self.v = 0 ms and present(self.v)",
+            &[true][..],
+            &[true][..],
+        ),
+        (
+            "self.v = absent and not present(self.v)",
+            &[false][..],
+            &[false][..],
+        ),
+        ("not (self.v = absent)", none, &[true][..]),
+        ("not (self.v != absent)", &[false][..], none),
+        ("true", &[false][..], &[true][..]),
+    ] {
+        let world = world_over(
+            option_clock_document(),
+            "",
+            &only(
+                &["work"],
+                &format!("post P using v on M::Call::work {{ {post} }}\n"),
+            ),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let initial = timed.initial();
+        let [absent, present] = &initial[..] else {
+            panic!("two initial states: {initial:?}");
+        };
+        let v = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("v's place");
+        let work = |state: &TimedState| {
+            let mut live: Vec<bool> = timed
+                .steps(state)
+                .expect("decided")
+                .into_iter()
+                .filter(|(step, _)| step.operation().contains("Call/work"))
+                .map(|(_, next)| timed.live(&timed.places()[v], next.discrete()))
+                .collect();
+            live.dedup();
+            live
+        };
+        assert_eq!(work(absent), from_absent, "{post}: from absent");
+        assert_eq!(work(present), from_present, "{post}: from present");
+    }
+}
+
 /// FR-230-AC-12 (TC-685): `self.v = 0 ms` makes an absent `v` present at
 /// 0: from the absent initial state, `work`'s write gives the one state
 /// with `v` present, never one keeping it absent.
@@ -4805,6 +4930,129 @@ fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
             "state": state,
         }),
     )
+}
+
+/// QSpec FR-415-AC-21 (QSpec #485, TC-685): the clock-presence frame
+/// vectors `FP-01`..`FP-10`, `FP-13` and `FP-14`, read from `$QSPEC_DIR`
+/// (skipped, and passing, when it is unset), each run as `work`'s
+/// postcondition over `v: Option<Clock>` or the union `state: Mode` (the
+/// vectors' `st`, its case `Armed` holding the clock as the payload
+/// `Armed(Clock)`), both in `work`'s frame, from a pre-state whose live
+/// clock reads `3 ms`. The successors' presence and clock are the vector's
+/// `expected`: no clock becomes live without its write, an unwritten clock
+/// keeps its value, a requirement is never a write, an `Option<Clock>` bit
+/// never changes unwritten, and a union value may leave its clock case.
+/// `FP-11` and `FP-12` are S3 refusals (qsl-semantics `clock_places`).
+#[trace("TC-685")]
+#[test]
+fn the_clock_presence_frame_vectors_step_as_published() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/clock-presence-frame-vectors.json");
+    let vectors: Json = serde_json::from_slice(
+        &std::fs::read(&path).unwrap_or_else(|failure| panic!("{}: {failure}", path.display())),
+    )
+    .expect("the vectors are JSON");
+    let case = |name: &str| json!({"variant": {"type": ident("Mode"), "case": name}});
+    let millis = |text: &Json| -> Option<Rational> {
+        let text = text.as_str()?;
+        let amount: i64 = text.strip_suffix(" ms")?.parse().ok()?;
+        Some(exact(amount, 1))
+    };
+    let mut ran = 0;
+    for vector in vectors["cases"].as_array().expect("cases") {
+        let id = vector["id"].as_str().expect("an id");
+        if vector["expected"].get("refused").is_some() {
+            continue;
+        }
+        let union = vector["form"] == "union";
+        let requires = vector["requires"]
+            .as_str()
+            .map(|text| text.replace("self.st.", "self.state."));
+        let write = match (&vector["write"], union) {
+            (Json::Null, _) => None,
+            (write, false) if write["absent"] == true => Some("self.v = absent".to_owned()),
+            (write, false) => Some(format!(
+                "self.v = {}",
+                write["clock"].as_str().expect("a clock")
+            )),
+            (write, true) => Some(match write["clock"].as_str() {
+                Some(clock) => format!("self.state = M::Mode::Armed({clock})"),
+                None => format!(
+                    "self.state = M::Mode::{}",
+                    write["constructor"].as_str().expect("a constructor")
+                ),
+            }),
+        };
+        let conjuncts: Vec<String> = requires.into_iter().chain(write).collect();
+        let post = if conjuncts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "post P using v on M::Call::work {{ {} }}\n",
+                conjuncts.join(" and ")
+            )
+        };
+        let world = if union {
+            union_world_holding(
+                &format!("{post}pre NoTick using v on M::Call::tick {{ false }}\n"),
+                case(vector["pre"]["case"].as_str().expect("a case")),
+            )
+        } else {
+            world_over(option_clock_document(), "", &only(&["work"], &post))
+        };
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let name = if union { "state.Armed" } else { "v" };
+        let at = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == name)
+            })
+            .expect("the place");
+        let initial = timed.initial();
+        let start = initial
+            .iter()
+            .find(|state| {
+                timed.live(&timed.places()[at], state.discrete())
+                    == (vector["pre"]["present"] == true || vector["pre"]["case"] == "Armed")
+            })
+            .unwrap_or_else(|| panic!("{id}: the pre-state"));
+        let start = TimedState::new(
+            start.discrete().clone(),
+            start.clocks().delayed(&exact(3, 1)),
+        );
+        let mut observed: Vec<(bool, Option<Rational>)> = timed
+            .steps(&start)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| {
+                let live = timed.live(&timed.places()[at], next.discrete());
+                (live, live.then(|| next.clocks().get(at).cloned()).flatten())
+            })
+            .collect();
+        let mut expected: Vec<(bool, Option<Rational>)> = vector["expected"]
+            .as_array()
+            .expect("successors")
+            .iter()
+            .map(|successor| (successor["present"] == true, millis(&successor["clock"])))
+            .collect();
+        for successors in [&mut observed, &mut expected] {
+            successors.sort();
+            successors.dedup();
+        }
+        assert_eq!(observed, expected, "{id}: {post}");
+        ran += 1;
+    }
+    assert_eq!(ran, 12);
 }
 
 /// FR-106 over a union whose case holds a clock (FR-230 "Records, tuples
@@ -5007,4 +5255,70 @@ fn a_union_write_resets_its_case_and_drops_the_others() {
         timed.invariants(initial.discrete()).expect("decided").len()
     };
     assert_eq!((bounded("Armed"), bounded("Idle")), (1, 0));
+}
+
+/// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21), the timed subject's
+/// part: over `work(c: Clock)` with a frame naming `v: Option<Clock>` and
+/// `x`, the postcondition `c = 0 ms and present(self.v)` is decided per
+/// instance. From the state where `v` is absent the instance binding `c` to
+/// `v` writes `v`, present at 0 ms, and the instance binding `c` to `x`
+/// leaves `v` unwritten and absent, contradicting the requirement, so it
+/// has no successor.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_reset_writes_the_place_its_instance_binds() {
+    let mut document: Json = serde_json::from_slice(&clock_operation_document(
+        &[("c", CLOCK)],
+        &["v", "x"],
+        &[],
+        None,
+    ))
+    .expect("JSON");
+    let mut v = wire_field("v", CLOCK);
+    v["presence"] = json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let world = world_over(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(
+            &["work"],
+            "post P using v on M::Call::work { c = 0 ms and present(self.v) }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let v = timed
+        .places()
+        .iter()
+        .position(|place| {
+            timed
+                .model()
+                .clock(place.clock())
+                .is_some_and(|clock| clock.name() == "v")
+        })
+        .expect("v's place");
+    let absent = timed
+        .initial()
+        .into_iter()
+        .find(|state| !timed.live(&timed.places()[v], state.discrete()))
+        .expect("an initial state with v absent");
+    let steps: Vec<_> = timed
+        .steps(&absent)
+        .expect("decided")
+        .into_iter()
+        .filter(|(step, _)| step.operation().contains("Call/work"))
+        .collect();
+    assert!(!steps.is_empty(), "the instance binding c to v steps");
+    for (step, next) in &steps {
+        let arguments = step.transition().arguments();
+        let [place] = arguments else {
+            panic!("one argument: {arguments:?}");
+        };
+        assert!(place.contains("Call/v"), "only c bound to v steps: {place}");
+        assert!(timed.live(&timed.places()[v], next.discrete()));
+        assert!(next.clocks().values()[v].numerator().is_zero());
+    }
 }

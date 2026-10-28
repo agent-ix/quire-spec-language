@@ -24,8 +24,9 @@
 //! is the liveness half's: `Unsupported` carries the proved safety half
 //! beside it (ADR-020 AX-5).
 //!
-//! What this does not do yet: the requirement record and its `Refinement`
-//! property form and the obligation identity.
+//! The item's requirement record and its `Refinement` property form are
+//! S3's (`CheckedRefinement::property_form`), and its obligation identity is
+//! the request writer's (`qsl_route::deadlock::ModelRefinementItem`).
 
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;

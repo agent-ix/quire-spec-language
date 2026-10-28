@@ -1326,6 +1326,14 @@ pub enum TemporalCause {
         /// The later write's span.
         span: Span,
     },
+    /// QSpec FR-415-AC-21 "No implicit reset on a presence change": a
+    /// postcondition requires `present(p)` of a guarded place it does not
+    /// write, where the operation's precondition establishes `p` absent,
+    /// so no successor exists. Located at the requirement.
+    ClockPresenceUnwritten {
+        /// The `present(...)` requirement's span.
+        span: Span,
+    },
     /// FR-230 "Guards": `value(p)` of a guarded place read where the guard
     /// conjunct or the time invariant's predicate does not establish
     /// `present(p)`: `undefined_expression`/`unproved-presence`, located at
@@ -1869,6 +1877,7 @@ impl TemporalCause {
             | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
             | Self::ConflictingClockWrite { span }
+            | Self::ClockPresenceUnwritten { span }
             | Self::UnprovedPresence { span }
             | Self::PresenceNotChecked { span }
             | Self::TimeInvariantShape { span }
@@ -1953,6 +1962,7 @@ impl TemporalCause {
             | Self::ClockBoundNotConstant { .. }
             | Self::ClockWrite { .. }
             | Self::ConflictingClockWrite { .. }
+            | Self::ClockPresenceUnwritten { .. }
             | Self::TimeInvariantShape { .. }
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
@@ -2026,6 +2036,7 @@ impl TemporalCause {
             Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
             Self::ClockWrite { .. } => "clock-write",
             Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
+            Self::ClockPresenceUnwritten { .. } => "clock-presence-unwritten",
             Self::UnprovedPresence { .. } => "unproved-presence",
             Self::PresenceNotChecked { .. } => "not-yet-implemented",
             Self::TimeInvariantShape { .. } => "time-invariant-shape",

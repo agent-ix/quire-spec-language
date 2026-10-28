@@ -2,16 +2,6 @@
 
 For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
 
-## Hash / digest / pin antipattern: present, slated for removal
-
-This repository still contains hashes, digests, SHAs, pins, checksum catalogs and
-records that track files, versions or tools. That is an antipattern and it is slated
-for removal. Do not introduce any new use of it. When you touch code or specs that
-contain one, remove it as part of the change. The only hash that stays is a canonical
-identity digest that binds a proof to the exact content it proved. Package versions
-live in Cargo.toml / package.json and their lockfiles only; reports name the app
-version they ran.
-
 Read README.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
@@ -57,10 +47,8 @@ code smells are part of that review. For `/spec-review`, select the analyses
 applicable to the change; running all seven optional analyses is not required.
 
 Owner update: keep prototype bookkeeping minimal. Use ordinary Git history, PR
-links and brief test results. Do not maintain manual SHA inventories or
-per-document checksum catalogs, refresh hashes for routine draft edits, create
-successor draft files for working history, or record every intermediate step in
-status/review logs. Update existing artifacts and tickets for material decisions
+links and brief test results. Do not create successor draft files for working history, or record every
+intermediate step in status/review logs. Update existing artifacts and tickets for material decisions
 and remaining work.
 
 Owner update (2026-09-09): prioritize engineering toward the first proof of
