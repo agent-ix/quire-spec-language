@@ -248,7 +248,7 @@ impl HyperProduct<'_, '_> {
     fn key_bytes(&self, state: &HyperState) -> Result<Vec<u8>, ExpansionStop> {
         let identity = IdentityLimits::default();
         quire_canonical::to_vec(
-            &HyperKey::of(&self.joint.systems, state),
+            &HyperKey::of(&self.joint.systems, state, &self.automaton.borrow()),
             quire_canonical::Limits::new(identity.input_bytes),
         )
         .map_err(|error| {
