@@ -152,6 +152,22 @@ pub(crate) fn parse_reference(text: &str) -> Option<ObjectReference> {
     ))
 }
 
+/// A timed transition's `clock_place` argument split at the object it
+/// names: the text before the object's reference, the reference, and the
+/// text after it. `None` for any other text.
+/// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
+#[ix_trace_rs::string_edge]
+pub(super) fn split_clock_place(text: &str) -> Option<(&str, ObjectReference, &str)> {
+    if !text.ends_with(r#","type":"clock_place"}"#) {
+        return None;
+    }
+    let marker = r#","object":"#;
+    let start = text.find(marker)? + marker.len();
+    let length = text[start..].find(r#""}"#)? + 2;
+    let reference = parse_reference(&text[start..start + length])?;
+    Some((&text[..start], reference, &text[start + length..]))
+}
+
 /// The reference a parameter's canonical text names: the text of a reference,
 /// or of an option holding one. `Some(None)` is an absent option.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.

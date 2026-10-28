@@ -512,6 +512,7 @@ pub struct ClockParameterRange {
     operation: ClauseOperation,
     position: usize,
     range: Vec<ClockId>,
+    receiver: Vec<ClockId>,
 }
 
 impl ClockParameterRange {
@@ -528,6 +529,13 @@ impl ClockParameterRange {
     /// The clock fields an instance binds the parameter to a place of.
     pub fn range(&self) -> &[ClockId] {
         &self.range
+    }
+
+    /// The fields of [`Self::range`] the frame names for the receiver only
+    /// (`modifies self.f`, FR-103): an instance binds the parameter to
+    /// their places on the operation's receiver, never another object's.
+    pub fn receiver_only(&self) -> &[ClockId] {
+        &self.receiver
     }
 }
 
@@ -805,6 +813,8 @@ struct ClockParameter {
     position: usize,
     name: String,
     range: Vec<ClockId>,
+    /// The fields of `range` the frame names for the receiver only.
+    receiver: Vec<ClockId>,
 }
 
 /// The resets of one postcondition before they are typed.
@@ -2093,7 +2103,9 @@ fn reset_names(clause: &StateClauseDeclaration) -> Vec<String> {
 /// The `Clock` parameters of `clause`'s operation (FR-230 "Operation
 /// parameters"), each with its range: the clock fields the operation's
 /// frame names when a postcondition of it resets the parameter (in
-/// `resets`), every clock field of the model otherwise.
+/// `resets`), every clock field of the model otherwise. A field the frame
+/// names only by a receiver-scoped entry (`modifies self.f`, FR-103) is
+/// written on the receiver alone, so its places bind on the receiver.
 fn clock_parameters(
     clause: &StateClauseDeclaration,
     clocks: &Clocks<'_>,
@@ -2102,25 +2114,40 @@ fn clock_parameters(
     let (Some(operation), Some(key)) = (&clause.operation, &clause.operation_key) else {
         return Vec::new();
     };
-    let written: BTreeSet<&DeclarationKey> =
-        operation.declaration.effect().written_fields().collect();
+    let effect = operation.declaration.effect();
+    let written: BTreeSet<&DeclarationKey> = effect.written_fields().collect();
     operation
         .declaration
         .clock_parameters()
         .iter()
         .map(|(position, name)| {
             let reset = resets.contains(&(key.clone(), name.clone()));
-            let range = clocks
+            let range: Vec<ClockId> = clocks
                 .fields
                 .iter()
                 .enumerate()
                 .filter(|(_, field)| !reset || written.contains(&field.field))
                 .map(|(index, _)| ClockId(index))
                 .collect();
+            let receiver = if reset {
+                range
+                    .iter()
+                    .copied()
+                    .filter(|clock| {
+                        clocks
+                            .fields
+                            .get(clock.0)
+                            .is_some_and(|field| !effect.modifies.contains(&field.field))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             ClockParameter {
                 position: *position,
                 name: name.clone(),
                 range,
+                receiver,
             }
         })
         .collect()
@@ -2617,6 +2644,7 @@ fn prepare_models(
                             operation: operation.clone(),
                             position: parameter.position,
                             range: parameter.range.clone(),
+                            receiver: parameter.receiver.clone(),
                         });
                     }
                 }
