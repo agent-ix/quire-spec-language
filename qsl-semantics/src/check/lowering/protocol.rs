@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
+    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, JoinPolicy, LossSelector,
     ProtocolDeclarationForm, ProtocolNodeKind,
 };
 use qsl_foundation::MemoryModelName;
@@ -202,11 +202,18 @@ impl ProtocolInput<'_> {
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
             // A `branch` and a `case` are held by the `parallel` and the
-            // `choice` that is refused for them.
-            let refused = matches!(
-                control.kind,
-                ProtocolNodeKind::Choice | ProtocolNodeKind::Parallel | ProtocolNodeKind::Repeat
-            );
+            // `choice` that hold them. A `parallel` is written unless its
+            // join is a predicate, which names a function written after the
+            // protocols.
+            let refused = match control.kind {
+                ProtocolNodeKind::Choice | ProtocolNodeKind::Repeat => true,
+                ProtocolNodeKind::Parallel => form
+                    .parallels
+                    .iter()
+                    .find(|parallel| parallel.declaration == control.node.0)
+                    .is_none_or(|parallel| matches!(parallel.join.value, JoinPolicy::Predicate(_))),
+                _ => false,
+            };
             if refused && !kinds.contains(&control.kind) {
                 kinds.push(control.kind);
                 unemitted.push(ProtocolConstruct::Control(control.kind.label()));
@@ -1948,8 +1955,8 @@ fn catalog_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
 /// (FR-432): the clause itself (`activate`), its channels and roles by name,
 /// and its step nodes by declaration index: every control the `run` tree
 /// writes and the `finish` node. A clause holding a control that is not
-/// written yet (`choice`, `parallel`, `repeat`) has no node, so a refinement
-/// over it stays not emitted.
+/// written yet (`choice`, `repeat`, a predicate-joined `parallel`) has no
+/// node, so a refinement over it stays not emitted.
 #[derive(Clone, Debug)]
 pub(crate) struct ProtocolMembers {
     pub(crate) clause: NodeKey,
