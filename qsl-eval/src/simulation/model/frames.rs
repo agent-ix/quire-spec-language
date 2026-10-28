@@ -652,13 +652,9 @@ impl Run<'_, '_, '_> {
                 {
                     continue;
                 }
-                let domain = Domain::of(
-                    &field.value_type,
-                    &post_references,
-                    system.types,
-                    &system.record_orders,
-                )
-                .ok_or_else(|| stop(BROKEN))?;
+                let domain = system
+                    .field_domain(&member.type_key, field, &post_references)
+                    .ok_or_else(|| stop(BROKEN))?;
                 dimensions.push(Dimension {
                     population: member.population.clone(),
                     key: member.key.clone(),

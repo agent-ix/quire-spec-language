@@ -1346,8 +1346,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 .iter()
                 .enumerate()
                 .filter(|(_, place)| {
-                    range.is_none_or(|range| range.range().contains(&place.clock))
-                        && self.live(place, state)
+                    range.is_none_or(|range| {
+                        range.range().contains(&place.clock)
+                            && (!range.receiver_only().contains(&place.clock)
+                                || place.holds(&vector.receiver))
+                    }) && self.live(place, state)
                 })
                 .map(|(index, _)| index)
                 .collect();
@@ -1366,9 +1369,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     }
 
     /// `transition` with each `Clock` parameter's argument the place
-    /// `instance` binds it to, at the parameter's declared position: an
-    /// opaque `clock_place` document naming the object, the clock field and
-    /// the slots, which no data value encodes as.
+    /// `instance` binds it to: an opaque `clock_place` document naming the
+    /// object, the clock field and the slots, which no data value encodes
+    /// as. The place arguments follow the data arguments, in declared
+    /// order, so a data argument keeps its index among the data parameters
+    /// that every reader (hyper step reads, footprints) indexes by.
     fn instance_transition(
         &self,
         transition: &quire_semantic_value::model_transition::ModelTransition,
@@ -1380,13 +1385,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let mut arguments: Vec<String> = transition.arguments().to_vec();
         let mut bound: Vec<&(usize, usize)> = instance.iter().collect();
         bound.sort();
-        for (position, place) in bound {
+        for (_, place) in bound {
             let text = self
                 .place_enc(*place)?
                 .canonical_text(quire_canonical::Limits::new(u64::MAX))
                 .ok()?;
-            let at = (*position).min(arguments.len());
-            arguments.insert(at, text);
+            arguments.push(text);
         }
         quire_semantic_value::model_transition::ModelTransition::new(
             transition.operation().to_owned(),

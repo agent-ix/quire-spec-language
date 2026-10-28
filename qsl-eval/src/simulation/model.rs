@@ -512,6 +512,31 @@ impl<'a> ModelSystem<'a> {
 
     /// The declarations every value of this system is encoded under: the
     /// package's record, tuple, union and variant types (FR-181).
+    /// The values a candidate gives `field` of an object of `type_key`
+    /// over the objects `references`: its FR-120 domain, except that the
+    /// element count of a pure-clock `Set` or `OrderedSet` whose `min`
+    /// exceeds 1 has no value (FR-230 "Initial element count": a set holds
+    /// at most one bare clock), so no object of the type is created.
+    pub(in crate::simulation::model) fn field_domain(
+        &self,
+        type_key: &DeclarationKey,
+        field: &StateField,
+        references: &[ObjectReference],
+    ) -> Option<domain::Domain> {
+        let infeasible = self.clock_counts.iter().any(|(key, count, min, max)| {
+            key == type_key && count.key == field.key && max.is_some_and(|max| max < *min)
+        });
+        if infeasible {
+            return Some(domain::Domain::Listed(Vec::new()));
+        }
+        domain::Domain::of(
+            &field.value_type,
+            references,
+            self.types,
+            &self.record_orders,
+        )
+    }
+
     pub(crate) fn typing(&self) -> encode::Typing<'_> {
         self.value_typing().with_clock_counts(&self.clock_counts)
     }
