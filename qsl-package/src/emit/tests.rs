@@ -36,6 +36,7 @@ mod abstraction;
 mod admission_corpus;
 mod child_composite;
 mod clock_places;
+mod control_node;
 mod converted_equality;
 mod deep_bodies;
 mod envelope_adoption;
@@ -51,6 +52,9 @@ mod population_bound;
 mod population_reference;
 mod probabilistic;
 mod protocol_captures;
+mod protocol_compensation;
+mod protocol_controls;
+mod protocol_function_bodies;
 mod protocol_graph;
 mod protocol_reference;
 mod protocol_terminal;
@@ -1393,6 +1397,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
         RefinementNotEmitted,
+        SameMeaningRefinements,
         UnlocatedRefinementDeclaration,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
@@ -1409,6 +1414,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
+            Err(EmitRefusal::SameMeaningRefinements { .. }) => Seen::SameMeaningRefinements,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
             }

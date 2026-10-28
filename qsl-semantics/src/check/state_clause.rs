@@ -48,12 +48,13 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::location::Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
-/// for an invariant, `pre` for a precondition, `post` for a postcondition.
+/// for an invariant or constraint, `pre` for a precondition, `post` for a
+/// postcondition.
 /// The checker types the clause's reads by it and S6a selects the clause's
 /// own observation by it.
 pub(crate) fn observation_of(kind: StateClauseKind) -> Observation {
     match kind {
-        StateClauseKind::Invariant => Observation::Current,
+        StateClauseKind::Invariant | StateClauseKind::Constraint => Observation::Current,
         StateClauseKind::Precondition => Observation::Pre,
         StateClauseKind::Postcondition => Observation::Post,
     }
@@ -176,6 +177,12 @@ pub struct StateClauseDeclaration {
     pub kind: StateClauseKind,
     /// The declared clause name.
     pub name: String,
+    /// The span of the authored clause name, used for binding refusals.
+    pub name_span: qsl_foundation::Span,
+    /// The operation name exactly as authored in `on M::T::op`; it is
+    /// retained to validate a supplied execution point against the source
+    /// member as well as the resolved operation declaration.
+    pub authored_operation: Option<String>,
     /// The profile selection the clause's `using` alias resolved to.
     pub selection: ProfileSelection,
     /// The context object type `M::T`, by its effective identity.
@@ -187,6 +194,9 @@ pub struct StateClauseDeclaration {
     /// clause names, the key the unit's operation bodies and clauses join on
     /// (FR-103, FR-302); `None` for an invariant.
     pub operation_key: Option<quire_checked::key::DeclarationKey>,
+    /// Accepted caller-supplied execution point, absent when no binding was
+    /// supplied for this clause (FR-104-AC-15).
+    pub execution_point: Option<crate::value::member::AcceptedPoint>,
     /// The context's population domain, the assembler's own resolution
     /// (FR-104 "Resolution", "Requirements"): the one population with no
     /// maximum whose member types cover `context`, by conformance
@@ -263,7 +273,7 @@ impl ClauseView<'_> {
     /// postcondition.
     fn clause_kind(&self) -> ClauseKind {
         match self.kind {
-            StateClauseKind::Invariant => ClauseKind::Invariant,
+            StateClauseKind::Invariant | StateClauseKind::Constraint => ClauseKind::Invariant,
             StateClauseKind::Precondition => ClauseKind::Precondition,
             StateClauseKind::Postcondition => ClauseKind::Postcondition,
         }

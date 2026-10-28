@@ -49,19 +49,19 @@ fn prepared<'a>(
         ClauseKind::Invariant => (
             format!("invariant Rule on M::Node at current {{ {expression} }}"),
             ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
+                name: ir::AnchorName::new("validate").unwrap().into(),
             },
         ),
         ClauseKind::Precondition => (
             format!("pre Rule on M::Node::step {{ {expression} }}"),
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         ClauseKind::Postcondition => (
             format!("post Rule on M::Node::step {{ {expression} }}"),
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
     };

@@ -46,10 +46,14 @@ use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 pub use lifecycle::{
-    check, package, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit, EmittedUnit,
-    FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
+    check, check_with_execution_points, package, parse, refusal_or_fault, select, AdmittedModels,
+    CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
 pub use qsl_semantics::check::LockEvidence;
+
+/// Accepted execution points keyed by the exact authored state-clause name
+/// (FR-104-AC-15). An absent entry means no point was supplied.
+pub type StateClauseExecutionPoints = BTreeMap<String, quire_contract_model::ExecutionPoint>;
 
 #[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
@@ -724,6 +728,7 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::UnanchoredResult { clause, operation } => {
             let clause = match clause {
                 Some(qsl_forms::StateClauseKind::Invariant) => "an invariant",
+                Some(qsl_forms::StateClauseKind::Constraint) => "a constraint",
                 Some(qsl_forms::StateClauseKind::Precondition) => "a precondition",
                 Some(qsl_forms::StateClauseKind::Postcondition) => {
                     "a postcondition of an operation with no result"

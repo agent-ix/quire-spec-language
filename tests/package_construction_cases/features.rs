@@ -36,13 +36,13 @@ fn rule<'a>(models: &'a [NativeModel], expression: &str, kind: ClauseKind) -> Na
         ClauseKind::Invariant => format!("invariant Rule on M::Node at current {{ {expression} }}"),
         ClauseKind::Precondition => {
             binding.execution_point = ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             };
             format!("pre Rule on M::Node::step {{ {expression} }}")
         }
         ClauseKind::Postcondition => {
             binding.execution_point = ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             };
             format!("post Rule on M::Node::step {{ {expression} }}")
         }

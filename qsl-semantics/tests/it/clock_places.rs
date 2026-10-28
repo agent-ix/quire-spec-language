@@ -2387,9 +2387,9 @@ fn a_union_case_clock_is_a_guarded_place() {
 }
 
 /// FR-230 "Presence bit" (TC-685), part of FR-230-AC-39: a top-level
-/// postcondition conjunct `present(self.v)` or `self.v != absent` requires
-/// `v` present in the post-state, and `not present(self.v)` requires it
-/// absent; each is recorded on the postcondition's resets, with no reset or
+/// postcondition conjunct `present(self.v)`, `self.v != absent` or `not
+/// (self.v = absent)` requires `v` present in the post-state, and `not
+/// present(self.v)` or `not (self.v != absent)` requires it absent; each is recorded on the postcondition's resets, with no reset or
 /// drop.
 #[trace("TC-685")]
 #[test]
@@ -2398,7 +2398,9 @@ fn a_postcondition_requires_a_presence_of_its_post_state() {
     for (conjunct, present) in [
         ("present(self.v)", true),
         ("self.v != absent", true),
+        ("not (self.v = absent)", true),
         ("not present(self.v)", false),
+        ("not (self.v != absent)", false),
     ] {
         let body =
             format!("{UNITS}{DENSE}post Kept using v on Config::Call::bump {{ {conjunct} }}\n");

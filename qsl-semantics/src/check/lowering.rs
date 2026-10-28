@@ -113,11 +113,12 @@ pub use model::{
     ModelClause, ModelRootKeyError, PlaceRow, PlaceStep,
 };
 pub(crate) use protocol::{
-    compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
-    ProtocolSite,
+    compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
+    CompensationNodes, ProtocolInput, ProtocolSite,
 };
 pub(crate) use state::{
-    protocol_attempt_operation_location, protocol_attempt_operation_site, state_operation_location,
+    protocol_attempt_operation_location, protocol_attempt_operation_site,
+    state_clause_name_location, state_clause_name_site, state_operation_location,
     state_operation_site, AnchorInput, AttemptInput, LoweredAttempt, LoweredClause,
     OperationBinding, StateClauseInput,
 };
@@ -4715,6 +4716,112 @@ pub(crate) fn lowering_order(callees: &[Vec<usize>]) -> Vec<FunctionGroup> {
             FunctionGroup { members, recursive }
         })
         .collect()
+}
+
+/// One step of lowering a unit's functions and protocols together.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum LoweringStep {
+    /// A group of functions that call each other, or one function.
+    Functions(FunctionGroup),
+    /// The `index`-th protocol, whose callees and referenced protocols are
+    /// all keyed before it.
+    Protocol(usize),
+    /// A cyclic component of function calls and protocol references that
+    /// holds a protocol (QSL-844): its protocols have no node, then its
+    /// functions are lowered in their own order.
+    Cycle {
+        /// The component's protocols, ascending.
+        protocols: Vec<usize>,
+        /// The component's functions, each callee's group first.
+        functions: Vec<FunctionGroup>,
+    },
+}
+
+/// The order to lower functions and protocols in (FR-093: a node's key
+/// hashes the keys of the nodes it names, so each is keyed before the
+/// nodes that name it). `function_edges[f]` are the functions `f` calls and
+/// the protocols it refers to; `protocol_edges[p]` are the functions `p`'s
+/// bodies call and the protocols they refer to.
+pub(crate) fn dependency_order(
+    function_edges: &[(Vec<usize>, Vec<usize>)],
+    protocol_edges: &[(Vec<usize>, Vec<usize>)],
+) -> Vec<LoweringStep> {
+    let functions = function_edges.len();
+    let protocols = protocol_edges.len();
+    let edges: Vec<Vec<usize>> = function_edges
+        .iter()
+        .chain(protocol_edges)
+        .map(|(called, referenced)| {
+            called
+                .iter()
+                .copied()
+                .filter(|callee| *callee < functions)
+                .chain(
+                    referenced
+                        .iter()
+                        .copied()
+                        .filter(|protocol| *protocol < protocols)
+                        .map(|protocol| functions + protocol),
+                )
+                .collect()
+        })
+        .collect();
+    let mut steps = Vec::new();
+    for mut members in strongly_connected(&edges) {
+        members.sort_unstable();
+        let (members_functions, members_protocols): (Vec<usize>, Vec<usize>) =
+            members.iter().partition(|member| **member < functions);
+        if members_protocols.is_empty() {
+            let recursive = members_functions.len() > 1
+                || members_functions
+                    .first()
+                    .is_some_and(|member| edges[*member].contains(member));
+            steps.push(LoweringStep::Functions(FunctionGroup {
+                members: members_functions,
+                recursive,
+            }));
+            continue;
+        }
+        let protocol_indices: Vec<usize> = members_protocols
+            .iter()
+            .map(|member| member - functions)
+            .collect();
+        let cyclic = members.len() > 1
+            || members
+                .first()
+                .is_some_and(|member| edges[*member].contains(member));
+        if !cyclic {
+            steps.extend(protocol_indices.into_iter().map(LoweringStep::Protocol));
+            continue;
+        }
+        // The functions of the component, ordered by their calls alone.
+        let local: Vec<Vec<usize>> = members_functions
+            .iter()
+            .map(|member| {
+                function_edges[*member]
+                    .0
+                    .iter()
+                    .filter_map(|callee| members_functions.iter().position(|m| m == callee))
+                    .collect()
+            })
+            .collect();
+        let groups = lowering_order(&local)
+            .into_iter()
+            .map(|group| FunctionGroup {
+                members: group
+                    .members
+                    .into_iter()
+                    .map(|member| members_functions[member])
+                    .collect(),
+                recursive: group.recursive,
+            })
+            .collect();
+        steps.push(LoweringStep::Cycle {
+            protocols: protocol_indices,
+            functions: groups,
+        });
+    }
+    steps
 }
 
 /// The strongly connected components of the graph `edges` (Tarjan's

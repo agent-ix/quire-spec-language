@@ -63,21 +63,21 @@ pub(crate) fn request_source<'a>(
             "invariant",
             "M::Node at current",
             ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
+                name: ir::AnchorName::new("validate").unwrap().into(),
             },
         ),
         ClauseKind::Precondition => (
             "pre",
             "M::Node::step",
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         ClauseKind::Postcondition => (
             "post",
             "M::Node::step",
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
     };

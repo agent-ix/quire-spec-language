@@ -205,7 +205,7 @@ fn execution(
                                 operation.as_str().len() + bound.role().anchor.as_str().len(),
                                 site,
                             )?;
-                            return Ok(&bound.role().anchor == operation);
+                            return Ok(bound.role().anchor.as_str() == operation.as_str());
                         }
                         // A domain operation's execution anchor is its name.
                         ModelTarget::Declaration(bound) => {

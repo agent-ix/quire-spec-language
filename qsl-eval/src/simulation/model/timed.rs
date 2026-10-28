@@ -727,8 +727,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// ([`GuardedStep::carries`]): a step writes a clock collection whole
     /// (FR-230 "Collection-valued writes"), or a clock lies below a set or
     /// bag slot of elements with data, which a step matches by equal data
-    /// wherever they land (FR-120-AC-26). A zone over places maps no carried clock yet
-    /// (QSL-1162), so a zone analysis refuses such a model by name.
+    /// wherever they land (FR-120-AC-26). The refinement zone checker has
+    /// not yet mapped these carried clock places.
     pub fn carries_clocks(&self) -> bool {
         self.model
             .resets()
@@ -791,11 +791,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// Whether the presence bits of `post` are the ones `vector`'s step
     /// writes and its postconditions require (FR-230 "Presence bit"): a
     /// guarded place a postcondition requires present or absent is so at
-    /// `post`; a reset of an `Option<Clock>` of the
-    /// receiver makes it present, a drop (`self.v = absent`) makes it
-    /// absent, and every other bit of an object `pre` holds keeps its value.
-    /// A frame writing the field enumerates both values of the bit; this
-    /// keeps the written one.
+    /// `post`; a reset of an `Option<Clock>` of the receiver, or a write of
+    /// a union field's clock case constructor, makes it present, a drop
+    /// (`self.v = absent`, a write of another case) makes it absent, and
+    /// every other guarded place of an object `pre` holds keeps its
+    /// presence. A frame writing the field enumerates every value; this
+    /// keeps the written one, so a case switch no write makes leaves no
+    /// successor: there is no implicit reset (planner ruling, 2026-10-28).
     fn bits_follow(
         &self,
         vector: &super::frames::EnabledVector,
@@ -828,28 +830,24 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         if !self.presences_hold(post, &vector.receiver, required) {
             return false;
         }
-        let bit = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| {
-            place.stored(state).map(|stored| {
-                matches!(
-                    stored.fields.get(field),
-                    Some(quire_exact::Value::Boolean(true))
-                )
-            })
-        };
         self.places.iter().all(|place| {
-            let Some(field) = self
-                .model
-                .clock(place.clock)
-                .filter(|field| field.presence_bit())
-            else {
+            // An `Option<Clock>` place, or a union case's clock outside
+            // collections: guarded by its presence.
+            let guarded = self.model.clock(place.clock).is_some_and(|field| {
+                field.presence_bit()
+                    || (place.slots.is_empty()
+                        && field
+                            .path()
+                            .iter()
+                            .any(|step| matches!(step, PlaceStep::Union(_))))
+            });
+            if !guarded {
                 return true;
-            };
-            let (Some(before), Some(after)) = (
-                bit(pre, place, field.field()),
-                bit(post, place, field.field()),
-            ) else {
+            }
+            if place.stored(pre).is_none() || place.stored(post).is_none() {
                 return true;
-            };
+            }
+            let (before, after) = (self.live(place, pre), self.live(place, post));
             let receiver = place.holds(&vector.receiver);
             if receiver && dropped.contains(&place.clock) {
                 return !after;

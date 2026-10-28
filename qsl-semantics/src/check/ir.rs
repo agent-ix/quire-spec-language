@@ -414,6 +414,19 @@ impl<'a> CheckedNode<'a> {
             })
             .collect()
     }
+
+    /// Every protocol declaration index a `NodeKind::ProtocolReference` in
+    /// this subtree names, in pre-order: the protocols whose clause keys this
+    /// subtree's own key hashes.
+    pub(crate) fn protocol_references(self) -> Vec<usize> {
+        self.descendants()
+            .into_iter()
+            .filter_map(|node| match node.kind() {
+                NodeKind::ProtocolReference { protocol } => Some(*protocol),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl fmt::Debug for CheckedNode<'_> {

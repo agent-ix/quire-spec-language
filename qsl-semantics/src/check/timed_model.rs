@@ -2116,9 +2116,9 @@ struct ResetCut {
 }
 
 /// The post-state presence the top-level postcondition conjunct `id`
-/// requires of a guarded place of the receiver: `present(p)` and `p !=
-/// absent` present, `not present(p)` absent. `p = absent` is a drop, not a
-/// requirement.
+/// requires of a guarded place of the receiver: `present(p)`, `p !=
+/// absent` and `not (p = absent)` present, `not present(p)` and `not (p !=
+/// absent)` absent. `p = absent` is a drop, not a requirement.
 fn post_presence(located: &Located<'_>, id: ExprId) -> Option<(ClockId, bool)> {
     if let Some(clock) = located.presence(id) {
         return Some((clock, true));
@@ -2127,7 +2127,16 @@ fn post_presence(located: &Located<'_>, id: ExprId) -> Option<(ClockId, bool)> {
         return Some((clock, true));
     }
     match located.node(id)? {
-        ExprNode::Not(operand) => located.presence(*operand).map(|clock| (clock, false)),
+        // `not present(p)`, and `not (p = absent)` / `not (p != absent)`,
+        // the negation of the test.
+        ExprNode::Not(operand) => located
+            .presence(*operand)
+            .map(|clock| (clock, false))
+            .or_else(|| {
+                located
+                    .absent_test(*operand)
+                    .map(|(clock, present)| (clock, !present))
+            }),
         _ => None,
     }
 }
@@ -2707,7 +2716,7 @@ fn read_clause(
     }
     let mut removed = BTreeSet::new();
     let (leaves, read) = match clause.kind {
-        StateClauseKind::Invariant => {
+        StateClauseKind::Invariant | StateClauseKind::Constraint => {
             // A clock collection written whole anywhere but in a
             // postcondition (FR-230 "Collection-valued writes").
             let written = located.form.expression.iter().find(|node| {
