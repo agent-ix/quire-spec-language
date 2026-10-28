@@ -62,7 +62,7 @@ fn tc_049_complete_source_ordered_mappings_preserve_qualified_local_ids() {
             requirement: owner,
             clause: ir::ClauseId::new("shared_local_id").unwrap(),
             execution_point: ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
+                name: ir::AnchorName::new("validate").unwrap().into(),
             },
         };
         let second_owner = ir::RequirementRef::new(
@@ -157,31 +157,31 @@ fn tc_049_execution_points_must_match_clause_category_and_selected_anchor() {
         (
             ClauseKind::Invariant,
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         (
             ClauseKind::Precondition,
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         (
             ClauseKind::Postcondition,
             ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("step").unwrap(),
+                name: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         (
             ClauseKind::Precondition,
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("other_step").unwrap(),
+                operation: ir::AnchorName::new("other_step").unwrap().into(),
             },
         ),
         (
             ClauseKind::Postcondition,
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("other_step").unwrap(),
+                operation: ir::AnchorName::new("other_step").unwrap().into(),
             },
         ),
     ] {
@@ -191,7 +191,7 @@ fn tc_049_execution_points_must_match_clause_category_and_selected_anchor() {
     }
     let (linked, mut bindings) = prepared(&models, "true", ClauseKind::Invariant).unwrap();
     let point = ir::ExecutionPoint::Initialization {
-        name: ir::AnchorName::new("initialize").unwrap(),
+        name: ir::AnchorName::new("initialize").unwrap().into(),
     };
     bindings.clauses[0].execution_point = point.clone();
     let checked = check(linked, bindings, CheckLimits::default()).unwrap();

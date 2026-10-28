@@ -281,7 +281,7 @@ impl Inputs {
                         requirement: owner(),
                         clause: ir::ClauseId::new(name.to_lowercase()).unwrap(),
                         execution_point: ir::ExecutionPoint::Handler {
-                            name: ir::AnchorName::new("validate").unwrap(),
+                            name: ir::AnchorName::new("validate").unwrap().into(),
                         },
                     })
                     .collect(),
@@ -447,7 +447,7 @@ impl Inputs {
             (
                 pre,
                 ir::ExecutionPoint::Pre {
-                    operation: operation.anchor.clone(),
+                    operation: operation.anchor.clone().into(),
                 },
                 w::Execution::Pre {
                     operation: export.clone(),
@@ -456,7 +456,7 @@ impl Inputs {
             (
                 post,
                 ir::ExecutionPoint::Post {
-                    operation: operation.anchor.clone(),
+                    operation: operation.anchor.clone().into(),
                 },
                 w::Execution::Post {
                     operation: export.clone(),

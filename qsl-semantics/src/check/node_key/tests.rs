@@ -126,6 +126,7 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
             },
             clause: match text("clause")? {
                 "invariant" => StateClauseKind::Invariant,
+                "constraint" => StateClauseKind::Constraint,
                 "precondition" => StateClauseKind::Precondition,
                 "postcondition" => StateClauseKind::Postcondition,
                 other => {
@@ -1438,8 +1439,10 @@ fn owner_model_is_a_member_of_a_protocol_clauses_preimage_alone() {
 // `state_clause` member and the `operation_anchor` body, hence both keys.
 // ---------------------------------------------------------------------
 
-fn anchor_name(text: &str) -> quire_contract_model::AnchorName {
-    quire_contract_model::AnchorName::new(text).expect("test anchor name is valid")
+fn anchor_name(text: &str) -> quire_contract_model::ExecutionPointName {
+    quire_contract_model::AnchorName::new(text)
+        .expect("test anchor name is valid")
+        .into()
 }
 
 fn point(point: quire_contract_model::ExecutionPoint) -> AcceptedPoint {

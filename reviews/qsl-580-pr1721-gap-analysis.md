@@ -48,3 +48,12 @@ Ticket: QSL-580 (580q part 1). Plan completion: not assessed.
 | --- | --- | --- | --- |
 | FND-001 | medium | Add tests for the behaviours this slice adds that no test covers. (a) `absent` lowers to the FR-322 `none` literal typed by its option node. (b) `self.v = 0 ms` outside the frame refuses `clock-write`. (c) A `max` constraint does not bound an absent `Option<Clock>`. (d) A reset and a drop of one place in one postcondition refuses, or has no successor (SR-1721001 FND-001). (e) The `unproved-presence` refusal is located at the `value(self.v)` read (SR-1721001 FND-003). (f) `present(self.v)` under `not` and `or` in an invariant `when`, and in the other positions SR-1721001 FND-002 lists, checks as a data predicate. | qsl-semantics/tests/it/clock_places.rs; qsl-eval/tests/it/timed_subject.rs; FR-230-AC-12, AC-25, AC-39 |
 | FND-002 | low | The `absent` ruling has no spec text to cite yet. The PR body says the STD text is pending, while FR-230 already uses `self.v = absent` in AC-12 and "Presence bit". Once the STD-493 ruling text lands, cite it in the `absent_literal` doc and in the PR body, so that the typing rules tested here (contextual only, `ambiguous-literal` with no type, `type-mismatch` for a non-option) can be traced to a requirement. | qsl-semantics/src/check/check.rs (`absent_literal`); STD-493 |
+
+## Dispositions
+
+Round 1, fix commit c1387e815. The gates are those in SR-1721001's dispositions.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Each item now has a passing test. (a) `absent_lowers_to_the_none_literal_of_its_option`: a `none` literal typed by its `Option<Integer>`. (b) `absent_drops_an_option_clock` also refuses a reset outside the frame. (c) `present_reads_the_bit_in_invariants_bounds_and_urgency`: a `max` bound reaches `v` only where it is present. (d) `two_writes_of_an_option_clock_conflict`: either order, and two resets. (e) The read span is asserted in `an_option_clock_reads_its_presence_bit`. (f) `present_is_a_data_predicate_beyond_a_guard_conjunct` covers `!=`/`= absent`, `not … or …` in a `when`, urgency, and the three `not-yet-implemented` positions. In addition, `the_zone_search_frees_an_absent_option_clock` covers SR-1721001 FND-004. |
+| FND-002 | still-open | The PR body still says the STD-493 `absent` ruling text and citation are pending. This waits on the spec, not on this PR. Cite the text when it lands. |

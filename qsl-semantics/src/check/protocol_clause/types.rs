@@ -291,6 +291,11 @@ pub struct CheckedAwait {
     pub clock: String,
     /// The `within [lower, upper]` window, `lower <= upper`.
     pub within: crate::check::protocol_obligation::CheckedDeadline,
+    /// The temporal profile the `await` reads its clock role under (QSpec
+    /// FR-464 "Profiles and laws"): the one its `using` alias names when that
+    /// is a temporal profile, otherwise the unit's first. `None` only when
+    /// the header selects none, which the check refuses.
+    pub profile: Option<crate::check::profile::TemporalProfile>,
 }
 
 /// One port of a control (FR-218 "Outputs", QSpec FR-464 "Derived causal

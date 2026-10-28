@@ -54,7 +54,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 use super::concretise::{concretise, NotConcretised, Stage, Target};
 use super::lasso::{solve_loop, LoopStage};
 use super::search::{
-    constrain_at, scaled, Badness, Halt, Run, ZoneCheckLimit, ZoneStop, ZoneUndecided,
+    apply_step_clocks, constrain_at, scaled, Badness, Halt, Run, ZoneCheckLimit, ZoneStop,
+    ZoneUndecided,
 };
 use super::{Bound, Dbm, ZoneCheckRefusal};
 use crate::model_check::fair_walk::{fairness_constraints, FairModel};
@@ -771,9 +772,7 @@ impl Run<'_, '_, '_> {
                 if next.is_empty() {
                     continue;
                 }
-                for (place, value) in step.resets() {
-                    next.reset(place + 1, &scaled(value, &scale))?;
-                }
+                apply_step_clocks(&mut next, step, &scale)?;
                 constrain_at(&mut next, &target, &scale)?;
                 if next.is_empty() {
                     continue;
@@ -1409,6 +1408,11 @@ impl Run<'_, '_, '_> {
                 ),
                 None => (Vec::new(), Vec::new()),
             };
+            let carries = stage
+                .step
+                .as_ref()
+                .map(|(step, _)| step.carries().to_vec())
+                .unwrap_or_default();
             resets.extend(
                 stage
                     .position_resets
@@ -1420,6 +1424,7 @@ impl Run<'_, '_, '_> {
                 invariants: stage.invariants,
                 part,
                 resets,
+                carries,
                 target: stage.target,
                 position: stage.position,
                 before: stage.before,

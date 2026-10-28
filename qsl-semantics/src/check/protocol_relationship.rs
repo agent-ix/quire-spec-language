@@ -60,6 +60,8 @@ fn kind_label(record: &DomainPackageRecord) -> &'static str {
         DomainPackageRecord::ObjectType(_) => "object type",
         DomainPackageRecord::FieldMember(_) => "field",
         DomainPackageRecord::RecordValueType(_) => "record value type",
+        DomainPackageRecord::TupleValueType(_) => "tuple value type",
+        DomainPackageRecord::TuplePosition(_) => "tuple position",
         DomainPackageRecord::EventType(_) => "event type",
         DomainPackageRecord::StateMachine(_) => "state machine",
         DomainPackageRecord::Process(_) => "process",

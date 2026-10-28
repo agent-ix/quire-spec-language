@@ -38,7 +38,7 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
             requirement: ir::RequirementRef::parse("example/z-rules", "Invariant", 4).unwrap(),
             clause: ir::ClauseId::new("always").unwrap(),
             execution_point: ir::ExecutionPoint::Initialization {
-                name: ir::AnchorName::new("initialize").unwrap(),
+                name: ir::AnchorName::new("initialize").unwrap().into(),
             },
         },
         ClauseBinding {
@@ -46,7 +46,7 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
             requirement: ir::RequirementRef::parse("example/a-rules", "Precondition", 9).unwrap(),
             clause: ir::ClauseId::new("before").unwrap(),
             execution_point: ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         },
         ClauseBinding {
@@ -54,7 +54,7 @@ fn source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_
             requirement: ir::RequirementRef::parse("example/q-rules", "Postcondition", 2).unwrap(),
             clause: ir::ClauseId::new("after").unwrap(),
             execution_point: ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         },
     ];

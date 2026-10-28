@@ -96,11 +96,11 @@ fn operation_binding(post: bool) -> ClauseBinding {
     ClauseBinding {
         execution_point: if post {
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             }
         } else {
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             }
         },
         ..binding()

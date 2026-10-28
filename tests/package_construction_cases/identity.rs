@@ -174,7 +174,7 @@ fn real_authored_identity_and_anchor_changes_match_independent_static_expectatio
     clause.clause = ir::ClauseId::new("another_clause").unwrap();
     let mut anchor = original;
     anchor.execution_point = ir::ExecutionPoint::Initialization {
-        name: ir::AnchorName::new("initialize").unwrap(),
+        name: ir::AnchorName::new("initialize").unwrap().into(),
     };
     for (binding, before, after) in [
         (
