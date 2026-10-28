@@ -72,6 +72,8 @@ mod population_bound;
 mod probabilistic_declarations;
 mod quantities;
 #[cfg(feature = "test-support")]
+mod refinement_class_catalog;
+#[cfg(feature = "test-support")]
 mod refinement_declarations;
 #[cfg(feature = "test-support")]
 mod refinement_populations;

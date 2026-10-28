@@ -215,13 +215,13 @@ fn document_with(
     .into_bytes()
 }
 
-const SUB: &str = "example/sub-counter";
+pub(crate) const SUB: &str = "example/sub-counter";
 const NARROW: &str = "example/narrow-counter";
 const WIDE: &str = "example/wide-counter";
 
 /// `Counter { value }` with `peek()`, its subtype `SubCounter { extra }` with
 /// `bump()`, and the population `counters` of counters.
-fn sub_counter() -> Vec<u8> {
+pub(crate) fn sub_counter() -> Vec<u8> {
     document(
         SUB,
         vec![
@@ -286,7 +286,7 @@ fn bounded_counter(package: &str, upper: u32) -> Vec<u8> {
 /// `Counter { value }` with `inc()` and the population `counters`, and the
 /// record value type `Try { done }`, the attempt type of a compensation
 /// template (FR-381).
-fn counter_spec() -> Vec<u8> {
+pub(crate) fn counter_spec() -> Vec<u8> {
     let attempt = declaration(
         SPEC,
         "Try",
@@ -536,7 +536,7 @@ pub(crate) fn assemble(
 
 /// A refusal with the text of the unit it is located at.
 #[derive(Debug)]
-struct Refused {
+pub(crate) struct Refused {
     refusal: CheckRefusal,
     at: String,
     unit: String,
@@ -555,7 +555,7 @@ impl Refused {
     }
 }
 
-fn check_with(
+pub(crate) fn check_with(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -1697,10 +1697,10 @@ fn a_strong_row_checks_as_strong() {
     assert_eq!(retry.granularity(), FairnessGranularity::Whole);
 }
 
-/// A checked `refinement` declaration is refused at package build until S4
-/// writes it, so a package is never built with an identity equal to the same
-/// package without it; object-type-only models reach this emission refusal
-/// without a synthetic state-machine subject (FR-136-AC-12).
+/// A checked `refinement` declaration S4 cannot write yet (a `history`
+/// row, whose reads have no node form) is refused at package build, so a
+/// package is never built with an identity equal to the same package
+/// without it.
 #[trace("TC-540")]
 #[test]
 fn a_checked_refinement_refuses_not_emitted_at_package_build() {
@@ -1708,7 +1708,10 @@ fn a_checked_refinement_refuses_not_emitted_at_package_build() {
     let (_, declarations) = assemble(
         "",
         &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
-        &cas_refines_counter(),
+        &with_refinement_rows(
+            cas_refines_counter(),
+            "history Impl::Counter.last : Int[0, 1] = 0 { on Impl::Counter::peek : 0; }\n",
+        ),
     );
     let refusals = declarations
         .expect("the unit assembles")
@@ -1857,30 +1860,22 @@ fn with_machine_fields(
     document.to_string().into_bytes()
 }
 
-/// The first refusal of emitting `CasRefinesCounter` over the models given.
-fn emission_refusal(models: &[(&str, &str, &[u8])]) -> CheckRefusal {
-    let (_, declarations) = assemble("", models, &cas_refines_counter());
-    let mut refusals = declarations
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .expect_err("the refinement is not emitted");
-    refusals.remove(0)
-}
-
 /// FR-136-AC-12: object-type-only model subjects are not rejected for lacking
-/// a state-machine anchor; the unwritten mapped refinement remains refused
-/// until its V2 emitter slice is available.
+/// a state-machine anchor: the mapped refinement checks, its rows keyed.
 #[trace("TC-541", "FR-136-AC-12")]
 #[test]
-fn an_object_type_only_refinement_subject_reaches_the_existing_emission_gate() {
+fn an_object_type_only_refinement_subject_checks_and_is_emittable() {
     let (spec, cas) = counters();
-    let models = [("Spec", SPEC, &spec[..]), ("Impl", CAS, &cas[..])];
-    let refusal = emission_refusal(&models);
-    assert!(matches!(
-        refusal.cause,
-        CheckCause::RefinementNotEmitted { ref name, .. }
-            if name == "CasRefinesCounter"
-    ));
+    let (_, declarations) = assemble(
+        "",
+        &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
+        &cas_refines_counter(),
+    );
+    let graph = declarations
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the refinement checks: {refusals:?}"));
+    assert!(only_refinement(&graph).v2_emittable());
 }
 
 /// FR-136-AC-12: several state machines are selected by explicit rows rather
@@ -1898,15 +1893,10 @@ fn several_state_machines_are_not_an_ambiguous_refinement_subject() {
         "object Spec::SpecMachine from Impl::ImplMachine { value = self.value; }\n",
     );
     let (_, declarations) = assemble("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &one);
-    let refusal = declarations
+    declarations
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .expect_err("the refinement is not emitted")[0]
-        .clone();
-    assert!(
-        matches!(refusal.cause, CheckCause::RefinementNotEmitted { .. }),
-        "{refusal:?}"
-    );
+        .unwrap_or_else(|refusals| panic!("the refinement checks: {refusals:?}"));
     let twice = with_machine_fields(&spec, SPEC, "SpecMachineToo", &[("value", INTEGER)]);
     let two = with_refinement_rows(
         cas_refines_counter(),
@@ -1914,15 +1904,11 @@ fn several_state_machines_are_not_an_ambiguous_refinement_subject() {
          object Spec::SpecMachineToo from Impl::ImplMachine { value = self.value; }\n",
     );
     let (_, declarations) = assemble("", &[("Spec", SPEC, &twice), ("Impl", CAS, &cas)], &two);
-    let refusal = declarations
+    // Machine multiplicity is not a subject refusal.
+    declarations
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .expect_err("the refinement is not emitted")[0]
-        .clone();
-    assert!(
-        matches!(refusal.cause, CheckCause::RefinementNotEmitted { .. }),
-        "machine multiplicity is not a subject refusal: {refusal:?}"
-    );
+        .unwrap_or_else(|refusals| panic!("the refinement checks: {refusals:?}"));
 }
 
 /// FR-136-AC-12: a build that keeps unwritten refinements (analysis, replay)
@@ -2013,15 +1999,18 @@ fn state_machine_rows_report_missing_duplicate_and_mixed_kinds() {
     );
 }
 
-/// A unit holding a `terminal` declaration and a refinement refuses only the
-/// refinement: the `terminal` declaration is emitted.
+/// A unit holding a `terminal` declaration and a refinement S4 cannot write
+/// yet refuses only the refinement: the `terminal` declaration is emitted.
 #[trace("TC-540")]
 #[test]
 fn only_the_refinement_beside_a_terminal_is_refused() {
     let (spec, cas) = counters();
     let body = format!(
         "terminal Halt using v on Spec any;\n{}",
-        cas_refines_counter()
+        with_refinement_rows(
+            cas_refines_counter(),
+            "history Impl::Counter.last : Int[0, 1] = 0 { on Impl::Counter::peek : 0; }\n",
+        )
     );
     let (_, declarations) = assemble("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &body);
     let refusals = declarations
@@ -2035,11 +2024,11 @@ fn only_the_refinement_beside_a_terminal_is_refused() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
 }
 
-const DIAMOND: &str = "example/diamond-counter";
+pub(crate) const DIAMOND: &str = "example/diamond-counter";
 
 /// `Base1 { value }` and `Base2 { other }`, each with `op()`, and `Child`
 /// specializing both, so `Child::op` names two unrelated declarations.
-fn diamond_counter() -> Vec<u8> {
+pub(crate) fn diamond_counter() -> Vec<u8> {
     document(
         DIAMOND,
         vec![

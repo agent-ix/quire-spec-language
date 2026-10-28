@@ -479,8 +479,14 @@ fn document_digest(document: &[u8]) -> String {
 /// The spine fixture's object package with one minimal, independent state
 /// machine added, under `package`'s identity.
 fn state_machine_document(package: &str) -> Vec<u8> {
-    let base = String::from_utf8(SPINE_MODEL_DOCUMENT.to_vec()).expect("fixture UTF-8");
-    let base = base.replace("acme/orders", package);
+    with_state_machine(SPINE_MODEL_DOCUMENT, "acme/orders", package)
+}
+
+/// The document `base`, its identity `from` renamed `package`, with one
+/// minimal, independent state machine added.
+fn with_state_machine(base: &[u8], from: &str, package: &str) -> Vec<u8> {
+    let base = String::from_utf8(base.to_vec()).expect("fixture UTF-8");
+    let base = base.replace(from, package);
     let mut document: serde_json::Value =
         serde_json::from_str(&base).expect("the spine model document is JSON");
     let identity = format!("ix://{package}/Lifecycle");
@@ -1077,12 +1083,9 @@ fn two_refinements_of_different_meanings_both_emit() {
     assert_ne!(refinements[0]["node_id"], refinements[1]["node_id"]);
 }
 
-/// The declaration occurrence is provenance rather than refinement identity:
-/// moving the authored declaration changes its source-map region while the
-/// refinement node and package identities stay fixed.
-#[trace("FR-375", "QSL-1102")]
-#[test]
-fn a_row_empty_refinement_identity_excludes_its_source_region() {
+/// The row-empty refinement `R` of the state-machine model `A` by `C`, and
+/// the two model documents.
+fn row_empty_refinement() -> (String, Vec<Vec<u8>>) {
     let abstract_document = state_machine_document("example/refinement-abstract");
     let concrete_document = state_machine_document("example/refinement-concrete");
     let abstract_digest = document_digest(&abstract_document);
@@ -1093,7 +1096,81 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
          model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
          refinement R using inf abstract A concrete C {{}}\n"
     );
-    let documents = vec![abstract_document, concrete_document];
+    (unit, vec![abstract_document, concrete_document])
+}
+
+/// QSpec FR-375-AC-20's refusal half: the reader recomputes the refinement
+/// node's key from the closed `quire.refinement-node/v1` preimage, so
+/// changing only its `semantic_type` root, or only one body row, while
+/// keeping its node id (the package id and dependencies recomputed) refuses
+/// `invalid_package`/`stale-node-key` at that node.
+#[trace("FR-375-AC-20", "TC-310")]
+#[test]
+fn a_refinement_changed_under_its_node_id_is_a_stale_node_key() {
+    let (unit, documents) = row_empty_refinement();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the row-empty refinement emits");
+    let wire = wire(&emission);
+    let position = nodes(&wire)
+        .iter()
+        .position(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node");
+    let refinement = &wire["semantic_graph"]["nodes"][position];
+    let abstract_root = refinement["body"]["abstract"].clone();
+    let verdict = |envelope: &Value| {
+        let mut evidence = read_evidence(&emission);
+        for document in &documents {
+            evidence
+                .insert_domain_package_document(document_digest(document), document.to_vec())
+                .expect("a fresh evidence key");
+        }
+        match quire_contract_model::read_checked_package(
+            &jcs(envelope),
+            quire_contract_model::CheckedPackageReadLimits::bounded(),
+            &evidence,
+        ) {
+            quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {
+                "admitted".to_owned()
+            }
+            quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
+                "{:?} at {} ({:?})",
+                refusal.code,
+                refusal.path.as_ref().map_or("-", |path| path.as_str()),
+                refusal.cause
+            ),
+            other => format!("{other:?}"),
+        }
+    };
+    assert_eq!(verdict(&wire), "admitted");
+    let expected =
+        format!("InvalidPackage at /semantic_graph/nodes/{position}/node_id (Some(StaleNodeKey))");
+
+    // The concrete root swapped for the abstract one: the subject changes,
+    // the dependencies (the abstract root alone) do not.
+    let mut retyped = wire.clone();
+    retyped["semantic_graph"]["nodes"][position]["semantic_type"] = abstract_root.clone();
+    crate::checked_v2::tests::refresh_frame_identity(&mut retyped);
+    assert_ne!(retyped["package_id"], wire["package_id"]);
+    assert_eq!(verdict(&retyped), expected);
+
+    // One body member changed: the selected profile. This model has no
+    // population or object to write a valid row over, so the profile is the
+    // body change that leaves every other member admissible.
+    let mut reprofiled = wire.clone();
+    reprofiled["semantic_graph"]["nodes"][position]["body"]["profile"]["identity"] =
+        json!("quire.temporal.finite-trace/v1");
+    crate::checked_v2::tests::refresh_frame_identity(&mut reprofiled);
+    assert_eq!(verdict(&reprofiled), expected);
+}
+
+/// The declaration occurrence is provenance rather than refinement identity:
+/// moving the authored declaration changes its source-map region while the
+/// refinement node and package identities stay fixed.
+#[trace("FR-375", "QSL-1102")]
+#[trace("FR-375-AC-20")]
+#[test]
+fn a_row_empty_refinement_identity_excludes_its_source_region() {
+    let (unit, documents) = row_empty_refinement();
     let compile = |source: &str| {
         let package = modelled_with_documents(source, &documents, Vec::new());
         let emission = emit_checked(&package).expect("the row-empty refinement emits");
@@ -1139,6 +1216,39 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
     assert_eq!(first_node["semantic_type"], concrete_root);
     assert_eq!(first_node["body"]["abstract"], abstract_root);
     assert_eq!(first_node["dependencies"], json!([abstract_root]));
+    // QSpec FR-375-AC-20: the typed body writes exactly the nine closed
+    // members, every row array present and empty, and no optional member.
+    let mut members: Vec<&str> = first_node["body"]
+        .as_object()
+        .expect("an object body")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    members.sort_unstable();
+    assert_eq!(
+        members,
+        [
+            "abstract",
+            "assume",
+            "ensure",
+            "histories",
+            "objects",
+            "populations",
+            "profile",
+            "steps",
+            "term"
+        ]
+    );
+    for array in [
+        "assume",
+        "ensure",
+        "histories",
+        "objects",
+        "populations",
+        "steps",
+    ] {
+        assert_eq!(first_node["body"][array], json!([]), "{array}");
+    }
     assert_eq!(first_node["node_id"], shifted_node["node_id"]);
     assert_eq!(first.package.package_id(), shifted.package.package_id());
     let declaration_region = |emission: &Emission, node: &Value| {
@@ -1157,6 +1267,495 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
         first_region["end"].as_u64().unwrap() - first_region["start"].as_u64().unwrap(),
         shifted_region["end"].as_u64().unwrap() - shifted_region["start"].as_u64().unwrap()
     );
+}
+
+/// A row-empty refinement of the model `A` by `C`, with the protocol clause
+/// `Local` over `C::Widget`: a static role, an `unknown`-delivery channel
+/// and `finish`.
+fn catalog_refinement() -> (String, Vec<Vec<u8>>) {
+    let abstract_document = state_machine_document("example/refinement-abstract");
+    let concrete_document = state_machine_document("example/refinement-concrete");
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         protocol Local using p over (input: C::Widget) on origin {{\n\
+         role w on C::Widget;\n\
+         channel ch from w to w carries Boolean ordering unordered delivery unknown \
+         capacity 2 overflow block;\n\
+         run sequence Main {{ }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         refinement R using inf abstract A concrete C {{}}\n",
+        document_digest(&abstract_document),
+        document_digest(&concrete_document),
+    );
+    (unit, vec![abstract_document, concrete_document])
+}
+
+/// The refinement relation node of `emission`.
+fn refinement_node(emission: &Emission) -> Value {
+    nodes(&wire(emission))
+        .iter()
+        .find(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node")
+        .clone()
+}
+
+/// QSpec FR-375: a protocol clause over the concrete model gives a
+/// row-empty model refinement its `class_catalog`, in the closed body and
+/// so in the node identity. The concrete side lists the concrete model's
+/// operation classes and the clause's classes, the abstract side the
+/// abstract model's operation classes, each in UTF-8 byte order; every
+/// class node and binder type is a local node of the package and a
+/// dependency of the refinement.
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
+    let (unit, documents) = catalog_refinement();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement with a catalog emits");
+    let node = refinement_node(&emission);
+    let catalog = &node["body"]["class_catalog"];
+    let spelled = |side: &str| -> Vec<&str> {
+        catalog[side]
+            .as_array()
+            .unwrap_or_else(|| panic!("the {side} side: {catalog}"))
+            .iter()
+            .map(|class| class["class"].as_str().expect("a class spelling"))
+            .collect()
+    };
+    assert_eq!(
+        spelled("concrete"),
+        [
+            "Lifecycle::tick",
+            "Local::Done",
+            "duplicate Local::ch",
+            "lose Local::ch",
+        ]
+    );
+    assert_eq!(spelled("abstract"), ["Lifecycle::tick"]);
+
+    let wire = wire(&emission);
+    let by_id = |id: &Value| {
+        nodes(&wire)
+            .iter()
+            .find(|node| &node["node_id"] == id)
+            .unwrap_or_else(|| panic!("{id} is a node of the package"))
+            .clone()
+    };
+    let dependencies = node["dependencies"].as_array().expect("dependencies");
+    for class in catalog["concrete"]
+        .as_array()
+        .into_iter()
+        .chain(catalog["abstract"].as_array())
+        .flatten()
+    {
+        let used = std::iter::once(&class["node"])
+            .chain(class["binder_types"].as_array().into_iter().flatten());
+        for id in used {
+            by_id(id);
+            assert!(dependencies.contains(id), "{id} is a dependency");
+        }
+    }
+    // The operation class names the state machine's model node; its binder
+    // record is the receiver alone, `tick` having no parameter or result.
+    let tick = &catalog["concrete"][0];
+    assert_eq!(by_id(&tick["node"])["semantic_form"], "state_machine");
+    assert_eq!(tick["binder_types"].as_array().map(Vec::len), Some(1));
+    // The finish class names the clause's `obligation` node, typed by its
+    // closing binder; a channel class has no binder.
+    let done = &catalog["concrete"][1];
+    assert_eq!(by_id(&done["node"])["semantic_form"], "obligation");
+    assert_eq!(done["binder_types"].as_array().map(Vec::len), Some(1));
+    assert_eq!(catalog["concrete"][2]["binder_types"], json!([]));
+    assert_eq!(
+        by_id(&catalog["concrete"][2]["node"])["semantic_form"],
+        "channel"
+    );
+    let mut sorted = dependencies.clone();
+    sorted.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    assert_eq!(&sorted, dependencies, "dependencies ascend");
+
+    // With the clause over the abstract model instead, the concrete side
+    // has no protocol class, so the refinement has no catalog and another
+    // node.
+    let without = unit
+        .replace("over (input: C::Widget)", "over (input: A::Widget)")
+        .replace("role w on C::Widget", "role w on A::Widget");
+    let other = modelled_with_documents(&without, &documents, Vec::new());
+    let other = refinement_node(&emit_checked(&other).expect("the refinement emits"));
+    assert!(other["body"].get("class_catalog").is_none(), "{other}");
+    assert_ne!(other["node_id"], node["node_id"]);
+}
+
+/// QSpec FR-375-AC-27: an `on each` clause over the concrete model writes
+/// `activate <P>` naming the clause node, with the trigger's binder record
+/// (one field for a Boolean trigger).
+#[trace("FR-375-AC-27", "TC-310")]
+#[test]
+fn an_each_clause_writes_its_activate_class() {
+    let (unit, documents) = catalog_refinement();
+    let unit = unit.replace("on origin", "on each (t: Boolean)");
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement emits");
+    let node = refinement_node(&emission);
+    let activate = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("the concrete side")
+        .iter()
+        .find(|class| class["class"] == "activate Local")
+        .expect("the activate class")
+        .clone();
+    let wire = wire(&emission);
+    let clause = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "protocol_clause")
+        .expect("the clause node")
+        .clone();
+    assert_eq!(activate["node"], clause["node_id"]);
+    let [binder] = activate["binder_types"]
+        .as_array()
+        .expect("binders")
+        .as_slice()
+    else {
+        panic!("one trigger field: {activate}");
+    };
+    let boolean = nodes(&wire)
+        .iter()
+        .find(|node| &node["node_id"] == binder)
+        .expect("the binder type node")
+        .clone();
+    assert_eq!(boolean["semantic_form"], "boolean", "{boolean}");
+}
+
+/// QSpec FR-375-AC-23: a clause whose `owner_model` is a model of a third
+/// selected declaration is foreign to the refinement: it contributes no
+/// class, so the row-empty model refinement has no catalog.
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+fn a_clause_over_a_third_model_contributes_no_class() {
+    let (unit, mut documents) = catalog_refinement();
+    let third = state_machine_document("example/refinement-third");
+    let unit = unit
+        .replace(
+            "protocol Local",
+            &format!(
+                "model T = \"example/refinement-third\" version \"1.0.0\" \
+                 digest \"sha256-jcs:{}\";\nprotocol Local",
+                document_digest(&third)
+            ),
+        )
+        .replace("over (input: C::Widget)", "over (input: T::Widget)")
+        .replace("role w on C::Widget", "role w on T::Widget");
+    documents.push(third);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement emits");
+    let node = refinement_node(&emission);
+    assert!(node["body"].get("class_catalog").is_none(), "{node}");
+    assert!(nodes(&wire(&emission))
+        .iter()
+        .any(|node| node["semantic_form"] == "protocol_clause"));
+}
+
+/// [`catalog_refinement`] with the clause `Local` over the abstract model and
+/// the refinement's abstract side that clause: a protocol subject.
+fn protocol_subject() -> (String, Vec<Vec<u8>>) {
+    let (unit, documents) = catalog_refinement();
+    let unit = unit
+        .replace("over (input: C::Widget)", "over (input: A::Widget)")
+        .replace("role w on C::Widget", "role w on A::Widget")
+        .replace("abstract A concrete C", "abstract A::Local concrete C");
+    (unit, documents)
+}
+
+/// A row-empty model subject `R2` of `A` by `C`, beside a protocol
+/// subject `R` over the same models.
+const MODEL_SUBJECT_R2: &str = "refinement R2 using inf abstract A concrete C {}\n";
+
+/// `unit` over `documents` with the `refinement_internals` value `internals`,
+/// checked and emitted: the package id and every refinement node by name.
+fn emit_with_internals(
+    unit: &str,
+    documents: &[Vec<u8>],
+    internals: Option<Value>,
+) -> (Value, BTreeMap<String, Value>) {
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let mut declarations =
+        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
+    if let Some(value) = internals {
+        declarations = declarations.with_refinement_internals(value);
+    }
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
+    let names: Vec<String> = graph
+        .refinements()
+        .iter()
+        .map(|refinement| refinement.name().to_owned())
+        .collect();
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let refinements: Vec<Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .cloned()
+        .collect();
+    // Each refinement's node is located at its own declaration.
+    let by_name = names
+        .into_iter()
+        .map(|name| {
+            let start = unit
+                .find(&format!("refinement {name} "))
+                .expect("its declaration");
+            let node = refinements
+                .iter()
+                .find(|node| {
+                    wire["source_map"].as_array().is_some_and(|entries| {
+                        entries.iter().any(|entry| {
+                            entry["node_id"] == node["node_id"]
+                                && entry["role"] == "declaration"
+                                && entry["regions"][0]["start"].as_u64()
+                                    == u64::try_from(start).ok()
+                        })
+                    })
+                })
+                .unwrap_or_else(|| panic!("the node of {name}"))
+                .clone();
+            (name, node)
+        })
+        .collect();
+    (wire["package_id"].clone(), by_name)
+}
+
+/// QSpec FR-375-AC-12: the `refinement_internals` value is the only host of
+/// a protocol subject's internal list: `[{"refinement": "R", "internal":
+/// ["A::Local::Done"]}]` writes `abstract_internal` `["Local::Done"]`; the
+/// value absent, `[]` or naming only another refinement writes no member.
+#[trace("FR-375-AC-12", "TC-310")]
+#[test]
+fn the_internal_list_value_hosts_abstract_internal() {
+    let (unit, documents) = protocol_subject();
+    let internal =
+        |name: &str, entries: &[&str]| json!([{"refinement": name, "internal": entries}]);
+    let (_, listed) =
+        emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
+    assert_eq!(
+        listed["R"]["body"]["abstract_internal"],
+        json!(["Local::Done"])
+    );
+    for value in [None, Some(json!([]))] {
+        let (_, plain) = emit_with_internals(&unit, &documents, value.clone());
+        assert!(
+            plain["R"]["body"].get("abstract_internal").is_none(),
+            "{value:?}"
+        );
+    }
+    // A value naming only another refinement, the model subject `R2`.
+    let two = format!("{unit}{MODEL_SUBJECT_R2}");
+    let (_, nodes) = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
+    assert!(nodes["R"]["body"].get("abstract_internal").is_none());
+    assert!(nodes["R2"]["body"].get("abstract_internal").is_none());
+}
+
+/// QSpec FR-375-AC-13: a list and none give different refinement node ids
+/// and package ids; reordering the value's objects or entries changes
+/// neither, nor does renaming the abstract alias with the value's spellings
+/// renamed to match.
+#[trace("FR-375-AC-13", "TC-310")]
+#[test]
+fn the_internal_list_enters_the_identity_and_its_order_does_not() {
+    let (unit, documents) = protocol_subject();
+    let two = format!("{unit}{MODEL_SUBJECT_R2}");
+    let (none_id, none) = emit_with_internals(&two, &documents, None);
+    let value = |alias: &str, entries: [&str; 2], objects_reversed: bool| {
+        let r = json!({"refinement": "R", "internal": entries.map(|entry| entry.replace("A::", &format!("{alias}::")))});
+        let r2 = json!({"refinement": "R2", "internal": []});
+        if objects_reversed {
+            json!([r2, r])
+        } else {
+            json!([r, r2])
+        }
+    };
+    let entries = ["A::Local::Done", "lose A::Local::ch"];
+    let reversed = ["lose A::Local::ch", "A::Local::Done"];
+    let (listed_id, listed) =
+        emit_with_internals(&two, &documents, Some(value("A", entries, false)));
+    assert_ne!(listed["R"]["node_id"], none["R"]["node_id"]);
+    assert_ne!(listed_id, none_id);
+    assert_eq!(
+        listed["R"]["body"]["abstract_internal"],
+        json!(["Local::Done", "lose Local::ch"])
+    );
+    for (order, objects_reversed) in [(reversed, false), (entries, true), (reversed, true)] {
+        let (id, nodes) =
+            emit_with_internals(&two, &documents, Some(value("A", order, objects_reversed)));
+        assert_eq!(id, listed_id, "{order:?} {objects_reversed}");
+        assert_eq!(nodes["R"]["node_id"], listed["R"]["node_id"]);
+        assert_eq!(nodes["R2"]["node_id"], listed["R2"]["node_id"]);
+    }
+    // The abstract alias renamed, with the value's spellings to match.
+    let renamed = two
+        .replace("model A ", "model S ")
+        .replace("abstract A ", "abstract S ")
+        .replace("A::", "S::");
+    let (renamed_id, renamed_nodes) =
+        emit_with_internals(&renamed, &documents, Some(value("S", entries, false)));
+    assert_eq!(renamed_nodes["R"]["node_id"], listed["R"]["node_id"]);
+    assert_eq!(renamed_id, listed_id);
+}
+
+/// QSpec FR-375 (AC-11, AC-25): a row-empty protocol subject keeps the
+/// abstract model's root as `abstract` and names its clause as `protocol`,
+/// a local dependency. Its catalog lists the clause's classes on the
+/// abstract side, and the protocol is part of the node's meaning: the model
+/// subject over the same models is another node.
+#[trace("FR-375-AC-11", "FR-375-AC-25", "FR-375-AC-23", "TC-310")]
+#[test]
+fn a_row_empty_protocol_subject_names_its_clause() {
+    let (unit, documents) = protocol_subject();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol subject emits");
+    let node = refinement_node(&emission);
+    let wire = wire(&emission);
+    let clause = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "protocol_clause")
+        .expect("the clause node")
+        .clone();
+    let root = nodes(&wire)
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "model_root"
+                && node["owner"]["identity"] == "example/refinement-abstract"
+        })
+        .expect("the abstract root")
+        .clone();
+    assert_eq!(node["body"]["abstract"], root["node_id"]);
+    assert_eq!(node["body"]["protocol"], clause["node_id"]);
+    assert!(node["body"].get("abstract_internal").is_none());
+    let dependencies = node["dependencies"].as_array().expect("dependencies");
+    assert!(dependencies.contains(&clause["node_id"]));
+    assert!(dependencies.contains(&root["node_id"]));
+    let abstract_classes: Vec<&str> = node["body"]["class_catalog"]["abstract"]
+        .as_array()
+        .expect("the abstract side")
+        .iter()
+        .map(|class| class["class"].as_str().expect("a spelling"))
+        .collect();
+    assert_eq!(
+        abstract_classes,
+        ["Local::Done", "duplicate Local::ch", "lose Local::ch"]
+    );
+    for class in node["body"]["class_catalog"]["abstract"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        assert!(dependencies.contains(&class["node"]), "{class}");
+    }
+
+    let (model_unit, _) = catalog_refinement();
+    let model_subject = modelled_with_documents(
+        &model_unit
+            .replace("over (input: C::Widget)", "over (input: A::Widget)")
+            .replace("role w on C::Widget", "role w on A::Widget"),
+        &documents,
+        Vec::new(),
+    );
+    let model_node =
+        refinement_node(&emit_checked(&model_subject).expect("the model subject emits"));
+    assert!(model_node["body"].get("protocol").is_none());
+    assert_ne!(model_node["node_id"], node["node_id"]);
+}
+
+/// QSpec FR-375: the protocol subject reads back through IR. Ignored while
+/// IR-874 is open: IR's rebuild of the abstract clause's classes reads the
+/// member prefix from the second declaration-path segment, which QSL writes
+/// as `[P, finish, Done]` (B3).
+#[trace("FR-375-AC-11", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's protocol class rebuild disagrees with QSL's member naming (B3)"]
+fn a_row_empty_protocol_subject_reads_back() {
+    let (unit, documents) = protocol_subject();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol subject emits");
+    let admitted = read(&Emitted {
+        package,
+        emission,
+        documents,
+    });
+    assert!(
+        admitted.is_ok(),
+        "the protocol subject reads back: {admitted:?}"
+    );
+}
+
+/// QSpec FR-375-AC-23, AC-26 with QSL-1186's `parallel` node: a clause over
+/// the concrete model whose `run` holds a `parallel` writes its `fork` and
+/// `join` classes, both naming the `parallel` control, and the `memory
+/// drain` entry of its source-default model (`sc` when none is written).
+#[trace("FR-375-AC-23", "FR-375-AC-26", "TC-310")]
+#[test]
+fn a_parallel_clause_writes_fork_join_and_drain_classes() {
+    let (unit, documents) = catalog_refinement();
+    let unit = unit.replace(
+        "run sequence Main { }",
+        "run sequence Main { parallel par { branch a sequence A { } branch b sequence B { } } join all [a, b]; }",
+    );
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement emits");
+    let node = refinement_node(&emission);
+    let concrete = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("the concrete side")
+        .clone();
+    let by_class = |name: &str| {
+        concrete
+            .iter()
+            .find(|class| class["class"] == name)
+            .unwrap_or_else(|| panic!("the class {name}: {concrete:?}"))
+            .clone()
+    };
+    let (fork, join) = (by_class("fork Local::par"), by_class("join Local::par"));
+    assert_eq!(fork["node"], join["node"]);
+    assert_eq!(fork["binder_types"], json!([]));
+    let wire = wire(&emission);
+    let parallel = nodes(&wire)
+        .iter()
+        .find(|candidate| candidate["node_id"] == fork["node"])
+        .expect("the parallel node")
+        .clone();
+    assert_eq!(parallel["semantic_form"], "control");
+    assert_eq!(
+        parallel["body"]["operation"]["member"]["operator"],
+        "parallel"
+    );
+    assert_eq!(
+        by_class("memory drain"),
+        json!({"class": "memory drain", "memory_model": "sc", "drain": "store-buffer-flush"})
+    );
+}
+
+/// QSpec FR-375: the emitted catalog reads back through IR. Ignored while
+/// IR-874 is open: IR rebuilds an empty abstract side for a model subject
+/// where FR-375 lists the abstract model's operation classes (B2), and
+/// reads a clause member's class prefix from the second segment of its
+/// declaration path, which QSL writes as `[P, finish, Done]` (B3).
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn a_model_refinement_class_catalog_reads_back() {
+    let (unit, documents) = catalog_refinement();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement with a catalog emits");
+    let admitted = read(&Emitted {
+        package,
+        emission,
+        documents,
+    });
+    assert!(admitted.is_ok(), "the catalog reads back: {admitted:?}");
 }
 
 /// Every node body of every package the admission corpus emits is in QSpec
@@ -1471,4 +2070,620 @@ fn quantity_literal_nodes_are_referenced_by_their_operations() {
     );
     assert!(is_quantity_literal(target(&written, &arguments[1]), "3"));
     assert!(read(&emitted).is_ok());
+}
+
+/// Two copies of the config-version model, each with a state machine, as
+/// the abstract `A` and concrete `C` of a refinement `R` written by `rows`.
+/// `ConfigVersion` keeps only its `versionNumber` field (`parent` is an
+/// `Option<Reference<_>>`, whose row is a nested reference row the default
+/// build does not support), and its operations are `operations`, each
+/// shaped as `attemptUpdate` is.
+fn rows_refinement(rows: &str, operations: &[&str]) -> (String, Vec<Vec<u8>>) {
+    rows_refinement_with(rows, operations, false)
+}
+
+/// [`rows_refinement`], each operation taking one required Boolean
+/// parameter `flag` when `flag` holds.
+fn rows_refinement_with(rows: &str, operations: &[&str], flag: bool) -> (String, Vec<Vec<u8>>) {
+    let mut document: Value =
+        serde_json::from_str(config_version_unit::DOMAIN_PACKAGE).expect("the model is JSON");
+    for object in document["types"].as_array_mut().expect("types") {
+        if let Some(fields) = object.get_mut("fields").and_then(Value::as_array_mut) {
+            fields.retain(|field| field["name"] != "parent");
+        }
+        if let Some(declared) = object.get_mut("operations").and_then(Value::as_array_mut) {
+            let Some(template) = declared.first().cloned() else {
+                continue;
+            };
+            *declared = operations
+                .iter()
+                .map(|name| {
+                    let mut operation = template.clone();
+                    operation["name"] = json!(name);
+                    operation["identity"] =
+                        json!(format!("ix://example/config-version/ConfigVersion/{name}"));
+                    if flag {
+                        let identity =
+                            format!("ix://example/config-version/ConfigVersion/{name}/flag");
+                        operation["params"] = json!([{
+                            "identity": identity,
+                            "name": "flag",
+                            "typeRef": "ix://quire/native/Boolean",
+                            "presence": "required",
+                            "nullable": false,
+                            "defaultKind": "none",
+                            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                            "origin": {"generated": {
+                                "generatorIdentity": identity,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [identity],
+                            }},
+                        }]);
+                    }
+                    operation
+                })
+                .collect();
+        }
+    }
+    let base = serde_json::to_vec(&document).expect("the model serializes");
+    let abstract_document =
+        with_state_machine(&base, "example/config-version", "example/rows-abstract");
+    let concrete_document =
+        with_state_machine(&base, "example/config-version", "example/rows-concrete");
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"example/rows-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model C = \"example/rows-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         refinement R using inf abstract A concrete C {{\n{rows}\n}}\n",
+        document_digest(&abstract_document),
+        document_digest(&concrete_document),
+    );
+    (unit, vec![abstract_document, concrete_document])
+}
+
+/// The population and object rows of every [`rows_refinement`].
+const MAPS: &str = "population A::config_history from C::config_history;\n\
+    object A::ConfigVersion from C::ConfigVersion { versionNumber = self.versionNumber; }";
+
+/// `rows` over the operations `operations`, checked and emitted, with the
+/// unit's text.
+fn emit_rows(rows: &str, operations: &[&str]) -> (Emitted, String) {
+    let (unit, documents) = rows_refinement(rows, operations);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement with rows emits");
+    (
+        Emitted {
+            package,
+            emission,
+            documents,
+        },
+        unit,
+    )
+}
+
+/// The `[start, end)` of `needle` in `text`.
+fn span_of(text: &str, needle: &str) -> (u64, u64) {
+    let start = text
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle} in {text}"));
+    let start = u64::try_from(start).expect("an offset");
+    (
+        start,
+        start + u64::try_from(needle.len()).expect("a length"),
+    )
+}
+
+/// QSpec FR-375 rows (FR-375-AC-21, AC-24): a population row names both
+/// population nodes and an object row both object-type nodes and each field
+/// by name with its expression over the concrete object (`self`, FR-341's
+/// level-0 `parameter`); the node depends on each, and IR's reader admits
+/// the package. A model with no operation needs no step row, and with
+/// every abstract field mapped the owner is proof-eligible: one `generated`
+/// occurrence, at its declaration.
+#[trace("FR-375-AC-21", "FR-375-AC-24", "FR-322-AC-88", "TC-310")]
+#[test]
+fn population_and_object_rows_read_back() {
+    let (emitted, _) = emit_rows(MAPS, &[]);
+    let node = refinement_node(&emitted.emission);
+    let body = &node["body"];
+    let population = &body["populations"][0];
+    let object = &body["objects"][0];
+    let field = &object["fields"][0];
+    assert_eq!(field["name"], "versionNumber");
+    assert_eq!(field["expression"]["term"], "reference");
+    let dependencies = node["dependencies"].as_array().expect("dependencies");
+    for key in [
+        &population["abstract"],
+        &population["concrete"],
+        &object["abstract_type"],
+        &object["concrete_type"],
+        &field["expression"]["target"],
+    ] {
+        assert!(dependencies.contains(key), "{key} in {dependencies:?}");
+    }
+    assert_eq!(
+        node["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}, {"role": "generated", "ordinal": 0}])
+    );
+    assert!(wire(&emitted.emission)
+        .get("refinement_step_rows")
+        .is_none());
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// QSpec FR-375-AC-22, FR-322-AC-88 and AC-128 (AC-87 does not apply: QSL
+/// derives no node per step row, the rows are members of the owner's
+/// body): each step row has
+/// one `refinement_step_rows` entry at its own source row, keyed by the
+/// owner and its canonical ordinal, and a proof-eligible owner a
+/// `generated` occurrence per row (ordinal `i + 1` at row `i`'s region)
+/// beside the one at its declaration. Writing the rows in the other order
+/// moves the regions but not the `steps` order, the node id or the
+/// package id.
+#[trace("FR-375-AC-22", "FR-322-AC-88", "FR-322-AC-128", "TC-310", "TC-233")]
+#[test]
+fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
+    let operations = ["attemptUpdate", "rollback"];
+    let update = "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);";
+    let rollback = "step C::ConfigVersion::rollback -> stutter;";
+    let (forward, forward_unit) = emit_rows(&format!("{MAPS}\n{update}\n{rollback}"), &operations);
+    let (reversed, reversed_unit) =
+        emit_rows(&format!("{MAPS}\n{rollback}\n{update}"), &operations);
+    let (forward_node, reversed_node) = (
+        refinement_node(&forward.emission),
+        refinement_node(&reversed.emission),
+    );
+    assert_eq!(forward_node["node_id"], reversed_node["node_id"]);
+    assert_eq!(forward_node["body"], reversed_node["body"]);
+    assert_eq!(
+        wire(&forward.emission)["package_id"],
+        wire(&reversed.emission)["package_id"]
+    );
+    let classes: Vec<&str> = forward_node["body"]["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|step| step["source_class"].as_str().expect("a class"))
+        .collect();
+    assert_eq!(
+        classes,
+        ["ConfigVersion::attemptUpdate", "ConfigVersion::rollback"]
+    );
+    for (emitted, unit, node) in [
+        (&forward, &forward_unit, &forward_node),
+        (&reversed, &reversed_unit, &reversed_node),
+    ] {
+        let written = wire(&emitted.emission);
+        let rows = written["refinement_step_rows"]
+            .as_array()
+            .expect("a step-row sidecar");
+        let at = |row: &str| span_of(unit, row);
+        let expected = [at(update), at(rollback)];
+        assert_eq!(rows.len(), 2);
+        for (ordinal, (row, (start, end))) in rows.iter().zip(expected).enumerate() {
+            assert_eq!(row["node_id"], node["node_id"]);
+            assert_eq!(row["ordinal"], ordinal);
+            assert_eq!(
+                (row["region"]["start"].clone(), row["region"]["end"].clone()),
+                (json!(start), json!(end))
+            );
+        }
+        let generated: Vec<(u64, u64, u64)> = written["source_map"]
+            .as_array()
+            .expect("source map")
+            .iter()
+            .filter(|entry| entry["node_id"] == node["node_id"] && entry["role"] == "generated")
+            .map(|entry| {
+                (
+                    entry["ordinal"].as_u64().expect("an ordinal"),
+                    entry["regions"][0]["start"].as_u64().expect("a start"),
+                    entry["regions"][0]["end"].as_u64().expect("an end"),
+                )
+            })
+            .collect();
+        let declaration = span_of(unit, "refinement R");
+        assert_eq!(generated.len(), 3, "{generated:?}");
+        assert_eq!(generated[0].1, declaration.0);
+        assert_eq!((generated[1].1, generated[1].2), expected[0]);
+        assert_eq!((generated[2].1, generated[2].2), expected[1]);
+    }
+}
+
+/// The refusals of [`rows_refinement`] over `rows`, which must not check.
+fn refused_rows(rows: &str, operations: &[&str]) -> Vec<qsl_semantics::check::CheckCause> {
+    let (unit, documents) = rows_refinement(rows, operations);
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .map(|_| ())
+        .expect_err("the refinement is not emitted")
+        .into_iter()
+        .map(|refusal| refusal.cause)
+        .collect()
+}
+
+/// A row whose expression reads a whole concrete population or builds a
+/// `seq` has no node form (STD-493), like a `history` row: the
+/// refinement refuses `RefinementNotEmitted` naming it, never a fault or a
+/// malformed package.
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+fn whole_population_and_seq_rows_are_not_emitted() {
+    for field in [
+        "versionNumber = count(s in C::config_history where s.versionNumber = 1);",
+        "versionNumber = if size(seq(i in 0 .. 1: i)) = 2 then self.versionNumber \
+         else self.versionNumber;",
+    ] {
+        let rows = format!(
+            "population A::config_history from C::config_history;\n\
+             object A::ConfigVersion from C::ConfigVersion {{ {field} }}"
+        );
+        let refusals = refused_rows(&rows, &[]);
+        assert!(
+            matches!(
+                &refusals[..],
+                [qsl_semantics::check::CheckCause::RefinementNotEmitted { name, .. }] if name == "R"
+            ),
+            "{field}: {refusals:?}"
+        );
+    }
+}
+
+/// QSpec FR-341 row binders (SR-1735002 FND-002): over an operation with a
+/// Boolean parameter `flag`, a step row binds `self` at level 0 and `flag`
+/// at level 1, each a `parameter` node, whether the row passes `flag`,
+/// `not flag` or leaves it open (`_`).
+#[trace("FR-375-AC-22", "TC-310")]
+#[test]
+fn a_row_parameter_above_self_binds_at_level_one() {
+    for arguments in ["(self, flag)", "(self, not flag)", "(self, _)"] {
+        let step = format!(
+            "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate{arguments};"
+        );
+        let (unit, documents) =
+            rows_refinement_with(&format!("{MAPS}\n{step}"), &["attemptUpdate"], true);
+        let package = modelled_with_documents(&unit, &documents, Vec::new());
+        let emission = emit_checked(&package).expect("the refinement emits");
+        let mut parameters: Vec<(String, String)> = wire(&emission)["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .filter(|node| node["semantic_form"] == "parameter")
+            .map(|parameter| {
+                let text = |name: &str| {
+                    super::protocol_graph::member(&parameter["body"], name)["value"]
+                        .as_str()
+                        .expect("a literal")
+                        .to_owned()
+                };
+                (text("name"), text("level"))
+            })
+            .filter(|(name, _)| name == "self" || name == "flag")
+            .collect();
+        parameters.sort();
+        parameters.dedup();
+        assert_eq!(
+            parameters,
+            [
+                ("flag".to_owned(), "1".to_owned()),
+                ("self".to_owned(), "0".to_owned())
+            ],
+            "{arguments}"
+        );
+        // The read-back waits on IR-1077 (`operation_rows_read_back`).
+    }
+}
+
+/// QSpec FR-322-AC-129: an owner that is not proof-eligible (an `any`
+/// step) still carries every step row's region, and no `generated`
+/// occurrence.
+#[trace("FR-322-AC-129", "TC-233", "TC-310")]
+#[test]
+fn an_ineligible_owner_has_step_rows_and_no_generated_occurrence() {
+    let row = "step C::ConfigVersion::attemptUpdate -> any;";
+    let (emitted, unit) = emit_rows(&format!("{MAPS}\n{row}"), &["attemptUpdate"]);
+    let node = refinement_node(&emitted.emission);
+    assert_eq!(
+        node["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}])
+    );
+    assert_eq!(node["body"]["steps"][0]["target"], json!({"kind": "any"}));
+    let written = wire(&emitted.emission);
+    let (start, end) = span_of(&unit, row);
+    assert_eq!(written["refinement_step_rows"][0]["region"]["start"], start);
+    assert_eq!(written["refinement_step_rows"][0]["region"]["end"], end);
+}
+
+/// QSpec FR-375 `assume` and `ensure`: each names its operation's
+/// `operation_anchor` with the written kind and granularity, and an
+/// operation's step row names that anchor as its `source_node` (no class
+/// catalog), and an abstract target's operation its own anchor.
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+fn fairness_and_operation_rows_name_operation_anchors() {
+    let (emitted, _) = emit_rows(
+        &format!(
+            "{MAPS}\n\
+             step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);\n\
+             assume fair weak each C::ConfigVersion::attemptUpdate;\n\
+             ensure fair strong whole A::ConfigVersion::attemptUpdate;"
+        ),
+        &["attemptUpdate"],
+    );
+    let written = wire(&emitted.emission);
+    let node = refinement_node(&emitted.emission);
+    let anchor = |key: &Value| {
+        nodes(&written)
+            .iter()
+            .find(|candidate| candidate["node_id"] == *key)
+            .unwrap_or_else(|| panic!("a node {key}"))["semantic_form"]
+            .clone()
+    };
+    let body = &node["body"];
+    let assume = &body["assume"][0];
+    assert_eq!(
+        (&assume["kind"], &assume["granularity"]),
+        (&json!("weak"), &json!("each"))
+    );
+    assert_eq!(anchor(&assume["operation"]), "operation_anchor");
+    let ensure = &body["ensure"][0];
+    assert_eq!(
+        (&ensure["kind"], &ensure["granularity"]),
+        (&json!("strong"), &json!("whole"))
+    );
+    assert_eq!(anchor(&ensure["operation"]), "operation_anchor");
+    let step = &body["steps"][0];
+    assert_eq!(step["source_node"], assume["operation"]);
+    assert_eq!(step["target"]["operation"], ensure["operation"]);
+    assert_eq!(anchor(&step["target"]["receiver"]["target"]), "parameter");
+}
+
+/// The step, `assume` and `ensure` rows read back once IR resolves an
+/// `operation_anchor` against its declaring type (IR-1077).
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+#[ignore = "IR-1077: IR requires a row's operation_anchor context to be the model root"]
+fn operation_rows_read_back() {
+    let (emitted, _) = emit_rows(
+        &format!(
+            "{MAPS}\n\
+             step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);\n\
+             assume fair weak each C::ConfigVersion::attemptUpdate;"
+        ),
+        &["attemptUpdate"],
+    );
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// A protocol subject `A::Local` refined by the concrete protocol `Impl`,
+/// whose step rows are `rows`.
+fn protocol_rows(rows: &[&str]) -> (String, Vec<Vec<u8>>) {
+    protocol_rows_running("sequence Main { }", rows)
+}
+
+/// [`protocol_rows`] whose concrete protocol `Impl` runs `run`.
+fn protocol_rows_running(run: &str, rows: &[&str]) -> (String, Vec<Vec<u8>>) {
+    let (unit, documents) = protocol_subject();
+    let unit = unit.replace(
+        "refinement R using inf abstract A::Local concrete C {}",
+        &format!(
+            "protocol Impl using p over (input: C::Widget) on origin {{\n\
+             role w on C::Widget;\n\
+             channel ch from w to w carries Boolean ordering unordered delivery unknown \
+             capacity 2 overflow block;\n\
+             run {run}\n\
+             finish Done as (d: Boolean) {{ true }};\n\
+             }}\n\
+             refinement R using inf abstract A::Local concrete C {{\n{}\n}}",
+            rows.join("\n")
+        ),
+    );
+    (unit, documents)
+}
+
+/// The protocol-subject rows of [`protocol_rows`]: the finish, then the
+/// channel's two classes.
+const PROTOCOL_ROWS: [&str; 3] = [
+    "step lose C::Impl::ch -> stutter;",
+    "step C::Impl::Done -> stutter;",
+    "step duplicate C::Impl::ch -> stutter;",
+];
+
+/// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject's
+/// `steps` are ordered by their node's digest, rows of one node by their
+/// alias-free class spelling (`duplicate Impl::ch` before `lose Impl::ch`),
+/// each naming its class catalog node, whatever order they are written in.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn protocol_step_rows_order_by_node_then_class_spelling() {
+    let steps = |rows: &[&str]| {
+        let (unit, documents) = protocol_rows(rows);
+        let package = modelled_with_documents(&unit, &documents, Vec::new());
+        let emission = emit_checked(&package).expect("the protocol rows emit");
+        let node = refinement_node(&emission);
+        let catalog = node["body"]["class_catalog"]["concrete"].clone();
+        (node["body"]["steps"].clone(), catalog)
+    };
+    let (written, catalog) = steps(&PROTOCOL_ROWS);
+    let steps_of = |steps: &Value| -> Vec<(String, String)> {
+        steps
+            .as_array()
+            .expect("steps")
+            .iter()
+            .map(|step| {
+                (
+                    step["source_node"]["digest"]
+                        .as_str()
+                        .expect("a node")
+                        .to_owned(),
+                    step["source_class"].as_str().expect("a class").to_owned(),
+                )
+            })
+            .collect()
+    };
+    let ordered = steps_of(&written);
+    let mut sorted = ordered.clone();
+    sorted.sort();
+    assert_eq!(ordered, sorted);
+    let classes: Vec<&str> = ordered.iter().map(|(_, class)| class.as_str()).collect();
+    let duplicate = classes
+        .iter()
+        .position(|class| *class == "duplicate Impl::ch");
+    let lose = classes.iter().position(|class| *class == "lose Impl::ch");
+    assert!(duplicate < lose && lose.is_some(), "{classes:?}");
+    for step in written.as_array().expect("steps") {
+        let entry = catalog
+            .as_array()
+            .expect("a concrete catalog")
+            .iter()
+            .find(|entry| entry["class"] == step["source_class"])
+            .unwrap_or_else(|| panic!("{} is catalogued", step["source_class"]));
+        assert_eq!(entry["node"], step["source_node"]);
+    }
+    let reversed: Vec<&str> = PROTOCOL_ROWS.iter().rev().copied().collect();
+    assert_eq!(steps(&reversed).0, written);
+}
+
+/// A protocol subject's step rows read back once IR's catalog rebuild
+/// agrees with FR-375 (IR-874).
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn protocol_step_rows_read_back() {
+    let (unit, documents) = protocol_rows(&PROTOCOL_ROWS);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol rows emit");
+    let admitted = read(&Emitted {
+        package,
+        emission,
+        documents,
+    });
+    assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// [`PROTOCOL_ROWS`] with a `tso` parallel `Par` in `Impl`'s run: its
+/// `fork`/`join` rows and the `memory drain` and `memory flush` rows.
+const MEMORY_RUN: &str = "sequence Main { parallel Par memory tso { branch a sequence Ay { } \
+     branch b sequence Bee { } } join all [a, b]; }";
+const MEMORY_ROWS: [&str; 7] = [
+    "step memory flush -> stutter;",
+    "step lose C::Impl::ch -> stutter;",
+    "step fork C::Impl::Par -> stutter;",
+    "step memory drain -> stutter;",
+    "step C::Impl::Done -> stutter;",
+    "step join C::Impl::Par -> stutter;",
+    "step duplicate C::Impl::ch -> stutter;",
+];
+
+/// The checked package and emission of [`protocol_rows_running`].
+fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
+    let (unit, documents) = protocol_rows_running(run, rows);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the memory rows emit");
+    Emitted {
+        package,
+        emission,
+        documents,
+    }
+}
+
+/// QSpec FR-375-AC-19 (the memory rows, QSL-1181 7ce810ed): the `memory`
+/// rows come after every declaration-naming row, `drain` before `flush`,
+/// neither with a `source_node`; writing the rows in another order changes
+/// neither the node id nor the package id.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn memory_rows_go_last_drain_before_flush() {
+    let forward = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let reversed: Vec<&str> = MEMORY_ROWS.iter().rev().copied().collect();
+    let reversed = memory_emission(MEMORY_RUN, &reversed);
+    let node = refinement_node(&forward.emission);
+    let steps = node["body"]["steps"].as_array().expect("steps");
+    let tail: Vec<&Value> = steps[steps.len() - 2..].iter().collect();
+    assert_eq!(
+        tail.iter()
+            .map(|step| step["source_class"].as_str().expect("a class"))
+            .collect::<Vec<_>>(),
+        ["memory drain", "memory flush"]
+    );
+    for step in &tail {
+        assert!(step.get("source_node").is_none(), "{step}");
+    }
+    for step in &steps[..steps.len() - 2] {
+        assert!(step.get("source_node").is_some(), "{step}");
+    }
+    assert_eq!(
+        refinement_node(&reversed.emission)["node_id"],
+        node["node_id"]
+    );
+    assert_eq!(
+        wire(&reversed.emission)["package_id"],
+        wire(&forward.emission)["package_id"]
+    );
+}
+
+/// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
+/// `sc`, `tso` and `ra` (and a second `sc`), the concrete catalog holds
+/// `memory drain` once per model in the order `ra`, `sc`, `tso`, each with
+/// `drain: store-buffer-flush` and no `node` or `binder_types`, then
+/// `memory flush` once for `tso`.
+#[trace("FR-375-AC-23", "FR-375-AC-26", "TC-310")]
+#[test]
+fn memory_catalog_entries_are_one_drain_per_model_then_flush() {
+    let parallel = |name: &str, memory: &str| {
+        format!(
+            "parallel {name} memory {memory} {{ branch a sequence {name}A {{ }} \
+             branch b sequence {name}B {{ }} }} join all [a, b];"
+        )
+    };
+    let run = format!(
+        "sequence Main {{ {} {} {} {} }}",
+        parallel("Sc", "sc"),
+        parallel("Tso", "tso"),
+        parallel("Ra", "ra"),
+        parallel("Again", "sc"),
+    );
+    let mut rows: Vec<String> = PROTOCOL_ROWS.iter().map(|row| (*row).to_owned()).collect();
+    for name in ["Sc", "Tso", "Ra", "Again"] {
+        rows.push(format!("step fork C::Impl::{name} -> stutter;"));
+        rows.push(format!("step join C::Impl::{name} -> stutter;"));
+    }
+    rows.push("step memory drain -> stutter;".to_owned());
+    rows.push("step memory flush -> stutter;".to_owned());
+    let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+    let emitted = memory_emission(&run, &rows);
+    let node = refinement_node(&emitted.emission);
+    let memory: Vec<&Value> = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("a concrete catalog")
+        .iter()
+        .filter(|entry| {
+            entry["class"]
+                .as_str()
+                .is_some_and(|class| class.starts_with("memory "))
+        })
+        .collect();
+    assert_eq!(
+        memory,
+        [
+            &json!({"class": "memory drain", "memory_model": "ra", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory drain", "memory_model": "sc", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory drain", "memory_model": "tso", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory flush", "memory_model": "tso"}),
+        ]
+    );
+}
+
+/// The memory rows and catalog entries read back once IR's catalog rebuild
+/// agrees with FR-375 (IR-874).
+#[trace("FR-375-AC-19", "FR-375-AC-26", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn memory_rows_read_back() {
+    let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the memory rows read back: {admitted:?}");
 }

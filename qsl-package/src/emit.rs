@@ -92,10 +92,10 @@ use quire_contract_model::{
     CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
-    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
-    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion,
-    CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner, ProtocolForm, StateForm,
-    ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedRefinementStepRowRegion, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
+    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
+    CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner,
+    ProtocolForm, StateForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -1195,65 +1195,89 @@ fn inspection_source_map(
     PackageSourceMap::from_entries(mapped).map_err(|_| EmitRefusal::SourceMapInvariant)
 }
 
-/// The first FR-375 emission slice: the complete row-empty model refinement
-/// body. Mapped refinements are added by later slices; this body is legal in
-/// its own right and its identity is bound to the concrete model's
-/// `model_root` node.
-fn empty_model_refinement_node(
+/// A refinement's V2 node (QSpec FR-375), its source-map entries and its
+/// `refinement_step_rows` entries. Its `declaration` occurrence is at
+/// `region`; a proof-eligible owner also has one `generated` occurrence per
+/// step-simulation obligation, the initial one at `region` and the one of
+/// `steps[i]` at that row's own region (FR-322-AC-87, AC-88). Every step
+/// row has a sidecar entry at its region, eligible or not (FR-322-AC-129).
+fn refinement_node(
+    graph: &CheckedGraph,
     refinement: &CheckedRefinement,
     region: &SourceRegion,
-) -> Result<(CheckedSemanticNodeV2, Vec<CheckedSourceMapEntry>), EmitRefusal> {
-    let abstract_node = node_id(
-        refinement
-            .abstract_subject_node()
-            .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
-    );
+) -> Result<
+    (
+        CheckedSemanticNodeV2,
+        Vec<CheckedSourceMapEntry>,
+        Vec<CheckedRefinementStepRowRegion>,
+    ),
+    EmitRefusal,
+> {
+    let emission = refinement.v2_emission().map_err(|error| match error {
+        qsl_semantics::check::RefinementV2EncodingError::MissingSubject
+        | qsl_semantics::check::RefinementV2EncodingError::MissingRows => {
+            EmitRefusal::RefinementSubjectNotEmitted
+        }
+        qsl_semantics::check::RefinementV2EncodingError::Body(_)
+        | qsl_semantics::check::RefinementV2EncodingError::Identity(_) => {
+            EmitRefusal::RefinementIdentityEncoding
+        }
+    })?;
     let concrete_node = node_id(
         refinement
             .concrete_subject_node()
             .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
     );
-    let (identity, typed_body) =
-        refinement
-            .v2_empty_model_emission()
-            .map_err(|error| match error {
-                qsl_semantics::check::RefinementV2EncodingError::MissingSubject => {
-                    EmitRefusal::RefinementSubjectNotEmitted
-                }
-                qsl_semantics::check::RefinementV2EncodingError::Body(_)
-                | qsl_semantics::check::RefinementV2EncodingError::Identity(_) => {
-                    EmitRefusal::RefinementIdentityEncoding
-                }
-            })?;
-    let semantic_type = concrete_node;
-    let id = node_id(identity);
-    let declaration = CheckedOccurrence {
-        role: CheckedOccurrenceRole::Declaration,
-        ordinal: 0,
-    };
-    let generated = CheckedOccurrence {
-        role: CheckedOccurrenceRole::Generated,
-        ordinal: 0,
-    };
-    let source = source_artifact(region.source());
-    let source_region = CheckedSourceRegion {
-        source,
+    let id = node_id(emission.identity);
+    let wire_region = |region: &SourceRegion| CheckedSourceRegion {
+        source: source_artifact(region.source()),
         start: region.start(),
         end: region.end(),
     };
-    let occurrences = vec![declaration.clone(), generated.clone()];
-    let source_entries = [declaration, generated]
-        .into_iter()
-        .map(|occurrence| CheckedSourceMapEntry {
+    let declaration_region = wire_region(region);
+    let mut row_regions = Vec::with_capacity(emission.step_sources.len());
+    let mut step_rows = Vec::with_capacity(emission.step_sources.len());
+    for (ordinal, source) in emission.step_sources.iter().enumerate() {
+        let row = graph
+            .refinement_step_region(refinement, *source)
+            .filter(|row| row.start() < row.end())
+            .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
+        let row = wire_region(&row);
+        step_rows.push(CheckedRefinementStepRowRegion {
             node_id: id.clone(),
-            role: occurrence.role,
+            ordinal: u64::try_from(ordinal).map_err(encoding)?,
+            region: row.clone(),
+        });
+        row_regions.push(row);
+    }
+    let mut occurrences = vec![(
+        CheckedOccurrence {
+            role: CheckedOccurrenceRole::Declaration,
+            ordinal: 0,
+        },
+        declaration_region.clone(),
+    )];
+    if emission.proof_eligible {
+        let generated = std::iter::once(declaration_region).chain(row_regions);
+        for (ordinal, region) in generated.enumerate() {
+            occurrences.push((
+                CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Generated,
+                    ordinal: u64::try_from(ordinal).map_err(encoding)?,
+                },
+                region,
+            ));
+        }
+    }
+    let source_entries = occurrences
+        .iter()
+        .map(|(occurrence, region)| CheckedSourceMapEntry {
+            node_id: id.clone(),
+            role: occurrence.role.clone(),
             ordinal: occurrence.ordinal,
-            regions: vec![source_region.clone()],
+            regions: vec![region.clone()],
         })
         .collect();
-    let mut dependencies = vec![abstract_node];
-    dependencies.sort();
-    dependencies.dedup();
     Ok((
         CheckedSemanticNodeV2 {
             owner_model: None,
@@ -1261,16 +1285,20 @@ fn empty_model_refinement_node(
             schema_version: GRAPH_V2.into(),
             node_tag: CheckedNodeTag::Relation.as_wire().into(),
             semantic_form: "refinement".into(),
-            semantic_type,
-            dependencies,
-            occurrences,
+            semantic_type: concrete_node,
+            dependencies: emission.dependencies.into_iter().map(node_id).collect(),
+            occurrences: occurrences
+                .into_iter()
+                .map(|(occurrence, _)| occurrence)
+                .collect(),
             recursion_group: None,
             nominal_identity_preimage: None,
             declaration: None,
             owner: None,
-            body: typed_body,
+            body: emission.body,
         },
         source_entries,
+        step_rows,
     ))
 }
 
@@ -1889,21 +1917,23 @@ fn emit_package_inner(
     let mut nodes = wire_nodes;
     let mut emitted_refinements = Vec::new();
     let mut refinement_names: BTreeMap<CheckedNodeId, &str> = BTreeMap::new();
+    let mut step_rows = Vec::new();
     for refinement in graph.refinements() {
-        if !refinement.v2_empty_model_body() {
+        if !refinement.v2_emittable() {
             return Err(EmitRefusal::RefinementNotEmitted);
         }
         let region = graph
             .refinement_declaration_region(refinement)
             .filter(|region| region.start() < region.end())
             .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
-        let (node, entries) = empty_model_refinement_node(refinement, &region)?;
+        let (node, entries, rows) = refinement_node(graph, refinement, &region)?;
         if let Some(first) = refinement_names.insert(node.node_id.clone(), refinement.name()) {
             return Err(EmitRefusal::SameMeaningRefinements {
                 first: first.to_owned(),
                 second: refinement.name().to_owned(),
             });
         }
+        step_rows.extend(rows);
         let insertion = nodes.partition_point(|existing| {
             existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
         });
@@ -1912,6 +1942,11 @@ fn emit_package_inner(
         sources.insert(source_artifact(region.source()));
         emitted_refinements.push(refinement);
     }
+    // FR-322: the sidecar is ordered by owner node id, then ordinal.
+    step_rows.sort_by(|left, right| {
+        (left.node_id.digest.as_bytes(), left.ordinal)
+            .cmp(&(right.node_id.digest.as_bytes(), right.ordinal))
+    });
     if !graph.time_sources().is_empty() {
         let text_type = literal_type(&nodes, "text")
             .unwrap_or_else(|| node_id(qsl_semantics::check::builtin_text_type_key()));
@@ -2194,7 +2229,7 @@ fn emit_package_inner(
             &semantic_graph,
             CheckedPackageSourceCorrespondenceRef {
                 source_map: &source_map,
-                refinement_step_rows: None,
+                refinement_step_rows: (!step_rows.is_empty()).then_some(step_rows.as_slice()),
             },
             &capability_report,
             &diagnostics,
