@@ -1569,17 +1569,34 @@ impl Registry {
         outcome: CandidateOutcome,
         dense: bool,
     ) -> CandidateOutcome {
+        if dense {
+            self.keep_candidates(outcome, BackendDescriptor::decides_dense_time)
+        } else {
+            outcome
+        }
+    }
+
+    /// FR-144 and QSpec FR-430: `outcome`, a candidate set computed for a
+    /// refinement record over an untimed or `time tick` concrete subject,
+    /// restricted to the explicit-state engines: those that do not decide a
+    /// `time dense` subject, since EN-6's refinement product reads only a
+    /// dense concrete subject. An unknown named backend is returned
+    /// unchanged.
+    pub fn restrict_to_untimed_refinement(&self, outcome: CandidateOutcome) -> CandidateOutcome {
+        self.keep_candidates(outcome, |descriptor| !descriptor.decides_dense_time())
+    }
+
+    /// `outcome` keeping the candidates whose descriptor `keep` holds for.
+    fn keep_candidates(
+        &self,
+        outcome: CandidateOutcome,
+        keep: impl Fn(&BackendDescriptor) -> bool,
+    ) -> CandidateOutcome {
         let CandidateOutcome::Candidates(mut set) = outcome else {
             return outcome;
         };
-        if !dense {
-            return CandidateOutcome::Candidates(set);
-        }
-        set.candidates.retain(|candidate| {
-            self.held
-                .get(&candidate.id)
-                .is_some_and(BackendDescriptor::decides_dense_time)
-        });
+        set.candidates
+            .retain(|candidate| self.held.get(&candidate.id).is_some_and(&keep));
         let kept = set.candidates.clone();
         set.fairness.retain(|candidate, _| kept.contains(candidate));
         CandidateOutcome::Candidates(set)

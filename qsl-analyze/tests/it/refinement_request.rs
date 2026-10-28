@@ -104,6 +104,11 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
     }
 }
 
+/// The concrete subject ranges over the one model `Impl`.
+fn over_impl<S>(_: &S) -> Vec<String> {
+    vec!["Impl".to_owned()]
+}
+
 /// The deadlock-freedom items of a request holding `CasRefinesCounter` over
 /// its concrete subject, in a unit that also declares `terminal`.
 fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
@@ -117,7 +122,7 @@ fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
         abstract_initial: &initial,
         package: world.package().graph(),
     };
-    let derived = deadlock_freedom_items(&[], &[item], &[])
+    let derived = deadlock_freedom_items(&[], &[item], &[], over_impl)
         .iter()
         .map(|item| item.subject().clone())
         .collect();
@@ -136,6 +141,62 @@ fn a_refinement_brings_only_its_concrete_subjects_deadlock_item() {
     }
     let (_, derived) = derived("terminal Halt using v on Impl any;\n");
     assert!(derived.is_empty(), "{derived:?}");
+}
+
+/// FR-124 with FR-144 (TC-549 step 1, SR-1751002 FND-002): a temporal item
+/// and a refinement item over the one concrete subject derive one
+/// deadlock-freedom item, alone or together, while the abstract model
+/// declares `terminal any`; the concrete model's `terminal any` removes it
+/// in every case.
+#[trace("TC-549", "FR-144-AC-1")]
+#[test]
+fn a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item() {
+    use qsl_route::deadlock::ModelTemporalItem;
+    for (terminal, expected) in [
+        ("terminal Halt using v on Spec any;\n", 1),
+        ("terminal Halt using v on Impl any;\n", 0),
+    ] {
+        let world = World::new(&format!("{terminal}{}", cas_refines_counter()));
+        let subject = subject(&world);
+        let identity = SubjectIdentity::of(&subject).expect("the package emits");
+        let clause = OccurrenceKey::new(
+            qsl_foundation::digest::WireNodeId::from_digest([3; 32]),
+            quire_exact::Origin::new(quire_exact::Role::new("temporal"), 0),
+        );
+        let graph = world.package().graph();
+        let temporal = [ModelTemporalItem {
+            occurrence: &clause,
+            subject: &identity,
+            package: graph,
+        }];
+        let initial = [world.abstract_initial()];
+        let refinement = [ModelRefinementItem {
+            refinement: world.refinement(),
+            subject: &identity,
+            abstract_initial: &initial,
+            package: graph,
+        }];
+        for (name, derived) in [
+            (
+                "temporal",
+                deadlock_freedom_items(&temporal, &[], &[], over_impl),
+            ),
+            (
+                "refinement",
+                deadlock_freedom_items(&[], &refinement, &[], over_impl),
+            ),
+            (
+                "both",
+                deadlock_freedom_items(&temporal, &refinement, &[], over_impl),
+            ),
+        ] {
+            assert_eq!(derived.len(), expected, "{terminal:?} {name}");
+            assert!(
+                derived.iter().all(|item| *item.subject() == identity),
+                "{terminal:?} {name}"
+            );
+        }
+    }
 }
 
 /// FR-144-AC-5 (TC-549 step 5): two `CasRefinesCounter` requests that

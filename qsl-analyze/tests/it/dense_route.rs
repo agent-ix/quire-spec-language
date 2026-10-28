@@ -95,7 +95,7 @@ fn routes(world: &World) -> Routes {
             dense,
         ))
     };
-    let derived = deadlock_freedom_items(&temporal, &[], &[])
+    let derived = deadlock_freedom_items(&temporal, &[], &[], |_| vec!["M".to_owned()])
         .iter()
         .map(|item| (item.dense_time(), derived_route(item.dense_time())))
         .chain(
@@ -199,4 +199,30 @@ fn an_item_over_an_untimed_subject_keeps_its_candidates() {
             vec![en1::BACKEND_ID.to_owned(), en6::BACKEND_ID.to_owned()]
         )]
     );
+}
+
+/// FR-144-AC-1 with FR-430 (TC-549, SR-1751002 FND-001): with EN-1 and EN-6
+/// both registered, the untimed `CasRefinesCounter` record routes to the
+/// explicit-state engine alone, while an untimed clause keeps both.
+#[trace("TC-549", "FR-144-AC-1")]
+#[test]
+fn an_untimed_refinement_record_routes_to_explicit_state_alone() {
+    use crate::refinement_fixture::{cas_refines_counter, World as Cas};
+    let world = Cas::new(&cas_refines_counter());
+    let occurrence = world
+        .refinement()
+        .requirement_occurrence()
+        .expect("the refinement has a record");
+    let records = world.package().graph().requirements();
+    assert!(!records
+        .get(occurrence)
+        .expect("its record")
+        .requirements()
+        .dense_time());
+    let items = items_from_requirements(records, &registry(), None);
+    let item = items
+        .iter()
+        .find(|item| item.occurrence() == occurrence)
+        .expect("the record's item");
+    assert_eq!(ids(item.candidates()), [en1::BACKEND_ID]);
 }
