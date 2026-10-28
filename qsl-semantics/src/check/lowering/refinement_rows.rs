@@ -124,8 +124,6 @@ impl Lowering<'_> {
         Ok(rows)
     }
 
-    /// `key`, built by `node`, with a `generated` occurrence at `location`
-    /// when no declaration has located it.
     /// FR-144: the `Boolean` type node the refinement's requirement record
     /// is result-bounded at, with a `generated` occurrence at the
     /// refinement's declaration `location` when no other declaration locates
@@ -139,6 +137,8 @@ impl Lowering<'_> {
         })
     }
 
+    /// `key`, built by `node`, with a `generated` occurrence at `location`
+    /// when no declaration has located it.
     fn located(
         &mut self,
         location: &Location,

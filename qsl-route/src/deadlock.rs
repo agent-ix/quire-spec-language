@@ -34,7 +34,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     Capability, CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember,
-    TerminalDeclaration, TerminalMode, TimeSourceKind,
+    TerminalDeclaration, TimeSourceKind,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_semantic_value::fairness::PropertyForm;
@@ -186,8 +186,8 @@ impl<S: Clone> DeadlockFreedomItem<S> {
         &self.subject
     }
 
-    /// Whether the subject is `time dense` (FR-243): an item it was derived
-    /// from is over a dense subject, so the item routes to EN-6
+    /// Whether the subject is `time dense` (FR-243): one of its models
+    /// declares `time dense`, so the item routes to EN-6
     /// ([`crate::Registry::restrict_to_dense_time`]).
     pub fn dense_time(&self) -> bool {
         self.dense_time
@@ -221,21 +221,12 @@ impl<S: Clone> DeadlockFreedomItem<S> {
     }
 }
 
-/// Whether `package`'s state model opts out of the deadlock-freedom item:
-/// a selected model declares `terminal any`.
-fn opts_out(package: &CheckedGraph) -> bool {
-    package
-        .terminal_nodes()
-        .iter()
-        .any(|terminal| terminal.mode == TerminalMode::Any)
-}
-
-/// Whether `refinement`'s concrete model declares `terminal any` in
-/// `package`: only that declaration opts the refinement's subject out, and
-/// the abstract model's has no effect on it (ADR-020 RS-9).
-fn concrete_opts_out(package: &CheckedGraph, refinement: &CheckedRefinement) -> bool {
+/// Whether one of the models `models` of `package` declares `terminal any`:
+/// only a subject's own models opt it out of the deadlock-freedom item, and
+/// another model's declaration has no effect on it.
+fn opts_out(package: &CheckedGraph, models: &[String]) -> bool {
     package.terminals().iter().any(|terminal| {
-        terminal.model() == refinement.concrete_model()
+        models.iter().any(|model| model == terminal.model())
             && matches!(terminal.declaration(), TerminalDeclaration::Any)
     })
 }
@@ -244,30 +235,41 @@ fn concrete_opts_out(package: &CheckedGraph, refinement: &CheckedRefinement) -> 
 /// temporal, refinement and state-graph items over model subjects. There is
 /// one per distinct subject, ordered by temporal-item order, then
 /// refinement-item order, then state-graph-item order, and none for a subject
-/// whose state model declares `terminal any`. A refinement item brings its
-/// concrete subject's item and none for its abstract subject.
+/// one of whose own models declares `terminal any`. `models_of` gives the
+/// model aliases a subject ranges over, as [`time_lock_freedom_items`]
+/// reads them. A refinement item brings its concrete subject's item, opted
+/// out only by its concrete model's `terminal any`, and none for its
+/// abstract subject (ADR-020 RS-9).
 pub fn deadlock_freedom_items<S: Clone + Eq>(
     temporal: &[ModelTemporalItem<'_, S>],
     refinements: &[ModelRefinementItem<'_, S>],
     state_graph: &[ModelStateGraphItem<'_, S>],
+    models_of: impl Fn(&S) -> Vec<String>,
 ) -> Vec<DeadlockFreedomItem<S>> {
     let temporal = temporal.iter().map(|item| {
+        let models = models_of(item.subject);
         (
             item.subject,
-            opts_out(item.package),
-            record_is_dense(item.package, Some(item.occurrence)),
+            opts_out(item.package, &models),
+            is_dense(item.package, &models),
         )
     });
     let refinements = refinements.iter().map(|item| {
+        let concrete = [item.refinement.concrete_model().to_owned()];
         (
             item.subject,
-            concrete_opts_out(item.package, item.refinement),
-            record_is_dense(item.package, item.occurrence()),
+            opts_out(item.package, &concrete),
+            is_dense(item.package, &concrete),
         )
     });
-    let state_graph = state_graph
-        .iter()
-        .map(|item| (item.subject, opts_out(item.package), false));
+    let state_graph = state_graph.iter().map(|item| {
+        let models = models_of(item.subject);
+        (
+            item.subject,
+            opts_out(item.package, &models),
+            is_dense(item.package, &models),
+        )
+    });
     let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
     for (subject, opted_out, dense) in temporal.chain(refinements).chain(state_graph) {
         if opted_out {
@@ -282,14 +284,6 @@ pub fn deadlock_freedom_items<S: Clone + Eq>(
         }
     }
     derived
-}
-
-/// Whether `package`'s requirement record at `occurrence` is over a `time
-/// dense` subject (FR-243).
-fn record_is_dense(package: &CheckedGraph, occurrence: Option<&OccurrenceKey>) -> bool {
-    occurrence
-        .and_then(|occurrence| package.requirements().get(occurrence))
-        .is_some_and(|record| record.requirements().dense_time())
 }
 
 /// One temporal item over a protocol subject, as the writer reads it: the

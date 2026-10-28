@@ -150,6 +150,7 @@ fn the_timed_refinement_record_routes_to_en6_alone() {
             package: graph,
         }],
         &[],
+        |_| vec!["M".to_owned()],
     );
     let [deadlock] = derived.as_slice() else {
         panic!("one deadlock-freedom item: {derived:?}");
