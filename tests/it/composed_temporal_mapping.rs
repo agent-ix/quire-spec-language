@@ -23,8 +23,10 @@ use setup::{admitted, origin, Declaration, EVENT_POSITION, FIXED_SAMPLE, TIMESTA
 enum Row {
     /// Timestamped-event finite window.
     FiniteWindow,
-    /// Any bounded past operator reachable from the root.
-    PastOperator,
+    /// A bounded past operator reachable and no future one, false-extension profile.
+    PastOnly,
+    /// Both a bounded past and a bounded future operator reachable.
+    MixedDirection,
     /// Event-position, a bounded future operator, complete surrounding execution.
     EventComplete,
     /// Event-position, a bounded future operator, open surrounding execution.
@@ -36,9 +38,10 @@ enum Row {
 }
 
 /// Every row the table has; the control requires each one to be reachable.
-const ROWS: [Row; 6] = [
+const ROWS: [Row; 7] = [
     Row::FiniteWindow,
-    Row::PastOperator,
+    Row::PastOnly,
+    Row::MixedDirection,
     Row::EventComplete,
     Row::EventOpen,
     Row::FixedSampleFuture,
@@ -52,7 +55,8 @@ fn keys(row: Row, profile: &str, operators: Operators, surrounding: Closure) -> 
     let bounded_future = operators.future && !operators.past;
     match row {
         Row::FiniteWindow => profile == TIMESTAMPED_WINDOW,
-        Row::PastOperator => operators.past,
+        Row::PastOnly => false_extension && operators.past && !operators.future,
+        Row::MixedDirection => operators.past && operators.future,
         Row::EventComplete => {
             profile == EVENT_POSITION && bounded_future && surrounding == Closure::Closed
         }
@@ -135,18 +139,185 @@ fn cases() -> Vec<Case> {
             expect: Expect::Unsupported(&[Unmatched::FiniteWindow]),
         },
         Case {
-            row: Row::PastOperator,
+            row: Row::PastOnly,
             profile: EVENT_POSITION,
             body: "once[0,1] holds(view.ready)",
             surrounding: Closure::Closed,
-            expect: Expect::Unsupported(&[Unmatched::PastOperator]),
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
         },
         Case {
-            row: Row::PastOperator,
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "once[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "historically[0,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "historically[0,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "historically[0,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
             profile: FIXED_SAMPLE,
             body: "historically[0,2] holds(view.ready)",
             surrounding: Closure::Open,
-            expect: Expect::Unsupported(&[Unmatched::PastOperator]),
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) since[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::PastOnly,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) triggered[1,2] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.origin-complete-history/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "once[0,1] eventually[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: FIXED_SAMPLE,
+            body: "always[0,1] historically[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) since[1,2] holds(view.ready) and eventually[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
         },
         Case {
             row: Row::EventComplete,
@@ -302,8 +473,7 @@ fn the_disposition_follows_the_three_inputs_and_nothing_else() {
 }
 
 /// FR-045-AC-2: a timestamped-event request names the finite-window dimension
-/// and a bounded-past request names the past-operator dimension, under every
-/// profile. Neither carries a substitute formula, profile or clock, and no index
+/// and a mixed past/future request names the mixed-direction dimension. Neither carries a substitute formula, profile or clock, and no index
 /// conversion is inferred for the timestamped request.
 #[trace("TC-125", "FR-045-AC-2")]
 #[test]
@@ -328,19 +498,26 @@ fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
         },
     );
 
+    // Mixed direction names its own dimension, never the past operator alone.
     for (profile, body) in [
-        (EVENT_POSITION, "once[0,1] holds(view.ready)"),
-        (FIXED_SAMPLE, "once[0,1] holds(view.ready)"),
-        (TIMESTAMPED_WINDOW, "historically[0,2] holds(view.ready)"),
+        (
+            EVENT_POSITION,
+            "once[0,1] eventually[0,1] holds(view.ready)",
+        ),
+        (
+            FIXED_SAMPLE,
+            "always[0,1] historically[0,1] holds(view.ready)",
+        ),
     ] {
         admitted(&origin("Due", profile, body), |package, at| {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Unsupported { dimensions } = &classified.support else {
-                panic!("{profile}: a bounded past operator has no TL target");
+                panic!("{profile}: a mixed-direction request has no TL target");
             };
-            assert!(
-                dimensions.contains(&Unmatched::PastOperator),
-                "{profile}: the past-operator dimension is named",
+            assert_eq!(
+                dimensions.as_slice(),
+                [Unmatched::MixedDirection],
+                "{profile}: the mixed-direction dimension alone",
             );
             assert_eq!(
                 classified.retained.profile.identity(),
@@ -349,6 +526,25 @@ fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
             );
         });
     }
+
+    // A finite-window past-only request is unsupported on the finite-window
+    // dimension alone; it does not borrow the past-only target.
+    admitted(
+        &origin(
+            "Due",
+            TIMESTAMPED_WINDOW,
+            "historically[0,2] holds(view.ready)",
+        ),
+        |package, at| {
+            let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
+            assert_eq!(
+                classified.support,
+                Support::Unsupported {
+                    dimensions: vec![Unmatched::FiniteWindow]
+                },
+            );
+        },
+    );
 }
 
 /// FR-045-AC-3: an unsupported result retains the native declaration subject,
@@ -403,7 +599,11 @@ fn an_unsupported_result_retains_the_native_subject_and_changes_nothing() {
 #[test]
 fn a_doubly_unmatched_declaration_names_both_dimensions() {
     admitted(
-        &origin("Due", TIMESTAMPED_WINDOW, "once[0,1] holds(view.ready)"),
+        &origin(
+            "Due",
+            TIMESTAMPED_WINDOW,
+            "once[0,1] eventually[0,1] holds(view.ready)",
+        ),
         |package, at| {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Unsupported { dimensions } = &classified.support else {
@@ -411,7 +611,7 @@ fn a_doubly_unmatched_declaration_names_both_dimensions() {
             };
             assert_eq!(
                 dimensions.as_slice(),
-                [Unmatched::FiniteWindow, Unmatched::PastOperator],
+                [Unmatched::FiniteWindow, Unmatched::MixedDirection],
                 "both unmatched dimensions, not one summary cause",
             );
         },

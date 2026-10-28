@@ -30,6 +30,9 @@ pub enum Target {
     ClosedTrace,
     /// `mltl.online-prefix/v1`.
     OnlinePrefix,
+    /// `mltl.origin-complete-history/v1`: every bounded past operator alone,
+    /// under either false-extension profile, whatever the surrounding closure.
+    OriginCompleteHistory,
 }
 
 impl Target {
@@ -38,6 +41,7 @@ impl Target {
         match self {
             Self::ClosedTrace => "mltl.closed-trace/v1",
             Self::OnlinePrefix => "mltl.online-prefix/v1",
+            Self::OriginCompleteHistory => "mltl.origin-complete-history/v1",
         }
     }
 }
@@ -48,9 +52,9 @@ pub enum Unmatched {
     /// The finite-window boundary rule; index-based TL profiles extend atoms
     /// false beyond closure.
     FiniteWindow,
-    /// Any bounded past operator, until a separately reviewed TL past profile
-    /// exists.
-    PastOperator,
+    /// A bounded past and a bounded future operator both reachable; no TL
+    /// profile evaluates both directions in one formula.
+    MixedDirection,
 }
 
 /// Premises a supported mapping would still have to discharge. Naming them is
@@ -252,18 +256,28 @@ impl Operators {
 
 /// Classify one mapping request against the reviewed support table.
 ///
-/// Unmatched dimensions accumulate: a bounded past operator under the
-/// finite-window profile names both.
+/// Unmatched dimensions accumulate: a mixed-direction request under the
+/// finite-window profile names both. A past-only request under a false-extension
+/// profile maps to the origin-complete-history target whatever the closure;
+/// whether the history is complete is a bridge premise, and a history cutoff is
+/// `incomplete` at the evaluation owner's boundary, never unsupported here.
 pub fn classify(profile: Profile, operators: Operators, surrounding_execution: Closure) -> Support {
     let mut dimensions = Vec::new();
     if profile == Profile::TimestampedWindow {
         dimensions.push(Unmatched::FiniteWindow);
     }
-    if operators.past {
-        dimensions.push(Unmatched::PastOperator);
+    if operators.past && operators.future {
+        dimensions.push(Unmatched::MixedDirection);
     }
     if !dimensions.is_empty() {
         return Support::Unsupported { dimensions };
+    }
+    if operators.past {
+        return Support::Supported {
+            target: Target::OriginCompleteHistory,
+            total_sample_valuation: false,
+            premises: OUTSTANDING_PREMISES,
+        };
     }
     Support::Supported {
         target: match surrounding_execution {

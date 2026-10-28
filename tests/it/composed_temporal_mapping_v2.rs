@@ -24,30 +24,82 @@ use quire_spec_language::temporal::{
 };
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
 
-/// One authored declaration per registered profile, each reaching a bounded
-/// future operator and no past operator.
-const DECLARATIONS: [(&str, R); 3] = [
-    ("ByEvent", R::EventPosition),
-    ("BySample", R::FixedSample),
-    ("ByTimestamp", R::TimestampedWindow),
+/// Which operator directions a declaration's body reaches.
+#[derive(Clone, Copy, Debug)]
+enum Kind {
+    /// A bounded future operator and no past operator.
+    Future,
+    /// A bounded past operator and no future operator.
+    PastOnly,
+    /// Both a bounded past and a bounded future operator.
+    Mixed,
+}
+
+/// One authored declaration per registered profile and operator direction.
+const DECLARATIONS: [(&str, R, Kind); 10] = [
+    ("ByEvent", R::EventPosition, Kind::Future),
+    ("BySample", R::FixedSample, Kind::Future),
+    ("ByTimestamp", R::TimestampedWindow, Kind::Future),
+    ("OnceEvent", R::EventPosition, Kind::PastOnly),
+    ("HistoricallySample", R::FixedSample, Kind::PastOnly),
+    ("SinceEvent", R::EventPosition, Kind::PastOnly),
+    ("TriggeredSample", R::FixedSample, Kind::PastOnly),
+    ("PastTimestamp", R::TimestampedWindow, Kind::PastOnly),
+    ("MixedEvent", R::EventPosition, Kind::Mixed),
+    ("MixedTimestamp", R::TimestampedWindow, Kind::Mixed),
 ];
 
 fn inputs() -> Inputs {
     Inputs::new(&[
         Unit {
-            name: "event-time",
+            name: "event-clock",
             body: "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { always[0,1] holds(view.ready) }",
             declarations: &["ByEvent"],
         },
         Unit {
-            name: "sample-time",
+            name: "sample-clock",
             body: "temporal BySample using F over (view: M::Plain) clock \"sample-clock\" on origin { eventually[0,2] holds(view.ready) }",
             declarations: &["BySample"],
         },
         Unit {
-            name: "timestamp-time",
+            name: "timestamp-clock",
             body: "temporal ByTimestamp using W over (view: M::Plain) clock \"timestamp-clock\" on origin { always[0,1] holds(view.ready) }",
             declarations: &["ByTimestamp"],
+        },
+        Unit {
+            name: "once-event-clock",
+            body: "temporal OnceEvent using T over (view: M::Plain) clock \"once-event-clock\" on origin { once[0,1] holds(view.ready) }",
+            declarations: &["OnceEvent"],
+        },
+        Unit {
+            name: "historically-sample-clock",
+            body: "temporal HistoricallySample using F over (view: M::Plain) clock \"historically-sample-clock\" on origin { historically[0,2] holds(view.ready) }",
+            declarations: &["HistoricallySample"],
+        },
+        Unit {
+            name: "since-event-clock",
+            body: "temporal SinceEvent using T over (view: M::Plain) clock \"since-event-clock\" on origin { holds(view.ready) since[1,2] holds(view.ready) }",
+            declarations: &["SinceEvent"],
+        },
+        Unit {
+            name: "triggered-sample-clock",
+            body: "temporal TriggeredSample using F over (view: M::Plain) clock \"triggered-sample-clock\" on origin { holds(view.ready) triggered[1,2] holds(view.ready) }",
+            declarations: &["TriggeredSample"],
+        },
+        Unit {
+            name: "past-timestamp-clock",
+            body: "temporal PastTimestamp using W over (view: M::Plain) clock \"past-timestamp-clock\" on origin { once[0,1] holds(view.ready) }",
+            declarations: &["PastTimestamp"],
+        },
+        Unit {
+            name: "mixed-event-clock",
+            body: "temporal MixedEvent using T over (view: M::Plain) clock \"mixed-event-clock\" on origin { once[0,1] eventually[0,1] holds(view.ready) }",
+            declarations: &["MixedEvent"],
+        },
+        Unit {
+            name: "mixed-timestamp-clock",
+            body: "temporal MixedTimestamp using W over (view: M::Plain) clock \"mixed-timestamp-clock\" on origin { once[0,1] eventually[0,1] holds(view.ready) }",
+            declarations: &["MixedTimestamp"],
         },
         // A compiled package must carry a protocol family; this consumer
         // requires every temporal declaration above.
@@ -58,6 +110,13 @@ fn inputs() -> Inputs {
                 requires temporal ByEvent;
                 requires temporal BySample;
                 requires temporal ByTimestamp;
+                requires temporal OnceEvent;
+                requires temporal HistoricallySample;
+                requires temporal SinceEvent;
+                requires temporal TriggeredSample;
+                requires temporal PastTimestamp;
+                requires temporal MixedEvent;
+                requires temporal MixedTimestamp;
                 run sequence Main {
                     event Happened by Service as (happened: M::Plain) { happened.ready };
                 }
@@ -69,25 +128,29 @@ fn inputs() -> Inputs {
 }
 
 /// The exact clock configuration each declaration selects, in declaration order.
-fn clocks() -> [v2::wire::ClockConfiguration; 3] {
-    [
-        v2::wire::ClockConfiguration::EventPosition {
-            sequence_authority: "orders".into(),
-        },
-        v2::wire::ClockConfiguration::FixedSample {
-            epoch: w::Number(NumberWire::Integer {
-                decimal: "0".into(),
-            }),
-            period: w::Number(NumberWire::Rational {
-                numerator: "1".into(),
-                denominator: "2".into(),
-            }),
-            unit: "second".into(),
-        },
-        v2::wire::ClockConfiguration::TimestampedEvent {
-            timestamp_unit: "millisecond".into(),
-        },
-    ]
+fn clocks() -> Vec<v2::wire::ClockConfiguration> {
+    DECLARATIONS
+        .iter()
+        .map(|(_, definition, _)| match definition {
+            R::EventPosition => v2::wire::ClockConfiguration::EventPosition {
+                sequence_authority: "orders".into(),
+            },
+            R::FixedSample => v2::wire::ClockConfiguration::FixedSample {
+                epoch: w::Number(NumberWire::Integer {
+                    decimal: "0".into(),
+                }),
+                period: w::Number(NumberWire::Rational {
+                    numerator: "1".into(),
+                    denominator: "2".into(),
+                }),
+                unit: "second".into(),
+            },
+            R::TimestampedWindow => v2::wire::ClockConfiguration::TimestampedEvent {
+                timestamp_unit: "millisecond".into(),
+            },
+            other => unreachable!("{other:?} is not a selectable clock profile"),
+        })
+        .collect()
 }
 
 /// The original definition artifact the caller selected for one registered
@@ -121,7 +184,7 @@ fn with_both(
             let namespace = proofs.types().binding().namespace();
             let spans: Vec<_> = DECLARATIONS
                 .iter()
-                .map(|(name, _)| {
+                .map(|(name, _, _)| {
                     let [id] = namespace.lookup(name) else {
                         panic!("one authored declaration named {name}")
                     };
@@ -134,7 +197,7 @@ fn with_both(
                 .collect();
             let revisions: Vec<_> = DECLARATIONS
                 .iter()
-                .map(|(_, definition)| w::Revision {
+                .map(|(_, definition, _)| w::Revision {
                     namespace: selected.definition_revision_namespace.into(),
                     value: definition.revision().into(),
                 })
@@ -143,7 +206,7 @@ fn with_both(
             let producer: Vec<_> = DECLARATIONS
                 .iter()
                 .enumerate()
-                .map(|(index, (_, definition))| native::TemporalSelection {
+                .map(|(index, (_, definition, _))| native::TemporalSelection {
                     source: &inputs.source_references[index],
                     span: &spans[index],
                     definition_identity: definition.identity(),
@@ -158,7 +221,7 @@ fn with_both(
                 .iter()
                 .zip(clocks())
                 .enumerate()
-                .map(|(index, ((name, definition), clock))| {
+                .map(|(index, ((name, definition, _), clock))| {
                     inputs.temporal_expectation(
                         proofs,
                         index,
@@ -221,7 +284,7 @@ fn position(declarations: &[w::Declaration], name: &str) -> usize {
 #[test]
 fn a_version_two_classification_retains_its_authenticated_definition_selection() {
     with_both(|selected, v1_package, v2_package, emitted_digest| {
-        for (name, definition) in DECLARATIONS {
+        for (name, definition, kind) in DECLARATIONS {
             let v1_at = position(&v1_package.package().declarations, name);
             let v2_at = position(&v2_package.inherited().declarations, name);
             for closure in [Closure::Closed, Closure::Open] {
@@ -230,16 +293,22 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                 let authenticated = temporal::mapping_support_v2(v2_package, v2_at, closure)
                     .expect("a version-2 temporal declaration classifies");
 
-                let expected = match (definition, closure) {
-                    (R::TimestampedWindow, _) => None,
-                    (_, Closure::Closed) => Some("mltl.closed-trace/v1"),
-                    (_, Closure::Open) => Some("mltl.online-prefix/v1"),
+                // Spelt from FR-045's table, not read back from the classifier.
+                let (expected, unmatched): (_, &[Unmatched]) = match (definition, kind, closure) {
+                    (R::TimestampedWindow, Kind::Mixed, _) => {
+                        (None, &[Unmatched::FiniteWindow, Unmatched::MixedDirection])
+                    }
+                    (R::TimestampedWindow, _, _) => (None, &[Unmatched::FiniteWindow]),
+                    (_, Kind::Mixed, _) => (None, &[Unmatched::MixedDirection]),
+                    (_, Kind::PastOnly, _) => (Some("mltl.origin-complete-history/v1"), &[]),
+                    (_, Kind::Future, Closure::Closed) => (Some("mltl.closed-trace/v1"), &[]),
+                    (_, Kind::Future, Closure::Open) => (Some("mltl.online-prefix/v1"), &[]),
                 };
                 match (expected, &authenticated.support) {
                     (None, Support::Unsupported { dimensions }) => assert_eq!(
                         dimensions.as_slice(),
-                        [Unmatched::FiniteWindow],
-                        "{name}: the finite-window dimension alone",
+                        unmatched,
+                        "{name}: every unmatched dimension",
                     ),
                     (Some(target), Support::Supported { target: named, .. }) => {
                         assert_eq!(named.identity(), target, "{name} {closure:?}: TL target");
