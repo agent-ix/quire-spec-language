@@ -5,7 +5,8 @@
 //! `make ci` runs standalone (the `Makefile` targets of the same names), and
 //! `cargo xtask canonical-types`, run on demand, and the local `conformance`
 //! vector gate.
-//! `refinement` holds the refinement gates (`cargo xtask refinement versioning`).
+//! `refinement` holds the refinement gates (`cargo xtask refinement versioning`
+//! and `cargo xtask refinement layering`).
 //! `import_graph`, `definition_scan` and `typestate_scan` are plain library
 //! modules backing their own `#[cfg(test)]` suites.
 #![forbid(unsafe_code)]
