@@ -11,13 +11,10 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    step_row_refs, step_simulation_records, AssemblyRefusal, Capability, CheckCause, CheckRefusal,
-    CheckedGraph, CheckedRefinement, PackageDeclarations, RefinementCause, RowClass, StepClass,
-    StepSimulationEntry, StepTarget,
+    AssemblyRefusal, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement,
+    PackageDeclarations, RefinementCause, RowClass, StepClass, StepTarget,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -25,10 +22,9 @@ use quire_checked::key::DeclarationKey;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
-use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 use serde_json::{json, Value};
 
-const INTEGER: &str = "ix://quire/native/Integer";
+pub(crate) const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
 pub(crate) const SPEC: &str = "example/counter-spec";
@@ -97,7 +93,7 @@ fn parameter(package: &str, owner: &str, operation: &str, name: &str, type_ref: 
 
 /// The operation `name` of `owner`, taking `parameters` (name, type) and
 /// returning `returns`, whose frame modifies `modifies`.
-fn operation(
+pub(crate) fn operation(
     package: &str,
     owner: &str,
     name: &str,
@@ -135,7 +131,7 @@ fn operation(
     value
 }
 
-fn object_type(
+pub(crate) fn object_type(
     package: &str,
     name: &str,
     fields: &[(&str, &str)],
@@ -168,7 +164,7 @@ fn object_type_under(
     )
 }
 
-fn population(package: &str, name: &str, member: &str) -> Value {
+pub(crate) fn population(package: &str, name: &str, member: &str) -> Value {
     json!({
         "identity": node(package, name), "displayName": node(package, name),
         "kind": {"module": package, "name": "population"},
@@ -177,7 +173,7 @@ fn population(package: &str, name: &str, member: &str) -> Value {
     })
 }
 
-fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
+pub(crate) fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
     document_with(package, Vec::new(), types, populations)
 }
 
@@ -335,32 +331,42 @@ pub(crate) fn counter_spec() -> Vec<u8> {
 
 /// The compare-and-set counter: two workers that read `value` into a scratch
 /// field and write it back, and `peek`.
-fn counter_cas() -> Vec<u8> {
-    let step = |name: &str, modifies: &[&str]| operation(CAS, "Counter", name, &[], None, modifies);
-    document(
-        CAS,
-        vec![object_type(
-            CAS,
-            "Counter",
-            &[
-                ("value", INTEGER),
-                ("tmpA", INTEGER),
-                ("busyA", BOOLEAN),
-                ("tmpB", INTEGER),
-                ("busyB", BOOLEAN),
-            ],
-            vec![
-                step("beginA", &["tmpA", "busyA"]),
-                step("commitA", &["value", "busyA"]),
-                step("retryA", &["busyA"]),
-                step("beginB", &["tmpB", "busyB"]),
-                step("commitB", &["value", "busyB"]),
-                step("retryB", &["busyB"]),
-                step("peek", &[]),
-            ],
-        )],
-        vec![population(CAS, "counters", "Counter")],
+pub(crate) fn counter_cas() -> Vec<u8> {
+    counter_cas_with(
+        operation(CAS, "Counter", "peek", &[], None, &[]),
+        Vec::new(),
+        Vec::new(),
     )
+}
+
+/// [`counter_cas`] with `peek` as given, and `types` and `populations`
+/// added beside `Counter` and `counters`.
+pub(crate) fn counter_cas_with(peek: Value, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
+    let step = |name: &str, modifies: &[&str]| operation(CAS, "Counter", name, &[], None, modifies);
+    let mut all_types = vec![object_type(
+        CAS,
+        "Counter",
+        &[
+            ("value", INTEGER),
+            ("tmpA", INTEGER),
+            ("busyA", BOOLEAN),
+            ("tmpB", INTEGER),
+            ("busyB", BOOLEAN),
+        ],
+        vec![
+            step("beginA", &["tmpA", "busyA"]),
+            step("commitA", &["value", "busyA"]),
+            step("retryA", &["busyA"]),
+            step("beginB", &["tmpB", "busyB"]),
+            step("commitB", &["value", "busyB"]),
+            step("retryB", &["busyB"]),
+            peek,
+        ],
+    )];
+    all_types.extend(types);
+    let mut all_populations = vec![population(CAS, "counters", "Counter")];
+    all_populations.extend(populations);
+    document(CAS, all_types, all_populations)
 }
 
 /// `Queue { size }` with `enq(x)`, `deq()` and a Boolean-valued `deqFlag()`,
@@ -537,20 +543,20 @@ pub(crate) fn assemble(
 /// A refusal with the text of the unit it is located at.
 #[derive(Debug)]
 pub(crate) struct Refused {
-    refusal: CheckRefusal,
-    at: String,
+    pub(crate) refusal: CheckRefusal,
+    pub(crate) at: String,
     unit: String,
 }
 
 impl Refused {
-    fn refinement(&self) -> &RefinementCause {
+    pub(crate) fn refinement(&self) -> &RefinementCause {
         let CheckCause::Refinement(refusal) = &self.refusal.cause else {
             panic!("a refinement refusal: {:?}", self.refusal);
         };
         &refusal.cause
     }
 
-    fn code_and_cause(&self) -> (Code, Option<&'static str>) {
+    pub(crate) fn code_and_cause(&self) -> (Code, Option<&'static str>) {
         (self.refusal.cause.code(), self.refusal.cause.cause())
     }
 }
@@ -595,7 +601,7 @@ fn check_declarations(
         })
 }
 
-fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
+pub(crate) fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
     match check_with("", models, body) {
         Ok(_) => panic!("{body}: expected a refusal"),
         Err(refusals) => refusals,
@@ -617,7 +623,7 @@ pub(crate) fn counters() -> (Vec<u8>, Vec<u8>) {
     (counter_spec(), counter_cas())
 }
 
-fn checked_counter(body: &str) -> CheckedGraph {
+pub(crate) fn checked_counter(body: &str) -> CheckedGraph {
     let (spec, cas) = counters();
     check_with("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], body).unwrap_or_else(|refusals| {
         panic!(
@@ -627,13 +633,13 @@ fn checked_counter(body: &str) -> CheckedGraph {
     })
 }
 
-fn refused_counter(body: &str) -> Vec<Refused> {
+pub(crate) fn refused_counter(body: &str) -> Vec<Refused> {
     let (spec, cas) = counters();
     refused(&[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], body)
 }
 
 /// ADR-020 §8's `CasRefinesCounter`.
-fn cas_refines_counter() -> String {
+pub(crate) fn cas_refines_counter() -> String {
     "refinement CasRefinesCounter using inf abstract Spec concrete Impl {\n\
      population Spec::counters from Impl::counters;\n\
      object Spec::Counter from Impl::Counter { value = self.value; }\n\
@@ -670,7 +676,7 @@ pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
     body.replace(from, to)
 }
 
-fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
+pub(crate) fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
     let [refinement] = graph.refinements() else {
         panic!("one refinement: {:?}", graph.refinements());
     };
@@ -2071,283 +2077,4 @@ fn a_step_row_naming_an_ambiguous_operation_refuses_at_its_name() {
         (Code::AmbiguousDeclaration, Some("ambiguous-name"))
     );
     assert_eq!(ambiguous.at, "Impl::Child::op");
-}
-
-/// A node key standing for `CasRefinesCounter`'s refinement node, which the
-/// caller mints (FR-144 is not built yet).
-fn refinement_key() -> quire_exact::NodeKey {
-    quire_exact::NodeKey::from_digest([7_u8; 32])
-}
-
-/// A node key for a concrete operation, standing for the key the refinement
-/// node's minting gives it: the digest of the operation's declaration node.
-fn operation_key(operation: &DeclarationKey) -> quire_exact::NodeKey {
-    use sha2::{Digest, Sha256};
-    quire_exact::NodeKey::from_digest(Sha256::digest(operation.node.as_bytes()).into())
-}
-
-fn simulation_entries(graph: &CheckedGraph) -> Vec<StepSimulationEntry> {
-    step_simulation_records(
-        refinement_key(),
-        only_refinement(graph),
-        graph.state_clauses(),
-    )
-    .expect("the rows fit a step row reference")
-}
-
-fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
-    simulation_entries(graph)
-        .iter()
-        .map(|entry| entry.record().clone())
-        .collect()
-}
-
-/// TC-551 step 10: each record carries the occurrence key ADR-013 O-07 gives
-/// it: the refinement node, role `generated`, ordinal 0 for `Initial` and the
-/// row's position + 1 for a `Step`. The key is a locator, so it is distinct
-/// per record and is not part of the record.
-#[trace("TC-551", "FR-146-AC-9")]
-#[test]
-fn each_record_has_its_generated_occurrence_key() {
-    let entries = simulation_entries(&checked_counter(&cas_refines_counter()));
-    assert_eq!(entries.len(), 8);
-    let node = WireNodeId::from_digest(*refinement_key().as_bytes());
-    for (ordinal, entry) in entries.iter().enumerate() {
-        let origin = entry.occurrence().origin();
-        assert_eq!(entry.occurrence().node(), node);
-        assert_eq!(origin.role().as_str(), "generated");
-        assert_eq!(origin.ordinal(), ordinal as u64);
-        let expected = match ordinal {
-            0 => StepObligation::Initial,
-            row => StepObligation::Step {
-                row: StepRowRef::new(u32::try_from(row - 1).expect("small")),
-            },
-        };
-        assert_eq!(entry.record().obligation, expected);
-    }
-}
-
-/// TC-551 step 1: `CasRefinesCounter` writes one `Initial` and one
-/// `Step` record for each of its seven rows, with no hypotheses.
-#[trace("TC-551")]
-#[test]
-fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
-    let records = simulation_records(&checked_counter(&cas_refines_counter()));
-    assert_eq!(records.len(), 8);
-    let mut expected = vec![StepObligation::Initial];
-    expected.extend((0..7).map(|row| StepObligation::Step {
-        row: StepRowRef::new(row),
-    }));
-    let found: Vec<_> = records.iter().map(|record| record.obligation).collect();
-    assert_eq!(found, expected);
-    for record in &records {
-        assert_eq!(record.refinement, refinement_key());
-        assert!(record.hypotheses.is_empty());
-    }
-}
-
-/// TC-551 step 1, record values only: with `commitB -> any` the refinement
-/// writes no record.
-#[trace("TC-551")]
-#[test]
-fn an_any_row_writes_no_simulation_record() {
-    let base = cas_refines_counter();
-    let graph = checked_counter(&mutated(
-        &base,
-        "step Impl::Counter::commitB -> Spec::Counter::inc(self);",
-        "step Impl::Counter::commitB -> any;",
-    ));
-    assert_eq!(simulation_records(&graph), []);
-}
-
-/// TC-551 step 2, the hidden-field case: a refinement with a hidden field
-/// writes no record. The `RegisterHistory` case is in `qsl-replay`'s
-/// `refinement_history`, whose fixture has the bounded history field.
-#[trace("TC-551")]
-#[test]
-fn a_hidden_field_writes_no_simulation_record() {
-    let base = cas_refines_counter();
-    let graph = checked_counter(&mutated(&base, "value = self.value;", ""));
-    assert_eq!(simulation_records(&graph), []);
-}
-
-const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
-     self.busyA or self.tmpA <= self.value }\n";
-
-/// TC-551 step 3: an invariant of
-/// `Impl::Counter` is a hypothesis of every record, and the `Initial`
-/// record differs from the one without it.
-#[trace("TC-551")]
-#[test]
-fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
-    let base = cas_refines_counter();
-    let without = simulation_records(&checked_counter(&base));
-    let graph = checked_counter(&format!("{base}\n{CAS_INV}"));
-    let with = simulation_records(&graph);
-    let [invariant] = graph.state_clauses() else {
-        panic!("one invariant clause");
-    };
-    assert_eq!(with.len(), 8);
-    for record in &with {
-        assert_eq!(record.hypotheses, [invariant.identity()]);
-    }
-    assert_ne!(with[0], without[0]);
-}
-
-/// TC-551 step 3: every hypothesis is its own `operation-contract` record in
-/// the checked package, keyed by the clause's `claim` occurrence.
-#[trace("TC-551")]
-#[test]
-fn a_hypothesis_is_its_own_operation_contract_record() {
-    let graph = checked_counter(&format!("{}\n{CAS_INV}", cas_refines_counter()));
-    let [invariant] = graph.state_clauses() else {
-        panic!("one invariant clause");
-    };
-    let key = OccurrenceKey::new(
-        WireNodeId::from_digest(*invariant.identity().as_bytes()),
-        invariant.claim().clone(),
-    );
-    let record = graph
-        .requirements()
-        .get(&key)
-        .expect("the invariant has a requirement record");
-    assert_eq!(record.requirements().kind(), Capability::OperationContract);
-    for entry in simulation_entries(&graph) {
-        assert_eq!(entry.record().hypotheses, [invariant.identity()]);
-    }
-}
-
-/// TC-551 step 3: an invariant of the abstract model is not a hypothesis
-/// over concrete state, even though the declaring package holds it.
-#[trace("TC-551")]
-#[test]
-fn an_abstract_model_invariant_is_not_a_hypothesis() {
-    let base = cas_refines_counter();
-    let abstract_invariant =
-        "invariant SpecInv using inf on Spec::Counter at current { self.value >= 0 }\n";
-    let graph = checked_counter(&format!("{base}\n{CAS_INV}{abstract_invariant}"));
-    let [concrete, abstract_clause] = graph.state_clauses() else {
-        panic!("two invariant clauses");
-    };
-    for record in simulation_records(&graph) {
-        assert_eq!(record.hypotheses, [concrete.identity()]);
-        assert_ne!(record.hypotheses, [abstract_clause.identity()]);
-    }
-}
-
-/// Swapping two invariant clauses in the source leaves every record equal.
-#[trace("TC-551")]
-#[test]
-fn the_order_of_invariant_clauses_does_not_change_the_records() {
-    let base = cas_refines_counter();
-    let second = "invariant CasInv2 using inf on Impl::Counter at current { \
-         self.busyB or self.tmpB <= self.value }\n";
-    let forward = simulation_records(&checked_counter(&format!("{base}\n{CAS_INV}{second}")));
-    let backward = simulation_records(&checked_counter(&format!("{base}\n{second}{CAS_INV}")));
-    assert_eq!(forward[0].hypotheses.len(), 2);
-    assert_eq!(forward, backward);
-}
-
-/// The step row of each concrete operation, by operation name, as the
-/// record's `StepRowRef` names it.
-fn row_refs_by_operation(graph: &CheckedGraph) -> BTreeMap<String, StepRowRef> {
-    let refinement = only_refinement(graph);
-    let refs = step_row_refs(refinement, operation_key).expect("the rows fit");
-    refinement
-        .steps()
-        .iter()
-        .zip(refs)
-        .map(|(row, reference)| {
-            let StepClass::Operation(operation) = &row.class else {
-                panic!("an operation row: {:?}", row.class);
-            };
-            (operation.node.clone(), reference)
-        })
-        .collect()
-}
-
-/// Reordering the step rows in the source does not change which row a
-/// `Step{row}` names: positions follow QSpec FR-375's node-key order.
-#[trace("TC-551")]
-#[test]
-fn reordering_step_rows_does_not_change_the_row_a_reference_names() {
-    let base = cas_refines_counter();
-    let first = "step Impl::Counter::commitA -> Spec::Counter::inc(self);\n";
-    let last = "step Impl::Counter::peek -> stutter;\n";
-    let swapped = mutated(&mutated(&base, first, "@@"), last, first).replace("@@", last);
-    assert_ne!(base, swapped);
-    let before = row_refs_by_operation(&checked_counter(&base));
-    let after = row_refs_by_operation(&checked_counter(&swapped));
-    assert_eq!(before, after);
-    let mut positions: Vec<_> = before.values().map(|reference| reference.index()).collect();
-    positions.sort_unstable();
-    assert_eq!(positions, (0..7).collect::<Vec<_>>());
-}
-
-/// The step rows of `graph` in the order their `StepRowRef`s give, each as
-/// its concrete operation and what it maps to.
-fn rows_in_reference_order(graph: &CheckedGraph) -> Vec<(DeclarationKey, String)> {
-    let refinement = only_refinement(graph);
-    let refs = step_row_refs(refinement, operation_key).expect("the rows fit");
-    let mut ordered: Vec<_> = refinement
-        .steps()
-        .iter()
-        .zip(refs)
-        .map(|(row, reference)| {
-            let StepClass::Operation(operation) = &row.class else {
-                panic!("an operation row: {:?}", row.class);
-            };
-            let target = match &row.target {
-                StepTarget::Abstract { operation, .. } => operation.node.clone(),
-                StepTarget::Stutter => "stutter".to_owned(),
-                other => panic!("an abstract operation or stutter: {other:?}"),
-            };
-            (reference.index(), (operation.clone(), target))
-        })
-        .collect();
-    ordered.sort_by_key(|(index, _)| *index);
-    ordered.into_iter().map(|(_, row)| row).collect()
-}
-
-/// FR-136 "Order of the checked rows" (TC-541): `CasRefinesCounter` checked
-/// with its seven `step` rows in source order and in the exact reverse gives
-/// each row the same `StepRowRef`, and the rows in `StepRowRef` order are
-/// equal and ascend by the node-key digest of the concrete operation. The
-/// emitted `steps` array needs the refinement's S4 emission, which is not
-/// built, so it is not tested.
-#[trace("TC-541")]
-#[test]
-fn the_full_reverse_of_the_step_rows_gives_the_same_references_in_digest_order() {
-    let base = cas_refines_counter();
-    let mut lines: Vec<&str> = base.split('\n').collect();
-    let steps: Vec<usize> = (0..lines.len())
-        .filter(|index| lines[*index].starts_with("step "))
-        .collect();
-    assert_eq!(steps.len(), 7);
-    let forward: Vec<&str> = steps.iter().map(|index| lines[*index]).collect();
-    for (index, line) in steps.iter().zip(forward.iter().rev()) {
-        lines[*index] = line;
-    }
-    let reversed = lines.join("\n");
-    assert_ne!(base, reversed);
-
-    let source = checked_counter(&base);
-    let backward = checked_counter(&reversed);
-    assert_eq!(
-        row_refs_by_operation(&source),
-        row_refs_by_operation(&backward)
-    );
-    let ordered = rows_in_reference_order(&source);
-    assert_eq!(ordered, rows_in_reference_order(&backward));
-    let digests: Vec<_> = ordered
-        .iter()
-        .map(|(operation, _)| operation_key(operation))
-        .collect();
-    assert!(
-        digests
-            .windows(2)
-            .all(|pair| pair[0].as_bytes() < pair[1].as_bytes()),
-        "{ordered:?}"
-    );
-    assert_eq!(ordered.len(), 7);
 }

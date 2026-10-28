@@ -74,11 +74,19 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
             PropertyForm::Refinement { liveness }
         );
         let records = world.package().graph().requirements();
-        let at_node = records
+        let roles: Vec<&str> = records
             .keys()
             .filter(|key| key.node() == occurrence.node())
-            .count();
-        assert_eq!(at_node, 1, "one record at the refinement's node");
+            .map(|key| key.origin().role().as_str())
+            .collect();
+        // The refinement record, and FR-146's eight per-step simulation
+        // records at their `generated` occurrences.
+        assert_eq!(
+            roles.iter().filter(|role| **role == "declaration").count(),
+            1,
+            "one refinement record at the refinement's node"
+        );
+        assert_eq!(roles.iter().filter(|role| **role == "generated").count(), 8);
 
         let mut registry = Registry::new();
         registry
