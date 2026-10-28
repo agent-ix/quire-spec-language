@@ -253,6 +253,7 @@ pub fn check(
                 pending_predicate_joins.push(PendingPredicateJoin {
                     node,
                     function,
+                    name: name.clone(),
                     joined: joined.clone(),
                     outstanding,
                 });

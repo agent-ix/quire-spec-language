@@ -4135,7 +4135,7 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(dense, (source, _, _))| (*source, dense))
             .collect();
-        let protocol_edges: Vec<(Vec<usize>, Vec<usize>, Vec<usize>)> = protocol_list
+        let mut protocol_edges: Vec<(Vec<usize>, Vec<usize>, Vec<usize>)> = protocol_list
             .iter()
             .map(|protocol| {
                 let (functions, protocols, required) = protocol.dependencies();
@@ -4146,6 +4146,19 @@ impl PackageDeclarations {
                 (functions, protocols, required)
             })
             .collect();
+        // A predicate join is a checked function reference even though the
+        // function's public node key is attached after lowering. Include its
+        // declaration edge now so protocol/function cycles enter the same
+        // SCC before either side is keyed.
+        for (protocol_index, protocol) in protocol_list.iter().enumerate() {
+            for pending in &protocol.checked.pending_predicate_joins {
+                if let Some(function) = signatures.position(&pending.name) {
+                    protocol_edges[protocol_index].0.push(function);
+                }
+            }
+            protocol_edges[protocol_index].0.sort_unstable();
+            protocol_edges[protocol_index].0.dedup();
+        }
         let temporal_edges: Vec<(Vec<usize>, Vec<usize>)> = checked_temporal
             .iter()
             .map(|(_, checked, conditions)| {
@@ -4215,7 +4228,8 @@ impl PackageDeclarations {
         };
         let lower_functions = |lowering: &mut lowering::Lowering<'_>,
                                refusals: &mut Vec<CheckRefusal>,
-                               group: &lowering::FunctionGroup| {
+                               group: &lowering::FunctionGroup,
+                               in_cycle: bool| {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members
                 .iter()
@@ -4242,7 +4256,11 @@ impl PackageDeclarations {
                     })
                 })
                 .collect();
-            refusals.extend(lowering.function_group(group, &inputs));
+            if in_cycle {
+                refusals.extend(lowering.function_group_in_cycle(group, &inputs));
+            } else {
+                refusals.extend(lowering.function_group(group, &inputs));
+            }
         };
         let mut lowered_temporal: Vec<Option<lowering::LoweredTemporalClause>> =
             std::iter::repeat_with(|| None)
@@ -4276,7 +4294,7 @@ impl PackageDeclarations {
         for step in &order {
             match step {
                 lowering::LoweringStep::Functions(group) => {
-                    lower_functions(&mut lowering, &mut refusals, group);
+                    lower_functions(&mut lowering, &mut refusals, group, false);
                 }
                 lowering::LoweringStep::Protocol(index) => {
                     lower_protocol(&mut lowering, &mut refusals, *index, false);
@@ -4291,11 +4309,19 @@ impl PackageDeclarations {
                     functions,
                     temporals,
                 } => {
+                    let function_indices: Vec<usize> = functions
+                        .iter()
+                        .flat_map(|group| group.members.iter().copied())
+                        .collect();
+                    lowering.begin_mixed_cycle(protocols, &function_indices);
                     for index in protocols {
                         lower_protocol(&mut lowering, &mut refusals, *index, true);
                     }
                     for group in functions {
-                        lower_functions(&mut lowering, &mut refusals, group);
+                        lower_functions(&mut lowering, &mut refusals, group, true);
+                    }
+                    if let Err(refusal) = lowering.settle_mixed_cycle() {
+                        refusals.push(refusal);
                     }
                     for index in temporals {
                         if !deferred_protocol_fairness.contains(index) {

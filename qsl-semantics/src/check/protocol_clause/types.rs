@@ -346,6 +346,7 @@ impl CheckedProtocol {
 #[derive(Clone, Debug)]
 pub(crate) struct PendingPredicateJoin {
     pub(crate) node: ProtocolNodeId,
+    pub(crate) name: String,
     /// The named function's declaration index among the unit's
     /// signatures, which lowering keys before the protocol (FR-093).
     pub(crate) function: usize,
