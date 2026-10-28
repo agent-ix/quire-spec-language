@@ -1080,8 +1080,6 @@ pub(super) fn retained_text(declared: &quire_exact::TextType, payload: &str) -> 
     }
 }
 
-/// A Text object's `text` member, if it is a string.
-#[ix_trace_rs::string_edge]
 /// A Quantity object's unit text and exact magnitude, or `None` when it is
 /// not one admission reads.
 #[ix_trace_rs::string_edge]
@@ -1093,6 +1091,7 @@ fn quantity_identity(native: RawNative<'_>) -> Option<(&str, quire_exact::Ration
     Some((unit, magnitude))
 }
 
+/// A Text object's `text` member, if it is a string.
 #[ix_trace_rs::string_edge]
 fn text_member(native: RawNative<'_>) -> Option<&str> {
     native

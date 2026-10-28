@@ -91,11 +91,20 @@ pub(crate) fn collection_document() -> Value {
     build_with(Flavor::Collections)
 }
 
+/// The package document with `Item` also holding, after its other fields,
+/// the Quantity field of FR-106-AC-59 (TC-1171): `reach: Quantity<ms>` (its
+/// unit is `ix://quire/unit/ms`, which the replay's source unit declares).
+/// The operations are the base ones, which grant no quantity.
+pub(crate) fn quantity_document() -> Value {
+    build_with(Flavor::Quantity)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Flavor {
     Plain,
     Text,
     Collections,
+    Quantity,
 }
 
 /// A field of `Item` called `name` of `type_ref`, with the multiplicity of a
@@ -199,6 +208,13 @@ fn build_with(flavor: Flavor) -> Value {
         bounded["scalar"] = json!("integer");
         bounded["constraints"] = json!([constraint("min", "0"), constraint("max", "9")]);
         types.push(bounded);
+    }
+    if flavor == Flavor::Quantity {
+        let ms = "ix://quire/unit/ms".to_owned();
+        item["fields"]
+            .as_array_mut()
+            .expect("Item has fields")
+            .extend([variants::field("Item", "reach", &ms)]);
     }
     if text {
         let (title, tag, code) = (id("Title"), id("Tag"), id("Code"));

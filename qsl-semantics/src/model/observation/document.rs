@@ -1605,7 +1605,19 @@ fn admit_native(
             if domain.contains(&value) {
                 Ok(Value::Rational(value))
             } else {
-                Err(admission_record(Code::InvalidRuntimeInput, "invalid-value"))
+                // FR-106-AC-56: the declared type and the normalized pair.
+                Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
+                    .with(
+                        "expected",
+                        format!(
+                            "Rational[{}, {}; {}, {}]",
+                            domain.numerator().lower(),
+                            domain.numerator().upper(),
+                            domain.denominator().lower(),
+                            domain.denominator().upper()
+                        ),
+                    )
+                    .with("actual", value.to_string()))
             }
         }
         (NativeKind::Quantity, quire_exact::ValueType::Quantity(unit)) => {
@@ -4173,6 +4185,176 @@ mod tests {
             assert_eq!(field("member"), Some("text"));
             assert_eq!(field("expected"), Some(expected));
             assert_eq!(field("actual"), Some(measured.to_string().as_str()));
+        }
+    }
+
+    /// `Rational[-10, 10; 1, 12]`, the declared domain of FR-106-AC-55 and
+    /// FR-106-AC-56 (a domain package cannot declare it, so the slot is built
+    /// directly).
+    fn rational_slot() -> quire_exact::ValueType {
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::new(Integer::from(low), Integer::from(high))
+                .expect("a non-empty interval")
+        };
+        quire_exact::ValueType::Rational(
+            quire_exact::RationalDomain::new(interval(-10, 10), interval(1, 12))
+                .expect("the denominators are at least one"),
+        )
+    }
+
+    /// The object `object` admitted into `slot` with no declared unit.
+    fn admit_object(object: &str, slot: &quire_exact::ValueType) -> Result<Value, AdmissionRecord> {
+        let value = snapshot(object);
+        let RawForm::Native(native) = value.form() else {
+            panic!("a native object: {object}");
+        };
+        admit_native(native, slot, &TypeEnvironment::default())
+    }
+
+    /// The Rational object `numerator` / `denominator`.
+    fn rational_object(numerator: &str, denominator: &str) -> String {
+        serde_json::json!({"kind": "rational", "numerator": numerator, "denominator": denominator})
+            .to_string()
+    }
+
+    fn rational_of(numerator: i64, denominator: i64) -> quire_exact::Rational {
+        quire_exact::Rational::new(Integer::from(numerator), Integer::from(denominator))
+            .expect("a nonzero denominator")
+    }
+
+    /// Part of FR-106-AC-55 (TC-1171): a Rational object admits as its
+    /// normalized value (`2`/`4` as `1`/`2`, `-1`/`-2` as `1`/`2`, `0`/`-7`
+    /// as `0`/`1`), and the boundary values `-10`/`1` and `10`/`1` admit.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_rational_object_admits_as_its_normalized_value() {
+        for (numerator, denominator, expected) in [
+            ("2", "4", rational_of(1, 2)),
+            ("-1", "-2", rational_of(1, 2)),
+            ("0", "-7", rational_of(0, 1)),
+            ("-10", "1", rational_of(-10, 1)),
+            ("10", "1", rational_of(10, 1)),
+        ] {
+            let admitted = admit_object(&rational_object(numerator, denominator), &rational_slot());
+            let Ok(Value::Rational(value)) = &admitted else {
+                panic!("{numerator}/{denominator}: a Rational, not {admitted:?}");
+            };
+            assert_eq!(value, &expected, "{numerator}/{denominator}");
+        }
+    }
+
+    /// Part of FR-106-AC-56 (TC-1171): a Rational outside the declared domain
+    /// refuses `invalid-value` naming the declared type (`expected`) and the
+    /// normalized pair (`actual`); `22`/`2` normalizes to `11`/`1` first.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_rational_outside_its_domain_refuses_with_the_normalized_pair() {
+        for (numerator, denominator, actual) in [
+            ("11", "1", "11/1"),
+            ("22", "2", "11/1"),
+            ("1", "13", "1/13"),
+        ] {
+            let refusal = admit_object(&rational_object(numerator, denominator), &rational_slot())
+                .expect_err("outside the domain");
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "invalid-value");
+            let field = |name: &str| refusal.fields.get(name).map(String::as_str);
+            assert_eq!(field("expected"), Some("Rational[-10, 10; 1, 12]"));
+            assert_eq!(field("actual"), Some(actual), "{numerator}/{denominator}");
+        }
+    }
+
+    /// Part of FR-106-AC-56 (TC-1171): each defective Rational object
+    /// refuses with its cause naming the defective member: a zero
+    /// denominator or a noncanonical integer spelling `invalid-value`, a
+    /// numeric denominator `wrong-value-kind`, a missing denominator
+    /// `missing-member`, an added `unit` `unknown-member` and a `kind`
+    /// spelled `Rational` `invalid-value`.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_defective_rational_object_refuses_naming_its_member() {
+        for (object, cause, member) in [
+            (
+                r#"{"kind":"rational","numerator":"1","denominator":"0"}"#,
+                "invalid-value",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"0","denominator":"0"}"#,
+                "invalid-value",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"01","denominator":"2"}"#,
+                "invalid-value",
+                "numerator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"+1","denominator":"2"}"#,
+                "invalid-value",
+                "numerator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"-0","denominator":"2"}"#,
+                "invalid-value",
+                "numerator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"1","denominator":2}"#,
+                "wrong-value-kind",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"1"}"#,
+                "missing-member",
+                "denominator",
+            ),
+            (
+                r#"{"kind":"rational","numerator":"1","denominator":"2","unit":"s"}"#,
+                "unknown-member",
+                "unit",
+            ),
+            (
+                r#"{"kind":"Rational","numerator":"1","denominator":"2"}"#,
+                "invalid-value",
+                "kind",
+            ),
+        ] {
+            let refusal = admit_object(object, &rational_slot()).expect_err(object);
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput, "{object}");
+            assert_eq!(refusal.cause, cause, "{object}");
+            assert_eq!(
+                refusal.fields.get("member").map(String::as_str),
+                Some(member),
+                "{object}"
+            );
+        }
+    }
+
+    /// Part of FR-106-AC-56 and FR-106-AC-59 (TC-1171): a Decimal or a
+    /// Quantity object in a Rational slot, a Rational object in a Float64
+    /// slot and a Rational object in a Quantity slot each refuse
+    /// `wrong-value-kind`.
+    #[trace("TC-1171")]
+    #[test]
+    fn a_rational_fits_only_a_rational_slot() {
+        let float64 = quire_exact::ValueType::Float(quire_exact::FloatType::new(
+            quire_exact::IeeeWidth::Binary64,
+            quire_exact::RoundingMode::Exact,
+        ));
+        let quantity = quire_exact::ValueType::Quantity(quire_exact::UnitId::compound([1; 32]));
+        let decimal = r#"{"kind":"decimal","coefficient":"5","scale":"1"}"#;
+        let in_quantity = r#"{"kind":"quantity","unit":"s","magnitude":{"kind":"rational","numerator":"1","denominator":"2"}}"#;
+        let rational = rational_object("1", "2");
+        for (object, slot, place) in [
+            (decimal, rational_slot(), "Decimal in Rational"),
+            (in_quantity, rational_slot(), "Quantity in Rational"),
+            (rational.as_str(), float64, "Rational in Float64"),
+            (rational.as_str(), quantity, "Rational in Quantity"),
+        ] {
+            let refusal = admit_object(object, &slot).expect_err(place);
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput, "{place}");
+            assert_eq!(refusal.cause, "wrong-value-kind", "{place}");
         }
     }
 

@@ -890,22 +890,6 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         written: &qsl_semantics::check::Written,
         meter: &mut Meter,
     ) -> Result<Option<collection_write::WrittenCollection>, CallFailure>;
-
-    /// The value the top-level conjunct `self.field = E` of the
-    /// postcondition `clause` writes, `E` evaluated over `observations`'
-    /// pre- and post-states (FR-120 "Successors": a write of a field with
-    /// no finite domain, executed rather than enumerated). `None` when the
-    /// clause has no such conjunct.
-    ///
-    /// Refuses as [`Self::evaluate_clause`] does for an unknown clause or
-    /// mismatched observations.
-    fn evaluate_write(
-        &self,
-        clause: &QualifiedName,
-        observations: &qsl_semantics::model::observation::AdmittedObservations,
-        field: &str,
-        meter: &mut Meter,
-    ) -> Result<Option<collection_write::WrittenValue>, CallFailure>;
 }
 
 /// What evaluating one state clause over its admitted observations reads
@@ -1493,17 +1477,6 @@ impl CheckedPackageEvaluation for CheckedPackage {
     ) -> Result<Option<collection_write::WrittenCollection>, CallFailure> {
         let setup = ClauseSetup::of(self, clause, observations)?;
         collection_write::evaluate(self.graph(), &setup, field, written, meter)
-    }
-
-    fn evaluate_write(
-        &self,
-        clause: &QualifiedName,
-        observations: &qsl_semantics::model::observation::AdmittedObservations,
-        field: &str,
-        meter: &mut Meter,
-    ) -> Result<Option<collection_write::WrittenValue>, CallFailure> {
-        let setup = ClauseSetup::of(self, clause, observations)?;
-        collection_write::evaluate_write(self.graph(), &setup, field, meter)
     }
 
     fn evaluate_frame(
