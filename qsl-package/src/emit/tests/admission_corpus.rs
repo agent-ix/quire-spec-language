@@ -1670,13 +1670,14 @@ fn a_row_empty_protocol_subject_names_its_clause() {
     assert_ne!(model_node["node_id"], node["node_id"]);
 }
 
-/// QSpec FR-375: the protocol subject reads back through IR. Ignored while
-/// IR-874 is open: IR's rebuild of the abstract clause's classes reads the
+/// QSpec FR-375: the protocol subject reads back through IR. Ignored: IR's
+/// class_catalog read-back still refuses after IR-874/#647 (ticket pending);
+/// IR's rebuild of the abstract clause's classes reads the
 /// member prefix from the second declaration-path segment, which QSL writes
 /// as `[P, finish, Done]` (B3).
 #[trace("FR-375-AC-11", "TC-310")]
 #[test]
-#[ignore = "IR-874: IR's protocol class rebuild disagrees with QSL's member naming (B3)"]
+#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
 fn a_row_empty_protocol_subject_reads_back() {
     let (unit, documents) = protocol_subject();
     let package = modelled_with_documents(&unit, &documents, Vec::new());
@@ -1738,14 +1739,15 @@ fn a_parallel_clause_writes_fork_join_and_drain_classes() {
     );
 }
 
-/// QSpec FR-375: the emitted catalog reads back through IR. Ignored while
-/// IR-874 is open: IR rebuilds an empty abstract side for a model subject
+/// QSpec FR-375: the emitted catalog reads back through IR. Ignored: IR's
+/// class_catalog read-back still refuses after IR-874/#647 (ticket pending);
+/// IR rebuilds an empty abstract side for a model subject
 /// where FR-375 lists the abstract model's operation classes (B2), and
 /// reads a clause member's class prefix from the second segment of its
 /// declaration path, which QSL writes as `[P, finish, Done]` (B3).
 #[trace("FR-375-AC-23", "TC-310")]
 #[test]
-#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
 fn a_model_refinement_class_catalog_reads_back() {
     let (unit, documents) = catalog_refinement();
     let package = modelled_with_documents(&unit, &documents, Vec::new());
@@ -2079,17 +2081,41 @@ fn quantity_literal_nodes_are_referenced_by_their_operations() {
 /// build does not support), and its operations are `operations`, each
 /// shaped as `attemptUpdate` is.
 pub(super) fn rows_refinement(rows: &str, operations: &[&str]) -> (String, Vec<Vec<u8>>) {
-    rows_refinement_with(rows, operations, false)
+    rows_refinement_with(rows, operations, RowsModel::default())
 }
 
-/// [`rows_refinement`], each operation taking one required Boolean
-/// parameter `flag` when `flag` holds.
-fn rows_refinement_with(rows: &str, operations: &[&str], flag: bool) -> (String, Vec<Vec<u8>>) {
+/// How [`rows_refinement_with`] edits the config-version model.
+#[derive(Clone, Copy, Default)]
+struct RowsModel {
+    /// Each operation takes one required Boolean parameter `flag`.
+    flag: bool,
+    /// `ConfigVersion` also has `epoch`, a copy of `versionNumber`, so an
+    /// object row can map two fields.
+    epoch: bool,
+}
+
+/// [`rows_refinement`] over the model `model` edits.
+fn rows_refinement_with(
+    rows: &str,
+    operations: &[&str],
+    model: RowsModel,
+) -> (String, Vec<Vec<u8>>) {
+    let RowsModel { flag, epoch } = model;
     let mut document: Value =
         serde_json::from_str(config_version_unit::DOMAIN_PACKAGE).expect("the model is JSON");
     for object in document["types"].as_array_mut().expect("types") {
         if let Some(fields) = object.get_mut("fields").and_then(Value::as_array_mut) {
             fields.retain(|field| field["name"] != "parent");
+            let copy = fields
+                .iter()
+                .find(|field| field["name"] == "versionNumber")
+                .filter(|_| epoch)
+                .map(|field| {
+                    let text = serde_json::to_string(field).expect("the field serializes");
+                    serde_json::from_str::<Value>(&text.replace("versionNumber", "epoch"))
+                        .expect("the copy parses")
+                });
+            fields.extend(copy);
         }
         if let Some(declared) = object.get_mut("operations").and_then(Value::as_array_mut) {
             let Some(template) = declared.first().cloned() else {
@@ -2342,8 +2368,14 @@ fn a_row_parameter_above_self_binds_at_level_one() {
         let step = format!(
             "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate{arguments};"
         );
-        let (unit, documents) =
-            rows_refinement_with(&format!("{MAPS}\n{step}"), &["attemptUpdate"], true);
+        let (unit, documents) = rows_refinement_with(
+            &format!("{MAPS}\n{step}"),
+            &["attemptUpdate"],
+            RowsModel {
+                flag: true,
+                ..RowsModel::default()
+            },
+        );
         let package = modelled_with_documents(&unit, &documents, Vec::new());
         let emission = emit_checked(&package).expect("the refinement emits");
         let mut parameters: Vec<(String, String)> = wire(&emission)["semantic_graph"]["nodes"]
@@ -2548,10 +2580,10 @@ fn protocol_step_rows_order_by_node_then_class_spelling() {
 }
 
 /// A protocol subject's step rows read back once IR's catalog rebuild
-/// agrees with FR-375 (IR-874).
+/// agrees with FR-375: still refused after IR-874/#647 (ticket pending).
 #[trace("FR-375-AC-19", "TC-310")]
 #[test]
-#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
 fn protocol_step_rows_read_back() {
     let (unit, documents) = protocol_rows(&PROTOCOL_ROWS);
     let package = modelled_with_documents(&unit, &documents, Vec::new());
@@ -2678,10 +2710,10 @@ fn memory_catalog_entries_are_one_drain_per_model_then_flush() {
 }
 
 /// The memory rows and catalog entries read back once IR's catalog rebuild
-/// agrees with FR-375 (IR-874).
+/// agrees with FR-375: still refused after IR-874/#647 (ticket pending).
 #[trace("FR-375-AC-19", "FR-375-AC-26", "TC-310")]
 #[test]
-#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
 fn memory_rows_read_back() {
     let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
     let admitted = read(&emitted);
@@ -2798,7 +2830,82 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
         .sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
     let verdict = refinement_verdict(&emitted, &absent, position);
     assert!(
-        verdict.starts_with("MissingDeclaration at ") && verdict.ends_with("(Some(MissingName))"),
+        verdict.starts_with("MissingDeclaration at ")
+            && verdict.contains(&at("body/abstract"))
+            && verdict.ends_with("(Some(MissingName))"),
+        "{verdict}"
+    );
+
+    // An external `abstract` key naming a package that is no direct
+    // dependency of this one.
+    let mut external = wire.clone();
+    let node = &mut external["semantic_graph"]["nodes"][position];
+    let local = node["body"]["abstract"].clone();
+    node["body"]["abstract"] = json!({
+        "package": {"domain": "quire.package", "algorithm": "sha256", "digest": "1".repeat(64)},
+        "node": local,
+    });
+    node["dependencies"]
+        .as_array_mut()
+        .expect("dependencies")
+        .retain(|dependency| *dependency != local);
+    let verdict = refinement_verdict(&emitted, &external, position);
+    assert!(
+        verdict.starts_with("MissingDeclaration at ")
+            && verdict.contains(&at("body/abstract"))
+            && verdict.ends_with("(Some(MissingSelection))"),
+        "{verdict}"
+    );
+}
+
+/// QSpec FR-375-AC-21's ordering half: with every identity recomputed, an
+/// object row whose two fields are written out of name order refuses
+/// `invalid_semantic_graph` at the first offending entry.
+#[trace("FR-375-AC-21", "TC-310")]
+#[test]
+fn an_out_of_order_row_refuses_at_its_first_offending_entry() {
+    let (unit, documents) = rows_refinement_with(
+        "population A::config_history from C::config_history;\n\
+         object A::ConfigVersion from C::ConfigVersion { versionNumber = self.versionNumber; epoch = self.epoch; }",
+        &[],
+        RowsModel {
+            epoch: true,
+            ..RowsModel::default()
+        },
+    );
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the two-field refinement emits");
+    let emitted = Emitted {
+        package,
+        emission,
+        documents,
+    };
+    let wire = wire(&emitted.emission);
+    let position = nodes(&wire)
+        .iter()
+        .position(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node");
+    assert_eq!(refinement_verdict(&emitted, &wire, position), "admitted");
+    let fields = &wire["semantic_graph"]["nodes"][position]["body"]["objects"][0]["fields"];
+    let names: Vec<&str> = fields
+        .as_array()
+        .expect("fields")
+        .iter()
+        .map(|field| field["name"].as_str().expect("a name"))
+        .collect();
+    assert_eq!(names, ["epoch", "versionNumber"]);
+
+    let mut swapped = wire.clone();
+    swapped["semantic_graph"]["nodes"][position]["body"]["objects"][0]["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .swap(0, 1);
+    let verdict = refinement_verdict(&emitted, &swapped, position);
+    assert!(
+        verdict.starts_with("InvalidSemanticGraph at ")
+            && verdict.contains(&format!(
+                "/semantic_graph/nodes/{position}/body/objects/0/fields/1"
+            )),
         "{verdict}"
     );
 }
