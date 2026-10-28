@@ -684,6 +684,7 @@ mod tests {
             ]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        assert!(enumerable_in(&ValueType::Composite(union), &types));
         let values = composite_values::<()>(&ValueType::Composite(union), &[], &types, || Ok(()))
             .expect("no stop")
             .expect("a finite domain");
@@ -700,6 +701,54 @@ mod tests {
                 "05".repeat(32)
             )
         );
+    }
+
+    /// FR-120-AC-25 / TC-1270: an admitted model variant union adds the
+    /// nullary case's one value to each value of a finite Boolean payload.
+    #[trace("TC-1270", "FR-120-AC-25")]
+    #[test]
+    fn a_variant_union_adds_nullary_and_payload_case_domains() {
+        use quire_exact::{Identifier, UnionMember};
+        use quire_semantic_value::declaration::UnionMemberDeclaration;
+        let union = NodeKey::from_digest([9; 32]);
+        let empty = UnionMember::from_admitted(
+            union,
+            NodeKey::from_digest([10; 32]),
+            Identifier::new("Empty").expect("an identifier"),
+        );
+        let enabled = UnionMember::from_admitted(
+            union,
+            NodeKey::from_digest([11; 32]),
+            Identifier::new("Enabled").expect("an identifier"),
+        );
+        let declaration = CompositeDeclaration::new(
+            union,
+            "Choice",
+            CompositeShape::Union(vec![
+                UnionMemberDeclaration::from_verified(empty.clone(), vec![]),
+                UnionMemberDeclaration::from_verified(enabled.clone(), vec![ValueType::Boolean]),
+            ]),
+        );
+        let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        assert!(enumerable_in(&ValueType::Composite(union), &types));
+        let values = composite_values::<()>(&ValueType::Composite(union), &[], &types, || Ok(()))
+            .expect("no stop")
+            .expect("the union has a finite domain");
+        assert_eq!(values.len(), 3);
+        let Value::Union(empty_value) = &values[0] else {
+            panic!("the nullary case is first")
+        };
+        assert_eq!(empty_value.member().variant(), empty.variant());
+        assert!(empty_value.payload().is_empty());
+        for (index, expected) in [(1, false), (2, true)] {
+            let Value::Union(enabled_value) = &values[index] else {
+                panic!("the payload case follows the nullary case")
+            };
+            assert_eq!(enabled_value.member().variant(), enabled.variant());
+            assert!(
+                matches!(enabled_value.payload(), [Value::Boolean(value)] if *value == expected)
+            );
+        }
     }
 
     /// FR-120's record form, written exactly: `type`, the declaration's node

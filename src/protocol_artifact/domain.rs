@@ -503,11 +503,13 @@ mod tests {
                 key: key("variant/Tier-Gold"),
                 owner: key("Tier"),
                 case: "Gold".to_owned(),
+                payload_type: None,
             }),
             DomainPackageRecord::Variant(VariantRecord {
                 key: key("variant/Tier-Standard"),
                 owner: key("Tier"),
                 case: "Standard".to_owned(),
+                payload_type: None,
             }),
         ];
         let package = AdmittedPackage::admit(
