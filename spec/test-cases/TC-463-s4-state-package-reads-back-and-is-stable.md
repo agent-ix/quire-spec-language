@@ -30,8 +30,8 @@ Scope: FR-105-AC-3, FR-105-AC-4, FR-105-AC-6.
    `pre B using v on Config::Sub::attemptUpdate { true }`.
 4. Inject an emitter fault at the `frame` node (a test-only hook in the
    `ProtocolClause` emission arm) and compile.
-5. Compile and read accepted initialization/handler invariants and pre/post
-   clauses; mutate each clause's execution point and the matching
+5. Compile through TC-471's name-keyed S3 check input and read accepted
+   initialization/handler invariants and pre/post clauses; mutate each clause's execution point and the matching
    operation-anchor binding independently, then rekey nodes and package.
 
 Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.

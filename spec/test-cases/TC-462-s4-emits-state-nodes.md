@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-104-AC-15
+    type: verifies
 ---
 # TC-462: S4 emits state clause, operation anchor and frame nodes with their bodies
 
@@ -13,7 +15,7 @@ relationships:
 Verify the node set, bodies, types, dependencies and occurrences S4 emits for
 state clauses, and the totality of the clause-kind mapping.
 
-Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8 to FR-105-AC-11.
+Scope: FR-104-AC-15; FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8 to FR-105-AC-12.
 
 ## Test Procedure
 
@@ -42,8 +44,10 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8 to FR-105-AC-11.
    both the attempt and `VersionUnchanged`, once with the attempt before the
    clause and once after it; compare the frame occurrence's region and its
    `(node id, role, ordinal)`.
-9. For accepted initialization and handler invariants and pre/post clauses,
-   compare each emitted execution point to the accepted ClauseBinding; mutate
+9. Supply the accepted points for authored clauses through TC-471's S3 input,
+   keyed by each clause's exact source name. For accepted initialization and
+   handler invariants and pre/post clauses, compare each emitted execution
+   point to the accepted ClauseBinding; mutate
    its variant and anchor name independently, and compare the resulting
    `state_clause` and `operation_anchor` identities. Include a protocol-only
    attempt anchor with no execution point.

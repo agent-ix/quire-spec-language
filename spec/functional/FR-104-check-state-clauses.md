@@ -51,13 +51,18 @@ and per frame (ADR-012 §2, §15.7; FR-057).
 
 - A `StateClauseForm`; the assembled `PackageDeclarations` with the
   operations FR-103 admits; `CheckContext` (ADR-012 §2).
+- An optional mapping of accepted `ClauseBinding` execution points, keyed
+  by the exact authored state-clause name in the same check unit. The point
+  value uses the `ExecutionPoint` carrier already defined by QSpec and FR-105;
+  this input does not redefine that carrier.
 
 ## Outputs
 
 - A checked state clause: its kind, its context object type, its operation
   (for `pre` and `post`), its checked Boolean body with each model read's
-  observation, its node identity and its `claim` occurrence (ADR-013 O-07,
-  O-09), recorded in the `CheckedGraph` under its declared name.
+  observation, its accepted execution point when one was supplied, its node
+  identity and its `claim` occurrence (ADR-013 O-07, O-09), recorded in the
+  `CheckedGraph` under its declared name.
 - One `Requirements` record per clause, and one per frame of an operation
   that at least one `pre` or `post` clause, or protocol attempt (FR-114),
   of the unit names.
@@ -74,6 +79,16 @@ family `check` reads the resolved context, operation and population domain(s)
 off the assembled declaration rather than re-resolving them. A `reaches`
 target's population is the one exception: its type is unknown before the
 body is typed, so S3 resolves and refuses it (see "Requirements").
+
+- For each supplied execution-point entry, S3 SHALL resolve its key to exactly
+  one authored `StateClauseForm` in this unit and attach that accepted point to
+  that clause's checked result. An entry whose key names no authored clause
+  SHALL refuse `missing_declaration`/`missing-name` at the key before lowering
+  or minting clause identity. A clause with no entry has no accepted point;
+  S3 SHALL NOT infer, synthesize, or default a point from its kind, operation,
+  profile, or body. Existing execution-point applicability and anchor-name
+  checks apply to each supplied point. This check input does not alter the
+  accepted `ExecutionPoint` contract in QSpec or its V2 carrier in FR-105.
 
 - The assembler SHALL resolve the `using` alias to one of the unit's profile
   selections, exactly as it does for a function (FR-091).
@@ -346,6 +361,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-12 | Extend TC-459 step 7's fixture package with an object type `Counter { tally: Int[0,3]; next: Int[0,3]; }` and an operation `bump` declared on it. `self.tally < 3 and self.next = self.tally + 1` checks as `pre G using v on Config::Counter::bump` and as `invariant I using v on Config::Counter at current`; with `record Pair { tally: Int[0,3]; }`, `function f using v(earlier: Pair, later: Pair, n: Integer): Boolean pure { ... }` with body `earlier.tally < 3 and later.tally = earlier.tally + 1` checks. With `self.tally < 3 and` or `earlier.tally < 3 and` removed, each refuses `undefined_expression`/`unproved-range` at the sum. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally` and `later.tally = n` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
 | FR-104-AC-13 | With `type P = Decimal[-99, 99; 2, 2; nearest-even];` and `type R = Decimal[0, 1000; 1, 1; exact];`, `function c using v(a: P, b: P): Boolean pure { a + b = b + a }` checks with each sum typed `P`, as do the bodies `a * b = b * a`, `a - b = a - b` and `a + decimal(1, 2) = b`, the last with the literal typed `P`. With `b: R`, `a + b = b + a` refuses `ill_typed`/`type-mismatch` at the first `a + b`. `let s = decimal(1, 2) + decimal(2, 2) in s = a` refuses `ill_typed`/`ambiguous-literal` at the sum. Evaluating `c` with `a = decimal(1, 2)`, `b = decimal(2, 2)` returns `true`, and with `a = decimal(99, 2)`, `b = decimal(1, 2)` it is refused `decimal_out_of_domain`/`outside-domain`. With `type W = Decimal[-198, 198; 2, 2; nearest-even];`, `function w using v(a: P, b: P): W pure { convert<W>(a) + convert<W>(b) }` evaluated at `a = decimal(99, 2)`, `b = decimal(1, 2)` returns `decimal(100, 2)`, while the body `convert<W>(a + b)` at the same values is refused `decimal_out_of_domain`/`outside-domain`. `function d using v(a: P, b: P): P pure { a / b }` checks with `a / b` typed `P`; evaluated at `a = decimal(1, 2)`, `b = decimal(8, 2)` (exactly 0.125, a tie at scale 2) it returns `decimal(12, 2)` under `nearest-even`, and at `a = decimal(5, 2)`, `b = decimal(2, 2)` (2.50) it is refused `decimal_out_of_domain`/`outside-domain`. The body `-a = b` checks with `-a` typed `P`, and with `b: R` the body `a / b = a` refuses `ill_typed`/`type-mismatch` at `a / b`. | Test (TC-1084) |
 | FR-104-AC-14 | A protocol repeat's `visible` and guard slots type an eligible body-produced attempt binder in the scope FR-218 supplies, using its most recently completed iteration value and retaining the producing role. | Test (TC-1268) |
+| FR-104-AC-15 | S3 accepts a partial mapping from exact authored state-clause names to accepted `ClauseBinding` execution points. Each supplied key resolves to its authored clause and the unchanged point is retained on that checked clause; an absent key leaves the clause without a point and no point is inferred. A key naming no authored clause refuses `missing_declaration`/`missing-name` before clause lowering or identity minting. Existing applicability and operation-anchor consistency checks apply. | Test (TC-471) |
 
 ## Dependencies
 
