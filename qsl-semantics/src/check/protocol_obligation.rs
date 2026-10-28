@@ -159,6 +159,9 @@ pub enum CheckedCommit {
 pub struct CheckedCompensation {
     /// The template's name.
     pub name: String,
+    /// The temporal profile selected by the template's `using` alias, for
+    /// the package lock row required when this template is emitted.
+    pub temporal_profile: Option<super::profile::TemporalProfile>,
     /// The one forward `effect` node it registers for.
     pub effect: ProtocolNodeId,
     /// The index of the `by` role among the protocol's roles.
@@ -646,6 +649,14 @@ impl Checker<'_, '_> {
         };
         match stage {
             ObligationStage::RegistrationCapture => {
+                site.location = Some(protocol_location(
+                    &protocol.name.name,
+                    ProtocolSite::CompensationBody(
+                        &form.name.name,
+                        "registration-capture",
+                        position,
+                    ),
+                ));
                 site.bind(&form.forward.name.name, &own.forward);
                 site.bind_input(&types.input);
                 site.bind_pair(&types.activation);
@@ -659,12 +670,20 @@ impl Checker<'_, '_> {
                     .collect();
             }
             ObligationStage::TriggerGuard => {
+                site.location = Some(protocol_location(
+                    &protocol.name.name,
+                    ProtocolSite::CompensationBody(&form.name.name, "trigger-guard", 0),
+                ));
                 site.bind(&form.trigger.name.name, &own.trigger);
                 protocol_captures(&mut site, usize::MAX);
                 registration(&mut site, usize::MAX);
                 site.bind_input(&types.input);
             }
             ObligationStage::ActivationCapture => {
+                site.location = Some(protocol_location(
+                    &protocol.name.name,
+                    ProtocolSite::CompensationBody(&form.name.name, "activation-capture", position),
+                ));
                 site.bind(&form.trigger.name.name, &own.trigger);
                 site.bind_input(&types.input);
                 protocol_captures(&mut site, usize::MAX);
@@ -678,6 +697,10 @@ impl Checker<'_, '_> {
                     .collect();
             }
             ObligationStage::Retry => {
+                site.location = Some(protocol_location(
+                    &protocol.name.name,
+                    ProtocolSite::CompensationBody(&form.name.name, "retry", 0),
+                ));
                 site.bind(&form.retry.earlier.name.name, &own.earlier);
                 site.bind(&form.retry.later.name.name, &own.later);
                 protocol_captures(&mut site, usize::MAX);
@@ -686,6 +709,10 @@ impl Checker<'_, '_> {
                 site.bind_input(&types.input);
             }
             ObligationStage::Recovery => {
+                site.location = Some(protocol_location(
+                    &protocol.name.name,
+                    ProtocolSite::CompensationBody(&form.name.name, "recovery", 0),
+                ));
                 site.bind(&form.recover.binder.name.name, &own.recovery);
                 protocol_captures(&mut site, usize::MAX);
                 registration(&mut site, usize::MAX);
@@ -972,6 +999,7 @@ impl Checker<'_, '_> {
                 .collect::<Vec<_>>();
             let compensation = CheckedCompensation {
                 name: name.to_owned(),
+                temporal_profile: None,
                 effect: effect?,
                 role: role?,
                 operation: operation?,

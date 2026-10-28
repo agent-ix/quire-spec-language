@@ -145,15 +145,17 @@ pub(super) enum Point {
 impl Point {
     pub fn native(&self) -> ir::ExecutionPoint {
         match self {
-            Self::Initialization { name } => {
-                ir::ExecutionPoint::Initialization { name: name.clone() }
-            }
-            Self::Handler { name } => ir::ExecutionPoint::Handler { name: name.clone() },
+            Self::Initialization { name } => ir::ExecutionPoint::Initialization {
+                name: name.clone().into(),
+            },
+            Self::Handler { name } => ir::ExecutionPoint::Handler {
+                name: name.clone().into(),
+            },
             Self::Pre { operation } => ir::ExecutionPoint::Pre {
-                operation: operation.clone(),
+                operation: operation.clone().into(),
             },
             Self::Post { operation } => ir::ExecutionPoint::Post {
-                operation: operation.clone(),
+                operation: operation.clone().into(),
             },
         }
     }

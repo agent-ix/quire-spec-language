@@ -43,7 +43,8 @@ impl<'a> DomainType<'a> {
         match declaration.kind {
             DeclarationKind::ObjectType
             | DeclarationKind::Interface
-            | DeclarationKind::RecordValueType => Some(Self {
+            | DeclarationKind::RecordValueType
+            | DeclarationKind::TupleValueType => Some(Self {
                 package,
                 declaration,
             }),
@@ -61,6 +62,7 @@ impl<'a> DomainType<'a> {
             | DeclarationKind::EventType
             | DeclarationKind::VariantType
             | DeclarationKind::VariantCase
+            | DeclarationKind::TuplePosition
             | DeclarationKind::StateMachine
             | DeclarationKind::Process
             | DeclarationKind::PersistenceInterface => None,

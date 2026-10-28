@@ -78,11 +78,19 @@ defect.
 
 ## Dispositions
 
-Round 1, fix commit cc106f1bf. The focused tests are listed in the PR body. I re-applied the probe_1709.diff probe on that head (not committed), and its case is now `a_receiver_scoped_clock_parameter_binds_the_receivers_place`.
+Round 1, fix commit cc106f1bf, head 81fa6e048.
+
+Gates (locked-build, jobs 4, debug info off, `--all-features`, QSPEC_DIR 308596b0):
+- qsl-eval `timed_subject`: 55/55.
+- qsl-analyze `zone`: 105/105.
+- qsl-semantics `timed`: 3 + 67.
+- clippy on qsl-eval, qsl-analyze and qsl-semantics with `--tests -D warnings`: exit 0.
+
+I re-applied probe_1709.diff on the head. It was not committed.
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | `ClockParameterRange::receiver_only()` lists the range fields that the frame names only by a receiver-scoped entry (`modifies self.f`, not in `modifies`). `instances` binds the parameter to those fields' places on the receiver alone. Re-running the probe gives two steps, and each receiver resets only its own `x`. |
-| FND-002 | fixed | The place arguments now come after the data arguments, in declared order. A data argument therefore keeps its index among `declaration.parameters()`, which hyper `ArgumentRead.index` and footprints both use. `footprint_selecting` accepts a timed transition's `parameters + clock_parameters` arguments and reads only the data ones. `a_data_argument_after_a_clock_parameter_keeps_its_index` checks `work(c: Clock, a, b)` with `pre { b }`. It confirms that `b` is at data index 1, that `b`'s argument is `true` on every step, and that the timed transition's footprint resolves. |
-| FND-003 | fixed | `ModelSystem::field_domain` gives a pure-clock `Set`/`OrderedSet` count whose `min` exceeds 1 an empty domain. A candidate that creates such an object therefore has no value, and no count below `min` is enumerated. The initial case (no initial state) is tested in `a_bare_clock_collection_ranges_its_initial_count` and, as an EN-6 settlement, in `en6_settles_the_bare_clock_counts`. I tried to test the created-object case, but it cannot be reached today. Creating the object needs a receiver of another object type, and S3 refused the `time` declaration over a package with a second object type, `Maker` beside `Call`, as `AmbiguousTimedModel` (`ambiguous_declaration`), so no timed model holds one. A receiver of the same type cannot exist either, because then no initial state exists. |
-| FND-004 | fixed | `permute_transition` renames the object in a `clock_place` argument through `split_clock_place` (`#[string_edge]`, reading the encoder's own text), so the slot path is unchanged. In `a_permutation_renames_a_clock_place_argument`, the image of each `work` transition under `c1 ↔ c2` is a transition of the expansion whose argument names the image object. With the rename disabled, the test fails. 580q moves the same rename onto the place id. |
+| FND-001 | fixed | `ClockParameter.receiver` holds the range fields that are written but not in the population-wide `modifies` (that is, only in `receiver_modifies`). The `instances` filter adds `!receiver_only.contains(clock) \|\| place.holds(receiver)`. The re-run probe gives 2 steps: receiver `c1` resets only `c1`'s `x`, and `c2` resets only `c2`'s `x`. Before the fix, `c2` reset `c1.x`. |
+| FND-002 | fixed | `instance_transition` now pushes the place arguments after the data arguments. `footprint_selecting` accepts either `parameters` or `parameters + clock_parameters` arguments and zips only the data parameters. `a_data_argument_after_a_clock_parameter_keeps_its_index` checks `work(c: Clock, a, b)`: the arguments are `[a, b, place]`, `b` is `true` on both steps under `pre { b }`, and the footprint resolves. |
+| FND-003 | fixed | `field_domain` gives an empty `Listed` domain when a pure-clock count has `max < min`, and frames.rs uses it for created objects. I checked the claim that the created-object path is unreachable, and it holds. An object of the type cannot exist, because a `Set<Clock>[2, ..]` field has no value, so there is no initial state (`en6_settles_the_bare_clock_counts` asserts `NoInitialState`). So no receiver of that type can create one. A creator of another object type would need a second object-type model node, which `AmbiguousTimedModel` refuses (check/mod.rs: `object_type_model_node_keys` must be one). The guard is correct and has no reachable test. |
+| FND-004 | fixed | `permute_transition` renames the object inside a `clock_place` argument through `split_clock_place` and keeps the slot path. `a_permutation_renames_a_clock_place_argument` asserts that the image names the swapped object. Without the rename, the image of (c1, place c2.x) would be (c2, place c2.x), which is also an expanded transition. So the `named(&image, to)` assertion is the one that catches the defect, and it does. |

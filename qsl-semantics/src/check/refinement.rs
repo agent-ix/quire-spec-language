@@ -2530,7 +2530,8 @@ impl<'c, 'a> Checker<'c, 'a> {
                 declarations.checking_limits,
                 &mut *self.nodes,
                 match kind {
-                    qsl_forms::StateClauseKind::Invariant => qsl_forms::ClauseKind::Invariant,
+                    qsl_forms::StateClauseKind::Invariant
+                    | qsl_forms::StateClauseKind::Constraint => qsl_forms::ClauseKind::Invariant,
                     qsl_forms::StateClauseKind::Precondition => qsl_forms::ClauseKind::Precondition,
                     qsl_forms::StateClauseKind::Postcondition => {
                         qsl_forms::ClauseKind::Postcondition

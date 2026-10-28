@@ -38,6 +38,10 @@ pub enum DeclarationKind {
     ValueType,
     /// A record value type: named fields and no identity (FR-208).
     RecordValueType,
+    /// A closed ordered tuple value type (FR-208).
+    TupleValueType,
+    /// One tuple position identified by ordinal (FR-208).
+    TuplePosition,
     /// A variant type: a closed set of named cases (FR-208).
     VariantType,
     /// One case of a variant type.
@@ -217,8 +221,18 @@ impl AdmittedPackage {
                         key.node, key.package
                     ),
                 ));
-            } else if let Some(artifact) = type_identity_segment(&identity, &key.node) {
-                nodes.insert(artifact.to_owned(), index);
+            } else if !matches!(
+                record,
+                DomainPackageRecord::FieldMember(_)
+                    | DomainPackageRecord::OperationMember(_)
+                    | DomainPackageRecord::Clause(_)
+                    | DomainPackageRecord::Variant(_)
+            ) {
+                if let Some(artifact) = type_identity_segment(&identity, &key.node) {
+                    nodes.insert(artifact.to_owned(), index);
+                } else {
+                    member_records.push(index);
+                }
             } else {
                 member_records.push(index);
             }
@@ -239,6 +253,10 @@ impl AdmittedPackage {
                 DomainPackageRecord::FieldMember(member) => {
                     member_identity_name(&member.owner.node, &key.node)
                         .map(|name| (member.owner.node.as_str(), name))
+                }
+                DomainPackageRecord::TuplePosition(position) => {
+                    member_identity_name(&position.owner.node, &key.node)
+                        .map(|name| (position.owner.node.as_str(), name))
                 }
                 DomainPackageRecord::OperationMember(member) => {
                     member_identity_name(&member.owner.node, &key.node)
@@ -262,6 +280,7 @@ impl AdmittedPackage {
                 DomainPackageRecord::Enum(_)
                 | DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::TupleValueType(_)
                 | DomainPackageRecord::EventType(_)
                 | DomainPackageRecord::StateMachine(_)
                 | DomainPackageRecord::Process(_)
@@ -403,6 +422,8 @@ impl AdmittedPackage {
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
+            DomainPackageRecord::TupleValueType(_) => DeclarationKind::TupleValueType,
+            DomainPackageRecord::TuplePosition(_) => DeclarationKind::TuplePosition,
             DomainPackageRecord::Enum(_) => DeclarationKind::VariantType,
             DomainPackageRecord::Variant(_) => DeclarationKind::VariantCase,
             DomainPackageRecord::EventType(_) => DeclarationKind::EventType,

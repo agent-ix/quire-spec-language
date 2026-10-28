@@ -2112,8 +2112,14 @@ pub fn admit_observations(
     };
     // Check 2: selection form.
     match (clause.kind, &selection.input) {
-        (StateClauseKind::Invariant, ClauseSelectionInput::Current { .. })
-        | (StateClauseKind::Invariant, ClauseSelectionInput::Context { .. })
+        (
+            StateClauseKind::Invariant | StateClauseKind::Constraint,
+            ClauseSelectionInput::Current { .. },
+        )
+        | (
+            StateClauseKind::Invariant | StateClauseKind::Constraint,
+            ClauseSelectionInput::Context { .. },
+        )
         | (StateClauseKind::Precondition, ClauseSelectionInput::PreCall { .. })
         | (
             StateClauseKind::Precondition | StateClauseKind::Postcondition,
@@ -2124,12 +2130,15 @@ pub fn admit_observations(
             ClauseSelectionInput::Current { .. } | ClauseSelectionInput::Context { .. },
         )
         | (
-            StateClauseKind::Invariant | StateClauseKind::Postcondition,
+            StateClauseKind::Invariant
+            | StateClauseKind::Constraint
+            | StateClauseKind::Postcondition,
             ClauseSelectionInput::PreCall { .. },
         )
-        | (StateClauseKind::Invariant, ClauseSelectionInput::Invocation { .. }) => {
-            return Err(wrong_observation())
-        }
+        | (
+            StateClauseKind::Invariant | StateClauseKind::Constraint,
+            ClauseSelectionInput::Invocation { .. },
+        ) => return Err(wrong_observation()),
     }
 
     let views = model_views(model_selections, packages, model_limits)?;
@@ -2266,7 +2275,9 @@ pub fn admit_observations(
                 model_limits,
             ),
             // Check 2 above refused an invariant's `Invocation` selection.
-            StateClauseKind::Invariant => Err(fault("invariant-selected-by-invocation")),
+            StateClauseKind::Invariant | StateClauseKind::Constraint => {
+                Err(fault("invariant-selected-by-invocation"))
+            }
         },
         ClauseSelectionInput::Context { invocation, side } => match side {
             ContextSide::Pre => admit_pre_call_invocation(

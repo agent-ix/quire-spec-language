@@ -281,7 +281,7 @@ mod tests {
             requirement: setup::authored_owner(),
             clause: ir::ClauseId::new("population_rule").unwrap(),
             execution_point: ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
+                name: ir::AnchorName::new("validate").unwrap().into(),
             },
         }
     }

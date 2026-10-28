@@ -90,12 +90,12 @@ use quire_contract_model::{
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
     CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
     CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
-    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
-    PACKAGE_DOMAIN_V2,
+    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
+    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion,
+    CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner, ProtocolForm, StateForm,
+    ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -107,7 +107,7 @@ use qsl_foundation::source::provenance::{
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
-    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode,
+    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
@@ -237,6 +237,17 @@ pub enum EmitRefusal {
     /// A checked refinement is not supported by the current emission slice.
     #[error("the checked refinement body is not supported by the current V2 emission slice")]
     RefinementNotEmitted,
+    /// Two refinement declarations of different names key one node: the
+    /// authored name is part of a refinement's node identity (the planner's
+    /// ruling on STD-493), which the V2 preimage does not carry yet, so the
+    /// second is not emitted rather than merged into the first.
+    #[error("refinement `{second}` has the meaning of `{first}`; a refinement's name does not enter its node identity yet")]
+    SameMeaningRefinements {
+        /// The first declaration, in source order.
+        first: String,
+        /// The later declaration with the same node.
+        second: String,
+    },
     /// A checked refinement's declaration occurrence has no original source region.
     #[error("the checked refinement declaration has no source region")]
     UnlocatedRefinementDeclaration,
@@ -271,7 +282,9 @@ impl EmitRefusal {
                 Code::RuntimeInvariant
             }
             Self::RefinementIdentityEncoding => Code::OutputFailure,
-            Self::RefinementNotEmitted => Code::UnsupportedConstruct,
+            Self::RefinementNotEmitted | Self::SameMeaningRefinements { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
             Self::SourceMapInvariant => Code::RuntimeInvariant,
         }
@@ -284,7 +297,9 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Some("not-yet-implemented")
             }
-            Self::RefinementNotEmitted => Some("not-yet-implemented"),
+            Self::RefinementNotEmitted | Self::SameMeaningRefinements { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -658,10 +673,59 @@ impl<'g> Candidate<'g> {
             }),
             owner: node.owner().map(wire_owner),
             owner_model: node.owner_model().map(node_id),
-            body: CheckedTerm::deserialize(node.wire_body().map_err(encoding)?)
-                .map_err(encoding)?,
+            body: checked_body(node, self.tag)?,
         })
     }
+}
+
+/// The point-bearing operation-anchor body is a contextual bare-value
+/// binding in V2, not an ordinary expression term. Decode it through IR's
+/// typed body so emission and read-back use the same closed carrier.
+/// `#[string_edge]`: node-kind and member discriminators select this one
+/// contextual V2 body shape.
+#[string_edge]
+fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm, EmitRefusal> {
+    let body = node.wire_body().map_err(encoding)?;
+    if CheckedNodeKind::decode(tag, node.semantic_form())
+        == Some(CheckedNodeKind::State(StateForm::OperationAnchor))
+        && body["members"].as_array().is_some_and(|members| {
+            members.len() == 4
+                && members.last().is_some_and(|member| {
+                    member["term"] == "binding" && member["name"] == "execution_point"
+                })
+        })
+    {
+        let members = body["members"]
+            .as_array()
+            .ok_or_else(|| encoding("operation-anchor body members are not an array"))?;
+        let [context, operation, frame, point] = members.as_slice() else {
+            return Err(encoding(
+                "point-bearing operation-anchor body does not have four members",
+            ));
+        };
+        let execution_point = point
+            .get("value")
+            .cloned()
+            .ok_or_else(|| encoding("operation-anchor execution point has no value"))?;
+        let execution_point: ExecutionPoint =
+            ExecutionPoint::deserialize(execution_point).map_err(encoding)?;
+        let members = [context, operation, frame]
+            .into_iter()
+            .cloned()
+            .map(CheckedTerm::deserialize)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(encoding)?;
+        let [context, operation, frame] = members.try_into().map_err(|_| {
+            encoding("operation-anchor body does not have three expression members")
+        })?;
+        return Ok(CheckedTerm::OperationAnchorBody(Box::new(
+            CheckedOperationAnchorBody {
+                members: [context, operation, frame],
+                execution_point: Some(execution_point),
+            },
+        )));
+    }
+    CheckedTerm::deserialize(body).map_err(encoding)
 }
 
 /// A structural node's `owner` as the v2 wire writes it (FR-093): exactly the
@@ -1693,6 +1757,72 @@ fn candidates_of<'g>(
     Ok(candidates)
 }
 
+/// The temporal profile the lock selects for the clock-reading control nodes
+/// actually written into `nodes` (QSpec FR-464 "Profiles and laws": the lock
+/// selects a `temporal_profile` for an `await` or `compensate` node). A
+/// protocol whose controls are not emitted, for want of a protocol profile or
+/// a refused construct, selects nothing, so the package identity of a unit
+/// that writes no such node is unchanged. The lock holds one row per role
+/// (FR-322), so the first emitted node's profile in source order is the one
+/// selected. QSL-1127 adds `compensate` templates to the same trigger.
+fn clock_control_profile(
+    graph: &CheckedGraph,
+    nodes: &[CheckedSemanticNodeV2],
+) -> Option<TemporalProfile> {
+    let awaits = graph.protocols().iter().flat_map(|protocol| {
+        protocol.awaits.iter().filter_map(move |awaited| {
+            let control = protocol.controls.control(awaited.node)?;
+            let mut path = vec![protocol.name.as_str(), "run"];
+            path.extend(control.path.iter().map(String::as_str));
+            Some((path, awaited.profile?))
+        })
+    });
+    let compensations = graph.protocols().iter().flat_map(|protocol| {
+        protocol
+            .obligations
+            .compensations
+            .iter()
+            .filter_map(move |template| {
+                let profile = template.temporal_profile?;
+                Some((
+                    vec![protocol.name.as_str(), "compensate", template.name.as_str()],
+                    profile,
+                ))
+            })
+    });
+    awaits
+        .chain(compensations)
+        .find(|(path, _)| {
+            nodes.iter().any(|node| {
+                is_control_node(node)
+                    || is_compensation_node(node)
+                        && node.declaration.as_ref().is_some_and(|declaration| {
+                            declaration
+                                .qualified_name
+                                .iter()
+                                .map(AsRef::as_ref)
+                                .eq(path.iter().copied())
+                        })
+            })
+        })
+        .map(|(_, profile)| profile)
+}
+
+/// Whether a written node is a protocol `control`, decoded through IR's closed
+/// vocabulary rather than compared by spelling.
+fn is_control_node(node: &CheckedSemanticNodeV2) -> bool {
+    CheckedNodeTag::from_wire(&node.node_tag)
+        .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+        == Some(CheckedNodeKind::Protocol(ProtocolForm::Control))
+}
+
+/// Whether a written node is a protocol compensation template.
+fn is_compensation_node(node: &CheckedSemanticNodeV2) -> bool {
+    CheckedNodeTag::from_wire(&node.node_tag)
+        .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+        == Some(CheckedNodeKind::Protocol(ProtocolForm::Compensation))
+}
+
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
 /// `fault` runs against each node's id, in graph order, just before that
 /// node would be written; every production call site is `emit_package`,
@@ -1758,6 +1888,7 @@ fn emit_package_inner(
         .collect::<Result<Vec<_>, _>>()?;
     let mut nodes = wire_nodes;
     let mut emitted_refinements = Vec::new();
+    let mut refinement_names: BTreeMap<CheckedNodeId, &str> = BTreeMap::new();
     for refinement in graph.refinements() {
         if !refinement.v2_empty_model_body() {
             return Err(EmitRefusal::RefinementNotEmitted);
@@ -1767,6 +1898,12 @@ fn emit_package_inner(
             .filter(|region| region.start() < region.end())
             .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
         let (node, entries) = empty_model_refinement_node(refinement, &region)?;
+        if let Some(first) = refinement_names.insert(node.node_id.clone(), refinement.name()) {
+            return Err(EmitRefusal::SameMeaningRefinements {
+                first: first.to_owned(),
+                second: refinement.name().to_owned(),
+            });
+        }
         let insertion = nodes.partition_point(|existing| {
             existing.node_id.digest.as_bytes() < node.node_id.digest.as_bytes()
         });
@@ -1978,6 +2115,20 @@ fn emit_package_inner(
             definition: CheckedArtifactRef {
                 authority: "agent-ix".into(),
                 identity: refinement.profile().identity.as_str().into(),
+            },
+        };
+        if !profile_selections.contains(&selection) {
+            profile_selections.push(selection);
+        }
+    }
+    // A clock-reading control node needs the lock to select a temporal
+    // profile (QSpec FR-464 "Profiles and laws").
+    if let Some(profile) = clock_control_profile(graph, &nodes) {
+        let selection = CheckedSelection {
+            role: CheckedSelectionRole::TemporalProfile,
+            definition: CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: profile.identity().into(),
             },
         };
         if !profile_selections.contains(&selection) {

@@ -55,7 +55,8 @@ use crate::model::domain_package::{
     OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
     PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
-    ScalarValueDomain, SequenceTypeRecord, ValueBoundRecord, ValueTypeRef, VariantRecord,
+    ScalarValueDomain, SequenceTypeRecord, TuplePositionRecord, TupleValueTypeRecord,
+    ValueBoundRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -1280,11 +1281,18 @@ pub(crate) fn admit_located<'a, T>(
 // Declaration identity form (model-complete.md's Identity row; FCD #199 gap
 // 2, "the identity form"): a type-definition node's identity is exactly
 // `ix://<package identity>/<artifact id>` (one segment past the package); a
-// member node's identity is exactly `<owner identity>/<member name>`. An
-// artifact id or member name is `^[A-Za-z][A-Za-z0-9_]*$`.
+// member node's identity is exactly `<owner identity>/<member name>`. FR-154
+// admits hyphens in artifact ids, but member names keep their underscore-only
+// grammar.
 // ---------------------------------------------------------------------------
 
-fn is_artifact_segment(text: &str) -> bool {
+fn is_artifact_id_segment(text: &str) -> bool {
+    let mut chars = text.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+}
+
+fn is_member_name_segment(text: &str) -> bool {
     let mut chars = text.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
@@ -1301,14 +1309,14 @@ pub(crate) fn type_identity_segment<'a>(
         .strip_prefix("ix://")?
         .strip_prefix(package_identity)?;
     let rest = rest.strip_prefix('/')?;
-    (!rest.is_empty() && !rest.contains('/') && is_artifact_segment(rest)).then_some(rest)
+    (!rest.is_empty() && !rest.contains('/') && is_artifact_id_segment(rest)).then_some(rest)
 }
 
 /// The member name past `<owner_identity>/`, when `identity` has exactly
 /// that form.
 pub(crate) fn member_identity_name<'a>(owner_identity: &str, identity: &'a str) -> Option<&'a str> {
     let rest = identity.strip_prefix(owner_identity)?.strip_prefix('/')?;
-    (!rest.is_empty() && !rest.contains('/') && is_artifact_segment(rest)).then_some(rest)
+    (!rest.is_empty() && !rest.contains('/') && is_member_name_segment(rest)).then_some(rest)
 }
 
 // ---------------------------------------------------------------------------
@@ -4342,6 +4350,142 @@ pub(super) fn read_variant_type(
     Ok(())
 }
 
+/// Reads a `TUPLE_VALUE_TYPE` definition into its type declaration and one
+/// ordinal position record per ordered position (FR-208-AC-19).
+#[ix_trace_rs::string_edge]
+pub(super) fn read_tuple_value_type(
+    package: &str,
+    type_value: &Value,
+    node: &str,
+    at: &str,
+    shape: Option<&str>,
+    type_meanings: &HashMap<&str, &str>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), Refusals> {
+    let ctx = NodeCtx::new(type_value, at);
+    let mut refusals = Vec::new();
+    if shape != Some("tuple") {
+        refusals.push(ctx.malformed_in("kind", "a tuple value type's construct has shape tuple"));
+    }
+    for member in [
+        "fields",
+        "identityFields",
+        "operations",
+        "supertypes",
+        "clauses",
+    ] {
+        if type_value
+            .get(member)
+            .is_some_and(|value| value.as_array().is_none_or(|members| !members.is_empty()))
+        {
+            refusals.push(ctx.malformed_in(
+                member,
+                "a tuple value type is closed and declares no named members or ancestry",
+            ));
+        }
+    }
+    let positions = match ctx.array_field("positions") {
+        Ok(positions) => positions,
+        Err(refusal) => {
+            refusals.push(refusal);
+            &[]
+        }
+    };
+    if positions.is_empty() {
+        refusals.push(ctx.malformed_in("positions", "a tuple has at least one position"));
+    }
+    let owner = declaration_key(package, node);
+    let mut position_records = Vec::with_capacity(positions.len());
+    let mut seen = HashMap::new();
+    for (ordinal, value) in positions.iter().enumerate() {
+        let position_at = format!("{at}.positions[{ordinal}]");
+        let position_ctx = NodeCtx::new(value, &position_at);
+        let identity = match position_ctx.str_field("identity") {
+            Ok(identity) => identity,
+            Err(refusal) => {
+                refusals.push(refusal);
+                continue;
+            }
+        };
+        if let Some(first) = seen.get(identity) {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding {
+                    key: declaration_key(package, identity),
+                    member: Some(
+                        MemberPath::type_definition()
+                            .name("positions")
+                            .index(ordinal),
+                    ),
+                },
+                detail: format!(
+                    "{position_at}: positions[{ordinal}] repeats the identity at positions[{first}]"
+                ),
+            });
+            continue;
+        }
+        seen.insert(identity, ordinal);
+        let expected = format!("{node}/p{ordinal}");
+        if identity != expected {
+            refusals.push(position_ctx.malformed_in(
+                "identity",
+                format!("position {ordinal} has the required ordinal identity {expected:?}"),
+            ));
+            continue;
+        }
+        let type_ref = match position_ctx.str_field("typeRef") {
+            Ok(type_ref) => type_ref,
+            Err(refusal) => {
+                refusals.push(refusal);
+                continue;
+            }
+        };
+        let value_type = match read_value_type_ref(package, &position_ctx, type_ref, true) {
+            Ok(value_type) => value_type,
+            Err(refusal) => {
+                refusals.push(refusal);
+                continue;
+            }
+        };
+        let supported = match &value_type {
+            ValueTypeRef::Clock => false,
+            ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => true,
+            ValueTypeRef::Package(key) => {
+                type_meanings.get(key.node.as_str()).is_none_or(|meaning| {
+                    matches!(
+                        *meaning,
+                        meaning::VALUE_TYPE
+                            | meaning::RECORD_VALUE_TYPE
+                            | meaning::TUPLE_VALUE_TYPE
+                            | meaning::VARIANT_TYPE
+                    )
+                })
+            }
+        };
+        if !supported {
+            refusals.push(
+                position_ctx
+                    .malformed_in("typeRef", "a tuple position names an admitted value type"),
+            );
+            continue;
+        }
+        position_records.push(DomainPackageRecord::TuplePosition(TuplePositionRecord {
+            key: declaration_key(package, identity),
+            owner: owner.clone(),
+            ordinal,
+            value_type,
+        }));
+    }
+    if let Ok(found) = Refusals::try_from(refusals) {
+        return Err(found);
+    }
+    records.push(DomainPackageRecord::TupleValueType(TupleValueTypeRecord {
+        key: owner,
+    }));
+    records.extend(position_records);
+    Ok(())
+}
+
 /// Whether `payload_type` resolves to one of the admitted model or native
 /// value types, or is `Clock`: a case with a `Clock` payload is a clock place
 /// guarded by the case and holds no data payload (FR-230 "Records, tuples
@@ -4657,6 +4801,8 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::Enum(_)
         | DomainPackageRecord::Variant(_)
         | DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::TupleValueType(_)
+        | DomainPackageRecord::TuplePosition(_)
         | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Clause(_)
@@ -5617,6 +5763,56 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use sha2::{Digest, Sha256};
+
+    /// QSpec FR-154-AC-33: package intake retains a tuple declaration and
+    /// each ordinal position's value type in authored product order.
+    #[ix_trace_rs::trace("QSpec-FR-154-AC-33")]
+    #[test]
+    fn reads_tuple_value_type_positions_by_ordinal() {
+        let value = serde_json::json!({
+            "positions": [
+                {
+                    "identity": "ix://acme/orders/Pair/p0",
+                    "typeRef": "ix://quire/native/Boolean"
+                },
+                {
+                    "identity": "ix://acme/orders/Pair/p1",
+                    "typeRef": "ix://quire/native/Integer"
+                }
+            ]
+        });
+        let mut records = Vec::new();
+        read_tuple_value_type(
+            "acme/orders",
+            &value,
+            "ix://acme/orders/Pair",
+            "types[0]",
+            Some("tuple"),
+            &HashMap::new(),
+            &mut records,
+        )
+        .expect("the closed, ordered tuple form is admitted");
+        assert_eq!(
+            records,
+            vec![
+                DomainPackageRecord::TupleValueType(TupleValueTypeRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Pair"),
+                }),
+                DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Pair/p0"),
+                    owner: declaration_key("acme/orders", "ix://acme/orders/Pair"),
+                    ordinal: 0,
+                    value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+                }),
+                DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Pair/p1"),
+                    owner: declaration_key("acme/orders", "ix://acme/orders/Pair"),
+                    ordinal: 1,
+                    value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                }),
+            ]
+        );
+    }
 
     /// FR-103-AC-2: a `modifies` entry naming a systems connection (a
     /// relationship with no slot in a type's `relationships` array) is not a
@@ -6703,6 +6899,149 @@ mod tests {
         )
         .to_string()
         .into_bytes()
+    }
+
+    #[trace("TC-145", "FR-056-AC-4", "FR-056-AC-44")]
+    #[test]
+    fn admits_hyphenated_artifact_ids_and_preserves_underscored_member_names() {
+        let types = serde_json::json!([
+            wire_type(
+                "ix://acme/orders/sys-pump",
+                serde_json::json!({"module": "acme/orders", "name": "entity"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [wire_field(
+                        "ix://acme/orders/sys-pump/created_at",
+                        "created_at",
+                        "ix://quire/native/Boolean",
+                    )],
+                    "operations": [],
+                }),
+            ),
+            wire_type(
+                "ix://acme/orders/FR-001",
+                serde_json::json!({"module": "acme/orders", "name": "entity"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                "ix://acme/orders/OP-001",
+                serde_json::json!({"module": "acme/orders", "name": "entity"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [wire_field(
+                        "ix://acme/orders/OP-001/owner_ref",
+                        "owner_ref",
+                        "ix://acme/orders/FR-001",
+                    )],
+                    "operations": [{
+                        "identity": "ix://acme/orders/OP-001/find_by_id",
+                        "name": "find_by_id",
+                        "params": [wire_field(
+                            "ix://acme/orders/OP-001/find_by_id/created_at",
+                            "created_at",
+                            "ix://acme/orders/FR-001",
+                        )],
+                        "pre": [],
+                        "post": [],
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": "ix://acme/orders/OP-001/find_by_id",
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": ["ix://acme/orders/OP-001/find_by_id"],
+                            }
+                        },
+                    }],
+                }),
+            ),
+        ]);
+        let bytes = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "entity",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            types,
+        )
+        .to_string()
+        .into_bytes();
+
+        let records = read_records("acme/orders", &parse_document(&bytes))
+            .expect("FR-154 admits the hyphenated artifact IDs and resolves their references");
+        let keys: std::collections::BTreeSet<_> = records
+            .iter()
+            .map(|record| record.key().node.as_str())
+            .collect();
+        assert!(keys.contains("ix://acme/orders/sys-pump"));
+        assert!(keys.contains("ix://acme/orders/sys-pump/created_at"));
+        assert!(keys.contains("ix://acme/orders/FR-001"));
+        assert!(keys.contains("ix://acme/orders/OP-001"));
+        assert!(keys.contains("ix://acme/orders/OP-001/owner_ref"));
+        assert!(keys.contains("ix://acme/orders/OP-001/find_by_id"));
+
+        let owner_ref = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::FieldMember(field)
+                    if field.key.node == "ix://acme/orders/OP-001/owner_ref" =>
+                {
+                    Some(field)
+                }
+                _ => None,
+            })
+            .expect("the OP-001 field is retained under its authored member name");
+        assert_eq!(
+            owner_ref.value_type,
+            ValueTypeRef::Package(DeclarationKey {
+                package: "acme/orders".to_owned(),
+                node: "ix://acme/orders/FR-001".to_owned(),
+            }),
+            "owner_ref resolves to the hyphenated FR-001 declaration"
+        );
+
+        let find_by_id = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation)
+                    if operation.key.node == "ix://acme/orders/OP-001/find_by_id" =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the OP-001 operation is retained under its authored name");
+        assert_eq!(
+            find_by_id.parameters[0].key.node, "ix://acme/orders/OP-001/find_by_id/created_at",
+            "the operation parameter identity keeps its authored underscore name"
+        );
+    }
+
+    #[trace("TC-145", "FR-056-AC-4")]
+    #[test]
+    fn hyphens_are_allowed_in_artifact_ids_but_not_member_names() {
+        assert_eq!(
+            type_identity_segment("acme/orders", "ix://acme/orders/sys-pump"),
+            Some("sys-pump"),
+        );
+        assert_eq!(
+            type_identity_segment("acme/orders", "ix://acme/orders/-sys_pump"),
+            None,
+        );
+        assert_eq!(
+            member_identity_name(
+                "ix://acme/orders/sys-pump",
+                "ix://acme/orders/sys-pump/created_at",
+            ),
+            Some("created_at"),
+        );
+        assert_eq!(
+            member_identity_name(
+                "ix://acme/orders/sys-pump",
+                "ix://acme/orders/sys-pump/created-at",
+            ),
+            None,
+        );
     }
 
     /// A field whose multiplicity `upper` is 2^60 + 1, a whole number no

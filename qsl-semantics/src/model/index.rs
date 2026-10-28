@@ -73,6 +73,7 @@ struct DeclFlags {
     non_root: bool,
     scalar_type: bool,
     record_value_type: bool,
+    tuple_value_type: bool,
     /// A package `alias` or `sequence` type definition (FR-230 "Units",
     /// "Clock collections").
     core_type: bool,
@@ -227,6 +228,11 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .collect(),
         DomainPackageRecord::RecordValueType(record) => std::iter::once(&record.key)
             .chain(&record.supertypes)
+            .collect(),
+        DomainPackageRecord::TupleValueType(record) => vec![&record.key],
+        DomainPackageRecord::TuplePosition(position) => std::iter::once(&position.key)
+            .chain([&position.owner])
+            .chain(position.value_type.as_package())
             .collect(),
         DomainPackageRecord::Enum(record) => vec![&record.key],
         DomainPackageRecord::Variant(record) => std::iter::once(&record.key)
@@ -689,6 +695,14 @@ impl RecordIndex {
                     index.flags[own.0].record_value_type = true;
                     index.generals[own.0].extend(record.supertypes.iter().map(at));
                 }
+                DomainPackageRecord::TupleValueType(_) => {
+                    index.flags[own.0].tuple_value_type = true;
+                }
+                DomainPackageRecord::TuplePosition(position) => {
+                    let owner = at(&position.owner);
+                    index.member_owner.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
+                }
                 DomainPackageRecord::EventType(event) => {
                     index.flags[own.0].event_type = true;
                     index.generals[own.0].extend(event.supertypes.iter().map(at));
@@ -866,6 +880,11 @@ impl RecordIndex {
     /// Whether some `RecordValueType` record declares `key`.
     pub(crate) fn is_record_value_type(&self, key: &DeclarationKey) -> bool {
         self.flags(key).record_value_type
+    }
+
+    /// Whether a tuple value type declares `key`.
+    pub(crate) fn is_tuple_value_type(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).tuple_value_type
     }
 
     /// Whether a package `alias` or `sequence` type definition declares

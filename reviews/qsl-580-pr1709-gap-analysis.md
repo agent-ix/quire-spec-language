@@ -50,10 +50,10 @@ analysis-level settlements.
 
 ## Dispositions
 
-Round 1, fix commit cc106f1bf.
+Round 1, fix commit cc106f1bf, head 81fa6e048. The gates are those in SR-1709001's dispositions.
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | Each path now has a test:<br>- a receiver-scoped frame: `a_receiver_scoped_clock_parameter_binds_the_receivers_place`;<br>- a data parameter after a `Clock` parameter, checked through a step read and a footprint: `a_data_argument_after_a_clock_parameter_keeps_its_index`;<br>- two `Clock` parameters: `two_clock_parameters_bind_every_pair_of_places` gives 8 instances over two calls, each resetting `c`'s place alone;<br>- an operation with a `Clock` result: `an_operation_with_a_clock_result_steps` steps it in the timed subject, with no data result.<br>A `Clock` result read in a guard through a function call is FR-230 "Clock-reading declarations", which S3's reading of a call already covers. |
-| FND-002 | fixed | `zone_clock_collections::en6_settles_the_bare_clock_counts` covers both settlements. `Set<Clock>[2, 5]` settles EN-6's deadlock-freedom item as `Undecided(NoInitialState)`. An unbounded `Sequence<Clock>` under `max_clocks` 2 stops `LimitReached(MaxClocks(2))`, which is incomplete, never a verdict. |
-| FND-003 | recorded by the coordinator | The coordinator records the deferred AC rows on QSL-580. |
+| FND-001 | fixed | Each path now has a test, and each passes. The receiver frame: `a_receiver_scoped_clock_parameter_binds_the_receivers_place`. A data parameter after a Clock parameter: `a_data_argument_after_a_clock_parameter_keeps_its_index`. Two Clock parameters: `two_clock_parameters_bind_every_pair_of_places`, 8 distinct instances, each resetting `c`'s place only. A Clock result: `an_operation_with_a_clock_result_steps`. |
+| FND-002 | fixed | `en6_settles_the_bare_clock_counts` asserts both settlements at analysis level. `Set<Clock>[2, 5]` gives `Undecided(NoInitialState)`. An unbounded `Sequence<Clock>` under `max_clocks` 2 gives `Stopped(LimitReached(MaxClocks(2)))`. |
+| FND-003 | fixed | Recorded on QSL-580 (comment 5bba1fe4, "Deferred FR-230 rows ... SR-1709002 GA FND-003"), with the 580q rows and the blocking clock_place selector ruling. |

@@ -76,6 +76,51 @@ fn tc_693_zero_up_constrain_reset_give_the_stated_zones() {
     assert_eq!(at.bound(0, Y), Ok(&le(-3)));
 }
 
+#[trace("TC-685", "FR-230-AC-20")]
+#[test]
+fn carried_clock_updates_are_simultaneous_and_have_an_exact_preimage() {
+    let mut before = Dbm::zero(4);
+    before.reset(X, &BigInt::from(2)).expect("x is a clock");
+    before.reset(Y, &BigInt::from(7)).expect("y is a clock");
+    before.reset(3, &BigInt::from(9)).expect("z is a clock");
+
+    // Slot 0 takes the old slot 1 value while slot 1 is fresh. Both outputs
+    // are assigned from the same pre-update valuation.
+    let carries = [(X, Y)];
+    let resets = [(Y, BigInt::from(5))];
+    let mut after = before.clone();
+    after
+        .assign_clocks(&carries, &resets)
+        .expect("valid model clock updates");
+    assert_eq!(after.bound(X, 0), Ok(&le(7)));
+    assert_eq!(after.bound(0, X), Ok(&le(-7)));
+    assert_eq!(after.bound(Y, 0), Ok(&le(5)));
+    assert_eq!(after.bound(0, Y), Ok(&le(-5)));
+    assert_eq!(after.bound(3, 0), Ok(&le(9)));
+
+    let mut target = Dbm::zero(4);
+    target.reset(X, &BigInt::from(7)).expect("x is a clock");
+    target.reset(Y, &BigInt::from(5)).expect("y is a clock");
+    target.reset(3, &BigInt::from(9)).expect("z is a clock");
+    let predecessors = target
+        .preimage_clocks(&carries, &resets)
+        .expect("valid model clock updates");
+    assert!(predecessors.includes(&before).expect("matching dimensions"));
+}
+
+#[trace("TC-685", "FR-230-AC-20")]
+#[test]
+fn a_carried_place_can_copy_one_pre_clock_to_two_post_places() {
+    let mut before = Dbm::zero(3);
+    before.reset(X, &BigInt::from(4)).expect("x is a clock");
+    let mut after = before.clone();
+    after
+        .assign_clocks(&[(Y, X)], &[])
+        .expect("valid model clock update");
+    assert_eq!(after.bound(X, Y), Ok(&le(0)));
+    assert_eq!(after.bound(Y, X), Ok(&le(0)));
+}
+
 /// FR-238-AC-2: `includes` holds for `x <= 3` over `x < 3` and not the
 /// reverse; a strict and a non-strict bound stay distinct; out-of-shape
 /// operations refuse and leave the DBM unchanged.
