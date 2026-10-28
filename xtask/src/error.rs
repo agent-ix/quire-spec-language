@@ -341,6 +341,13 @@ pub enum Error {
         #[source]
         source: serde_json::Error,
     },
+    /// FR-489: a production linked-provider snapshot could not be built.
+    #[error("refinement: cannot build the production provider registry: {source}")]
+    RefinementRegistryBuild {
+        /// The descriptor-source or registration failure.
+        #[source]
+        source: crate::refinement::layering::RegistryBuildError,
+    },
     /// FR-353: corpus preflight or invocation refused before any vector ran.
     #[error("qualify: {0}")]
     QualificationRefusal(String),
@@ -388,7 +395,9 @@ impl Error {
             | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
-            Self::RefinementReport { .. } => Code::Refinement,
+            Self::RefinementReport { .. } | Self::RefinementRegistryBuild { .. } => {
+                Code::Refinement
+            }
             Self::QualificationRefusal(_) => Code::Qualification,
         }
     }
