@@ -1194,32 +1194,33 @@ fn a_refused_read_is_classified_in_the_order_the_criteria_state() {
     assert_eq!(universe.classify("order", &at_protocol), ReadClass::Stage);
 }
 
-/// FR-092-AC-18, FR-383: a protocol with an `each` guard, a capture and a
-/// `compensate` template is never checked to a package without the template:
-/// with a protocol profile selected the production check refuses
-/// `NotEmitted` for the template and its controls, naming QSL-1127, and none for the guard and the capture, which are written.
-#[trace("FR-092-AC-18", "FR-383-AC-1")]
+/// FR-381-AC-1: a protocol with an `each` guard, capture, and compensation
+/// checks the template and retains the guard and capture in the checked form.
+#[trace("TC-1057", "FR-381-AC-1")]
 #[test]
-fn a_compensation_refuses_the_protocol_naming_its_ticket_and_a_guard_and_a_capture_do_not() {
-    use super::super::refusal::{ProtocolConstruct, ProtocolReferenceCause};
+fn a_compensation_with_each_guard_and_capture_checks_as_a_template() {
     let (_, assembled) = assemble_with(
         obligation_model(),
         &format!("profile pp = \"quire.protocol.finite-global/v1\";\n{BASE}"),
         false,
     );
-    let constructs: Vec<ProtocolConstruct> = assembled
+    let graph = assembled
         .check(CheckingLimits::default())
-        .map(|_| ())
-        .expect_err("the protocol refuses")
-        .into_iter()
-        .map(|refusal| match refusal.cause {
-            CheckCause::ProtocolReference(cause) => match *cause {
-                ProtocolReferenceCause::NotEmitted { construct } => construct,
-                ProtocolReferenceCause::Repeated { .. } => panic!("repeated"),
-            },
-            other => panic!("only NotEmitted refusals, got {other:?}"),
-        })
-        .collect();
-    assert_eq!(constructs, [ProtocolConstruct::Compensations]);
-    assert_eq!(constructs[0].tracking(), "QSL-1127");
+        .expect("the compensation and its protocol check");
+    let protocol = &graph.protocols()[0];
+    assert_eq!(protocol.name, "Refunds");
+    assert_eq!(protocol.obligations.compensations.len(), 1);
+    assert_eq!(protocol.obligations.compensations[0].name, "Refund");
+    assert_eq!(
+        protocol.obligations.compensations[0].registration_captures,
+        [1]
+    );
+    assert_eq!(
+        protocol.obligations.compensations[0].activation_captures,
+        [2]
+    );
+    assert!(matches!(
+        protocol.obligations.activation,
+        super::CheckedActivation::OnEach { guard: Some(_), .. }
+    ));
 }

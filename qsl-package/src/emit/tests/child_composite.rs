@@ -10,7 +10,7 @@ use super::owners::node_where;
 use super::*;
 
 #[path = "../../../../qsl-semantics/tests/support/child_composite.rs"]
-mod fixture;
+pub(super) mod fixture;
 
 /// `unit_body` as model `M` over the FR-359 package, through the spine to the
 /// v2 emitter with nothing omitted, and a read of the bytes with the package

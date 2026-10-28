@@ -51,6 +51,7 @@ mod population_bound;
 mod population_reference;
 mod probabilistic;
 mod protocol_captures;
+mod protocol_compensation;
 mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
