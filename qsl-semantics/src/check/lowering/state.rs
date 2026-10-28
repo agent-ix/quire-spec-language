@@ -27,7 +27,7 @@ use crate::check::node_key::{
     BindingValue, BodyTerm, FrameDeletesScoped, FrameField, FrameModifies, FrameScope, GroupTerm,
     LeafTerm, MemberTerm, NodeRef, NodeTag, Operation, Operator,
 };
-use crate::check::refusal::{CheckRefusal, ExecutionPointRefusal, KeyFault};
+use crate::check::refusal::{CheckCause, CheckRefusal, ExecutionPointRefusal, KeyFault};
 use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
@@ -75,6 +75,19 @@ pub(crate) fn state_operation_location(clause: usize) -> Location {
     })
 }
 
+/// The `Origin::TypeDeclaration` name for state clause `clause`'s authored
+/// name token, retained separately from the clause body expression locus.
+pub(crate) fn state_clause_name_site(clause: usize) -> String {
+    format!("state clause {clause} name")
+}
+
+/// The source location of the authored state-clause name token.
+pub(crate) fn state_clause_name_location(clause: usize) -> Location {
+    Location::root(LocationOrigin::TypeDeclaration {
+        name: state_clause_name_site(clause),
+    })
+}
+
 /// The `Origin::TypeDeclaration` name under which protocol `protocol`'s
 /// attempt `attempt` qualified operation reference is located (FR-105
 /// Outputs). Spaced, so it names no declared type.
@@ -96,10 +109,15 @@ pub(crate) struct StateClauseInput<'a> {
     pub(crate) kind: StateClauseKind,
     /// The clause's root location: its `claim` occurrence is recorded here.
     pub(crate) location: &'a Location,
+    /// The authored clause-name token, used to locate execution-point
+    /// binding refusals precisely.
+    pub(crate) name_location: &'a Location,
     /// The context object type `T` of `on M::T`.
     pub(crate) context: EffectiveId,
     /// The operation a `pre` or `post` clause names.
     pub(crate) anchor: Option<AnchorInput<'a>>,
+    /// The operation member exactly as written in `on M::T::op`.
+    pub(crate) authored_operation_name: Option<&'a str>,
     /// `self`, then `result` when bound, then the operation's parameters,
     /// in slot order.
     pub(crate) parameters: &'a [(String, ValueType)],
@@ -135,12 +153,15 @@ pub(crate) fn check_execution_point(
     };
     match (kind, point.point()) {
         (
-            StateClauseKind::Invariant,
+            StateClauseKind::Invariant | StateClauseKind::Constraint,
             ExecutionPoint::Initialization { .. } | ExecutionPoint::Handler { .. },
         ) => Ok(()),
         (StateClauseKind::Precondition, ExecutionPoint::Pre { operation })
         | (StateClauseKind::Postcondition, ExecutionPoint::Post { operation }) => named(operation),
-        (StateClauseKind::Invariant, ExecutionPoint::Pre { .. } | ExecutionPoint::Post { .. })
+        (
+            StateClauseKind::Invariant | StateClauseKind::Constraint,
+            ExecutionPoint::Pre { .. } | ExecutionPoint::Post { .. },
+        )
         | (
             StateClauseKind::Precondition,
             ExecutionPoint::Initialization { .. }
@@ -261,12 +282,25 @@ impl Lowering<'_> {
     ) -> Result<LoweredClause, CheckRefusal> {
         let location = clause.location;
         if let Some(point) = &clause.execution_point {
-            check_execution_point(
-                clause.kind,
-                clause.anchor.as_ref().map(|anchor| anchor.operation.name()),
-                point,
-            )
-            .map_err(|refusal| fault(location, KeyFault::ExecutionPoint(refusal)))?;
+            let authored = clause.authored_operation_name;
+            let resolved = clause.anchor.as_ref().map(|anchor| anchor.operation.name());
+            check_execution_point(clause.kind, authored, point)
+                .and_then(|()| {
+                    let is_operation_point = matches!(
+                        point.point(),
+                        quire_contract_model::ExecutionPoint::Pre { .. }
+                            | quire_contract_model::ExecutionPoint::Post { .. }
+                    );
+                    if is_operation_point && authored != resolved {
+                        Err(ExecutionPointRefusal::OperationMismatch)
+                    } else {
+                        Ok(())
+                    }
+                })
+                .map_err(|refusal| CheckRefusal {
+                    location: clause.name_location.clone(),
+                    cause: CheckCause::ExecutionPointBinding(refusal),
+                })?;
         }
         let mut scope = Vec::with_capacity(clause.parameters.len());
         for (level, (name, value_type)) in clause.parameters.iter().enumerate() {

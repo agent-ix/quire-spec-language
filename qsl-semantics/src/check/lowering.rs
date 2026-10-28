@@ -117,7 +117,8 @@ pub(crate) use protocol::{
     ProtocolSite,
 };
 pub(crate) use state::{
-    protocol_attempt_operation_location, protocol_attempt_operation_site, state_operation_location,
+    protocol_attempt_operation_location, protocol_attempt_operation_site,
+    state_clause_name_location, state_clause_name_site, state_operation_location,
     state_operation_site, AnchorInput, AttemptInput, LoweredAttempt, LoweredClause,
     OperationBinding, StateClauseInput,
 };

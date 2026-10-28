@@ -437,7 +437,7 @@ pub enum Accumulation {
 /// The clause a checked declaration is. FR-151's dispatch-call restriction
 /// (`quire.model.dispatch.single/v1`) gates a dispatched
 /// `receiver.member(args)` call on this context, not on syntax alone: it
-/// checks inside an invariant, precondition or postcondition, and is refused
+/// checks inside an invariant, constraint, precondition or postcondition, and is refused
 /// `ill_typed`/`operator-ineligible` inside a function or operation body
 /// (TC-196 D07).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -2679,7 +2679,8 @@ pub struct UnitForm {
 }
 
 /// A [`StateClauseForm`]'s kind (FR-102 "Outputs"): read from the leading
-/// token alone, `invariant` gives [`Self::Invariant`], `pre` gives
+/// token alone, `invariant` gives [`Self::Invariant`], `constraint` gives
+/// [`Self::Constraint`], `pre` gives
 /// [`Self::Precondition`] and `post` gives [`Self::Postcondition`]. An
 /// invariant's `at current` observation is carried as this kind itself: the
 /// grammar admits no other observation for an invariant, so no separate
@@ -2688,21 +2689,24 @@ pub struct UnitForm {
 pub enum StateClauseKind {
     /// `invariant N using p on M::T at current { e }`.
     Invariant,
+    /// `constraint N using p on M::T at current { e }` (FR-102, FR-158).
+    Constraint,
     /// `pre N using p on M::T::op { e }`.
     Precondition,
     /// `post N using p on M::T::op { e }`.
     Postcondition,
 }
 
-/// `invariant N using p on M::T at current { e }`, `pre N using p on
-/// M::T::op { e }` or `post N using p on M::T::op { e }` (FR-102 "Outputs",
+/// `invariant N using p on M::T at current { e }`, `constraint N using p on
+/// M::T at current { e }`, `pre N using p on M::T::op { e }` or `post N using
+/// p on M::T::op { e }` (FR-102 "Outputs",
 /// ADR-012 §15.2: owned by `ProtocolClause`). S2 keeps the `using` alias,
 /// the model context and the operation member spelled and spanned,
 /// unresolved: it resolves none of them, and neither does it check where
 /// the clause may appear; the assembler and S3 do (FR-104).
 #[derive(Clone, Debug)]
 pub struct StateClauseForm {
-    /// Invariant, precondition or postcondition.
+    /// Invariant, constraint, precondition or postcondition.
     pub kind: StateClauseKind,
     /// The declared clause name.
     pub name: DeclaredName,
@@ -4670,7 +4674,7 @@ pub enum DeclarationForm {
     DimensionEquivalence(Box<DimensionEquivalenceForm>),
     /// A `unit` declaration, boxed to keep the declaration sum compact.
     Unit(Box<UnitForm>),
-    /// An `invariant`, `pre` or `post` state clause, boxed for the same
+    /// An `invariant`, `constraint`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
     /// A `body` operation-body declaration, boxed for the same reason
