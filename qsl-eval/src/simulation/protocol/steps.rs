@@ -1474,15 +1474,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(weak) = accesses.attempt(&key) {
             for instance in &weak.instances {
                 let InstanceAccess::Access {
-                    class: class @ (AccessClass::Load | AccessClass::Rmw),
+                    class: AccessClass::Load | AccessClass::Rmw,
                     location: Some(location),
                 } = &instance.access
                 else {
                     continue;
                 };
-                if *class == AccessClass::Load && !self.non_atomic.contains(location) {
-                    continue;
-                }
                 let Some(cell) = accesses.cell(location) else {
                     continue;
                 };
