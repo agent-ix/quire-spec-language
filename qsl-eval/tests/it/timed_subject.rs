@@ -5256,3 +5256,69 @@ fn a_union_write_resets_its_case_and_drops_the_others() {
     };
     assert_eq!((bounded("Armed"), bounded("Idle")), (1, 0));
 }
+
+/// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21), the timed subject's
+/// part: over `work(c: Clock)` with a frame naming `v: Option<Clock>` and
+/// `x`, the postcondition `c = 0 ms and present(self.v)` is decided per
+/// instance. From the state where `v` is absent the instance binding `c` to
+/// `v` writes `v`, present at 0 ms, and the instance binding `c` to `x`
+/// leaves `v` unwritten and absent, contradicting the requirement, so it
+/// has no successor.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_reset_writes_the_place_its_instance_binds() {
+    let mut document: Json = serde_json::from_slice(&clock_operation_document(
+        &[("c", CLOCK)],
+        &["v", "x"],
+        &[],
+        None,
+    ))
+    .expect("JSON");
+    let mut v = wire_field("v", CLOCK);
+    v["presence"] = json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let world = world_over(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(
+            &["work"],
+            "post P using v on M::Call::work { c = 0 ms and present(self.v) }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let v = timed
+        .places()
+        .iter()
+        .position(|place| {
+            timed
+                .model()
+                .clock(place.clock())
+                .is_some_and(|clock| clock.name() == "v")
+        })
+        .expect("v's place");
+    let absent = timed
+        .initial()
+        .into_iter()
+        .find(|state| !timed.live(&timed.places()[v], state.discrete()))
+        .expect("an initial state with v absent");
+    let steps: Vec<_> = timed
+        .steps(&absent)
+        .expect("decided")
+        .into_iter()
+        .filter(|(step, _)| step.operation().contains("Call/work"))
+        .collect();
+    assert!(!steps.is_empty(), "the instance binding c to v steps");
+    for (step, next) in &steps {
+        let arguments = step.transition().arguments();
+        let [place] = arguments else {
+            panic!("one argument: {arguments:?}");
+        };
+        assert!(place.contains("Call/v"), "only c bound to v steps: {place}");
+        assert!(timed.live(&timed.places()[v], next.discrete()));
+        assert!(next.clocks().values()[v].numerator().is_zero());
+    }
+}

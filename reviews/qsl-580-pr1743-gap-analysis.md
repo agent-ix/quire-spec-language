@@ -41,3 +41,13 @@ STD-526's presence ruling (merged into QSL FR-230 as AC-51, in #1713, which this
 ## Verdict
 
 Mergeable. All three findings are low; FND-001 and FND-002 are tests to add in this PR.
+
+## Dispositions
+
+Round 1, head 3d67f219f.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Tests of a requirement contradicting a write (both conjunct orders) and of a union case switch; FP-01..10, 13, 14 run from QSPEC_DIR and pass |
+| FND-002 | fixed | `zone_clock_collections` reports a deadlock where a requirement disables the only step (7/7 pass) |
+| FND-003 | fixed | The comment names STD-526 as ruling the forms in; #1754 implements them |
