@@ -1124,6 +1124,22 @@ fn domain_operation_parameters_and_result_emit_and_read_back() {
                 .iter()
                 .all(|(_, kind, _, _)| *kind != w::BinderKind::Result));
 
+            // Authored `fill(level, forced)`: the parameter binders keep that
+            // order, in the precondition and in the postcondition.
+            let parameter_order = |name: &str| -> Vec<(String, w::Type)> {
+                binder_rows(package, declaration(package, name))
+                    .into_iter()
+                    .filter(|(_, kind, _, _)| *kind == w::BinderKind::InvocationParameter)
+                    .map(|(name, _, _, ty)| (name, ty))
+                    .collect()
+            };
+            let authored = vec![
+                ("level".to_owned(), reading.clone()),
+                ("forced".to_owned(), boolean.clone()),
+            ];
+            assert_eq!(parameter_order("FillReady"), authored);
+            assert_eq!(parameter_order("Filled"), authored);
+
             let filled = binder_rows(package, declaration(package, "Filled"));
             assert!(
                 filled.contains(&parameter("forced", &boolean)),

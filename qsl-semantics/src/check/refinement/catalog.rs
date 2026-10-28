@@ -57,7 +57,11 @@ pub struct RefinementCatalogClass {
     node: Option<RefinementCatalogNode>,
     binder_types: Vec<ValueType>,
     memory_model: Option<MemoryModelName>,
+    drain: Option<&'static str>,
 }
+
+/// The sole drain operation of a `memory drain` class (FR-375-AC-23).
+const STORE_BUFFER_FLUSH: &str = "store-buffer-flush";
 
 impl RefinementCatalogClass {
     /// Alias-free class spelling, such as `Cell::increment` or `memory flush`.
@@ -79,7 +83,7 @@ impl RefinementCatalogClass {
     /// The sole drain operation of a `memory drain` class (FR-375-AC-23):
     /// the store-buffer flush, a no-op under `sc`. Other classes have none.
     pub fn drain(&self) -> Option<&'static str> {
-        (self.class == MEMORY_DRAIN).then_some("store-buffer-flush")
+        self.drain
     }
 
     /// The catalog ordering key (FR-375-AC-26): the alias-free `class`
@@ -106,6 +110,7 @@ impl RefinementCatalogClass {
             node: Some(node),
             binder_types,
             memory_model: None,
+            drain: None,
         }
     }
 
@@ -115,6 +120,16 @@ impl RefinementCatalogClass {
             node: None,
             binder_types: Vec::new(),
             memory_model: Some(memory_model),
+            drain: None,
+        }
+    }
+
+    /// The `memory drain` class of `memory_model`, carrying its store-buffer
+    /// flush operation by construction rather than by class spelling.
+    pub(super) fn memory_drain(memory_model: MemoryModelName) -> Self {
+        Self {
+            drain: Some(STORE_BUFFER_FLUSH),
+            ..Self::memory(MEMORY_DRAIN.to_owned(), memory_model)
         }
     }
 }
