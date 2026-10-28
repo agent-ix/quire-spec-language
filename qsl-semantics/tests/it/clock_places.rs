@@ -2543,3 +2543,44 @@ fn a_presence_the_precondition_denies_and_nothing_writes_refuses() {
         .unwrap_or_else(|refusals| panic!("{place} written: {refusals:?}"));
     }
 }
+
+/// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21): a reset of a
+/// `Clock` parameter whose range holds the place writes it for the instance
+/// binding the parameter there. Over `bump(c: Clock)` with a frame naming
+/// `v: Option<Clock>` and `x`, `pre { not present(self.v) }` and `post { c
+/// = 0 ms and present(self.v) }` check: the instance binding `c` to `v`
+/// writes `v`, so no `clock-presence-unwritten` is decided statically.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_reset_ranging_over_the_place_writes_it() {
+    let clock = "ix://quire/native/Clock";
+    let mut document: Value =
+        serde_json::from_slice(&clock_parameter_document(clock, None, &["v", "x"])).expect("JSON");
+    let mut v = field("v", clock);
+    v["presence"] = json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}\
+             pre Off using v on Config::Call::bump {{ not present(self.v) }}\n\
+             post On using v on Config::Call::bump {{ c = 0 ms and present(self.v) }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("c ranges over v: {refusals:?}"));
+    let model = timed(&graph);
+    let [range] = model.clock_parameters() else {
+        panic!("one clock parameter: {:?}", model.clock_parameters());
+    };
+    let mut names: Vec<&str> = range
+        .range()
+        .iter()
+        .map(|clock| model.clock(*clock).expect("a clock").name())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["v", "x"]);
+}

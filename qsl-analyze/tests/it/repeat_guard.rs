@@ -89,6 +89,23 @@ impl Fixture {
         Self::with_run(&run, PRETEST_CLAIM, &READS_THREE)
     }
 
+    /// The pre-test fixture whose guard reads `ready`, the binder of an
+    /// event that precedes the repeat (so is readable at its entry) and is
+    /// constrained false: a guard that
+    /// reads no body binder stays pre-test, and as it is false at entry the
+    /// body load never runs (SR-1737002 FND-001).
+    fn entry_guard() -> Self {
+        let run = format!(
+            "parallel Both {{ branch w sequence W {{ {} }} \
+             branch r sequence Rr {{ event Ready by c as (ready: Boolean) {{ not ready }}; \
+             repeat Poll by c visible (ready) while {{ ready }} sequence R {{ {} }} }} }} \
+             join all [w, r];",
+            attempt("Sx", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+            attempt("Lx", "c", "Core::look", "relaxed", "LooksX, Looked"),
+        );
+        Self::with_run(&run, PRETEST_CLAIM, &READS_THREE)
+    }
+
     fn with_run(run: &str, claim: &str, letters: &'static dyn ModelLetters) -> Self {
         let body = contracts()
             + "pre LooksX using v on M::Core::look { c.id = 0 }\n"
@@ -208,5 +225,32 @@ fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
     assert!(
         matches!(outcome, ModelCheckOutcome::Holds { .. }),
         "a false pre-test guard must skip the body load: {outcome:?}"
+    );
+}
+
+/// SR-1737002 FND-001: a repeat whose guard reads only a binder readable at
+/// its entry is pre-test. Its guard is false on entry, so the body's load
+/// never runs and `r1` keeps its initial value on every path.
+#[trace("TC-1268", "FR-228-AC-2")]
+#[test]
+fn a_guard_over_an_entry_binder_is_pre_test_and_skips_the_body() {
+    let fixture = Fixture::entry_guard();
+    let outcome = check_protocol(
+        ProtocolCheckRequest {
+            subject: fixture.subject(),
+            item: fixture.item(),
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
+        },
+        &Cancel::new(),
+    )
+    .expect("the checked request runs");
+    assert!(
+        matches!(outcome, ModelCheckOutcome::Holds { .. }),
+        "a false entry guard must skip the body load: {outcome:?}"
     );
 }
