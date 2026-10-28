@@ -662,7 +662,7 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::Predicate), F::FormsUnit),
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
-        row(K::Model(ModelForm::StateMachine), F::RefinementV2Empty),
+        row(K::Model(ModelForm::ModelRoot), F::SpineModel),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
         row(K::Model(ModelForm::VariantType), F::VariantType),
         row(K::Model(ModelForm::RecordValueType), F::VariantType),
@@ -722,6 +722,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (
             K::Expression(ExpressionForm::Reference),
             "a name read lowers to a reference term, not a node",
+        ),
+        (
+            K::Model(ModelForm::StateMachine),
+            "a refinement binds its model's model_root node, not a state-machine declaration node (FR-375)",
         ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
@@ -937,6 +941,14 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .or_default()
             .push("admitted by the typed timed-model writer (TC-367)".to_owned());
     }
+    // QSL assembles dimension equivalences for unit conversion but lowers no
+    // node for one.
+    classified
+        .entry(CheckedNodeKind::ScalarType(
+            ScalarTypeForm::DimensionEquivalence,
+        ))
+        .or_default()
+        .push("not emitted: QSL lowers no dimension-equivalence node".to_owned());
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))
@@ -1039,6 +1051,26 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
     };
     let first_node = find_node(&first);
     let shifted_node = find_node(&shifted);
+    // QSpec FR-375-AC-7/AC-11: the header's `semantic_type` is the CONCRETE
+    // model's `model_root`, `body.abstract` (and the dependencies) the
+    // ABSTRACT model's.
+    let first_wire = wire(&first);
+    let root_of = |identity: &str| {
+        let roots: Vec<&Value> = nodes(&first_wire)
+            .iter()
+            .filter(|node| {
+                node["semantic_form"] == "model_root" && node["owner"]["identity"] == identity
+            })
+            .collect();
+        assert_eq!(roots.len(), 1, "one root for {identity}");
+        roots[0]["node_id"].clone()
+    };
+    let abstract_root = root_of("example/refinement-abstract");
+    let concrete_root = root_of("example/refinement-concrete");
+    assert_ne!(abstract_root, concrete_root);
+    assert_eq!(first_node["semantic_type"], concrete_root);
+    assert_eq!(first_node["body"]["abstract"], abstract_root);
+    assert_eq!(first_node["dependencies"], json!([abstract_root]));
     assert_eq!(first_node["node_id"], shifted_node["node_id"]);
     assert_eq!(first.package.package_id(), shifted.package.package_id());
     let declaration_region = |emission: &Emission, node: &Value| {

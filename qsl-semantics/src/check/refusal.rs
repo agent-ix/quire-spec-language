@@ -2739,6 +2739,8 @@ pub enum KeyFault {
     /// Two admitted domain packages share this identity: a check selects
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
+    /// A selected model package's `model_root` node has no key.
+    ModelRootKey(super::lowering::ModelRootKeyError),
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),
@@ -2790,6 +2792,7 @@ impl KeyFault {
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::IeeeProfileAdmission(_) => "catalog-ieee-profile-admitted",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
+            Self::ModelRootKey(_) => "model-root-keyed",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
             Self::UncheckedLimit(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",
