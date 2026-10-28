@@ -88,14 +88,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedExecutionPoint, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
+    CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
     CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion,
-    CheckedTerm, NominalIdentityPreimage, NominalOwner, ProtocolForm, StateForm, ValueForm,
-    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner, ProtocolForm, StateForm,
+    ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -692,8 +692,8 @@ fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm,
             .get("value")
             .cloned()
             .ok_or_else(|| encoding("operation-anchor execution point has no value"))?;
-        let execution_point: CheckedExecutionPoint =
-            CheckedExecutionPoint::deserialize(execution_point).map_err(encoding)?;
+        let execution_point: ExecutionPoint =
+            ExecutionPoint::deserialize(execution_point).map_err(encoding)?;
         let members = [context, operation, frame]
             .into_iter()
             .cloned()

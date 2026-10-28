@@ -81,7 +81,7 @@ pub(super) fn validate(linked: &LinkedPackage<'_>, bindings: &CheckBindings) -> 
                             context: role.context.clone(),
                             name: role.name.clone(),
                         }
-                        && &role.anchor == operation
+                        && role.anchor.as_str() == operation.as_str()
                 })
             }
             _ => false,

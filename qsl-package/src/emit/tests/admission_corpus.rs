@@ -949,6 +949,11 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
         ))
         .or_default()
         .push("not emitted: QSL lowers no dimension-equivalence node".to_owned());
+    // IR-1059: the tuple value type is an IR kind QSL's emitter does not write.
+    classified
+        .entry(CheckedNodeKind::Model(ModelForm::TupleValueType))
+        .or_default()
+        .push("not emitted: QSL lowers no tuple value type node yet".to_owned());
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))

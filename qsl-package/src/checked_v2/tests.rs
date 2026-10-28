@@ -1297,19 +1297,24 @@ fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: 
     let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
         return;
     };
-    let document = read_fixture(
-        &std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/domain-package-acme-orders.json"),
-    );
-    let bytes = jcs(&document);
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    let selected = envelope["lock"]["model_selections"]
-        .as_array()
-        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
-    if selected {
-        evidence
-            .insert_domain_package_document(digest.as_str(), &bytes[..])
-            .expect("a fresh evidence key");
+    for name in ["acme-orders", "acme-shapes"] {
+        let path = std::path::Path::new(&qspec).join(format!(
+            "proposals/checked-package-v2/domain-package-{name}.json"
+        ));
+        if !path.exists() {
+            continue;
+        }
+        let document = read_fixture(&path);
+        let bytes = jcs(&document);
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let selected = envelope["lock"]["model_selections"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
+        if selected {
+            evidence
+                .insert_domain_package_document(digest.as_str(), &bytes[..])
+                .expect("a fresh evidence key");
+        }
     }
 }
 

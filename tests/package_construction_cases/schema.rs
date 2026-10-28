@@ -46,13 +46,13 @@ fn structural_schema_accepts_fixed_and_real_producer_manifests() {
         (
             "pre Rule on M::Node::step { true }",
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         (
             "post Rule on M::Node::step { result }",
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
     ] {

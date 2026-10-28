@@ -397,8 +397,14 @@ fn last_segment(node: &CheckedSemanticNodeV2) -> Result<Identifier, HybridReadEr
     shape(Identifier::new(&**segment).ok())
 }
 
+/// The wire record of an application operation, through its public
+/// `Serialize` form (the typed carrier keeps its raw record internal).
+fn record(operation: &impl serde::Serialize) -> serde_json::Value {
+    serde_json::to_value(operation).unwrap_or_default()
+}
+
 /// The application at `node`'s body root.
-fn application(term: &CheckedTerm) -> Result<(&[CheckedTerm], Option<&str>), HybridReadError> {
+fn application(term: &CheckedTerm) -> Result<(&[CheckedTerm], Option<String>), HybridReadError> {
     match term {
         CheckedTerm::Application {
             operation,
@@ -406,7 +412,10 @@ fn application(term: &CheckedTerm) -> Result<(&[CheckedTerm], Option<&str>), Hyb
             ..
         } => Ok((
             arguments,
-            operation.get("identity").and_then(|v| v.as_str()),
+            record(operation)
+                .get("identity")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
         )),
         _ => Err(HybridReadError::Fault(SHAPE)),
     }
@@ -627,7 +636,7 @@ impl Reader<'_> {
                         }
                         CheckedNodeKind::Expression(_) => {
                             let (arguments, identity) = application(self.body(node)?)?;
-                            let operation = shape(term_operation(shape(identity)?))?;
+                            let operation = shape(term_operation(shape(identity.as_deref())?))?;
                             // A call's first argument is the callee.
                             let operands = match operation {
                                 TermOperation::Call => shape(arguments.get(1..))?,
@@ -801,8 +810,9 @@ impl Reader<'_> {
         let CheckedTerm::Application { operation, .. } = body else {
             return Err(HybridReadError::Fault(SHAPE));
         };
+        let record = record(operation);
         let profile = shape(
-            operation
+            record
                 .get("laws")
                 .and_then(|laws| laws.get(0))
                 .and_then(|law| law.get("definition"))
@@ -891,7 +901,8 @@ impl Reader<'_> {
         let CheckedTerm::Application { operation, .. } = self.body(node)? else {
             return Err(HybridReadError::Fault(SHAPE));
         };
-        let member = shape(operation.get("member"))?;
+        let record = record(operation);
+        let member = shape(record.get("member"))?;
         let field = |name: &str| shape(member.get(name).and_then(|value| value.as_str()));
         let declaration = shape(
             member
@@ -962,7 +973,7 @@ impl Reader<'_> {
                     self.charge()?;
                     let node = self.node(id)?;
                     let (arguments, identity) = application(self.body(node)?)?;
-                    let operation = shape(formula_operation(shape(identity)?))?;
+                    let operation = shape(formula_operation(shape(identity.as_deref())?))?;
                     match operation {
                         FormulaOperation::Constant(value) => {
                             done.push(HybridFormula::Holds(HybridTerm::Boolean(value)));
@@ -1037,7 +1048,8 @@ impl Reader<'_> {
         let CheckedTerm::Application { operation, .. } = self.body(node)? else {
             return Err(HybridReadError::Fault(SHAPE));
         };
-        let Some(interval) = operation
+        let record = record(operation);
+        let Some(interval) = record
             .get("member")
             .and_then(|member| member.get("interval"))
             .filter(|interval| !interval.is_null())
