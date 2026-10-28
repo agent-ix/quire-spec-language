@@ -2,7 +2,8 @@
 //! `cargo xtask seam-probe` / `cargo xtask string-edge` / `cargo xtask
 //! route-lint` / `cargo xtask checked-input` / `cargo xtask test-suites
 //! <lane> [<cargo test args>]` and `cargo xtask refinement versioning
-//! <corpus>`: the gates `make ci` runs standalone. `cargo xtask
+//! <corpus>` / `cargo xtask refinement layering <corpus>`: refinement gates.
+//! `cargo xtask
 //! canonical-types [<workspace>]` runs on demand, over this workspace or the
 //! one named.
 #![forbid(unsafe_code)]
@@ -23,6 +24,7 @@ const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-ed
                      cargo xtask test-suites <lane> [<cargo test args>]\n       \
                      cargo xtask conformance-input\n       cargo xtask conformance\n       \
                      cargo xtask ci\n       cargo xtask refinement versioning <corpus>\n       \
+                     cargo xtask refinement layering <corpus>\n       \
                      cargo xtask qualify --corpus <dir> [--capability <id>]... [--limit <setting>=<value>]... [--text]\n       \\
                      cargo xtask canonical-types [<workspace>]";
 
