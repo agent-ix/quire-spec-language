@@ -44,3 +44,12 @@ Ticket: QSL-1186 (slice a). Plan completion: not assessed.
 | --- | --- | --- | --- |
 | FND-001 | low | Add read-back tests for three cases. (a) `memory tso` with `join all`, which the PR body claims but no test runs. (b) A `parallel` nested in a branch-body `sequence`, and a `parallel` as a branch body, asserting the declarations `[…, Par, Ay, In]` and `[…, Par, In, X]` (FR-464-AC-4's holder rule across levels). (c) `outstanding continue`. Probes for all three pass and read back. | qsl-package/src/emit/tests/protocol_graph.rs; probe_1727.diff; FR-464-AC-4; FR-466 `parallel` |
 | FND-002 | low | Record on QSL-1186 that the `predicate` join (with its `function` reference, plus FR-466's arity and type checks on the function) is deferred to the slice that writes function nodes. It is not in the PR's remaining-work list. | QSL-1186; FR-466 per-operator check 4 |
+
+## Dispositions
+
+Round 1, head 7cd3f46f6. The gates are those in SR-1727001's dispositions.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `tso_continue_and_nested_parallels_read_back` reads back each case through IR and asserts it: `memory tso` with `all`; `outstanding continue` with its policy; a `parallel` nested in a branch body's sequence, with its declarations and its branch body's target; and a `parallel` that is itself a branch body. |
+| FND-002 | fixed | QSL-1186 comment 5949da6c and the PR body ("Predicate join … deferred to the function-node slice") record the deferral, with the function reference and FR-466's arity and type checks. One correction to the record: FR-466 check 4 asks for one Boolean parameter per `joined` label and a Boolean result, not "two Booleans per joined label". |
