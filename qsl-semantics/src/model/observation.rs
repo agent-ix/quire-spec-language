@@ -214,7 +214,7 @@ impl qsl_foundation::SettingLimits for ObservationLimits {
 
 /// FR-001's four source labels, naming one admitted document, plus its
 /// `sha256-jcs` digest (FR-106's `DocumentRef`).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DocumentRef {
     /// The `authority` label.
     pub authority: String,

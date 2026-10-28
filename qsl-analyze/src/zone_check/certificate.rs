@@ -34,6 +34,13 @@ pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_
         ObligationKind::Authored(occurrence) => CertificateItem::Clause(occurrence),
         ObligationKind::DeadlockFreedom => CertificateItem::DeadlockFreedom,
         ObligationKind::TimeLockFreedom => CertificateItem::TimeLockFreedom,
+        ObligationKind::Refinement {
+            occurrence,
+            abstract_initial,
+        } => CertificateItem::Refinement {
+            occurrence,
+            abstract_initial,
+        },
         ObligationKind::RaceFreedom { .. } => CertificateItem::Other,
     }
 }
@@ -67,11 +74,21 @@ impl Proof {
             components: self.components,
             divergence: self.divergence,
             admitted: self.admitted,
+            refinement: None,
         }
     }
 }
 
 impl Run<'_, '_, '_> {
+    /// The retained edges in certificate order, by index: by source in
+    /// discovery order; from one source the search retains them in
+    /// canonical step and part order.
+    pub(super) fn edge_order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.edges.len()).collect();
+        order.sort_by_key(|&edge| self.edges[edge].from);
+        order
+    }
+
     /// The certificate of a completed run with no admitted violation, its
     /// `admitted` part mapped from `witness`, the evidence FR-240's test
     /// accepted from the initial node `root`; with `divergence`, each
@@ -98,10 +115,7 @@ impl Run<'_, '_, '_> {
                 product: None,
             });
         }
-        // Edges by source in discovery order; from one source the search
-        // retains them in canonical step and part order.
-        let mut order: Vec<usize> = (0..self.edges.len()).collect();
-        order.sort_by_key(|&edge| self.edges[edge].from);
+        let order = self.edge_order();
         let mut edges = Vec::with_capacity(order.len());
         let mut steps = Vec::with_capacity(order.len());
         for edge in order {
