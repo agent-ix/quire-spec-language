@@ -1022,9 +1022,15 @@ mod tests {
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
         assert!(enumerable_in(&ValueType::Composite(tuple), &types));
-        let values = composite_values::<()>(&ValueType::Composite(tuple), &[], &types, || Ok(()))
-            .expect("no stop")
-            .expect("both positions have finite domains");
+        let values = composite_values::<()>(
+            &ValueType::Composite(tuple),
+            &[],
+            &types,
+            &RecordOrders::new(),
+            || Ok(()),
+        )
+        .expect("no stop")
+        .expect("both positions have finite domains");
         assert_eq!(values.len(), 4);
         let rendered = values
             .iter()
