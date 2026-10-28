@@ -729,6 +729,7 @@ struct Pending {
 /// An [`ExprNode`] variant's payload, without its subexpressions.
 enum Shape {
     Boolean(bool),
+    Absent,
     Integer(Integer),
     Float32(u32),
     Float64(u64),
@@ -827,6 +828,10 @@ impl Shape {
             Self::Boolean(value) => {
                 arity(0)?;
                 ExprNode::Boolean(value)
+            }
+            Self::Absent => {
+                arity(0)?;
+                ExprNode::Absent
             }
             Self::Integer(value) => {
                 arity(0)?;
@@ -1768,6 +1773,7 @@ impl<'c> Mapping<'c> {
         match token.spelling() {
             b"true" => self.leaf(Shape::Boolean(true), &task),
             b"false" => self.leaf(Shape::Boolean(false), &task),
+            b"absent" => self.leaf(Shape::Absent, &task),
             b"null" | b"none" => Err(unrepresented(Production::Primary, node.span())),
             b"self" => self.leaf(Shape::SelfRef, &task),
             b"result" => self.leaf(Shape::Result, &task),

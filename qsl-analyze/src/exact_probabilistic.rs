@@ -373,16 +373,23 @@ pub struct PathStep {
     pub draw: Option<Vec<Value>>,
     /// The step's probability.
     pub probability: Rational,
+    /// The complete product key reached after this step and any scheduler
+    /// resolution it requires.
+    pub target: Box<ProbKey>,
     /// Over every scheduler, when the draw has several post-states: the
-    /// model state the scheduler took, as its complete state-key bytes. The
-    /// path names one state only with it (SCH-2).
-    pub resolved: Option<Vec<u8>>,
+    /// complete product key the scheduler took at the intermediate state
+    /// (SCH-2).
+    pub resolved: Option<Box<ProbKey>>,
 }
 
 /// A path to a product state at which the claim reads an undefined value
 /// (ADR-028 XV-8, ADR-018 UE-1): the refutation's evidence.
 #[derive(Clone, Debug)]
 pub struct UndefinedPath {
+    /// The index of the initial state in the subject.
+    pub initial: u32,
+    /// The `over` binding for which the undefined read was evaluated.
+    pub binding: Option<ModelInstance>,
     /// The model steps from the initial state, in order.
     pub steps: Vec<PathStep>,
     /// The product of the steps' probabilities.
@@ -391,6 +398,9 @@ pub struct UndefinedPath {
     pub position: u64,
     /// The `quire.simulation.state-key/v1` digest of the model state.
     pub state_key: DigestRecord,
+    /// The complete product key at the undefined read, before its letter is
+    /// read and the monitor or accumulator advances.
+    pub key: Box<ProbKey>,
     /// The predicate that has no value.
     pub read: UndefinedRead,
     /// Why it has none.

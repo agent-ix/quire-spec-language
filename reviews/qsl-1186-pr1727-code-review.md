@@ -69,3 +69,24 @@ Ticket: QSL-1186 (slice a).
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | - | - | No findings. | - |
+
+## Dispositions
+
+Round 1, head 7cd3f46f6. The `parallel` lowering is re-ported onto main's `controls.rs` (#1710, QSL-1126), and I re-reviewed it as new code. `parallel_arguments` and `control_declarations` are carried over unchanged. A `branch` is skipped in `build_order`'s loop, so it has no node and no path segment. Every written control, `parallel` included, enters the member keys through `Run.nodes`. Binder scoping comes from S3's `slots.entries` and `root_out`.
+
+I re-ran the probe matrix on the head; it is not committed. Every admitted case reads back through IR and is verified.
+- **Nesting.** Admitted, with the declarations `[…, Par, Ay, In]` / `[…, Ay, In, X]` and `[…, Par, In]` / `[…, Par, In, X]`.
+- **Branch events.** Events inside branches are declared `[…, Par, A, E1]` and `[…, Par, B, E2]`.
+- **Branch binders after the join.** After `join all`, a later event reads `e1`. After `join any`, `e1` refuses `MissingName` (FR-466: `Out(parallel)` is `In(parallel)` for non-`all` policies).
+- **Join refusals.** Each of these refuses: `quorum(0)`, `quorum(3)` of 2, `quorum(2)` of 1 joined, and `quorum(3) [a, a, b]`. So do `all` omitting a branch, an unknown label, an empty list, and a duplicate branch label.
+- **Admitted joins and memory models.** `quorum(2)` of 2, `quorum(1)` of 1, duplicate joined labels (written once), UTF-8 branch order, `tso`/`all` and `outstanding continue` are all admitted.
+- **Predicate join.** It still refuses `not-yet-implemented` before lowering (`a_predicate_join_is_not_written_yet`).
+
+The four `Fill` protocol-refinement tests now expect `concrete_protocol()` to be `Some`. That is correct: `Fill` holds a `parallel`, which is now written, so the clause has a node.
+
+Gates (locked-build, jobs 4, debug info off, `--all-features`, QSPEC_DIR 48373530):
+- qsl-semantics: lib 804, it 1328, doc 30, all pass.
+- qsl-package lib: 376 pass, 2 ignored, and only c14/i2 fail (QSL-1190).
+- Workspace clippy `-D warnings`: exit 0.
+
+This round adds no findings. The review was clean, and the re-port stays clean.

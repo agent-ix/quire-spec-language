@@ -46,3 +46,25 @@ Gates at 7d6a76fdf (locked-build, jobs 4, `--all-features`, debug info off, QSPE
 - qsl-package `refinement`/`catalog`/`protocol`/`rows`/`step`/`fairness`/`owner`: 84 pass, 4 ignored (IR-874 ×3, IR-1077).
 - qsl-replay `refinement`: 43/43.
 - `cargo clippy -p qsl-semantics -p qsl-package -p qsl-replay --all-targets -D warnings`: exit 0.
+
+## Dispositions
+
+Round 1 (head 2c563657d).
+
+Round 1. Fix 7d6a76fdf..2c563657d (tests and the reviews/ SR files only).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `whole_population_and_seq_rows_are_not_emitted` refuses exactly `[RefinementNotEmitted{name: "R"}]` for a field row reading `count(s in C::config_history ...)` (whole population) and one using `seq(i in 0 .. 1: i)`. A mutant that makes `rows_have_nodes` always true fails it. |
+| FND-002 | fixed | `a_row_parameter_above_self_binds_at_level_one` asserts the parameter nodes `self` at level 0 and `flag` at level 1 for `(self, flag)`, `(self, not flag)` and `(self, _)`. It asserts the encoding only: the read-back is the IR-1077-blocked `operation_rows_read_back`. That is acceptable, because FR-341's level encoding is QSL's to get right, and IR-1077 is about the anchor context, not the binders. |
+| FND-003 | fixed | The FR-322-AC-87 tag is dropped from `step_rows_carry_their_source_regions_by_canonical_ordinal`, and its doc says AC-87 does not apply: QSL derives no node per step row. |
+
+**"Memory rows last" read-back.** It was not recorded on QSL-1181, so I recorded it there as a completion item: it lands in the first branch holding both #1735's rows and #1727's `parallel`, with the assertion and source-order permutations spelled out.
+
+**Verdict: mergeable** (stacked on #1723). No finding remains open on SR-1735001 or SR-1735002.
+
+Gates at 2c563657d (locked-build, jobs 4, `--all-features`, debug info off):
+- fmt: exit 0.
+- qsl-package new and `refinement` tests: 7 pass, 1 ignored (IR-1077).
+- `cargo clippy -p qsl-package --all-targets -D warnings`: exit 0.
+
