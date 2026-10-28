@@ -257,6 +257,18 @@ pub enum RefinementCause {
         /// The selected profile identity.
         profile: String,
     },
+    /// The abstract model is timed: it declares a time source (QSpec FR-430
+    /// "Timed refinement"): `unsupported_construct`/`declaration-form` at
+    /// the refinement's abstract model reference.
+    TimedAbstract {
+        /// The abstract model's alias.
+        model: String,
+    },
+    /// A row reads a clock field of the concrete model, so the mapped
+    /// abstract state would not be a function of the discrete state alone
+    /// (QSpec FR-430 "Timed refinement"): `unsupported_construct`/
+    /// `expression-form` at the read.
+    ClockRead,
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -338,7 +350,9 @@ impl RefinementCause {
             },
             Self::Unsupported { .. }
             | Self::UnsupportedRowForm { .. }
-            | Self::AbstractRelationships { .. } => Code::UnsupportedConstruct,
+            | Self::AbstractRelationships { .. }
+            | Self::TimedAbstract { .. }
+            | Self::ClockRead => Code::UnsupportedConstruct,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -362,8 +376,10 @@ impl RefinementCause {
             }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
-            Self::UnsupportedRowForm { .. } => Some("expression-form"),
-            Self::AbstractRelationships { .. } => Some("declaration-form"),
+            Self::UnsupportedRowForm { .. } | Self::ClockRead => Some("expression-form"),
+            Self::AbstractRelationships { .. } | Self::TimedAbstract { .. } => {
+                Some("declaration-form")
+            }
             Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
             Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
@@ -942,8 +958,6 @@ pub struct CheckedRefinement {
     /// selections after protocol refinement resolution.
     pub(crate) abstract_subject_node: Option<NodeKey>,
     pub(crate) concrete_subject_node: Option<NodeKey>,
-    pub(crate) abstract_subject_declaration: Option<DeclarationKey>,
-    pub(crate) concrete_subject_declaration: Option<DeclarationKey>,
     /// The full authored declaration region used by the V2 relation-node
     /// occurrence and source map.
     pub(crate) declaration_span: Span,
@@ -1019,24 +1033,14 @@ impl CheckedRefinement {
         self.concrete_protocol
     }
 
-    /// The model node that keys this refinement's abstract state machine.
+    /// The abstract model's `model_root` node (QSpec FR-375).
     pub fn abstract_subject_node(&self) -> Option<NodeKey> {
         self.abstract_subject_node
     }
 
-    /// The model node that keys this refinement's concrete state machine.
+    /// The concrete model's `model_root` node (QSpec FR-375).
     pub fn concrete_subject_node(&self) -> Option<NodeKey> {
         self.concrete_subject_node
-    }
-
-    /// The abstract state-machine's declaring package and record key.
-    pub fn abstract_subject_declaration(&self) -> Option<&DeclarationKey> {
-        self.abstract_subject_declaration.as_ref()
-    }
-
-    /// The concrete state-machine's declaring package and record key.
-    pub fn concrete_subject_declaration(&self) -> Option<&DeclarationKey> {
-        self.concrete_subject_declaration.as_ref()
     }
 
     /// The authored refinement declaration span.
@@ -1475,7 +1479,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     protocols: &'c [ProtocolDeclarationForm],
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
-    env: &RefinementEnv<'_>,
+    env: &RefinementEnv<'c>,
     identity: qsl_foundation::IdentityLimits,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
@@ -1549,6 +1553,17 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         );
         return (RefinementCheck::Refused(findings.refusals), nodes);
     }
+    // QSpec FR-430: a timed concrete model refines an untimed abstract one;
+    // a timed abstract model has no reading as a refinement's abstract side.
+    if env.timed_models.contains(&abstract_side.alias) {
+        findings.refuse(
+            abstract_alias.span,
+            RefinementCause::TimedAbstract {
+                model: abstract_side.alias.to_owned(),
+            },
+        );
+        return (RefinementCheck::Refused(findings.refusals), nodes);
+    }
     let subject = match &form.abstract_side {
         AbstractSideForm::Model(_) => ListSubject::Model,
         AbstractSideForm::Protocol { clause, .. } => resolve_protocol(
@@ -1569,6 +1584,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     let clause_refused = matches!(subject, ListSubject::Refused);
     let mut checker = Checker {
         declarations,
+        clock_reading: env.clock_reading,
         protocols,
         abstract_side,
         concrete_side,
@@ -1682,8 +1698,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
-        abstract_subject_declaration: None,
-        concrete_subject_declaration: None,
         declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported
@@ -1747,6 +1761,12 @@ pub(crate) struct RefinementEnv<'e> {
     /// Whether an abstract protocol header is intentionally deferred because
     /// another unit refusal stops the check before protocol clauses run.
     pub(crate) defer_abstract_protocol_resolution: bool,
+    /// The aliases of the unit's timed models: those a `time` declaration
+    /// names (QSpec FR-430).
+    pub(crate) timed_models: &'e [&'e str],
+    /// The unit's clock-reading declarations, whose calls read clocks
+    /// (FR-230).
+    pub(crate) clock_reading: &'e [super::assemble::ClockReadingDeclaration],
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1893,6 +1913,8 @@ fn internal_list(
 
 struct Checker<'c, 'a> {
     declarations: &'c ClauseDeclarations<'a>,
+    /// The unit's clock-reading declarations (FR-230).
+    clock_reading: &'c [super::assemble::ClockReadingDeclaration],
     /// The unit's protocol declarations, which a step row may select.
     protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
@@ -2474,6 +2496,20 @@ impl<'c, 'a> Checker<'c, 'a> {
             self.findings
                 .refuse(span, RefinementCause::UnsupportedRowForm { layer });
             return None;
+        }
+        // QSpec FR-430: the row reads no clock place of the concrete
+        // object, so the mapped state is a function of the discrete state.
+        if let Some((_, ValueType::Reference(object))) = context.parameters.first() {
+            if let Some(span) = super::timed_model::first_clock_read(
+                expression,
+                self.concrete_side.model,
+                self.declarations.models,
+                self.clock_reading,
+                *object,
+            ) {
+                self.findings.refuse(span, RefinementCause::ClockRead);
+                return None;
+            }
         }
         let declarations = self.declarations;
         let location = Location::root(Origin::Expression);

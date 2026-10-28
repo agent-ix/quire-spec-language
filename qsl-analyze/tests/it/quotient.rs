@@ -20,13 +20,14 @@
 //! replays through FR-128.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{ModelCheckRefusal, Reductions, SymmetryDeclaration};
+use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_replay::{
     AppliedReduction, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
     ModelStep, ModelTraceSettlement, ModelTraceValue, ProofCertificate, ReachedLimit,
     ReductionCause, ResultLabel, SettlementBasis, TemporalCounterexample, TerminalValue,
 };
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use quire_exact::ScalarLimits;
 
 use crate::counter::UNLIMITED;

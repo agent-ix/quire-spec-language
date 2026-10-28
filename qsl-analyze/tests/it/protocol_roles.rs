@@ -1469,6 +1469,7 @@ fn requests_differing_only_in_max_live_instances_share_one_obligation_identity()
     let obligation = |request: &ProtocolCheckRequest<'_>| ItemObligation {
         subject: SubjectIdentity::of(&request.subject.model).expect("the package emits"),
         kind: ObligationKind::Authored(node_occurrence(clause)),
+        reductions: qsl_route::reductions::ObligationReductions::default(),
     };
     let mut written = ModelRequest::new();
     let mut indices = Vec::new();

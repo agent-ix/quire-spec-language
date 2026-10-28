@@ -17,6 +17,8 @@ description = "ADR-011 §6.1 layer R: the #185 capability-backend registry and r
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
+# FR-159: a symmetry declaration names its population by declaration key.
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 thiserror = "2.0.20"
 

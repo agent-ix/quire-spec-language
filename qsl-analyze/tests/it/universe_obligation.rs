@@ -99,6 +99,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
     let obligation = |subject: &ModelSubject<'_>| ItemObligation {
         subject: SubjectIdentity::of(subject).expect("the package emits"),
         kind: ObligationKind::Authored(occurrence.clone()),
+        reductions: qsl_route::reductions::ObligationReductions::default(),
     };
     assert_ne!(obligation(&two), obligation(&three));
     // They differ only in the universe: with the same keys the identities

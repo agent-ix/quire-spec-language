@@ -5,7 +5,6 @@
 //! evaluator.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::SymmetryDeclaration;
 use qsl_analyze::statistical::{check_statistical, StatisticalRequest, DEFAULT_MAX_WITNESSES};
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::model::TransitionId;
@@ -20,6 +19,7 @@ use qsl_replay::statistical::{
 };
 use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
+use qsl_route::reductions::SymmetryDeclaration;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
 use quire_semantic_value::catalog::UndefinedReason;

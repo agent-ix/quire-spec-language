@@ -8,8 +8,10 @@ use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
 use quire_exact::Cancel;
 
-use crate::timed_world::{timers_document, world_holding, World, DENSE};
-use crate::zone_search::{claim, deadlock, operations, violated, INFINITE};
+use crate::timed_world::{
+    ident, timers_document, world_built, world_holding, World, DENSE, PACKAGE,
+};
+use crate::zone_search::{claim, deadlock, deadlock_result, operations, violated, INFINITE};
 
 /// `ts: Sequence<Timer>[0, max]` (`Timer { x: Clock; n: Phase }`) granted by
 /// `grow`, with the precondition `guard` and the further text `claim`.
@@ -65,16 +67,27 @@ fn the_zone_search_reads_the_clocks_of_a_granted_collection() {
 /// `Set<Timer>[0, 2]` or `Bag<Timer>[0, 2]` matches elements by equal data
 /// and may carry a clock to another slot, which a zone over places does not
 /// map yet (QSL-1162). EN-6 refuses the model `CarriedClocks` before any
-/// state is explored, whatever the item.
+/// state is explored, whatever the item, and before a selected symmetry
+/// over `c1` and `c2` applies (FR-430): no orbit is formed over a carried
+/// clock.
 #[trace("TC-1270")]
 #[test]
 fn the_zone_search_refuses_a_set_or_bag_of_clocked_elements() {
-    use qsl_analyze::zone_check::{
-        check_timed_model, ZoneCheckItem, ZoneCheckRefusal, ZoneCheckRequest,
-    };
+    use qsl_analyze::zone_check::ZoneCheckRefusal;
     use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
-    use qsl_route::deadlock::{ItemObligation, ObligationKind};
+    use qsl_route::reductions::{Reductions, SymmetryDeclaration};
+    use quire_checked::key::DeclarationKey;
 
+    let swap = Reductions {
+        symmetry: vec![SymmetryDeclaration {
+            population: DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: ident("calls"),
+            },
+            classes: vec![vec!["c1".to_owned(), "c2".to_owned()]],
+        }],
+        ..Reductions::default()
+    };
     for (unique, empty) in [(true, "set"), (false, "bag")] {
         let mut document: serde_json::Value =
             serde_json::from_slice(&timers_document(2, &[("grow", &["ts"])])).expect("JSON");
@@ -87,30 +100,23 @@ fn the_zone_search_refuses_a_set_or_bag_of_clocked_elements() {
             .expect("ts");
         ts["multiplicity"]["ordered"] = serde_json::json!(false);
         ts["multiplicity"]["unique"] = serde_json::json!(unique);
-        let world = world_holding(
+        let world = world_built(
             document.to_string().as_bytes(),
             INFINITE,
             &format!("{DENSE}pre Grow using v on M::Call::grow {{ true }}\n"),
+            &["c1", "c2"],
+            &[],
             &serde_json::json!({"ts": {empty: []}}),
         );
         let system: ModelSystem<'_> = world.system();
         let timed = TimedSystem::new(&system, "M").expect("a timed subject");
         assert!(timed.carries_clocks());
-        let refused = check_timed_model(
-            ZoneCheckRequest {
-                subject: &timed,
-                item: ZoneCheckItem::DeadlockFreedom,
-                obligation: ItemObligation {
-                    subject: "c",
-                    kind: ObligationKind::DeadlockFreedom,
-                },
-                limits: ZoneCheckLimits::default(),
-            },
-            &Cancel::new(),
-        );
-        assert!(
-            matches!(refused, Err(ZoneCheckRefusal::CarriedClocks)),
-            "{empty}: {refused:?}"
-        );
+        for reductions in [Reductions::default(), swap.clone()] {
+            let refused = deadlock_result(&world, &reductions);
+            assert!(
+                matches!(refused, Err(ZoneCheckRefusal::CarriedClocks)),
+                "{empty} under {reductions:?}: {refused:?}"
+            );
+        }
     }
 }

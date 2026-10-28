@@ -58,6 +58,9 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # replay tests use to change or misplace a send record (FR-217-AC-5/AC-6).
 qsl-eval = { path = "../qsl-eval", features = ["test-support"] }
 serde_json = "1.0.151"
+# FR-159-AC-5 validates EN-1's manifest entry against QSpec's backend-provider
+# schema, read in place from `$QSPEC_DIR`.
+jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 
 [[test]]
 name = "it"
