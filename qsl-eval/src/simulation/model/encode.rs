@@ -194,6 +194,9 @@ pub(crate) struct Typing<'t> {
     /// [`values_equal`].
     types: Option<&'t TypeEnvironment>,
     variants: &'t [VariantTypeDeclaration],
+    /// The element-count members of the pure-clock collections, which a
+    /// record writes after its declared fields.
+    clock_counts: &'t [super::ClockCount],
 }
 
 impl<'t> Typing<'t> {
@@ -202,6 +205,7 @@ impl<'t> Typing<'t> {
         Self {
             types: None,
             variants: &[],
+            clock_counts: &[],
         }
     }
 
@@ -214,6 +218,15 @@ impl<'t> Typing<'t> {
         Self {
             types: Some(types),
             variants,
+            clock_counts: &[],
+        }
+    }
+
+    /// These declarations with the element-count members `clock_counts`.
+    pub(crate) fn with_clock_counts(self, clock_counts: &'t [super::ClockCount]) -> Self {
+        Self {
+            clock_counts,
+            ..self
         }
     }
 
@@ -596,7 +609,7 @@ pub(super) fn object_enc(
     let Ok(Some(fields)) = model.fields(&object.type_identity) else {
         return Enc::Unencodable("an object of an undeclared type");
     };
-    let fields = fields
+    let mut fields: Vec<Enc> = fields
         .iter()
         .map(|field| {
             // QSpec FR-181: a field declared `Option<T>` holds an option
@@ -612,11 +625,44 @@ pub(super) fn object_enc(
             ])
         })
         .collect();
+    // A collection of bare clocks holds one `Clock` tuple per element, the
+    // shell FR-230 gives a present clock place, so two states that differ
+    // in its element count have different keys.
+    for (type_key, field, _, _) in typing.clock_counts {
+        if *type_key != object.type_identity {
+            continue;
+        }
+        let Some(Value::Integer(count)) = object.fields.get(&field.key) else {
+            continue;
+        };
+        let elements = (0..count.to_u64().unwrap_or(0))
+            .map(|_| clock_shell_enc())
+            .collect();
+        fields.push(Enc::Object(vec![
+            ("name", Enc::text(field.name.clone())),
+            (
+                "value",
+                Enc::tagged("sequence", vec![("elements", Enc::Array(elements))]),
+            ),
+        ]));
+    }
     Enc::tagged(
         "record",
         vec![
             ("name", declaration_enc_text(&object.type_identity)),
             ("fields", Enc::Array(fields)),
+        ],
+    )
+}
+
+/// A present clock place's shell, FR-230's
+/// `{"type":"tuple","name":"Clock","components":[]}`.
+pub(crate) fn clock_shell_enc() -> Enc {
+    Enc::tagged(
+        "tuple",
+        vec![
+            ("name", Enc::text("Clock")),
+            ("components", Enc::Array(Vec::new())),
         ],
     )
 }

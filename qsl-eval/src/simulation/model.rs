@@ -512,7 +512,13 @@ impl<'a> ModelSystem<'a> {
 
     /// The declarations every value of this system is encoded under: the
     /// package's record, tuple, union and variant types (FR-181).
-    pub(crate) fn typing(&self) -> encode::Typing<'a> {
+    pub(crate) fn typing(&self) -> encode::Typing<'_> {
+        self.value_typing().with_clock_counts(&self.clock_counts)
+    }
+
+    /// [`Self::typing`] for values alone, which hold no element-count
+    /// member: it lives as long as the package.
+    pub(crate) fn value_typing(&self) -> encode::Typing<'a> {
         encode::Typing::with_variants(self.types, self.package.graph().scope().variant_types())
     }
 

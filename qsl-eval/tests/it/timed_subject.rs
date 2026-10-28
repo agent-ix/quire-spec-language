@@ -4152,6 +4152,8 @@ fn a_clock_parameter_has_one_instance_per_place() {
 /// while the live clocks (`t.x`, `t.y`, `x` and one per element) stay
 /// within `max_clocks` 5, then one past it: counts 0, 1, 2 and 3, the last
 /// stopping `MaxClocks` when expanded; the bound check admits the model.
+/// Each count is its own state key: the record writes one `Clock` shell
+/// per element.
 /// Not covered: AC-46's `Sequence<Stopwatch>` and `Sequence<Option<Clock>>`
 /// (580q) and AC-47's `Map`, which a domain package cannot declare.
 #[trace("TC-685")]
@@ -4218,4 +4220,15 @@ fn a_bare_clock_collection_ranges_its_initial_count() {
         timed.steps(&initial[3]).err(),
         Some(TimedStop::MaxClocks { max_clocks: 5 })
     );
+    // Each count is a distinct state key: the record writes one `Clock`
+    // shell per element.
+    let keys: std::collections::BTreeSet<Vec<u8>> = initial
+        .iter()
+        .map(|state| held.state_key(state.discrete()).expect("a key").0)
+        .collect();
+    assert_eq!(keys.len(), 4);
+    let (two, _) = held.state_key(initial[2].discrete()).expect("a key");
+    let text = String::from_utf8(two).expect("UTF-8");
+    let shell = r#"{"components":[],"name":"Clock","type":"tuple"}"#;
+    assert_eq!(text.matches(shell).count(), 2, "{text}");
 }
