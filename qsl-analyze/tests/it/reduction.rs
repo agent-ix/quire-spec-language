@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     admit, generators, instance_groups, not_preserving, preserves, unoffered, ModelCheckRefusal,
-    Reductions, SymmetryDeclaration, TableForm,
+    SubjectContext, TableForm,
 };
 use qsl_eval::simulation::model::{explore_model, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
@@ -23,14 +23,16 @@ use qsl_eval::simulation::{
     SymmetryClass, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::ReductionKind;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
-    ProofBasis, ReachedLimit, ReductionCause, ReductionKind, ResultLabel, RunStats,
-    SettlementBasis, SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause,
-    UndefinedLocus,
+    ProofBasis, ReachedLimit, ReductionCause, ResultLabel, RunStats, SettlementBasis,
+    SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause, UndefinedLocus,
 };
+use qsl_route::model_request::ModelRequest;
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::PropertyForm;
@@ -64,7 +66,7 @@ fn shape(symmetric: bool, max: u64) -> Shape {
 }
 
 /// §7.1's subject, annotated or not, from `starts`, with `clauses`.
-fn cycle(symmetric: bool, starts: &[[i64; 3]], clauses: &[Clause<'_>]) -> World {
+pub(crate) fn cycle(symmetric: bool, starts: &[[i64; 3]], clauses: &[Clause<'_>]) -> World {
     let starts: Vec<_> = starts.iter().map(|values| start(*values)).collect();
     World::new(shape(symmetric, 2), CYCLE, clauses, &starts, &KEYS)
 }
@@ -1262,4 +1264,64 @@ fn a_reduced_prefix_concretises_to_a_subject_path() {
     let unreduced = run(&world, None, Vec::new(), Reductions::default());
     assert_eq!(violation(&unreduced).prefix.len(), 6);
     assert!(reduced.stats().product_states < unreduced.stats().product_states);
+}
+
+/// FR-159-AC-4 (FR-159 "Identity"): over the annotated §7.1 subject, the
+/// request selecting `[[a, b, c]]`, the one selecting partial-order
+/// reduction and the one selecting no reduction give one claim three
+/// obligation identities; requests that differ only by the constraint
+/// `Low` versus none give it one identity. Each request's item carries its
+/// own request's selection, so a constrained item never stands for an
+/// unconstrained one. After `ReductionNotPreserving` the outcome records no
+/// exploration statistics.
+#[trace("TC-583", "FR-159-AC-4")]
+#[test]
+fn reductions_but_the_constraint_enter_the_obligation_identity() {
+    let world = cycle(true, &[[0, 0, 0]], &[infinite("always holds(x.v <= 2)")]);
+    let subject = world.subject();
+    let context = SubjectContext::new(&subject).expect("the package emits");
+    let [clause] = world.package.graph().temporal_clauses() else {
+        panic!("one declared clause");
+    };
+    let written = |reductions: Reductions| {
+        let mut request = ModelRequest::reduced(reductions);
+        let index = context
+            .author_clause(&mut request, clause)
+            .expect("the clause has a record");
+        let obligation = request.obligation(index).expect("written").clone();
+        let selected = request.items()[index.get()].reductions().to_vec();
+        (obligation, selected)
+    };
+    let (plain, unreduced) = written(Reductions::default());
+    let (symmetric, by_symmetry) = written(symmetry(&[&["a", "b", "c"]]));
+    let (ordered, _) = written(partial_order());
+    let (constrained, by_constraint) = written(constraint("Low"));
+    assert_ne!(plain, symmetric);
+    assert_ne!(plain, ordered);
+    assert_ne!(symmetric, ordered);
+    assert_eq!(plain.subject, symmetric.subject);
+    assert_eq!(plain, constrained);
+    assert_eq!(symmetric, written(symmetry(&[&["a", "b", "c"]])).0);
+    assert!(unreduced.is_empty());
+    assert_eq!(by_symmetry, [ReductionKind::Symmetry]);
+    assert_eq!(by_constraint, [ReductionKind::StateConstraint]);
+
+    let bounded = cycle(
+        true,
+        &[[0, 0, 0]],
+        &[Clause {
+            profile: BOUNDED,
+            formula: "always[0,2] holds(x.v = 0)",
+        }],
+    );
+    let outcome = run(
+        &bounded,
+        Some(0),
+        vec![atom(|v| Some(v == 0))],
+        partial_order(),
+    );
+    let ModelCheckOutcome::Reduction { stats, .. } = &outcome else {
+        panic!("expected a reduction cause, got {outcome:?}");
+    };
+    assert_eq!(*stats, RunStats::default());
 }

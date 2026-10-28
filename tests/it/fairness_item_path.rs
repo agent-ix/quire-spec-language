@@ -74,6 +74,7 @@ fn registry() -> Registry {
                 fairness_kinds: Some(FairnessKindsMember::List(labels)),
                 evidence_kinds: None,
                 memory_models: None,
+                reductions: None,
             },
         )
         .expect("a valid temporal manifest");

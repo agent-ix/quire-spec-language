@@ -30,6 +30,7 @@ use qsl_semantics::check::{
 };
 use quire_semantic_value::fairness::PropertyForm;
 
+use crate::reductions::{ObligationReductions, Reductions};
 use crate::request::ExtentClassification;
 
 /// One temporal item over a model subject, as the writer reads it: the
@@ -64,6 +65,7 @@ impl<S: Clone> ModelTemporalItem<'_, S> {
         ItemObligation {
             subject: self.subject.clone(),
             kind: ObligationKind::Authored(self.occurrence.clone()),
+            reductions: ObligationReductions::default(),
         }
     }
 }
@@ -89,13 +91,30 @@ pub enum ObligationKind {
     },
 }
 
-/// An obligation identity over a model subject: the subject and the kind.
+/// An obligation identity over a model subject: the subject, the kind
+/// and, beside the subject, the reductions the request selects (FR-159
+/// "Identity"), so a reduced and an unreduced request for one claim are
+/// different obligations.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ItemObligation<S> {
     /// The subject.
     pub subject: S,
     /// The kind.
     pub kind: ObligationKind,
+    /// The symmetry declarations and partial-order selection; none for an
+    /// unreduced request. The constraint stays out (FR-158).
+    pub reductions: ObligationReductions,
+}
+
+impl<S> ItemObligation<S> {
+    /// This obligation as selected with `reductions` (FR-159 "Identity").
+    #[must_use]
+    pub fn reduced(self, reductions: &Reductions) -> Self {
+        Self {
+            reductions: reductions.obligation_identity(),
+            ..self
+        }
+    }
 }
 
 /// One derived deadlock-freedom item.
@@ -115,6 +134,7 @@ impl<S: Clone> DeadlockFreedomItem<S> {
         ItemObligation {
             subject: self.subject.clone(),
             kind: ObligationKind::DeadlockFreedom,
+            reductions: ObligationReductions::default(),
         }
     }
 
@@ -250,6 +270,7 @@ impl<S: Clone> RaceFreedomItem<S> {
             kind: ObligationKind::RaceFreedom {
                 models: self.models.clone(),
             },
+            reductions: ObligationReductions::default(),
         }
     }
 
@@ -314,6 +335,7 @@ impl<S: Clone> TimeLockFreedomItem<S> {
         ItemObligation {
             subject: self.subject.clone(),
             kind: ObligationKind::TimeLockFreedom,
+            reductions: ObligationReductions::default(),
         }
     }
 

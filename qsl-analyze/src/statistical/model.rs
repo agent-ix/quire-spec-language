@@ -56,8 +56,9 @@ use super::{
 };
 use crate::exact_probabilistic::plan::{read_letter, PlanFault};
 use crate::exact_probabilistic::{FormulaState, MonitorVerdict};
+use crate::model_check::admit;
 use crate::model_check::false_extension::false_extension_rejects;
-use crate::model_check::{admit, SymmetryDeclaration};
+use qsl_route::reductions::SymmetryDeclaration;
 
 /// FR-189's statistical request over a model subject.
 pub struct StatisticalRequest<'a> {

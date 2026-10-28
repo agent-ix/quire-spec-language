@@ -11,9 +11,7 @@
 //! claim.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{
-    retain_reduced, Ample, Atoms, Choice, ModelCheckRefusal, Por, Reductions, SymmetryDeclaration,
-};
+use qsl_analyze::model_check::{retain_reduced, Ample, Atoms, Choice, ModelCheckRefusal, Por};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
@@ -27,6 +25,7 @@ use qsl_replay::{
     ProofCertificate, Proviso, ReachedLimit, ReductionCause, ResultLabel, SettlementBasis,
     TerminalValue,
 };
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;

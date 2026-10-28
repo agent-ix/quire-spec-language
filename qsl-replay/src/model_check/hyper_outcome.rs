@@ -14,7 +14,8 @@ use qsl_semantics::check::HyperForm;
 use crate::model_check::hyper_counterexample::HyperCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::model_check::outcome::{RunStats, UndecidedCause};
-use crate::proof_result::{AppliedReduction, IncompleteCause, ReductionKind};
+use crate::proof_result::{AppliedReduction, IncompleteCause};
+use qsl_foundation::ReductionKind;
 
 /// Why a request's reduction was settled before any state was expanded
 /// (FR-174 "Preservation rows").

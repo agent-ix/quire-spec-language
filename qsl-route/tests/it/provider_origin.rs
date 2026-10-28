@@ -52,6 +52,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
     .expect("a well-formed manifest is admitted");

@@ -26,7 +26,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest, Reductions};
+use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 use qsl_eval::automaton::translate;
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
@@ -39,6 +39,7 @@ use qsl_replay::{
     ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject,
     TemporalCounterexample,
 };
+use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};

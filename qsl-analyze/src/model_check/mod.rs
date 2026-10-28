@@ -47,7 +47,7 @@ pub use product::{
 pub use qsl_replay::{SubjectIdentity, SubjectIdentityRefusal};
 pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
-    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, TableForm,
+    ClosureRefusal, InstanceGroup, TableForm,
 };
 pub use refine::{check_refinement, RefinementCheckRequest};
 pub use request::{RequestRefusal, SubjectContext};

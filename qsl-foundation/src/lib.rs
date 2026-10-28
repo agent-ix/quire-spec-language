@@ -29,6 +29,7 @@ pub mod identity_limits;
 pub mod intake_limits;
 pub mod json_number;
 pub mod memory;
+pub mod reduction;
 pub mod request_index;
 pub mod selection;
 pub mod serde_object;
@@ -44,6 +45,7 @@ pub use digest::ByteDigest;
 pub use identity_limits::{IdentityLimits, DEFAULT_IDENTITY_INPUT_BYTES};
 pub use intake_limits::{IntakeLimits, DEFAULT_INTAKE_INPUT_BYTES};
 pub use memory::MemoryModelName;
+pub use reduction::ReductionKind;
 pub use request_index::RequestIndex;
 pub use setting::{
     AccountingSetting, Setting, SettingLimits, SettingName, UsageCause, UsageRefusal,

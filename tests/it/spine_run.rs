@@ -90,6 +90,7 @@ fn front_end_package_is_independent_of_provider_registry() {
                         fairness_kinds: None,
                         evidence_kinds: None,
                         memory_models: None,
+                        reductions: None,
                     },
                 )
                 .unwrap(),

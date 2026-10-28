@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_analyze::model_check::{
     check_hyper, check_single_existential, retain, HyperCheckRequest, ModelCheckRefusal,
-    Reductions, RetainedGraph, SingleExistentialRequest, SingleExistentialRun,
+    RetainedGraph, SingleExistentialRequest, SingleExistentialRun,
 };
 use qsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
 use qsl_eval::hyper::{
@@ -37,6 +37,7 @@ use qsl_replay::{
     replay_hyper_trace_tuple, HyperCounterexample, HyperOutcome, HyperReplay, ModelCheckLimits,
     ModelTraceSettlement, ReplayRefusal, DEFAULT_MAX_WITNESS_SET,
 };
+use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{
     check_hyper_clauses, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId,
     PackageDeclarations,

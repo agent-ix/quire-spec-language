@@ -17,20 +17,21 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze, hyper_form_item, DispositionKind, Engines, Settlement};
-use qsl_analyze::model_check::{ModelCheckRefusal, Reductions};
+use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::ReductionKind;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
     settle_hyper_check, settle_hyper_form, BoundCovers, Code, DisagreementCause, Execution,
     HyperCounterexample, HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause,
     HyperSettleRefusal, IncompleteCause, InconclusiveCause, LimitOrigin, ModelCheckLimit,
-    ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReductionKind, ReplayRefusal,
-    ResultLabel, RunStats, SettlementBasis, TerminalValue, Truth, UnavailabilityCause,
-    UndecidedCause, EXPLICIT_STATE,
+    ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReplayRefusal, ResultLabel, RunStats,
+    SettlementBasis, TerminalValue, Truth, UnavailabilityCause, UndecidedCause, EXPLICIT_STATE,
 };
+use qsl_route::reductions::Reductions;
 use qsl_route::request::items_from_requirements;
 use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, HyperForm, HyperUnsupported, RequirementRecord};

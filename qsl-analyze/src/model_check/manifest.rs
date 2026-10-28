@@ -14,7 +14,7 @@
 //! `qsl-route` reads by their literal spelling.
 
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::MemoryModelName;
+use qsl_foundation::{MemoryModelName, ReductionKind};
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
     ManifestDigest, ManifestMembers, Mode, ProviderOrigin, RegistrationRefusal,
@@ -47,8 +47,17 @@ pub const MEMORY_MODELS: [MemoryModelName; 3] = [
     MemoryModelName::Ra,
 ];
 
+/// The reductions EN-1 applies (FR-159 "Capability"), as QSpec FR-382's
+/// `reductions` member spells them.
+pub const REDUCTIONS: [&str; 3] = [
+    ReductionKind::Symmetry.as_str(),
+    ReductionKind::PartialOrder.as_str(),
+    ReductionKind::StateConstraint.as_str(),
+];
+
 /// EN-1's routed descriptor, converted from [`ADVERTISED`], [`DOMAINS`],
-/// [`FAIRNESS_KINDS`] and [`MEMORY_MODELS`] by FR-288's conversion. `origin` and `manifest_digest`
+/// [`FAIRNESS_KINDS`], [`MEMORY_MODELS`] and [`REDUCTIONS`] by FR-288's
+/// conversion. `origin` and `manifest_digest`
 /// are the host's facts (ADR-029 PV-1).
 ///
 /// # Errors
@@ -69,6 +78,7 @@ pub fn descriptor(
             fairness_kinds: Some(FairnessKindsMember::List(&FAIRNESS_KINDS)),
             evidence_kinds: None,
             memory_models: Some(&MEMORY_MODELS),
+            reductions: Some(&REDUCTIONS),
         },
     )
 }

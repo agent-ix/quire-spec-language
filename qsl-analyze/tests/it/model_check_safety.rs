@@ -1007,7 +1007,7 @@ fn a_partial_order_run_reads_the_guards_footprint() {
                 },
                 max_depth: None,
                 limits: ModelCheckLimits::default(),
-                reductions: qsl_analyze::model_check::Reductions {
+                reductions: qsl_route::reductions::Reductions {
                     partial_order,
                     ..Default::default()
                 },

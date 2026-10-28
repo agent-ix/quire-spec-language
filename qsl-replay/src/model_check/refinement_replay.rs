@@ -26,7 +26,8 @@
 //! emitted, so a refinement unit does not compile through the replay request;
 //! the caller passes the systems of an already-checked package.
 
-use qsl_eval::simulation::model::ModelFinding;
+use qsl_eval::simulation::model::{ModelFinding, TimedSystem};
+use qsl_eval::simulation::Limits;
 use qsl_semantics::model::state::ModelState;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::FairnessKind;
@@ -36,10 +37,10 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{
     CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
 };
-use crate::model_check::limits::ReachedLimit;
+use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::model_check::replay::{
     close_loop, disagreement, fault, loop_states_of, no_value_cause, reexecute, refused,
-    unfair_constraint, ModelTraceRefusal, Position,
+    timed_prefix, unfair_constraint, ModelTraceRefusal, Position,
 };
 use crate::refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, step_history,
@@ -47,6 +48,7 @@ use crate::refinement::{
     StepVerdict, Taken,
 };
 use crate::result::DisagreementCause;
+use crate::timed::explore::{explore, widen, Closure};
 use qsl_semantics::check::CheckedRefinement;
 
 /// FR-145's settlement of a refinement counterexample's replay.
@@ -107,6 +109,85 @@ pub fn replay_refinement_trace(
     if let Some(lasso) = payload.lasso {
         close_loop(&systems.concrete, &positions, lasso)?;
     }
+    settle_positions(refinement, systems, payload, recorded, &positions)
+}
+
+/// QSpec FR-430: replay `payload`, a refinement counterexample of
+/// `refinement` whose concrete model is timed, over `systems`. The prefix
+/// is re-executed over time by FR-237's rules, each step after its exact
+/// delay; the checks then run along it as [`replay_refinement_trace`]
+/// runs them, a delay taking no abstract step. A reproduced failing step
+/// stands only where the behaviour goes on from it with time diverging:
+/// the valuation it reaches has a time-divergent continuation (ADR-026
+/// TV-1 and TS-4), which a fresh exploration bounded by `exploration`
+/// finds; one with none settles `inconclusive`.
+///
+/// # Errors
+///
+/// [`ReplayRefusal`] when the concrete subject is not timed, the prefix
+/// does not re-execute over time (FR-237's refusals), the payload names no
+/// refinement failure or is a lasso, or an internal fault occurs.
+pub fn replay_timed_refinement_trace(
+    refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    payload: &TemporalCounterexample,
+    exploration: &Limits,
+) -> Result<RefinementTraceSettlement, ReplayRefusal> {
+    let Some(recorded) = payload.refinement.as_ref() else {
+        return Err(refused(ModelTraceRefusal::NoRefinementFailure));
+    };
+    if payload.lasso.is_some() {
+        return Err(refused(ModelTraceRefusal::NoRefinementFailure));
+    }
+    let timed = TimedSystem::new(&systems.concrete, refinement.concrete_model())
+        .map_err(|refusal| refused(ModelTraceRefusal::TimedSubject(refusal)))?;
+    let Some((positions, states)) = timed_prefix(&timed, payload)? else {
+        return Ok(RefinementTraceSettlement::Inconclusive(no_value_cause()));
+    };
+    let settlement = settle_positions(refinement, systems, payload, recorded, &positions)?;
+    let RefinementTraceSettlement::Reproduced { failure, .. } = &settlement else {
+        return Ok(settlement);
+    };
+    // A failing initial state is the failing step of the empty prefix: its
+    // post-state is the initial state (QSpec FR-430).
+    let Some(post) = failure
+        .position()
+        .and_then(|position| usize::try_from(position).ok())
+    else {
+        return Ok(settlement);
+    };
+    let Some(point) = states.get(post) else {
+        return Err(fault("a-failing-step-has-a-post-state"));
+    };
+    Ok(match explore(&timed, point, exploration) {
+        Ok(Closure::Divergent) => settlement,
+        Ok(Closure::Locked) => {
+            RefinementTraceSettlement::Inconclusive(disagreement(Category::Success))
+        }
+        Ok(Closure::Stopped { states, .. }) => RefinementTraceSettlement::Stopped(if states {
+            ReachedLimit {
+                limit: ModelCheckLimit::MaxStates,
+                value: widen(exploration.max_states),
+            }
+        } else {
+            ReachedLimit {
+                limit: ModelCheckLimit::MaxTransitions,
+                value: widen(exploration.max_transitions),
+            }
+        }),
+        Err(_) => RefinementTraceSettlement::Inconclusive(no_value_cause()),
+    })
+}
+
+/// The settlement of `payload` along its re-executed `positions`: the
+/// checks run at each position, stopping at the first failure.
+fn settle_positions(
+    refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    payload: &TemporalCounterexample,
+    recorded: &RefinementFailure,
+    positions: &[Position],
+) -> Result<RefinementTraceSettlement, ReplayRefusal> {
     let mut mapped = Vec::new();
     let mut previous: Option<RefinementPosition> = None;
     // The position and the abstract steps taken at each step, for a lasso.
@@ -198,7 +279,7 @@ pub fn replay_refinement_trace(
     }
     if let Some(lasso) = payload.lasso {
         let walk = Walk {
-            positions: &positions,
+            positions,
             trail,
             taken_by,
         };

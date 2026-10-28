@@ -385,7 +385,7 @@ pub use qsl_forms::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, IdentityForm, IdentityNode, IdentityObserving,
+    DispatchSubtypeFailure, ExecutionPointRefusal, IdentityForm, IdentityNode, IdentityObserving,
     InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
     ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
@@ -1511,6 +1511,17 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        if let Some(name) = self.execution_point_keys.iter().find(|name| {
+            !self
+                .state_clauses
+                .iter()
+                .any(|clause| &clause.name == *name)
+        }) {
+            return Err(vec![CheckRefusal {
+                location: root(Origin::Expression),
+                cause: CheckCause::MissingName(name.clone()),
+            }]);
+        }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
         let complete_value = self
@@ -2524,6 +2535,12 @@ impl PackageDeclarations {
                 })),
             });
         }
+        // QSpec FR-430: the models a `time` declaration names are timed.
+        let timed_aliases: Vec<&str> = self
+            .time_sources
+            .iter()
+            .map(|source| source.model.as_str())
+            .collect();
         let mut refinement_slots: Vec<Option<CheckedRefinement>> = std::iter::repeat_with(|| None)
             .take(self.refinements.len())
             .collect();
@@ -2556,6 +2573,8 @@ impl PackageDeclarations {
                     lists: &internal_lists,
                     protocols: $views,
                     defer_abstract_protocol_resolution: $defer_abstract,
+                    timed_models: &timed_aliases,
+                    clock_reading: &self.clock_reading,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,
@@ -2766,6 +2785,7 @@ impl PackageDeclarations {
                         clause.name.as_str(),
                         protocol_requirement::UnitDeclarationKind::Other(match clause.kind {
                             qsl_forms::StateClauseKind::Invariant => "invariant",
+                            qsl_forms::StateClauseKind::Constraint => "constraint",
                             qsl_forms::StateClauseKind::Precondition => "pre",
                             qsl_forms::StateClauseKind::Postcondition => "post",
                         }),
@@ -3697,6 +3717,9 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(index, form)| clause_location(index, &form.name))
             .collect();
+        let clause_name_locations: Vec<Location> = (0..state_clause_forms.len())
+            .map(lowering::state_clause_name_location)
+            .collect();
         // FR-105 "Outputs": each clause's qualified operation reference, where
         // the frame's `generated` occurrence is placed if the clause is the
         // first to name the operation.
@@ -4023,10 +4046,11 @@ impl PackageDeclarations {
         for (_, item) in lowering_order {
             match item {
                 Lowerable::Clause(index) => {
-                    let (Some(form), Some(typed), Some(location), Some(slot)) = (
+                    let (Some(form), Some(typed), Some(location), Some(name_location), Some(slot)) = (
                         state_clause_forms.get(index),
                         typed_clauses.get(index),
                         clause_locations.get(index),
+                        clause_name_locations.get(index),
                         lowered_clauses.get_mut(index),
                     ) else {
                         continue;
@@ -4034,6 +4058,7 @@ impl PackageDeclarations {
                     let input = lowering::StateClauseInput {
                         kind: form.kind,
                         location,
+                        name_location,
                         context: form.context,
                         anchor: form
                             .operation
@@ -4044,18 +4069,12 @@ impl PackageDeclarations {
                                 location,
                                 reference: location,
                             }),
+                        authored_operation_name: form.authored_operation.as_deref(),
                         parameters: &typed.parameters,
                         body: typed.body.root(),
                         body_slots: &typed.slot_names,
                         population_types: &typed.population_types,
-                        // Gated (QSL-1082): the pinned IR V2 reader refuses
-                        // a state_clause member or operation_anchor body
-                        // carrying an execution point (unknown member /
-                        // body shape), so the production check emits none
-                        // until the IR reader admits the carrier. The keying
-                        // and lowering above are exercised with a point by
-                        // their tests.
-                        execution_point: None,
+                        execution_point: form.execution_point.clone(),
                     };
                     match lowering.state_clause(&input) {
                         Ok(lowered) => *slot = Some(lowered),
