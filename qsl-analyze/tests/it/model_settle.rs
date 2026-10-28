@@ -929,7 +929,10 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     );
     assert_eq!(
         stale.value,
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+            requested: elsewhere,
+            recompiled: case.package_id,
+        })
     );
 
     let failed = settle_model_check(
