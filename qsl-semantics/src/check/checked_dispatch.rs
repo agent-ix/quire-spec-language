@@ -1676,6 +1676,7 @@ mod tests {
         let form = || TypeForm::name("T", qsl_foundation::Span { start: 0, end: 0 });
         let mut forms = vec![
             Expression::boolean(true),
+            Expression::absent(),
             Expression::integer(3_i64),
             Expression::float32_bits(0x3f80_0000),
             Expression::float64_bits(0x3ff0_0000_0000_0000),
@@ -1799,9 +1800,10 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 38] = [
+    const FORM_NAMES: [&str; 39] = [
         "Case",
         "Boolean",
+        "Absent",
         "Integer",
         "Rational",
         "Float32",
@@ -1848,6 +1850,7 @@ mod tests {
         match expression.root_node() {
             ExprNode::Case(_) => "Case",
             ExprNode::Boolean(_) => "Boolean",
+            ExprNode::Absent => "Absent",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
             ExprNode::Float32(_) => "Float32",
