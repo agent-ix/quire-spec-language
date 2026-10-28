@@ -390,37 +390,42 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
             vec![],
             "",
         ),
+        // QSL-1121g: a body that calls a function is keyed after it.
         (
             bare("on origin", "capture start: Boolean = ok();", "true"),
-            vec![C::CaptureReadsDeclaration],
-            "QSL-1121g",
+            vec![],
+            "",
         ),
         (
             bare("on each (opened: M::Tick) when (ok())", "", "true"),
-            vec![C::ActivationGuardReadsDeclaration],
-            "QSL-1121g",
+            vec![],
+            "",
         ),
         (
             bare("on origin", "terminal when { ok() };", "true"),
-            vec![C::TerminalReadsDeclaration],
-            "QSL-1121g",
+            vec![],
+            "",
+        ),
+        (bare("on origin", "", "ok()"), vec![], ""),
+        // QSL-844: a protocol that reaches itself is a cyclic component.
+        (
+            bare("on origin", "", "protocol Bare"),
+            vec![C::ReferenceCycle],
+            "QSL-844",
         ),
         (
-            bare("on origin", "", "ok()"),
-            vec![C::FinishReadsDeclaration],
-            "QSL-1121g",
+            bare("on origin", "", "back()"),
+            vec![C::ReferenceCycle],
+            "QSL-844",
         ),
     ];
     for (text, expected, ticket) in cases {
-        let text = if ticket == "QSL-1121g" {
-            text.replacen(
-                "protocol Bare",
-                "function ok using v(): Boolean pure { true }\nprotocol Bare",
-                1,
-            )
-        } else {
-            text
-        };
+        let text = text.replacen(
+            "protocol Bare",
+            "function ok using v(): Boolean pure { true }\n\
+             function back using v(): Boolean pure { protocol Bare }\nprotocol Bare",
+            1,
+        );
         if expected.is_empty() {
             let packaged = text.replacen(
                 "model M",
@@ -430,7 +435,11 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
             checks(&packaged);
             continue;
         }
-        assert_eq!(unwritten(&text), expected, "{text}");
+        // A reference to the cycle's protocol refuses too, with the same
+        // construct.
+        let mut found = unwritten(&text);
+        found.dedup();
+        assert_eq!(found, expected, "{text}");
         for construct in expected {
             assert_eq!(construct.tracking(), ticket, "{construct:?}");
         }

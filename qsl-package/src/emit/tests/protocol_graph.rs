@@ -671,14 +671,6 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         )
     };
     let main = "sequence Main { }";
-    // A second protocol, which the cases refer to.
-    let with_other = |text: String| {
-        format!(
-            "{text}protocol Other using v over (input: M::Order) on origin {{\n\
-             {BUYER}\nrun sequence Main {{ }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n}}\n"
-        )
-    };
     let carrying = |carries: &str| {
         format!(
             "{SELLER}\n{}",
@@ -699,49 +691,17 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             plain("on origin", "role W on M;", main, "true"),
         ),
         (
-            C::CaptureReadsDeclaration,
-            "QSL-1121g",
-            plain("on origin", "capture c: Boolean = ok();", main, "true"),
+            C::ReferenceCycle,
+            "QSL-844",
+            plain("on origin", "", main, "protocol Flow"),
         ),
         (
-            C::ActivationGuardReadsDeclaration,
-            "QSL-1121g",
-            plain("on each (g: M::Person) when (ok())", "", main, "true"),
-        ),
-        (
-            C::TerminalReadsDeclaration,
-            "QSL-1121g",
-            plain("on origin", "terminal when { ok() };", main, "true"),
-        ),
-        (
-            C::FinishReadsDeclaration,
-            "QSL-1121g",
-            plain("on origin", "", main, "ok()"),
-        ),
-        (
-            C::FinishReadsDeclaration,
-            "QSL-1121g",
-            with_other(plain("on origin", "", main, "protocol Other")),
-        ),
-        (
-            C::CaptureReadsDeclaration,
-            "QSL-1121g",
-            with_other(plain(
-                "on origin",
-                "capture c: Boolean = protocol Other;",
-                main,
-                "true",
-            )),
-        ),
-        (
-            C::ActivationGuardReadsDeclaration,
-            "QSL-1121g",
-            with_other(plain(
-                "on each (g: M::Person) when (protocol Other)",
-                "",
-                main,
-                "true",
-            )),
+            C::ReferenceCycle,
+            "QSL-844",
+            format!(
+                "function back using v(): Boolean pure {{ protocol Flow }}\n{}",
+                plain("on origin", "", main, "back()")
+            ),
         ),
         (
             C::ChannelCarriesBounded,
@@ -782,14 +742,19 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
     for (construct, ticket, text) in cases {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
         let refusals = checked(&text, false).expect_err(&text);
-        assert_eq!(
+        // The protocol's declaration, and each reference to it, refuse.
+        assert!(!refusals.is_empty(), "{text}");
+        assert!(
             refusals
                 .iter()
-                .map(|refusal| &refusal.cause)
-                .collect::<Vec<_>>(),
-            [&not_emitted(construct)],
-            "{text}"
+                .all(|refusal| refusal.cause == not_emitted(construct)),
+            "{text}: {refusals:?}"
         );
+        if text.contains("function back") {
+            // A function that reads the unwritten protocol is refused at
+            // its reference whatever the opt-in.
+            continue;
+        }
         let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
         // Only the second protocol the case declares, if any, is written.
         let others = text.matches("protocol Other using").count();
