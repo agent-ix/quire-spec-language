@@ -54,3 +54,13 @@ Gates at ef62a25cc, all with `--all-features` and debug info off:
 | --- | --- | --- | --- |
 | FND-001 | medium | Temporal and state-graph items still opt out on any `terminal any` in the package, of any model. With `terminal any` on the abstract `Spec` only, a temporal item over the concrete `Impl` subject gets no deadlock-freedom item, and adding the refinement item brings it back. | qsl-route/src/deadlock.rs:217-223 |
 | FND-002 | low | `refinement_result_type` was inserted between `located`'s doc lines. `located`'s two doc lines now lead `refinement_result_type`'s doc, and `located` has none. | qsl-semantics/src/check/lowering/refinement_rows.rs:127-142 |
+
+## Dispositions
+
+Round 1, at 20b4a7c8b. Every finding is fixed:
+- SR-1751001 FND-001: the deadlock opt-out reads the subject's own models through `models_of`. With `terminal any` on `Spec`, temporal-only, refinement-only and both each give 1 item; with it on `Impl`, each gives 0.
+- SR-1751001 FND-002: `located`'s doc is restored.
+- SR-1751002 FND-001: fixed in #1753. With EN-1 and EN-6 registered, the untimed record's candidates are `[en-1]`.
+- SR-1751002 FND-002: `a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item` covers it.
+
+Verdict: mergeable.
