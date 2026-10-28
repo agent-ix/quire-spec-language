@@ -1686,6 +1686,52 @@ fn a_row_empty_protocol_subject_reads_back() {
     );
 }
 
+/// QSpec FR-375-AC-23, AC-26 with QSL-1186's `parallel` node: a clause over
+/// the concrete model whose `run` holds a `parallel` writes its `fork` and
+/// `join` classes, both naming the `parallel` control, and the `memory
+/// drain` entry of its source-default model (`sc` when none is written).
+#[trace("FR-375-AC-23", "FR-375-AC-26", "TC-310")]
+#[test]
+fn a_parallel_clause_writes_fork_join_and_drain_classes() {
+    let (unit, documents) = catalog_refinement();
+    let unit = unit.replace(
+        "run sequence Main { }",
+        "run sequence Main { parallel par { branch a sequence A { } branch b sequence B { } } join all [a, b]; }",
+    );
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement emits");
+    let node = refinement_node(&emission);
+    let concrete = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("the concrete side")
+        .clone();
+    let by_class = |name: &str| {
+        concrete
+            .iter()
+            .find(|class| class["class"] == name)
+            .unwrap_or_else(|| panic!("the class {name}: {concrete:?}"))
+            .clone()
+    };
+    let (fork, join) = (by_class("fork Local::par"), by_class("join Local::par"));
+    assert_eq!(fork["node"], join["node"]);
+    assert_eq!(fork["binder_types"], json!([]));
+    let wire = wire(&emission);
+    let parallel = nodes(&wire)
+        .iter()
+        .find(|candidate| candidate["node_id"] == fork["node"])
+        .expect("the parallel node")
+        .clone();
+    assert_eq!(parallel["semantic_form"], "control");
+    assert_eq!(
+        parallel["body"]["operation"]["member"]["operator"],
+        "parallel"
+    );
+    assert_eq!(
+        by_class("memory drain"),
+        json!({"class": "memory drain", "memory_model": "sc", "drain": "store-buffer-flush"})
+    );
+}
+
 /// QSpec FR-375: the emitted catalog reads back through IR. Ignored while
 /// IR-874 is open: IR rebuilds an empty abstract side for a model subject
 /// where FR-375 lists the abstract model's operation classes (B2), and
