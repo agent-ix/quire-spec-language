@@ -73,6 +73,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 mod timed;
 
+pub(super) use self::timed::timed_prefix;
+
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{

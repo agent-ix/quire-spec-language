@@ -3939,3 +3939,53 @@ fn a_model_variant_union_is_finite_by_its_payloads() {
     };
     assert_eq!(format!("{:?}", bound.domains).matches("Node {").count(), 1);
 }
+
+/// QSpec FR-430 "Reductions over a dense-time subject" over clock
+/// collections: swapping `c1` and `c2`, each holding `ts: Sequence<Timer>`
+/// of at most 2 elements, maps every clock place of one object to the
+/// place of the same clock at the same slots on the other, a permutation
+/// of the places.
+#[trace("TC-1170", "FR-430-AC-3")]
+#[test]
+fn a_permutation_maps_each_slot_clock_to_the_same_slot() {
+    let timer =
+        |n: &str| json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    let fields = initial_fields(json!({"t": timer("0"), "ts": {"sequence": [timer("0")]}}));
+    let world = world_of(
+        timer_sequence_document(Some(2)),
+        "",
+        &only(
+            &["send"],
+            "post Send using v on M::Call::send { self.phase = 1 }\n",
+        ),
+        json!([
+            {"key": "c1", "type": ident("Call"), "fields": fields},
+            {"key": "c2", "type": ident("Call"), "fields": fields},
+        ]),
+    );
+    let held = system_over(&world, &["c1", "c2"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let calls = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("calls"),
+    };
+    let swap = qsl_eval::simulation::Permutation::of(
+        &calls,
+        [
+            ("c1".to_owned(), "c2".to_owned()),
+            ("c2".to_owned(), "c1".to_owned()),
+        ],
+    );
+    let images = timed.place_images(&swap).expect("every place has an image");
+    let places = timed.places();
+    assert_eq!(places.len(), 14);
+    let mut seen = images.clone();
+    seen.sort_unstable();
+    assert_eq!(seen, (0..places.len()).collect::<Vec<_>>());
+    for (from, &to) in images.iter().enumerate() {
+        let (from, to) = (&places[from], &places[to]);
+        assert_eq!(from.clock(), to.clock());
+        assert_eq!(from.slots(), to.slots());
+        assert_ne!(from.object(), to.object());
+    }
+}

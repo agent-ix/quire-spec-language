@@ -112,6 +112,14 @@ pub enum DbmError {
     /// A reset of the reference clock, which is fixed at 0.
     #[error("the reference clock cannot be reset")]
     ResetReferenceClock,
+    /// A renaming mapped two clocks to one, so it is no permutation.
+    #[error("the renaming maps clocks {first} and {second} to one clock")]
+    NotAPermutation {
+        /// The lower clock mapped twice.
+        first: usize,
+        /// The higher.
+        second: usize,
+    },
     /// Two matrices of different dimensions were compared.
     #[error("DBMs of dimension {left} and {right} cannot be compared")]
     DimensionMismatch {
@@ -237,6 +245,42 @@ impl Dbm {
             }
         }
         Ok(())
+    }
+
+    /// The zone with clock `i` renamed to `image[i - 1] + 1` for each `i`
+    /// that `image` covers, every other clock (the reference clock first)
+    /// kept: QSpec FR-430's move of an object's clock indices to those of
+    /// the object a permutation maps it to. A permutation of the clocks
+    /// keeps the canonical form.
+    ///
+    /// # Errors
+    ///
+    /// [`DbmError::ClockOutOfRange`] when an image is outside the matrix,
+    /// and [`DbmError::NotAPermutation`] when two clocks have one image, so
+    /// that no row is overwritten.
+    pub fn renamed(&self, image: &[usize]) -> Result<Self, DbmError> {
+        let to = |clock: usize| match clock.checked_sub(1).and_then(|place| image.get(place)) {
+            Some(place) => place + 1,
+            None => clock,
+        };
+        let mut from = vec![None; self.dim];
+        for clock in 0..self.dim {
+            let target = to(clock);
+            self.in_range(target)?;
+            if let Some(first) = from[target].replace(clock) {
+                return Err(DbmError::NotAPermutation {
+                    first,
+                    second: clock,
+                });
+            }
+        }
+        let mut renamed = self.clone();
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                renamed.set(to(i), to(j), self.at(i, j).clone());
+            }
+        }
+        Ok(renamed)
     }
 
     /// Reset `clock` to `value`.

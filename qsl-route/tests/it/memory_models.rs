@@ -107,6 +107,7 @@ fn a_manifest_memory_models_member_is_read_and_its_absence_advertises_sc_only() 
                 fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
                 evidence_kinds: None,
                 memory_models: models,
+                reductions: None,
             },
         )
         .expect("a well-formed manifest")
@@ -142,6 +143,7 @@ fn a_defective_memory_models_member_refuses_the_registration() {
                 fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
                 evidence_kinds: None,
                 memory_models: Some(models),
+                reductions: None,
             },
         )
         .expect_err("refused")
@@ -185,6 +187,7 @@ fn a_provider_with_dynamics_keeps_its_memory_models() {
             fairness_kinds: Some(FairnessKindsMember::List(&[FairnessLabel::Text("weak")])),
             evidence_kinds: None,
             memory_models: Some(&[Sc, Tso]),
+            reductions: None,
         },
         Some(DynamicsMember::List(&["discrete"])),
         None,
@@ -209,6 +212,7 @@ fn memory_models_are_judged_after_evidence_kinds() {
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: Some(&[Sc]),
+            reductions: None,
         },
     )
     .expect_err("refused");

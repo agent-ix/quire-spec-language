@@ -23,6 +23,7 @@ use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::BackendId;
+use qsl_foundation::ReductionKind;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::check::HyperUnsupported;
 use qsl_semantics::family::UnsupportedItem;
@@ -161,28 +162,6 @@ pub enum Proviso {
     /// A state with an ample-set successor already discovered is fully
     /// expanded.
     BreadthFirstRevisit,
-}
-
-/// A reduction a request selects (FR-160 `ReductionKind`).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ReductionKind {
-    /// Symmetry over population universes.
-    Symmetry,
-    /// Partial-order reduction.
-    PartialOrder,
-    /// A state constraint.
-    StateConstraint,
-}
-
-impl ReductionKind {
-    /// The reduction's advertised spelling (FR-159 "Capability").
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Symmetry => "symmetry",
-            Self::PartialOrder => "partial-order",
-            Self::StateConstraint => "state-constraint",
-        }
-    }
 }
 
 /// Why a symmetry declaration does not admit its subject (FR-160).

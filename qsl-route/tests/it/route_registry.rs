@@ -126,6 +126,7 @@ fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
                 fairness_kinds: fairness,
                 evidence_kinds: None,
                 memory_models: None,
+                reductions: None,
             },
             dynamics,
             bounds,
@@ -1065,6 +1066,7 @@ mod tc_282_duplicate_backend_identity {
                         fairness_kinds: None,
                         evidence_kinds: None,
                         memory_models: None,
+                        reductions: None,
                     },
                 )
                 .expect_err("`finite` is not an FR-290 mode")
@@ -1444,6 +1446,7 @@ mod permutation_equality {
                     fairness_kinds: None,
                     evidence_kinds: None,
                     memory_models: None,
+                    reductions: None,
                 },
             )
             .expect("generated item manifest is valid");
@@ -1457,6 +1460,7 @@ mod permutation_equality {
                     fairness_kinds: None,
                     evidence_kinds: None,
                     memory_models: None,
+                    reductions: None,
                 },
             )
             .expect("generated irrelevant manifest is valid");
@@ -1470,6 +1474,7 @@ mod permutation_equality {
                     fairness_kinds: None,
                     evidence_kinds: None,
                     memory_models: None,
+                    reductions: None,
                 },
             )
             .expect("generated relevant manifest is valid");

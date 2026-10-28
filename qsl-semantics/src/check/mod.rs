@@ -213,8 +213,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause, NominalNode,
-    SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause,
+    ModelRootKeyError, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -567,6 +567,8 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// QSpec FR-322: the `model_root` key of each selection, in the same order.
+    model_roots: Vec<quire_exact::NodeKey>,
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
@@ -1900,6 +1902,20 @@ impl PackageDeclarations {
                 ))),
             }]);
         }
+        // QSpec FR-322 `model_root`: one key per selection, from the check's
+        // identity limits, shared by the refinement headers and the emitter.
+        let mut model_roots = Vec::with_capacity(model_selections.len());
+        for selection in &model_selections {
+            match model_root_key(selection, self.identity) {
+                Ok(key) => model_roots.push(key),
+                Err(fault) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::ModelRootKey(fault))),
+                    }]);
+                }
+            }
+        }
         if let Some((&index, _)) = self.model_clauses.range(self.functions.len()..).next() {
             return Err(vec![invalid_dispatch(
                 root(Origin::Expression),
@@ -2508,6 +2524,12 @@ impl PackageDeclarations {
                 })),
             });
         }
+        // QSpec FR-430: the models a `time` declaration names are timed.
+        let timed_aliases: Vec<&str> = self
+            .time_sources
+            .iter()
+            .map(|source| source.model.as_str())
+            .collect();
         let mut refinement_slots: Vec<Option<CheckedRefinement>> = std::iter::repeat_with(|| None)
             .take(self.refinements.len())
             .collect();
@@ -2540,6 +2562,8 @@ impl PackageDeclarations {
                     lists: &internal_lists,
                     protocols: $views,
                     defer_abstract_protocol_resolution: $defer_abstract,
+                    timed_models: &timed_aliases,
+                    clock_reading: &self.clock_reading,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,
@@ -3091,21 +3115,25 @@ impl PackageDeclarations {
             .zip(selected_protocols)
             .filter_map(|(checked, selected)| Some((checked?, selected)))
             .unzip();
+        let root_of = |selection: &DomainPackageRef| {
+            model_selections
+                .iter()
+                .position(|held| held.identity == selection.identity)
+                .and_then(|index| model_roots.get(index).copied())
+        };
         for checked in &mut refinements {
             let abstract_model = models
                 .iter()
                 .find(|model| model.alias() == Some(checked.abstract_model()));
-            checked.abstract_subject_declaration =
-                abstract_model.and_then(AdmittedModel::state_machine_declaration);
+            // QSpec FR-375: the refinement's subjects are the selected model
+            // packages' `model_root` nodes.
             checked.abstract_subject_node =
-                abstract_model.and_then(|model| model.state_machine_node_key(self.identity));
+                abstract_model.and_then(|model| root_of(model.selection()));
             let concrete_model = models
                 .iter()
                 .find(|model| model.alias() == Some(checked.concrete_model()));
-            checked.concrete_subject_declaration =
-                concrete_model.and_then(AdmittedModel::state_machine_declaration);
             checked.concrete_subject_node =
-                concrete_model.and_then(|model| model.state_machine_node_key(self.identity));
+                concrete_model.and_then(|model| root_of(model.selection()));
         }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
@@ -4941,6 +4969,7 @@ impl PackageDeclarations {
             synthesized_spans,
             embedding,
             model_selections,
+            model_roots,
             header_layers,
             time_sources: self.time_sources,
             time_units: time_units.clone(),
@@ -5301,6 +5330,14 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// QSpec FR-322: each selection with its `model_root` node key, in
+    /// `model_selections` order.
+    pub fn model_roots(&self) -> impl Iterator<Item = (&DomainPackageRef, quire_exact::NodeKey)> {
+        self.model_selections
+            .iter()
+            .zip(self.model_roots.iter().copied())
     }
 
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -6042,6 +6079,24 @@ fn register_protocol_sites(
                 protocol_site(name, ProtocolSite::Control(&control.path)),
                 declaration.name.span,
             );
+        }
+    }
+    for member in &protocol.members {
+        match member {
+            qsl_forms::ProtocolMemberForm::Terminal(qsl_forms::TerminalForm::Any { span }) => {
+                type_spans.insert(protocol_site(name, ProtocolSite::Terminal), *span);
+            }
+            qsl_forms::ProtocolMemberForm::Terminal(qsl_forms::TerminalForm::When {
+                predicate,
+                span,
+            }) => {
+                type_spans.insert(protocol_site(name, ProtocolSite::Terminal), *span);
+                site_spans.insert(
+                    protocol_site(name, ProtocolSite::TerminalBody),
+                    predicate.spans.clone(),
+                );
+            }
+            qsl_forms::ProtocolMemberForm::Scheduling(_) => {}
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {

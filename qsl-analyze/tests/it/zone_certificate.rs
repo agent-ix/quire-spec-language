@@ -218,6 +218,7 @@ fn identity_and_budgets_are_checked_first() {
     let other = ItemObligation {
         subject: SUBJECT,
         kind: ObligationKind::DeadlockFreedom,
+        reductions: qsl_route::reductions::ObligationReductions::default(),
     };
     let refusal = qsl_replay::check_zone_certificate(
         qsl_replay::ZoneCertificateRequest {
@@ -473,6 +474,7 @@ fn retarget(mut certificate: Certificate, world: &World) -> Certificate {
         kind: ObligationKind::Authored(qsl_replay::node_occurrence(
             &world.package.graph().temporal_clauses()[0],
         )),
+        reductions: qsl_route::reductions::ObligationReductions::default(),
     };
     certificate
 }
@@ -480,6 +482,8 @@ fn retarget(mut certificate: Certificate, world: &World) -> Certificate {
 fn summary(outcome: &Outcome) -> &'static str {
     match outcome {
         ZoneCheckOutcome::Holds { .. } => "Holds",
+        ZoneCheckOutcome::HoldsReduced { .. } => "HoldsReduced",
+        ZoneCheckOutcome::Reduction { .. } => "Reduction",
         ZoneCheckOutcome::Violated { .. } => "Violated",
         ZoneCheckOutcome::Undecided { .. } => "Undecided",
         ZoneCheckOutcome::Stopped { .. } => "Stopped",

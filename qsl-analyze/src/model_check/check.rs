@@ -112,7 +112,8 @@ use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
 use super::fair_walk::FairModel;
 use super::false_extension::false_extension_rejects;
-use super::reduce::{self, InstanceGroup, Reductions, TableForm};
+use super::reduce::{self, InstanceGroup, TableForm};
+use qsl_route::reductions::Reductions;
 
 pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
 
@@ -1641,7 +1642,8 @@ impl<S: SubjectSystem> Run<'_, S> {
             | AutomatonError::KeyEncodingLimit { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
-            | AutomatonError::NestedIntervalShape
+            | AutomatonError::RepeatedPunctualInterval
+            | AutomatonError::ClockLimit { .. }
             | AutomatonError::ProfileNotTranslated { .. }
             | AutomatonError::Invariant { .. } => fault("monitor-steps").into(),
         }

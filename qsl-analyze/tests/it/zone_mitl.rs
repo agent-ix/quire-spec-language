@@ -115,6 +115,7 @@ fn a_settles_certificate_is_checked_against_the_rebuilt_automaton() {
         kind: ObligationKind::Authored(qsl_replay::node_occurrence(
             &strict.package.graph().temporal_clauses()[0],
         )),
+        reductions: qsl_route::reductions::ObligationReductions::default(),
     };
     let verdict =
         check(&strict, &certificate, CertificateCheckLimits::default()).expect("the check runs");

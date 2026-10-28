@@ -18,11 +18,12 @@ use serde_json::{Map, Value};
 use super::plugin::{read_plugin_cause_kind, PluginResultRefusal, ValueFault};
 use super::{
     AppliedReduction, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, ProofBasis,
-    Proviso, ReductionKind,
+    Proviso,
 };
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::witness::{CanonicalAssignment, WitnessValue};
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::ReductionKind;
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::fairness::PropertyForm;
 

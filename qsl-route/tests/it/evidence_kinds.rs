@@ -33,6 +33,7 @@ fn admit(
             fairness_kinds: Some(FairnessKindsMember::List(&[])),
             evidence_kinds: evidence,
             memory_models: None,
+            reductions: None,
         },
     )
 }
@@ -402,6 +403,7 @@ fn evidence_is_judged_after_pairs_domains_and_fairness() {
                 // Always defective: absent for a probabilistic backend.
                 evidence_kinds: None,
                 memory_models: None,
+                reductions: None,
             },
         )
         .expect_err("refused")

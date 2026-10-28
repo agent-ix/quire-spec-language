@@ -22,7 +22,8 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 pub(crate) const PACKAGE: &str = "test/timed";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+pub(crate) const PLACEHOLDER: &str =
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 pub(crate) fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -33,7 +34,7 @@ fn origin(identity: &str) -> Json {
         "inputIdentities": [identity]}})
 }
 
-fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
+pub(crate) fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
     let mut node = json!({
         "identity": identity, "displayName": identity,
         "kind": {"module": PACKAGE, "name": kind}, "roles": [],
@@ -46,7 +47,7 @@ fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
     node
 }
 
-fn wire_field(name: &str, type_ref: &str) -> Json {
+pub(crate) fn wire_field(name: &str, type_ref: &str) -> Json {
     let identity = ident(&format!("Call/{name}"));
     let unique = type_ref != "ix://quire/native/Clock";
     json!({
@@ -74,7 +75,9 @@ fn phase_type() -> Json {
     )
 }
 
-fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
+/// With `scoped`, the frame modifies `modifies` on the receiver only
+/// (`modifies_receiver`), as each object of a symmetric population needs.
+fn operation(name: &str, modifies: &[&str], unbounded: bool, scoped: bool) -> Json {
     let identity = ident(&format!("Call/{name}"));
     // With `unbounded`, a parameter `n: Integer`, an unbounded root.
     let params: Vec<Json> = unbounded
@@ -89,12 +92,17 @@ fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
         })
         .into_iter()
         .collect();
+    let fields: Vec<String> = modifies
+        .iter()
+        .map(|field| ident(&format!("Call/{field}")))
+        .collect();
     json!({
         "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
         "frame": {
-            "modifies": modifies.iter().map(|field| ident(&format!("Call/{field}"))).collect::<Vec<_>>(),
+            "modifies": if scoped { Vec::new() } else { fields.clone() },
+            "modifies_receiver": if scoped { fields } else { Vec::new() },
             "creates": [], "deletes": [],
         },
     })
@@ -103,16 +111,26 @@ fn operation(name: &str, modifies: &[&str], unbounded: bool) -> Json {
 /// The package with clock fields `clocks` and `operations` (name, the
 /// fields it modifies).
 pub(crate) fn document(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
-    document_with(clocks, operations, false)
+    document_with(clocks, operations, false, false)
+}
+
+/// [`document`] whose population is declared `symmetric` (FR-151).
+pub(crate) fn symmetric_document(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
+    document_with(clocks, operations, false, true)
 }
 
 /// [`document`] whose first operation also takes `n: Integer`, an
 /// unbounded population root (FR-126).
 pub(crate) fn document_unbounded(clocks: &[&str], operations: &[(&str, &[&str])]) -> Vec<u8> {
-    document_with(clocks, operations, true)
+    document_with(clocks, operations, true, false)
 }
 
-fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: bool) -> Vec<u8> {
+fn document_with(
+    clocks: &[&str],
+    operations: &[(&str, &[&str])],
+    unbounded: bool,
+    symmetric: bool,
+) -> Vec<u8> {
     let call = ident("Call");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -141,7 +159,7 @@ fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: boo
     let operations: Vec<Json> = operations
         .iter()
         .enumerate()
-        .map(|(at, (name, modifies))| operation(name, modifies, unbounded && at == 0))
+        .map(|(at, (name, modifies))| operation(name, modifies, unbounded && at == 0, symmetric))
         .collect();
     let population = ident("calls");
     json!({
@@ -164,6 +182,7 @@ fn document_with(clocks: &[&str], operations: &[(&str, &[&str])], unbounded: boo
             "identity": population, "displayName": population,
             "kind": {"module": PACKAGE, "name": "population"},
             "members": [call], "extent": "closed", "origin": origin(&population),
+            "symmetric": symmetric,
         }],
     })
     .to_string()
@@ -219,16 +238,46 @@ pub(crate) struct World {
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     initial: DocumentRef,
+    keys: Vec<String>,
 }
 
 /// `document` checked with `body` as its unit, under the model and the
 /// complete temporal (`t`) profiles and the header lines `profiles`.
 pub(crate) fn world(document: &[u8], profiles: &str, body: &str) -> World {
-    world_holding(document, profiles, body, &json!({}))
+    world_over(document, profiles, body, &["c"])
 }
 
 /// [`world`] whose `c` also holds the fields `extra`.
 pub(crate) fn world_holding(document: &[u8], profiles: &str, body: &str, extra: &Json) -> World {
+    world_built(document, profiles, body, &["c"], &[], extra)
+}
+
+/// [`world`] over the universe `keys`, each object in the snapshot with
+/// `phase` 0 and every Boolean false.
+pub(crate) fn world_over(document: &[u8], profiles: &str, body: &str, keys: &[&str]) -> World {
+    world_armed(document, profiles, body, keys, &[])
+}
+
+/// [`world_over`] whose objects `armed` start with `inflight` true.
+pub(crate) fn world_armed(
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+) -> World {
+    world_built(document, profiles, body, keys, armed, &json!({}))
+}
+
+/// [`world_armed`] whose objects also hold the fields `extra`.
+pub(crate) fn world_built(
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+    extra: &Json,
+) -> World {
     let packages = package_input([document]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -280,9 +329,12 @@ pub(crate) fn world_holding(document: &[u8], profiles: &str, body: &str, extra: 
             "revision": "fixture:1"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
-        "populations": [{"population": ident("calls"), "complete": true, "objects": [{
-            "key": "c", "type": ident("Call"), "fields": fields,
-        }]}],
+        "populations": [{"population": ident("calls"), "complete": true,
+            "objects": keys.iter().map(|key| {
+                let mut fields = fields.clone();
+                fields["inflight"] = json!({"boolean": armed.contains(key)});
+                json!({"key": key, "type": ident("Call"), "fields": fields})
+            }).collect::<Vec<_>>()}],
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -300,6 +352,7 @@ pub(crate) fn world_holding(document: &[u8], profiles: &str, body: &str, extra: 
             revision: "fixture:1".to_owned(),
             digest: snapshot_digest,
         },
+        keys: keys.iter().map(|key| (*key).to_owned()).collect(),
     }
 }
 
@@ -317,7 +370,7 @@ const METER: ScalarLimits = ScalarLimits {
 };
 
 impl World {
-    /// The model system over the universe `{c}`.
+    /// The model system over the world's universe.
     pub(crate) fn system(&self) -> ModelSystem<'_> {
         ModelSystem::new(self.request()).expect("the system admits")
     }
@@ -330,6 +383,198 @@ impl World {
             normalization: ModelNormalizationLimits::default(),
             snapshots: &self.snapshots,
             initial: vec![self.initial.clone()],
+            universes: vec![PopulationUniverse {
+                population: DeclarationKey {
+                    package: PACKAGE.to_owned(),
+                    node: ident("calls"),
+                },
+                keys: self.keys.clone(),
+            }],
+            observation: ObservationLimits::default(),
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+            meter: METER,
+        }
+    }
+}
+
+/// `document` (a package of this fixture) as the package `package`: every
+/// identity under `test/timed` moved under `package`, for a second model of
+/// one unit.
+pub(crate) fn renamed_package(document: &[u8], package: &str) -> Vec<u8> {
+    String::from_utf8(document.to_vec())
+        .expect("the fixture writes UTF-8")
+        .replace(PACKAGE, package)
+        .into_bytes()
+}
+
+/// A unit over two packages of this fixture and its snapshots: the model
+/// `A` (`abstract_package`) and the model `M` (`test/timed`), each with the
+/// one object `c` (`phase` 0, every Boolean false).
+pub(crate) struct Refining {
+    pub(crate) package: CheckedPackage,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    /// `M`'s initial state.
+    pub(crate) concrete_initial: DocumentRef,
+    /// `A`'s initial state.
+    pub(crate) abstract_initial: DocumentRef,
+}
+
+/// The unit over the abstract model `A`, the package `abstract_document`
+/// names, and the concrete model `M`, `concrete_document`, with `body`
+/// under the model, temporal and infinite-trace (`inf`) profiles; its
+/// refusals when S3 refuses it, each with the text at its region.
+pub(crate) fn refining(
+    abstract_document: &[u8],
+    concrete_document: &[u8],
+    body: &str,
+) -> Result<Refining, Vec<(String, String, String)>> {
+    refining_from(abstract_document, concrete_document, body, false)
+}
+
+/// [`refining`] whose abstract object `c` starts with `inflight` equal to
+/// `abstract_inflight`.
+pub(crate) fn refining_from(
+    abstract_document: &[u8],
+    concrete_document: &[u8],
+    body: &str,
+    abstract_inflight: bool,
+) -> Result<Refining, Vec<(String, String, String)>> {
+    let packages = package_input([abstract_document, concrete_document]);
+    let digest_of = |document: &[u8]| {
+        packages
+            .iter()
+            .find(|(_, bytes)| bytes.as_slice() == document)
+            .map(|(digest, _)| hex(digest))
+            .expect("the package is provisioned")
+    };
+    let abstract_package = serde_json::from_slice::<Json>(abstract_document).expect("JSON")
+        ["package"]["identity"]
+        .as_str()
+        .expect("an identity")
+        .to_owned();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n\
+         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"{abstract_package}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+        digest_of(abstract_document),
+        digest_of(concrete_document),
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "fr-430", "fixture", "1"),
+        "fr-430.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(parsed.is_admissible(), "S1: {:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selections admit")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the kept operation clauses parse");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .with_unwritten_timed_members()
+    .with_unwritten_refinements();
+    let regions = declarations.regions();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .map_err(|refusals| {
+            refusals
+                .into_iter()
+                .map(|refusal| {
+                    let at = regions
+                        .refusal_region(&refusal)
+                        .map_or_else(String::new, |region| {
+                            let start = usize::try_from(region.start()).expect("a start");
+                            let end = usize::try_from(region.end()).expect("an end");
+                            unit[start..end].to_owned()
+                        });
+                    (
+                        refusal.cause.code().as_str().to_owned(),
+                        refusal.cause.cause().unwrap_or_default().to_owned(),
+                        at,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })?;
+    let mut snapshots = BTreeMap::new();
+    let mut snapshot = |package: &str, document: &[u8], name: &str, inflight: bool| {
+        let digest = packages
+            .iter()
+            .find(|(_, bytes)| bytes.as_slice() == document)
+            .map(|(digest, _)| hex(digest))
+            .expect("the package is provisioned");
+        let identity = |suffix: &str| format!("ix://{package}/{suffix}");
+        let snapshot = json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
+                "revision": "fixture:1"},
+            "observation": "current",
+            "model": {"identity": package, "version": "1.0.0",
+                "digest": format!("sha256-jcs:{digest}")},
+            "anchor": {"kind": "initialization", "name": "start"},
+            "populations": [{"population": identity("calls"), "complete": true,
+                "objects": [{"key": "c", "type": identity("Call"),
+                    "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": inflight},
+                        "late": {"boolean": false}, "retried": {"boolean": false}}}]}],
+        });
+        let bytes = snapshot.to_string().into_bytes();
+        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+            .expect("canonical fixture")
+            .as_bytes();
+        snapshots.insert(digest, bytes);
+        DocumentRef {
+            authority: "test".to_owned(),
+            identity: name.to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "fixture:1".to_owned(),
+            digest,
+        }
+    };
+    let abstract_initial = snapshot(
+        &abstract_package,
+        abstract_document,
+        "a0",
+        abstract_inflight,
+    );
+    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0", false);
+    Ok(Refining {
+        package: CheckedPackage::link(graph),
+        packages,
+        snapshots,
+        concrete_initial,
+        abstract_initial,
+    })
+}
+
+impl Refining {
+    /// FR-120's request of the concrete model `M` over the universe `{c}`.
+    pub(crate) fn concrete_request(&self) -> ModelSimulationRequest<'_> {
+        ModelSimulationRequest {
+            package: &self.package,
+            packages: &self.packages,
+            normalization: ModelNormalizationLimits::default(),
+            snapshots: &self.snapshots,
+            initial: vec![self.concrete_initial.clone()],
             universes: vec![PopulationUniverse {
                 population: DeclarationKey {
                     package: PACKAGE.to_owned(),
