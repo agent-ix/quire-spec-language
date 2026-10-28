@@ -361,11 +361,21 @@ ill-formed use.
   unwritten is absent; a union value MAY leave its clock case unwritten (the
   clock is dropped) but SHALL NOT enter one. A presence requirement in a
   postcondition (`present(p)`, `not present(p)`) is a constraint on the
-  successor, never a write: one that nothing writes leaves no successor from
-  a state that contradicts it, and where the operation's precondition
-  establishes the place absent and the postcondition requires it present
-  without a write, the checker SHALL refuse
-  `invalid_timed_model`/`clock-presence-unwritten` at the requirement.
+  successor, never a write. `present(p)` of a place absent in the
+  predecessor that nothing writes leaves no successor, for an `Option<Clock>`
+  place and a union case alike. Where the operation's precondition or an
+  invariant establishes the place absent and the postcondition requires it
+  present without a write, the requirement is decided statically: the
+  checker SHALL refuse `invalid_timed_model`/`clock-presence-unwritten` at
+  the `present(p)` requirement, whose span names the place `p`. This slice
+  decides the precondition case; a state invariant that reads a clock
+  presence refuses `unsupported_construct`/`not-yet-implemented` at the read
+  first, so the invariant case is not reached yet. For absence the two forms
+  split as QSpec FR-415 "The same rule for absence" states: `not
+  present(self.v)` of a present, unwritten `v` has no successor, since an
+  `Option<Clock>` bit does not change unwritten, while `not
+  present(self.st.Armed)` of an `Armed` `st` has the successor in which `st`
+  is a clockless case (`Idle`) and the clock is dropped.
   "Every present clock is 0 in every initial state" (QSpec
   FR-415, FR-231, FR-239's zero valuation) therefore reads over the present
   clocks only. **State-key form.** A presence bit SHALL be held only for a **live** guarded
