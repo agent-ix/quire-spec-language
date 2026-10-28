@@ -107,7 +107,7 @@ use qsl_foundation::source::provenance::{
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
-    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode,
+    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
@@ -1742,6 +1742,44 @@ fn candidates_of<'g>(
     Ok(candidates)
 }
 
+/// The temporal profile the lock selects for the clock-reading control nodes
+/// actually written into `nodes` (QSpec FR-464 "Profiles and laws": the lock
+/// selects a `temporal_profile` for an `await` or `compensate` node). A
+/// protocol whose controls are not emitted, for want of a protocol profile or
+/// a refused construct, selects nothing, so the package identity of a unit
+/// that writes no such node is unchanged. The lock holds one row per role
+/// (FR-322), so the first emitted node's profile in source order is the one
+/// selected. QSL-1127 adds `compensate` templates to the same trigger.
+fn clock_control_profile(
+    graph: &CheckedGraph,
+    nodes: &[CheckedSemanticNodeV2],
+) -> Option<TemporalProfile> {
+    graph
+        .protocols()
+        .iter()
+        .flat_map(|protocol| {
+            protocol.awaits.iter().filter_map(move |awaited| {
+                let control = protocol.controls.control(awaited.node)?;
+                let mut path = vec![protocol.name.as_str(), "run"];
+                path.extend(control.path.iter().map(String::as_str));
+                Some((path, awaited.profile?))
+            })
+        })
+        .find(|(path, _)| {
+            nodes.iter().any(|node| {
+                &*node.semantic_form == "control"
+                    && node.declaration.as_ref().is_some_and(|declaration| {
+                        declaration
+                            .qualified_name
+                            .iter()
+                            .map(AsRef::as_ref)
+                            .eq(path.iter().copied())
+                    })
+            })
+        })
+        .map(|(_, profile)| profile)
+}
+
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
 /// `fault` runs against each node's id, in graph order, just before that
 /// node would be written; every production call site is `emit_package`,
@@ -2027,6 +2065,20 @@ fn emit_package_inner(
             definition: CheckedArtifactRef {
                 authority: "agent-ix".into(),
                 identity: refinement.profile().identity.as_str().into(),
+            },
+        };
+        if !profile_selections.contains(&selection) {
+            profile_selections.push(selection);
+        }
+    }
+    // A clock-reading control node needs the lock to select a temporal
+    // profile (QSpec FR-464 "Profiles and laws").
+    if let Some(profile) = clock_control_profile(graph, &nodes) {
+        let selection = CheckedSelection {
+            role: CheckedSelectionRole::TemporalProfile,
+            definition: CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: profile.identity().into(),
             },
         };
         if !profile_selections.contains(&selection) {

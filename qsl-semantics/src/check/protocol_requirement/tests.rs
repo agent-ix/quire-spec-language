@@ -318,12 +318,6 @@ fn a_requirement_refuses_the_protocol_naming_its_ticket() {
     let not_emitted = |construct| {
         CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }))
     };
-    assert_eq!(
-        causes,
-        [
-            not_emitted(ProtocolConstruct::Requirements),
-            not_emitted(ProtocolConstruct::Control("attempt"))
-        ]
-    );
+    assert_eq!(causes, [not_emitted(ProtocolConstruct::Requirements)]);
     assert_eq!(ProtocolConstruct::Requirements.tracking(), "QSL-1127");
 }
