@@ -24,8 +24,8 @@ Fixtures: the `Req`, `TReq` and `TReq2` models of FR-430-AC-1, the `trap`/`undo`
 4. Check `eventually holds(b.fired)` over `Blink` under weak and under strong fairness on `fire` (FR-430-AC-4).
 5. Check the liveness half of the `poll` refinement with and without the time invariant `when not self.sent { x <= 0 }` (FR-430-AC-5).
 6. Check the `dead` refinement of FR-430-AC-6 with and without the invariant `when self.dead { x <= 0 }` (FR-430-AC-6).
-7. Check the failing-initial-state refinement with and without the concrete invariant `when true { x <= 0 }`, and the `Undetermined` variant (FR-430-AC-7).
-8. Read the certificates of steps 1 and 6 and check each with FR-245; check the tampered variants (FR-430-AC-8).
+7. Check the failing-initial-state refinement with and without the concrete invariant `when true { x <= 0 }`, and the two `Undetermined` `RegisterHistory` variants over a `time dense` `Register`, one with the time invariant on `value` (FR-430-AC-7).
+8. Read the certificates of steps 1 and 6 and check each with FR-245; check the tampered variants, and drive the settlement path with a `Holds` outcome whose certificate is withheld to show it does not settle `proved` (FR-430-AC-8).
 
 Tag the tests `#[trace("TC-1170", "FR-430-AC-n")]`.
 
@@ -37,5 +37,5 @@ Tag the tests `#[trace("TC-1170", "FR-430-AC-n")]`.
 - Step 4: `Violated` with a `tick` lasso of loop delay 1 under weak fairness; `Holds` with a certificate under strong fairness.
 - Step 5: liveness `Checked(HoldsReduced{reductions: []})` with the invariant (the only abstract-unfair loop has zero total delay); without it, liveness `Checked(Violated)` with an empty stem, a one-`poll` loop of delay 1 and `Divergence{constraint: send}`, replaying.
 - Step 6: `Holds` with the `undo` post-state a `locked` node and the time-lock-freedom item refuted when `undo` sets `dead`; `Violated` at position 3 with delays 1, 1 and 0, the last point inside the post-state, replaying, when it does not.
-- Step 7: `Violated` with `InitialNotAbstract{initial: 0}` and an empty prefix; with the invariant, `inconclusive` `NoAdmittedBehaviour`; the `Undetermined` variant `Undecided(MappingUndetermined)`.
-- Step 8: `Accepted` for each honest certificate and `Proved{basis: ZoneCertified, certification: Certified}`; `Rejected` `StepFails` at the `ZoneEdge` with the `locked` mark removed; a missing certificate never settles `proved`.
+- Step 7: `Violated` with `InitialNotAbstract{initial: 0}` and an empty prefix; with the invariant, `inconclusive` `NoAdmittedBehaviour`; both `Undetermined` variants `Undecided(MappingUndetermined)` naming `writes`.
+- Step 8: `Accepted` for each honest certificate and `Proved{basis: ZoneCertified, certification: Certified}`; `Rejected` `StepFails` at the `ZoneEdge` with the `locked` mark removed; a withheld certificate never settles `proved`.
