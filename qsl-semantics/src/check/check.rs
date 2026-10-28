@@ -1721,6 +1721,9 @@ pub(crate) struct Typer<'a> {
     /// What a `hyper` clause's condition reads beyond a state clause's
     /// (FR-487); `None` everywhere else.
     hyper: Option<HyperTyping>,
+    /// The guarded clock places `present(r.f)` reads by the owner `r`
+    /// (FR-230 "Presence is derived"); empty outside a timed predicate.
+    pub(super) presence_places: Vec<super::timed_model::PresencePlace>,
 }
 
 /// What the typer reads of a `hyper` clause's atom or `match` conjunct
@@ -2116,6 +2119,7 @@ impl<'a> Typer<'a> {
             named: None,
             history: Vec::new(),
             hyper: None,
+            presence_places: Vec::new(),
         }
     }
 
@@ -2141,6 +2145,17 @@ impl<'a> Typer<'a> {
     #[must_use]
     pub(crate) fn with_named_populations(mut self, named: NamedScope) -> Self {
         self.named = Some(named);
+        self
+    }
+
+    /// This pass typing a timed predicate, whose `present(r.f)` may read
+    /// the guarded clock places `places` (FR-230 "Presence is derived").
+    #[must_use]
+    pub(crate) fn with_presence_places(
+        mut self,
+        places: Vec<super::timed_model::PresencePlace>,
+    ) -> Self {
+        self.presence_places = places;
         self
     }
 
@@ -3083,6 +3098,106 @@ impl<'a> Typer<'a> {
     /// from it. An `Option`, a collection or a population of references is one
     /// in a function body as in a state clause, which the hook refuses at the
     /// operand (FR-363).
+    /// The owner, field and union case of `operand` when it names a guarded
+    /// clock place this pass reads the presence of: `r.f` for an
+    /// `Option<Clock>` field `f`, `r.f.c` for the case `c` of a union field
+    /// `f` (FR-230 "Presence is derived"); `None` otherwise.
+    pub(super) fn place_operand<'e>(
+        &self,
+        operand: qsl_forms::ExprRef<'e>,
+    ) -> Option<(qsl_forms::ExprRef<'e>, &'e str, Option<&'e str>, usize)> {
+        if self.presence_places.is_empty() {
+            return None;
+        }
+        let qsl_forms::ExprNode::Field {
+            operand: owner,
+            field,
+        } = operand.node()
+        else {
+            return None;
+        };
+        let names = |field: &str, case: Option<&str>| {
+            self.presence_places
+                .iter()
+                .any(|place| place.field == field && place.case.as_deref() == case)
+        };
+        if names(field, None) {
+            return Some((operand.at(*owner), field.as_str(), None, 1));
+        }
+        let qsl_forms::ExprNode::Field {
+            operand: object,
+            field: union,
+        } = operand.at(*owner).node()
+        else {
+            return None;
+        };
+        names(union, Some(field)).then(|| {
+            let owner = operand.at(*owner);
+            (owner.at(*object), union.as_str(), Some(field.as_str()), 2)
+        })
+    }
+
+    /// `present(r.f)` (`present(r.f.c)`) over the typed owner `owner`: the
+    /// place's presence, `Boolean`. An owner of an object type holding no
+    /// such place reads `r.f` as a field and `present` over it; any other
+    /// owner refuses `ill_typed`/`type-mismatch` (QSpec FR-322-AC-156).
+    pub(super) fn place_presence(
+        &mut self,
+        owner: Node,
+        field: &str,
+        case: Option<&str>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let place = match &owner.value_type {
+            ValueType::Reference(object) => self
+                .presence_places
+                .iter()
+                .find(|place| {
+                    place.field == field
+                        && place.case.as_deref() == case
+                        && self.scope.types.conforms(*object, place.owner)
+                })
+                .cloned(),
+            _ => None,
+        };
+        let Some(place) = place else {
+            if case.is_some() {
+                return Err(mismatch(location));
+            }
+            // A field of the same name that is no guarded place: `present`
+            // of the field read, as the typer reads it elsewhere.
+            let field_location = location.child(0);
+            let read = if self.is_model_receiver(&owner.value_type, field) {
+                self.attribute(
+                    owner,
+                    field,
+                    &field_location.child(0),
+                    &field_location,
+                    false,
+                )?
+            } else {
+                self.field(owner, field, &field_location)?
+            };
+            if !matches!(read.value_type, ValueType::Option(_)) {
+                return Err(mismatch(location));
+            }
+            return Ok(node(
+                NodeKind::Present(self.push(read)),
+                ValueType::Boolean,
+                location,
+            ));
+        };
+        Ok(node(
+            NodeKind::PlacePresence {
+                reference: self.push(owner),
+                field: quire_semantic_value::declaration::FieldRef::new(place.owner, place.field),
+                case: place.case,
+            },
+            ValueType::Boolean,
+            location,
+        ))
+    }
+
     pub(crate) fn is_model_receiver(&self, value_type: &ValueType, name: &str) -> bool {
         match value_type {
             ValueType::Reference(object) => {

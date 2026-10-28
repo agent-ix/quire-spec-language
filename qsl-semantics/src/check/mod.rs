@@ -2523,6 +2523,7 @@ impl PackageDeclarations {
                 complete_value: crate::value::definition::DefinitionLock::pinned()
                     .closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
+                presence_places: &[],
             };
             match timed_model::check(timed_drafts, &checking, &mut contract_cx) {
                 Ok((checked, used)) => {

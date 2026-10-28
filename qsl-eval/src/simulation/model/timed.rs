@@ -38,6 +38,7 @@ use qsl_semantics::check::{
     PlaceStep, QuantifiedFamily, SlotRef, TimeSourceKind, TimedModel, Urgency,
 };
 
+use qsl_semantics::model::object_environment::PlacePresences;
 use quire_checked::key::DeclarationKey;
 
 use super::encode::declaration_text;
@@ -889,6 +890,29 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         })
     }
 
+    /// The presence at `state` of every guarded place outside collections
+    /// a predicate names `r.f` or `r.f.c`, by object, field and union case:
+    /// what `present(r.f)` of another object reads (FR-230 "Presence is
+    /// derived").
+    fn place_presences(&self, state: &ModelSimState) -> PlacePresences {
+        self.places
+            .iter()
+            .filter(|place| place.slots.is_empty())
+            .filter_map(|place| {
+                let field = self.model.clock(place.clock)?;
+                let (name, case) = match field.path() {
+                    [PlaceStep::Field(name)] if field.presence_bit() => (name, None),
+                    [PlaceStep::Field(name), PlaceStep::Union(case)] => (name, Some(case.clone())),
+                    _ => return None,
+                };
+                Some((
+                    (place.object.clone(), name.clone(), case),
+                    self.live(place, state),
+                ))
+            })
+            .collect()
+    }
+
     /// Whether each `Option<Clock>` place of `object` in `presences` is
     /// present at `state` exactly when its entry says so (FR-230 "Presence
     /// bit").
@@ -1108,7 +1132,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .iter()
             .map(|object| (predicate, Some(object)))
             .collect();
-        let readings = self.system.state_predicates(state, &bound)?;
+        let bound: Vec<_> = bound
+            .into_iter()
+            .map(|(predicate, over)| (predicate, over, Vec::new()))
+            .collect();
+        let readings =
+            self.system
+                .state_predicates_with(state, &bound, self.place_presences(state))?;
         objects
             .iter()
             .zip(readings)
@@ -2177,10 +2207,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         elements: Vec<quire_exact::Value>,
         site: impl Fn() -> TimedSite,
     ) -> Result<bool, TimedStop> {
-        let [reading] = &self
-            .system
-            .state_predicates_with(state, &[(predicate, Some(object), elements)])?[..]
-        else {
+        let [reading] = &self.system.state_predicates_with(
+            state,
+            &[(predicate, Some(object), elements)],
+            self.place_presences(state),
+        )?[..] else {
             return Err(TimedStop::undecided(site(), object.clone(), None));
         };
         match reading {
