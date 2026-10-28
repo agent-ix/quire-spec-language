@@ -150,9 +150,11 @@ impl RefinementClassCatalog {
 }
 
 fn canonical(mut classes: Vec<RefinementCatalogClass>) -> Vec<RefinementCatalogClass> {
-    classes.sort_by_key(|class| {
-        let (name, model) = class.catalog_key();
-        (name.into_bytes(), model)
+    let model =
+        |class: &RefinementCatalogClass| class.memory_model.map_or("", MemoryModelName::label);
+    classes.sort_by(|left, right| {
+        (left.class.as_bytes(), model(left).as_bytes())
+            .cmp(&(right.class.as_bytes(), model(right).as_bytes()))
     });
     classes
 }

@@ -563,11 +563,12 @@ impl ProtocolClasses {
             .collect();
         // One `memory <kind>` row covers a kind for every `parallel`, so the
         // kinds are the union over the source-resolved models (FR-136).
+        // `drain` is a class of every source-default model.
         let memory = checked
             .memory
             .parallels
             .iter()
-            .filter_map(|parallel| memory_step(parallel.memory))
+            .flat_map(|parallel| std::iter::once("drain").chain(memory_step(parallel.memory)))
             .collect();
         let memory_models = checked
             .memory

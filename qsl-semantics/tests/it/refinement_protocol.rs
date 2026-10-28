@@ -945,6 +945,36 @@ fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
     }
 }
 
+/// SR-1708001 FND-001 (FR-432-AC-8, FR-375 "Checked class catalog"): the
+/// entry `memory drain` makes exactly the drain class internal, a class of
+/// every source-default model: over `Full` (`parallel par memory tso`)
+/// alone and beside `memory flush`, and over the same protocol under `sc`
+/// and `ra`, where `memory flush` names no class.
+#[trace("TC-552", "FR-147-AC-8")]
+#[test]
+fn a_memory_drain_entry_makes_the_drain_class_internal_under_every_model() {
+    for model in ["tso", "sc", "ra"] {
+        let protocol = full().replace("memory tso", &format!("memory {model}"));
+        let unit = format!("{protocol}{}", refinement("Spec", "Full"));
+        let graph = checked(&unit, internal(&["memory drain"]));
+        assert_eq!(
+            spellings(the_refinement(&graph)),
+            ["memory drain"],
+            "{model}"
+        );
+        if model == "tso" {
+            let graph = checked(&unit, internal(&["memory drain", "memory flush"]));
+            assert_eq!(
+                spellings(the_refinement(&graph)),
+                ["memory drain", "memory flush"]
+            );
+        } else {
+            let found = refused(&unit, internal(&["memory flush"]), RefinementSupport::BUILD);
+            assert_eq!(only(&found).code_and_cause(), MISSING, "{model}");
+        }
+    }
+}
+
 /// The protocol `Rich`: an `await` (the `timeout` class), an `on each`
 /// trigger (the `activate` class) and a compensation template `Undo` (the
 /// `cattempt` and `cend` classes) over the counter model, whose record
