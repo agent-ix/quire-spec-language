@@ -30,6 +30,9 @@ pub enum Target {
     ClosedTrace,
     /// `mltl.online-prefix/v1`.
     OnlinePrefix,
+    /// `mltl.origin-complete-history/v1`: every bounded past operator alone,
+    /// under either false-extension profile, whatever the surrounding closure.
+    OriginCompleteHistory,
 }
 
 impl Target {
@@ -38,6 +41,7 @@ impl Target {
         match self {
             Self::ClosedTrace => "mltl.closed-trace/v1",
             Self::OnlinePrefix => "mltl.online-prefix/v1",
+            Self::OriginCompleteHistory => "mltl.origin-complete-history/v1",
         }
     }
 }
@@ -48,9 +52,9 @@ pub enum Unmatched {
     /// The finite-window boundary rule; index-based TL profiles extend atoms
     /// false beyond closure.
     FiniteWindow,
-    /// Any bounded past operator, until a separately reviewed TL past profile
-    /// exists.
-    PastOperator,
+    /// A bounded past and a bounded future operator both reachable; no TL
+    /// profile evaluates both directions in one formula.
+    MixedDirection,
 }
 
 /// Premises a supported mapping would still have to discharge. Naming them is
@@ -224,26 +228,64 @@ pub struct Operators {
 }
 
 impl Operators {
-    /// Walk the emitted temporal arena. Every node is inspected once; the graph
-    /// is a flat arena, so no traversal is required.
-    pub fn of(nodes: &[w::Temporal]) -> Self {
+    /// Walk the temporal graph from `root`, the declaration's root node. Only
+    /// operators reachable from the root count (FR-045): the arena may hold
+    /// nodes the root never reaches, and admission does not reject them. Each
+    /// node is inspected at most once, so a shared subformula costs one visit.
+    /// An index outside the arena reaches nothing; admission already refuses one.
+    pub fn of(nodes: &[w::Temporal], root: usize) -> Self {
         let mut result = Self::default();
-        for node in nodes {
+        let mut seen = vec![false; nodes.len()];
+        let mut pending = vec![root];
+        while let Some(index) = pending.pop() {
+            let Some(node) = nodes.get(index) else {
+                continue;
+            };
+            if std::mem::replace(&mut seen[index], true) {
+                continue;
+            }
+            let mut child = |handle: &w::Handle| {
+                if let Ok(next) = usize::try_from(handle.index) {
+                    pending.push(next);
+                }
+            };
             match &node.operation {
-                w::TemporalOperation::Unary { operator, .. } => match operator {
-                    w::TemporalUnary::Eventually | w::TemporalUnary::Always => result.future = true,
-                    w::TemporalUnary::Once | w::TemporalUnary::Historically => result.past = true,
-                    w::TemporalUnary::Not => {}
-                },
-                w::TemporalOperation::Binary { operator, .. } => match operator {
-                    w::TemporalBinary::Until | w::TemporalBinary::Release => result.future = true,
-                    w::TemporalBinary::Since | w::TemporalBinary::Triggered => result.past = true,
-                    w::TemporalBinary::And | w::TemporalBinary::Or | w::TemporalBinary::Implies => {
+                w::TemporalOperation::Unary {
+                    operator, value, ..
+                } => {
+                    match operator {
+                        w::TemporalUnary::Eventually | w::TemporalUnary::Always => {
+                            result.future = true;
+                        }
+                        w::TemporalUnary::Once | w::TemporalUnary::Historically => {
+                            result.past = true;
+                        }
+                        w::TemporalUnary::Not => {}
                     }
-                },
-                w::TemporalOperation::Constant { .. }
-                | w::TemporalOperation::Holds { .. }
-                | w::TemporalOperation::Group { .. } => {}
+                    child(value);
+                }
+                w::TemporalOperation::Binary {
+                    operator,
+                    left,
+                    right,
+                    ..
+                } => {
+                    match operator {
+                        w::TemporalBinary::Until | w::TemporalBinary::Release => {
+                            result.future = true;
+                        }
+                        w::TemporalBinary::Since | w::TemporalBinary::Triggered => {
+                            result.past = true;
+                        }
+                        w::TemporalBinary::And
+                        | w::TemporalBinary::Or
+                        | w::TemporalBinary::Implies => {}
+                    }
+                    child(left);
+                    child(right);
+                }
+                w::TemporalOperation::Group { value } => child(value),
+                w::TemporalOperation::Constant { .. } | w::TemporalOperation::Holds { .. } => {}
             }
         }
         result
@@ -252,18 +294,28 @@ impl Operators {
 
 /// Classify one mapping request against the reviewed support table.
 ///
-/// Unmatched dimensions accumulate: a bounded past operator under the
-/// finite-window profile names both.
+/// Unmatched dimensions accumulate: a mixed-direction request under the
+/// finite-window profile names both. A past-only request under a false-extension
+/// profile maps to the origin-complete-history target whatever the closure;
+/// whether the history is complete is a bridge premise, and a history cutoff is
+/// `incomplete` at the evaluation owner's boundary, never unsupported here.
 pub fn classify(profile: Profile, operators: Operators, surrounding_execution: Closure) -> Support {
     let mut dimensions = Vec::new();
     if profile == Profile::TimestampedWindow {
         dimensions.push(Unmatched::FiniteWindow);
     }
-    if operators.past {
-        dimensions.push(Unmatched::PastOperator);
+    if operators.past && operators.future {
+        dimensions.push(Unmatched::MixedDirection);
     }
     if !dimensions.is_empty() {
         return Support::Unsupported { dimensions };
+    }
+    if operators.past {
+        return Support::Supported {
+            target: Target::OriginCompleteHistory,
+            total_sample_valuation: false,
+            premises: OUTSTANDING_PREMISES,
+        };
     }
     Support::Supported {
         target: match surrounding_execution {
