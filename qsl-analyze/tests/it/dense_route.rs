@@ -201,6 +201,105 @@ fn an_item_over_an_untimed_subject_keeps_its_candidates() {
     );
 }
 
+/// The record `analyze` settles for `world`'s one clause on EN-6, through
+/// `zone_item`: the zone search, FR-245's certificate check and FR-237's
+/// replay, under the package identity `package`.
+fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
+    use qsl_analyze::analyze::{analyze, zone_item, Engines, TimedItem};
+    use qsl_analyze::zone_check::{ZoneCheckItem, ZoneCheckLimits, ZoneCheckRequest};
+    use qsl_eval::simulation::model::{TimedSystem, DEFAULT_MAX_CLOCKS};
+    use qsl_replay::{CertificateCheckLimits, CertifiedItem, ModelTraceReplayResult};
+    use qsl_route::deadlock::{ItemObligation, ObligationKind};
+    use qsl_route::reductions::{ObligationReductions, Reductions};
+
+    let package = qsl_semantics::library::PackageId::of_preimage(b"analyze-dense");
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let letters = system.clause_letters(node).expect("letters");
+    let reductions = Reductions::default();
+    let item = TimedItem {
+        request: ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            obligation: ItemObligation {
+                subject: "c",
+                kind: ObligationKind::Authored(node_occurrence(node)),
+                reductions: ObligationReductions::default(),
+            },
+            limits: ZoneCheckLimits::default(),
+            reductions: &reductions,
+        },
+        certificate: qsl_replay::ZoneCertificateRequest {
+            simulation: world.request(),
+            model: "M",
+            max_clocks: DEFAULT_MAX_CLOCKS,
+            item: CertifiedItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+        },
+        certificate_limits: CertificateCheckLimits::default(),
+        package_id: package.record(),
+        replay: Box::new(|payload| {
+            qsl_replay::replay_timed_counterexample(
+                &timed,
+                payload,
+                Some(node.clause()),
+                &letters,
+                system.meter_limits(),
+                &qsl_eval::simulation::Limits::default(),
+            )
+            .map(|(settlement, hints)| ModelTraceReplayResult {
+                settlement,
+                hints,
+                package_id: package,
+            })
+        }),
+    };
+    let mut records = analyze(
+        &Engines::qsl().expect("the layer-A manifests register"),
+        vec![zone_item(qsl_foundation::RequestIndex::new(0), item)],
+        &quire_exact::Cancel::new(),
+    );
+    assert_eq!(records.len(), 1);
+    records.remove(0)
+}
+
+/// FR-243-AC-1 end to end (TC-698): `NoLateReply` over the dense `Rpc` runs
+/// on EN-6 through `analyze` and settles `Proved{ZoneCertified, Certified}`
+/// with `T = 4 ms`, once FR-245 accepts its certificate, and `refuted` with
+/// `T = 3 ms`, once its counterexample replays (FR-239-AC-1).
+#[trace("TC-698", "FR-243-AC-1")]
+#[test]
+fn a_dense_clause_settles_on_en6_through_analyze() {
+    use qsl_replay::{Certification, ProofBasis, TerminalValue};
+    let claim = "temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always holds(not c.late) }\n";
+    for (t, value) in [
+        (
+            4,
+            TerminalValue::Proved {
+                basis: ProofBasis::ZoneCertified,
+                certification: Certification::Certified,
+            },
+        ),
+        (3, TerminalValue::Refuted),
+    ] {
+        let record = analyzed(&rpc_claim(t, INFINITE, claim));
+        let terminal = record.terminal().expect("a terminal record");
+        assert_eq!(
+            terminal.backend().map(qsl_foundation::BackendId::as_str),
+            Some(en6::BACKEND_ID),
+            "T = {t}"
+        );
+        assert_eq!(*terminal.value(), value, "T = {t}");
+    }
+}
+
 /// FR-144-AC-1 with FR-430 (TC-549, SR-1751002 FND-001): with EN-1 and EN-6
 /// both registered, the untimed `CasRefinesCounter` record routes to the
 /// explicit-state engine alone, while an untimed clause keeps both.
@@ -300,4 +399,44 @@ fn a_mixed_package_routes_each_record_by_its_own_subject() {
     assert_eq!(clause("UntimedClause"), (false, both));
     assert_eq!(refined("Timed"), (true, vec![en6::BACKEND_ID.to_owned()]));
     assert_eq!(refined("Same"), (false, vec![en1::BACKEND_ID.to_owned()]));
+}
+
+/// FR-235-AC-5 and FR-281 end to end (TC-710, SR-1755002 FND-001):
+/// FR-239-AC-5's `Ticker` clause, whose division by zero is undefined at
+/// position 2, settles `refuted` on EN-6 through `analyze`; the record
+/// carries EN-6's counterexample, and its outcome item names the cause
+/// `undefined-evaluation` (`division-by-zero` at position 2), never the
+/// `undefined` label.
+#[trace("TC-710", "FR-235-AC-5")]
+#[test]
+fn an_undefined_timed_evaluation_settles_refuted_through_analyze() {
+    use qsl_replay::{CounterexampleKind, TerminalValue};
+    use quire_semantic_value::catalog::Category;
+    let record = analyzed(&crate::zone_search::ticker(false));
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(*terminal.value(), TerminalValue::Refuted);
+    assert_eq!(
+        terminal.backend().map(qsl_foundation::BackendId::as_str),
+        Some(en6::BACKEND_ID)
+    );
+    let counterexample = record
+        .counterexample()
+        .expect("the record carries EN-6's counterexample");
+    let CounterexampleKind::UndefinedEvaluation(undefined) = &counterexample.kind else {
+        panic!("an undefined evaluation: {:?}", counterexample.kind);
+    };
+    assert_eq!(undefined.site.position, 2);
+    let item = record.outcome_item().expect("an item");
+    assert_eq!(item.category(), Category::Violation);
+    let written = serde_json::to_value(&item).expect("writes");
+    assert_eq!(written["result"], "refuted");
+    assert_eq!(written["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(written["cause"]["cause"], "division-by-zero");
+    assert!(
+        written["cause"]["where"]
+            .as_str()
+            .is_some_and(|at| at.starts_with("position 2, state ")),
+        "{written}"
+    );
+    assert!(!written.to_string().contains("\"undefined\""));
 }

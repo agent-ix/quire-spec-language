@@ -200,14 +200,12 @@ impl<T: SubjectTransition> ModelCheckRecord<T> {
         request_index: RequestIndex,
         backend: BackendId,
     ) -> Result<TerminalRecord, TerminalRecordRefusal> {
-        if matches!(self.value, TerminalValue::Refuted) && self.counterexample.is_none() {
-            return Err(TerminalRecordRefusal::RefutedWithoutCounterexample);
-        }
-        Ok(TerminalRecord::with_backend(
+        TerminalRecord::of_model_settlement(
             request_index,
             backend,
             self.value.clone(),
-        ))
+            self.counterexample.as_ref(),
+        )
     }
 }
 
