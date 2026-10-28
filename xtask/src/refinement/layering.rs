@@ -7,6 +7,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use logos::Logos;
+use qsl_analyze::analyze::Engines;
 use qsl_cst::token::Kind;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -17,7 +18,9 @@ use qsl_replay::spine::{
 };
 use qsl_replay::Cancel;
 use qsl_route::routing::Disposition;
-use qsl_route::{BackendDescriptor, Candidate, CandidateOutcome, RegistrationRefusal, Registry};
+use qsl_route::{
+    BackendDescriptor, Candidate, CandidateOutcome, ItemEvidence, RegistrationRefusal, Registry,
+};
 use qsl_semantics::check::Capability;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::value::{DefinitionLock, HeaderLayer, WitnessKind, WitnessRequest};
@@ -33,6 +36,21 @@ pub struct RegistrySnapshot {
 }
 
 impl RegistrySnapshot {
+    /// Build a fresh snapshot from the descriptors owned by QSL's linked
+    /// analyzer engines.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistryBuildError`] if the linked descriptor source fails
+    /// or if the registry refuses any descriptor. No partial snapshot is
+    /// returned.
+    pub fn production() -> Result<Self, RegistryBuildError> {
+        let engines = Engines::qsl().map_err(RegistryBuildError::DescriptorSource)?;
+        Self::build_registrations(engines.registrations().cloned(), |builder, descriptor| {
+            builder.register(descriptor)
+        })
+    }
+
     /// Take ownership of a caller-built QSL registry as one immutable run snapshot.
     pub fn from_registry(registry: Registry) -> Self {
         Self { registry }
@@ -42,6 +60,52 @@ impl RegistrySnapshot {
     pub fn candidates(&self, kind: Capability) -> CandidateOutcome {
         self.registry.candidates(kind, None)
     }
+
+    /// The FR-075-AC-13 candidate set for one probabilistic evidence kind.
+    pub fn candidates_for_evidence(
+        &self,
+        kind: Capability,
+        evidence: &ItemEvidence,
+    ) -> CandidateOutcome {
+        self.registry.candidates_for_evidence(kind, evidence, None)
+    }
+
+    fn build_registrations(
+        registrations: impl IntoIterator<Item = BackendDescriptor>,
+        mut register: impl FnMut(
+            &mut RegistrySnapshotBuilder,
+            BackendDescriptor,
+        ) -> Result<(), Vec<RegistrationRefusal>>,
+    ) -> Result<Self, RegistryBuildError> {
+        let mut builder = RegistrySnapshotBuilder::new();
+        for descriptor in registrations {
+            register(&mut builder, descriptor).map_err(RegistryBuildError::Registration)?;
+        }
+        Ok(builder.build())
+    }
+
+    #[cfg(test)]
+    fn with_injected_source(
+        source: impl FnOnce() -> Result<Vec<BackendDescriptor>, RegistryBuildError>,
+        register: impl FnMut(
+            &mut RegistrySnapshotBuilder,
+            BackendDescriptor,
+        ) -> Result<(), Vec<RegistrationRefusal>>,
+    ) -> Result<Self, RegistryBuildError> {
+        Self::build_registrations(source()?, register)
+    }
+}
+
+/// Why a production provider snapshot could not be built.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum RegistryBuildError {
+    /// A linked engine's descriptor source refused to construct its descriptor.
+    #[error("linked engine descriptor source refused: {0}")]
+    DescriptorSource(#[source] RegistrationRefusal),
+    /// The registry refused one of the linked engine descriptors.
+    #[error("linked engine registration refused: {0:?}")]
+    Registration(Vec<RegistrationRefusal>),
 }
 
 /// Build one registry snapshot from registrations supplied by the caller.
@@ -860,6 +924,12 @@ pub fn compare(
     Report::new(results)
 }
 
+/// Run the FR-345 gate with QSL's compile composition and a caller-owned
+/// provider snapshot, without witness negotiation.
+pub fn run(corpus: &Path, registry: &RegistrySnapshot) -> Report {
+    compare(corpus, compile_unit, registry, None)
+}
+
 fn tool_failure(entry: String, defect: String) -> EntryResult {
     EntryResult::ToolFailure {
         entry,
@@ -1065,6 +1135,7 @@ mod tests {
     use qsl_foundation::bound::DomainKind;
     use qsl_foundation::digest::ByteDigest;
     use qsl_foundation::BackendId;
+    use qsl_route::EvidenceKind;
     use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
     use qsl_semantics::check::Capability;
     use serde_json::json;
@@ -1137,6 +1208,106 @@ mod tests {
         };
         assert_eq!(candidates.candidates().len(), 1);
         assert_eq!(candidates.candidates()[0].id().as_str(), "backend-a");
+    }
+
+    fn refusal() -> RegistrationRefusal {
+        qsl_route::descriptor_from_manifest(
+            Candidate::new(BackendId::new("injected-invalid")),
+            ProviderOrigin::Linked,
+            ManifestDigest::from_digest([0; 32]),
+            [(Some("unknown-kind"), Some("bounded"))],
+            qsl_route::ManifestMembers::default(),
+        )
+        .expect_err("unknown capability labels are refused")
+    }
+
+    /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
+    /// EN-1 and EN-4 registrations and leaves the missing witness kinds empty.
+    #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
+    #[test]
+    fn production_snapshot_contains_only_linked_engine_registrations() {
+        let first = RegistrySnapshot::production().expect("linked registry builds");
+        let second = RegistrySnapshot::production().expect("linked registry builds again");
+
+        assert_eq!(first, second);
+        let CandidateOutcome::Candidates(temporal) =
+            first.candidates(Capability::TemporalSatisfaction)
+        else {
+            panic!("EN-1 gives a temporal candidate set");
+        };
+        assert_eq!(
+            temporal
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-1"]
+        );
+
+        let engines = Engines::qsl().expect("linked engine descriptors are admitted");
+        let registrations: Vec<_> = engines.registrations().collect();
+        assert_eq!(registrations[1].id().as_str(), "en-4");
+        assert_eq!(
+            registrations[1].evidence_kinds(),
+            &BTreeSet::from([EvidenceKind::Statistical])
+        );
+        let CandidateOutcome::Candidates(probabilistic) = first.candidates_for_evidence(
+            Capability::ProbabilisticSatisfaction,
+            &ItemEvidence::Kind(EvidenceKind::Statistical),
+        ) else {
+            panic!("EN-4 gives an evidence-qualified candidate set");
+        };
+        assert_eq!(
+            probabilistic
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-4"]
+        );
+        for kind in [Capability::ValueValidity, Capability::OperationContract] {
+            let CandidateOutcome::Candidates(candidates) = first.candidates(kind) else {
+                panic!("an unregistered kind returns its empty candidate set");
+            };
+            assert!(candidates.is_empty(), "unexpected provider for {kind:?}");
+        }
+    }
+
+    /// FR-489-AC-3/6: a source failure or refused registration returns a
+    /// typed error rather than a partially populated snapshot.
+    #[trace("TC-1272", "FR-489-AC-3", "FR-489-AC-6")]
+    #[test]
+    fn injected_registry_failures_never_return_a_partial_snapshot() {
+        let source_refusal = refusal();
+        let source_result = RegistrySnapshot::with_injected_source(
+            || Err(RegistryBuildError::DescriptorSource(source_refusal.clone())),
+            |builder, descriptor| builder.register(descriptor),
+        );
+        assert!(matches!(
+            source_result,
+            Err(RegistryBuildError::DescriptorSource(found)) if found == source_refusal
+        ));
+
+        let descriptors: Vec<_> = Engines::qsl()
+            .expect("linked engines build")
+            .registrations()
+            .cloned()
+            .collect();
+        let registration_refusal = refusal();
+        let registration_result = RegistrySnapshot::with_injected_source(
+            || Ok(descriptors),
+            |builder, descriptor| {
+                if descriptor.id().as_str() == "en-4" {
+                    Err(vec![registration_refusal.clone()])
+                } else {
+                    builder.register(descriptor)
+                }
+            },
+        );
+        assert!(matches!(
+            registration_result,
+            Err(RegistryBuildError::Registration(found)) if found == vec![registration_refusal]
+        ));
     }
 
     /// With a caller-supplied candidate, an admitted witness stays unresolved

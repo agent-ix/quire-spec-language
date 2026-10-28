@@ -230,7 +230,7 @@ impl TransitionSystem for ProjectedProduct<'_, '_> {
     }
 
     fn key(&self, state: &HyperState) -> HyperKey {
-        HyperKey::of(&self.joint.systems, state)
+        HyperKey::of(&self.joint.systems, state, &self.automaton())
     }
 
     fn successors(
