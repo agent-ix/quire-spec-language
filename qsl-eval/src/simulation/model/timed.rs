@@ -788,7 +788,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     }
 
     /// Whether the presence bits of `post` are the ones `vector`'s step
-    /// writes (FR-230 "Presence bit"): a reset of an `Option<Clock>` of the
+    /// writes and its postconditions require (FR-230 "Presence bit"): a
+    /// guarded place a postcondition requires present or absent is so at
+    /// `post`; a reset of an `Option<Clock>` of the
     /// receiver makes it present, a drop (`self.v = absent`) makes it
     /// absent, and every other bit of an object `pre` holds keeps its value.
     /// A frame writing the field enumerates both values of the bit; this
@@ -819,6 +821,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .flat_map(|resets| resets.drops())
             .copied()
             .collect();
+        // A postcondition's presence requirements on the receiver's
+        // post-state (`present(self.v)`, `not present(self.v)`).
+        let required = clauses.iter().flat_map(|resets| resets.requires()).copied();
+        if !self.presences_hold(post, &vector.receiver, required) {
+            return false;
+        }
         let bit = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| {
             place.stored(state).map(|stored| {
                 matches!(

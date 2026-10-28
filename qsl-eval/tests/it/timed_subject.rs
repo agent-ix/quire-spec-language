@@ -4660,6 +4660,60 @@ fn present_reads_the_bit_in_invariants_bounds_and_urgency() {
     assert!(timed.is_urgent(present.discrete()).expect("decided"));
 }
 
+/// FR-230 "Presence bit" (TC-685), the timed subject's part of a
+/// postcondition presence requirement: `work`, whose postcondition is
+/// `present(self.v)` and which writes no clock, steps only from the state
+/// with `v` present, keeping it; with `not present(self.v)` only from the
+/// absent state.
+#[trace("TC-685")]
+#[test]
+fn a_postcondition_presence_filters_the_successors() {
+    for (post, from_present) in [("present(self.v)", true), ("not present(self.v)", false)] {
+        let world = world_over(
+            option_clock_document(),
+            "",
+            &only(
+                &["work"],
+                &format!("post Kept using v on M::Call::work {{ {post} }}\n"),
+            ),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let initial = timed.initial();
+        let [absent, present] = &initial[..] else {
+            panic!("two initial states: {initial:?}");
+        };
+        let v = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("v's place");
+        let work = |state: &TimedState| {
+            timed
+                .steps(state)
+                .expect("decided")
+                .into_iter()
+                .filter(|(step, _)| step.operation().contains("Call/work"))
+                .map(|(_, next)| timed.live(&timed.places()[v], next.discrete()))
+                .collect::<Vec<_>>()
+        };
+        let (from, other) = if from_present {
+            (present, absent)
+        } else {
+            (absent, present)
+        };
+        assert!(work(other).is_empty(), "{post}");
+        let kept = work(from);
+        assert!(!kept.is_empty(), "{post}");
+        assert!(kept.iter().all(|live| *live == from_present), "{post}");
+    }
+}
+
 /// FR-230-AC-12 (TC-685): `self.v = 0 ms` makes an absent `v` present at
 /// 0: from the absent initial state, `work`'s write gives the one state
 /// with `v` present, never one keeping it absent.
