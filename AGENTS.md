@@ -60,10 +60,8 @@ code smells are part of that review. For `/spec-review`, select the analyses
 applicable to the change; running all seven optional analyses is not required.
 
 Owner update: keep prototype bookkeeping minimal. Use ordinary Git history, PR
-links and brief test results. Do not maintain manual SHA inventories or
-per-document checksum catalogs, refresh hashes for routine draft edits, create
-successor draft files for working history, or record every intermediate step in
-status/review logs. Update existing artifacts and tickets for material decisions
+links and brief test results. Do not create successor draft files for working history, or record every
+intermediate step in status/review logs. Update existing artifacts and tickets for material decisions
 and remaining work.
 
 Owner update (2026-09-09): prioritize engineering toward the first proof of

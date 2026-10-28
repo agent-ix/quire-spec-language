@@ -18,9 +18,8 @@ an exemption written here.
 For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
 
 Keep prototype bookkeeping minimal. Use ordinary Git history, PR links and brief
-test results. Do not maintain manual SHA inventories or per-document checksum
-catalogs, refresh hashes for routine draft edits, create successor draft files
-for working history, or record every intermediate step in status/review logs.
+test results. Do not create successor draft files for working history, or record every
+intermediate step in status/review logs.
 Update existing artifacts and tickets for material decisions and remaining work.
 Reviews happen at PR readiness.
 
