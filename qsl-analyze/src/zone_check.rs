@@ -39,6 +39,5 @@ pub use search::{
     ZoneUndecided,
 };
 pub use settle::{
-    settle_timed_refinement, settle_zone_check, UncertifiedTimedRefinement, ZoneCheckRecord,
-    ZoneItem, ZONE_CERTIFIED,
+    settle_timed_refinement, settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED,
 };

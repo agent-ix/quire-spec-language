@@ -206,12 +206,17 @@ pub fn zone_item<'a, S: Clone + Eq + 'a>(
 }
 
 /// An EN-6 timed refinement item (QSpec FR-430, FR-144): the safety half's
-/// run and the replay of its counterexample (FR-145 over FR-241's delays),
-/// which in production is `replay_timed_refinement_trace` over the same
-/// subjects.
-pub struct TimedRefinementItem<'a> {
+/// run, the checker's request that recompiles both subjects for FR-245's
+/// check of the refinement form, and the replay of its counterexample
+/// (FR-145 over FR-241's delays), which in production is
+/// `replay_timed_refinement_trace` over the same subjects.
+pub struct TimedRefinementItem<'a, S> {
     /// The EN-6 run.
-    pub request: TimedRefinementRequest<'a>,
+    pub request: TimedRefinementRequest<'a, S>,
+    /// The checker's request over the same refinement and subjects.
+    pub certificate: ZoneCertificateRequest<'a>,
+    /// The checker's budgets.
+    pub certificate_limits: CertificateCheckLimits,
     /// Replays the run's counterexample.
     pub replay: Box<RefinementReplayFn<'a>>,
 }
@@ -222,12 +227,12 @@ pub type RefinementReplayFn<'a> =
 
 /// The `temporal-satisfaction` refinement item over a `time dense`
 /// concrete subject, run on EN-6 and settled by `settle_timed_refinement`.
-/// A half that holds settles `unsupported`/`not-yet-implemented`: no checker
-/// reads its zone certificate yet (QSL-1005c), and a `Holds` with no
-/// accepted certificate never settles `proved` (FR-144, FR-430-AC-8).
-pub fn timed_refinement_item<'a>(
+/// A half that holds settles `proved` only when FR-245's
+/// `check_zone_certificate` accepts its certificate (FR-144,
+/// FR-430-AC-8).
+pub fn timed_refinement_item<'a, S: Clone + Eq + 'a>(
     index: RequestIndex,
-    item: TimedRefinementItem<'a>,
+    item: TimedRefinementItem<'a, S>,
 ) -> AnalyzeItem<'a> {
     AnalyzeItem::new(
         index,
@@ -235,12 +240,29 @@ pub fn timed_refinement_item<'a>(
         Mode::Bounded,
         en6::BACKEND_ID,
         move |cancel| {
-            let TimedRefinementItem { request, replay } = item;
+            let TimedRefinementItem {
+                request,
+                certificate,
+                certificate_limits,
+                replay,
+            } = item;
+            let obligation = request.obligation.clone();
             match check_timed_refinement(request, cancel) {
-                Ok(outcome) => match settle_timed_refinement(&outcome, cancel, replay) {
-                    Ok(record) => EngineReport::Zone(Box::new(record)),
-                    Err(_) => EngineReport::Refused(Refusal::Unsupported(NOT_YET)),
-                },
+                Ok(outcome) => EngineReport::Zone(Box::new(settle_timed_refinement(
+                    &outcome,
+                    cancel,
+                    |proof| {
+                        check_zone_certificate(
+                            certificate,
+                            &obligation,
+                            certificate_item,
+                            proof,
+                            certificate_limits,
+                            cancel,
+                        )
+                    },
+                    replay,
+                ))),
                 Err(refusal) => EngineReport::Refused(timed_refinement_refusal(&refusal)),
             }
         },
