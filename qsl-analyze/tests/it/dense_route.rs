@@ -48,10 +48,18 @@ pub(crate) fn ids(outcome: &CandidateOutcome) -> Vec<String> {
         .collect()
 }
 
-/// The candidates of `world`'s one temporal clause, whether its record is
-/// marked dense, and the dense marks and candidates of the deadlock-freedom
-/// and time-lock-freedom items derived from it.
-fn routes(world: &World) -> (Vec<String>, bool, Vec<(bool, Vec<String>)>) {
+/// How `world`'s one temporal clause and the items derived from it route.
+struct Routes {
+    /// The clause item's candidates.
+    candidates: Vec<String>,
+    /// Whether the clause's record is marked dense.
+    dense: bool,
+    /// The dense mark and candidates of the deadlock-freedom item, then of
+    /// the time-lock-freedom item, when each is derived.
+    derived: Vec<(bool, Vec<String>)>,
+}
+
+fn routes(world: &World) -> Routes {
     let registry = registry();
     let graph = world.package.graph();
     let [clause] = graph.temporal_clauses() else {
@@ -96,7 +104,11 @@ fn routes(world: &World) -> (Vec<String>, bool, Vec<(bool, Vec<String>)>) {
                 .map(|item| (item.dense_time(), derived_route(item.dense_time()))),
         )
         .collect();
-    (ids(item.candidates()), dense, derived)
+    Routes {
+        candidates: ids(item.candidates()),
+        dense,
+        derived,
+    }
 }
 
 /// FR-243-AC-1 and AC-3 (TC-698): over the dense `Rpc`, `NoLateReply` under
@@ -143,7 +155,11 @@ fn timed_items_over_a_dense_subject_route_to_en6_alone() {
             panic!("one temporal clause");
         };
         assert_eq!(node.clause().timed_form(), form.as_ref());
-        let (candidates, dense, derived) = routes(world);
+        let Routes {
+            candidates,
+            dense,
+            derived,
+        } = routes(world);
         assert!(dense, "{form:?}");
         assert_eq!(candidates, [en6::BACKEND_ID], "{form:?}");
         assert_eq!(
@@ -169,7 +185,11 @@ fn an_item_over_an_untimed_subject_keeps_its_candidates() {
         "temporal P using inf over (c: M::Call) clock \"model-steps\" on origin \
          { always holds(not c.late) }\n",
     );
-    let (candidates, dense, derived) = routes(&untimed);
+    let Routes {
+        candidates,
+        dense,
+        derived,
+    } = routes(&untimed);
     assert!(!dense);
     assert_eq!(candidates, [en1::BACKEND_ID, en6::BACKEND_ID]);
     assert_eq!(
