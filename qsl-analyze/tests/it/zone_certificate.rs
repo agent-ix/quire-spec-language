@@ -480,6 +480,8 @@ fn retarget(mut certificate: Certificate, world: &World) -> Certificate {
 fn summary(outcome: &Outcome) -> &'static str {
     match outcome {
         ZoneCheckOutcome::Holds { .. } => "Holds",
+        ZoneCheckOutcome::HoldsReduced { .. } => "HoldsReduced",
+        ZoneCheckOutcome::Reduction { .. } => "Reduction",
         ZoneCheckOutcome::Violated { .. } => "Violated",
         ZoneCheckOutcome::Undecided { .. } => "Undecided",
         ZoneCheckOutcome::Stopped { .. } => "Stopped",

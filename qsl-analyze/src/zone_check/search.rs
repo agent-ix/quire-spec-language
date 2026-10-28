@@ -23,6 +23,12 @@
 //! ([`super::divergence`]). Its counterexample ends at such a valuation. A
 //! violation with none holds vacuously, is kept as a `locked` node, and the
 //! search goes on; nodes are judged in breadth-first order.
+//!
+//! Under a symmetry the request selects (QSpec FR-430), each symbolic state
+//! is stored canonicalised: its model state by FR-152's permutation, and its
+//! zone with each object's clocks moved to those of the object the
+//! permutation maps it to. A counterexample is lifted back to concrete
+//! states through the permutations, as FR-161 lifts EN-1's.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -32,16 +38,20 @@ use qsl_eval::simulation::model::{
     check_model_bounds, GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop,
     TimedSystem,
 };
-use qsl_eval::simulation::{NotSimulated, RequiresBound, BOUND_POSITIONS};
+use qsl_eval::simulation::{
+    NotSimulated, Permutation, RequiresBound, SymmetryGroup, BOUND_POSITIONS,
+};
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
-    CounterexampleKind, Lasso, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
+    AppliedReduction, CounterexampleKind, Lasso, ReductionCause, ReductionKind,
+    SymmetryBrokenCause, SymmetryRefusal, TemporalCounterexample, TimedPoint, UndefinedEvaluation,
     UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{
     CheckedTemporalClause, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,
 };
 use qsl_semantics::family::ClassifyFailure;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Meter, Rational};
 
 use super::certificate::Proof;
@@ -49,6 +59,7 @@ use super::concretise::{concretise, Concrete, Target};
 use super::divergence::Escape;
 use super::liveness::Liveness;
 use super::{scale_constants, Bound, Dbm, DbmError};
+use crate::model_check::{admit, closure, instance_groups, ClosureRefusal, Reductions};
 use qsl_eval::automaton::{
     position_automaton, AutomatonError, PositionAutomaton, Read, Stamp, WindowClaim, WindowFault,
     WindowRefusal,
@@ -111,6 +122,32 @@ pub struct ZoneCheckRequest<'r, 's, 'a, S> {
     pub obligation: ItemObligation<S>,
     /// The budgets.
     pub limits: ZoneCheckLimits,
+    /// The reductions the request selects (FR-159); EN-6 applies symmetry
+    /// only (QSpec FR-430).
+    pub reductions: &'r Reductions,
+}
+
+/// A reduction cause EN-6's pre-check settles, with no state explored
+/// (FR-159, QSpec FR-430).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ZoneReduction {
+    /// ADR-018 V-8: a selected reduction EN-6 does not apply. Over any
+    /// item, partial-order reduction or a state constraint (QSpec FR-430),
+    /// named first in the order partial-order, constraint; failing that,
+    /// symmetry over an item decided on the liveness product or by the
+    /// time-lock search, which do not read a symmetry-reduced graph.
+    Unsupported {
+        /// The reduction.
+        reduction: ReductionKind,
+    },
+    /// FR-151: the initial states are not closed under a declaration's
+    /// group.
+    SymmetryBroken {
+        /// The declaration's population.
+        population: DeclarationKey,
+        /// Why.
+        cause: SymmetryBrokenCause,
+    },
 }
 
 /// The budget a run reached, with its setting.
@@ -176,6 +213,18 @@ pub struct ZoneStats {
     pub zone_bytes: u64,
 }
 
+impl ZoneStats {
+    /// The counts of `self` and `other` together.
+    fn plus(self, other: Self) -> Self {
+        Self {
+            symbolic_states: self.symbolic_states.saturating_add(other.symbolic_states),
+            retained_edges: self.retained_edges.saturating_add(other.retained_edges),
+            automaton_states: self.automaton_states.saturating_add(other.automaton_states),
+            zone_bytes: self.zone_bytes.saturating_add(other.zone_bytes),
+        }
+    }
+}
+
 /// A stored symbolic state.
 #[derive(Clone, Debug)]
 pub(super) struct SymbolicNode {
@@ -189,6 +238,9 @@ pub(super) struct SymbolicNode {
     pub locked: bool,
     /// The claim-automaton state; 0 with no automaton.
     pub q: usize,
+    /// The permutation that canonicalised it (QSpec FR-430); the identity
+    /// under the trivial group.
+    pub permutation: Permutation,
 }
 
 /// A retained edge: a successor by a step's convex guard part, in
@@ -236,6 +288,22 @@ pub enum ZoneCheckOutcome<S> {
         /// FR-244's certificate, built from the retained graph.
         certificate: Box<qsl_replay::ZoneCertificate<ItemObligation<S>>>,
         /// The run's counts.
+        stats: ZoneStats,
+    },
+    /// No admitted violation is reachable in the symmetry-reduced graph of
+    /// any instance the run checked (FR-160, QSpec FR-430). No core checker
+    /// reads a reduced graph, so it carries no certificate.
+    HoldsReduced {
+        /// The applied symmetry, one entry per instance checked.
+        reductions: Vec<AppliedReduction>,
+        /// The runs' counts together.
+        stats: ZoneStats,
+    },
+    /// A reduction cause the pre-check settled, with no state explored.
+    Reduction {
+        /// The cause.
+        cause: ZoneReduction,
+        /// The run's counts: none.
         stats: ZoneStats,
     },
     /// The first admitted violation in breadth-first order, concretised
@@ -295,6 +363,9 @@ pub enum ZoneCheckRefusal {
     /// zones map no carried clock between places yet.
     #[error("the model writes a clock collection whole, whose carried clocks EN-6 does not map")]
     CarriedClocks,
+    /// A symmetry declaration does not admit (FR-151).
+    #[error(transparent)]
+    Symmetry(SymmetryRefusal),
     /// An invariant of the engine broke.
     #[error("the zone engine broke an invariant: {0}")]
     Fault(&'static str),
@@ -379,20 +450,205 @@ pub fn check_timed_model<S: Clone>(
     if request.subject.writes_collections() {
         return Err(ZoneCheckRefusal::CarriedClocks);
     }
+    // QSpec FR-430: EN-6 applies symmetry and no other reduction, so a
+    // request selecting partial-order reduction or a state constraint
+    // settles V-8 before anything is read, naming the first in the order
+    // partial-order, constraint.
+    let reductions = request.reductions;
+    if let Some(reduction) = reductions
+        .selected()
+        .into_iter()
+        .find(|reduction| *reduction != ReductionKind::Symmetry)
+    {
+        return Ok(reduced(ZoneReduction::Unsupported { reduction }));
+    }
     // FR-239: an unbounded population root refuses before any state is
     // explored, as FR-126 states.
-    check_model_bounds(request.subject.system(), BOUND_POSITIONS).map_err(not_simulated)?;
+    let system = request.subject.system();
+    check_model_bounds(system, BOUND_POSITIONS).map_err(not_simulated)?;
+    let mut symmetric = !reductions.symmetry.is_empty();
+    // EN-6 applies symmetry to its search only: the time-lock search and
+    // the liveness product read the unreduced graph's edges, so an item
+    // decided by either settles V-8 naming symmetry, as an unapplied
+    // reduction does, before its declarations are admitted.
+    if symmetric && reads_unreduced_graph(&request)? {
+        return Ok(reduced(ZoneReduction::Unsupported {
+            reduction: ReductionKind::Symmetry,
+        }));
+    }
+    // FR-151: the declarations admit, and the initial states are closed
+    // under their group.
+    let group = admit(system, &reductions.symmetry).map_err(ZoneCheckRefusal::Symmetry)?;
+    let closed = closure(system, &group).map_err(|refusal| match refusal {
+        ClosureRefusal::Encoding(_) => ZoneCheckRefusal::Fault("state-key"),
+        ClosureRefusal::Unordered => ZoneCheckRefusal::Fault("symmetry-closure"),
+    })?;
+    if let Some(ReductionCause::SymmetryBroken { population, cause }) = closed {
+        return Ok(reduced(ZoneReduction::SymmetryBroken { population, cause }));
+    }
+    // FR-151 "Instances": under symmetry, one run per orbit of the `over`
+    // binding, bound to its least key, under its stabiliser; otherwise one
+    // run over every instance.
+    let plans = match request.item {
+        ZoneCheckItem::Clause { clause, .. } => {
+            let instances = system.instances(&clause.over().1).map_err(not_simulated)?;
+            // With no instance there is no orbit to reduce: the item runs
+            // unreduced, so its proof is certified.
+            symmetric &= !instances.is_empty();
+            if symmetric {
+                instance_groups(Some(&instances), &group)
+                    .into_iter()
+                    .map(|instance| Plan {
+                        instances: instance.representative.into_iter().collect(),
+                        group: instance.group,
+                        orbit: instance.orbit,
+                    })
+                    .collect()
+            } else {
+                vec![Plan {
+                    instances,
+                    group: SymmetryGroup::default(),
+                    orbit: Vec::new(),
+                }]
+            }
+        }
+        ZoneCheckItem::DeadlockFreedom | ZoneCheckItem::TimeLockFreedom => vec![Plan {
+            instances: Vec::new(),
+            group: group.clone(),
+            orbit: Vec::new(),
+        }],
+    };
+    let mut applied = Vec::new();
+    let mut total = ZoneStats::default();
+    let mut proved = None;
+    for plan in plans {
+        let (judged, window, live) = judge_plan(&request, plan.instances)?;
+        let automaton_constants = live
+            .as_ref()
+            .map_or_else(Vec::new, PositionAutomaton::all_constants);
+        let mut run = Run::new(
+            request.subject,
+            judged,
+            window,
+            &automaton_constants,
+            request.limits,
+            cancel,
+        );
+        run.live = live;
+        run.group = plan.group.clone();
+        run.reduced = symmetric;
+        let searched = match run.search() {
+            Ok(searched) => searched,
+            Err(Halt::Outcome(searched)) => *searched,
+            Err(Halt::Refusal(refusal)) => return Err(refusal),
+        };
+        match searched {
+            Searched::Holds { proof, stats } => {
+                total = total.plus(stats);
+                proved = Some(proof);
+            }
+            Searched::HoldsReduced { stats } => {
+                total = total.plus(stats);
+                applied.push(AppliedReduction::Symmetry {
+                    groups: group.classes.clone(),
+                    orbit: plan.orbit,
+                    stabiliser: plan.group.classes,
+                });
+            }
+            Searched::Violated {
+                counterexample,
+                stats,
+            } => {
+                return Ok(ZoneCheckOutcome::Violated {
+                    counterexample,
+                    stats: total.plus(stats),
+                })
+            }
+            Searched::Undecided { cause, stats } => {
+                return Ok(ZoneCheckOutcome::Undecided {
+                    cause,
+                    stats: total.plus(stats),
+                })
+            }
+            Searched::Stopped { cause, stats } => {
+                return Ok(ZoneCheckOutcome::Stopped {
+                    cause,
+                    stats: total.plus(stats),
+                })
+            }
+        }
+    }
+    Ok(match proved {
+        Some(proof) if !symmetric => ZoneCheckOutcome::Holds {
+            certificate: Box::new(proof.proving(request.obligation)),
+            stats: total,
+        },
+        // Unreachable by design: a run under a selected symmetry sets
+        // `reduced`, whose proof is always `HoldsReduced`.
+        Some(_) => return Err(ZoneCheckRefusal::Fault("reduced-certificate")),
+        None => ZoneCheckOutcome::HoldsReduced {
+            reductions: applied,
+            stats: total,
+        },
+    })
+}
+
+/// Whether `request`'s item is decided on a graph EN-6 does not reduce:
+/// the time-lock-freedom item, or a clause with no TT-1 atom and no flat
+/// TT-2 window, which the liveness product decides (FR-240).
+fn reads_unreduced_graph<S>(
+    request: &ZoneCheckRequest<'_, '_, '_, S>,
+) -> Result<bool, ZoneCheckRefusal> {
+    Ok(match request.item {
+        ZoneCheckItem::TimeLockFreedom => true,
+        ZoneCheckItem::DeadlockFreedom => false,
+        ZoneCheckItem::Clause { clause, .. } => {
+            if qsl_eval::automaton::invariant_atom(clause).is_some() {
+                false
+            } else {
+                let instances = request
+                    .subject
+                    .system()
+                    .instances(&clause.over().1)
+                    .map_err(not_simulated)?;
+                flat_window(
+                    clause,
+                    instances.len(),
+                    request.subject.tick_period().cloned(),
+                    request.limits.max_automaton_states,
+                )?
+                .is_none()
+            }
+        }
+    })
+}
+
+/// One run of a request: the instances its claim reads, the group it is
+/// reduced by, and the keys its one bound instance stands for (FR-151).
+struct Plan {
+    instances: Vec<ModelInstance>,
+    group: SymmetryGroup,
+    orbit: Vec<String>,
+}
+
+/// The outcome the pre-check settles, with no state explored.
+fn reduced<S>(cause: ZoneReduction) -> ZoneCheckOutcome<S> {
+    ZoneCheckOutcome::Reduction {
+        cause,
+        stats: ZoneStats::default(),
+    }
+}
+
+/// What a run over `instances` judges: the clause read by TT-1's atom,
+/// TT-2's window automaton or FR-240's liveness product, or a derived item.
+fn judge_plan<'r, S>(
+    request: &ZoneCheckRequest<'r, '_, '_, S>,
+    instances: Vec<ModelInstance>,
+) -> Result<(Judged<'r>, Option<WindowClaim>, Option<PositionAutomaton>), ZoneCheckRefusal> {
     let mut window = None;
     let mut live = None;
     let judged = match request.item {
         ZoneCheckItem::Clause { clause, letters } => {
-            let instances = || {
-                request
-                    .subject
-                    .system()
-                    .instances(&clause.over().1)
-                    .map_err(not_simulated)
-            };
             if let Some(atom) = qsl_eval::automaton::invariant_atom(clause) {
                 if !matches!(
                     clause.profile(),
@@ -404,15 +660,14 @@ pub fn check_timed_model<S: Clone>(
                     clause,
                     atom: Some(atom),
                     letters,
-                    instances: instances()?,
+                    instances,
                 })
             } else if let Some(claim) = flat_window(
                 clause,
-                instances()?.len(),
+                instances.len(),
                 request.subject.tick_period().cloned(),
                 request.limits.max_automaton_states,
             )? {
-                let instances = instances()?;
                 window = Some(claim);
                 Judged::Claim(Claim {
                     clause,
@@ -445,7 +700,7 @@ pub fn check_timed_model<S: Clone>(
                     clause,
                     atom: None,
                     letters,
-                    instances: instances()?,
+                    instances,
                 })
             } else {
                 return Err(ZoneCheckRefusal::UnsupportedForm);
@@ -454,44 +709,55 @@ pub fn check_timed_model<S: Clone>(
         ZoneCheckItem::DeadlockFreedom => Judged::DeadlockFreedom,
         ZoneCheckItem::TimeLockFreedom => Judged::TimeLockFreedom,
     };
-    let automaton_constants = live
-        .as_ref()
-        .map_or_else(Vec::new, PositionAutomaton::all_constants);
-    let mut run = Run::new(
-        request.subject,
-        judged,
-        window,
-        &automaton_constants,
-        request.limits,
-        cancel,
-    );
-    run.live = live;
-    let searched = match run.search() {
-        Ok(searched) => searched,
-        Err(Halt::Outcome(searched)) => *searched,
-        Err(Halt::Refusal(refusal)) => return Err(refusal),
-    };
-    Ok(match searched {
-        Searched::Holds { proof, stats } => ZoneCheckOutcome::Holds {
-            certificate: Box::new(proof.proving(request.obligation)),
-            stats,
-        },
-        Searched::Violated {
-            counterexample,
-            stats,
-        } => ZoneCheckOutcome::Violated {
-            counterexample,
-            stats,
-        },
-        Searched::Undecided { cause, stats } => ZoneCheckOutcome::Undecided { cause, stats },
-        Searched::Stopped { cause, stats } => ZoneCheckOutcome::Stopped { cause, stats },
-    })
+    Ok((judged, window, live))
+}
+
+/// QSpec FR-430: the canonical form of the symbolic state `(state, zone)`
+/// of `subject` under `group`, with the permutation that gives it: the
+/// model state by FR-152's permutation, ties between objects of equal
+/// state in key order, and the zone with each object's clocks moved to
+/// those of the object the permutation maps it to.
+///
+/// # Errors
+///
+/// [`ZoneCheckRefusal::Fault`] when the canonicaliser stops or a clock has
+/// no image.
+pub fn canonical_symbolic_state(
+    subject: &TimedSystem<'_, '_>,
+    group: &SymmetryGroup,
+    state: &ModelSimState,
+    zone: &Dbm,
+) -> Result<(ModelSimState, Dbm, Permutation), ZoneCheckRefusal> {
+    let (canonical, permutation) = subject
+        .system()
+        .canonicalise(state, group)
+        .map_err(|_| ZoneCheckRefusal::Fault("canonicalise"))?;
+    let zone = renamed_zone(subject, zone, &permutation)?;
+    Ok((canonical, zone, permutation))
+}
+
+/// `zone` with each of `subject`'s objects' clocks moved to those of the
+/// object `permutation` maps it to.
+fn renamed_zone(
+    subject: &TimedSystem<'_, '_>,
+    zone: &Dbm,
+    permutation: &Permutation,
+) -> Result<Dbm, ZoneCheckRefusal> {
+    let images = subject
+        .place_images(permutation)
+        .ok_or(ZoneCheckRefusal::Fault("clock-image"))?;
+    Ok(zone.renamed(&images)?)
 }
 
 /// A run's outcome before its certificate names the item's obligation.
 pub(super) enum Searched {
     Holds {
         proof: Box<Proof>,
+        stats: ZoneStats,
+    },
+    /// No admitted violation in a symmetry-reduced graph, which no
+    /// certificate covers.
+    HoldsReduced {
         stats: ZoneStats,
     },
     Violated {
@@ -568,6 +834,10 @@ pub(super) struct Run<'r, 's, 'a> {
     steps: BTreeMap<Vec<u8>, Vec<GuardedStep>>,
     /// The first instance an admitted behaviour read short of data for.
     insufficient: Option<ModelInstance>,
+    /// The group the run's states are canonicalised under (QSpec FR-430).
+    pub(super) group: SymmetryGroup,
+    /// Whether the request selected symmetry, so a proof is `Reduced`.
+    reduced: bool,
 }
 
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
@@ -621,6 +891,8 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             escape_edges: 0,
             steps: BTreeMap::new(),
             insufficient: None,
+            group: SymmetryGroup::default(),
+            reduced: false,
         }
     }
 
@@ -861,6 +1133,10 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                     instance.ok_or(ZoneCheckRefusal::Fault("insufficient-instance"))?,
                 )))
             }
+            // FR-160: a symmetry-reduced graph has no certificate.
+            Some(_) if self.reduced => Ok(Searched::HoldsReduced {
+                stats: self.stats(),
+            }),
             Some((root, witness)) => {
                 // FR-240: a claim decided on the liveness product, once
                 // the subject admits a behaviour; its proof is the
@@ -902,6 +1178,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         initial: Option<usize>,
         arrival: Option<Arrival>,
     ) -> Result<Option<usize>, Halt> {
+        let (state, zone, permutation) = self.canonical(state, zone)?;
         let (mut key, _) = self
             .timed
             .system()
@@ -932,6 +1209,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             initial,
             locked: false,
             q,
+            permutation,
         });
         self.keys.push(key.clone());
         self.expanded.push(false);
@@ -952,6 +1230,30 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         };
         self.parent.push(parent);
         Ok(Some(index))
+    }
+
+    /// `(state, zone)` canonicalised under the run's group, with the
+    /// permutation applied ([`canonical_symbolic_state`]).
+    fn canonical(
+        &self,
+        state: ModelSimState,
+        zone: Dbm,
+    ) -> Result<(ModelSimState, Dbm, Permutation), Halt> {
+        if self.group.is_trivial() {
+            return Ok((state, zone, Permutation::identity()));
+        }
+        Ok(canonical_symbolic_state(
+            self.timed,
+            &self.group,
+            &state,
+            &zone,
+        )?)
+    }
+
+    /// `zone` with each object's clocks moved to those of the object
+    /// `permutation` maps it to (QSpec FR-430).
+    pub(super) fn renamed(&self, zone: &Dbm, permutation: &Permutation) -> Result<Dbm, Halt> {
+        Ok(renamed_zone(self.timed, zone, permutation)?)
     }
 
     /// Charge one stored symbolic state with `zone` against
@@ -1564,38 +1866,66 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         &mut self,
         node: usize,
     ) -> Result<(usize, Vec<super::concretise::Stage>, usize), Halt> {
-        let mut path = Vec::new();
+        let lifted = self.lifted_to(node)?;
+        Ok((lifted.initial, lifted.stages, lifted.stutters))
+    }
+
+    /// The real edges to `node` from its initial node, lifted to concrete
+    /// states (QSpec FR-430, as FR-161 lifts EN-1's paths): `σ` starts as
+    /// the inverse of the permutation that canonicalised the initial state,
+    /// each canonical step `t` becomes the concrete step `σ(t)`, and `σ`
+    /// becomes `σ ∘ π⁻¹` for the permutation `π` that canonicalised the
+    /// step's target. Under the trivial group the path is already concrete.
+    pub(super) fn lifted_to(&mut self, node: usize) -> Result<LiftedPath, Halt> {
+        let mut chain = Vec::new();
         let mut at = node;
         while let Some(edge) = self.parent[at] {
             let edge = self.edges[edge].clone();
             if edge.covering {
                 return Err(ZoneCheckRefusal::Fault("covering-parent").into());
             }
-            let step = match edge.step {
-                Some((step, part)) => {
-                    let steps = self.steps_of(edge.from)?;
-                    let step = steps
-                        .get(step)
+            chain.push((edge.from, at, edge.step, edge.piece));
+            at = edge.from;
+        }
+        chain.reverse();
+        let initial = self.nodes[at]
+            .initial
+            .ok_or(ZoneCheckRefusal::Fault("path-root"))?;
+        let trivial = self.group.is_trivial();
+        let mut sigma = self.nodes[at].permutation.inverse();
+        let mut concrete = self.permuted(&self.nodes[at].state, &sigma)?;
+        let pieces = self.window.as_ref().map(|_| self.pieces.clone());
+        let mut stages = Vec::with_capacity(chain.len());
+        let mut stutters = 0_usize;
+        for (from, to, step, piece) in chain {
+            let step = match step {
+                Some((index, part)) => {
+                    let steps = self.steps_of(from)?;
+                    let canonical = steps
+                        .get(index)
                         .cloned()
                         .ok_or(ZoneCheckRefusal::Fault("edge-step"))?;
+                    let step = if trivial {
+                        canonical
+                    } else {
+                        let wanted = self
+                            .timed
+                            .system()
+                            .permute_transition(canonical.transition(), &sigma)
+                            .map_err(|_| ZoneCheckRefusal::Fault("lifted-transition"))?;
+                        self.steps_for(&concrete)?
+                            .into_iter()
+                            .find(|step| *step.transition() == wanted)
+                            .ok_or(ZoneCheckRefusal::Fault("lifted-step"))?
+                    };
                     Some((step, part))
                 }
                 None => None,
             };
-            path.push((edge.from, step, edge.piece));
-            at = edge.from;
-        }
-        path.reverse();
-        let initial = self.nodes[at]
-            .initial
-            .ok_or(ZoneCheckRefusal::Fault("path-root"))?;
-        let pieces = self.window.as_ref().map(|_| self.pieces.clone());
-        let mut stages = Vec::with_capacity(path.len());
-        let mut stutters = 0_usize;
-        for (from, step, piece) in path {
-            let state = self.nodes[from].state.clone();
-            let post = step.as_ref().map_or(&state, |(step, _)| step.post());
-            let target = self.timed(self.timed.invariants(post))?;
+            let post = step
+                .as_ref()
+                .map_or_else(|| concrete.clone(), |(step, _)| step.post().clone());
+            let target = self.timed(self.timed.invariants(&post))?;
             stutters += usize::from(step.is_none());
             let position = match (&pieces, piece) {
                 (Some(pieces), Some(piece)) => pieces
@@ -1605,8 +1935,8 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 _ => Vec::new(),
             };
             stages.push(super::concretise::Stage {
-                invariants: self.timed(self.timed.invariants(&state))?,
-                elapses: self.elapses(&state)?,
+                invariants: self.timed(self.timed.invariants(&concrete))?,
+                elapses: self.elapses(&concrete)?,
                 target,
                 step,
                 position,
@@ -1616,8 +1946,34 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 silent: false,
                 fixed: None,
             });
+            if !trivial {
+                sigma = sigma.compose(&self.nodes[to].permutation.inverse());
+            }
+            concrete = post;
         }
-        Ok((initial, stages, stutters))
+        Ok(LiftedPath {
+            initial,
+            stages,
+            stutters,
+            sigma,
+            state: concrete,
+        })
+    }
+
+    /// `state` under `permutation`; under the trivial group, unchanged.
+    fn permuted(
+        &self,
+        state: &ModelSimState,
+        permutation: &Permutation,
+    ) -> Result<ModelSimState, Halt> {
+        if self.group.is_trivial() {
+            return Ok(state.clone());
+        }
+        Ok(self
+            .timed
+            .system()
+            .permute(state, permutation)
+            .map_err(|_| ZoneCheckRefusal::Fault("permute"))?)
     }
 
     /// FR-241: the counterexample through the real edges to `node`.
@@ -1627,9 +1983,23 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         badness: Badness,
         escape: Escape,
     ) -> Result<TemporalCounterexample, Halt> {
-        let path = self.stages_to(node)?;
-        let state = self.nodes[node].state.clone();
-        self.finite_counterexample(path, state, badness, escape)
+        let LiftedPath {
+            initial,
+            stages,
+            stutters,
+            sigma,
+            state,
+        } = self.lifted_to(node)?;
+        // The violation and its divergent targets are read on the stored,
+        // canonical state; σ carries them to the concrete one.
+        let badness = match badness {
+            Badness::False(instance) => Badness::False(lift_instance(instance, &sigma)),
+            Badness::Undefined(instance, cause, locus) => {
+                Badness::Undefined(lift_instance(instance, &sigma), cause, locus)
+            }
+            Badness::Deadlock(zone) => Badness::Deadlock(self.renamed(&zone, &sigma)?),
+        };
+        self.finite_counterexample((initial, stages, stutters), state, badness, escape, &sigma)
     }
 
     /// FR-241: the counterexample along `path` (its initial state's index,
@@ -1642,6 +2012,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         state: ModelSimState,
         badness: Badness,
         escape: Escape,
+        sigma: &Permutation,
     ) -> Result<TemporalCounterexample, Halt> {
         // FR-241: the last valuation is one with a time-divergent
         // continuation, never a time-locked one. A deadlocked valuation of a
@@ -1656,7 +2027,9 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             Badness::False(_) | Badness::Undefined(..) => {
                 let mut targets = Vec::with_capacity(escape.to_quiescent.len());
                 for path in &escape.to_quiescent {
-                    targets.push(self.pre_path(path)?);
+                    // The escape ran from the canonical state.
+                    let region = self.pre_path(path)?;
+                    targets.push(self.renamed(&region, sigma)?);
                 }
                 targets
             }
@@ -1757,6 +2130,29 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             refinement: None,
             final_delay: None,
         })
+    }
+}
+
+/// A path to a node lifted to concrete states (QSpec FR-430).
+pub(super) struct LiftedPath {
+    /// The index of the initial state it starts from.
+    pub(super) initial: usize,
+    /// Its stages, over concrete states.
+    pub(super) stages: Vec<super::concretise::Stage>,
+    /// The idle-tail stutters among them.
+    pub(super) stutters: usize,
+    /// The permutation from the node's canonical state to the concrete one.
+    pub(super) sigma: Permutation,
+    /// The concrete state it ends at.
+    pub(super) state: ModelSimState,
+}
+
+/// `instance` with its key mapped by `sigma`.
+fn lift_instance(instance: ModelInstance, sigma: &Permutation) -> ModelInstance {
+    let key = sigma.image(&instance.population, &instance.key).to_owned();
+    ModelInstance {
+        population: instance.population,
+        key,
     }
 }
 

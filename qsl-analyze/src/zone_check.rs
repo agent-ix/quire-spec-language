@@ -26,7 +26,8 @@ pub use certificate::certificate_item;
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
 pub use search::{
-    check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome,
-    ZoneCheckRefusal, ZoneCheckRequest, ZoneStats, ZoneStop, ZoneUndecided,
+    canonical_symbolic_state, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
+    ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneReduction, ZoneStats, ZoneStop,
+    ZoneUndecided,
 };
 pub use settle::{settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED};

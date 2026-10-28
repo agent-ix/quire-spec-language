@@ -41,6 +41,7 @@ use qsl_eval::automaton::{Atom, AutomatonError, ClockedEdge, Letter, PositionAut
 use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Vertex};
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{GuardedStep, ModelSimState, PlaceConstraint};
+use qsl_eval::simulation::Permutation;
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_replay::{
     CounterexampleKind, FairnessMember, Lasso, TemporalCounterexample, UndefinedLocus,
@@ -1179,8 +1180,14 @@ impl Run<'_, '_, '_> {
             }
         };
         let badness = Badness::Undefined(live.instance.clone(), cause, locus);
-        self.finite_counterexample((initial, stages, 0), state.clone(), badness, escape)
-            .map(Some)
+        self.finite_counterexample(
+            (initial, stages, 0),
+            state.clone(),
+            badness,
+            escape,
+            &Permutation::identity(),
+        )
+        .map(Some)
     }
 
     /// The edges from an initial vertex to `vertex`, by index.
