@@ -11,6 +11,12 @@ use quire_contract_model::CheckedPackageEvidence;
 /// ConfigVersion with the clock `x: Clock` and the clock collection `s:
 /// Sequence<Clock>[0, 3]`.
 fn clocked_document() -> Vec<u8> {
+    clocked_document_with(true)
+}
+
+/// ConfigVersion with the clock `x: Clock`, and `s: Sequence<Clock>[0, 3]`
+/// when `collection` holds.
+fn clocked_document_with(collection: bool) -> Vec<u8> {
     let mut document: Value =
         serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
             .expect("the fixture is JSON");
@@ -30,7 +36,9 @@ fn clocked_document() -> Vec<u8> {
     };
     let fields = config["fields"].as_array_mut().expect("fields");
     fields.push(field("x", 1, 1, false, true));
-    fields.push(field("s", 0, 3, true, false));
+    if collection {
+        fields.push(field("s", 0, 3, true, false));
+    }
     serde_json::to_vec(&document).expect("the fixture stays JSON")
 }
 
@@ -249,14 +257,10 @@ fn a_clock_model_with_a_guard_is_not_emitted() {
     );
 }
 
-/// QSpec FR-322-AC-148..150 read-back of the template places: the I2 read
-/// admits the emitted package and reconstructs both places.
-#[trace("TC-685")]
-#[test]
-#[ignore = "IR does not yet admit symbolic slot selectors (STD-526 IR delta, luna)"]
-fn the_template_places_read_back() {
-    let document = clocked_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+/// The emitted package over `document` with no further unit text, read back
+/// through I2 into its typed timed models.
+fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
+    let packages = qsl_semantics::model::intake::package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
@@ -271,7 +275,7 @@ fn the_template_places_read_back() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.clone())
+        .insert_domain_package_document(qsl_semantics::model::key::hex(digest), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -280,9 +284,40 @@ fn the_template_places_read_back() {
         &evidence,
         &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
-    .unwrap_or_else(|failure| panic!("the I2 read admits the template places: {failure:?}"));
-    let typed = CheckedTimedModel::from_admitted(&read.into_value().admitted)
-        .expect("I2 reconstructs the typed timed model");
+    .map_err(|failure| format!("{failure:?}"))?;
+    CheckedTimedModel::from_admitted(&read.into_value().admitted).map_err(str::to_owned)
+}
+
+/// QSpec FR-322 "Timed-model nodes" read-back: the template place of `x:
+/// Clock`, with its `resolved_path` row and empty `guards`, is admitted by
+/// I2 and reconstructed.
+#[trace("TC-685")]
+#[test]
+fn a_clock_place_reads_back() {
+    let typed = read_back(&clocked_document_with(false))
+        .unwrap_or_else(|failure| panic!("the I2 read admits the place: {failure}"));
+    let [timed] = typed.as_slice() else {
+        panic!("one timed model reads back");
+    };
+    let [place] = timed.clock_places.as_slice() else {
+        panic!("one place reads back");
+    };
+    assert_eq!(
+        place.path,
+        [crate::checked_v2::ClockPathStep::Field("x".to_owned())]
+    );
+    assert!(place.guards.is_empty());
+}
+
+/// QSpec FR-322-AC-148 read-back of a template slot step: the place of `s:
+/// Sequence<Clock>[0, 3]`, whose first row's member type is the rendered
+/// collection `Sequence<ix://quire/native/Clock>`.
+#[trace("TC-685")]
+#[test]
+#[ignore = "IR renders a collection field row without its collection and refuses malformed-clock-place (STD-526 IR delta, luna)"]
+fn a_template_slot_place_reads_back() {
+    let typed = read_back(&clocked_document())
+        .unwrap_or_else(|failure| panic!("the I2 read admits the template places: {failure}"));
     let [timed] = typed.as_slice() else {
         panic!("one timed model reads back");
     };
