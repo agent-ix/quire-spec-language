@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_semantics::check::{ProbForm, ReachTarget};
-use quire_exact::{Integer, Rational};
+use quire_exact::{Identifier, Integer, Rational, Value};
 
 use super::finite::Extremum;
 use super::{ProbProduct, ProbStateId, ProductAction, ProductKind};
@@ -18,6 +18,35 @@ pub struct ReachabilitySolution {
     /// Index of the first product edge of the chosen action, or `None` for
     /// a DTMC state or a state with no enabled action.
     policy_edges: Vec<Option<usize>>,
+}
+
+/// An exact nonnegative expected value, including divergence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExtendedRational {
+    /// A finite exact value.
+    Finite(Rational),
+    /// The target is not reached almost surely for the selected scheduler.
+    PlusInfinity,
+}
+
+/// Exact expected accumulated reward and the selected action at each product
+/// state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpectedRewardSolution {
+    values: Vec<ExtendedRational>,
+    policy_edges: Vec<Option<usize>>,
+}
+
+impl ExpectedRewardSolution {
+    /// The expected reward at `state`.
+    pub fn value(&self, state: ProbStateId) -> Option<&ExtendedRational> {
+        self.values.get(state.index())
+    }
+
+    /// The selected action's first edge at `state`.
+    pub fn policy_edge(&self, state: ProbStateId) -> Option<usize> {
+        self.policy_edges.get(state.index()).copied().flatten()
+    }
 }
 
 impl ReachabilitySolution {
@@ -231,6 +260,252 @@ pub fn reach_form(
             }
             Ok(solution)
         }
+    }
+}
+
+/// Solve an unbounded expected-reward objective (FR-198) by exact policy
+/// iteration. States whose selected scheduler fails to reach the target with
+/// probability one have value `+∞`; the remaining policy equations are solved
+/// exactly.
+pub fn expected_reward(
+    product: &ProbProduct,
+    targets: &[bool],
+    reward: &Identifier,
+    extremum: Extremum,
+    max_policy_iterations: u64,
+) -> Result<ExpectedRewardSolution, ReachabilityFault> {
+    if targets.len() != product.states.len() {
+        return Err(ReachabilityFault::TargetLength {
+            expected: product.states.len(),
+            actual: targets.len(),
+        });
+    }
+    let reach_extremum = match extremum {
+        Extremum::Minimum => Extremum::Maximum,
+        Extremum::Maximum => Extremum::Minimum,
+    };
+    let reaching = reachability(product, targets, reach_extremum, max_policy_iterations)?;
+    let infinite = product
+        .ids()
+        .map(|state| {
+            !targets[state.index()]
+                && reaching
+                    .value(state)
+                    .is_some_and(|probability| *probability < one())
+        })
+        .collect::<Vec<_>>();
+    let mut policy_edges = product
+        .ids()
+        .map(|state| reaching.policy_edge(state))
+        .collect::<Vec<_>>();
+    if product.kind == ProductKind::Dtmc {
+        policy_edges.fill(None);
+        let finite = evaluate_reward_chain(product, &policy_edges, targets, &infinite, reward)?;
+        return Ok(ExpectedRewardSolution {
+            values: finite
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    if infinite[index] {
+                        ExtendedRational::PlusInfinity
+                    } else {
+                        ExtendedRational::Finite(value)
+                    }
+                })
+                .collect(),
+            policy_edges,
+        });
+    }
+
+    for iteration in 0..max_policy_iterations {
+        let values = evaluate_reward_chain(product, &policy_edges, targets, &infinite, reward)?;
+        let mut changed = false;
+        for state in product.ids() {
+            let index = state.index();
+            if targets[index] || infinite[index] {
+                continue;
+            }
+            let groups = action_groups(product, state);
+            if groups.is_empty() {
+                continue;
+            }
+            let mut best: Option<(usize, Option<Rational>)> = None;
+            for (start, end) in groups {
+                let candidate =
+                    reward_expectation(product, &values, &infinite, reward, start, end)?;
+                best = Some(match best {
+                    None => (start, candidate),
+                    Some((best_start, best_value)) => {
+                        if improves_extended(&candidate, &best_value, extremum) {
+                            (start, candidate)
+                        } else {
+                            (best_start, best_value)
+                        }
+                    }
+                });
+            }
+            let (best_start, best_value) = best.ok_or(ReachabilityFault::GraphShape)?;
+            let current_start = policy_edges[index].ok_or(ReachabilityFault::GraphShape)?;
+            let current_value = reward_expectation(
+                product,
+                &values,
+                &infinite,
+                reward,
+                current_start,
+                action_end(product, state, current_start)?,
+            )?;
+            if improves_extended(&best_value, &current_value, extremum) {
+                policy_edges[index] = Some(best_start);
+                changed = true;
+            }
+        }
+        if !changed {
+            return Ok(ExpectedRewardSolution {
+                values: values
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        if infinite[index] {
+                            ExtendedRational::PlusInfinity
+                        } else {
+                            ExtendedRational::Finite(value)
+                        }
+                    })
+                    .collect(),
+                policy_edges,
+            });
+        }
+        if iteration + 1 == max_policy_iterations {
+            return Err(ReachabilityFault::PolicyIterationLimit {
+                limit: max_policy_iterations,
+            });
+        }
+    }
+    Err(ReachabilityFault::PolicyIterationLimit {
+        limit: max_policy_iterations,
+    })
+}
+
+fn improves_extended(
+    candidate: &Option<Rational>,
+    current: &Option<Rational>,
+    extremum: Extremum,
+) -> bool {
+    match (candidate, current, extremum) {
+        (None, Some(_), Extremum::Maximum) => true,
+        (Some(_), None, Extremum::Minimum) => true,
+        (Some(candidate), Some(current), Extremum::Minimum) => candidate < current,
+        (Some(candidate), Some(current), Extremum::Maximum) => candidate > current,
+        (None, Some(_), Extremum::Minimum)
+        | (Some(_), None, Extremum::Maximum)
+        | (None, None, _) => false,
+    }
+}
+
+fn evaluate_reward_chain(
+    product: &ProbProduct,
+    policy_edges: &[Option<usize>],
+    targets: &[bool],
+    infinite: &[bool],
+    reward: &Identifier,
+) -> Result<Vec<Rational>, ReachabilityFault> {
+    let count = product.states.len();
+    if policy_edges.len() != count || targets.len() != count || infinite.len() != count {
+        return Err(ReachabilityFault::GraphShape);
+    }
+    let unknown = product
+        .ids()
+        .filter(|state| !targets[state.index()] && !infinite[state.index()])
+        .map(ProbStateId::index)
+        .collect::<Vec<_>>();
+    let mut positions = vec![None; count];
+    for (row, state) in unknown.iter().copied().enumerate() {
+        positions[state] = Some(row);
+    }
+    let size = unknown.len();
+    let mut matrix = vec![BTreeMap::new(); size];
+    for (row, state) in unknown.iter().copied().enumerate() {
+        let edges = selected_edges(product, policy_edges, ProbStateId(state))?;
+        let mass = edges.iter().try_fold(zero(), |sum, edge| {
+            checked_probability_sum(sum, &edge.probability)
+        })?;
+        if !edges.is_empty() && mass != one() {
+            return Err(ReachabilityFault::ProbabilityMass);
+        }
+        add_coefficient(&mut matrix[row], row, one());
+        let mut immediate = zero();
+        for edge in edges.iter().filter(|edge| !edge.probability.is_zero()) {
+            if infinite[edge.to.index()] {
+                return Err(ReachabilityFault::GraphShape);
+            }
+            let step = edge_reward(edge, reward)?;
+            immediate = immediate.add(&edge.probability.mul(&step));
+            if !targets[edge.to.index()] {
+                let column = positions[edge.to.index()].ok_or(ReachabilityFault::GraphShape)?;
+                add_coefficient(&mut matrix[row], column, zero().sub(&edge.probability));
+            }
+        }
+        matrix[row].insert(size, immediate);
+    }
+    gaussian_elimination(&mut matrix)?;
+    let mut values = vec![zero(); count];
+    for (row, state) in unknown.into_iter().enumerate() {
+        values[state] = matrix[row]
+            .get(&size)
+            .cloned()
+            .ok_or(ReachabilityFault::SingularSystem)?;
+    }
+    Ok(values)
+}
+
+fn reward_expectation(
+    product: &ProbProduct,
+    values: &[Rational],
+    infinite: &[bool],
+    reward: &Identifier,
+    start: usize,
+    end: usize,
+) -> Result<Option<Rational>, ReachabilityFault> {
+    let edges = product
+        .edges
+        .get(start..end)
+        .ok_or(ReachabilityFault::GraphShape)?;
+    let mut value = zero();
+    for edge in edges.iter().filter(|edge| !edge.probability.is_zero()) {
+        if infinite[edge.to.index()] {
+            return Ok(None);
+        }
+        value = value.add(
+            &edge
+                .probability
+                .mul(&edge_reward(edge, reward)?.add(&values[edge.to.index()])),
+        );
+    }
+    Ok(Some(value))
+}
+
+fn edge_reward(edge: &super::ProbEdge, reward: &Identifier) -> Result<Rational, ReachabilityFault> {
+    let (_, value) = edge
+        .rewards
+        .iter()
+        .find(|(name, _)| name == reward)
+        .ok_or(ReachabilityFault::MissingReward)?;
+    match value {
+        Value::Integer(integer) => Ok(Rational::from_integer(integer.clone())),
+        Value::Rational(value) => Ok(value.clone()),
+        Value::Quantity(quantity) => Ok(quantity.magnitude().clone()),
+        _ => Err(ReachabilityFault::InvalidReward),
+    }
+}
+
+fn checked_probability_sum(
+    sum: Rational,
+    probability: &Rational,
+) -> Result<Rational, ReachabilityFault> {
+    if probability < &zero() {
+        Err(ReachabilityFault::NegativeProbability)
+    } else {
+        Ok(sum.add(probability))
     }
 }
 
@@ -507,6 +782,12 @@ pub enum ReachabilityFault {
     /// Exact linear equations have no unique transient solution.
     #[error("reachability linear system is singular")]
     SingularSystem,
+    /// A product edge lacks the requested reward.
+    #[error("a probability product edge lacks the requested reward")]
+    MissingReward,
+    /// A product reward is not an exact numeric value.
+    #[error("a probability product reward is not an exact numeric value")]
+    InvalidReward,
     /// Policy improvement exceeded its request limit.
     #[error("policy iteration reached its limit of {limit}")]
     PolicyIterationLimit {
@@ -548,6 +829,26 @@ mod tests {
             to: ProbStateId(to),
             probability,
             rewards: Vec::new(),
+        }
+    }
+
+    fn reward_edge(
+        from: usize,
+        to: usize,
+        probability: Rational,
+        reward: i64,
+    ) -> super::super::ProbEdge {
+        super::super::ProbEdge {
+            from: ProbStateId(from),
+            choice: ProductAction::PostState(Box::new(key(to))),
+            action: None,
+            draw: None,
+            to: ProbStateId(to),
+            probability,
+            rewards: vec![(
+                Identifier::new("cost").expect("an identifier"),
+                Value::Integer(Integer::from(reward)),
+            )],
         }
     }
 
@@ -605,6 +906,58 @@ mod tests {
             .expect("the sparse transient system is solved exactly");
         assert_eq!(result.value(ProbStateId(0)), Some(&one()));
         assert_eq!(result.value(ProbStateId(1)), Some(&one()));
+    }
+
+    /// FR-198-AC-2 (TC-633): the exact reward equations include each edge's
+    /// reward once, and a positive probability of missing the target is +∞.
+    #[ix_trace_rs::trace("TC-633", "FR-198-AC-2")]
+    #[test]
+    fn expected_reward_solves_transient_cost_and_nontermination() {
+        let reward = Identifier::new("cost").expect("an identifier");
+        let finite = product(
+            ProductKind::Dtmc,
+            vec![
+                reward_edge(0, 1, one(), 1),
+                reward_edge(1, 1, ratio(1, 2), 1),
+                reward_edge(1, 2, ratio(1, 2), 1),
+            ],
+        );
+        let result = expected_reward(
+            &finite,
+            &[false, false, true],
+            &reward,
+            Extremum::Minimum,
+            10,
+        )
+        .expect("the transient expected-reward equations have a unique solution");
+        assert_eq!(
+            result.value(ProbStateId(0)),
+            Some(&ExtendedRational::Finite(ratio(3, 1)))
+        );
+        assert_eq!(
+            result.value(ProbStateId(1)),
+            Some(&ExtendedRational::Finite(ratio(2, 1)))
+        );
+
+        let divergent = product(
+            ProductKind::Dtmc,
+            vec![
+                reward_edge(0, 1, ratio(1, 2), 1),
+                reward_edge(0, 2, ratio(1, 2), 1),
+            ],
+        );
+        let result = expected_reward(
+            &divergent,
+            &[false, true, false],
+            &reward,
+            Extremum::Minimum,
+            10,
+        )
+        .expect("the target is not reached almost surely");
+        assert_eq!(
+            result.value(ProbStateId(0)),
+            Some(&ExtendedRational::PlusInfinity)
+        );
     }
 
     #[test]

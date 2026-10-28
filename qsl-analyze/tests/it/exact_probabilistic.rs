@@ -7,14 +7,15 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    backward_induction, build_product, reach_form, terminal_values, Accumulator, Amount, Extremum,
-    FinitePayoff, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
-    ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind,
-    ProductRefusal, ProductStop, UndefinedRead,
+    backward_induction, build_product, expected_reward, finite_solution, reach_form,
+    terminal_values, Accumulator, Amount, ExtendedRational, Extremum, FinitePayoff, FiniteSolution,
+    FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole, ProbBuild, ProbEdge,
+    ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductStop,
+    UndefinedRead,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_replay::{ModelCheckLimit, ModelCheckLimits};
+use qsl_replay::{ExactProbLimits, ModelCheckLimit, ModelCheckLimits};
 use quire_exact::{Cancel, CancelCause, Integer, Rational, Value};
 use quire_semantic_value::catalog::UndefinedReason;
 
@@ -450,6 +451,51 @@ fn deliver_is_an_mdp_over_every_scheduler_and_a_dtmc_under_a_workload() {
         sends(edges, "send_b"),
         BTreeMap::from([(false, ratio(2, 5)), (true, ratio(1, 10))])
     );
+}
+
+/// FR-197-AC-1 (TC-632): backward induction computes the minimum and maximum
+/// delivery probabilities and retains the maximizing/minimizing actions.
+#[trace("TC-632", "FR-197-AC-1")]
+#[test]
+fn finite_backward_induction_decides_deliver_exactly_under_each_scheduler() {
+    let world = World::new(&prob_world::link(DELIVER));
+    let product = built(&world, "Deliver");
+    let terminal = terminal_values(&product, &FinitePayoff::Formula)
+        .expect("the bounded delivery monitor supplies Boolean payoffs");
+
+    let FiniteSolution::Exact(minimum) = finite_solution(
+        &product,
+        &terminal,
+        Extremum::Minimum,
+        ExactProbLimits::default(),
+    )
+    .expect("the finite product has an exact value within the default budget") else {
+        panic!("the delivery values fit the rational budget");
+    };
+    let FiniteSolution::Exact(maximum) = finite_solution(
+        &product,
+        &terminal,
+        Extremum::Maximum,
+        ExactProbLimits::default(),
+    )
+    .expect("the finite product has an exact value within the default budget") else {
+        panic!("the delivery values fit the rational budget");
+    };
+
+    let initial = start(&product);
+    assert_eq!(minimum.get(initial), Some(&ratio(24, 25)));
+    assert_eq!(maximum.get(initial), Some(&ratio(99, 100)));
+    assert_eq!(minimum.policy_edge(initial), Some(2));
+    assert_eq!(maximum.policy_edge(initial), Some(0));
+
+    let after_one_loss = product
+        .outgoing(initial)
+        .iter()
+        .find(|edge| edge.draw.as_ref().is_some_and(|draw| boolean_of(&draw[0])))
+        .expect("the first delivery attempt has a losing draw")
+        .to;
+    assert_eq!(minimum.get(after_one_loss), Some(&ratio(4, 5)));
+    assert_eq!(maximum.get(after_one_loss), Some(&ratio(9, 10)));
 }
 
 const CLOSING: &str = "probabilistic Late using ev on M over (m: M::Msg) under every scheduler \
@@ -1028,6 +1074,9 @@ fn an_unbounded_form_labels_the_model_states() {
 const COST: &str = "probabilistic Cost using ev on M over (m: M::Msg) under Even on origin \
      { expected accumulate cost until holds(m.delivered or m.attempts = 2) <= rational(6, 5) }";
 
+const COST_EVERY: &str = "probabilistic Cost using ev on M over (m: M::Msg) under every scheduler \
+     on origin { expected accumulate cost until holds(m.delivered or m.attempts = 2) <= rational(6, 5) }";
+
 /// Checks FR-196 "Behavior", expected reward: the DTMC itself is the product, the
 /// target is the one state label and each send carries its `cost` on its
 /// edge; the stutter step of a terminal state carries cost 0.
@@ -1064,6 +1113,48 @@ fn an_expected_reward_product_keeps_rewards_on_edges() {
         );
         assert_eq!(edge.to, edge.from);
     }
+}
+
+/// FR-198-AC-2 (TC-633): exact expected reward policy iteration gives the
+/// minimum and maximum for the Link model, with the policy retained.
+#[trace("TC-633", "FR-198-AC-2")]
+#[test]
+fn link_expected_reward_computes_exact_scheduler_extrema() {
+    let world = World::new(&prob_world::link(COST_EVERY));
+    let product = built(&world, "Cost");
+    let targets = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let reward = quire_exact::Identifier::new("cost").expect("an identifier");
+    let minimum = expected_reward(&product, &targets, &reward, Extremum::Minimum, 100)
+        .expect("the minimum expected reward policy settles");
+    let maximum = expected_reward(&product, &targets, &reward, Extremum::Maximum, 100)
+        .expect("the maximum expected reward policy settles");
+    let initial = start(&product);
+    assert_eq!(
+        minimum.value(initial),
+        Some(&ExtendedRational::Finite(ratio(11, 10)))
+    );
+    assert_eq!(
+        maximum.value(initial),
+        Some(&ExtendedRational::Finite(ratio(6, 5)))
+    );
+    let min_edge = minimum
+        .policy_edge(initial)
+        .expect("the MDP policy selects an action");
+    let max_edge = maximum
+        .policy_edge(initial)
+        .expect("the MDP policy selects an action");
+    assert!(product.edges[min_edge]
+        .action
+        .as_ref()
+        .is_some_and(|action| action.operation.contains("send_a")));
+    assert!(product.edges[max_edge]
+        .action
+        .as_ref()
+        .is_some_and(|action| action.operation.contains("send_b")));
 }
 
 const LONG_RUN: &str =

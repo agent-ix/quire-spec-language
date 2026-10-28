@@ -28,6 +28,7 @@
 mod build;
 mod finite;
 pub mod graph;
+mod long_run;
 pub mod manifest;
 pub(crate) mod plan;
 pub mod unbounded;
@@ -37,8 +38,10 @@ pub use finite::{
     backward_induction, backward_induction_bounds, finite_solution, terminal_values,
     DyadicInterval, Extremum, FiniteBounds, FinitePayoff, FiniteSolution, FiniteValues,
 };
+pub use long_run::{long_run_fraction, LongRunComponent, LongRunFault, LongRunSolution};
 pub use unbounded::{
-    reach_form, reachability, reachability_with_zeroes, ReachabilityFault, ReachabilitySolution,
+    expected_reward, reach_form, reachability, reachability_with_zeroes, ExpectedRewardSolution,
+    ExtendedRational, ReachabilityFault, ReachabilitySolution,
 };
 
 use qsl_eval::automaton::{AutomatonError, StateId};
