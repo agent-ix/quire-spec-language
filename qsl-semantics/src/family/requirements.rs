@@ -162,6 +162,7 @@ pub struct Requirements {
     hybrid_dynamics: bool,
     evidence: Option<ClaimEvidence>,
     property_form: Option<PropertyForm>,
+    dense_time: bool,
 }
 
 impl Requirements {
@@ -176,7 +177,22 @@ impl Requirements {
             hybrid_dynamics: false,
             evidence: None,
             property_form: None,
+            dense_time: false,
         }
+    }
+
+    /// The requirements of an item over a `time dense` subject (QSL FR-243,
+    /// FR-430): negotiation routes it to the engines that decide one (EN-6).
+    /// The mark is QSL's own; the item's wire `requirements` do not carry it.
+    #[must_use]
+    pub fn over_dense_time(mut self) -> Self {
+        self.dense_time = true;
+        self
+    }
+
+    /// Whether the item is over a `time dense` subject.
+    pub fn dense_time(&self) -> bool {
+        self.dense_time
     }
 
     /// The requirements with the property form the record is routed and

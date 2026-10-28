@@ -774,8 +774,9 @@ fn reduced_candidates(
 }
 
 /// The candidate outcome of one item's `requirements`: backends of its
-/// capability kind that advertise every fairness kind it uses (FR-134). An
-/// item the writer disposes `Unsupported` has no candidate (FR-234).
+/// capability kind that advertise every fairness kind it uses (FR-134) and,
+/// for an item over a `time dense` subject, decide one (FR-243). An item
+/// the writer disposes `Unsupported` has no candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
     evidence: Option<EvidenceKind>,
@@ -794,6 +795,7 @@ fn candidates_of(
             requirements.hybrid_dynamics(),
         ),
     };
+    let outcome = registry.restrict_to_dense_time(outcome, requirements.dense_time());
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
         CandidateOutcome::Candidates(_) if requirements.unsupported().is_some() => {

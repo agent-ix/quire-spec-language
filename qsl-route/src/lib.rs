@@ -287,6 +287,7 @@ pub struct BackendDescriptor {
     evidence_kinds: BTreeSet<EvidenceKind>,
     dynamics: Option<BTreeSet<DynamicsKind>>,
     solver_bounds: Option<SolverBounds>,
+    dense_time: bool,
 }
 
 /// The optional FR-331 manifest members [`descriptor_from_manifest`] reads
@@ -413,6 +414,7 @@ pub fn descriptor_from_manifest<'a>(
         solver_bounds: None,
         memory_models,
         reductions,
+        dense_time: false,
     })
 }
 
@@ -640,7 +642,23 @@ impl BackendDescriptor {
             evidence_kinds,
             dynamics: None,
             solver_bounds: None,
+            dense_time: false,
         })
+    }
+
+    /// The descriptor of an engine that decides items over a `time dense`
+    /// subject (QSL FR-243, FR-430): EN-6. The attribute is QSL's own, read
+    /// by [`Registry::restrict_to_dense_time`]; FR-331's manifest has no
+    /// member for it, so it is never read from or written to a manifest.
+    #[must_use]
+    pub fn with_dense_time(mut self) -> Self {
+        self.dense_time = true;
+        self
+    }
+
+    /// Whether the engine decides items over a `time dense` subject.
+    pub fn decides_dense_time(&self) -> bool {
+        self.dense_time
     }
 
     /// Admit typed temporal dynamics and their published solver bounds.
@@ -1538,6 +1556,32 @@ impl Registry {
         }
         set.fairness.retain(|candidate, _| kept.contains(candidate));
         set.candidates = kept;
+        CandidateOutcome::Candidates(set)
+    }
+
+    /// QSL FR-243 and FR-430: `outcome`, a candidate set computed for an
+    /// item, restricted to the engines that decide a `time dense` subject
+    /// when the item is over one (`dense`), so such an item routes to EN-6
+    /// alone. An item over no dense subject keeps its candidates. An unknown
+    /// named backend is returned unchanged.
+    pub fn restrict_to_dense_time(
+        &self,
+        outcome: CandidateOutcome,
+        dense: bool,
+    ) -> CandidateOutcome {
+        let CandidateOutcome::Candidates(mut set) = outcome else {
+            return outcome;
+        };
+        if !dense {
+            return CandidateOutcome::Candidates(set);
+        }
+        set.candidates.retain(|candidate| {
+            self.held
+                .get(&candidate.id)
+                .is_some_and(BackendDescriptor::decides_dense_time)
+        });
+        let kept = set.candidates.clone();
+        set.fairness.retain(|candidate, _| kept.contains(candidate));
         CandidateOutcome::Candidates(set)
     }
 

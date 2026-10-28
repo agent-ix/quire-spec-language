@@ -34,7 +34,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     Capability, CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember,
-    TerminalDeclaration, TerminalMode,
+    TerminalDeclaration, TerminalMode, TimeSourceKind,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_semantic_value::fairness::PropertyForm;
@@ -177,12 +177,20 @@ impl<S> ItemObligation<S> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeadlockFreedomItem<S> {
     subject: S,
+    dense_time: bool,
 }
 
 impl<S: Clone> DeadlockFreedomItem<S> {
     /// The subject the item is over.
     pub fn subject(&self) -> &S {
         &self.subject
+    }
+
+    /// Whether the subject is `time dense` (FR-243): an item it was derived
+    /// from is over a dense subject, so the item routes to EN-6
+    /// ([`crate::Registry::restrict_to_dense_time`]).
+    pub fn dense_time(&self) -> bool {
+        self.dense_time
     }
 
     /// The item's obligation identity: the subject and `deadlock-freedom`.
@@ -243,28 +251,45 @@ pub fn deadlock_freedom_items<S: Clone + Eq>(
     refinements: &[ModelRefinementItem<'_, S>],
     state_graph: &[ModelStateGraphItem<'_, S>],
 ) -> Vec<DeadlockFreedomItem<S>> {
-    let temporal = temporal
-        .iter()
-        .map(|item| (item.subject, opts_out(item.package)));
+    let temporal = temporal.iter().map(|item| {
+        (
+            item.subject,
+            opts_out(item.package),
+            record_is_dense(item.package, Some(item.occurrence)),
+        )
+    });
     let refinements = refinements.iter().map(|item| {
         (
             item.subject,
             concrete_opts_out(item.package, item.refinement),
+            record_is_dense(item.package, item.occurrence()),
         )
     });
     let state_graph = state_graph
         .iter()
-        .map(|item| (item.subject, opts_out(item.package)));
+        .map(|item| (item.subject, opts_out(item.package), false));
     let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
-    for (subject, opted_out) in temporal.chain(refinements).chain(state_graph) {
-        if opted_out || derived.iter().any(|seen| seen.subject == *subject) {
+    for (subject, opted_out, dense) in temporal.chain(refinements).chain(state_graph) {
+        if opted_out {
             continue;
         }
-        derived.push(DeadlockFreedomItem {
-            subject: subject.clone(),
-        });
+        match derived.iter_mut().find(|seen| seen.subject == *subject) {
+            Some(seen) => seen.dense_time |= dense,
+            None => derived.push(DeadlockFreedomItem {
+                subject: subject.clone(),
+                dense_time: dense,
+            }),
+        }
     }
     derived
+}
+
+/// Whether `package`'s requirement record at `occurrence` is over a `time
+/// dense` subject (FR-243).
+fn record_is_dense(package: &CheckedGraph, occurrence: Option<&OccurrenceKey>) -> bool {
+    occurrence
+        .and_then(|occurrence| package.requirements().get(occurrence))
+        .is_some_and(|record| record.requirements().dense_time())
 }
 
 /// One temporal item over a protocol subject, as the writer reads it: the
@@ -295,6 +320,7 @@ pub fn protocol_deadlock_freedom_items<S: Clone + Eq>(
         }
         derived.push(DeadlockFreedomItem {
             subject: item.subject.clone(),
+            dense_time: false,
         });
     }
     derived
@@ -395,12 +421,20 @@ pub fn race_freedom_items<S: Clone + Eq>(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeLockFreedomItem<S> {
     subject: S,
+    dense_time: bool,
 }
 
 impl<S: Clone> TimeLockFreedomItem<S> {
     /// The subject the item is over.
     pub fn subject(&self) -> &S {
         &self.subject
+    }
+
+    /// Whether the subject is `time dense` (FR-243): one of its models
+    /// declares `time dense`, so the item routes to EN-6
+    /// ([`crate::Registry::restrict_to_dense_time`]).
+    pub fn dense_time(&self) -> bool {
+        self.dense_time
     }
 
     /// The item's obligation identity: the subject and `time-lock-freedom`.
@@ -435,6 +469,15 @@ fn is_timed(package: &CheckedGraph, models: &[String]) -> bool {
         .any(|source| models.contains(&source.model))
 }
 
+/// Whether one of the models `models` of `package` declares `time dense`
+/// (FR-243).
+fn is_dense(package: &CheckedGraph, models: &[String]) -> bool {
+    package
+        .time_sources()
+        .iter()
+        .any(|source| models.contains(&source.model) && source.source == TimeSourceKind::Dense)
+}
+
 /// FR-232: the time-lock-freedom items of a request's temporal and
 /// state-graph items over model subjects: one per distinct timed subject,
 /// in temporal-item then state-graph-item order. `models_of` gives the
@@ -451,11 +494,11 @@ pub fn time_lock_freedom_items<S: Clone + Eq>(
         .chain(state_graph.iter().map(|item| (item.subject, item.package)));
     let mut derived: Vec<TimeLockFreedomItem<S>> = Vec::new();
     for (subject, package) in subjects {
-        if is_timed(package, &models_of(subject))
-            && derived.iter().all(|seen| seen.subject != *subject)
-        {
+        let models = models_of(subject);
+        if is_timed(package, &models) && derived.iter().all(|seen| seen.subject != *subject) {
             derived.push(TimeLockFreedomItem {
                 subject: subject.clone(),
+                dense_time: is_dense(package, &models),
             });
         }
     }
