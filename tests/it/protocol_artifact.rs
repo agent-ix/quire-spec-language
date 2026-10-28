@@ -1142,6 +1142,26 @@ fn real_model_values_and_all_declaration_families_preserve_exact_references() {
     }
 }
 
+/// Admission checks each temporal node's handles and acyclicity but not that the
+/// root reaches every node, so an unreferenced node is admitted. FR-045's
+/// operator detection therefore walks from the root rather than trusting the
+/// arena to hold nothing else (see `composed_temporal_mapping`).
+#[test]
+#[trace("TC-121", "FR-042-AC-4")]
+fn unreachable_temporal_nodes_are_admitted() {
+    let fixture = Fixture::families();
+    let mut offered = fixture.package.clone();
+    let mut stray = offered.declarations[3].temporal[1].clone();
+    stray.original_node = 2;
+    stray.operation = w::TemporalOperation::Constant { value: true };
+    offered.declarations[3].temporal.push(stray);
+    let report = fixture.offered(&offered);
+    let admitted = report
+        .result()
+        .unwrap_or_else(|error| panic!("an unreferenced node is admitted: {error:?}"));
+    assert_eq!(admitted.package().declarations[3].temporal.len(), 3);
+}
+
 /// Tracing: TC-131.
 #[trace("TC-131", "FR-047-AC-8")]
 #[test]

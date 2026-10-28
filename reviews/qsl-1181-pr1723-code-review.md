@@ -44,3 +44,42 @@ Gates at 0c943010a (locked-build, jobs 4, `--all-features`, debug info off, QSPE
 ## Verdict
 
 Clean.
+
+## Delta review, round 2 (IR main repin)
+
+
+Delta review, round 2, of the QSL-1181 stack after the IR main repin. Correctness only. **All three are mergeable.** No new findings.
+
+| PR | Head | Verdict | What I checked |
+| --- | --- | --- | --- |
+| #1711 | 3cf9ba503 | mergeable | Pin, `ExecutionPointName`, hybrid reader and `ExecutionPoint`. Details below. |
+| #1716 | 094574159 | mergeable | `run_nodes` keying of written controls. Details below. |
+| #1723 | 5c2af3dd7 | mergeable | The `abstract_protocol` loop now sits after main's attempt-protocol keying (`protocol_nodes_with_attempts`) and the concrete-protocol loop, and before `class_catalog_keys`, so an attempt-bearing abstract clause gets its key. |
+
+**#1711:**
+- **Pin.** All five manifests are `branch = "main"`. Cargo.lock locks 976e25eb, which is IR #627's merge commit (MERGED). No branch pin is left.
+- **`ExecutionPointName`.** It derives `Eq` over `Box<str>`, so `AcceptedPoint`'s `Hash` over `as_str()` agrees with `Eq`.
+- **Hybrid reader.** IR's `Serialize` writes the operation's `record`, with the execution point merged in when present. Reading `laws`/`member` from `serde_json::to_value` therefore sees the same members the old `get` did. That is acceptable as a stopgap; it costs one clone per hybrid node read. A public `record()` accessor in IR would remove it (IR keeps `record()` and `get()` `pub(super)`). That is a follow-up to ask IR for, not a blocker.
+- **`ExecutionPoint`.** The `CheckedExecutionPoint` to `ExecutionPoint` change in emit.rs is a straight rename.
+- **Pre-existing failure.** `composed_domain_models::domain_operation_parameters_and_result_bind_and_type_check` fails ("FillReady: two invocation parameters"). It fails identically on main 2d901bee4, this branch's base, and passes on current main 937c0ca91, so it is not caused here.
+
+**#1716:**
+- **Keying.** `run_nodes` returns every written control's key by `ProtocolNodeId`, and the clause inserts `finish` beside them.
+- **Probe.** I gave `catalog_refinement` an `event Seen by w` control. The class `Local::Seen` maps to the `control` node declared `[Local, run, Main, Seen]`, and `Local::Done` maps to the finish obligation.
+- **No double-keying.** All 23 wire node ids are unique, and `finish` is a different `ProtocolNodeId` from every run control.
+- **Read-back.** The ignored IR-874 read-back still fails at IR main, so the ignore stands.
+
+Gates (locked-build, jobs 4, `--all-features`, debug info off):
+- **#1711:**
+  - fmt: exit 0.
+  - qsl-package `hybrid`/`timed_source`/`receiver_frames`/`execution_point`: 28/28.
+  - qsl-semantics `execution_point`/`state_clause`/`node_key`: 38/38.
+  - root `native_checking`/`package_construction`/`composed`/`domain_protocol`/`mapped`: 298 pass, plus the 1 pre-existing failure.
+  - workspace clippy `-D warnings`: exit 0.
+- **#1716:**
+  - qsl-package `refinement`/`catalog`/`protocol`: 60 pass, 1 ignored.
+  - qsl-semantics: lib 177, it 98, all passing.
+- **#1723:**
+  - qsl-package `refinement`/`catalog`/`protocol`/`internal_list`: 63 pass, 2 ignored.
+  - qsl-semantics: lib 178, it 98, all passing.
+  - clippy `-p qsl-semantics -p qsl-package`: exit 0.

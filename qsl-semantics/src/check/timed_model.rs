@@ -82,9 +82,19 @@ pub struct ClockField {
     /// The clock aliases the clock is typed by, each alias of an alias on
     /// the chain.
     aliases: Vec<DeclarationKey>,
+    /// Whether the place is an `Option<Clock>`, whose presence is a bit of
+    /// the state (FR-230 "Presence bit").
+    bit: bool,
 }
 
 impl ClockField {
+    /// Whether the place is an `Option<Clock>` field: its presence is a bit
+    /// of each object's state, which `present(self.f)` reads, a write of a
+    /// constant sets and `absent` clears (FR-230 "Presence bit").
+    pub fn presence_bit(&self) -> bool {
+        self.bit
+    }
+
     /// The object type that declares the place's field.
     pub fn owner(&self) -> EffectiveId {
         self.owner
@@ -343,6 +353,7 @@ impl ElementBinding {
 #[derive(Debug)]
 pub struct ConvexPart {
     data: Option<CheckedTimedPredicate>,
+    presences: Vec<(ClockId, bool)>,
     elements: Vec<ElementBinding>,
     clocks: Vec<ClockConstraint>,
     families: Vec<QuantifiedFamily>,
@@ -384,6 +395,13 @@ impl ConvexPart {
     /// The part's data predicate; `None` when the part reads no data.
     pub fn data(&self) -> Option<&CheckedTimedPredicate> {
         self.data.as_ref()
+    }
+
+    /// Each `Option<Clock>` place of the receiver whose presence the part
+    /// requires, and whether present (FR-230 "Presence bit"): a data
+    /// predicate over the bit, read at the state.
+    pub fn presences(&self) -> &[(ClockId, bool)] {
+        &self.presences
     }
 
     /// The collection elements the data predicate reads, each a parameter
@@ -546,6 +564,7 @@ pub struct ClockResets {
     operation: ClauseOperation,
     resets: Vec<ClockReset>,
     writes: Vec<CollectionWrite>,
+    drops: Vec<ClockId>,
 }
 
 impl ClockResets {
@@ -569,6 +588,13 @@ impl ClockResets {
     pub fn writes(&self) -> &[CollectionWrite] {
         &self.writes
     }
+
+    /// The `Option<Clock>` places of the receiver the postcondition drops,
+    /// `self.v = absent` (FR-230 "Presence bit"): each becomes absent, its
+    /// clock unconstrained, and no clock is reset.
+    pub fn drops(&self) -> &[ClockId] {
+        &self.drops
+    }
 }
 
 /// `time invariant N when { P } { x <= c and ... }`: at a state where `P`
@@ -578,8 +604,31 @@ impl ClockResets {
 pub struct TimeInvariant {
     name: String,
     context: EffectiveId,
-    predicate: CheckedTimedPredicate,
+    alternatives: Vec<StateAlternative>,
     bounds: Vec<ClockConstraint>,
+}
+
+/// One disjunct of a state predicate that reads the presence of
+/// `Option<Clock>` places (FR-230 "Presence bit"): the presences it
+/// requires of `self`'s places and its data predicate. The predicate holds
+/// of an object when one of its alternatives does.
+#[derive(Debug)]
+pub struct StateAlternative {
+    presences: Vec<(ClockId, bool)>,
+    predicate: CheckedTimedPredicate,
+}
+
+impl StateAlternative {
+    /// Each `Option<Clock>` place of `self` whose presence the alternative
+    /// requires, and whether present.
+    pub fn presences(&self) -> &[(ClockId, bool)] {
+        &self.presences
+    }
+
+    /// The alternative's data predicate.
+    pub fn predicate(&self) -> &CheckedTimedPredicate {
+        &self.predicate
+    }
 }
 
 impl TimeInvariant {
@@ -593,9 +642,11 @@ impl TimeInvariant {
         self.context
     }
 
-    /// The `when` predicate.
-    pub fn predicate(&self) -> &CheckedTimedPredicate {
-        &self.predicate
+    /// The `when` predicate's alternatives: one with no presences for a
+    /// predicate that reads no `Option<Clock>` presence, else its
+    /// disjunctive form over those presences (FR-230 "Presence bit").
+    pub fn alternatives(&self) -> &[StateAlternative] {
+        &self.alternatives
     }
 
     /// The upper bounds, each `<` or `<=`, in declared order.
@@ -614,8 +665,8 @@ pub enum Urgency {
         name: String,
         /// The object type `self` ranges over.
         context: EffectiveId,
-        /// The predicate.
-        predicate: CheckedTimedPredicate,
+        /// The predicate's alternatives ([`TimeInvariant::alternatives`]).
+        alternatives: Vec<StateAlternative>,
     },
     /// `urgent N O`: urgent while operation `O` is enabled.
     Operation {
@@ -723,6 +774,9 @@ impl TimedModel {
 /// One guard part before its data predicate is typed.
 struct PartDraft {
     data: Option<ExpressionForm>,
+    /// Each `Option<Clock>` place's presence the part requires, and whether
+    /// present.
+    presences: Vec<(ClockId, bool)>,
     /// Each element the data predicate reads, with its quantifier's span.
     elements: Vec<(ElementBinding, Span)>,
     clocks: Vec<ClockConstraint>,
@@ -751,7 +805,7 @@ struct PredicateDraft {
 enum UrgencyDraft {
     When {
         name: String,
-        predicate: PredicateDraft,
+        alternatives: Vec<AlternativeDraft>,
     },
     Operation {
         name: String,
@@ -761,8 +815,14 @@ enum UrgencyDraft {
 
 struct InvariantDraft {
     name: String,
-    predicate: PredicateDraft,
+    alternatives: Vec<AlternativeDraft>,
     bounds: Vec<ClockConstraint>,
+}
+
+/// A [`StateAlternative`] before its data predicate is typed.
+struct AlternativeDraft {
+    presences: Vec<(ClockId, bool)>,
+    predicate: PredicateDraft,
 }
 
 struct ModelDraft {
@@ -824,6 +884,7 @@ struct ResetsDraft {
     context: EffectiveId,
     resets: Vec<ResetDraft>,
     writes: Vec<CollectionWrite>,
+    drops: Vec<ClockId>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -878,10 +939,30 @@ impl Clocks<'_> {
     /// The clock place the path `self.f.g…` reads at `id` of `form`, for a
     /// clause about `context`.
     fn read(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
+        // `value(self.v)` reads an `Option<Clock>`'s clock; `self.v` alone
+        // is its option, no clock.
+        let (path, bit) = match form.expression.get(id)?.node() {
+            ExprNode::Value(operand) => (self_path(form, *operand)?, true),
+            _ => (self_path(form, id)?, false),
+        };
+        self.fields
+            .iter()
+            .position(|clock| {
+                clock.path == path && clock.bit == bit && self.model.conforms(context, clock.owner)
+            })
+            .map(ClockId)
+    }
+
+    /// The `Option<Clock>` place the path `self.v` names at `id` of `form`,
+    /// for a clause about `context`: the option, read by `present`, written
+    /// by a reset or `absent` (FR-230 "Presence bit").
+    fn option(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
         let path = self_path(form, id)?;
         self.fields
             .iter()
-            .position(|clock| clock.path == path && self.model.conforms(context, clock.owner))
+            .position(|clock| {
+                clock.bit && clock.path == path && self.model.conforms(context, clock.owner)
+            })
             .map(ClockId)
     }
 
@@ -1039,6 +1120,7 @@ fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
             name: place.name(),
             path: place.path.clone(),
             aliases: place.aliases.clone(),
+            bit: place.bit,
         })
         .collect()
 }
@@ -1184,12 +1266,21 @@ struct Located<'f> {
     spans: Vec<Span>,
     /// The clock a node reads directly, `self.x`.
     clock: Vec<Option<ClockId>>,
+    /// The `Option<Clock>` place a node `self.v` names (FR-230 "Presence
+    /// bit").
+    option: Vec<Option<ClockId>>,
+    /// The model's `Option<Clock>` places.
+    bits: Vec<ClockId>,
     /// The `Clock` parameter a node names, by its index in `parameters`.
     parameter: Vec<Option<usize>>,
     /// The clause's operation's `Clock` parameters.
     parameters: Vec<ClockParameter>,
     /// The span of the first clock read under each node.
     first: Vec<Option<Span>>,
+    /// Whether the first read under each node is a presence read of an
+    /// `Option<Clock>` place (`present(p)`, `p = absent`, `p != absent`):
+    /// a data read of its presence, never a clock read.
+    presence_first: Vec<bool>,
 }
 
 impl<'f> Located<'f> {
@@ -1210,7 +1301,9 @@ impl<'f> Located<'f> {
         let spans = form.spans.of_nodes(&form.expression)?;
         let mut clock = vec![None; form.expression.len()];
         let mut parameter = vec![None; form.expression.len()];
+        let mut option = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
+        let mut presence_first = vec![false; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
             for child in node.node().children() {
@@ -1223,6 +1316,44 @@ impl<'f> Located<'f> {
         // parent is reached.
         for node in form.expression.iter() {
             let id = node.id();
+            // A presence read of an `Option<Clock>` place, of `self` or of
+            // another object: a data read of its presence (FR-230
+            // "Presence bit"). Another object's place is a field read
+            // already taken as a clock read, named like an `Option<Clock>`
+            // field.
+            let option_place = |operand: ExprId| {
+                option.get(operand.index()).copied().flatten().is_some()
+                    || (first.get(operand.index()).copied().flatten().is_some()
+                        && matches!(
+                            form.expression.get(operand).map(|node| node.node()),
+                            Some(ExprNode::Field { field, .. })
+                                if clocks.fields.iter().any(|clock| clock.bit
+                                    && clock.path == [PlaceStep::Field(field.clone())])
+                        ))
+            };
+            let presence = match node.node() {
+                ExprNode::Present(operand) => option_place(*operand),
+                ExprNode::Binary {
+                    operator: BinaryOperator::Equal | BinaryOperator::NotEqual,
+                    left,
+                    right,
+                } => {
+                    let absent = |side: ExprId| {
+                        matches!(
+                            form.expression.get(side).map(|node| node.node()),
+                            Some(ExprNode::Absent)
+                        )
+                    };
+                    (option_place(*left) && absent(*right))
+                        || (absent(*left) && option_place(*right))
+                }
+                _ => false,
+            };
+            if presence {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                continue;
+            }
             // A call of a clock-reading declaration reads its clocks, at the
             // call.
             if clocks.declarations.is_call(&form.expression, id) {
@@ -1231,6 +1362,11 @@ impl<'f> Located<'f> {
             }
             if let Some(read) = clocks.read(form, id, context) {
                 clock[id.index()] = Some(read);
+                first[id.index()] = spans.get(id.index()).copied();
+                continue;
+            }
+            if let Some(read) = clocks.option(form, id, context) {
+                option[id.index()] = Some(read);
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
@@ -1295,20 +1431,52 @@ impl<'f> Located<'f> {
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
-            first[id.index()] = node
+            let reading = node
                 .node()
                 .children()
                 .into_iter()
-                .find_map(|child| first.get(child.index()).copied().flatten());
+                .find(|child| first.get(child.index()).copied().flatten().is_some());
+            if let Some(child) = reading {
+                first[id.index()] = first.get(child.index()).copied().flatten();
+                presence_first[id.index()] =
+                    presence_first.get(child.index()).copied().unwrap_or(false);
+            }
         }
         Some(Self {
             form,
             spans,
             clock,
+            option,
+            bits: clocks
+                .fields
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| field.bit)
+                .map(|(index, _)| ClockId(index))
+                .collect(),
             parameter,
             parameters,
             first,
+            presence_first,
         })
+    }
+
+    /// Whether `clock` is an `Option<Clock>` place.
+    fn bit(&self, clock: ClockId) -> bool {
+        self.bits.contains(&clock)
+    }
+
+    /// The `Option<Clock>` place node `id` names, `self.v`.
+    fn option(&self, id: ExprId) -> Option<ClockId> {
+        self.option.get(id.index()).copied().flatten()
+    }
+
+    /// The `Option<Clock>` place `present(self.v)` at `id` reads.
+    fn presence(&self, id: ExprId) -> Option<ClockId> {
+        match self.node(id)? {
+            ExprNode::Present(operand) => self.option(*operand),
+            _ => None,
+        }
     }
 
     /// The `Clock` parameter node `id` names.
@@ -1346,9 +1514,41 @@ impl<'f> Located<'f> {
 
     /// A clock read under `id` where no constraint may read it, at the read.
     fn outside(&self, id: ExprId) -> TemporalCause {
-        TemporalCause::ClockReadOutsideConstraint {
-            span: self.first(id).unwrap_or_else(|| self.span(id)),
+        let span = self.first(id).unwrap_or_else(|| self.span(id));
+        // A presence read where this slice reads none: no clock is read.
+        if self
+            .presence_first
+            .get(id.index())
+            .copied()
+            .unwrap_or(false)
+        {
+            return TemporalCause::PresenceNotChecked { span };
         }
+        TemporalCause::ClockReadOutsideConstraint { span }
+    }
+
+    /// The `Option<Clock>` place and the presence `p = absent` or
+    /// `p != absent` at `id` tests: present for `!=`.
+    fn absent_test(&self, id: ExprId) -> Option<(ClockId, bool)> {
+        let Some(ExprNode::Binary {
+            operator,
+            left,
+            right,
+        }) = self.node(id)
+        else {
+            return None;
+        };
+        let present = match operator {
+            BinaryOperator::Equal => false,
+            BinaryOperator::NotEqual => true,
+            _ => return None,
+        };
+        let place = match (self.node(*left), self.node(*right)) {
+            (_, Some(ExprNode::Absent)) => self.option(*left)?,
+            (Some(ExprNode::Absent), _) => self.option(*right)?,
+            _ => return None,
+        };
+        Some((place, present))
     }
 
     /// The non-negative constant `id` denotes: a time quantity literal. A
@@ -1383,13 +1583,16 @@ enum DataLiteral {
     /// A quantifier over a collection with no declared maximum, read as the
     /// family of its entries indexed by size: it holds or fails at a state.
     Family(std::rc::Rc<FamilyDraft>),
+    /// `present(self.v)` of an `Option<Clock>` place: its presence bit
+    /// (FR-230 "Presence bit").
+    Presence(ClockId),
 }
 
 impl DataLiteral {
     /// The literal's own form, `None` for a node of the clause.
     fn form(&self) -> Option<&ExpressionForm> {
         match self {
-            Self::Site(_) | Self::Family(_) => None,
+            Self::Site(_) | Self::Family(_) | Self::Presence(_) => None,
             Self::Formed(form) | Self::Element(form, ..) => Some(form),
         }
     }
@@ -1406,6 +1609,7 @@ impl PartialEq for DataLiteral {
                 left_binding == right_binding && left.expression == right.expression
             }
             (Self::Family(left), Self::Family(right)) => std::rc::Rc::ptr_eq(left, right),
+            (Self::Presence(left), Self::Presence(right)) => left == right,
             _ => false,
         }
     }
@@ -1474,6 +1678,21 @@ fn clock_atom(
     context: EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
+    // `present(self.v)`, `self.v != absent` and `self.v = absent`: a data
+    // predicate over the place's presence bit.
+    let presence = located
+        .presence(id)
+        .map(|clock| (clock, true))
+        .or_else(|| located.absent_test(id));
+    if let Some((clock, present)) = presence {
+        let literal = |positive: bool| {
+            vec![(
+                vec![(DataLiteral::Presence(clock), positive == present)],
+                Vec::new(),
+            )]
+        };
+        return Ok(Some((literal(true), literal(false))));
+    }
     if let Some(read) = quantified::read(located, id, clocks, context, budget)? {
         return Ok(Some(read));
     }
@@ -1665,8 +1884,9 @@ fn part_predicate(
             let cut = match &literal {
                 DataLiteral::Site(id) => located.form.cut(*id, &BTreeMap::new())?,
                 DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => (**form).clone(),
-                // A family is read at the state, not by the data predicate.
-                DataLiteral::Family(_) => return None,
+                // A family and a presence bit are read at the state, not by
+                // the data predicate.
+                DataLiteral::Family(_) | DataLiteral::Presence(_) => return None,
             };
             if positive {
                 Some(cut)
@@ -1686,6 +1906,29 @@ fn draft_part(
     literals: Vec<(DataLiteral, bool)>,
     clocks: Vec<ClockConstraint>,
 ) -> Result<PartDraft, CheckCause> {
+    let (presences, literals): (Vec<_>, Vec<_>) = literals
+        .into_iter()
+        .partition(|(literal, _)| matches!(literal, DataLiteral::Presence(_)));
+    let mut presences: Vec<(ClockId, bool)> = presences
+        .into_iter()
+        .filter_map(|(literal, positive)| match literal {
+            DataLiteral::Presence(clock) => Some((clock, positive)),
+            _ => None,
+        })
+        .collect();
+    // A part requiring a place both present and absent is never enabled:
+    // no state meets both requirements.
+    presences.sort();
+    presences.dedup();
+    // FR-230-AC-39: a constraint on an `Option<Clock>` reads its clock only
+    // where the part establishes its presence.
+    if let Some(unproved) = clocks.iter().find(|constraint| {
+        located.bit(constraint.clock) && !presences.contains(&(constraint.clock, true))
+    }) {
+        return Err(timed(TemporalCause::UnprovedPresence {
+            span: unproved.span,
+        }));
+    }
     let (families, literals): (Vec<_>, Vec<_>) = literals
         .into_iter()
         .partition(|(literal, _)| matches!(literal, DataLiteral::Family(_)));
@@ -1727,6 +1970,7 @@ fn draft_part(
         .collect::<Result<Vec<_>, CheckCause>>()?;
     Ok(PartDraft {
         data,
+        presences,
         elements,
         clocks,
         families,
@@ -1740,7 +1984,7 @@ enum ClauseClocks {
     /// A precondition's guard parts.
     Guard(Vec<PartDraft>),
     /// A postcondition's resets.
-    Resets(Vec<ResetDraft>, Vec<CollectionWrite>),
+    Resets(Vec<ResetDraft>, Vec<CollectionWrite>, Vec<ClockId>),
 }
 
 /// What a postcondition's resets cut from its body: each reset conjunct,
@@ -1754,6 +1998,10 @@ struct ResetCut {
     literals: BTreeSet<ExprId>,
     resets: Vec<ResetDraft>,
     writes: Vec<CollectionWrite>,
+    /// The `Option<Clock>` places the postcondition drops.
+    drops: Vec<ClockId>,
+    /// The `Option<Clock>` places written so far, by a reset or a drop.
+    option_writes: BTreeSet<ClockId>,
 }
 
 /// The resets of a postcondition: each top-level conjunct `self.x = c` that
@@ -1838,6 +2086,49 @@ fn resets(
                 span,
             }
             .resets(path, *right, &mut cut)?;
+            continue;
+        }
+        // FR-230 "Presence bit": `self.v = c` of an `Option<Clock>` makes
+        // the place present and resets its clock to `c`.
+        if let Some(clock) = located.option(*left) {
+            let in_frame = clocks
+                .fields
+                .get(clock.0)
+                .is_some_and(|field| written.contains(&field.field));
+            // A second write of the place, a reset and a drop or two
+            // resets, gives it no one presence and value.
+            if !cut.option_writes.insert(clock) {
+                return Err(TemporalCause::ConflictingClockWrite { span });
+            }
+            // `self.v = absent` drops the place: absent, its clock
+            // unconstrained, and no reset.
+            if matches!(located.node(*right), Some(ExprNode::Absent)) {
+                if !in_frame {
+                    return Err(TemporalCause::ClockWrite { span });
+                }
+                cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+                cut.drops.push(clock);
+                continue;
+            }
+            if located.reads_clock(*right) {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            let value = match located.constant(*right, clocks) {
+                Ok(value) => value,
+                Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                    return Err(TemporalCause::ClockWrite { span })
+                }
+                Err(cause) => return Err(cause),
+            };
+            let in_frame = clocks
+                .fields
+                .get(clock.0)
+                .is_some_and(|field| written.contains(&field.field));
+            if !in_frame {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+            cut.resets.push(ResetDraft::single(clock, value, span));
             continue;
         }
         if let Some(parameter) = located.parameter(*left) {
@@ -2231,7 +2522,10 @@ fn read_clause(
                 }));
             }
             removed = cut.removed;
-            (cut.leaves, ClauseClocks::Resets(cut.resets, cut.writes))
+            (
+                cut.leaves,
+                ClauseClocks::Resets(cut.resets, cut.writes, cut.drops),
+            )
         }
     };
     let rewritten = form
@@ -2289,8 +2583,9 @@ fn time_invariant(
     clocks: &Clocks<'_>,
     context: EffectiveId,
     population: Option<PopulationDomain>,
-) -> Result<InvariantDraft, TemporalCause> {
-    let predicate = state_predicate(&form.guard, clocks, context, population)?;
+    budget: &mut PartBudget,
+) -> Result<InvariantDraft, CheckCause> {
+    let alternatives = state_alternatives(&form.guard, clocks, context, population, budget)?;
     let bounds =
         form.bounds
             .iter()
@@ -2319,12 +2614,99 @@ fn time_invariant(
                     span: bound.span,
                 })
             })
-            .collect::<Result<_, TemporalCause>>()?;
+            .collect::<Result<Vec<_>, TemporalCause>>()
+            .map_err(timed)?;
+    // FR-230 "Guarded places": `when P { value(p) <= c }` bounds `p` where
+    // `P` establishes `present(p)`.
+    if let Some(unproved) = bounds.iter().find(|bound| {
+        clocks
+            .fields
+            .get(bound.clock.0)
+            .is_some_and(|field| field.bit)
+            && alternatives
+                .iter()
+                .any(|alternative| !alternative.presences.contains(&(bound.clock, true)))
+    }) {
+        return Err(timed(TemporalCause::UnprovedPresence {
+            span: unproved.span,
+        }));
+    }
     Ok(InvariantDraft {
         name: form.name.name.clone(),
-        predicate,
+        alternatives,
         bounds,
     })
+}
+
+/// The alternatives of the state predicate `predicate` about `context`
+/// (FR-230 "Presence bit"): the predicate itself, with no presences, when it
+/// reads no presence of an `Option<Clock>` place; otherwise its disjunctive
+/// form over those presences, `present(self.v)`, `self.v = absent` and
+/// `self.v != absent` under `and`, `or` and `not`, each disjunct its
+/// presences and its data literals, a disjunct requiring a place both
+/// present and absent left out.
+///
+/// # Errors
+///
+/// A clock read anywhere in the predicate, or a presence read this slice
+/// does not read (another object's place, a quantifier body).
+fn state_alternatives(
+    predicate: &ExpressionForm,
+    clocks: &Clocks<'_>,
+    context: EffectiveId,
+    population: Option<PopulationDomain>,
+    budget: &mut PartBudget,
+) -> Result<Vec<AlternativeDraft>, CheckCause> {
+    let located = Located::of(predicate, clocks, context);
+    let Some(located) = located.filter(|located| located.presence_first.contains(&true)) else {
+        return Ok(vec![AlternativeDraft {
+            presences: Vec::new(),
+            predicate: state_predicate(predicate, clocks, context, population).map_err(timed)?,
+        }]);
+    };
+    let (dnf, _) = guard(&located, clocks, context, budget)?;
+    let mut alternatives = Vec::new();
+    for (literals, constraints) in dnf {
+        if let Some(constraint) = constraints.first() {
+            return Err(timed(TemporalCause::ClockReadOutsideConstraint {
+                span: constraint.span,
+            }));
+        }
+        let (presences, literals): (Vec<_>, Vec<_>) = literals
+            .into_iter()
+            .partition(|(literal, _)| matches!(literal, DataLiteral::Presence(_)));
+        let mut presences: Vec<(ClockId, bool)> = presences
+            .into_iter()
+            .filter_map(|(literal, positive)| match literal {
+                DataLiteral::Presence(clock) => Some((clock, positive)),
+                _ => None,
+            })
+            .collect();
+        presences.sort();
+        presences.dedup();
+        if presences.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            continue;
+        }
+        let data = if literals.is_empty() {
+            let span = located.span(located.root());
+            let expression = qsl_forms::Expression::boolean(true);
+            let spans = qsl_forms::ExpressionSpans::at_point(&expression, span.start)
+                .map_err(|_| timed(located.outside(located.root())))?;
+            ExpressionForm { expression, spans }
+        } else {
+            part_predicate(&located, &literals)
+                .ok_or_else(|| timed(located.outside(located.root())))?
+        };
+        alternatives.push(AlternativeDraft {
+            presences,
+            predicate: PredicateDraft {
+                context,
+                population,
+                predicate: data,
+            },
+        });
+    }
+    Ok(alternatives)
 }
 
 /// The time invariants the package's `max` constraints on clocks state
@@ -2390,11 +2772,15 @@ fn clock_bounds(
                 .map_err(|_| timed(TemporalCause::TimeInvariantShape { span }))?;
             drafts.push(InvariantDraft {
                 name: bound.key.node.clone(),
-                predicate: PredicateDraft {
-                    context: owner,
-                    population,
-                    predicate: ExpressionForm { expression, spans },
-                },
+                // A bound reads a guarded place only where it is live.
+                alternatives: vec![AlternativeDraft {
+                    presences: Vec::new(),
+                    predicate: PredicateDraft {
+                        context: owner,
+                        population,
+                        predicate: ExpressionForm { expression, spans },
+                    },
+                }],
                 bounds,
             });
         }
@@ -2408,29 +2794,30 @@ fn urgency(
     clocks: &Clocks<'_>,
     state: impl FnOnce() -> Result<(EffectiveId, Option<PopulationDomain>), TemporalCause>,
     guarded: &BTreeMap<DeclarationKey, String>,
-) -> Result<UrgencyDraft, TemporalCause> {
+    budget: &mut PartBudget,
+) -> Result<UrgencyDraft, CheckCause> {
     match &form.target {
         UrgentTarget::When(predicate) => {
-            let (context, population) = state()?;
+            let (context, population) = state().map_err(timed)?;
             Ok(UrgencyDraft::When {
                 name: form.name.name.clone(),
-                predicate: state_predicate(predicate, clocks, context, population)?,
+                alternatives: state_alternatives(predicate, clocks, context, population, budget)?,
             })
         }
         UrgentTarget::Operation(operation) => {
             let keys = model.tick_operation_keys(operation);
             let [key] = keys.as_slice() else {
-                return Err(TemporalCause::UrgentOperation {
+                return Err(timed(TemporalCause::UrgentOperation {
                     name: operation.name.clone(),
                     ambiguous: !keys.is_empty(),
                     span: operation.span,
-                });
+                }));
             };
             if let Some(clock) = guarded.get(*key) {
-                return Err(TemporalCause::UrgentGuardReadsClock {
+                return Err(timed(TemporalCause::UrgentGuardReadsClock {
                     clock: clock.clone(),
                     span: form.span,
-                });
+                }));
             }
             Ok(UrgencyDraft::Operation {
                 name: form.name.name.clone(),
@@ -2535,7 +2922,7 @@ fn prepare_models(
                 // 17).
                 if AdmittedModel::clock_places(model)
                     .iter()
-                    .any(|place| place.optional)
+                    .any(|place| place.optional && !(place.bit && place.path.len() == 1))
                 {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,
@@ -2664,16 +3051,18 @@ fn prepare_models(
                     }
                     guards.push((index, parts));
                 }
-                ClauseClocks::Resets(written, writes) => {
-                    if let (false, Some(operation)) =
-                        (written.is_empty() && writes.is_empty(), &clause.operation)
-                    {
+                ClauseClocks::Resets(written, writes, drops) => {
+                    if let (false, Some(operation)) = (
+                        written.is_empty() && writes.is_empty() && drops.is_empty(),
+                        &clause.operation,
+                    ) {
                         resets.push(ResetsDraft {
                             clause: clause.name.clone(),
                             operation: operation.clone(),
                             context: clause.context,
                             resets: written,
                             writes,
+                            drops,
                         });
                     }
                 }
@@ -2691,12 +3080,23 @@ fn prepare_models(
             match form {
                 TimedDeclaration::TimeInvariant(form) => {
                     let (context, population) = state().map_err(timed)?;
-                    invariants
-                        .push(time_invariant(form, &clocks, context, population).map_err(timed)?);
+                    invariants.push(time_invariant(
+                        form,
+                        &clocks,
+                        context,
+                        population,
+                        &mut budget,
+                    )?);
                 }
                 TimedDeclaration::Urgent(form) => {
-                    urgency_drafts
-                        .push(urgency(form, model, &clocks, state, &guarded).map_err(timed)?);
+                    urgency_drafts.push(urgency(
+                        form,
+                        model,
+                        &clocks,
+                        state,
+                        &guarded,
+                        &mut budget,
+                    )?);
                 }
                 TimedDeclaration::TimeSource(_) | TimedDeclaration::ClockType(_) => {}
             }
@@ -2812,6 +3212,26 @@ fn typed(
     ))
 }
 
+/// `alternative` with its data predicate typed as a state predicate.
+fn typed_alternative(
+    alternative: AlternativeDraft,
+    checking: &Checking<'_, '_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+    nodes_used: &mut u64,
+) -> Result<StateAlternative, CheckRefusal> {
+    let (predicate, used) = typed(
+        &state_view(&alternative.predicate, checking.complete_value),
+        &alternative.predicate.predicate,
+        checking,
+        cx,
+    )?;
+    *nodes_used = (*nodes_used).max(used);
+    Ok(StateAlternative {
+        presences: alternative.presences,
+        predicate,
+    })
+}
+
 fn state_view<'v>(draft: &'v PredicateDraft, complete_value: bool) -> ClauseView<'v> {
     ClauseView {
         kind: StateClauseKind::Invariant,
@@ -2887,6 +3307,7 @@ fn check_part(
         .collect::<Result<Vec<_>, CheckRefusal>>()?;
     Ok(ConvexPart {
         data,
+        presences: part.presences,
         elements: part
             .elements
             .into_iter()
@@ -2932,35 +3353,45 @@ pub(crate) fn check(
         }
         let mut invariants = Vec::with_capacity(draft.invariants.len());
         for invariant in draft.invariants {
-            let (predicate, used) = typed(
-                &state_view(&invariant.predicate, checking.complete_value),
-                &invariant.predicate.predicate,
-                checking,
-                cx,
-            )?;
-            nodes_used = nodes_used.max(used);
+            let context = invariant
+                .alternatives
+                .first()
+                .map(|alternative| alternative.predicate.context);
+            let alternatives = invariant
+                .alternatives
+                .into_iter()
+                .map(|alternative| typed_alternative(alternative, checking, cx, &mut nodes_used))
+                .collect::<Result<Vec<_>, CheckRefusal>>()?;
+            let Some(context) = context else {
+                continue;
+            };
             invariants.push(TimeInvariant {
                 name: invariant.name,
-                context: invariant.predicate.context,
-                predicate,
+                context,
+                alternatives,
                 bounds: invariant.bounds,
             });
         }
         let mut urgency = Vec::with_capacity(draft.urgency.len());
         for declared in draft.urgency {
             urgency.push(match declared {
-                UrgencyDraft::When { name, predicate } => {
-                    let (checked, used) = typed(
-                        &state_view(&predicate, checking.complete_value),
-                        &predicate.predicate,
-                        checking,
-                        cx,
-                    )?;
-                    nodes_used = nodes_used.max(used);
+                UrgencyDraft::When { name, alternatives } => {
+                    let Some(context) = alternatives
+                        .first()
+                        .map(|alternative| alternative.predicate.context)
+                    else {
+                        continue;
+                    };
+                    let alternatives = alternatives
+                        .into_iter()
+                        .map(|alternative| {
+                            typed_alternative(alternative, checking, cx, &mut nodes_used)
+                        })
+                        .collect::<Result<Vec<_>, CheckRefusal>>()?;
                     Urgency::When {
                         name,
-                        context: predicate.context,
-                        predicate: checked,
+                        context,
+                        alternatives,
                     }
                 }
                 UrgencyDraft::Operation { name, operation } => {
@@ -3017,6 +3448,7 @@ pub(crate) fn check(
                 operation: written.operation,
                 resets: checked,
                 writes: written.writes,
+                drops: written.drops,
             });
         }
         models.push(TimedModel {
