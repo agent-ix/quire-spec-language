@@ -1055,6 +1055,28 @@ fn repeat_decisions_read_the_latest_body_output_and_classify_the_guard() {
             .post_test
     );
 
+    // A guard that reads a binder readable at the repeat's entry, not one
+    // its body declares, is pre-test (SR-1737002 FND-001): its `max 0` is
+    // admitted.
+    let entry_guard = flow(
+        "",
+        &format!(
+            "sequence Main {{ {} repeat Loop by R visible (start) max 0 while {{ not start }} \
+             {} exhausted sequence Done {{ }} }}",
+            attempt("Start"),
+            attempt("Work")
+        ),
+    );
+    let graph = checks(&entry_guard);
+    assert!(
+        !graph
+            .protocol("Flow")
+            .expect("checked protocol")
+            .slots
+            .repeats[0]
+            .post_test
+    );
+
     let max_zero = flow(
         "",
         &format!(

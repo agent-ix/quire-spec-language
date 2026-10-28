@@ -616,8 +616,8 @@ fn the_reference_protocols_check_with_their_edges() {
 
 /// FR-092-AC-18, FR-383-AC-7: a replicated-role protocol whose `event` and
 /// `check` controls and capture are all written is checked to a package with a
-/// selected protocol profile, and a `choice` it holds is the one construct
-/// refused, naming QSL-1126.
+/// selected protocol profile, and a post-test `repeat` it holds is the one
+/// construct refused, naming STD-493.
 #[trace("FR-092-AC-18", "FR-383-AC-1")]
 #[test]
 fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
@@ -633,13 +633,13 @@ fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
         .unwrap_or_else(|refusals| panic!("the controls are written: {refusals:?}"));
     let choosing = workers("workflow").replacen(
         "check After using v { true };",
-        "choice Pick by r visible () { case yes when { true } sequence A { } \
-         case no when { false } sequence B { } }",
+        "repeat Again by r visible (e.ready) while { not e.ready } \
+         sequence Body { event E by r as (e: M::Flag) { true }; }",
         1,
     );
     let found: Vec<ProtocolConstruct> = check(&with_profile(&choosing))
         .map(|_| ())
-        .expect_err("the choice is not written")
+        .expect_err("the post-test repeat is not written")
         .into_iter()
         .map(|refusal| match refusal.cause {
             CheckCause::ProtocolReference(cause) => {
@@ -648,6 +648,6 @@ fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
             other => panic!("only NotEmitted refusals, got {other:?}"),
         })
         .collect();
-    assert_eq!(found, [ProtocolConstruct::Control("choice")]);
-    assert_eq!(found[0].tracking(), "QSL-1126");
+    assert_eq!(found, [ProtocolConstruct::PostTestRepeat]);
+    assert_eq!(found[0].tracking(), "STD-493");
 }
