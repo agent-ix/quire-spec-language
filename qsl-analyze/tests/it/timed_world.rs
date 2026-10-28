@@ -22,7 +22,8 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 pub(crate) const PACKAGE: &str = "test/timed";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+pub(crate) const PLACEHOLDER: &str =
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 pub(crate) fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -33,7 +34,7 @@ fn origin(identity: &str) -> Json {
         "inputIdentities": [identity]}})
 }
 
-fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
+pub(crate) fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
     let mut node = json!({
         "identity": identity, "displayName": identity,
         "kind": {"module": PACKAGE, "name": kind}, "roles": [],
@@ -46,7 +47,7 @@ fn wire_type(identity: &str, kind: &str, extra: Json) -> Json {
     node
 }
 
-fn wire_field(name: &str, type_ref: &str) -> Json {
+pub(crate) fn wire_field(name: &str, type_ref: &str) -> Json {
     let identity = ident(&format!("Call/{name}"));
     let unique = type_ref != "ix://quire/native/Clock";
     json!({
@@ -371,6 +372,17 @@ pub(crate) fn refining(
     concrete_document: &[u8],
     body: &str,
 ) -> Result<Refining, Vec<(String, String, String)>> {
+    refining_from(abstract_document, concrete_document, body, false)
+}
+
+/// [`refining`] whose abstract object `c` starts with `inflight` equal to
+/// `abstract_inflight`.
+pub(crate) fn refining_from(
+    abstract_document: &[u8],
+    concrete_document: &[u8],
+    body: &str,
+    abstract_inflight: bool,
+) -> Result<Refining, Vec<(String, String, String)>> {
     let packages = package_input([abstract_document, concrete_document]);
     let digest_of = |document: &[u8]| {
         packages
@@ -445,7 +457,7 @@ pub(crate) fn refining(
                 .collect::<Vec<_>>()
         })?;
     let mut snapshots = BTreeMap::new();
-    let mut snapshot = |package: &str, document: &[u8], name: &str| {
+    let mut snapshot = |package: &str, document: &[u8], name: &str, inflight: bool| {
         let digest = packages
             .iter()
             .find(|(_, bytes)| bytes.as_slice() == document)
@@ -462,7 +474,7 @@ pub(crate) fn refining(
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": identity("calls"), "complete": true,
                 "objects": [{"key": "c", "type": identity("Call"),
-                    "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": false},
+                    "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": inflight},
                         "late": {"boolean": false}, "retried": {"boolean": false}}}]}],
         });
         let bytes = snapshot.to_string().into_bytes();
@@ -479,8 +491,13 @@ pub(crate) fn refining(
             digest,
         }
     };
-    let abstract_initial = snapshot(&abstract_package, abstract_document, "a0");
-    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0");
+    let abstract_initial = snapshot(
+        &abstract_package,
+        abstract_document,
+        "a0",
+        abstract_inflight,
+    );
+    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0", false);
     Ok(Refining {
         package: CheckedPackage::link(graph),
         packages,

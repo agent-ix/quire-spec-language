@@ -14,20 +14,28 @@
 //! The rows read no clock (S3 refuses one), so the abstract state is a
 //! function of the discrete state alone.
 //!
-//! A failing edge refutes only when its pre-state has a valuation with a
-//! time-divergent continuation (ADR-026 TV-1, FR-240's test); an edge
-//! failing only on time-locked valuations is no behaviour and is dropped.
-//! The counterexample is the breadth-first tree path to the pre-state, then
-//! the failing step, concretised with exact delays (FR-241).
+//! A failing edge refutes only when the behaviour can go on from it with
+//! time diverging: its post-state, the successor's state and zone, has a
+//! valuation with a time-divergent continuation (ADR-026 TV-1 and TS-4,
+//! FR-240's test). An edge failing only into time-locked valuations is no
+//! behaviour and is dropped. The counterexample is the breadth-first tree
+//! path to the pre-state, then the failing step, concretised with exact
+//! delays (FR-241) to end at such a valuation.
 //!
 //! A product state is stored unless a stored one with the same model state
 //! and position covers its zone under the aLU abstraction, as FR-239's
 //! search stores its symbolic states: the failure of an edge reads its
 //! discrete ends and position only, which the abstraction preserves.
 //!
-//! No core checker reads a zone product's simulation relation (FR-149
-//! reads explicit concrete successors, which ignore clock guards), so a
-//! half that holds carries no certificate (spec gap STD-493).
+//! A failing initial state refutes only when its symbolic state has a
+//! time-divergent point; a time-locked one holds vacuously, and a half
+//! whose initial states admit no time-divergent behaviour settles ADR-026
+//! TD-6's `NoAdmittedBehaviour`.
+//!
+//! A half that holds carries no certificate yet: QSpec FR-430 and FR-244
+//! "Refinement form" give it a zone certificate over this product, which
+//! is remaining work on QSL-1005 (1005c). FR-149's simulation certificate
+//! does not apply, since its explicit successors ignore clock guards.
 //!
 //! This is the safety half only. Remaining work on QSL-1005: the liveness
 //! half over a timed concrete subject (ADR-026 TS-4), and the route of a
@@ -49,10 +57,11 @@ use qsl_replay::{
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Cancel, Rational};
+use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
 
-use super::concretise::{concretise, Concrete, Stage, Target};
+use super::concretise::{concretise, Stage, Target};
+use super::divergence::Escape;
 use super::search::{
     not_simulated, widen, Arrival, Halt, Judged, Run, Searched, ZoneCheckLimits, ZoneCheckRefusal,
     ZoneStats, ZoneStop, ZoneUndecided,
@@ -234,6 +243,12 @@ struct Product<'p, 'a> {
     depth: Vec<usize>,
 }
 
+/// A judged step: the position after it, or its failure.
+enum Edge {
+    Passes(usize),
+    Fails(Box<(RefinementFailure, CounterexampleKind)>),
+}
+
 /// What a verdict decides.
 enum Judgement {
     /// The step passes, to the position at this index.
@@ -249,7 +264,12 @@ impl Product<'_, '_> {
     fn search(&mut self, run: &mut Run<'_, '_, '_>) -> Result<TimedSafetyOutcome, Halt> {
         let concrete = run.timed.system();
         let initial = run.timed.initial();
+        let (scale, lower, upper) = (run.scale.clone(), run.lower.clone(), run.upper.clone());
         let mut queue = VecDeque::new();
+        let mut roots = Vec::new();
+        // Whether a failing initial state was time-locked (QSpec FR-430 "A
+        // failing initial state").
+        let mut locked_failure = false;
         for (index, state) in initial.iter().enumerate() {
             run.poll()?;
             let discrete = state.discrete().clone();
@@ -260,32 +280,49 @@ impl Product<'_, '_> {
                 index,
                 discrete.state(),
             );
-            let q = match self.judge(verdict, run)? {
+            let judged = self.judge(verdict, run)?;
+            let mut zone = Dbm::zero(run.dim());
+            run.settle(&discrete, &mut zone)?;
+            let q = match judged {
                 Judgement::Passes(q) => q,
-                // An initial state is no edge: its failure refutes as
-                // FR-142's does, at position 0.
+                // The failing step of the empty prefix refutes only when
+                // the initial symbolic state has a point with a
+                // time-divergent continuation; otherwise it holds
+                // vacuously.
                 Judgement::Fails(failed) => {
-                    let (failure, kind) = *failed;
-                    return Ok(TimedSafetyOutcome::Violated {
-                        counterexample: Box::new(refuted(index, Vec::new(), failure, kind)),
-                        stats: run.stats(),
-                    });
+                    if !zone.is_empty()
+                        && run
+                            .escape(&discrete, &zone, &scale, &lower, &upper)?
+                            .diverges
+                    {
+                        let (failure, kind) = *failed;
+                        return Ok(TimedSafetyOutcome::Violated {
+                            counterexample: Box::new(refuted(index, Vec::new(), failure, kind)),
+                            stats: run.stats(),
+                        });
+                    }
+                    locked_failure = true;
+                    continue;
                 }
                 Judgement::Ends(outcome) => return Ok(outcome),
             };
-            let mut zone = Dbm::zero(run.dim());
-            run.settle(&discrete, &mut zone)?;
             if zone.is_empty() {
                 continue;
             }
             if let Some(node) = run.insert(discrete, q, zone, Some(index), None)? {
                 self.depth.push(0);
+                roots.push(node);
                 queue.push_back(node);
             }
         }
         if queue.is_empty() {
+            let cause = if locked_failure {
+                ZoneUndecided::NoAdmittedBehaviour
+            } else {
+                ZoneUndecided::NoInitialState
+            };
             return Ok(TimedSafetyOutcome::Undecided {
-                cause: TimedRefinementUndecided::Zone(ZoneUndecided::NoInitialState),
+                cause: TimedRefinementUndecided::Zone(cause),
                 stats: run.stats(),
             });
         }
@@ -295,7 +332,17 @@ impl Product<'_, '_> {
                 return Ok(outcome);
             }
         }
-        Ok(TimedSafetyOutcome::Holds { stats: run.stats() })
+        // ADR-026 TD-6: the half holds only over a subject that admits a
+        // time-divergent behaviour from some initial state.
+        for root in roots {
+            if run.node_escape(root)?.diverges {
+                return Ok(TimedSafetyOutcome::Holds { stats: run.stats() });
+            }
+        }
+        Ok(TimedSafetyOutcome::Undecided {
+            cause: TimedRefinementUndecided::Zone(ZoneUndecided::NoAdmittedBehaviour),
+            stats: run.stats(),
+        })
     }
 
     /// Expand `node`: each symbolic successor by a discrete step, judged by
@@ -313,56 +360,54 @@ impl Product<'_, '_> {
         let depth = self.depth[node];
         let steps = run.steps_for(&state)?;
         let scale = run.scale.clone();
-        // Each step's position after it, judged once; `None` for a step
-        // whose failure the pre-state's time-locked valuations only reach.
-        let mut judged: BTreeMap<usize, Option<usize>> = BTreeMap::new();
+        let (lower, upper) = (run.lower.clone(), run.upper.clone());
+        // Each step's verdict, judged once: the position after it, or its
+        // failure.
+        let mut judged: BTreeMap<usize, Edge> = BTreeMap::new();
         for successor in run.successors(&state, &zone, &scale)? {
+            let step = steps
+                .get(successor.step)
+                .ok_or(ZoneCheckRefusal::Fault("refinement-step"))?;
+            if let std::collections::btree_map::Entry::Vacant(slot) = judged.entry(successor.step) {
+                let result = check_step(
+                    self.refinement,
+                    run.timed.system(),
+                    self.abstract_system,
+                    &self.positions[q],
+                    &ConcreteStep {
+                        position: widen(depth.saturating_add(1)),
+                        transition: Some(step.transition()),
+                        post: step.post(),
+                    },
+                );
+                let edge = match self.judge(result.verdict, run)? {
+                    Judgement::Passes(next) => Edge::Passes(next),
+                    Judgement::Fails(failed) => Edge::Fails(failed),
+                    Judgement::Ends(outcome) => return Ok(Some(outcome)),
+                };
+                slot.insert(edge);
+            }
             let next = match judged.get(&successor.step) {
-                Some(next) => *next,
-                None => {
-                    let step = steps
-                        .get(successor.step)
-                        .ok_or(ZoneCheckRefusal::Fault("refinement-step"))?;
-                    let result = check_step(
-                        self.refinement,
-                        run.timed.system(),
-                        self.abstract_system,
-                        &self.positions[q],
-                        &ConcreteStep {
-                            position: widen(depth.saturating_add(1)),
-                            transition: Some(step.transition()),
-                            post: step.post(),
-                        },
-                    );
-                    let next = match self.judge(result.verdict, run)? {
-                        Judgement::Passes(next) => Some(next),
-                        Judgement::Ends(outcome) => return Ok(Some(outcome)),
-                        Judgement::Fails(failed) => {
-                            let (failure, kind) = *failed;
-                            // ADR-026 TV-1: only a pre-state with a
-                            // time-divergent valuation refutes.
-                            if run.node_escape(node)?.diverges {
-                                let counterexample = self.counterexample(
-                                    run,
-                                    node,
-                                    (step, successor.part),
-                                    failure,
-                                    kind,
-                                )?;
-                                return Ok(Some(TimedSafetyOutcome::Violated {
-                                    counterexample: Box::new(counterexample),
-                                    stats: run.stats(),
-                                }));
-                            }
-                            None
-                        }
-                    };
-                    judged.insert(successor.step, next);
-                    next
+                Some(Edge::Passes(next)) => *next,
+                Some(Edge::Fails(failed)) => {
+                    // ADR-026 TV-1 and TS-4: the failing step refutes only
+                    // when the behaviour can go on from it, time diverging:
+                    // its post-state, the successor's zone, has a valuation
+                    // with a time-divergent continuation.
+                    let escape =
+                        run.escape(&successor.state, &successor.zone, &scale, &lower, &upper)?;
+                    if !escape.diverges {
+                        continue;
+                    }
+                    let failed = (**failed).clone();
+                    let counterexample =
+                        self.counterexample(run, node, (step, successor.part), failed, &escape)?;
+                    return Ok(Some(TimedSafetyOutcome::Violated {
+                        counterexample: Box::new(counterexample),
+                        stats: run.stats(),
+                    }));
                 }
-            };
-            let Some(next) = next else {
-                continue;
+                None => return Err(ZoneCheckRefusal::Fault("refinement-verdict").into()),
             };
             let arrival = Arrival {
                 from: node,
@@ -452,14 +497,18 @@ impl Product<'_, '_> {
     }
 
     /// FR-241: the counterexample through the real edges to `node`, then
-    /// the failing `step` by its guard part.
+    /// the failing `step` by its guard part, ending at a valuation of the
+    /// step's post-state with a time-divergent continuation: within the
+    /// valuations from which `escape`'s paths reach a quiescent state, in
+    /// its breadth-first order, failing that the least-delay point,
+    /// checked.
     fn counterexample(
         &self,
         run: &mut Run<'_, '_, '_>,
         node: usize,
         (step, part): (&GuardedStep, usize),
-        failure: RefinementFailure,
-        kind: CounterexampleKind,
+        (failure, kind): (RefinementFailure, CounterexampleKind),
+        escape: &Escape,
     ) -> Result<TemporalCounterexample, Halt> {
         let lifted = run.lifted_to(node)?;
         let mut stages = lifted.stages;
@@ -476,61 +525,37 @@ impl Product<'_, '_> {
             silent: false,
             fixed: None,
         });
-        let concrete = concretise(run.timed, run.dim() - 1, &stages, &Target::Any, &run.scale)
-            .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
-        // ADR-026 TV-1 at the concrete point: the valuation the failing step
-        // is taken from has a time-divergent continuation, which replay
-        // checks again (FR-145 over FR-237). FR-241 names no cause for a
-        // finite path with no such concretisation; `LassoNotConcretized`
-        // is reused, as for a claim (spec gap STD-493).
-        let point = pre_point(run, lifted.initial, &stages, &concrete.prefix)?;
-        if !run.point_diverges(state, &point)? {
-            return Err(run.undecided(ZoneUndecided::LassoNotConcretized));
+        let mut targets = Vec::with_capacity(escape.to_quiescent.len());
+        for path in &escape.to_quiescent {
+            targets.push(run.pre_path(path)?);
         }
+        let clocks = run.dim() - 1;
+        let within = targets.into_iter().find_map(|zone| {
+            concretise(
+                run.timed,
+                clocks,
+                &stages,
+                &Target::Within(zone),
+                &run.scale,
+            )
+            .ok()
+        });
+        let concrete = match within {
+            Some(concrete) => concrete,
+            None => {
+                let concrete = concretise(run.timed, clocks, &stages, &Target::Any, &run.scale)
+                    .map_err(|_| ZoneCheckRefusal::Fault("concretisation"))?;
+                // FR-241 names no cause for a finite path with no divergent
+                // concretisation; `LassoNotConcretized` is reused, as for a
+                // claim (spec gap STD-493).
+                if !run.point_diverges(step.post(), &concrete)? {
+                    return Err(run.undecided(ZoneUndecided::LassoNotConcretized));
+                }
+                concrete
+            }
+        };
         Ok(refuted(lifted.initial, concrete.prefix, failure, kind))
     }
-}
-
-/// The valuation the last step of `prefix`, along `stages` from initial
-/// state `initial`, is taken from: every clock from its initial value, each
-/// delay elapsed and each earlier step's resets applied, then the last
-/// delay.
-fn pre_point(
-    run: &Run<'_, '_, '_>,
-    initial: usize,
-    stages: &[Stage],
-    prefix: &[qsl_replay::ModelStep],
-) -> Result<Concrete, Halt> {
-    let start = run
-        .timed
-        .initial()
-        .into_iter()
-        .nth(initial)
-        .ok_or(ZoneCheckRefusal::Fault("refinement-initial"))?;
-    if stages.len() != prefix.len() {
-        return Err(ZoneCheckRefusal::Fault("refinement-stage-per-step").into());
-    }
-    let mut clocks = start.clocks().clone();
-    let last = prefix.len().saturating_sub(1);
-    for (index, (stage, step)) in stages.iter().zip(prefix).enumerate() {
-        let delay = step
-            .delay
-            .as_ref()
-            .ok_or(ZoneCheckRefusal::Fault("refinement-delay"))?;
-        clocks = clocks.delayed(delay);
-        if index < last {
-            let (guarded, _) = stage
-                .step
-                .as_ref()
-                .ok_or(ZoneCheckRefusal::Fault("refinement-stage-step"))?;
-            clocks = guarded.reset(&clocks);
-        }
-    }
-    Ok(Concrete {
-        prefix: Vec::new(),
-        last_clocks: clocks.values().to_vec(),
-        last_stamp: Rational::from_integer(quire_exact::Integer::zero()),
-    })
 }
 
 /// The counterexample from initial state `initial` along `prefix` to a

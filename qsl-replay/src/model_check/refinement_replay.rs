@@ -117,9 +117,10 @@ pub fn replay_refinement_trace(
 /// is re-executed over time by FR-237's rules, each step after its exact
 /// delay; the checks then run along it as [`replay_refinement_trace`]
 /// runs them, a delay taking no abstract step. A reproduced failing step
-/// stands only where the valuation it is taken from has a time-divergent
-/// continuation (ADR-026 TV-1), which a fresh exploration bounded by
-/// `exploration` finds; one with none settles `inconclusive`.
+/// stands only where the behaviour goes on from it with time diverging:
+/// the valuation it reaches has a time-divergent continuation (ADR-026
+/// TV-1 and TS-4), which a fresh exploration bounded by `exploration`
+/// finds; one with none settles `inconclusive`.
 ///
 /// # Errors
 ///
@@ -147,25 +148,18 @@ pub fn replay_timed_refinement_trace(
     let RefinementTraceSettlement::Reproduced { failure, .. } = &settlement else {
         return Ok(settlement);
     };
-    // An initial state is no edge: it refutes as FR-142's does.
-    let Some(step) = failure
+    // A failing initial state is the failing step of the empty prefix: its
+    // post-state is the initial state (QSpec FR-430).
+    let Some(post) = failure
         .position()
         .and_then(|position| usize::try_from(position).ok())
-        .and_then(|position| position.checked_sub(1))
     else {
         return Ok(settlement);
     };
-    let (Some(pre), Some(taken)) = (states.get(step), payload.prefix.get(step)) else {
-        return Err(fault("a-failing-step-has-a-pre-state"));
+    let Some(point) = states.get(post) else {
+        return Err(fault("a-failing-step-has-a-post-state"));
     };
-    let delay = taken
-        .delay
-        .as_ref()
-        .ok_or_else(|| fault("a-replayed-timed-step-has-a-delay"))?;
-    let Ok(Some(point)) = timed.delay(pre, delay) else {
-        return Ok(RefinementTraceSettlement::Inconclusive(no_value_cause()));
-    };
-    Ok(match explore(&timed, &point, exploration) {
+    Ok(match explore(&timed, point, exploration) {
         Ok(Closure::Divergent) => settlement,
         Ok(Closure::Locked) => {
             RefinementTraceSettlement::Inconclusive(disagreement(Category::Success))

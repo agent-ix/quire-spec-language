@@ -2547,6 +2547,7 @@ impl PackageDeclarations {
                     protocols: $views,
                     defer_abstract_protocol_resolution: $defer_abstract,
                     timed_models: &timed_aliases,
+                    clock_reading: &self.clock_reading,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,

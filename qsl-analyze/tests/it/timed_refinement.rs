@@ -7,8 +7,9 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    check_timed_model, check_timed_refinement, TimedRefinementRequest, TimedSafetyOutcome,
-    ZoneCheckItem, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRequest,
+    check_timed_model, check_timed_refinement, TimedRefinementRequest, TimedRefinementUndecided,
+    TimedSafetyOutcome, ZoneCheckItem, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRequest,
+    ZoneUndecided,
 };
 use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
 use qsl_eval::simulation::Limits;
@@ -20,7 +21,13 @@ use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::reductions::{ObligationReductions, Reductions};
 use quire_exact::{Cancel, Rational};
 
-use crate::timed_world::{document, refining, renamed_package, Refining, DENSE};
+use qsl_semantics::model::intake::meaning;
+use serde_json::{json, Value as Json};
+
+use crate::timed_world::{
+    document, ident, refining, refining_from, renamed_package, wire_field, wire_type, Refining,
+    DENSE, PACKAGE, PLACEHOLDER,
+};
 
 /// FR-430-AC-1's untimed `Req`: the object `c` (here `Call`) with `sent`
 /// (here `inflight`), and `send` setting it.
@@ -286,23 +293,7 @@ fn a_failing_undo_refutes_only_where_time_can_diverge() {
         matches!(outcome, TimedSafetyOutcome::Holds { .. }),
         "{outcome:?}"
     );
-    let system = ModelSystem::new(trapped.concrete_request()).expect("the system admits");
-    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
-    let time_lock = check_timed_model(
-        ZoneCheckRequest {
-            subject: &timed,
-            item: ZoneCheckItem::TimeLockFreedom,
-            obligation: ItemObligation {
-                subject: "trap-undo",
-                kind: ObligationKind::TimeLockFreedom,
-                reductions: ObligationReductions::default(),
-            },
-            limits: ZoneCheckLimits::default(),
-            reductions: &Reductions::default(),
-        },
-        &Cancel::new(),
-    )
-    .expect("EN-6 takes the item");
+    let time_lock = time_lock_of(&trapped);
     assert!(
         matches!(time_lock, ZoneCheckOutcome::Violated { .. }),
         "{time_lock:?}"
@@ -365,4 +356,310 @@ fn a_clock_read_in_a_step_row_is_refused_at_the_read() {
             "self.x".to_owned()
         )]
     );
+}
+
+/// A field `name: type_ref` of the package record `owner`.
+fn record_field(owner: &str, name: &str, type_ref: &str) -> Json {
+    let mut field = wire_field(name, type_ref);
+    field["identity"] = json!(ident(&format!("{owner}/{name}")));
+    field
+}
+
+/// `TReq` whose `Call` also holds `t: Timer`, the package record `Timer {
+/// x: Clock; n: Boolean }`, and `note: Note`, the record `Note { x: Boolean
+/// }` whose `x` is no clock.
+fn treq_with_records() -> Vec<u8> {
+    const CLOCK: &str = "ix://quire/native/Clock";
+    const BOOLEAN: &str = "ix://quire/native/Boolean";
+    let mut document: Json = serde_json::from_slice(&treq()).expect("JSON");
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(wire_type(
+        &ident("Timer"),
+        "value_record",
+        json!({"fields": [record_field("Timer", "x", CLOCK), record_field("Timer", "n", BOOLEAN)]}),
+    ));
+    types.push(wire_type(
+        &ident("Note"),
+        "value_record",
+        json!({"fields": [record_field("Note", "x", BOOLEAN)]}),
+    ));
+    let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+    fields.push(wire_field("t", &ident("Timer")));
+    fields.push(wire_field("note", &ident("Note")));
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(json!({"kind": {"module": PACKAGE, "name": "value_record"},
+            "moduleVersion": "1.0.0", "manifestDigest": PLACEHOLDER,
+            "construct": {"identity": "none", "shape": "record", "members": {},
+                "meaning": meaning::RECORD_VALUE_TYPE}}));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// The refusals of the unit over [`treq_with_records`] whose mapping row
+/// is `inflight = {row}`, with the declarations `declarations`.
+fn record_row(declarations: &str, row: &str) -> Result<(), Vec<(String, String, String)>> {
+    refining(
+        &req(),
+        &treq_with_records(),
+        &format!("{DENSE}{CONTRACTS}{declarations}{}", refinement(row)),
+    )
+    .map(|_| ())
+}
+
+/// QSpec FR-430 over FR-230's clock places: a row's read is a clock read by
+/// its place path from the concrete object, not by its field name. A data
+/// field of a clock-bearing record (`self.t.n`) and a record field named
+/// like a clock that is no clock place (`self.note.x`) are admitted; the
+/// clock place `self.t.x` is refused at the read.
+#[trace("TC-1170", "FR-430-AC-1")]
+#[test]
+fn a_rows_clock_read_is_found_by_its_place_path() {
+    assert_eq!(record_row("", "self.t.n"), Ok(()));
+    assert_eq!(record_row("", "self.note.x"), Ok(()));
+    assert_eq!(
+        record_row("", "self.t.x >= 1 ms"),
+        Err(vec![(
+            "unsupported_construct".to_owned(),
+            "expression-form".to_owned(),
+            "self.t.x".to_owned()
+        )])
+    );
+}
+
+/// QSpec FR-430 over FR-230's clock-reading declarations: a row calling a
+/// predicate or a function that reads a clock refuses `expression-form`
+/// at the call, the read, never `ill_typed`.
+#[trace("TC-1170", "FR-430-AC-1")]
+#[test]
+fn a_clock_read_through_a_predicate_or_function_is_refused_at_the_call() {
+    let near = "predicate near using v(c: Clock, b: Quantity<ms>): Boolean { c <= b }\n";
+    let pick = "function pick using v(a: Clock, b: Clock, left: Boolean): Clock pure \
+                { if left then a else b }\n";
+    for (declarations, row, at) in [
+        (near, "near(self.x, 3 ms)", "near(self.x, 3 ms)"),
+        (
+            pick,
+            "pick(self.x, self.x, true) >= 1 ms",
+            "pick(self.x, self.x, true)",
+        ),
+    ] {
+        assert_eq!(
+            record_row(declarations, row),
+            Err(vec![(
+                "unsupported_construct".to_owned(),
+                "expression-form".to_owned(),
+                at.to_owned()
+            )]),
+            "{row}"
+        );
+    }
+}
+
+/// FR-430-AC-6's model: `TReq` with `trap` (here `late`) and `dead` (here
+/// `retried`); `send` (precondition `not dead`, guard `x >= 1`) resets
+/// `x`; `enter` (precondition `sent and not dead`, guard `x >= 1`) sets
+/// `trap` and resets `x`; `undo` (precondition `trap and sent and not
+/// dead`, guard `x <= 0`) clears `sent` and, with `dead`, sets `dead` under
+/// the time invariant `when self.dead { x <= 0 }`. `trap` and `dead` map
+/// to the abstract `late` and `retried`, which stay false.
+fn dead_undo(dead: bool) -> Refining {
+    let model = document(
+        &["x"],
+        &[
+            ("send", &["inflight", "x"]),
+            ("enter", &["late", "x"]),
+            ("undo", &["inflight", "retried"]),
+        ],
+    );
+    let (undone, invariant) = if dead {
+        (
+            "not self.inflight and self.retried",
+            "time invariant Dead when { self.retried } { self.x <= 0 ms }\n",
+        )
+    } else {
+        ("not self.inflight and not self.retried", "")
+    };
+    let contracts = format!(
+        "post ASend using v on A::Call::send {{ self.inflight }}\n\
+         pre MSend using v on M::Call::send {{ not self.retried and self.x >= 1 ms }}\n\
+         post MSent using v on M::Call::send {{ self.inflight and self.x = 0 ms }}\n\
+         pre MEnter using v on M::Call::enter {{ self.inflight and not self.retried and self.x >= 1 ms }}\n\
+         post MEntered using v on M::Call::enter {{ self.late and self.x = 0 ms }}\n\
+         pre MUndo using v on M::Call::undo {{ self.late and self.inflight and not self.retried and self.x <= 0 ms }}\n\
+         post MUndone using v on M::Call::undo {{ {undone} }}\n{invariant}"
+    );
+    let body = refinement("self.inflight")
+        .replace("late = self.late", "late = false")
+        .replace("retried = self.retried", "retried = false")
+        .replace(
+            "step M::Call::send -> A::Call::send(self);",
+            "step M::Call::send -> A::Call::send(self);\n\
+             step M::Call::enter -> stutter;\nstep M::Call::undo -> stutter;",
+        );
+    refining(&req(), &model, &format!("{DENSE}{contracts}{body}"))
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"))
+}
+
+/// The time-lock-freedom item of `world`'s concrete model.
+fn time_lock_of(world: &Refining) -> ZoneCheckOutcome<&'static str> {
+    let system = ModelSystem::new(world.concrete_request()).expect("the system admits");
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    check_timed_model(
+        ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::TimeLockFreedom,
+            obligation: ItemObligation {
+                subject: "timed-refinement",
+                kind: ObligationKind::TimeLockFreedom,
+                reductions: ObligationReductions::default(),
+            },
+            limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("EN-6 takes the item")
+}
+
+/// FR-430-AC-6 (ADR-026 TV-1 read at the step's post-state): the `undo`
+/// edge fails from a pre-state (trap and `sent` set, `x = 0`) whose
+/// behaviour can still diverge, but its post-state (`dead` set, `x = 0`)
+/// has no time-divergent continuation, so the half holds and the
+/// time-lock-freedom item is refuted. The variant whose `undo` leaves
+/// `dead` false refutes: `send` after delay 1, `enter` after delay 1,
+/// `undo` after delay 0, `StutterChanged` at position 3, its last point in
+/// the post-state of `undo`, replaying through FR-241 and CT-3.
+#[trace("TC-1170", "FR-430-AC-6")]
+#[test]
+fn a_failing_step_refutes_only_where_its_post_state_can_diverge() {
+    let dead = dead_undo(true);
+    let outcome = safety(&dead);
+    assert!(
+        matches!(outcome, TimedSafetyOutcome::Holds { .. }),
+        "{outcome:?}"
+    );
+    assert!(
+        matches!(time_lock_of(&dead), ZoneCheckOutcome::Violated { .. }),
+        "the time-lock-freedom item is refuted"
+    );
+    let live = dead_undo(false);
+    let TimedSafetyOutcome::Violated { counterexample, .. } = safety(&live) else {
+        panic!("the failing undo refutes where time runs on");
+    };
+    let one = Rational::from_integer(1_i64.into());
+    assert_eq!(
+        steps(&counterexample),
+        [
+            ("send".to_owned(), one.clone()),
+            ("enter".to_owned(), one),
+            ("undo".to_owned(), Rational::from_integer(0_i64.into())),
+        ]
+    );
+    assert_eq!(
+        counterexample.refinement,
+        Some(RefinementFailure::StutterChanged { position: 3 })
+    );
+    assert!(matches!(
+        replay(&live, &counterexample),
+        RefinementTraceSettlement::Reproduced { .. }
+    ));
+}
+
+/// FR-430-AC-7 (QSpec FR-430 "A failing initial state"): a concrete
+/// initial `sent = false` under an abstract initial `sent = true` is
+/// `Violated` with `InitialNotAbstract{initial: 0}` and an empty prefix,
+/// and replays. With the time invariant `when true { x <= 0 }` and no
+/// operation enabled, the initial state is time-locked, the failure does
+/// not refute and the half settles TD-6's `NoAdmittedBehaviour`.
+#[trace("TC-1170", "FR-430-AC-7")]
+#[test]
+fn a_failing_initial_state_refutes_only_where_it_can_diverge() {
+    let unit = |locked: bool| {
+        let invariant = if locked {
+            "time invariant Stuck when { true } { self.x <= 0 ms }\n"
+        } else {
+            ""
+        };
+        refining_from(
+            &req(),
+            &treq(),
+            &format!(
+                "{DENSE}{CONTRACTS}{invariant}{}",
+                refinement("self.inflight")
+            ),
+            true,
+        )
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"))
+    };
+    let free = unit(false);
+    let TimedSafetyOutcome::Violated { counterexample, .. } = safety(&free) else {
+        panic!("the initial state is no abstract one");
+    };
+    assert!(counterexample.prefix.is_empty());
+    assert_eq!(
+        counterexample.refinement,
+        Some(RefinementFailure::InitialNotAbstract { initial: 0 })
+    );
+    assert!(matches!(
+        replay(&free, &counterexample),
+        RefinementTraceSettlement::Reproduced { .. }
+    ));
+    let outcome = safety(&unit(true));
+    assert!(
+        matches!(
+            outcome,
+            TimedSafetyOutcome::Undecided {
+                cause: TimedRefinementUndecided::Zone(ZoneUndecided::NoAdmittedBehaviour),
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+}
+
+/// FR-430-AC-7: an `Undetermined` step verdict is no refutation and TV-1
+/// does not read it. The unread history field `writes: Int[0, 1]`,
+/// counting `send`s, leaves the range at the second `send`, and the half
+/// returns `Undecided(Undetermined)` both where that step's post-state
+/// diverges and where the time invariant `when self.inflight { x <= 0 }`
+/// time-locks it.
+#[trace("TC-1170", "FR-430-AC-7")]
+#[test]
+fn an_undetermined_step_is_undecided_whatever_its_post_state() {
+    let history =
+        "history M::Call.writes : Int[0, 1] = 0 { on M::Call::send : pre(self.writes) + 1; }\n";
+    for locked in [false, true] {
+        let (guard, invariant) = if locked {
+            (
+                "(not self.inflight and self.x >= 1 ms) or self.inflight",
+                "time invariant Hold when { self.inflight } { self.x <= 0 ms }\n",
+            )
+        } else {
+            ("self.x >= 1 ms", "")
+        };
+        let contracts = format!(
+            "post ASend using v on A::Call::send {{ self.inflight }}\n\
+             pre MSend using v on M::Call::send {{ {guard} }}\n\
+             post MSent using v on M::Call::send {{ self.inflight and self.x = 0 ms }}\n{invariant}"
+        );
+        let body = refinement("self.inflight").replace(
+            "step M::Call::send",
+            &format!("{history}step M::Call::send"),
+        );
+        let model = document(&["x"], &[("send", &["inflight", "x"])]);
+        let world = refining(&req(), &model, &format!("{DENSE}{contracts}{body}"))
+            .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+        let outcome = safety(&world);
+        assert!(
+            matches!(
+                outcome,
+                TimedSafetyOutcome::Undecided {
+                    cause: TimedRefinementUndecided::Undetermined(_),
+                    ..
+                }
+            ),
+            "locked {locked}: {outcome:?}"
+        );
+    }
 }

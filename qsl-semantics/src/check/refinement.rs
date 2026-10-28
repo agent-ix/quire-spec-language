@@ -268,10 +268,7 @@ pub enum RefinementCause {
     /// abstract state would not be a function of the discrete state alone
     /// (QSpec FR-430 "Timed refinement"): `unsupported_construct`/
     /// `expression-form` at the read.
-    ClockRead {
-        /// The clock field read.
-        field: String,
-    },
+    ClockRead,
     /// A defect of the unit's `refinement_internals` value, located by the
     /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
     InternalList(ListDefect),
@@ -355,7 +352,7 @@ impl RefinementCause {
             | Self::UnsupportedRowForm { .. }
             | Self::AbstractRelationships { .. }
             | Self::TimedAbstract { .. }
-            | Self::ClockRead { .. } => Code::UnsupportedConstruct,
+            | Self::ClockRead => Code::UnsupportedConstruct,
             Self::PopulationBound { .. }
             | Self::NodeArgumentCount { .. }
             | Self::NodeArgumentType { .. } => Code::IllTyped,
@@ -379,7 +376,7 @@ impl RefinementCause {
             }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
-            Self::UnsupportedRowForm { .. } | Self::ClockRead { .. } => Some("expression-form"),
+            Self::UnsupportedRowForm { .. } | Self::ClockRead => Some("expression-form"),
             Self::AbstractRelationships { .. } | Self::TimedAbstract { .. } => {
                 Some("declaration-form")
             }
@@ -1462,7 +1459,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     protocols: &'c [ProtocolDeclarationForm],
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
-    env: &RefinementEnv<'_>,
+    env: &RefinementEnv<'c>,
     identity: qsl_foundation::IdentityLimits,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
@@ -1567,6 +1564,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     let clause_refused = matches!(subject, ListSubject::Refused);
     let mut checker = Checker {
         declarations,
+        clock_reading: env.clock_reading,
         protocols,
         abstract_side,
         concrete_side,
@@ -1748,6 +1746,9 @@ pub(crate) struct RefinementEnv<'e> {
     /// The aliases of the unit's timed models: those a `time` declaration
     /// names (QSpec FR-430).
     pub(crate) timed_models: &'e [&'e str],
+    /// The unit's clock-reading declarations, whose calls read clocks
+    /// (FR-230).
+    pub(crate) clock_reading: &'e [super::assemble::ClockReadingDeclaration],
 }
 
 /// One protocol clause of the unit and its check: `checked` is `None` when
@@ -1894,6 +1895,8 @@ fn internal_list(
 
 struct Checker<'c, 'a> {
     declarations: &'c ClauseDeclarations<'a>,
+    /// The unit's clock-reading declarations (FR-230).
+    clock_reading: &'c [super::assemble::ClockReadingDeclaration],
     /// The unit's protocol declarations, which a step row may select.
     protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
@@ -1931,43 +1934,6 @@ struct Checker<'c, 'a> {
 /// The first expression form in a refinement row that the governing
 /// infinite-trace profile does not admit, with the token span and the layer
 /// that admits it (QSpec FR-375 "Row layers").
-/// The first read of a clock field of `concrete` in `expression`, in
-/// source order, with its span (QSpec FR-430 "Timed refinement"): a field
-/// access whose member is the field of one of the model's clock places. A
-/// row's operands are the concrete object and the step's parameters, whose
-/// values hold no clock (FR-230), so a member named as a clock field is
-/// read as one.
-fn clock_read(expression: &ExpressionForm, concrete: &AdmittedModel) -> Option<(String, Span)> {
-    let places = concrete.clock_places();
-    if places.is_empty() {
-        return None;
-    }
-    let mut read = None;
-    super::layer::visit_located(
-        &expression.expression,
-        &expression.spans,
-        expression
-            .spans
-            .at(&[])
-            .unwrap_or(Span { start: 0, end: 0 }),
-        |node, span| {
-            let qsl_forms::ExprNode::Field { field, .. } = node else {
-                return None;
-            };
-            places
-                .iter()
-                .any(|place| {
-                    matches!(
-                        place.path.first(),
-                        Some(super::lowering::PlaceStep::Field(name)) if name == field
-                    )
-                })
-                .then(|| read = Some((field.clone(), span)))
-        },
-    );
-    read
-}
-
 fn unsupported_row_form(expression: &ExpressionForm) -> Option<(&'static str, Span)> {
     let lock = DefinitionLock::pinned();
     let required: std::collections::BTreeSet<_> = lock
@@ -2513,10 +2479,19 @@ impl<'c, 'a> Checker<'c, 'a> {
                 .refuse(span, RefinementCause::UnsupportedRowForm { layer });
             return None;
         }
-        if let Some((field, span)) = clock_read(expression, self.concrete_side.model) {
-            self.findings
-                .refuse(span, RefinementCause::ClockRead { field });
-            return None;
+        // QSpec FR-430: the row reads no clock place of the concrete
+        // object, so the mapped state is a function of the discrete state.
+        if let Some((_, ValueType::Reference(object))) = context.parameters.first() {
+            if let Some(span) = super::timed_model::first_clock_read(
+                expression,
+                self.concrete_side.model,
+                self.declarations.models,
+                self.clock_reading,
+                *object,
+            ) {
+                self.findings.refuse(span, RefinementCause::ClockRead);
+                return None;
+            }
         }
         let declarations = self.declarations;
         let location = Location::root(Origin::Expression);

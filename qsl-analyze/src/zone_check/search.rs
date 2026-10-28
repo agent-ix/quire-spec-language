@@ -1802,7 +1802,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// which its model steps are taken, each after an admissible delay: the
     /// exact predecessors of every valuation of the quiescent state it ends
     /// at, all of which diverge.
-    fn pre_path(&mut self, path: &[(ModelSimState, usize, usize)]) -> Result<Dbm, Halt> {
+    pub(super) fn pre_path(&mut self, path: &[(ModelSimState, usize, usize)]) -> Result<Dbm, Halt> {
         let mut region = Dbm::universe(self.dim());
         for (source, step, part) in path.iter().rev() {
             let steps = self.steps_for(source)?;

@@ -300,7 +300,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::UnsupportedRowForm { .. }
             | RefinementCause::AbstractRelationships { .. }
             | RefinementCause::TimedAbstract { .. }
-            | RefinementCause::ClockRead { .. }
+            | RefinementCause::ClockRead
             | RefinementCause::PopulationBound { .. }
             | RefinementCause::NodeArgumentCount { .. }
             | RefinementCause::NodeArgumentType { .. } => None,
