@@ -66,6 +66,16 @@
 //! way, and the deadlock-freedom and time-lock-freedom items. A
 //! certificate numbers its automaton states in its own order; the checker
 //! binds each number to the state it recomputes, one to one.
+//!
+//! A timed refinement's safety half (QSpec FR-430) is checked in FR-244's
+//! refinement form: the part's refinement and both packages are compared
+//! with the recompiled ones first; each node's second component is a
+//! position, not an automaton state; `check_initial` and `check_step`,
+//! run on the listed positions, replace the claim automaton and its
+//! badness (`InitialMismatch`, `StepFails`, `PostDiffers`); the locked
+//! region, entered only by a failing step into a `locked` entry node, is
+//! read on concrete steps alone; and `admitted` starts at a positioned
+//! initial node. FR-244's `initials` is the certificate's `initial`.
 
 mod divergence;
 mod product;
