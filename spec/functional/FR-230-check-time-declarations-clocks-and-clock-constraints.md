@@ -416,13 +416,16 @@ ill-formed use.
   path order; each row records declaring type, member identity/type and, for a
   collection, its kind and bounds. These rows are checked-package data joined
   to the selected declaration; I2 does not reopen source text or infer members
-  from a spelling. A `Slot` step is written as the template step of QSpec
-  FR-322 "Timed-model nodes" (FR-322-AC-148 to FR-322-AC-150): one `clock_place`
-  node for each path, whose slot selector is the symbolic element selector, never
-  an index, so that a collection holding more or fewer elements changes no node.
+  from a spelling.
+  A `Slot` step is written as the template step of QSpec FR-322 "Timed-model
+  nodes" (FR-322-AC-148 to FR-322-AC-150). There is one `clock_place` node for
+  each path, and its slot selector is the symbolic element selector, never an
+  index, so a collection holding more or fewer elements changes no node.
   A model whose guards the emission cannot yet write SHALL be refused
-  `TimedModelNotEmitted`, never emitted with an empty `guards` aggregate; an empty
-  aggregate is written only for a place or model that has no guard. The remaining node data records guards;
+  `TimedModelNotEmitted`; it SHALL NOT be emitted with an empty `guards`
+  aggregate. An empty aggregate is written only for a place or model that has
+  no guard.
+  The remaining node data records guards;
   reset target and exact converted value; guard/invariant constraint terms;
   urgency predicate or operation; and every bound's comparison, exact value
   and resolved unit. `Clock` remains a place, never a value type. Record and
