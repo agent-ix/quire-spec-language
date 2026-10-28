@@ -137,7 +137,7 @@ pub struct UndefinedPath {
     pub probability: Rational,           // the product of the steps' probabilities
     pub position: u64,                   // the trace position of the state: the number of steps
     pub state_key: DigestRecord,         // the quire.simulation.state-key/v1 digest of the model state
-    pub key: ProbKey,                    // the complete product key of the undefined state (ADR-028 WS-1)
+    pub key: ProbKey,                    // the complete pre-read product key at the undefined read (ADR-028 WS-1)
     pub read: UndefinedRead,             // the event atom or the state predicate (From, Until, Target) that has no value
     pub cause: UndefinedCause,
 }
@@ -236,6 +236,22 @@ array members are required. JSON null denotes actual None and SHALL NOT
 be replaced with an initial/default/zero value. This defines the semantic
 representation; FR-331 owns its transport and each certificate field's
 binding to it.
+
+For a read that evaluates `Undefined`, the key in `UndefinedPath` SHALL be
+the complete product key immediately before that read: it names the model
+state and the control already reached when EN-5 attempts to read the
+position's letter. The build SHALL NOT advance the monitor or accumulator
+using an undefined letter. At position zero, the pre-read control SHALL be
+initialized from the checked claim without reading any predicate: a formula
+uses its automaton's initial state; a bounded measure uses its initial
+inactive phase and zero, not-activated accumulator; a fraction uses its
+initial collecting phase and zero sums; an unbounded form has no monitor or
+accumulator. At later positions, the pre-read control is the control reached
+after the preceding defined position and its step. An intermediate
+multi-post-state draw is resolved before this key is formed, so the key names
+the selected post-state, has no pending draw, and retains the unchanged
+control from before the resolution. `position` remains the number of steps
+from the initial state to the model state named by this key.
 
 `binding` is the claim's `over` binding: the FR-181 reference triple object
 of the one object the claim's predicates are read for, or null for a claim
@@ -761,7 +777,8 @@ rejection loci, with no model-only shortcut.
 | FR-196-AC-9 | Every listed admission negative refuses before certificate membership; exact-only forms retain actual None, timed model keys retain all digital clocks and deadline facts, and a budget stop produces no default/truncated product key. | Test |
 | FR-196-AC-10 | Over a population with two live objects, a claim `over` the object type builds a product with two initial states per subject initial state, one per binding; the same model state and the same monitor state under the two bindings are two product states, and their keys differ in `binding`. | Test (TC-631) |
 | FR-196-AC-11 | A `steps from holds(A) until holds(B) within 3` measure whose `A` never holds ends every path at control `Measure{remaining: 0, phase: Unactivated}` with accumulator `Steps{activated: false, amount: 0}`, decided and not expanded. A `steps` measure activated at a terminal model state counts each stutter step up to its horizon. A fraction reads its predicate at the position the step leaves. | Test (TC-631) |
-| FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the complete product key of the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. An `Undefined` path over a claim `over` two objects carries the initial-state index and the binding of the undefined read, and its `key` is the complete product key of the undefined state. A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
+| FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the complete product key of the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. An `Undefined` path over a claim `over` two objects carries the initial-state index and the binding of the undefined read, and its `key` is the complete pre-read product key at the undefined read (AC-13). A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
+| FR-196-AC-13 | At every undefined read, `UndefinedPath.key` is the complete pre-read product key at that read: it retains the model state reached and the real control before evaluating the position's letter, and does not advance that control on the undefined result. For an undefined read at position 0, the key uses the initial model state and the claim-initialized non-null formula, measure or fraction control (or null control for an unbounded form); for a first undefined read after a step, it uses the reached post-state and the control carried from the preceding defined position. A resolved multi-post-state draw names the selected post-state with no pending draw. | Test |
 
 ## Dependencies
 
