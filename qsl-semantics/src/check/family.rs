@@ -436,6 +436,7 @@ fn encode_expression(
                 out.write_str("boolean");
                 out.write_bool(*value);
             }
+            ExprNode::Absent => out.write_str("absent"),
             ExprNode::Integer(value) => {
                 out.write_str("integer");
                 out.write_str(&value.to_string());

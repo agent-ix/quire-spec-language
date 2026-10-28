@@ -235,6 +235,50 @@ impl<'c> Plan<'c> {
         }
     }
 
+    /// The claim-initialized control before position zero is read. An
+    /// undefined position-zero predicate reports this state without applying
+    /// a letter or activating a measure.
+    pub(super) fn initial_control(
+        &mut self,
+    ) -> Result<(Option<MonitorState>, Option<Accumulator>), PlanFault> {
+        match self {
+            Self::Formula(monitor) => Ok((
+                Some(MonitorState::Formula(FormulaState::Running(
+                    monitor.initial()?,
+                ))),
+                None,
+            )),
+            Self::Measure {
+                reward,
+                threshold,
+                within,
+            } => Ok(measure_state(
+                reward.is_none(),
+                *within,
+                Activation::Inactive,
+                &Amount::Exact(zero()),
+                threshold,
+            )),
+            Self::Fraction { window, weight } => Ok((
+                Some(MonitorState::Fraction {
+                    remaining: window.saturating_add(1),
+                }),
+                Some(if weight.is_some() {
+                    Accumulator::WeightedFraction {
+                        true_sum: zero(),
+                        total_sum: zero(),
+                    }
+                } else {
+                    Accumulator::CountFraction {
+                        true_count: 0,
+                        position_count: 0,
+                    }
+                }),
+            )),
+            Self::Labels => Ok((None, None)),
+        }
+    }
+
     /// The control and amounts after a model step that leaves a state whose
     /// predicates read `source` and reaches one whose predicates read `post`,
     /// with the step's `rewards`.

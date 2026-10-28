@@ -24,7 +24,8 @@ pub use expression::{
     evaluate_terminal_predicate, input_refusal_code, refusal_record, supplied_stop_cause,
     supplied_stop_code, CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry,
     ClauseSetEvaluation, ClauseSetOutcome, FrameEvaluation, InvalidQualifiedName,
-    InvocationBinding, ObservationIdentity, PackageClosure, PackageTask, QualifiedName,
-    RuntimeValuePath, Separation, SeparationStep, StopReport, ValueInvariantEvaluation,
-    ValueInvariantOutcome, ValueInvariantResult, ValuePathStep, ValuePathSubject, WitnessClaim,
+    InvocationBinding, ObservationIdentity, PackageClosure, PackageTask, ProtocolSlot,
+    ProtocolSlotEvaluation, ProtocolSupply, QualifiedName, RuntimeValuePath, Separation,
+    SeparationStep, StopReport, SuppliedValue, ValueInvariantEvaluation, ValueInvariantOutcome,
+    ValueInvariantResult, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
