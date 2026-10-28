@@ -1429,7 +1429,7 @@ fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
 /// `none` is represented as an absent Option at S2, then refused at S3 when a
 /// variant slot requires the variant itself. FR-360's older S2 expectation
 /// needs its wording updated to match the option value form.
-#[trace("TC-1007")]
+#[trace("TC-1007", "FR-360-AC-5")]
 #[test]
 fn none_at_a_variant_slot_is_checked_and_refused_as_a_type_mismatch() {
     let literal = "none";
