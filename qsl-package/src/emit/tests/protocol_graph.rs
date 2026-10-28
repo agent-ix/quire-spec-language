@@ -709,9 +709,9 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             plain("on each (g: M::Person) when (ok())", "", main, "true"),
         ),
         (
-            C::Terminal,
-            "QSL-1121f",
-            plain("on origin", "terminal any;", main, "true"),
+            C::TerminalReadsDeclaration,
+            "QSL-1121g",
+            plain("on origin", "terminal when { ok() };", main, "true"),
         ),
         (
             C::FinishReadsDeclaration,

@@ -89,6 +89,8 @@ pub mod meaning {
     /// type, event type, ..." row) -- a known FR-208 meaning with no QSL
     /// record shape yet, refused as `unsupported_construct`.
     pub const RECORD_VALUE_TYPE: &str = "quire.meaning.model.record-value-type/v1";
+    /// An identity-free tuple value type with ordered ordinal positions.
+    pub const TUPLE_VALUE_TYPE: &str = "quire.meaning.model.tuple-value-type/v1";
     /// A variant type: a `TypeDefinition` declaring one `enum` with one
     /// `variant` case per member.
     pub const VARIANT_TYPE: &str = "quire.meaning.model.variant-type/v1";
@@ -140,6 +142,7 @@ pub mod meaning {
         OBJECT_TYPE,
         VALUE_TYPE,
         RECORD_VALUE_TYPE,
+        TUPLE_VALUE_TYPE,
         VARIANT_TYPE,
         EVENT_TYPE,
         STATE_MACHINE,
@@ -4183,6 +4186,7 @@ pub(super) fn read_variant_type(
     node: &str,
     at: &str,
     shape: Option<&str>,
+    type_meanings: &HashMap<&str, &str>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
     let ctx = NodeCtx::new(type_value, at);
@@ -4261,15 +4265,53 @@ pub(super) fn read_variant_type(
                 ),
             );
         }
-        if case.get("payloadType").is_some() {
-            refusals.push(unsupported_member(
-                case,
-                &case_at,
-                MemberPath::new(MemberRoot::Variant).name("payloadType"),
-                format!("{}:payloadType", meaning::VARIANT_TYPE),
-            ));
-        }
-        cases.push((name, identity));
+        let payload_type = match case.get("payloadType") {
+            None => None,
+            Some(value) => match value.as_str() {
+                Some(type_ref) => {
+                    let case_ctx = NodeCtx::new(case, case_at.clone());
+                    match read_value_type_ref(package, &case_ctx, type_ref, true) {
+                        Ok(value_type)
+                            if variant_payload_is_value_type(&value_type, type_meanings) =>
+                        {
+                            Some(value_type)
+                        }
+                        Ok(_) => {
+                            refusals.push(unsupported_member(
+                                case,
+                                &case_at,
+                                MemberPath::new(MemberRoot::Variant).name("payloadType"),
+                                format!("{}:payloadType", meaning::VARIANT_TYPE),
+                            ));
+                            None
+                        }
+                        Err(refusal) => {
+                            refusals.push(unsupported_member(
+                                case,
+                                &case_at,
+                                MemberPath::new(MemberRoot::Variant).name("payloadType"),
+                                format!(
+                                    "{}:payloadType ({})",
+                                    meaning::VARIANT_TYPE,
+                                    refusal.detail
+                                ),
+                            ));
+                            None
+                        }
+                    }
+                }
+                None => {
+                    refusals.push(unsupported_member(
+                        case,
+                        &case_at,
+                        MemberPath::new(MemberRoot::Variant).name("payloadType"),
+                        format!("{}:payloadType", meaning::VARIANT_TYPE),
+                    ));
+                    None
+                }
+            },
+        };
+        cases.push((name, identity, payload_type));
     }
     if let Ok(found) = Refusals::try_from(refusals) {
         return Err(found);
@@ -4278,16 +4320,42 @@ pub(super) fn read_variant_type(
     records.push(DomainPackageRecord::Enum(EnumRecord {
         key: owner.clone(),
         name: artifact.to_owned(),
-        members: cases.iter().map(|(name, _)| (*name).to_owned()).collect(),
+        members: cases
+            .iter()
+            .map(|(name, _, _)| (*name).to_owned())
+            .collect(),
     }));
-    for (name, identity) in cases {
+    for (name, identity, payload_type) in cases {
         records.push(DomainPackageRecord::Variant(VariantRecord {
             key: declaration_key(package, identity),
             owner: owner.clone(),
             case: name.to_owned(),
+            payload_type,
         }));
     }
     Ok(())
+}
+
+/// Whether `payload_type` resolves to one of the admitted model or native
+/// value types. Units and Clock are locations/places, and an unresolved or
+/// non-value package meaning is not a union payload type.
+fn variant_payload_is_value_type(
+    payload_type: &ValueTypeRef,
+    type_meanings: &HashMap<&str, &str>,
+) -> bool {
+    match payload_type {
+        ValueTypeRef::Clock | ValueTypeRef::Unit(_) => false,
+        ValueTypeRef::Native(_) => true,
+        ValueTypeRef::Package(key) => type_meanings.get(key.node.as_str()).is_some_and(|meaning| {
+            matches!(
+                *meaning,
+                meaning::VALUE_TYPE
+                    | meaning::RECORD_VALUE_TYPE
+                    | meaning::TUPLE_VALUE_TYPE
+                    | meaning::VARIANT_TYPE
+            )
+        }),
+    }
 }
 
 /// `earlier` refusals followed by `last`, as the non-empty [`Refusals`].

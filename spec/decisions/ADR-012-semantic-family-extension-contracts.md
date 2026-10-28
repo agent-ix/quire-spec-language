@@ -1255,10 +1255,17 @@ operation anchor node they share.
   revises it in place (§12.1).
 - **Not emitted.** QSL emits no `state`/`snapshot` node. A snapshot is an
   observation supplied at E6, and a package's identity must not depend on its
-  observations (ADR-011 E6). QSL emits no `state`/`transition` node from a
-  state clause. Transitions are protocol controls that carry a
-  `protocol_profile` law, and they belong to `ProtocolClause`'s protocol
-  emission (#218).
+  observations (ADR-011 E6). QSL emits a `state`/`transition` node only for
+  the Boolean model-field case FR-105 "Boolean model-field transitions"
+  fixes: one per (operation anchor, eligible Boolean field), derived at S4,
+  with `pre` and `post` bound to the conjunction (`quire.op.boolean.and`) of
+  the operation's preconditions and of the postconditions that constrain the
+  field. Every authored clause keeps its own `state_clause` node. QSpec FR-341's wire
+  shape needs no change, but its occurrence rule ("one `claim` occurrence per
+  declaration"), its "no conjunction node is synthesized" sentence and its OPEN
+  paragraph need a wording follow-up (QSpec STD ticket). A transition is otherwise a protocol control that carries a
+  `protocol_profile` law and belongs to `ProtocolClause`'s protocol emission
+  (#218).
 
 ### 15.5 Observations
 

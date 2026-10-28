@@ -77,6 +77,10 @@ pub(crate) enum ProtocolSite<'a> {
     Finish(&'a str),
     /// The `finish` constraint's expression tree.
     FinishBody(&'a str),
+    /// The `terminal` node: its `declaration` occurrence and its condition.
+    Terminal,
+    /// The `terminal when` condition's expression tree.
+    TerminalBody,
     /// The `activation on each` guard's expression tree.
     ActivationGuard,
     /// The capture of this name: its binder's `expression` occurrence.
@@ -107,6 +111,8 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::RoleUntil(role) => format!("protocol {protocol} role {role} until"),
         ProtocolSite::Channel(channel) => format!("protocol {protocol} channel {channel}"),
         ProtocolSite::ChannelKey(channel) => format!("protocol {protocol} channel {channel} key"),
+        ProtocolSite::Terminal => format!("protocol {protocol} terminal"),
+        ProtocolSite::TerminalBody => format!("protocol {protocol} terminal body"),
         ProtocolSite::FinishBody(name) => format!("protocol {protocol} finish {name} body"),
         ProtocolSite::ActivationGuard => format!("protocol {protocol} activation guard"),
         ProtocolSite::Capture(name) => format!("protocol {protocol} capture {name}"),
@@ -195,8 +201,16 @@ impl ProtocolInput<'_> {
         ) {
             unemitted.push(ProtocolConstruct::ActivationGuardReadsDeclaration);
         }
-        if !matches!(slots.terminal, CheckedTerminalMember::None) {
-            unemitted.push(ProtocolConstruct::Terminal);
+        if matches!(
+            &slots.terminal,
+            CheckedTerminalMember::When(body) if reads_declaration(body.root())
+        ) {
+            unemitted.push(ProtocolConstruct::TerminalReadsDeclaration);
+        }
+        if matches!(form.activation, ActivationForm::Each { .. })
+            && matches!(&slots.terminal, CheckedTerminalMember::When(body) if body.reads_local(0))
+        {
+            unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
         }
         if self
             .finish_body()
@@ -241,6 +255,8 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Option(_)
         | ValueType::Enum(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::Map(_)
         | ValueType::Population(_) => false,
     }
 }
@@ -570,6 +586,13 @@ impl Lowering<'_> {
         )?;
         let roles: Vec<NodeKey> = sorted(roles.into_iter().map(|(_, key)| key));
         let finish = self.finish_node(protocol, &operation("finish")?, &readable, boolean)?;
+        let terminal = self.terminal_node(
+            protocol,
+            &operation("terminal")?,
+            &readable,
+            trigger,
+            boolean,
+        )?;
         let run = self.run_nodes(protocol, &operation("sequence")?, boolean)?;
 
         let activation = match &trigger {
@@ -617,7 +640,12 @@ impl Lowering<'_> {
                     ),
                     MemberTerm::binding("requirements", empty_group()),
                     MemberTerm::binding("compensations", empty_group()),
-                    MemberTerm::binding("terminal", empty_group()),
+                    MemberTerm::binding(
+                        "terminal",
+                        terminal.map_or_else(empty_group, |terminal| {
+                            BindingValue::Group(GroupTerm::references([terminal]))
+                        }),
+                    ),
                     MemberTerm::binding("scheduling", scheduling),
                     MemberTerm::bound("run", LeafTerm::reference(run)),
                     MemberTerm::bound("finish", LeafTerm::reference(finish)),
@@ -1044,6 +1072,70 @@ impl Lowering<'_> {
                 ],
             ),
         )
+    }
+
+    /// The `terminal` obligation node of `protocol` (FR-465 "Terminal"), or
+    /// `None` when it writes no `terminal` member: `mode` is `any` or
+    /// `when`, and `condition` the checked predicate for `when` and an empty
+    /// optional for `any`. The condition reads `over` and, under an `origin`
+    /// activation, the protocol captures, and no other binder (QSpec FR-464
+    /// stage `terminal`), so under `each` its scope is `over` alone.
+    fn terminal_node(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        operation: &Operation,
+        readable: &[Binder],
+        trigger: Option<Binder>,
+        boolean: NodeKey,
+    ) -> Result<Option<NodeKey>, CheckRefusal> {
+        let name = protocol.form.name.name.as_str();
+        let location = protocol_location(name, ProtocolSite::Terminal);
+        let (mode, condition) = match &protocol.checked.slots.terminal {
+            CheckedTerminalMember::None => return Ok(None),
+            CheckedTerminalMember::Any => ("any", None),
+            CheckedTerminalMember::When(body) => ("when", Some(body)),
+        };
+        let condition = match condition {
+            None => MemberTerm::binding("condition", empty_group()),
+            Some(body) => {
+                let scope: Vec<Binder> = match trigger {
+                    None => readable.to_vec(),
+                    Some(_) => readable.iter().take(1).copied().collect(),
+                };
+                let slot_names: Vec<String> = protocol
+                    .checked
+                    .slots
+                    .binders
+                    .iter()
+                    .map(|binder| binder.name.clone())
+                    .collect();
+                let mut binders = Binders::new(&slot_names, &scope);
+                let term = self.expression(body.root(), &mut binders)?;
+                MemberTerm::binding(
+                    "condition",
+                    BindingValue::Group(GroupTerm::new(vec![GroupMember::Leaf(term)])),
+                )
+            }
+        };
+        let declaration = vec![
+            identifier(name, &location)?,
+            identifier("terminal", &location)?,
+        ];
+        let mode = MemberTerm::bound("mode", self.text_literal(mode, &location)?);
+        self.protocol_member(
+            &location,
+            "obligation",
+            boolean,
+            declaration,
+            None,
+            BodyTerm::application(
+                Operator::ProtocolControl,
+                operation.clone(),
+                boolean,
+                vec![mode, condition],
+            ),
+        )
+        .map(Some)
     }
 
     /// The `sequence` control nodes of `protocol`'s `run` tree (FR-466

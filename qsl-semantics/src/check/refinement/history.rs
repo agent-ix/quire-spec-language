@@ -81,11 +81,13 @@ fn bounded(declared: &ValueType) -> bool {
         ValueType::Integer
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::String
         | ValueType::Uuid
         | ValueType::Timestamp
         | ValueType::Composite(_)
         | ValueType::Collection(_)
+        | ValueType::Map(_)
         | ValueType::Reference(_)
         | ValueType::Population(_) => false,
     }

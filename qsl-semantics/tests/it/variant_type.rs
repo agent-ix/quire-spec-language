@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-056 "Variant types" (QSL-734): a variant type is admitted as one `enum`
-//! export and one `variant` export per case (TC-994), refuses a payload
-//! (TC-995), refuses malformed and duplicate cases with their causes
+//! export and one `variant` export per case (TC-994), admits supported
+//! payloads as union members (TC-995), refuses malformed and duplicate cases with their causes
 //! (TC-996), and admits a clause, field, parameter or result that names it
 //! while its own declaration stays unchanged (TC-997; FR-360 states how a
 //! member typed by it is assembled and checked).
@@ -362,38 +362,40 @@ fn payload_tiers() -> Value {
     )
 }
 
-/// TC-995 step 1: a case with a payload refuses as an unsupported
-/// declaration form at the case node, never as a malformed binding, and
-/// `Standard` raises nothing of its own.
+/// TC-995: a resolving payload remains attached to its case; a payload-free
+/// case beside it stays nullary.
 #[trace("TC-995", "FR-056-AC-25")]
 #[test]
-fn a_payload_on_a_case_refuses_as_an_unsupported_declaration_form() {
-    let found = refusals(&payload_tiers());
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert_eq!(found[0].code, Code::UnsupportedConstruct);
-    assert!(
-        matches!(
-            found[0].cause,
-            ModelRefusalCause::UnsupportedDeclarationForm { .. }
-        ),
-        "{:?}",
-        found[0]
+fn a_resolving_payload_is_retained_on_its_case() {
+    let package = admitted(&payload_tiers());
+    let cases = variants_of(&package, "Tier");
+    assert_eq!(cases.len(), 2);
+    assert_eq!(cases[0].case, "Gold");
+    assert_eq!(
+        cases[0].payload_type,
+        Some(ValueTypeRef::Native(
+            qsl_semantics::model::domain_package::NativeValueType::Integer,
+        ))
     );
-    assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
-    assert_eq!(member_of(&found[0]), path("Variant.payloadType"));
+    assert_eq!(cases[1].case, "Standard");
+    assert_eq!(cases[1].payload_type, None);
 }
 
-/// TC-995 step 2: without the payload the type admits as in TC-994 step 1.
+/// TC-995: a non-value payload still refuses at the typed payload member.
 #[trace("TC-995", "FR-056-AC-25")]
 #[test]
-fn removing_the_payload_admits_the_type() {
-    let mut without = payload_tiers();
-    without["types"][0]["variants"][1]
-        .as_object_mut()
-        .unwrap()
-        .remove("payloadType");
-    let package = admitted(&without);
-    assert_eq!(enum_of(&package, "Tier").members, ["Gold", "Standard"]);
+fn a_non_value_payload_type_refuses_at_its_member() {
+    let mut document = payload_tiers();
+    document["types"][0]["variants"][1]["payloadType"] = json!("ix://quire/native/Clock");
+    let found = refusals(&document);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].code, Code::UnsupportedConstruct);
+    assert!(matches!(
+        found[0].cause,
+        ModelRefusalCause::UnsupportedDeclarationForm { .. }
+    ));
+    assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
+    assert_eq!(member_of(&found[0]), path("Variant.payloadType"));
 }
 
 fn single_type(mutate: impl FnOnce(&mut Value)) -> Value {
@@ -795,26 +797,17 @@ fn an_undeclared_signature_type_keeps_the_operations_origin() {
     );
 }
 
-/// FR-154: every failing check of one node is reported. A type with two
-/// payload cases reports both, each at its own case node.
+/// A type with two resolving payload cases retains both cases.
 #[trace("TC-995", "FR-056-AC-25")]
 #[test]
-fn every_payload_case_of_one_type_is_reported() {
+fn every_payload_case_of_one_type_is_retained() {
     let mut document = payload_tiers();
     let standard = &mut document["types"][0]["variants"][0];
     standard["payloadType"] = json!("ix://quire/native/Integer");
-    let found = refusals(&document);
-    assert_eq!(found.len(), 2, "{found:?}");
-    let mut nodes: Vec<_> = found.iter().map(node_of).collect();
-    nodes.sort_unstable();
-    assert_eq!(
-        nodes,
-        [id("variant/Tier-Gold"), id("variant/Tier-Standard")]
-    );
-    for refusal in &found {
-        assert_eq!(refusal.code, Code::UnsupportedConstruct);
-        assert_eq!(member_of(refusal), path("Variant.payloadType"));
-    }
+    let package = admitted(&document);
+    assert!(variants_of(&package, "Tier")
+        .iter()
+        .all(|case| case.payload_type.is_some()));
 }
 
 /// FR-154: an empty `variants` list and a wrong construct shape can both

@@ -3699,6 +3699,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
             "missing_declaration" => CheckedPackageRefusalCode::MissingDeclaration,
             "invalid_model_binding" => CheckedPackageRefusalCode::InvalidModelBinding,
             "invalid_semantic_graph" => CheckedPackageRefusalCode::InvalidSemanticGraph,
+            "malformed_wire" => CheckedPackageRefusalCode::MalformedWire,
             other => panic!("{name}: unmapped expected_code {other}"),
         };
         let expected_cause = match mutation["expected_cause"].as_str() {
