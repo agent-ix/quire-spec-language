@@ -124,6 +124,19 @@ impl Lowering<'_> {
         Ok(rows)
     }
 
+    /// FR-144: the `Boolean` type node the refinement's requirement record
+    /// is result-bounded at, with a `generated` occurrence at the
+    /// refinement's declaration `location` when no other declaration locates
+    /// it.
+    pub(crate) fn refinement_result_type(
+        &mut self,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        self.located(location, |this| {
+            this.type_node(&quire_exact::ValueType::Boolean, location)
+        })
+    }
+
     /// `key`, built by `node`, with a `generated` occurrence at `location`
     /// when no declaration has located it.
     fn located(

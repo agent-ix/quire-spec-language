@@ -53,6 +53,7 @@ pub use refine::{check_refinement, RefinementCheckRequest};
 pub use request::{RequestRefusal, SubjectContext};
 pub use scc::Component;
 pub use state_graph::{
-    check_state_graph, ExploredStateGraph, GraphEdge, GraphNode, GraphStats, NodeIndex,
-    PredicateLabel, StateGraphItem, StateGraphRequest, StateGraphRun,
+    check_and_settle_state_graph, check_state_graph, ExploredStateGraph, GraphEdge, GraphNode,
+    GraphStats, NodeIndex, PredicateLabel, SettledStateGraphRun, StateGraphItem,
+    StateGraphPipelineRefusal, StateGraphRequest, StateGraphRun,
 };

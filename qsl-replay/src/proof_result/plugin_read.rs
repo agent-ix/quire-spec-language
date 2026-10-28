@@ -613,12 +613,29 @@ pub fn read_plugin_inconclusive_cause(
             depth: count(members, "depth", BASE, false)?,
         },
         "reduction-not-preserving" => {
-            let form = read_form(member(members, "form", BASE)?, child(BASE, "form"))?;
+            let form_value = member(members, "form", BASE)?;
             let reduction = read_reduction_kind(
                 member(members, "reduction", BASE)?,
                 child(BASE, "reduction"),
             )?;
-            InconclusiveCause::ReductionNotPreserving { reduction, form }
+            match form_value.as_str() {
+                Some("possible") => InconclusiveCause::StateGraphReductionNotPreserving {
+                    reduction,
+                    form: crate::StateGraphPropertyForm::Possible,
+                },
+                Some("always-possible") => InconclusiveCause::StateGraphReductionNotPreserving {
+                    reduction,
+                    form: crate::StateGraphPropertyForm::AlwaysPossible,
+                },
+                Some("unique-path") => InconclusiveCause::StateGraphReductionNotPreserving {
+                    reduction,
+                    form: crate::StateGraphPropertyForm::UniquePath,
+                },
+                _ => InconclusiveCause::ReductionNotPreserving {
+                    form: read_form(form_value, child(BASE, "form"))?,
+                    reduction,
+                },
+            }
         }
         "constraint-reached" => InconclusiveCause::ConstraintReached {
             boundary_states: count(members, "boundary_states", BASE, true)?,
