@@ -61,7 +61,7 @@ fn one_time_lock_freedom_item_per_timed_subject() {
             package: timed.graph(),
         },
     ];
-    let deadlock = deadlock_freedom_items(&both, &[]);
+    let deadlock = deadlock_freedom_items(&both, &[], &[]);
     let time_lock = time_lock_freedom_items(&both, &[], over_m);
     assert_eq!(deadlock.len(), 1);
     assert_eq!(time_lock.len(), 1);
@@ -103,7 +103,7 @@ fn one_time_lock_freedom_item_per_timed_subject() {
         subject: &rpc,
         package: opted_out.graph(),
     }];
-    assert!(deadlock_freedom_items(&terminal_any, &[]).is_empty());
+    assert!(deadlock_freedom_items(&terminal_any, &[], &[]).is_empty());
     assert_eq!(time_lock_freedom_items(&terminal_any, &[], over_m).len(), 1);
 
     // A subject over another model than the package's timed `M` is not

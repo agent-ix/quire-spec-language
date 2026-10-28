@@ -34,7 +34,9 @@ pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_
         ObligationKind::Authored(occurrence) => CertificateItem::Clause(occurrence),
         ObligationKind::DeadlockFreedom => CertificateItem::DeadlockFreedom,
         ObligationKind::TimeLockFreedom => CertificateItem::TimeLockFreedom,
-        ObligationKind::RaceFreedom { .. } => CertificateItem::Other,
+        ObligationKind::RaceFreedom { .. } | ObligationKind::Refinement { .. } => {
+            CertificateItem::Other
+        }
     }
 }
 

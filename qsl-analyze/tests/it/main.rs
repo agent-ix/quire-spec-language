@@ -62,6 +62,7 @@ mod refinement_fixture;
 mod refinement_liveness;
 mod refinement_protocol;
 mod refinement_reads;
+mod refinement_request;
 mod refinement_replay;
 mod refinement_safety;
 mod release_acquire;
