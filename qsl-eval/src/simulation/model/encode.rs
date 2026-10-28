@@ -15,7 +15,7 @@ use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, Ty
 
 use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::key::effective_id_from_digest;
-use qsl_semantics::model::state::{ModelState, StateModel};
+use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_checked::key::DeclarationKey;
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
@@ -213,6 +213,9 @@ pub(crate) struct Typing<'t> {
     /// The element-count members of the pure-clock collections, which a
     /// record writes after its declared fields.
     clock_counts: &'t [super::ClockCount],
+    /// The presence-bit members of the `Option<Clock>` fields, which a
+    /// record writes as the field's option shell.
+    clock_bits: &'t [(DeclarationKey, StateField)],
 }
 
 impl<'t> Typing<'t> {
@@ -222,6 +225,7 @@ impl<'t> Typing<'t> {
             types: None,
             variants: &[],
             clock_counts: &[],
+            clock_bits: &[],
         }
     }
 
@@ -235,13 +239,20 @@ impl<'t> Typing<'t> {
             types: Some(types),
             variants,
             clock_counts: &[],
+            clock_bits: &[],
         }
     }
 
-    /// These declarations with the element-count members `clock_counts`.
-    pub(crate) fn with_clock_counts(self, clock_counts: &'t [super::ClockCount]) -> Self {
+    /// These declarations with the element-count members `clock_counts`
+    /// and the presence-bit members `clock_bits`.
+    pub(crate) fn with_clock_members(
+        self,
+        clock_counts: &'t [super::ClockCount],
+        clock_bits: &'t [(DeclarationKey, StateField)],
+    ) -> Self {
         Self {
             clock_counts,
+            clock_bits,
             ..self
         }
     }
@@ -660,6 +671,23 @@ pub(super) fn object_enc(
                 "value",
                 Enc::tagged("sequence", vec![("elements", Enc::Array(elements))]),
             ),
+        ]));
+    }
+    // FR-230 "Presence bit": an `Option<Clock>` field writes its option
+    // shell, `null` when absent and a `Clock` shell when present.
+    for (type_key, field) in typing.clock_bits {
+        if *type_key != object.type_identity {
+            continue;
+        }
+        let present = matches!(object.fields.get(&field.key), Some(Value::Boolean(true)));
+        let shell = if present {
+            clock_shell_enc()
+        } else {
+            Enc::Null
+        };
+        fields.push(Enc::Object(vec![
+            ("name", Enc::text(field.name.clone())),
+            ("value", Enc::tagged("option", vec![("value", shell)])),
         ]));
     }
     Enc::tagged(
