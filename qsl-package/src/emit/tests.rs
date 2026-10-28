@@ -35,6 +35,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 mod abstraction;
 mod admission_corpus;
 mod child_composite;
+mod control_node;
 mod converted_equality;
 mod deep_bodies;
 mod envelope_adoption;
@@ -50,6 +51,8 @@ mod population_bound;
 mod population_reference;
 mod probabilistic;
 mod protocol_captures;
+mod protocol_compensation;
+mod protocol_controls;
 mod protocol_graph;
 mod protocol_reference;
 mod protocol_terminal;
@@ -1392,6 +1395,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
         RefinementNotEmitted,
+        SameMeaningRefinements,
         UnlocatedRefinementDeclaration,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
@@ -1408,6 +1412,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
+            Err(EmitRefusal::SameMeaningRefinements { .. }) => Seen::SameMeaningRefinements,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
             }
@@ -3192,6 +3197,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
             presence: Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("ConfigVersion/attemptUpdate"),

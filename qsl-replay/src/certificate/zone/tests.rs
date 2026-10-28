@@ -214,6 +214,63 @@ fn tc_700_checker_zone_agrees_with_the_reference_on_a_grid() {
     );
 }
 
+#[trace("TC-685", "FR-230-AC-20")]
+#[test]
+fn carried_clock_updates_are_simultaneous_and_have_an_exact_preimage() {
+    let mut before = Zone::zero(4);
+    before
+        .reset(1, &Integer::from(2_i64))
+        .expect("x is a clock");
+    before
+        .reset(2, &Integer::from(7_i64))
+        .expect("y is a clock");
+    before
+        .reset(3, &Integer::from(9_i64))
+        .expect("z is a clock");
+
+    let carries = [(1, 2)];
+    let resets = [(2, Integer::from(5_i64))];
+    let mut after = before.clone();
+    after
+        .assign_clocks(&carries, &resets)
+        .expect("valid model clock updates");
+    assert_eq!(after.bound(1, 0), Ok(Some((Integer::from(7_i64), false))));
+    assert_eq!(after.bound(0, 1), Ok(Some((Integer::from(-7_i64), false))));
+    assert_eq!(after.bound(2, 0), Ok(Some((Integer::from(5_i64), false))));
+    assert_eq!(after.bound(0, 2), Ok(Some((Integer::from(-5_i64), false))));
+    assert_eq!(after.bound(3, 0), Ok(Some((Integer::from(9_i64), false))));
+
+    let mut target = Zone::zero(4);
+    target
+        .reset(1, &Integer::from(7_i64))
+        .expect("x is a clock");
+    target
+        .reset(2, &Integer::from(5_i64))
+        .expect("y is a clock");
+    target
+        .reset(3, &Integer::from(9_i64))
+        .expect("z is a clock");
+    let predecessors = target
+        .preimage_clocks(&carries, &resets)
+        .expect("valid model clock updates");
+    assert!(predecessors.includes(&before).expect("matching dimensions"));
+}
+
+#[trace("TC-685", "FR-230-AC-20")]
+#[test]
+fn a_carried_place_can_copy_one_pre_clock_to_two_post_places() {
+    let mut before = Zone::zero(3);
+    before
+        .reset(1, &Integer::from(4_i64))
+        .expect("x is a clock");
+    let mut after = before;
+    after
+        .assign_clocks(&[(2, 1)], &[])
+        .expect("valid model clock update");
+    assert_eq!(after.bound(1, 2), Ok(Some((Integer::from(0_i64), false))));
+    assert_eq!(after.bound(2, 1), Ok(Some((Integer::from(0_i64), false))));
+}
+
 /// Operations naming a clock outside the zone, the reference clock as a
 /// reset target or zones of different shapes refuse.
 #[trace("TC-700", "FR-245-AC-4")]

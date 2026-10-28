@@ -88,6 +88,7 @@ fn orders_package() -> CheckedPackage {
             presence: Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
         DomainPackageRecord::Relationship(RelationshipRecord {
             key: housing(),

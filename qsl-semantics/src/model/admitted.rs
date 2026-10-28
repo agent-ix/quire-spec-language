@@ -217,8 +217,18 @@ impl AdmittedPackage {
                         key.node, key.package
                     ),
                 ));
-            } else if let Some(artifact) = type_identity_segment(&identity, &key.node) {
-                nodes.insert(artifact.to_owned(), index);
+            } else if !matches!(
+                record,
+                DomainPackageRecord::FieldMember(_)
+                    | DomainPackageRecord::OperationMember(_)
+                    | DomainPackageRecord::Clause(_)
+                    | DomainPackageRecord::Variant(_)
+            ) {
+                if let Some(artifact) = type_identity_segment(&identity, &key.node) {
+                    nodes.insert(artifact.to_owned(), index);
+                } else {
+                    member_records.push(index);
+                }
             } else {
                 member_records.push(index);
             }
@@ -474,6 +484,7 @@ mod tests {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         })
     }
 

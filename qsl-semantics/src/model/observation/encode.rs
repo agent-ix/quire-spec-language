@@ -134,6 +134,10 @@ impl ValueEncoder {
                     ));
                 }
                 Work::Read(Value::Enum(member), _) => done.push(self.variant(member)?),
+                Work::Read(Value::Quantity(quantity), _) => done.push(SnapshotValue::quantity(
+                    super::document::unit_name(&self.types, quantity.unit())?,
+                    quantity.magnitude(),
+                )),
                 Work::Read(Value::Option(option), canonical) => match option.payload() {
                     None => done.push(SnapshotValue::absent()),
                     Some(payload) => {
@@ -208,21 +212,7 @@ impl SnapshotValue {
                     // A `kind` that was not text, and a member that was not
                     // text, are held only to be refused by admission; they
                     // are written as `null`.
-                    let mut object = Map::new();
-                    object.insert(
-                        "kind".to_owned(),
-                        match native.kind {
-                            RawNativeKind::Known(NativeKind::String) => json!("string"),
-                            RawNativeKind::Known(NativeKind::Uuid) => json!("uuid"),
-                            RawNativeKind::Known(NativeKind::Timestamp) => json!("timestamp"),
-                            RawNativeKind::Known(NativeKind::Text) => json!("text"),
-                            RawNativeKind::Unknown | RawNativeKind::NotText => Json::Null,
-                        },
-                    );
-                    for (name, text) in &native.members {
-                        object.insert(name.clone(), json!(text));
-                    }
-                    Json::Object(object)
+                    native_json(native)
                 }
                 RawNode::Absent => json!({"absent": {}}),
                 RawNode::Present(inner) => json!({"present": take(&mut built, *inner)}),
@@ -294,4 +284,33 @@ fn take(built: &mut [Option<serde_json::Value>], index: usize) -> serde_json::Va
         .get_mut(index)
         .and_then(Option::take)
         .unwrap_or(serde_json::Value::Null)
+}
+
+/// A native payload object as its wire JSON, a member that is itself a
+/// payload object (a Quantity's `magnitude`) written as that object. A
+/// `kind` that was not text, and a member that was not text, are held only
+/// to be refused by admission; they are written as `null`.
+fn native_json(native: &super::NativeObject) -> serde_json::Value {
+    use serde_json::{json, Map, Value as Json};
+    let mut object = Map::new();
+    object.insert(
+        "kind".to_owned(),
+        match native.kind {
+            RawNativeKind::Known(NativeKind::String) => json!("string"),
+            RawNativeKind::Known(NativeKind::Uuid) => json!("uuid"),
+            RawNativeKind::Known(NativeKind::Timestamp) => json!("timestamp"),
+            RawNativeKind::Known(NativeKind::Text) => json!("text"),
+            RawNativeKind::Known(NativeKind::Quantity) => json!("quantity"),
+            RawNativeKind::Known(NativeKind::Rational) => json!("rational"),
+            RawNativeKind::Known(NativeKind::Decimal) => json!("decimal"),
+            RawNativeKind::Unknown | RawNativeKind::NotText => Json::Null,
+        },
+    );
+    for (name, text) in &native.members {
+        object.insert(name.clone(), json!(text));
+    }
+    for (name, nested) in &native.objects {
+        object.insert(name.clone(), native_json(nested));
+    }
+    Json::Object(object)
 }

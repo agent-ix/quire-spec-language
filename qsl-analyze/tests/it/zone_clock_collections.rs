@@ -1,0 +1,179 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-120-AC-26 (TC-1270) end to end through EN-6: a granted clock
+//! collection with a declared maximum is a finite domain, so the zone search
+//! takes a model that grants `ts: Sequence<Timer>[0, N]` and reaches its
+//! values, each slot's clock a place.
+
+use ix_trace_rs::trace;
+use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
+use quire_exact::Cancel;
+
+use crate::timed_world::{ident, timers_document, world_holding, World, DENSE};
+use crate::zone_search::{claim, deadlock, operations, violated, INFINITE};
+
+/// `ts: Sequence<Timer>[0, max]` (`Timer { x: Clock; n: Phase }`) granted by
+/// `grow`, with the precondition `guard` and the further text `claim`.
+fn timers(max: u64, guard: &str, claim: &str) -> World {
+    world_holding(
+        &timers_document(max, &[("grow", &["ts"])]),
+        INFINITE,
+        &format!("{DENSE}pre Grow using v on M::Call::grow {{ {guard} }}\n{claim}"),
+        &serde_json::json!({"ts": {"sequence": []}}),
+    )
+}
+
+const SHORT: &str = "temporal Short using inf over (c: M::Call) clock \"model-steps\" on origin \
+                     { always holds(size(c.ts) < 3) }\n";
+
+/// Over `ts: Sequence<Timer>[0, 3]` and `grow`, which grants `ts` and
+/// constrains nothing, EN-6 takes the model (no requires-bound refusal):
+/// the deadlock-freedom item holds, and `always holds(size(c.ts) < 3)` is
+/// violated by one `grow` to a three-element `ts`.
+#[trace("TC-1270")]
+#[test]
+fn the_zone_search_reaches_a_granted_clock_collection() {
+    assert!(
+        matches!(
+            deadlock(&timers(3, "true", "")),
+            ZoneCheckOutcome::Holds { .. }
+        ),
+        "the deadlock-freedom item holds"
+    );
+    let counterexample = violated(claim(
+        &timers(3, "true", SHORT),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    assert_eq!(operations(&counterexample), ["grow"]);
+}
+
+/// Over `ts: Sequence<Timer>[0, 1]`, `grow` enabled only while every
+/// element's clock reads at most 2 ms: each slot's clock is a place the
+/// quantified guard reads, so once the element's clock passes 2 ms nothing
+/// is enabled, and the deadlock-freedom item does not hold.
+#[trace("TC-1270")]
+#[test]
+fn the_zone_search_reads_the_clocks_of_a_granted_collection() {
+    let outcome = deadlock(&timers(1, "forall(e in self.ts: e.x <= 2 ms)", ""));
+    assert!(
+        !matches!(outcome, ZoneCheckOutcome::Holds { .. }),
+        "a deadlock is reached: {outcome:?}"
+    );
+}
+
+/// FR-230-AC-20 and FR-245: filtering a bounded set or bag carries a clock
+/// from slot 1 to slot 0. EN-6 and its independent certificate reader apply
+/// that mapping, while the evaluator agrees on the same transition.
+#[trace("TC-1270")]
+#[test]
+fn a_set_or_bag_filter_carries_clocks_through_search_and_certificate() {
+    use qsl_eval::model_subject::ModelInstance;
+    use qsl_eval::simulation::model::{
+        BehaviourLetters, BehaviourReading, ModelSystem, TimedBehaviour, TimedSystem,
+    };
+    use qsl_eval::temporal::{evaluate_at, TemporalOutcome, TemporalPosition};
+    use qsl_replay::{CertificateCheckLimits, ZoneCertificateVerdict};
+    use quire_exact::Meter;
+
+    use crate::zone_search::{check, claim, proved};
+
+    let timer = |n: &str| serde_json::json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": n}}}});
+    for (unique, kind) in [(true, "set"), (false, "bag")] {
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&timers_document(2, &[("drop", &["ts"])])).expect("JSON");
+        let fields = document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields");
+        let ts = fields
+            .iter_mut()
+            .find(|field| field["name"] == "ts")
+            .expect("ts");
+        ts["multiplicity"]["ordered"] = serde_json::json!(false);
+        ts["multiplicity"]["unique"] = serde_json::json!(unique);
+
+        let world = world_holding(
+            document.to_string().as_bytes(),
+            INFINITE,
+            &format!(
+                r#"{DENSE}pre DropGuard using v on M::Call::drop {{ size(self.ts) = 2 }}
+post DropFilter using v on M::Call::drop {{ self.ts = filter(e in pre(self.ts): e.n = 2) }}
+temporal Stable using inf over (c: M::Call) clock "model-steps" on origin {{ always holds(c.phase = 0) }}
+"#
+            ),
+            &serde_json::json!({"ts": {kind: [timer("1"), timer("2")]}}),
+        );
+        let system: ModelSystem<'_> = world.system();
+        let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+        assert!(timed.carries_clocks(), "{kind}");
+
+        // The evaluator applies the same element match: slot 1's clock moves
+        // to slot 0 when the filter removes slot 0.
+        let mut behaviour = TimedBehaviour::new(timed.initial().remove(0));
+        behaviour
+            .advance_where(
+                &timed,
+                &quire_exact::Rational::from_integer(quire_exact::Integer::from(3_i64)),
+                |step, _| step.operation().contains("Call/drop\""),
+            )
+            .expect("the filtering step is admitted");
+        let after = behaviour.last().state();
+        let carried: Vec<_> = timed
+            .places()
+            .iter()
+            .enumerate()
+            .filter(|(_, place)| {
+                timed.model().clock(place.clock()).map(|clock| clock.name()) == Some("ts.[slot].x")
+                    && timed.live(place, after.discrete())
+            })
+            .map(|(index, place)| (place.slots()[0], after.clocks().values()[index].clone()))
+            .collect();
+        assert_eq!(
+            carried,
+            [(
+                0,
+                quire_exact::Rational::from_integer(quire_exact::Integer::from(3_i64))
+            )],
+            "the former slot 1's clock is carried to slot 0 for {kind}"
+        );
+        let node = &world.package.graph().temporal_clauses()[0];
+        let BehaviourReading::Untimed(trace) = behaviour
+            .clause_reading(&timed, node.clause().profile())
+            .expect("the behavior's reading")
+        else {
+            panic!("the infinite-trace profile reads positions");
+        };
+        let letters = system.clause_letters(node).expect("the clause's letters");
+        let instance = ModelInstance {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/timed".to_owned(),
+                node: ident("calls"),
+            },
+            key: "c".to_owned(),
+        };
+        let mut letters = BehaviourLetters::new(&letters, &instance, &behaviour);
+        assert_eq!(
+            evaluate_at(
+                node.clause(),
+                trace,
+                TemporalPosition::new(0),
+                &mut letters,
+                &mut Meter::new(system.meter_limits()),
+            )
+            .expect("the evaluator reads the behavior"),
+            TemporalOutcome::Holds,
+            "{kind}"
+        );
+
+        let certificate = proved(claim(
+            &world,
+            qsl_analyze::zone_check::ZoneCheckLimits::default(),
+            &Cancel::new(),
+        ));
+        assert_eq!(
+            check(&world, &certificate, CertificateCheckLimits::default())
+                .expect("the independent reader checks the certificate"),
+            ZoneCertificateVerdict::Accepted,
+            "{kind}"
+        );
+    }
+}

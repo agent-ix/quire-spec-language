@@ -232,6 +232,7 @@ fn n12_phase_four_charges_follow_value_accounting() {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: redefines.map(node_key),
+            position: 0,
         })
     };
     let object = |name: &str, parents: &[&str]| {

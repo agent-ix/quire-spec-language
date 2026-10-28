@@ -212,8 +212,8 @@ pub struct RaComponent {
     events: BTreeMap<Id, ScEvent>,
     /// `P`: `(e, x)` when `e` precedes `x` in `psc`, transitively closed.
     order: BTreeSet<(Id, Id)>,
-    /// `F(ℓ)`: the live SC events that precede every SC write to `ℓ` still
-    /// to come.
+    /// `F(ℓ)`: the live SC events that precede every later SC write to `ℓ`
+    /// and every SC read of a retained message at `ℓ`.
     fronts: BTreeMap<Location, BTreeSet<Id>>,
     /// The live SC events that precede every later SC event of a thread,
     /// whatever its location: what a removed event of that thread owed its
@@ -744,10 +744,14 @@ impl RaComponent {
             if event.location.as_ref() != Some(at) {
                 continue;
             }
-            if write.is_some()
-                && (self.before(at, event.write, write) || self.before(at, event.read, write))
-            {
-                before.insert(*id);
+            // The selected message fixes mo for a read just as the inserted
+            // message fixes it for a write; both constrain the SC event.
+            if let Some(current) = write.or(read) {
+                if self.before(at, event.write, Some(current))
+                    || self.before(at, event.read, Some(current))
+                {
+                    before.insert(*id);
+                }
             }
             if event.write.is_some()
                 && (self.before(at, write, event.write) || self.before(at, read, event.write))
@@ -755,7 +759,9 @@ impl RaComponent {
                 after.insert(*id);
             }
         }
-        if write.is_some() {
+        // A read of any retained message is mo-after the collected prefix,
+        // so it inherits F(ℓ)'s predecessors just like a later SC write.
+        if write.is_some() || read.is_some() {
             if let Some(summary) = location.and_then(|at| self.fronts.get(at)) {
                 before.extend(summary.iter().copied());
             }

@@ -10,14 +10,14 @@
 //! by `quire.application-node/v1` with the declaration's qualified name `P`
 //! and the unit's source owner. Every composite subterm of that body is its
 //! own node, reached by reference (FR-464): the `over` and activation binders
-//! (`value`/`parameter`), the `run` tree's `sequence` controls (declared at
-//! `P`, `run` and the control names from the root down, FR-466) and the
+//! (`value`/`parameter`), the `run` tree's controls (declared at `P`, `run`
+//! and the control names from the root down, FR-466; see `controls`) and the
 //! `finish` obligation (declared at `P`, `finish` and its name, FR-465).
 //!
 //! What this writes is what QSL can prove IR admits. A protocol that names a
-//! construct whose node is not written yet (a role, a channel, a control
-//! other than `sequence`, a `terminal` member, a requirement, a
-//! compensation, a capture or guard that names a function) is refused with that construct named
+//! construct whose node is not written yet (a role, a channel, a `choice`,
+//! `parallel` or `repeat`, a `terminal` member, a requirement, a
+//! compensation, a capture, guard or control body that names a function) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
@@ -32,6 +32,11 @@ use qsl_forms::{
 use quire_exact::{EffectiveId, Identifier, Integer, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
+mod controls;
+
+use controls::RunInputs;
+pub(crate) use controls::{AttemptNodes, CompensationNodes};
+
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::{CheckedNode, NodeKind};
@@ -39,9 +44,11 @@ use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
 };
-use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
+use crate::check::protocol_clause::CheckedProtocol;
 use crate::check::protocol_controls::{CheckedChannel, CheckedOrdering};
-use crate::check::protocol_obligation::{CaptureOwner, CheckedActivation};
+use crate::check::protocol_obligation::{
+    CaptureOwner, CaptureStage, CheckedActivation, CheckedCommit, CheckedCompensation,
+};
 use crate::check::protocol_slots::{
     CheckedLifetime, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
 };
@@ -75,6 +82,10 @@ pub(crate) enum ProtocolSite<'a> {
     /// The `finish` node of this name: its `declaration` occurrence and its
     /// closing record binder's `expression` occurrence.
     Finish(&'a str),
+    /// A compensation template's `declaration` occurrence.
+    Compensation(&'a str),
+    /// One expression body owned by a compensation template.
+    CompensationBody(&'a str, &'static str, usize),
     /// The `finish` constraint's expression tree.
     FinishBody(&'a str),
     /// The `terminal` node: its `declaration` occurrence and its condition.
@@ -99,6 +110,8 @@ pub(crate) enum ProtocolSite<'a> {
     /// The control at this path from the `run` root, the root's name first:
     /// its `declaration` occurrence.
     Control(&'a [String]),
+    /// The constraint or condition tree of the control at this path.
+    ControlBody(&'a [String]),
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of protocol `protocol`.
@@ -107,6 +120,10 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
     match site {
         ProtocolSite::Declaration => declaration_origin(protocol),
         ProtocolSite::Finish(name) => format!("protocol {protocol} finish {name}"),
+        ProtocolSite::Compensation(name) => format!("protocol {protocol} compensate {name}"),
+        ProtocolSite::CompensationBody(name, stage, index) => {
+            format!("protocol {protocol} compensate {name} {stage} {index}")
+        }
         ProtocolSite::Role(role) => format!("protocol {protocol} role {role}"),
         ProtocolSite::RoleUntil(role) => format!("protocol {protocol} role {role} until"),
         ProtocolSite::Channel(channel) => format!("protocol {protocol} channel {channel}"),
@@ -120,6 +137,9 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
             format!("protocol {protocol} capture {name} initializer")
         }
         ProtocolSite::Control(path) => format!("protocol {protocol} run {}", path.join(" ")),
+        ProtocolSite::ControlBody(path) => {
+            format!("protocol {protocol} run {} body", path.join(" "))
+        }
     }
 }
 
@@ -150,6 +170,7 @@ impl ProtocolInput<'_> {
     fn unemitted(&self) -> Vec<ProtocolConstruct> {
         let form = self.form;
         let slots = &self.checked.slots;
+        let finish_node = self.checked.finish.as_ref().map(|(node, _)| *node);
         let mut unemitted = Vec::new();
         if self
             .checked
@@ -173,18 +194,15 @@ impl ProtocolInput<'_> {
         if !form.requirements.is_empty() {
             unemitted.push(ProtocolConstruct::Requirements);
         }
-        if !form.compensations.is_empty() {
-            unemitted.push(ProtocolConstruct::Compensations);
-        }
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
             // A `branch` and a `case` are held by the `parallel` and the
             // `choice` that is refused for them.
-            let held = matches!(
+            let refused = matches!(
                 control.kind,
-                ProtocolNodeKind::Sequence | ProtocolNodeKind::Branch | ProtocolNodeKind::Case
+                ProtocolNodeKind::Choice | ProtocolNodeKind::Parallel | ProtocolNodeKind::Repeat
             );
-            if !held && !kinds.contains(&control.kind) {
+            if refused && !kinds.contains(&control.kind) {
                 kinds.push(control.kind);
                 unemitted.push(ProtocolConstruct::Control(control.kind.label()));
             }
@@ -212,6 +230,13 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
         }
+        if slots
+            .bodies
+            .iter()
+            .any(|body| reads_declaration(body.body.root()) && Some(body.node) != finish_node)
+        {
+            unemitted.push(ProtocolConstruct::ControlReadsDeclaration);
+        }
         if self
             .finish_body()
             .is_some_and(|body| reads_declaration(body.root()))
@@ -219,6 +244,16 @@ impl ProtocolInput<'_> {
             unemitted.push(ProtocolConstruct::FinishReadsDeclaration);
         }
         unemitted
+    }
+
+    /// Whether the `run` tree holds an `attempt`, whose node names the
+    /// state clauses and operation anchors written after the functions.
+    fn has_attempt(&self) -> bool {
+        self.checked
+            .controls
+            .controls
+            .iter()
+            .any(|control| control.kind == ProtocolNodeKind::Attempt)
     }
 
     /// The checked body of the `finish` constraint.
@@ -272,6 +307,10 @@ fn reads_declaration(body: CheckedNode<'_>) -> bool {
         )
     })
 }
+
+/// A protocol's channel nodes and queue nodes, each set ascending by digest,
+/// and each channel's node by its name.
+type ChannelNodes = (Vec<NodeKey>, Vec<NodeKey>, Vec<(String, NodeKey)>);
 
 /// The operations of a protocol's `channel` and `queue` nodes.
 struct ChannelOperations {
@@ -386,11 +425,45 @@ impl Lowering<'_> {
             let Some(owner) = owner else {
                 return Err(fault(&location, KeyFault::UncheckedProtocolFact));
             };
-            let key = self.protocol_node(protocol, &law, owner, &location)?;
+            if protocol.has_attempt() {
+                keys.push(ProtocolKey::AfterClauses);
+                continue;
+            }
+            let key = self.protocol_node(protocol, &law, owner, &[], &[], &location)?;
             keys.push(ProtocolKey::Keyed(key));
         }
         self.protocol_keys = keys;
         Ok(refusals)
+    }
+
+    /// The nodes of the protocols that hold an `attempt`, written once the
+    /// state clauses and operation anchors they name are (`attempts[i]` is
+    /// the `i`-th protocol's). Each is refused or keyed as the rest are.
+    pub(crate) fn protocol_nodes_with_attempts(
+        &mut self,
+        protocols: &[ProtocolInput<'_>],
+        attempts: &[Vec<AttemptNodes>],
+        compensations: &[Vec<CompensationNodes>],
+    ) -> Result<(), CheckRefusal> {
+        for (index, protocol) in protocols.iter().enumerate() {
+            if !matches!(
+                self.protocol_keys.get(index),
+                Some(ProtocolKey::AfterClauses)
+            ) {
+                continue;
+            }
+            let location = protocol.location();
+            let law = self.law(LawRole::ProtocolProfile, &location)?;
+            let owner = self
+                .owner_model_object(protocol)
+                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
+            let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
+            let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
+            let key =
+                self.protocol_node(protocol, &law, owner, nodes, compensation_nodes, &location)?;
+            self.protocol_keys[index] = ProtocolKey::Keyed(key);
+        }
+        Ok(())
     }
 
     /// The object type `protocol` is declared over, whose model declaration
@@ -538,6 +611,8 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
         owner: EffectiveId,
+        attempts: &[AttemptNodes],
+        compensation_nodes: &[CompensationNodes],
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
@@ -573,19 +648,39 @@ impl Lowering<'_> {
         let guard = self.activation_guard(protocol, over, trigger)?;
         let captures = self.capture_records(protocol, &mut readable)?;
 
-        let roles = self.role_nodes(protocol, &operation("role")?, &readable, boolean)?;
-        let (channels, queues) = self.channel_nodes(
+        let roles_by_name = self.role_nodes(protocol, &operation("role")?, &readable, boolean)?;
+        let (channels, queues, named_channels) = self.channel_nodes(
             protocol,
             &ChannelOperations {
                 channel: operation("channel")?,
                 queue: operation("queue")?,
             },
-            &roles,
+            &roles_by_name,
             &readable,
             boolean,
         )?;
-        let roles: Vec<NodeKey> = sorted(roles.into_iter().map(|(_, key)| key));
-        let finish = self.finish_node(protocol, &operation("finish")?, &readable, boolean)?;
+        let run = self.run_nodes(
+            protocol,
+            &RunInputs {
+                law,
+                roles: &roles_by_name,
+                channels: &named_channels,
+                attempts,
+                clause_binders: &readable,
+                boolean,
+            },
+        )?;
+        let roles: Vec<NodeKey> = sorted(roles_by_name.iter().map(|(_, key)| *key));
+        let compensations = self.compensation_nodes(
+            protocol,
+            &operation("compensate")?,
+            &roles_by_name,
+            &run.nodes,
+            &readable,
+            boolean,
+            compensation_nodes,
+        )?;
+        let finish = self.finish_node(protocol, &operation("finish")?, &run.readable, boolean)?;
         let terminal = self.terminal_node(
             protocol,
             &operation("terminal")?,
@@ -593,7 +688,7 @@ impl Lowering<'_> {
             trigger,
             boolean,
         )?;
-        let run = self.run_nodes(protocol, &operation("sequence")?, boolean)?;
+        let run = run.root;
 
         let activation = match &trigger {
             None => GroupTerm::new(vec![member("kind", self.text_literal("origin", location)?)]),
@@ -639,7 +734,10 @@ impl Lowering<'_> {
                         BindingValue::Group(GroupTerm::references(queues)),
                     ),
                     MemberTerm::binding("requirements", empty_group()),
-                    MemberTerm::binding("compensations", empty_group()),
+                    MemberTerm::binding(
+                        "compensations",
+                        BindingValue::Group(GroupTerm::references(compensations)),
+                    ),
                     MemberTerm::binding(
                         "terminal",
                         terminal.map_or_else(empty_group, |terminal| {
@@ -855,6 +953,453 @@ impl Lowering<'_> {
         Ok(BindingValue::Group(GroupTerm::new(members)))
     }
 
+    /// The compensation template nodes of `protocol` (FR-383-AC-8 and
+    /// QSpec FR-466). Every checked stage is emitted from its checked body;
+    /// each introduced binder is a parameter at its stage-local level.
+    #[allow(clippy::too_many_arguments)]
+    fn compensation_nodes(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        operation: &Operation,
+        roles: &[(String, NodeKey)],
+        controls: &std::collections::BTreeMap<
+            crate::check::protocol_clause::ProtocolNodeId,
+            NodeKey,
+        >,
+        readable: &[Binder],
+        boolean: NodeKey,
+        anchors: &[CompensationNodes],
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+        let name = protocol.form.name.name.as_str();
+        let mut keys = Vec::with_capacity(protocol.checked.obligations.compensations.len());
+        for (index, checked) in protocol
+            .checked
+            .obligations
+            .compensations
+            .iter()
+            .enumerate()
+        {
+            let location = protocol_location(name, ProtocolSite::Compensation(&checked.name));
+            let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
+            let source = protocol
+                .form
+                .compensations
+                .get(index)
+                .ok_or_else(unchecked)?;
+            let anchor = anchors
+                .iter()
+                .find(|anchor| anchor.declaration == index)
+                .ok_or_else(unchecked)?
+                .anchor;
+            let effect = controls
+                .get(&checked.effect)
+                .copied()
+                .ok_or_else(unchecked)?;
+            let role = roles
+                .get(checked.role)
+                .map(|(_, key)| *key)
+                .ok_or_else(unchecked)?;
+
+            let mut binder_levels = BTreeMap::new();
+            if let Some(input) = protocol.checked.slots.binders.first() {
+                binder_levels.insert(input.name.clone(), 0);
+            }
+            let mut next_level = 1;
+            if let CheckedActivation::OnEach { binder, .. } =
+                &protocol.checked.obligations.activation
+            {
+                binder_levels.insert(binder.clone(), next_level);
+                next_level += 1;
+            }
+            for (capture, _) in self.protocol_capture_entries(protocol) {
+                binder_levels.insert(capture, next_level);
+                next_level += 1;
+            }
+            binder_levels.insert(checked.forward.name.clone(), next_level);
+            next_level += 1;
+            for (capture, _) in self.capture_entries(protocol, &checked.registration_captures)? {
+                binder_levels.insert(capture, next_level);
+                next_level += 1;
+            }
+            binder_levels.insert(checked.trigger.name.clone(), next_level);
+            next_level += 1;
+            for (capture, _) in self.capture_entries(protocol, &checked.activation_captures)? {
+                binder_levels.insert(capture, next_level);
+                next_level += 1;
+            }
+            binder_levels.insert(checked.retry.earlier.name.clone(), next_level);
+            next_level += 1;
+            binder_levels.insert(checked.retry.later.name.clone(), next_level);
+            next_level += 1;
+            binder_levels.insert(checked.recover.binder.name.clone(), next_level);
+            let mut binder_parameters = BTreeMap::new();
+            for binder in readable {
+                let declared = protocol
+                    .checked
+                    .slots
+                    .binders
+                    .get(binder.slot)
+                    .ok_or_else(unchecked)?;
+                binder_parameters.insert(
+                    declared.name.clone(),
+                    (binder.parameter, binder.semantic_type),
+                );
+            }
+
+            let mut args = Vec::with_capacity(13);
+            args.push(MemberTerm::bound("forward", LeafTerm::reference(effect)));
+            let forward = self.compensation_scope(
+                &[(
+                    checked.forward.name.clone(),
+                    checked.forward.value_type.clone(),
+                )],
+                &binder_levels,
+                &mut binder_parameters,
+                &location,
+            )?;
+            args.push(MemberTerm::bound(
+                "forward_binder",
+                LeafTerm::reference(forward.1[0].parameter),
+            ));
+            args.push(MemberTerm::bound("role", LeafTerm::reference(role)));
+            args.push(MemberTerm::bound("operation", LeafTerm::reference(anchor)));
+            args.push(MemberTerm::bound(
+                "clock",
+                self.text_literal(&source.clock.text, &location)?,
+            ));
+
+            let mut registration = Vec::with_capacity(checked.registration_captures.len());
+            for (position, &capture_index) in checked.registration_captures.iter().enumerate() {
+                let capture = protocol
+                    .checked
+                    .obligations
+                    .captures
+                    .get(capture_index)
+                    .ok_or_else(unchecked)?;
+                let mut entries = self.compensation_entries(
+                    protocol,
+                    checked,
+                    CaptureStage::Registration,
+                    position,
+                )?;
+                entries.push((capture.name.clone(), capture.declared_type.clone()));
+                let scope = self.compensation_scope(
+                    &entries,
+                    &binder_levels,
+                    &mut binder_parameters,
+                    &location,
+                )?;
+                let initializer = self.expression(
+                    capture.initializer.root(),
+                    &mut Binders::new(&scope.0, &scope.1),
+                )?;
+                registration.push(TupleMember::Group(GroupTerm::new(vec![
+                    member(
+                        "binder",
+                        LeafTerm::reference(scope.1.last().ok_or_else(unchecked)?.parameter),
+                    ),
+                    member("initializer", initializer),
+                ])));
+            }
+            args.push(MemberTerm::binding(
+                "registration_captures",
+                BindingValue::Tuple(TupleTerm::new(registration)),
+            ));
+
+            let mut trigger_entries = vec![(
+                checked.trigger.name.clone(),
+                checked.trigger.value_type.clone(),
+            )];
+            trigger_entries.extend(self.protocol_capture_entries(protocol));
+            trigger_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+            let trigger_scope = self.compensation_scope(
+                &trigger_entries,
+                &binder_levels,
+                &mut binder_parameters,
+                &location,
+            )?;
+            let guard = self.expression(
+                checked.guard.root(),
+                &mut Binders::new(&trigger_scope.0, &trigger_scope.1),
+            )?;
+            args.push(MemberTerm::binding(
+                "trigger",
+                BindingValue::Group(GroupTerm::new(vec![
+                    member("binder", LeafTerm::reference(trigger_scope.1[0].parameter)),
+                    member("guard", guard),
+                ])),
+            ));
+
+            let mut activation = Vec::with_capacity(checked.activation_captures.len());
+            for (position, &capture_index) in checked.activation_captures.iter().enumerate() {
+                let capture = protocol
+                    .checked
+                    .obligations
+                    .captures
+                    .get(capture_index)
+                    .ok_or_else(unchecked)?;
+                let mut entries = vec![(
+                    checked.trigger.name.clone(),
+                    checked.trigger.value_type.clone(),
+                )];
+                entries.extend(self.protocol_input_entries(protocol));
+                entries.extend(self.protocol_input_entries(protocol));
+                entries.extend(self.protocol_capture_entries(protocol));
+                entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+                entries.extend(
+                    self.capture_entries(protocol, &checked.activation_captures[..position])?,
+                );
+                entries.push((capture.name.clone(), capture.declared_type.clone()));
+                let scope = self.compensation_scope(
+                    &entries,
+                    &binder_levels,
+                    &mut binder_parameters,
+                    &location,
+                )?;
+                let initializer = self.expression(
+                    capture.initializer.root(),
+                    &mut Binders::new(&scope.0, &scope.1),
+                )?;
+                activation.push(TupleMember::Group(GroupTerm::new(vec![
+                    member(
+                        "binder",
+                        LeafTerm::reference(scope.1.last().ok_or_else(unchecked)?.parameter),
+                    ),
+                    member("initializer", initializer),
+                ])));
+            }
+            args.push(MemberTerm::binding(
+                "activation_captures",
+                BindingValue::Tuple(TupleTerm::new(activation)),
+            ));
+            args.push(MemberTerm::binding(
+                "within",
+                BindingValue::Group(GroupTerm::new(vec![
+                    member(
+                        "lower",
+                        self.integer_literal(Integer::from(checked.within.lower), &location)?,
+                    ),
+                    member(
+                        "upper",
+                        self.integer_literal(Integer::from(checked.within.upper), &location)?,
+                    ),
+                ])),
+            ));
+            let attempt_type = self.type_node(&checked.attempt_type, &location)?;
+            args.push(MemberTerm::binding(
+                "attempts",
+                BindingValue::Group(GroupTerm::new(vec![
+                    member(
+                        "maximum",
+                        self.integer_literal(Integer::from(checked.maximum_attempts), &location)?,
+                    ),
+                    member("record_type", LeafTerm::reference(attempt_type)),
+                ])),
+            ));
+
+            let mut retry_entries = vec![
+                (
+                    checked.retry.earlier.name.clone(),
+                    checked.retry.earlier.value_type.clone(),
+                ),
+                (
+                    checked.retry.later.name.clone(),
+                    checked.retry.later.value_type.clone(),
+                ),
+            ];
+            retry_entries.extend(self.protocol_capture_entries(protocol));
+            retry_entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+            retry_entries.extend(self.capture_entries(protocol, &checked.activation_captures)?);
+            let retry_scope = self.compensation_scope(
+                &retry_entries,
+                &binder_levels,
+                &mut binder_parameters,
+                &location,
+            )?;
+            let relation = self.expression(
+                checked.retry.relation.root(),
+                &mut Binders::new(&retry_scope.0, &retry_scope.1),
+            )?;
+            args.push(MemberTerm::binding(
+                "retry",
+                BindingValue::Group(GroupTerm::new(vec![
+                    member("earlier", LeafTerm::reference(retry_scope.1[0].parameter)),
+                    member("later", LeafTerm::reference(retry_scope.1[1].parameter)),
+                    member("relation", relation),
+                ])),
+            ));
+            let commit = match checked.commit {
+                CheckedCommit::Never => empty_group(),
+                CheckedCommit::Node(node) => BindingValue::Group(GroupTerm::references([controls
+                    .get(&node)
+                    .copied()
+                    .ok_or_else(unchecked)?])),
+            };
+            args.push(MemberTerm::binding("commit", commit));
+            let mut recovery_entries = vec![(
+                checked.recover.binder.name.clone(),
+                checked.recover.binder.value_type.clone(),
+            )];
+            recovery_entries.extend(self.protocol_capture_entries(protocol));
+            recovery_entries
+                .extend(self.capture_entries(protocol, &checked.registration_captures)?);
+            recovery_entries.extend(self.capture_entries(protocol, &checked.activation_captures)?);
+            let recovery_scope = self.compensation_scope(
+                &recovery_entries,
+                &binder_levels,
+                &mut binder_parameters,
+                &location,
+            )?;
+            let predicate = self.expression(
+                checked.recover.predicate.root(),
+                &mut Binders::new(&recovery_scope.0, &recovery_scope.1),
+            )?;
+            args.push(MemberTerm::binding(
+                "recovery",
+                BindingValue::Group(GroupTerm::new(vec![
+                    member("binder", LeafTerm::reference(recovery_scope.1[0].parameter)),
+                    member("predicate", predicate),
+                ])),
+            ));
+            let key = self.protocol_member(
+                &location,
+                "compensation",
+                boolean,
+                vec![
+                    identifier(name, &location)?,
+                    identifier("compensate", &location)?,
+                    identifier(&checked.name, &location)?,
+                ],
+                None,
+                BodyTerm::application(Operator::ProtocolControl, operation.clone(), boolean, args),
+            )?;
+            keys.push(key);
+        }
+        Ok(sorted(keys))
+    }
+
+    fn compensation_scope(
+        &mut self,
+        entries: &[(String, ValueType)],
+        levels: &BTreeMap<String, usize>,
+        parameters: &mut BTreeMap<String, (NodeKey, NodeKey)>,
+        location: &Location,
+    ) -> Result<(Vec<String>, Vec<Binder>), CheckRefusal> {
+        let names = entries
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        let mut binders = Vec::with_capacity(entries.len());
+        for (slot, (name, value_type)) in entries.iter().enumerate() {
+            let semantic_type = self.binder_type(value_type, None, location)?;
+            let level = *levels
+                .get(name)
+                .ok_or_else(|| fault(location, KeyFault::UncheckedProtocolFact))?;
+            let parameter = if let Some((parameter, existing_type)) = parameters.get(name) {
+                if *existing_type != semantic_type {
+                    return Err(fault(location, KeyFault::UncheckedProtocolFact));
+                }
+                *parameter
+            } else {
+                let parameter = self.parameter(name, level, semantic_type, location)?;
+                parameters.insert(name.clone(), (parameter, semantic_type));
+                parameter
+            };
+            binders.push(Binder {
+                slot,
+                parameter,
+                semantic_type,
+            });
+        }
+        Ok((names, binders))
+    }
+
+    fn protocol_capture_entries(&self, protocol: &ProtocolInput<'_>) -> Vec<(String, ValueType)> {
+        protocol
+            .checked
+            .obligations
+            .captures
+            .iter()
+            .filter(|capture| capture.owner == CaptureOwner::Protocol)
+            .map(|capture| (capture.name.clone(), capture.declared_type.clone()))
+            .collect()
+    }
+
+    fn protocol_input_entries(&self, protocol: &ProtocolInput<'_>) -> Vec<(String, ValueType)> {
+        protocol
+            .checked
+            .slots
+            .binders
+            .first()
+            .map(|input| vec![(input.name.clone(), input.value_type.clone())])
+            .unwrap_or_default()
+    }
+
+    fn capture_entries(
+        &self,
+        protocol: &ProtocolInput<'_>,
+        indices: &[usize],
+    ) -> Result<Vec<(String, ValueType)>, CheckRefusal> {
+        indices
+            .iter()
+            .map(|&index| {
+                let capture = protocol
+                    .checked
+                    .obligations
+                    .captures
+                    .get(index)
+                    .ok_or_else(|| fault(&protocol.location(), KeyFault::UncheckedProtocolFact))?;
+                Ok((capture.name.clone(), capture.declared_type.clone()))
+            })
+            .collect()
+    }
+
+    fn compensation_entries(
+        &self,
+        protocol: &ProtocolInput<'_>,
+        checked: &CheckedCompensation,
+        stage: CaptureStage,
+        position: usize,
+    ) -> Result<Vec<(String, ValueType)>, CheckRefusal> {
+        let mut entries = Vec::new();
+        match stage {
+            CaptureStage::Registration => {
+                entries.push((
+                    checked.forward.name.clone(),
+                    checked.forward.value_type.clone(),
+                ));
+                if let Some(input) = protocol.checked.slots.binders.first() {
+                    entries.push((input.name.clone(), input.value_type.clone()));
+                }
+                if let CheckedActivation::OnEach {
+                    binder,
+                    record_type,
+                    ..
+                } = &protocol.checked.obligations.activation
+                {
+                    entries.push((binder.clone(), (**record_type).clone()));
+                }
+                entries.extend(self.protocol_capture_entries(protocol));
+                entries.extend(
+                    self.capture_entries(protocol, &checked.registration_captures[..position])?,
+                );
+            }
+            CaptureStage::Activation => {
+                entries.push((
+                    checked.trigger.name.clone(),
+                    checked.trigger.value_type.clone(),
+                ));
+                entries.extend(self.protocol_capture_entries(protocol));
+                entries.extend(self.capture_entries(protocol, &checked.registration_captures)?);
+                entries.extend(
+                    self.capture_entries(protocol, &checked.activation_captures[..position])?,
+                );
+            }
+            CaptureStage::Protocol => {}
+        }
+        Ok(entries)
+    }
+
     /// The `channel` nodes of `protocol` (FR-465 "Channel") and the one
     /// `queue` node of each (FR-465 "Queue"), each set ascending by digest.
     /// A queue is declared by its channel's `capacity` and `overflow`, so it
@@ -867,8 +1412,9 @@ impl Lowering<'_> {
         roles: &[(String, NodeKey)],
         readable: &[Binder],
         boolean: NodeKey,
-    ) -> Result<(Vec<NodeKey>, Vec<NodeKey>), CheckRefusal> {
+    ) -> Result<ChannelNodes, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
+        let mut named = Vec::with_capacity(protocol.checked.channels.len());
         let mut channels = Vec::with_capacity(protocol.checked.channels.len());
         let mut queues = Vec::with_capacity(protocol.checked.channels.len());
         for channel in &protocol.checked.channels {
@@ -910,9 +1456,10 @@ impl Lowering<'_> {
                 ),
             )?;
             channels.push(key);
+            named.push((channel.name.clone(), key));
             queues.push(self.queue_node(operations, channel, key, boolean, &location)?);
         }
-        Ok((sorted(channels), sorted(queues)))
+        Ok((sorted(channels), sorted(queues), named))
     }
 
     /// The `ordering` Group of `channel`: `unordered`, or `fifo` with the
@@ -1138,58 +1685,6 @@ impl Lowering<'_> {
         .map(Some)
     }
 
-    /// The `sequence` control nodes of `protocol`'s `run` tree (FR-466
-    /// "sequence"), each declared at `P`, `run` and the names from the root
-    /// down, and the root's key. A control is keyed after its children, so
-    /// the tree, which is in tree order, is read backwards.
-    fn run_nodes(
-        &mut self,
-        protocol: &ProtocolInput<'_>,
-        operation: &Operation,
-        boolean: NodeKey,
-    ) -> Result<NodeKey, CheckRefusal> {
-        let name = protocol.form.name.name.as_str();
-        let tree = &protocol.checked.controls;
-        let mut keys: BTreeMap<ProtocolNodeId, NodeKey> = BTreeMap::new();
-        for control in tree.controls.iter().rev() {
-            let location = protocol_location(name, ProtocolSite::Control(&control.path));
-            let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
-            if control.kind != ProtocolNodeKind::Sequence {
-                return Err(unchecked());
-            }
-            let children = control
-                .children
-                .iter()
-                .map(|child| keys.get(child).copied().ok_or_else(unchecked))
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut declaration = vec![identifier(name, &location)?, identifier("run", &location)?];
-            for segment in &control.path {
-                declaration.push(identifier(segment, &location)?);
-            }
-            let key = self.protocol_member(
-                &location,
-                "control",
-                boolean,
-                declaration,
-                None,
-                BodyTerm::application(
-                    Operator::ProtocolControl,
-                    operation.clone(),
-                    boolean,
-                    vec![MemberTerm::binding(
-                        "children",
-                        BindingValue::Group(GroupTerm::references(children)),
-                    )],
-                ),
-            )?;
-            keys.insert(control.node, key);
-        }
-        tree.root()
-            .and_then(|root| keys.get(&root.node))
-            .copied()
-            .ok_or_else(|| fault(&protocol.location(), KeyFault::UncheckedProtocolFact))
-    }
-
     /// The carrier of a reference to the `protocol`-th declaration: a
     /// `reference` leaf to its node, typed as that node is, with one
     /// `expression` occurrence at the reference.
@@ -1227,6 +1722,10 @@ impl Lowering<'_> {
         match self.protocol_keys.get(protocol) {
             Some(ProtocolKey::Keyed(key)) => Ok(*key),
             Some(ProtocolKey::NotEmitted(construct)) => Err(not_emitted(*construct, location)),
+            Some(ProtocolKey::AfterClauses) => Err(not_emitted(
+                ProtocolConstruct::ReferenceToAttemptProtocol,
+                location,
+            )),
             Some(ProtocolKey::Unselected) | None => Err(refuse(
                 location,
                 CheckCause::MissingSelection {
@@ -1244,6 +1743,9 @@ pub(super) enum ProtocolKey {
     Keyed(NodeKey),
     /// The package selects no protocol profile.
     Unselected,
+    /// The protocol holds an `attempt`: its node is written once the state
+    /// clauses it lists are ([`Lowering::protocol_nodes_with_attempts`]).
+    AfterClauses,
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),

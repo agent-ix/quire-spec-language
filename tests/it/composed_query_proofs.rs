@@ -147,7 +147,7 @@ fn inspect(
 
 fn handler() -> ir::ExecutionPoint {
     ir::ExecutionPoint::Handler {
-        name: ir::AnchorName::new("validate").unwrap(),
+        name: ir::AnchorName::new("validate").unwrap().into(),
     }
 }
 
@@ -300,7 +300,7 @@ fn nested_query_binders_and_captured_sequence_anchors_remain_original() {
     }",
         &["Nested"],
         ir::ExecutionPoint::Post {
-            operation: model.roles().operations[0].anchor.clone(),
+            operation: model.roles().operations[0].anchor.clone().into(),
         },
         |report| {
             let proof = discharged(report, "Nested");

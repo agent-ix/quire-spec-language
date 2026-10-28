@@ -4538,6 +4538,7 @@ mod tests {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         })
     }
 
@@ -4926,6 +4927,7 @@ mod tests {
                     presence: quire_exact::Presence::Required,
                     subsets: Vec::new(),
                     redefines: None,
+                    position: 0,
                 }),
                 DomainPackageRecord::Relationship(RelationshipRecord {
                     key: DeclarationKey::fixture("model.Related"),

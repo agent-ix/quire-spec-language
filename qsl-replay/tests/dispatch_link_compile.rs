@@ -174,9 +174,286 @@ fn compile(
     .into_value())
 }
 
+fn compile_with_execution_points(
+    document: &[u8],
+    declarations: &str,
+    execution_points: &spine::StateClauseExecutionPoints,
+    limits: SpineLimits,
+) -> Result<CheckedUnit, Box<CompileRefusal>> {
+    let (text, packages) = unit(document, declarations);
+    compile_text_with_execution_points(&text, &packages, execution_points, limits)
+}
+
+fn compile_text_with_execution_points(
+    text: &str,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    execution_points: &spine::StateClauseExecutionPoints,
+    limits: SpineLimits,
+) -> Result<CheckedUnit, Box<CompileRefusal>> {
+    let source = SourceIdentity::new("a", "u", "git", "1");
+    let cancel = Cancel::new();
+    let refusal = |failure| {
+        spine::refusal_or_fault(failure).expect("the front end does not fault on this source")
+    };
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &source,
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let models = spine::select(&parsed, packages, limits.model, &cancel)
+        .map_err(refusal)?
+        .into_value();
+    Ok(spine::check_with_execution_points(
+        &parsed,
+        execution_points,
+        &models,
+        &DependencyInput::default(),
+        &spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value())
+}
+
 fn compiled(document: &[u8], declarations: &str, limits: SpineLimits) -> CheckedUnit {
     compile(document, declarations, limits)
         .unwrap_or_else(|refusal| panic!("the unit compiles, got {refusal:?}"))
+}
+
+#[trace("TC-475", "FR-104-AC-15", "FR-105-AC-12")]
+#[test]
+fn accepted_execution_points_are_keyed_to_authored_state_clauses_and_emitted() {
+    use quire_contract_model::{AnchorName, ExecutionPoint};
+
+    let document = package(vec![query("ConfigVersion", "probe", &[], None)], &[]);
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let cases = [
+        (
+            "invariant Boot using v on Config::ConfigVersion at current { true }\n",
+            "Boot",
+            ExecutionPoint::Initialization {
+                name: AnchorName::new("boot").unwrap().into(),
+            },
+        ),
+        (
+            "invariant Validate using v on Config::ConfigVersion at current { true }\n",
+            "Validate",
+            ExecutionPoint::Handler {
+                name: AnchorName::new("validate").unwrap().into(),
+            },
+        ),
+        (
+            "constraint Guard using v on Config::ConfigVersion at current { true }\n",
+            "Guard",
+            ExecutionPoint::Initialization {
+                name: AnchorName::new("guard").unwrap().into(),
+            },
+        ),
+        (
+            "pre Before using v on Config::ConfigVersion::probe { true }\n",
+            "Before",
+            ExecutionPoint::Pre {
+                operation: AnchorName::new("probe").unwrap().into(),
+            },
+        ),
+        (
+            "post After using v on Config::ConfigVersion::probe { true }\n",
+            "After",
+            ExecutionPoint::Post {
+                operation: AnchorName::new("probe").unwrap().into(),
+            },
+        ),
+    ];
+    for (declaration, clause, point) in cases {
+        let expected_point = serde_json::to_value(&point).unwrap();
+        let mut points = spine::StateClauseExecutionPoints::new();
+        points.insert(clause.to_owned(), point);
+        let checked = compile_with_execution_points(&document, declaration, &points, limits)
+            .unwrap_or_else(|refusal| panic!("the accepted point checks: {refusal:?}"));
+        let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
+            .expect("the point-bearing package emits")
+            .into_value();
+        let bytes = emitted.package().bytes();
+        let wire: Value = serde_json::from_slice(bytes).expect("emitted JSON");
+        let nodes = wire["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("semantic graph nodes");
+        let state_clause = nodes
+            .iter()
+            .find(|node| node["semantic_form"] == "state_clause")
+            .expect("the state clause node");
+        assert_eq!(
+            state_clause["body"]["operation"]["member"]["execution_point"], expected_point,
+            "state clause carries its exact accepted point"
+        );
+        if clause == "Guard" {
+            assert_eq!(
+                state_clause["body"]["operation"]["member"]["clause"], "constraint",
+                "constraint remains a distinct state-clause kind"
+            );
+        }
+        if clause == "Before" || clause == "After" {
+            let operation_anchor = nodes
+                .iter()
+                .find(|node| node["semantic_form"] == "operation_anchor")
+                .expect("the operation anchor node");
+            assert_eq!(
+                operation_anchor["body"]["members"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|member| member["name"] == "execution_point")
+                    .map(|member| &member["value"]),
+                Some(&expected_point),
+                "operation anchor carries the same accepted point"
+            );
+        }
+        let baseline = compiled(&document, declaration, limits);
+        let baseline = spine::package(&baseline, spine::PackageLimits::default(), &cancel)
+            .expect("the point-free package emits")
+            .into_value();
+        let baseline_wire: Value =
+            serde_json::from_slice(baseline.package().bytes()).expect("point-free JSON");
+        let baseline_clause = baseline_wire["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["semantic_form"] == "state_clause")
+            .expect("the point-free state clause");
+        assert_ne!(
+            state_clause["node_id"], baseline_clause["node_id"],
+            "the accepted point participates in state-clause identity"
+        );
+    }
+}
+
+#[trace("TC-475", "FR-104-AC-15")]
+#[test]
+fn execution_point_refuses_unknown_clause_keys_and_mismatched_operation_names() {
+    use quire_contract_model::{AnchorName, ExecutionPoint};
+
+    let document = package(vec![query("ConfigVersion", "probe", &[], None)], &[]);
+    let limits = SpineLimits::default();
+    let declaration = "pre Before using v on Config::ConfigVersion::probe { true }\n";
+    let collision = "function Before using v(): Boolean pure { true }\npre Before using m on Config::ConfigVersion::probe { true }\n";
+    let mut unknown = spine::StateClauseExecutionPoints::new();
+    unknown.insert(
+        "NotAClause".to_owned(),
+        ExecutionPoint::Pre {
+            operation: AnchorName::new("probe").unwrap().into(),
+        },
+    );
+    let (collision_text, packages) = unit(&document, collision);
+    let collision_text = collision_text.replace(
+        "profile v = \"quire.model.complete/v1\";",
+        "profile m = \"quire.model.complete/v1\";\nprofile v = \"quire.value.complete/v1\";",
+    );
+    let no_points = spine::StateClauseExecutionPoints::new();
+    let ordinary =
+        compile_text_with_execution_points(&collision_text, &packages, &no_points, limits)
+            .expect_err("the existing input already has a clause/function collision");
+    assert!(
+        matches!(
+            ordinary.as_ref(),
+            CompileRefusal::Check { refusals, .. }
+                if refusals.iter().any(|refusal| matches!(
+                    refusal.cause,
+                    CheckCause::AmbiguousName { ref name, .. } if name == "Before"
+                ))
+        ),
+        "ordinary collision handling: {ordinary:?}"
+    );
+    let refusal = compile_text_with_execution_points(&collision_text, &packages, &unknown, limits)
+        .expect_err("the existing clause/function ambiguity wins before bad map keys");
+    match refusal.as_ref() {
+        CompileRefusal::Check { refusals, .. } => assert!(
+            refusals.iter().any(|refusal| {
+                matches!(
+                    refusal.cause,
+                    CheckCause::AmbiguousName { ref name, .. } if name == "Before"
+                )
+            }),
+            "the name collision is the first priority: {refusals:?}"
+        ),
+        other => panic!("unexpected refusal: {other:?}"),
+    }
+    let refusal = compile_with_execution_points(&document, declaration, &unknown, limits)
+        .expect_err("a non-clause key refuses");
+    match refusal.as_ref() {
+        CompileRefusal::Check { refusals, region } => {
+            assert!(matches!(
+                refusals[0].cause,
+                CheckCause::MissingName(ref name) if name == "NotAClause"
+            ));
+            assert_eq!(region.as_ref().map(|region| region.start()), Some(0));
+            assert_eq!(region.as_ref().map(|region| region.end()), Some(0));
+        }
+        other => panic!("unexpected refusal: {other:?}"),
+    }
+
+    let mut mismatched = spine::StateClauseExecutionPoints::new();
+    mismatched.insert(
+        "Before".to_owned(),
+        ExecutionPoint::Pre {
+            operation: AnchorName::new("other").unwrap().into(),
+        },
+    );
+    let refusal = compile_with_execution_points(&document, declaration, &mismatched, limits)
+        .expect_err("a point for another operation refuses");
+    match refusal.as_ref() {
+        CompileRefusal::Check { refusals, region } => {
+            assert!(matches!(
+                refusals[0].cause,
+                CheckCause::ExecutionPointBinding(_)
+            ));
+            let source = unit(&document, declaration).0;
+            let name_start = source.find("Before").unwrap() as u64;
+            assert_eq!(
+                region.as_ref().map(|region| region.start()),
+                Some(name_start)
+            );
+            assert_eq!(
+                region.as_ref().map(|region| region.end()),
+                Some(name_start + "Before".len() as u64)
+            );
+        }
+        other => panic!("unexpected refusal: {other:?}"),
+    }
+
+    let mut inapplicable = spine::StateClauseExecutionPoints::new();
+    inapplicable.insert(
+        "Before".to_owned(),
+        ExecutionPoint::Handler {
+            name: AnchorName::new("validate").unwrap().into(),
+        },
+    );
+    let refusal = compile_with_execution_points(&document, declaration, &inapplicable, limits)
+        .expect_err("an inapplicable point variant refuses");
+    match refusal.as_ref() {
+        CompileRefusal::Check { refusals, region } => {
+            assert!(matches!(
+                refusals[0].cause,
+                CheckCause::ExecutionPointBinding(
+                    qsl_semantics::check::ExecutionPointRefusal::InapplicableVariant
+                )
+            ));
+            let source = unit(&document, declaration).0;
+            let name_start = source.find("Before").unwrap() as u64;
+            assert_eq!(
+                region.as_ref().map(|region| region.start()),
+                Some(name_start)
+            );
+        }
+        other => panic!("unexpected refusal: {other:?}"),
+    }
 }
 
 fn operation_name(owner: &str, name: &str) -> String {

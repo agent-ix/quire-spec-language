@@ -655,63 +655,84 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
     }
 }
 
-/// QSL-1082 / FR-105-AC-12 gate: the pinned IR reader
-/// (`quire-contract-model` 9a84e654) admits a `state_clause` member of exactly
-/// `{kind, clause}` and an `operation_anchor` body of exactly three bindings,
-/// so a QSL-emitted package whose clause or anchor carries the QSpec
-/// FR-341/FR-342 `execution_point` is refused by the real reader at either
-/// carrier. QSL therefore emits no point (`check::mod`'s
-/// `execution_point: None`) until IR admits the carrier. The control proves
-/// the same package is admitted after the same rekey without a point, so each
-/// refusal is the point's. When IR admits the carrier this test fails; it and
-/// the production gate are then replaced by the admit-and-round-trip test
-/// (TC-463 step 5).
+/// FR-105-AC-12 / TC-463: both identity-bound execution-point carriers are
+/// admitted together by the current v2 reader and read back unchanged.
+#[trace("TC-463", "FR-105-AC-12")]
 #[test]
-fn the_pinned_ir_reader_refuses_an_execution_point_at_either_carrier() {
+fn execution_point_on_clause_and_anchor_reads_back() {
     let emitted = emit(&["own"], &[]);
     assert!(
         matches!(emitted.read(), Read::Verified { .. }),
-        "the emitted package reads back"
+        "the point-free package reads back"
     );
-    let mut control = emitted.wire.clone();
-    rekey_stale(&mut control);
-    assert!(
-        matches!(emitted.read_envelope(&control), Read::Verified { .. }),
-        "the rekeyed package is admitted without a point"
-    );
-
-    let points = [
-        json!({"kind": "initialization", "name": "boot"}),
-        json!({"kind": "handler", "name": "validate"}),
-        json!({"kind": "pre", "operation": "own"}),
-        json!({"kind": "post", "operation": "own"}),
-    ];
-    for point in &points {
-        for carrier in ["state_clause member", "operation_anchor binding"] {
-            let mut envelope = emitted.wire.clone();
-            let mut mutated = 0_usize;
-            for node in envelope["semantic_graph"]["nodes"].as_array_mut().unwrap() {
-                match (carrier, node["semantic_form"].as_str()) {
-                    ("state_clause member", Some("state_clause")) => {
-                        node["body"]["operation"]["member"]["execution_point"] = point.clone();
-                        mutated += 1;
-                    }
-                    ("operation_anchor binding", Some("operation_anchor")) => {
-                        node["body"]["members"].as_array_mut().unwrap().push(
-                            json!({"term": "binding", "name": "execution_point", "value": point}),
-                        );
-                        mutated += 1;
-                    }
-                    _ => {}
-                }
+    let point = json!({"kind": "post", "operation": "own"});
+    let mut envelope = emitted.wire.clone();
+    let mut clause = 0;
+    let mut anchor = 0;
+    for node in envelope["semantic_graph"]["nodes"].as_array_mut().unwrap() {
+        match node["semantic_form"].as_str() {
+            Some("state_clause") => {
+                node["body"]["operation"]["member"]["execution_point"] = point.clone();
+                clause += 1;
             }
-            assert_eq!(mutated, 1, "{carrier}: one carrier node");
-            rekey_stale(&mut envelope);
-            let outcome = emitted.read_envelope(&envelope);
-            assert!(
-                matches!(outcome, Read::Refused(_)),
-                "{carrier} with {point}: the pinned reader refuses it: {outcome:?}"
-            );
+            Some("operation_anchor") => {
+                node["body"]["members"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"term": "binding", "name": "execution_point", "value": point}));
+                anchor += 1;
+            }
+            _ => {}
         }
     }
+    assert_eq!((clause, anchor), (1, 1));
+    rekey_stale(&mut envelope);
+    assert!(
+        matches!(emitted.read_envelope(&envelope), Read::Verified { .. }),
+        "the exact clause and anchor carriers read back together"
+    );
+}
+
+/// FR-105-AC-10 / TC-462: `constraint` is a distinct state-clause member and
+/// remains admissible through QSL's V2 reader.
+#[trace("TC-462", "FR-105-AC-10")]
+#[test]
+fn constraint_state_clause_reads_back_as_a_distinct_kind() {
+    let mut parts = unit_of(&[], &[]);
+    parts
+        .unit
+        .push_str("constraint Low using v on M::Counter at current { true }\n");
+    let graph = assemble_with_models(parts.unit.as_bytes(), &parts.packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the constraint checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let clause = super::owners::node_where(&wire, "state", "state_clause")
+        .into_iter()
+        .find(|node| node["body"]["operation"]["member"]["clause"] == "constraint")
+        .expect("the distinct constraint clause node");
+    assert_eq!(
+        clause["body"]["operation"]["member"]["clause"],
+        "constraint"
+    );
+
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(parts.digest.as_str(), parts.document.as_slice())
+        .expect("a fresh evidence key");
+    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
+    assert!(matches!(
+        read_v2(
+            &jcs(&wire),
+            library(),
+            V2ReadLimits::default(),
+            &evidence,
+            &qsl_semantics::library::fixtures::single_pin(library(), package_id),
+        ),
+        Read::Verified { .. }
+    ));
 }
