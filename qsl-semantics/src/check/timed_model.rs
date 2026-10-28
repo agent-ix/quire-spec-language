@@ -82,9 +82,19 @@ pub struct ClockField {
     /// The clock aliases the clock is typed by, each alias of an alias on
     /// the chain.
     aliases: Vec<DeclarationKey>,
+    /// Whether the place is an `Option<Clock>`, whose presence is a bit of
+    /// the state (FR-230 "Presence bit").
+    bit: bool,
 }
 
 impl ClockField {
+    /// Whether the place is an `Option<Clock>` field: its presence is a bit
+    /// of each object's state, which `present(self.f)` reads, a write of a
+    /// constant sets and `absent` clears (FR-230 "Presence bit").
+    pub fn presence_bit(&self) -> bool {
+        self.bit
+    }
+
     /// The object type that declares the place's field.
     pub fn owner(&self) -> EffectiveId {
         self.owner
@@ -343,6 +353,7 @@ impl ElementBinding {
 #[derive(Debug)]
 pub struct ConvexPart {
     data: Option<CheckedTimedPredicate>,
+    presences: Vec<(ClockId, bool)>,
     elements: Vec<ElementBinding>,
     clocks: Vec<ClockConstraint>,
     families: Vec<QuantifiedFamily>,
@@ -384,6 +395,13 @@ impl ConvexPart {
     /// The part's data predicate; `None` when the part reads no data.
     pub fn data(&self) -> Option<&CheckedTimedPredicate> {
         self.data.as_ref()
+    }
+
+    /// Each `Option<Clock>` place of the receiver whose presence the part
+    /// requires, and whether present (FR-230 "Presence bit"): a data
+    /// predicate over the bit, read at the state.
+    pub fn presences(&self) -> &[(ClockId, bool)] {
+        &self.presences
     }
 
     /// The collection elements the data predicate reads, each a parameter
@@ -715,6 +733,9 @@ impl TimedModel {
 /// One guard part before its data predicate is typed.
 struct PartDraft {
     data: Option<ExpressionForm>,
+    /// Each `Option<Clock>` place's presence the part requires, and whether
+    /// present.
+    presences: Vec<(ClockId, bool)>,
     /// Each element the data predicate reads, with its quantifier's span.
     elements: Vec<(ElementBinding, Span)>,
     clocks: Vec<ClockConstraint>,
@@ -868,10 +889,30 @@ impl Clocks<'_> {
     /// The clock place the path `self.f.g…` reads at `id` of `form`, for a
     /// clause about `context`.
     fn read(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
+        // `value(self.v)` reads an `Option<Clock>`'s clock; `self.v` alone
+        // is its option, no clock.
+        let (path, bit) = match form.expression.get(id)?.node() {
+            ExprNode::Value(operand) => (self_path(form, *operand)?, true),
+            _ => (self_path(form, id)?, false),
+        };
+        self.fields
+            .iter()
+            .position(|clock| {
+                clock.path == path && clock.bit == bit && self.model.conforms(context, clock.owner)
+            })
+            .map(ClockId)
+    }
+
+    /// The `Option<Clock>` place the path `self.v` names at `id` of `form`,
+    /// for a clause about `context`: the option, read by `present`, written
+    /// by a reset or `absent` (FR-230 "Presence bit").
+    fn option(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
         let path = self_path(form, id)?;
         self.fields
             .iter()
-            .position(|clock| clock.path == path && self.model.conforms(context, clock.owner))
+            .position(|clock| {
+                clock.bit && clock.path == path && self.model.conforms(context, clock.owner)
+            })
             .map(ClockId)
     }
 
@@ -1133,6 +1174,11 @@ struct Located<'f> {
     spans: Vec<Span>,
     /// The clock a node reads directly, `self.x`.
     clock: Vec<Option<ClockId>>,
+    /// The `Option<Clock>` place a node `self.v` names (FR-230 "Presence
+    /// bit").
+    option: Vec<Option<ClockId>>,
+    /// The model's `Option<Clock>` places.
+    bits: Vec<ClockId>,
     /// The `Clock` parameter a node names, by its index in `parameters`.
     parameter: Vec<Option<usize>>,
     /// The clause's operation's `Clock` parameters.
@@ -1159,6 +1205,7 @@ impl<'f> Located<'f> {
         let spans = form.spans.of_nodes(&form.expression)?;
         let mut clock = vec![None; form.expression.len()];
         let mut parameter = vec![None; form.expression.len()];
+        let mut option = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
@@ -1180,6 +1227,11 @@ impl<'f> Located<'f> {
             }
             if let Some(read) = clocks.read(form, id, context) {
                 clock[id.index()] = Some(read);
+                first[id.index()] = spans.get(id.index()).copied();
+                continue;
+            }
+            if let Some(read) = clocks.option(form, id, context) {
+                option[id.index()] = Some(read);
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
             }
@@ -1254,10 +1306,36 @@ impl<'f> Located<'f> {
             form,
             spans,
             clock,
+            option,
+            bits: clocks
+                .fields
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| field.bit)
+                .map(|(index, _)| ClockId(index))
+                .collect(),
             parameter,
             parameters,
             first,
         })
+    }
+
+    /// Whether `clock` is an `Option<Clock>` place.
+    fn bit(&self, clock: ClockId) -> bool {
+        self.bits.contains(&clock)
+    }
+
+    /// The `Option<Clock>` place node `id` names, `self.v`.
+    fn option(&self, id: ExprId) -> Option<ClockId> {
+        self.option.get(id.index()).copied().flatten()
+    }
+
+    /// The `Option<Clock>` place `present(self.v)` at `id` reads.
+    fn presence(&self, id: ExprId) -> Option<ClockId> {
+        match self.node(id)? {
+            ExprNode::Present(operand) => self.option(*operand),
+            _ => None,
+        }
     }
 
     /// The `Clock` parameter node `id` names.
@@ -1332,13 +1410,16 @@ enum DataLiteral {
     /// A quantifier over a collection with no declared maximum, read as the
     /// family of its entries indexed by size: it holds or fails at a state.
     Family(std::rc::Rc<FamilyDraft>),
+    /// `present(self.v)` of an `Option<Clock>` place: its presence bit
+    /// (FR-230 "Presence bit").
+    Presence(ClockId),
 }
 
 impl DataLiteral {
     /// The literal's own form, `None` for a node of the clause.
     fn form(&self) -> Option<&ExpressionForm> {
         match self {
-            Self::Site(_) | Self::Family(_) => None,
+            Self::Site(_) | Self::Family(_) | Self::Presence(_) => None,
             Self::Formed(form) | Self::Element(form, ..) => Some(form),
         }
     }
@@ -1355,6 +1436,7 @@ impl PartialEq for DataLiteral {
                 left_binding == right_binding && left.expression == right.expression
             }
             (Self::Family(left), Self::Family(right)) => std::rc::Rc::ptr_eq(left, right),
+            (Self::Presence(left), Self::Presence(right)) => left == right,
             _ => false,
         }
     }
@@ -1423,6 +1505,11 @@ fn clock_atom(
     context: EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
+    // `present(self.v)`: a data predicate over the place's presence bit.
+    if let Some(clock) = located.presence(id) {
+        let literal = |positive| vec![(vec![(DataLiteral::Presence(clock), positive)], Vec::new())];
+        return Ok(Some((literal(true), literal(false))));
+    }
     if let Some(read) = quantified::read(located, id, clocks, context, budget)? {
         return Ok(Some(read));
     }
@@ -1614,8 +1701,9 @@ fn part_predicate(
             let cut = match &literal {
                 DataLiteral::Site(id) => located.form.cut(*id, &BTreeMap::new())?,
                 DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => (**form).clone(),
-                // A family is read at the state, not by the data predicate.
-                DataLiteral::Family(_) => return None,
+                // A family and a presence bit are read at the state, not by
+                // the data predicate.
+                DataLiteral::Family(_) | DataLiteral::Presence(_) => return None,
             };
             if positive {
                 Some(cut)
@@ -1635,6 +1723,29 @@ fn draft_part(
     literals: Vec<(DataLiteral, bool)>,
     clocks: Vec<ClockConstraint>,
 ) -> Result<PartDraft, CheckCause> {
+    let (presences, literals): (Vec<_>, Vec<_>) = literals
+        .into_iter()
+        .partition(|(literal, _)| matches!(literal, DataLiteral::Presence(_)));
+    let mut presences: Vec<(ClockId, bool)> = presences
+        .into_iter()
+        .filter_map(|(literal, positive)| match literal {
+            DataLiteral::Presence(clock) => Some((clock, positive)),
+            _ => None,
+        })
+        .collect();
+    // A part requiring a place both present and absent is never enabled:
+    // no state meets both requirements.
+    presences.sort();
+    presences.dedup();
+    // FR-230-AC-39: a constraint on an `Option<Clock>` reads its clock only
+    // where the part establishes its presence.
+    if clocks.iter().any(|constraint| {
+        located.bit(constraint.clock) && !presences.contains(&(constraint.clock, true))
+    }) {
+        return Err(CheckCause::Unproved(
+            crate::check::refusal::Obligation::Presence,
+        ));
+    }
     let (families, literals): (Vec<_>, Vec<_>) = literals
         .into_iter()
         .partition(|(literal, _)| matches!(literal, DataLiteral::Family(_)));
@@ -1676,6 +1787,7 @@ fn draft_part(
         .collect::<Result<Vec<_>, CheckCause>>()?;
     Ok(PartDraft {
         data,
+        presences,
         elements,
         clocks,
         families,
@@ -2444,6 +2556,7 @@ fn prepare_models(
                 name: place.name(),
                 path: place.path.clone(),
                 aliases: place.aliases.clone(),
+                bit: place.bit,
             })
             .collect();
         let target = source_of(model)
@@ -2476,7 +2589,7 @@ fn prepare_models(
                 // 17).
                 if AdmittedModel::clock_places(model)
                     .iter()
-                    .any(|place| place.optional)
+                    .any(|place| place.optional && !(place.bit && place.path.len() == 1))
                 {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,
@@ -2827,6 +2940,7 @@ fn check_part(
         .collect::<Result<Vec<_>, CheckRefusal>>()?;
     Ok(ConvexPart {
         data,
+        presences: part.presences,
         elements: part
             .elements
             .into_iter()

@@ -76,6 +76,10 @@ pub(crate) struct PackagePlace {
     /// Whether an optional member (`presence: optional`, `Option<Clock>`)
     /// is on the path.
     pub(crate) optional: bool,
+    /// Whether the optional member is the clock's own and no other is on
+    /// the path: an `Option<Clock>`, whose presence is a bit (FR-230
+    /// "Presence bit").
+    pub(crate) bit: bool,
     /// The clock aliases the member holding the clock is typed by, directly
     /// or as a sequence's items, each alias of an alias on the chain.
     pub(crate) aliases: Vec<DeclarationKey>,
@@ -1054,6 +1058,7 @@ impl AdmittedModel {
                 field: field.key.clone(),
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
+                bit: false,
                 aliases: Vec::new(),
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
@@ -1080,7 +1085,9 @@ impl AdmittedModel {
                 max: field.multiplicity.upper,
             }));
         }
-        at.optional |= matches!(field.presence, quire_exact::Presence::Optional);
+        let above = at.optional;
+        let own = matches!(field.presence, quire_exact::Presence::Optional);
+        at.optional |= own;
         // A package sequence type is a slot of an unbounded sequence of its
         // items (QSpec FR-154), a chain of them one slot each, and a package
         // alias the type it aliases.
@@ -1118,6 +1125,7 @@ impl AdmittedModel {
         }
         let key = match value_type {
             ValueTypeRef::Clock => {
+                at.bit = own && !above;
                 places.push(at);
                 return;
             }
