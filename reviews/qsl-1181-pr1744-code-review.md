@@ -46,3 +46,13 @@ Gates at 8d1753244 (locked-build, jobs 4, debug info off): the 4 new tests pass 
 ## Verdict
 
 Mergeable once FND-001 and the gap-analysis findings (SR-1744002) are fixed.
+
+## Dispositions
+
+Round 1, at f8925a6b9 (fix 48914b039 plus the IR-1093 follow-up). Every finding is fixed:
+- SR-1744001 FND-001: the `body/abstract` locus is now asserted.
+- SR-1744002 FND-001: `an_out_of_order_row_refuses_at_its_first_offending_entry` refuses at `objects/0/fields/1`.
+- SR-1744002 FND-002: the ignores cite IR-1093, which is open.
+- SR-1744002 FND-003: the external-key `MissingSelection` case is tested at `body/abstract`.
+
+Verdict: mergeable.

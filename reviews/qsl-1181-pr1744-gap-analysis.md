@@ -50,3 +50,13 @@ All of them are now covered. The remaining additions are `InternalFault` invaria
 ## Verdict
 
 Changes requested: FND-001 and FND-002.
+
+## Dispositions
+
+Round 1, at f8925a6b9 (fix 48914b039 plus the IR-1093 follow-up). Every finding is fixed:
+- SR-1744001 FND-001: the `body/abstract` locus is now asserted.
+- SR-1744002 FND-001: `an_out_of_order_row_refuses_at_its_first_offending_entry` refuses at `objects/0/fields/1`.
+- SR-1744002 FND-002: the ignores cite IR-1093, which is open.
+- SR-1744002 FND-003: the external-key `MissingSelection` case is tested at `body/abstract`.
+
+Verdict: mergeable.
