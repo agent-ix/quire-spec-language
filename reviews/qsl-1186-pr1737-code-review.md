@@ -56,3 +56,32 @@ Gates at 09b0d42e3 (locked-build, jobs 4, `--all-features`, debug info off, QSPE
 ## Verdict
 
 Changes requested: FND-001.
+
+## Dispositions
+
+Round 1, head 8be8961f2: one commit restacked onto the rebuilt 1186a (98b750b7b). I reviewed the whole `git diff 98b750b7b 8be8961f2`, including the adaptation to main's #1714 (QSL-1131), as new code.
+
+**The #1714 adaptation:**
+- `body_roots()` now also returns every `choice` `visible` entry and case guard, and every `repeat` `visible` entry, guard, invariant and variant.
+- So `dependencies()` lists the functions those slots call, keyed before the protocol. `a_decision_that_calls_a_function_reads_back` checks that a guard names the call's node and that IR admits the package.
+- So `ProtocolReferenceInBody` now also covers decision slots. `decisions_without_a_node_form_are_not_written` checks a `while { protocol Other }` guard.
+- The `ControlReadsDeclaration` decision path is gone, as the dependency now carries the call. This is correct.
+- Each decision slot gets its own `ProtocolSite::Decision(path, span)`, registered in `register_protocol_sites`. Refusals and occurrences inside a decision therefore locate at that slot's span.
+
+**Other changes I checked:**
+- `scoped_body` lowers decisions over the binders at the repeat's or choice's entry, as FR-466 "Binder scope" requires.
+- `visible_entries` keeps only reference leaves; a literal or bare binder was refused earlier, as `VisibleEntryNotAnExpression`.
+- `repeat_steps_through_repeat` follows FR-464 "Progress". A sequence steps if any child steps, a choice only if every case steps, and a check or a repeat never steps.
+
+One consequence outside this PR: with #1714, a protocol body may call a function that is keyed before the protocol. The predicate-join deferral that #1727 recorded (QSL-1186 comment 5949da6c: "function nodes are written after the protocols") may no longer hold. The QSL-1186 planner should re-check it.
+
+Gates (locked-build, jobs 4, debug info off, `--all-features`, QSPEC_DIR 48373530):
+- qsl-semantics: lib 810, it 1334, doc 30.
+- qsl-package lib: 397 pass, 2 ignored, 0 fail. c14/i2 now pass.
+- qsl-eval: lib 805, it 140.
+- qsl-analyze `repeat`: 9/9.
+- Workspace clippy `-D warnings`: exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `CheckedRepeat.decisions_read_body` is set when a `visible` entry, the invariant or the variant reads a binder in `Out(body) \ In(repeat)`. Such a repeat that is not post-test refuses `unsupported_construct`/`not-yet-implemented` naming `RepeatDecisionReadsBody` (STD-493), before lowering, in place of `NodePreimage(EmptyBindingName)`. `decisions_without_a_node_form_are_not_written` covers the three cases: `visible (got.ok)` with guard `true`, `invariant { got.ok }`, and `variant { if got.ok then 1 else 0 }`. A post-test repeat still refuses only `PostTestRepeat`, so the guard alone decides FR-218's post-test semantics. |

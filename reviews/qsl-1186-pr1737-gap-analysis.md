@@ -40,3 +40,13 @@ Gaps found by mutation and probe:
 ## Verdict
 
 Changes requested: FND-001. FND-002 and FND-003 are tests to add in this PR.
+
+## Dispositions
+
+Round 1, head 8be8961f2. The gates are those in SR-1737001's dispositions.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `graph.rs` `repeat_decisions_read_the_latest_body_output_and_classify_the_guard` adds a repeat whose guard reads an earlier attempt binder: it is `post_test == false`, and its `max 0` is admitted. `qsl-analyze` `repeat_guard::a_guard_over_an_entry_binder_is_pre_test_and_skips_the_body` covers an event `ready false` and a guard `{ ready }`: the body never runs, and `r1` keeps its initial value. Mutation check: I reverted `.difference(&readable)` to the plain `flow.output(body)`, and both tests fail (EXITM1=101, EXITM2=101). The mutant that survived before is now killed. |
+| FND-002 | fixed | `decisions_without_a_node_form_are_not_written` has a `RepeatStepsThroughRepeat` case whose outer body is a `choice`. Case `a` steps (an event) and case `b` is a nested always-true repeat, so under `Choice => all` the outer body does not necessarily step. |
+| FND-003 | fixed | `refinement_class_catalog::a_clause_holding_a_choice_and_a_repeat_keys_its_catalog` asserts that `class_catalog_keys()` is `Some` for a clause holding a choice and a pre-test repeat, with the events in the case and in the repeat body as classes with nodes. |
