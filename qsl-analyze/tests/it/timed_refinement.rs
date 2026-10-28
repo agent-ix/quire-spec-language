@@ -31,13 +31,13 @@ use crate::timed_world::{
 
 /// FR-430-AC-1's untimed `Req`: the object `c` (here `Call`) with `sent`
 /// (here `inflight`), and `send` setting it.
-fn req() -> Vec<u8> {
+pub(crate) fn req() -> Vec<u8> {
     renamed_package(&document(&[], &[("send", &["inflight"])]), "test/req")
 }
 
 /// FR-430-AC-1's timed `TReq`: `Req` with the clock `x`, `send` guarded
 /// `x >= 1`.
-fn treq() -> Vec<u8> {
+pub(crate) fn treq() -> Vec<u8> {
     document(&["x"], &[("send", &["inflight"])])
 }
 
@@ -78,12 +78,12 @@ fn safety(world: &Refining) -> TimedSafetyOutcome {
     .expect("EN-6 takes the refinement")
 }
 
-const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
+pub(crate) const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
      pre MSend using v on M::Call::send { self.x >= 1 ms }\n\
      post MSent using v on M::Call::send { self.inflight }\n";
 
 /// The refinement of `A` by `M` with the field row `inflight = {row}`.
-fn refinement(row: &str) -> String {
+pub(crate) fn refinement(row: &str) -> String {
     format!(
         "refinement Timed using inf abstract A concrete M {{\n\
          population A::calls from M::calls;\n\
