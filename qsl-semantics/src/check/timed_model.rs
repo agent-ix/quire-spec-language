@@ -899,6 +899,8 @@ struct ResetsDraft {
     writes: Vec<CollectionWrite>,
     drops: Vec<ClockId>,
     requires: Vec<(ClockId, bool)>,
+    /// Each requirement's span, beside `requires`.
+    require_spans: Vec<Span>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -2029,6 +2031,48 @@ struct ResetCut {
     option_writes: BTreeSet<ClockId>,
     /// The post-state presences the postcondition requires.
     requires: Vec<(ClockId, bool)>,
+    /// Each requirement's span, beside `requires`.
+    require_spans: Vec<Span>,
+}
+
+/// QSpec FR-415-AC-21: a postcondition that requires `present(p)` of a
+/// guarded place it does not write has no successor from a state where `p`
+/// is absent; where the operation's precondition establishes `p` absent
+/// (every part of one of its guards requires `p` absent), that is decided
+/// here and refuses `invalid_timed_model`/`clock-presence-unwritten` at the
+/// requirement.
+fn unwritten_presence(
+    resets: &[ResetsDraft],
+    guards: &[(usize, Vec<PartDraft>)],
+    state_clauses: &[StateClauseDeclaration],
+) -> Result<(), TemporalCause> {
+    for written in resets {
+        for (&(clock, present), &span) in written.requires.iter().zip(&written.require_spans) {
+            let writes = written.resets.iter().any(|reset| {
+                reset.clock == clock && reset.selection.is_none() && reset.parameter.is_none()
+            });
+            if !present || writes {
+                continue;
+            }
+            let absent = guards.iter().any(|(index, parts)| {
+                let same = state_clauses
+                    .get(*index)
+                    .and_then(|clause| clause.operation.as_ref())
+                    .is_some_and(|operation| {
+                        operation.declaring == written.operation.declaring
+                            && operation.declaration.name() == written.operation.declaration.name()
+                    });
+                same && !parts.is_empty()
+                    && parts
+                        .iter()
+                        .all(|part| part.presences.contains(&(clock, false)))
+            });
+            if absent {
+                return Err(TemporalCause::ClockPresenceUnwritten { span });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The post-state presence the top-level postcondition conjunct `id`
@@ -2083,6 +2127,7 @@ fn resets(
         if let Some(required) = post_presence(located, conjunct) {
             cut.leaves.insert(conjunct, ExprNode::Boolean(true));
             cut.requires.push(required);
+            cut.require_spans.push(located.span(conjunct));
             continue;
         }
         if let Some(reset) = quantified::reset(located, conjunct, clocks, clause.context, &written)?
@@ -3226,11 +3271,13 @@ fn prepare_models(
                             writes: cut.writes,
                             drops: cut.drops,
                             requires: cut.requires,
+                            require_spans: cut.require_spans,
                         });
                     }
                 }
             }
         }
+        unwritten_presence(&resets, &guards, state_clauses).map_err(timed)?;
         let mut invariants = Vec::new();
         let mut urgency_drafts = Vec::new();
         for form in &declarations {
