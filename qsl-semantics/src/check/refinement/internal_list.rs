@@ -19,7 +19,7 @@ use serde_json::Value;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
-use super::catalog::{RefinementCatalogClass, RefinementCatalogNode};
+use super::catalog::{RefinementCatalogClass, RefinementCatalogNode, MEMORY_DRAIN};
 use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_slots::CheckedLifetime;
 
@@ -449,7 +449,9 @@ pub(crate) struct ProtocolClasses {
     roles: BTreeMap<String, bool>,
     activates: bool,
     memory: BTreeSet<&'static str>,
-    memory_models: BTreeMap<&'static str, MemoryModelName>,
+    /// Every distinct source-default model of the clause's `parallel`
+    /// controls; each defines a `memory drain` class (FR-375-AC-23).
+    memory_models: BTreeSet<MemoryModelName>,
     /// The names of the protocol's own state: its binders, nodes and
     /// channels (queues), which no object row's field names.
     state_names: BTreeSet<String>,
@@ -571,7 +573,7 @@ impl ProtocolClasses {
             .memory
             .parallels
             .iter()
-            .filter_map(|parallel| memory_step(parallel.memory).map(|kind| (kind, parallel.memory)))
+            .map(|parallel| parallel.memory)
             .collect();
         let state_names = form
             .binders
@@ -690,11 +692,16 @@ impl ProtocolClasses {
                 ),
             );
         }
-        for (kind, model) in &self.memory_models {
-            let class = format!("memory {kind}");
-            classes.insert(class.clone(), RefinementCatalogClass::memory(class, *model));
+        let mut memory = Vec::new();
+        for model in &self.memory_models {
+            let drain = RefinementCatalogClass::memory(MEMORY_DRAIN.to_owned(), *model);
+            memory.push(drain);
+            if let Some(kind) = memory_step(*model) {
+                let class = RefinementCatalogClass::memory(format!("memory {kind}"), *model);
+                memory.push(class);
+            }
         }
-        Ok(classes.into_values().collect())
+        Ok(classes.into_values().chain(memory).collect())
     }
 
     /// What the node `name` is, when it has a step class.

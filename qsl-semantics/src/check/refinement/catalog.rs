@@ -43,6 +43,13 @@ pub enum RefinementCatalogNode {
     Trigger(String),
 }
 
+/// The spelling of the memory class every source-default model defines.
+pub(super) const MEMORY_DRAIN: &str = "memory drain";
+
+/// The unique, ordered catalog key: (`class`, `memory_model`) compared as
+/// UTF-8 bytes, class first.
+pub(super) type CatalogKey = (String, &'static str);
+
 /// One source-level class of a checked model or protocol subject.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementCatalogClass {
@@ -67,6 +74,21 @@ impl RefinementCatalogClass {
     /// The checked parameter or node-binder types, in declaration order.
     pub fn binder_types(&self) -> &[ValueType] {
         &self.binder_types
+    }
+
+    /// The sole drain operation of a `memory drain` class (FR-375-AC-23):
+    /// the store-buffer flush, a no-op under `sc`. Other classes have none.
+    pub fn drain(&self) -> Option<&'static str> {
+        (self.class == MEMORY_DRAIN).then_some("store-buffer-flush")
+    }
+
+    /// The catalog ordering key (FR-375-AC-26): the alias-free `class`
+    /// spelling, then the memory model label (empty for a declared class).
+    pub(super) fn catalog_key(&self) -> CatalogKey {
+        (
+            self.class.clone(),
+            self.memory_model.map_or("", MemoryModelName::label),
+        )
     }
 
     /// The source-default memory model for a memory class.
@@ -128,14 +150,17 @@ impl RefinementClassCatalog {
 }
 
 fn canonical(mut classes: Vec<RefinementCatalogClass>) -> Vec<RefinementCatalogClass> {
-    classes.sort_by(|left, right| left.class.as_bytes().cmp(right.class.as_bytes()));
+    classes.sort_by_key(|class| {
+        let (name, model) = class.catalog_key();
+        (name.into_bytes(), model)
+    });
     classes
 }
 
 /// Add the selected model's declared operation classes, preserving each
 /// checked operation key and its parameter types.
 pub(super) fn add_model_operations(
-    classes: &mut BTreeMap<String, RefinementCatalogClass>,
+    classes: &mut BTreeMap<CatalogKey, RefinementCatalogClass>,
     alias: &str,
     model: &super::super::lowering::AdmittedModel,
     operations: &crate::model::operation::OperationTable,
@@ -190,7 +215,7 @@ pub(super) fn add_model_operations(
                 RefinementCatalogNode::Operation(operation_key.clone()),
                 binder_types,
             );
-            if classes.insert(class, entry).is_some() {
+            if classes.insert(entry.catalog_key(), entry).is_some() {
                 return Err(quire_semantic_value::catalog::InternalFault::new(
                     "check.refinement-class-catalog",
                     "selected-model-operation-classes-are-unique",
@@ -325,11 +350,10 @@ pub(super) fn build(
 }
 
 fn insert(
-    classes: &mut BTreeMap<String, RefinementCatalogClass>,
+    classes: &mut BTreeMap<CatalogKey, RefinementCatalogClass>,
     class: RefinementCatalogClass,
 ) -> Result<(), quire_semantic_value::catalog::InternalFault> {
-    let spelling = class.class.clone();
-    match classes.entry(spelling) {
+    match classes.entry(class.catalog_key()) {
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(class);
         }
