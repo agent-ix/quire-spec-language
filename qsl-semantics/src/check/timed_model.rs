@@ -2385,6 +2385,16 @@ fn resets(
         .iter()
         .flat_map(|operation| operation.declaration.effect().written_fields())
         .collect();
+    // A quantifier reading its elements' presences in a form this slice
+    // does not read: a requirement, never a write (QSpec FR-415-AC-21).
+    if let Some(query) = located
+        .form
+        .expression
+        .iter()
+        .find_map(|node| located.unread(node.id()))
+    {
+        return Err(located.outside(query));
+    }
     let mut cut = ResetCut::default();
     for conjunct in conjuncts(located) {
         if !located.reads_clock(conjunct) {

@@ -2793,7 +2793,8 @@ fn quantified_presence_over_an_option_sequence_is_a_data_predicate() {
 /// and value(e) >= 1 ms`) reads no clock outside a constraint, and this
 /// slice does not read it yet: it refuses
 /// `unsupported_construct`/`not-yet-implemented` at the quantifier, in a
-/// guard and in a time invariant's `when` alike.
+/// guard, in a time invariant's `when` and in a postcondition alike, where
+/// it is a requirement and never a write (QSpec FR-415-AC-21).
 #[trace("TC-685")]
 #[test]
 fn another_quantified_presence_body_is_not_yet_implemented() {
@@ -2818,6 +2819,10 @@ fn another_quantified_presence_body_is_not_yet_implemented() {
         ),
         (
             "time invariant All when {{ {query} }} {{ self.x <= 5 ms }}\n",
+            "exists(e in self.q : not present(e))",
+        ),
+        (
+            "post P using v on Config::Call::bump {{ {query} }}\n",
             "exists(e in self.q : not present(e))",
         ),
     ] {
