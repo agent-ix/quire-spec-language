@@ -465,6 +465,9 @@ pub struct ModelSystem<'a> {
     /// and the collection's `min` and `max` (`None` with no declared
     /// maximum).
     pub(crate) clock_counts: Vec<ClockCount>,
+    /// The presence-bit members of the `Option<Clock>` fields (FR-230
+    /// "Presence bit"): each object type holding one and the member.
+    pub(crate) clock_bits: Vec<(DeclarationKey, StateField)>,
     /// Whether FR-120's bound check admits the system ([`Self::bounded`]),
     /// found once.
     bounded: std::sync::OnceLock<bool>,
@@ -551,7 +554,8 @@ impl<'a> ModelSystem<'a> {
     }
 
     pub(crate) fn typing(&self) -> encode::Typing<'_> {
-        self.value_typing().with_clock_counts(&self.clock_counts)
+        self.value_typing()
+            .with_clock_members(&self.clock_counts, &self.clock_bits)
     }
 
     /// [`Self::typing`] for values alone, which hold no element-count
@@ -779,7 +783,58 @@ impl<'a> ModelSystem<'a> {
                 declared.push(field.clone());
             }
         }
-        let initial = with_clock_counts(initial, &counts);
+        // FR-230 "Presence bit": an `Option<Clock>` field holds no data, so
+        // its presence is an eval-side Boolean member of each object's
+        // state, rooted and enumerated like a field; an initial state
+        // ranges over absent and present.
+        let mut bits: Vec<(DeclarationKey, StateField)> = Vec::new();
+        for timed in graph.timed_models() {
+            for clock in timed.clocks() {
+                let (true, [qsl_semantics::check::PlaceStep::Field(name)]) =
+                    (clock.presence_bit(), clock.path())
+                else {
+                    continue;
+                };
+                for (type_key, declared) in &fields {
+                    let below = model
+                        .type_identity(type_key)
+                        .is_some_and(|identity| types.conforms(identity, clock.owner()));
+                    let held = declared.iter().any(|field| field.key == *clock.field())
+                        || bits
+                            .iter()
+                            .any(|(key, field)| key == type_key && field.key == *clock.field());
+                    if !below || held {
+                        continue;
+                    }
+                    bits.push((
+                        type_key.clone(),
+                        StateField {
+                            key: clock.field().clone(),
+                            name: name.clone(),
+                            value_type: ValueType::Boolean,
+                            optional: false,
+                        },
+                    ));
+                }
+            }
+        }
+        for (type_key, field) in &bits {
+            if let Some(declared) = fields.get_mut(type_key) {
+                declared.push(field.clone());
+            }
+        }
+        let mut initial = with_clock_counts(initial, &counts);
+        for (type_key, field) in &bits {
+            initial = ranged(
+                initial,
+                type_key,
+                &field.key,
+                &[
+                    quire_exact::Value::Boolean(false),
+                    quire_exact::Value::Boolean(true),
+                ],
+            );
+        }
 
         let record_orders = domain::record_orders(types, &model.record_orders());
         let mut member_bounds = model.member_bounds();
@@ -817,6 +872,7 @@ impl<'a> ModelSystem<'a> {
             member_bounds,
             record_orders,
             clock_counts: counts,
+            clock_bits: bits,
             bounded: std::sync::OnceLock::new(),
         };
         system.check_rewards()?;
@@ -1588,47 +1644,58 @@ fn state_document(digest: &DigestRecord) -> DocumentRef {
 fn with_clock_counts(initial: Vec<ModelSimState>, counts: &[ClockCount]) -> Vec<ModelSimState> {
     let mut states = initial;
     for (type_key, field, min, max) in counts {
-        let range = *min..=max.unwrap_or(*min);
-        let mut next = Vec::new();
-        for state in states {
-            let holders: Vec<(DeclarationKey, String)> = state
-                .state
-                .populations
-                .iter()
-                .flat_map(|(population, objects)| {
-                    objects
-                        .iter()
-                        .filter(|(_, object)| object.type_identity == *type_key)
-                        .map(move |(key, _)| (population.clone(), key.clone()))
-                })
-                .collect();
-            let mut partial = vec![state];
-            for (population, key) in &holders {
-                let mut grown = Vec::new();
-                for state in partial {
-                    for count in range.clone() {
-                        let mut held = state.clone();
-                        if let Some(object) = held
-                            .state
-                            .populations
-                            .get_mut(population)
-                            .and_then(|objects| objects.get_mut(key))
-                        {
-                            object.fields.insert(
-                                field.key.clone(),
-                                quire_exact::Value::Integer(quire_exact::Integer::from(count)),
-                            );
-                        }
-                        grown.push(held);
-                    }
-                }
-                partial = grown;
-            }
-            next.extend(partial);
-        }
-        states = next;
+        let values: Vec<quire_exact::Value> = (*min..=max.unwrap_or(*min))
+            .map(|count| quire_exact::Value::Integer(quire_exact::Integer::from(count)))
+            .collect();
+        states = ranged(states, type_key, &field.key, &values);
     }
     states
+}
+
+/// Each of `states` with the member `field` of every object of type
+/// `type_key` taking each of `values`, every combination over the objects;
+/// none when `values` is empty.
+fn ranged(
+    states: Vec<ModelSimState>,
+    type_key: &DeclarationKey,
+    field: &DeclarationKey,
+    values: &[quire_exact::Value],
+) -> Vec<ModelSimState> {
+    let mut next = Vec::new();
+    for state in states {
+        let holders: Vec<(DeclarationKey, String)> = state
+            .state
+            .populations
+            .iter()
+            .flat_map(|(population, objects)| {
+                objects
+                    .iter()
+                    .filter(|(_, object)| object.type_identity == *type_key)
+                    .map(move |(key, _)| (population.clone(), key.clone()))
+            })
+            .collect();
+        let mut partial = vec![state];
+        for (population, key) in &holders {
+            let mut grown = Vec::new();
+            for state in partial {
+                for value in values {
+                    let mut held = state.clone();
+                    if let Some(object) = held
+                        .state
+                        .populations
+                        .get_mut(population)
+                        .and_then(|objects| objects.get_mut(key))
+                    {
+                        object.fields.insert(field.clone(), value.clone());
+                    }
+                    grown.push(held);
+                }
+            }
+            partial = grown;
+        }
+        next.extend(partial);
+    }
+    next
 }
 
 #[cfg(test)]

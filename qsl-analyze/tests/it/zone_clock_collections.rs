@@ -262,3 +262,59 @@ fn en6_settles_the_bare_clock_counts() {
         "{outcome:?}"
     );
 }
+
+/// FR-230 "Presence bit" (TC-685) through EN-6: an absent `Option<Clock>`
+/// has no valuation, so the zone search keeps no node apart by it. Over
+/// `v: Option<Clock>` and `x: Clock`, `arm` (`not present(self.v) and
+/// self.x >= 2 ms`, `self.v = 0 ms`) and `disarm` (`present(self.v) and
+/// value(self.v) >= 1 ms`, `self.v = absent`), the state `disarm` reaches
+/// is the initial absent state with a later `x`, and every node with `v`
+/// absent leaves `v` free: the deadlock-freedom certificate has the two
+/// initial nodes and the one `arm` reaches.
+#[trace("TC-685")]
+#[test]
+fn the_zone_search_frees_an_absent_option_clock() {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&document(&["x"], &[("arm", &["v"]), ("disarm", &["v"])]))
+            .expect("JSON");
+    let mut v = wire_field("v", "ix://quire/native/Clock");
+    v["presence"] = serde_json::json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let world = world_holding(
+        document.to_string().as_bytes(),
+        INFINITE,
+        &format!(
+            "{DENSE}\
+             pre Arming using v on M::Call::arm {{ not present(self.v) and self.x >= 2 ms }}\n\
+             post Arm using v on M::Call::arm {{ self.v = 0 ms }}\n\
+             pre Disarming using v on M::Call::disarm {{ present(self.v) and value(self.v) >= 1 ms }}\n\
+             post Disarm using v on M::Call::disarm {{ self.v = absent }}\n"
+        ),
+        &serde_json::json!({}),
+    );
+    let ZoneCheckOutcome::Holds { certificate, .. } = deadlock(&world) else {
+        panic!("deadlock freedom holds");
+    };
+    // Without the free dimension, `disarm`'s state (`v >= 1`, `x >= v +
+    // 2`) is a fourth node beside the initial absent one (`v = x`).
+    assert_eq!(certificate.nodes.len(), 3);
+    // The initial absent node relates `v` to nothing: no bound on `v`
+    // from above, against `x` either way.
+    let free = |zone: &qsl_replay::Zone, clock: usize| {
+        let dim = zone.dim();
+        let unbounded = |i: usize, j: usize| zone.bound(i, j).expect("in range").is_none();
+        (0..dim).all(|other| other == clock || unbounded(clock, other))
+            && (1..dim).all(|other| other == clock || unbounded(other, clock))
+    };
+    assert_eq!(
+        certificate
+            .nodes
+            .iter()
+            .filter(|node| (1..node.zone.dim()).any(|clock| free(&node.zone, clock)))
+            .count(),
+        1
+    );
+}
