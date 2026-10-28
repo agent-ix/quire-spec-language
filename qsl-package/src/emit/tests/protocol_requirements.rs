@@ -58,6 +58,137 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
     );
 }
 
+fn read_mutated_wire(mut wire: Value) -> Read {
+    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
+    wire["package_id"]["digest"] = json!(package_id.hex());
+    let bytes = serde_json::to_vec(&wire).expect("mutated wire serializes");
+    let document = model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied model document");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(digest.as_str(), &document)
+        .expect("fresh model evidence");
+    let pinned = qsl_semantics::library::fixtures::single_pin(library(), package_id);
+    read_v2(
+        &bytes,
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+        &pinned,
+    )
+}
+
+fn protocol_clause_index(wire: &Value) -> usize {
+    wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|node| node["semantic_form"] == "protocol_clause")
+        .expect("one protocol clause")
+}
+
+fn sort_dependencies(clause: &mut Value) {
+    clause["dependencies"]
+        .as_array_mut()
+        .unwrap()
+        .sort_by(|left, right| {
+            left["digest"]
+                .as_str()
+                .unwrap()
+                .cmp(right["digest"].as_str().unwrap())
+        });
+}
+
+#[trace("FR-383-AC-2", "FR-383-AC-13", "TC-1062")]
+#[test]
+fn requirement_wire_mutations_refuse() {
+    let declarations = "temporal Due using t over (c: M::Order) clock \"model-steps\" \
+                        on origin { always true }\n\
+                        temporal Later using t over (c: M::Order) clock \"model-steps\" \
+                        on origin { always eventually true }";
+    let protocol = flow_over(
+        "M::Order",
+        "on origin",
+        "role Buyer on M::Order;\nrequires temporal Due;\nrequires temporal Later;",
+    );
+    let valid = lower_with(model(), PROFILES, &format!("{declarations}\n{protocol}"));
+    assert!(valid.verified, "{}", valid.text);
+    let clause_index = protocol_clause_index(&valid.wire);
+    let clause = &valid.wire["semantic_graph"]["nodes"][clause_index];
+    let requirements = clause_argument(clause, "requirements");
+    assert_eq!(requirements["members"].as_array().unwrap().len(), 2);
+    let original_target = requirements["members"][0]["target"].clone();
+
+    let mut noncanonical = valid.wire.clone();
+    let clause = &mut noncanonical["semantic_graph"]["nodes"][clause_index];
+    clause["body"]["arguments"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| argument["name"] == "requirements")
+        .unwrap()["value"]["members"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    assert!(matches!(read_mutated_wire(noncanonical), Read::Refused(_)));
+
+    let mut missing_dependency = valid.wire.clone();
+    missing_dependency["semantic_graph"]["nodes"][clause_index]["dependencies"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|dependency| dependency != &original_target);
+    assert!(matches!(read_mutated_wire(missing_dependency), Read::Refused(_)));
+
+    let mut wrong_form = valid.wire.clone();
+    let replacement = wrong_form["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["semantic_form"] != "temporal_clause"
+                && node["node_id"] != wrong_form["semantic_graph"]["nodes"][clause_index]["node_id"]
+        })
+        .expect("a non-temporal node")
+        .get("node_id")
+        .unwrap()
+        .clone();
+    let clause = &mut wrong_form["semantic_graph"]["nodes"][clause_index];
+    clause["body"]["arguments"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| argument["name"] == "requirements")
+        .unwrap()["value"]["members"][0]["target"] = replacement.clone();
+    let dependencies = clause["dependencies"].as_array_mut().unwrap();
+    dependencies.retain(|dependency| dependency != &original_target);
+    dependencies.push(replacement);
+    sort_dependencies(clause);
+    assert!(matches!(read_mutated_wire(wrong_form), Read::Refused(_)));
+
+    let mut unknown_key = valid.wire.clone();
+    let clause = &mut unknown_key["semantic_graph"]["nodes"][clause_index];
+    let mut unknown = original_target.clone();
+    unknown["digest"] = json!("0000000000000000000000000000000000000000000000000000000000000000");
+    clause["body"]["arguments"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| argument["name"] == "requirements")
+        .unwrap()["value"]["members"][0]["target"] = unknown.clone();
+    let dependencies = clause["dependencies"].as_array_mut().unwrap();
+    dependencies.retain(|dependency| dependency != &original_target);
+    dependencies.push(unknown);
+    sort_dependencies(clause);
+    assert!(matches!(read_mutated_wire(unknown_key), Read::Refused(_)));
+}
+
 #[trace("FR-383-AC-13", "TC-1062")]
 #[test]
 fn requirement_order_does_not_change_the_protocol_package_identity() {

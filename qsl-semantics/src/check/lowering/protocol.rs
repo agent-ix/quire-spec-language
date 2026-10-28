@@ -437,17 +437,15 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         location: &Location,
     ) -> Result<Vec<NodeKey>, CheckRefusal> {
-        protocol
-            .checked
-            .requirements
-            .iter()
-            .map(|requirement| {
-                self.temporal_keys
-                    .get(&requirement.temporal)
-                    .copied()
-                    .ok_or_else(|| fault(location, KeyFault::UnkeyableRequirements))
-            })
-            .collect()
+        resolve_temporal_requirement_keys(
+            protocol
+                .checked
+                .requirements
+                .iter()
+                .map(|requirement| requirement.temporal),
+            &self.temporal_keys,
+            location,
+        )
     }
 
     /// Lower and key the `index`-th protocol, recording its one
@@ -1884,6 +1882,22 @@ impl Lowering<'_> {
     }
 }
 
+fn resolve_temporal_requirement_keys(
+    requirements: impl IntoIterator<Item = usize>,
+    temporal_keys: &BTreeMap<usize, NodeKey>,
+    location: &Location,
+) -> Result<Vec<NodeKey>, CheckRefusal> {
+    requirements
+        .into_iter()
+        .map(|requirement| {
+            temporal_keys
+                .get(&requirement)
+                .copied()
+                .ok_or_else(|| fault(location, KeyFault::UnkeyableRequirements))
+        })
+        .collect()
+}
+
 impl Lowering<'_> {
     /// QSpec FR-375's class catalog of a refinement, lowered to node keys:
     /// an operation class names its owner's model node, a protocol class
@@ -2048,4 +2062,25 @@ pub(super) enum ProtocolKey {
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),
+}
+
+#[cfg(test)]
+mod requirement_key_tests {
+    use super::*;
+
+    #[test]
+    fn a_required_temporal_without_a_key_is_unkeyable_requirements() {
+        let location = Location::root(Origin::Expression);
+        let Err(refusal) =
+            resolve_temporal_requirement_keys([7], &BTreeMap::new(), &location)
+        else {
+            panic!("a missing required temporal key is an internal key fault");
+        };
+        assert_eq!(
+            refusal.cause,
+            crate::check::CheckCause::InternalFault(Box::new(
+                crate::check::refusal::KeyFault::UnkeyableRequirements
+            ))
+        );
+    }
 }
