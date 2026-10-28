@@ -1995,3 +1995,60 @@ fn a_refused_abstract_clause_reports_alone_over_a_concrete_protocol() {
         );
     }
 }
+
+/// `check_text` without the test opt-in that tolerates unwritten protocol
+/// constructs, so a protocol's clause key is as production resolves it.
+fn check_written(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
+    PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        vec![concrete_model(), abstract_model()],
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
+    .with_unwritten_refinements()
+    .check(CheckingLimits::default())
+}
+
+/// A refinement whose rows select a protocol with an `attempt` adds no
+/// `ReferenceToAttemptProtocol` refusal of its own when a function that refers to
+/// the protocol is already refused (that refusal is the only one): the attempt-bearing node is
+/// written only for a unit with no earlier refusal, and the earlier refusal
+/// alone is reported. Without the earlier refusal the same unit checks.
+#[trace("TC-541", "FR-136-AC-1")]
+#[test]
+fn a_refinement_over_an_attempt_protocol_adds_no_attempt_reference_refusal() {
+    let solo = "protocol Solo using v over (k: M::Node) on origin {\n\
+        role w on M::Node;\n\
+        run sequence Main {\n\
+        attempt A by w on M::Node::step contracts [] as (a: M::Flag) { true };\n\
+        }\n\
+        finish Done as (d: M::Receipt) { true };\n}\n";
+    let rows = "step M::Node::step -> A::Acc::add(self);\n\
+        step M::Solo::Done -> stutter;";
+    let text = unit(solo, rows);
+    check_written(&text).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+
+    // A function that refers to the protocol is refused while the functions
+    // are lowered, before the attempt nodes: that is the one earlier refusal.
+    let text = text + "function refers using v(): Boolean pure { protocol Solo }\n";
+    let refusals = check_written(&text).expect_err("the reference refuses");
+    let attempt_reference = |refusal: &CheckRefusal| {
+        matches!(
+            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if cause.construct()
+                    == Some(crate::check::ProtocolConstruct::ReferenceToAttemptProtocol)
+        )
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert!(attempt_reference(&refusals[0]), "{refusals:?}");
+}

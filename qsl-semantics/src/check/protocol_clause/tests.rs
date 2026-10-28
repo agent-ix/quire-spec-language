@@ -103,7 +103,7 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
         // temporal profile, as the fixtures' units would select one.
         super::Selections {
             protocol: None,
-            temporal: true,
+            temporal: &[("t", crate::check::profile::TemporalProfile::InfiniteTrace)],
         },
     );
     (text, protocol, result)
