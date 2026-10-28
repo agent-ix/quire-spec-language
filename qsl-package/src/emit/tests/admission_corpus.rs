@@ -1009,6 +1009,69 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
+/// Two refinements of different names with one subject, profile and body
+/// key one node today, though a refinement's name is part of its identity
+/// (the planner's ruling on STD-493): the later declaration refuses
+/// `unsupported_construct`/`not-yet-implemented`, naming both, and no
+/// package is written.
+#[trace("FR-375", "TC-310")]
+#[test]
+fn two_refinements_of_one_meaning_refuse_naming_both() {
+    let abstract_document = state_machine_document("example/refinement-abstract");
+    let concrete_document = state_machine_document("example/refinement-concrete");
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         refinement R using inf abstract A concrete C {{}}\n\
+         refinement R2 using inf abstract A concrete C {{}}\n",
+        document_digest(&abstract_document),
+        document_digest(&concrete_document),
+    );
+    let package =
+        modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
+    let refusal = emit_checked(&package).expect_err("the second declaration refuses");
+    assert!(
+        matches!(
+            &refusal,
+            EmitRefusal::SameMeaningRefinements { first, second }
+                if first == "R" && second == "R2"
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
+    assert_eq!(refusal.cause(), Some("not-yet-implemented"));
+}
+
+/// Two refinements of different meanings are two nodes and both emit: `R`
+/// refines `A` by `C` and `R2` refines `C` by `A`, so their subjects differ
+/// and no declaration refuses as [`EmitRefusal::SameMeaningRefinements`].
+#[trace("FR-375", "TC-310")]
+#[test]
+fn two_refinements_of_different_meanings_both_emit() {
+    let abstract_document = state_machine_document("example/refinement-abstract");
+    let concrete_document = state_machine_document("example/refinement-concrete");
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         refinement R using inf abstract A concrete C {{}}\n\
+         refinement R2 using inf abstract C concrete A {{}}\n",
+        document_digest(&abstract_document),
+        document_digest(&concrete_document),
+    );
+    let package =
+        modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
+    let emission = emit_checked(&package).expect("both refinements emit");
+    let wire = wire(&emission);
+    let refinements: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .collect();
+    assert_eq!(refinements.len(), 2, "{refinements:?}");
+    assert_ne!(refinements[0]["node_id"], refinements[1]["node_id"]);
+}
+
 /// The declaration occurrence is provenance rather than refinement identity:
 /// moving the authored declaration changes its source-map region while the
 /// refinement node and package identities stay fixed.
