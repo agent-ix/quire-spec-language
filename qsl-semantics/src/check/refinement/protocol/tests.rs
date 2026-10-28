@@ -1289,7 +1289,7 @@ fn a_weak_memory_model_needs_a_row_for_each_internal_step() {
 /// code, cause and locus of FR-432-AC-3's missing `flush` row; a second
 /// drain row refuses `invalid_model_binding`/`conflicting-binding` naming
 /// both. A protocol with no `parallel` has no drain class and needs no row.
-#[trace("TC-386", "FR-432-AC-22", "FR-432-AC-3")]
+#[trace("TC-541", "FR-432-AC-22", "FR-432-AC-3", "FR-136-AC-6")]
 #[test]
 fn a_parallel_needs_one_memory_drain_row_under_every_source_default_model() {
     let drain = "step memory drain -> stutter;";
@@ -1342,6 +1342,42 @@ fn a_parallel_needs_one_memory_drain_row_under_every_source_default_model() {
         assert_eq!(name, "memory drain");
         assert_eq!(text_of(&text, *first), drain);
     }
+    // Under `tso` with neither memory row: two refusals, the drain first.
+    let found = refused(&unit(&fill("memory tso"), &without(ROWS, drain)));
+    assert_eq!(
+        found.iter().map(Refused::refinement).collect::<Vec<_>>(),
+        [
+            &missing(RowClass::Memory, "memory drain"),
+            &missing(RowClass::Memory, "memory flush"),
+        ]
+    );
+
+    // Two outermost `parallel` nodes, one `sc` and one `tso`: one drain row
+    // covers both.
+    let two = fill("memory sc").replace(
+        "} join all [left, right];\n",
+        "} join all [left, right];\n\
+         parallel Again memory tso {\n\
+         branch l2 attempt A2 by w on M::Node::step contracts [] as (a2: M::Flag) { true };\n\
+         branch r2 attempt B2 by w on M::Node::undo contracts [] as (b2: M::Flag) { true };\n\
+         } join all [l2, r2];\n",
+    );
+    let two_rows = format!(
+        "{ROWS}\n{flush}\nstep fork M::Fill::Again -> stutter;\nstep join M::Fill::Again -> stutter;"
+    );
+    let graph = checks(&unit(&two, &two_rows));
+    let drains = only_refinement(&graph)
+        .steps()
+        .iter()
+        .filter(|row| row.class == StepClass::MemoryStep(MemoryStepKind::Drain))
+        .count();
+    assert_eq!(drains, 1);
+    let found = refused(&unit(&two, &without(&two_rows, drain)));
+    assert_eq!(
+        only(&found).refinement(),
+        &missing(RowClass::Memory, "memory drain")
+    );
+
     // No `parallel`: no drain class, and no row needed.
     checks(&unit(REFUNDS, REFUND_ROWS));
 }
