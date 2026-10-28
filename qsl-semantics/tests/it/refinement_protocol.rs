@@ -809,14 +809,22 @@ fn the_protocol_is_checked_before_the_refinement_whatever_the_source_order() {
     let (before, after) = (the_refinement(&before), the_refinement(&after));
     assert_eq!(before.abstract_side(), after.abstract_side());
     assert_eq!(before.abstract_internal(), after.abstract_internal());
-    assert_eq!(
-        format!("{:?}", before.steps()),
-        format!("{:?}", after.steps())
-    );
-    assert_eq!(
-        format!("{:?}", before.objects()),
-        format!("{:?}", after.objects())
-    );
+    // A row's body is located at its own source site, which moves with
+    // the source order; everything else checks to the same value.
+    let unsited = |rows: &dyn std::fmt::Debug| {
+        let text = format!("{rows:?}");
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text.as_str();
+        while let Some(at) = rest.find("refinement row ") {
+            out.push_str(&rest[..at]);
+            let end = rest[at..].find('"').map_or(rest.len(), |end| at + end);
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
+    };
+    assert_eq!(unsited(&before.steps()), unsited(&after.steps()));
+    assert_eq!(unsited(&before.objects()), unsited(&after.objects()));
     assert_eq!(
         format!("{:?}", before.populations()),
         format!("{:?}", after.populations())
@@ -1612,6 +1620,14 @@ fn memory_entries(graph: &CheckedGraph) -> Vec<(String, String, Option<&'static 
         .iter()
         .filter(|class| class.class().starts_with("memory "))
         .map(|class| {
+            // A memory class carries its typed step kind, and its spelling
+            // and drain operation follow from it (#1718, SR-1738001).
+            let kind = class.memory_step().expect("a memory class has a step kind");
+            assert_eq!(class.class(), format!("memory {}", kind.label()));
+            assert_eq!(
+                class.drain().is_some(),
+                kind == qsl_semantics::check::MemoryStepKind::Drain
+            );
             (
                 class.class().to_owned(),
                 class

@@ -574,6 +574,7 @@ fn evaluate_arguments(
                 binds_result,
                 ..
             },
+        ..
     } = row
     else {
         return Err(fault("an-abstract-row-names-an-operation"));
