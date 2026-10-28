@@ -61,6 +61,7 @@ pub struct ZoneCertificate {
 
 pub struct RefinementPart {                     // FR-430
     pub refinement: NodeKey,                    // FR-149
+    pub initials: Vec<NodeIndex>,               // one initial node per concrete initial state, in index order; initials[0] == ZoneCertificate.initial
     pub concrete_package: PackageId,
     pub abstract_package: PackageId,
     pub positions: Vec<CertifiedPosition>,      // FR-149's type, unchanged
@@ -108,15 +109,22 @@ pub struct RefinementPart {                     // FR-430
     entered by a failing step and every node reached from it over
     certificate edges; each of its nodes carries the reserved index
     `positions.len()`, which names no position, and only the entry node
-    carries the `locked` mark;
+    carries the `locked` mark. A concrete initial state whose `check_initial`
+    fails and whose initial symbolic state has no point with a time-divergent
+    continuation (ADR-026 TV-1, FR-430 "A failing initial state") is also an
+    entry node: its initial node is a `locked` node with the reserved index,
+    and the locked region is that node and every node reached from it;
   - every edge is a discrete step (a delay is never an edge), and no node is
     bad by an automaton state: instead, `check_step` (FR-141) SHALL pass on
     every edge between two positioned nodes, the target's position and the
     edge's `Taken` being those `check_step` yields, and the only edge it may
     fail on is an edge into a `locked` entry node, the post-state of the
     failing step (FR-430);
-  - the initial node's position is the one `check_initial` yields for the
-    concrete initial state, and no certificate edge may leave the locked
+  - the initial node of each concrete initial state (`refinement.initials`,
+    one per state in index order; a safety half with one initial state lists
+    one) carries the position `check_initial` yields for that state, or is a
+    `locked` entry node when `check_initial` fails and the state is
+    time-locked, and no certificate edge may leave the locked
     region for a positioned node;
   - `refinement`, `concrete_package` and `abstract_package` SHALL be those
     of the item, as FR-149 requires of its certificate;
@@ -138,6 +146,7 @@ pub struct RefinementPart {                     // FR-430
 | FR-244-AC-3 | The time-lock-freedom item over the unmodified `Rpc` returns a certificate whose divergence part names, for every node, a path to a quiescent node. Two runs give byte-equal certificates. | Test (TC-699) |
 | FR-244-AC-4 | Over a `Lock` model (one object with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with no guard; `time invariant when phase = B { x <= 1 ms }`; `ping`, enabled in `B`, changes no data field), `always holds(c.phase = A)` is proved, and its certificate lists the node `(B, x <= 1)` marked `locked`, with `ping` edges that stay in `B` and reach no quiescent node and no cycle of positive total delay. | Test (TC-699) |
 | FR-244-AC-5 | The safety half of FR-430-AC-1's `TReq` refinement returns a certificate with `refinement` present, each node's second component an index into `positions`, every edge a discrete `send` step, an `admitted` path, and the refinement item's obligation identity; FR-245 accepts it. FR-430-AC-6's `Holds` certificate lists the post-state of `undo` as a `locked` node with no position, entered by the failing `undo` edge. Two runs give byte-equal certificates. | Test (TC-699) |
+| FR-244-AC-6 | The certificate of FR-245-AC-9's `Init3` refinement has `refinement.initials` of length 3 with `initials[0]` equal to `initial`; the initial node of index 1 is a `locked` node with the reserved index and no position, the other two initial nodes carry positions, and two runs give byte-equal certificates. A refinement-form certificate of one initial state lists `initials` of length 1. | Test (TC-699) |
 
 ## Dependencies
 
