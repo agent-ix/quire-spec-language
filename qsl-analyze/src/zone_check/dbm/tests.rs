@@ -508,3 +508,28 @@ fn down_universe_and_scaling() {
     assert_eq!(scaled.bound(X, 0).expect("in range"), &le(6));
     assert_eq!(scaled.bound(X, Y).expect("in range"), &le(0));
 }
+
+/// QSpec FR-430: a renaming swaps clocks' rows and columns and keeps the
+/// zone closed; one that maps two clocks to one is refused, so no row is
+/// silently overwritten.
+#[trace("TC-1170", "FR-430-AC-3")]
+#[test]
+fn a_renaming_must_be_a_permutation() {
+    let mut zone = Dbm::zero(3);
+    zone.up();
+    zone.constrain(0, Y, le(-2)).expect("y is a clock");
+    let swapped = zone.renamed(&[1, 0]).expect("a permutation");
+    assert_eq!(swapped.bound(0, X).expect("x"), &le(-2));
+    assert_eq!(swapped.renamed(&[1, 0]).expect("a permutation"), zone);
+    assert_eq!(
+        zone.renamed(&[0, 0]),
+        Err(DbmError::NotAPermutation {
+            first: 1,
+            second: 2
+        })
+    );
+    assert_eq!(
+        zone.renamed(&[2, 0]),
+        Err(DbmError::ClockOutOfRange { clock: 3, dim: 3 })
+    );
+}

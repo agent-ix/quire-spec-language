@@ -1515,6 +1515,7 @@ fn live_clocks_beyond_max_clocks_settle_limit_reached() {
                     ),
                 },
                 limits: ZoneCheckLimits::default(),
+                reductions: &qsl_analyze::model_check::Reductions::default(),
             },
             &Cancel::new(),
         )
