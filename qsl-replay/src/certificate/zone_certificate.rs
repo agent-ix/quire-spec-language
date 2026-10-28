@@ -37,6 +37,17 @@
 //! The first failure is the rejection. A node no edge reaches from an
 //! initial node is read nowhere and checked for nothing.
 //!
+//! A refinement's safety half over a timed concrete subject (QSpec FR-430)
+//! carries the refinement form (FR-244, FR-245 "Refinement form"): each
+//! node's second component indexes the part's positions, the reserved
+//! index `positions.len()` marking the locked region a failing step
+//! enters. The checker opens the refinement's systems as FR-142 does, runs
+//! `check_initial` on each initial node (`InitialMismatch`) and
+//! `check_step` on each edge out of a positioned node (`StepFails` unless
+//! it enters a `locked` node, `PostDiffers` when the target's position or
+//! the edge's `taken` differs), takes the locked region on concrete steps
+//! only, and stops on the evaluation meter, never rejecting.
+//!
 //! Coverage is read under the aLU simulation with the certificate's
 //! bounds; for the deadlock-freedom item under the aM bisimulation
 //! (`L = U = max(L, U)`), since the simulation does not preserve deadlocks.
