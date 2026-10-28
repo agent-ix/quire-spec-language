@@ -922,6 +922,18 @@ pub enum NodeKind {
         /// `Option<Clock>` field.
         case: Option<String>,
     },
+    /// `forall(e in r.q: present(e))` (`all`) or `exists(..)` of the
+    /// `Sequence<Option<Clock>>` place `q` of the object `r` refers to:
+    /// whether every (some) element the collection holds is present, a
+    /// `Boolean` data predicate (QSpec FR-415-AC-20).
+    SlotPresence {
+        /// The owner object's reference.
+        reference: NodeId,
+        /// The collection field, by its declaring object type and name.
+        field: FieldRef,
+        /// Whether every element must be present (`forall`).
+        all: bool,
+    },
     /// The payload of an `Option` operand.
     Value(NodeId),
     /// A call of a function of this package. Its checked identity is the
@@ -1301,6 +1313,9 @@ impl NodeKind {
             }
             | NodeKind::Present(operand)
             | NodeKind::PlacePresence {
+                reference: operand, ..
+            }
+            | NodeKind::SlotPresence {
                 reference: operand, ..
             }
             | NodeKind::Value(operand)

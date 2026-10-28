@@ -3119,7 +3119,7 @@ impl<'a> Typer<'a> {
         let names = |field: &str, case: Option<&str>| {
             self.presence_places
                 .iter()
-                .any(|place| place.field == field && place.case.as_deref() == case)
+                .any(|place| !place.slot && place.field == field && place.case.as_deref() == case)
         };
         if names(field, None) {
             return Some((operand.at(*owner), field.as_str(), None, 1));
@@ -3135,6 +3135,58 @@ impl<'a> Typer<'a> {
             let owner = operand.at(*owner);
             (owner.at(*object), union.as_str(), Some(field.as_str()), 2)
         })
+    }
+
+    /// The owner and field of `query` when it is `forall(e in r.q:
+    /// present(e))` or `exists(..)`, `q` a `Sequence<Option<Clock>>` place
+    /// this pass reads the presences of, with whether it is `forall`
+    /// (QSpec FR-415-AC-20, STD-526 PR-03).
+    pub(super) fn slot_presence_operand<'e>(
+        &self,
+        query: qsl_forms::ExprRef<'e>,
+    ) -> Option<(qsl_forms::ExprRef<'e>, &'e str, bool)> {
+        let (all, source, _) = super::timed_model::slot_presence_query(query)?;
+        let source = query.at(source);
+        let qsl_forms::ExprNode::Field { operand, field } = source.node() else {
+            return None;
+        };
+        self.presence_places
+            .iter()
+            .any(|place| place.slot && place.field == *field)
+            .then(|| (source.at(*operand), field.as_str(), all))
+    }
+
+    /// `forall(e in r.q: present(e))` (`all`) or `exists(..)` over the typed
+    /// owner `owner`: whether every (some) element the collection holds is
+    /// present, `Boolean`. An owner that is no reference to an object type
+    /// holding the place refuses `ill_typed`/`type-mismatch`.
+    pub(super) fn slot_presence(
+        &mut self,
+        owner: Node,
+        field: &str,
+        all: bool,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let ValueType::Reference(object) = owner.value_type else {
+            return Err(mismatch(location));
+        };
+        let place = self
+            .presence_places
+            .iter()
+            .find(|place| {
+                place.slot && place.field == field && self.scope.types.conforms(object, place.owner)
+            })
+            .cloned()
+            .ok_or_else(|| mismatch(location))?;
+        Ok(node(
+            NodeKind::SlotPresence {
+                reference: self.push(owner),
+                field: quire_semantic_value::declaration::FieldRef::new(place.owner, place.field),
+                all,
+            },
+            ValueType::Boolean,
+            location,
+        ))
     }
 
     /// `present(r.f)` (`present(r.f.c)`) over the typed owner `owner`: the
@@ -3153,7 +3205,8 @@ impl<'a> Typer<'a> {
                 .presence_places
                 .iter()
                 .find(|place| {
-                    place.field == field
+                    !place.slot
+                        && place.field == field
                         && place.case.as_deref() == case
                         && self.scope.types.conforms(*object, place.owner)
                 })

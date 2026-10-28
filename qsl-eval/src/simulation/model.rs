@@ -743,7 +743,18 @@ impl<'a> ModelSystem<'a> {
                 } else {
                     shape.max
                 };
+                // FR-230 "Presence bit", FR-230-AC-41/42: a
+                // `Sequence<Option<Clock>>` holds one presence bit for each
+                // element, so its member is the sequence of the bits, whose
+                // length is the count.
                 let value_type = match max {
+                    Some(max) if clock.presence_bit() => {
+                        ValueType::collection(quire_exact::CollectionType::new(
+                            quire_exact::CollectionKind::Sequence,
+                            ValueType::Boolean,
+                            quire_exact::CardinalityBound::new(shape.min.min(max), max).ok(),
+                        ))
+                    }
                     Some(max) => quire_exact::IntegerInterval::new(
                         quire_exact::Integer::from(shape.min.min(max)),
                         quire_exact::Integer::from(max),
@@ -823,7 +834,7 @@ impl<'a> ModelSystem<'a> {
                 declared.push(field.clone());
             }
         }
-        let mut initial = with_clock_counts(initial, &counts);
+        let mut initial = with_clock_counts(initial, &counts, types);
         for (type_key, field) in &bits {
             initial = ranged(
                 initial,
@@ -1641,12 +1652,26 @@ fn state_document(digest: &DigestRecord) -> DocumentRef {
 /// `counts` on each object of the count's type: every count from `min` to
 /// `max`, none when `min` exceeds `max`, or `min` alone with no maximum
 /// (the timed subject ranges it further).
-fn with_clock_counts(initial: Vec<ModelSimState>, counts: &[ClockCount]) -> Vec<ModelSimState> {
+fn with_clock_counts(
+    initial: Vec<ModelSimState>,
+    counts: &[ClockCount],
+    types: &quire_semantic_value::declaration::TypeEnvironment,
+) -> Vec<ModelSimState> {
     let mut states = initial;
     for (type_key, field, min, max) in counts {
-        let values: Vec<quire_exact::Value> = (*min..=max.unwrap_or(*min))
-            .map(|count| quire_exact::Value::Integer(quire_exact::Integer::from(count)))
-            .collect();
+        // A `Sequence<Option<Clock>>`'s bits: every sequence of `min` to
+        // `max` bits, each element's initial presence ranging over both.
+        let bits = matches!(field.value_type, ValueType::Collection(_))
+            .then(|| {
+                domain::Domain::of(&field.value_type, &[], types, &domain::RecordOrders::new())
+            })
+            .flatten();
+        let values: Vec<quire_exact::Value> = match bits {
+            Some(domain) => (0..domain.len()).map_while(|at| domain.nth(at)).collect(),
+            None => (*min..=max.unwrap_or(*min))
+                .map(|count| quire_exact::Value::Integer(quire_exact::Integer::from(count)))
+                .collect(),
+        };
         states = ranged(states, type_key, &field.key, &values);
     }
     states

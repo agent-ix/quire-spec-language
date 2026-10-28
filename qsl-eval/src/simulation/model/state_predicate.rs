@@ -65,7 +65,7 @@ impl ModelSystem<'_> {
             .iter()
             .map(|(predicate, over)| (*predicate, *over, Vec::new()))
             .collect();
-        self.state_predicates_with(state, &bound, PlacePresences::new())
+        self.state_predicates_with(state, &bound, PlacePresences::default())
     }
 
     /// [`Self::state_predicates`] with each predicate's slots after `over`

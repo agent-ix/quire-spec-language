@@ -51,7 +51,8 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
     let through = match node.kind() {
         NodeKind::Attribute { reference, .. }
         | NodeKind::Navigate { reference, .. }
-        | NodeKind::PlacePresence { reference, .. } => *reference,
+        | NodeKind::PlacePresence { reference, .. }
+        | NodeKind::SlotPresence { reference, .. } => *reference,
         NodeKind::Reaches { source, .. } | NodeKind::ReachesEnd { source, .. } => *source,
         NodeKind::Arithmetic(..)
         | NodeKind::IntegerDivision { .. }

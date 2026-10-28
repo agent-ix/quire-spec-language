@@ -638,6 +638,49 @@ pub(crate) struct PresencePlace {
     pub(crate) owner: EffectiveId,
     pub(crate) field: String,
     pub(crate) case: Option<String>,
+    /// Whether the place is the element of a `Sequence<Option<Clock>>`
+    /// field, whose presences `forall(e in r.f: present(e))` reads.
+    pub(crate) slot: bool,
+}
+
+/// `forall(e in c: present(e))` or `exists(e in c: present(e))` at
+/// `query`: whether it is `forall`, its collection operand and its binder.
+pub(crate) fn slot_presence_query(query: qsl_forms::ExprRef<'_>) -> Option<(bool, ExprId, &str)> {
+    let ExprNode::Query {
+        query: kind,
+        binder,
+        source,
+        body,
+    } = query.node()
+    else {
+        return None;
+    };
+    let all = match kind {
+        qsl_forms::BinderQuery::Forall => true,
+        qsl_forms::BinderQuery::Exists => false,
+        _ => return None,
+    };
+    let ExprNode::Present(operand) = query.at(*body).node() else {
+        return None;
+    };
+    let ExprNode::Name(name) = query.at(*operand).node() else {
+        return None;
+    };
+    (name.segments.len() == 1 && name.name == *binder).then_some((all, *source, binder.as_str()))
+}
+
+/// Whether a place with a presence bit at `path` is one the timed
+/// system holds the bit of: an `Option<Clock>` field, or an element of a
+/// `Sequence<Option<Clock>>` field with a declared maximum, one bit for each
+/// slot (FR-230 "Presence bit", FR-230-AC-41/42).
+fn bit_path(path: &[PlaceStep]) -> bool {
+    match path {
+        [PlaceStep::Field(_)] => true,
+        [PlaceStep::Field(_), PlaceStep::Slot(shape)] => {
+            shape.ordered && !shape.unique && shape.max.is_some()
+        }
+        _ => false,
+    }
 }
 
 /// The guarded places of `clocks` a predicate names `r.f` or `r.f.c`:
@@ -652,11 +695,19 @@ fn presence_places(clocks: &[ClockField]) -> Vec<PresencePlace> {
                 owner: clock.owner,
                 field: field.clone(),
                 case: None,
+                slot: false,
             }),
             [PlaceStep::Field(field), PlaceStep::Union(case)] => Some(PresencePlace {
                 owner: clock.owner,
                 field: field.clone(),
                 case: Some(case.clone()),
+                slot: false,
+            }),
+            [PlaceStep::Field(field), PlaceStep::Slot(_)] if clock.bit => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: None,
+                slot: true,
             }),
             _ => None,
         })
@@ -1035,6 +1086,63 @@ impl Clocks<'_> {
             .map(ClockId)
     }
 
+    /// The collection operand of `id` of `form` when it is `forall(e in
+    /// r.q: present(e))` or `exists(e in r.q: present(e))`, `q` a
+    /// `Sequence<Option<Clock>>` field of some object type of the model.
+    fn slot_presences(&self, form: &ExpressionForm, id: ExprId) -> Option<ExprId> {
+        slot_presence_query(form.expression.at(id))
+            .and_then(|(_, source, _)| self.bit_slots(form, source).then_some(source))
+    }
+
+    /// Whether `source` of `form` is `r.q`, `q` a `Sequence<Option<Clock>>`
+    /// field of some object type of the model.
+    fn bit_slots(&self, form: &ExpressionForm, source: ExprId) -> bool {
+        let Some(ExprNode::Field { field, .. }) =
+            form.expression.get(source).map(|node| node.node())
+        else {
+            return false;
+        };
+        self.fields.iter().any(|clock| {
+            clock.bit
+                && matches!(clock.path.as_slice(),
+                    [PlaceStep::Field(name), PlaceStep::Slot(_)] if name == field)
+        })
+    }
+
+    /// Whether `id` of `form` is `forall(e in r.q: B)` or `exists(..)`
+    /// over a `Sequence<Option<Clock>>` whose body `B` reads `present(e)`
+    /// other than as the whole body: a presence read of the elements this
+    /// slice does not read yet (SR-1763001 FND-003).
+    fn slot_presence_body(&self, form: &ExpressionForm, id: ExprId) -> bool {
+        let Some(ExprNode::Query {
+            query: qsl_forms::BinderQuery::Forall | qsl_forms::BinderQuery::Exists,
+            binder,
+            source,
+            body,
+        }) = form.expression.get(id).map(|node| node.node())
+        else {
+            return false;
+        };
+        if !self.bit_slots(form, *source) {
+            return false;
+        }
+        let mut pending = vec![*body];
+        while let Some(at) = pending.pop() {
+            let Some(node) = form.expression.get(at).map(|node| node.node()) else {
+                continue;
+            };
+            if let ExprNode::Present(operand) = node {
+                if matches!(form.expression.get(*operand).map(|node| node.node()),
+                    Some(ExprNode::Name(name)) if name.segments.len() == 1 && name.name == *binder)
+                {
+                    return true;
+                }
+            }
+            pending.extend(node.children());
+        }
+        false
+    }
+
     /// Whether `id` of `form` is `r.f`, `f` an `Option<Clock>` field, or
     /// `r.f.c`, `c` a clock case of the union field `f`, of some object
     /// type of the model.
@@ -1385,6 +1493,9 @@ struct Located<'f> {
     /// object's place: a data predicate of the guard's convex part,
     /// typed through the place identity (FR-230-AC-51), never a clock read.
     data_presence: Vec<bool>,
+    /// For each node of a quantifier [`Clocks::slot_presence_body`]
+    /// accepts, the quantifier included: the quantifier.
+    unread: Vec<Option<ExprId>>,
 }
 
 impl<'f> Located<'f> {
@@ -1409,6 +1520,7 @@ impl<'f> Located<'f> {
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut presence_first = vec![false; form.expression.len()];
         let mut data_presence = vec![false; form.expression.len()];
+        let mut unread = vec![None; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
             for child in node.node().children() {
@@ -1435,6 +1547,32 @@ impl<'f> Located<'f> {
                     || clocks.option(form, operand, context).is_some()
                     || foreign_place(operand)
             };
+            // `forall(e in r.q: present(e))` / `exists(..)` over a
+            // `Sequence<Option<Clock>>`: a data read of its elements'
+            // presences, never a clock read (QSpec FR-415-AC-20, STD-526
+            // PR-03).
+            if clocks.slot_presences(form, id).is_some() {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                data_presence[id.index()] = true;
+                continue;
+            }
+            // Any other body reading `present(e)` of such an element: a
+            // presence read this slice does not read yet.
+            if clocks.slot_presence_body(form, id) {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                let mut pending = vec![id];
+                while let Some(at) = pending.pop() {
+                    if let Some(slot) = unread.get_mut(at.index()) {
+                        *slot = Some(id);
+                    }
+                    if let Some(node) = form.expression.get(at) {
+                        pending.extend(node.node().children());
+                    }
+                }
+                continue;
+            }
             // `present(r.f)` of another object's place is a data read of its
             // presence, the typer's place presence: it reads no clock
             // (FR-230 "Presence is derived", QSpec FR-322-AC-155). It is
@@ -1588,7 +1726,15 @@ impl<'f> Located<'f> {
             first,
             presence_first,
             data_presence,
+            unread,
         })
+    }
+
+    /// The quantifier over a `Sequence<Option<Clock>>` holding `id` whose
+    /// body reads its elements' presences in a form this slice does not
+    /// read yet (SR-1763001 FND-003).
+    fn unread(&self, id: ExprId) -> Option<ExprId> {
+        self.unread.get(id.index()).copied().flatten()
     }
 
     /// Whether every read under `id` is `present(r.f)` of another object's
@@ -1887,6 +2033,9 @@ fn guard(
     let quantified = quantified::bodies(located, clocks, context);
     for node in located.form.expression.iter() {
         let id = node.id();
+        if let Some(query) = located.unread(id) {
+            return Err(timed(located.outside(query)));
+        }
         if quantified.contains(&id) {
             continue;
         }
@@ -2236,6 +2385,16 @@ fn resets(
         .iter()
         .flat_map(|operation| operation.declaration.effect().written_fields())
         .collect();
+    // A quantifier reading its elements' presences in a form this slice
+    // does not read: a requirement, never a write (QSpec FR-415-AC-21).
+    if let Some(query) = located
+        .form
+        .expression
+        .iter()
+        .find_map(|node| located.unread(node.id()))
+    {
+        return Err(located.outside(query));
+    }
     let mut cut = ResetCut::default();
     for conjunct in conjuncts(located) {
         if !located.reads_clock(conjunct) {
@@ -3249,9 +3408,11 @@ fn prepare_models(
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
                 // A place under an optional member is guarded by a presence
                 // FR-230 does not yet give S3 a reading of (STD-493 item
-                // 17).
+                // 17), except an `Option<Clock>`, a union case and an
+                // element of a bounded `Sequence<Option<Clock>>`, whose
+                // presences are bits or data.
                 if AdmittedModel::clock_places(model).iter().any(|place| {
-                    place.optional && !((place.bit && place.path.len() == 1) || place.case)
+                    place.optional && !((place.bit && bit_path(&place.path)) || place.case)
                 }) {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,
