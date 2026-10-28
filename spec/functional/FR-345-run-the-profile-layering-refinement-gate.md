@@ -132,8 +132,8 @@ entry or empty corpus, all passed to FR-344's report.
   unit does not classify `admitted`, it SHALL report `regression` naming the
   layer and compile codes; if its candidate set is empty, it SHALL report
   `regression` naming the layer and empty candidate set. The unresolved
-  result gives FR-344's unsupported verdict and exit 21, so the no-negotiation
-  path cannot pass the gate without evaluating any witness.
+  result gives the CLI FR-344's unsupported verdict and exit 21, so the
+  no-negotiation CLI path cannot report `holds` for an unevaluated witness.
 - The gate SHALL give each edge FR-453's proper-subset result: `holds` when
   every `distinguishing` entry for the edge classifies `prohibited` on the
   parent side, naming the parent layer, and `admitted` on the child side,
@@ -172,11 +172,12 @@ entry or empty corpus, all passed to FR-344's report.
   and tool-failure result.
 - Each case SHALL be named by its two units' `RawSourceRef`s and its edge's
   two layer identities, never by a display string or a directory name.
-- The make target `refinement-layering`, which `make ci` runs, SHALL run
+- The `refinement-layering` make target, which `make ci` runs, SHALL invoke
   `cargo run --package xtask -- refinement layering
-  tests/fixtures/refinement/layering/` over the real corpus, with no
-  negotiation function, and SHALL fail when the gate's exit code is not 0
-  (FR-344 "Invocation and exit").
+  tests/fixtures/refinement/layering/` with no negotiation function. The CLI
+  SHALL write its report and exit by FR-344. The make target SHALL pass only
+  when the CLI exits 21 and its report satisfies FR-345-AC-9; it SHALL fail
+  for every other CLI exit code or report.
 
 ## Acceptance Criteria
 
@@ -191,10 +192,10 @@ entry or empty corpus, all passed to FR-344's report.
 | FR-345-AC-7 | On each of E1 to E6, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
 | FR-345-AC-9 | Given `REAL_CORPUS` has one admitted witness per layer and each layer has a non-empty candidate set, `make refinement-layering` without negotiation succeeds only when the CLI exits 21 with verdict `unsupported` and all six layer results `unresolved (unsupported)` for reason `not-negotiated`. | Test (TC-868) |
-| FR-345-AC-10 | A root-package test calls `xtask::refinement::layering::compare` over `REAL_CORPUS` with the FR-278 composition, QSL's registry snapshot and a test negotiation function that settles every request `supported`, and receives verdict success with the same case, layer and edge results as the no-negotiation `make refinement-layering` run, except that all six negotiated witness results are `holds` rather than `unresolved (unsupported)`; each layer's witness item is requested once per candidate. The same call with no negotiation function makes no request and returns the report `make refinement-layering` writes, with verdict unsupported, exit 21, and no witness result `holds`. Neither call writes to stdout or stderr, and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
+| FR-345-AC-10 | A root-package test calls `xtask::refinement::layering::compare` over `REAL_CORPUS` with the FR-278 composition, QSL's registry snapshot and a test negotiation function that settles every request `supported`, and receives verdict success with the same case, layer and edge results as the no-negotiation CLI report, except that all six negotiated witness results are `holds` rather than `unresolved (unsupported)`; each layer's witness item is requested once per candidate. The same call with no negotiation function makes no request and returns a report byte-equal to the no-negotiation CLI report, with verdict unsupported, exit 21, and no witness result `holds`. Neither call writes to stdout or stderr, and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
 | FR-345-AC-11 | Over a layering corpus that holds E6's `case`, `distinguishing` and `witness` entries (the temporal layer's witness is a timed state model with a clock field, a reset, a guard, a time invariant and one `invariant` clause), E6's both-refuse case holds, its `distinguishing` entry classifies `prohibited` on the parent side naming `quire.model.complete/v1` and `admitted` on the child side, and the temporal witness settles `supported` under a candidate that advertises `operation-contract` in `bounded` mode; a corpus without E6's `distinguishing` entry or without the temporal `witness` entry gives one tool-failure result for each missing item, naming E6 / `distinguishing` or `quire.temporal.complete/v1` / `witness`. | Test (TC-868) |
 | FR-345-AC-12 | Over the real backend registry, with quire-contract-codegen's `negotiate_*` as the negotiation function, `compare` over `REAL_CORPUS` gives each of the six layers a `holds` witness result: its witness unit admits and its witness item, requested once per candidate by backend name, settles `supported` under at least one candidate. The temporal witness is the timed model of AC-6 and its request is `operation-contract`/`bounded`. A seeded unsupported witness gives a `regression` naming the layer and each candidate's identity and disposition, and a removed witness entry gives a tool-failure result. | Integration test (quire-integration IT-015 / quire-integration TC-095) |
-| FR-345-AC-13 | When the CLI exits with any code other than 21, or its report lacks the verdict and six layer results required by AC-9, `make refinement-layering` fails; in particular, removing a required witness makes the CLI report tool failure and exit 30 and the Make target fails. | Test (TC-868) |
+| FR-345-AC-13 | The make target's test-only CLI seam rejects a child result unless its exit code is 21 and its report satisfies AC-9; it rejects a report with a missing layer result and child exit codes 0, 1 and 10. | Test (TC-868) |
 
 ## Dependencies
 

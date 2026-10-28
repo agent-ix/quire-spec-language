@@ -16,7 +16,7 @@ Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-11 and AC-13.
+Scope: FR-345-AC-4 to FR-345-AC-11 and FR-345-AC-13.
 
 ## Test Procedure
 
@@ -68,8 +68,13 @@ quire-contract-codegen's `negotiate_*`.
    with one `entry.json` holding an extra member `expected`.
 7. Run step 1's corpus without the E6 `distinguishing` entry and without the temporal `witness` entry.
 8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`.
-   Capture the CLI exit code and JSON report. Then run the target over a copy
-   of the corpus with one `witness` entry removed.
+   Capture the child CLI exit code, JSON report and Make target exit. Then run
+   the target over a copy of the corpus with one `witness` entry removed. Call
+   the target's `#[cfg(test)]` CLI-execution seam with a compiled stub CLI that
+   returns exit codes 0, 1 and 10, and with a stub returning 21 plus a report
+   missing one layer result. The seam receives the stub executable directly as
+   a test argument; it reads no environment override and adds no production
+   provider.
 9. From a root-package test, call `compare` over `REAL_CORPUS` with the
    FR-278 composition, QSL's registry snapshot and a test negotiation
    function that settles every request `supported`; then call it without a
@@ -122,14 +127,15 @@ Each expected result is a literal in the test. Tag the test
 - Step 8, with all six witness units admitted and each layer's candidate set
   non-empty: the CLI exits 21 and reports `unsupported`; each of the six layer
   results is `unresolved (unsupported)` with reason `not-negotiated` and its
-  candidate backend identities. The Make target exits 0 only for that exit
-  code and report. A different CLI exit code or report makes the Make target
-  fail. With one required witness absent, the CLI reports a tool-failure
-  result and exits 30, and the Make target fails.
+  candidate backend identities, and the Make target exits 0. With one
+  required witness absent, the CLI exits 30 with a tool-failure result and
+  the Make target fails. The stub CLI exits 0, 1 and 10 each make the test
+  seam fail; a stub that exits 21 but omits a layer result also makes the seam
+  fail.
 - Step 9: the negotiated call gives verdict success, matches the case, layer
-  and edge results of `make refinement-layering`, and requests each layer's
+  and edge results of the no-negotiation CLI report, and requests each layer's
   witness once per candidate. The call without a negotiation function makes
-  no request, returns the report written by the make target and reports all
-  six witness results as `unresolved (unsupported)`, reason
+  no request, returns a byte-equal report to the no-negotiation CLI report and
+  reports all six witness results as `unresolved (unsupported)`, reason
   `not-negotiated`. Neither call writes to stdout or stderr, and the dependency tree contains no
   quire-contract-codegen crate.
