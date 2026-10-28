@@ -113,8 +113,12 @@ timed model treats an operation enabled only between positions as enabled.
 - **A failing initial state.** `check_initial` failing on a concrete initial
   state is the failing step of the empty prefix: it SHALL refute only when
   that initial symbolic state has a point with a time-divergent
-  continuation. Otherwise the initial state is time-locked, the failure holds
-  vacuously, and the item settles by ADR-026 TD-6 (`NoAdmittedBehaviour`).
+  continuation. Otherwise the initial state is time-locked and the failure
+  holds vacuously, per initial state (TV-1): the search continues from the
+  other initial states, the time-locked initial node is kept as a `locked`
+  entry node for the certificate (FR-244), and the item settles
+  `NoAdmittedBehaviour` (ADR-026 TD-6) only when no initial state admits a
+  time-divergent behaviour.
 - A step that `check_step` judges `Undetermined` is not a refutation and
   TV-1 does not read it: the half returns `Undecided` as FR-142 states.
 - **Concretisation.** The counterexample SHALL be the path to the failing
