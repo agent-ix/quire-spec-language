@@ -173,6 +173,8 @@ pub enum LeadingTokenKind {
     /// `invariant`: the `ProtocolClause` state clause form (FR-102, ADR-012
     /// §15.3).
     Invariant,
+    /// `constraint`: a state constraint clause (FR-102, FR-158).
+    Constraint,
     /// `pre`: the `ProtocolClause` state clause form, kind `Precondition`
     /// (FR-102). `pre(e)` in an expression stays `Expression::Pre`: this
     /// variant selects only the declaration-head spelling.
@@ -442,6 +444,7 @@ fn dispatch(
         LeadingTokenKind::Dimension => value::dimension(construct),
         LeadingTokenKind::Unit => value::unit(construct),
         LeadingTokenKind::Invariant => protocol_clause::state_clause(construct),
+        LeadingTokenKind::Constraint => protocol_clause::state_clause(construct),
         LeadingTokenKind::Pre => protocol_clause::state_clause(construct),
         LeadingTokenKind::Post => protocol_clause::state_clause(construct),
         LeadingTokenKind::Body => protocol_clause::operation_body(construct),
@@ -499,6 +502,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"dimension" => Some(LeadingTokenKind::Dimension),
         b"unit" => Some(LeadingTokenKind::Unit),
         b"invariant" => Some(LeadingTokenKind::Invariant),
+        b"constraint" => Some(LeadingTokenKind::Constraint),
         b"pre" => Some(LeadingTokenKind::Pre),
         b"post" => Some(LeadingTokenKind::Post),
         b"body" => Some(LeadingTokenKind::Body),

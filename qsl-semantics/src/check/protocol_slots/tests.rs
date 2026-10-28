@@ -10,7 +10,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 use super::{CheckedLifetime, CheckedTerminalMember};
 use crate::check::protocol_clause::ProtocolNodeId;
-use crate::check::refusal::{ProtocolAnchorCause, ProtocolConstruct, SlotKind};
+use crate::check::refusal::{ProtocolAnchorCause, SlotKind};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
 mod fixture {
@@ -614,39 +614,40 @@ fn the_reference_protocols_check_with_their_edges() {
     );
 }
 
-/// FR-092-AC-18, FR-383: the constructs of a replicated-role protocol whose
-/// node is not written yet (its `event` and `check` controls and its capture)
-/// are never checked to a package without their nodes: the production check
-/// refuses each `NotEmitted`, naming the construct and the ticket that writes
-/// it, and the replicated role itself is not among them.
+/// FR-092-AC-18, FR-383-AC-7: a replicated-role protocol whose `event` and
+/// `check` controls and capture are all written is checked to a package with a
+/// selected protocol profile, and a `choice` it holds is the one construct
+/// refused, naming QSL-1126.
 #[trace("FR-092-AC-18", "FR-383-AC-1")]
 #[test]
 fn a_replicated_role_protocol_refuses_only_its_unwritten_constructs() {
-    let constructs = |text: &str| -> Vec<ProtocolConstruct> {
-        let text = text.replacen(
+    use super::super::refusal::ProtocolConstruct;
+    let with_profile = |text: &str| {
+        text.replacen(
             "model M",
             "profile pp = \"quire.protocol.finite-global/v1\";\nmodel M",
             1,
-        );
-        check(&text)
-            .map(|_| ())
-            .expect_err("the protocol refuses")
-            .into_iter()
-            .map(|refusal| match refusal.cause {
-                CheckCause::ProtocolReference(cause) => {
-                    cause.construct().unwrap_or_else(|| panic!("{cause:?}"))
-                }
-                other => panic!("only NotEmitted refusals, got {other:?}"),
-            })
-            .collect()
+        )
     };
-    let found = constructs(&workers("workflow"));
-    assert_eq!(
-        found,
-        [
-            ProtocolConstruct::Control("event"),
-            ProtocolConstruct::Control("check"),
-        ]
+    check(&with_profile(&workers("workflow")))
+        .unwrap_or_else(|refusals| panic!("the controls are written: {refusals:?}"));
+    let choosing = workers("workflow").replacen(
+        "check After using v { true };",
+        "choice Pick by r visible () { case yes when { true } sequence A { } \
+         case no when { false } sequence B { } }",
+        1,
     );
+    let found: Vec<ProtocolConstruct> = check(&with_profile(&choosing))
+        .map(|_| ())
+        .expect_err("the choice is not written")
+        .into_iter()
+        .map(|refusal| match refusal.cause {
+            CheckCause::ProtocolReference(cause) => {
+                cause.construct().unwrap_or_else(|| panic!("{cause:?}"))
+            }
+            other => panic!("only NotEmitted refusals, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(found, [ProtocolConstruct::Control("choice")]);
     assert_eq!(found[0].tracking(), "QSL-1126");
 }
