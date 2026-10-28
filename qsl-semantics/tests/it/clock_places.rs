@@ -2499,3 +2499,47 @@ fn a_union_field_is_written_once_and_never_read_whole() {
         );
     }
 }
+
+/// QSpec FR-415-AC-21, the vectors FP-11 and FP-12 (TC-685): a
+/// postcondition that requires `present(p)` of a place it does not write,
+/// where the operation's precondition establishes `p` absent, has no
+/// successor, decided statically: `invalid_timed_model`/
+/// `clock-presence-unwritten` at the requirement, for `v: Option<Clock>`
+/// and for the union case `state.Armed` alike. With the write (`self.v = 5
+/// ms`, the constructor `Armed(5 ms)`) it checks.
+#[trace("TC-685")]
+#[test]
+fn a_presence_the_precondition_denies_and_nothing_writes_refuses() {
+    for (document, place, write) in [
+        (option_clock_document(), "self.v", "self.v = 5 ms"),
+        (
+            union_clock_document_with(false),
+            "self.state.Armed",
+            "self.state = Config::Mode::Armed(5 ms)",
+        ),
+    ] {
+        let pre = format!("pre Off using v on Config::Call::bump {{ not present({place}) }}\n");
+        let (cause, text) = refused(
+            &document,
+            &format!(
+                "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ present({place}) }}\n"
+            ),
+        );
+        let requirement = format!("present({place})");
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (
+                Code::InvalidTimedModel,
+                "clock-presence-unwritten",
+                requirement.as_str()
+            )
+        );
+        check(
+            &document,
+            &format!(
+                "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ {write} and present({place}) }}\n"
+            ),
+        )
+        .unwrap_or_else(|refusals| panic!("{place} written: {refusals:?}"));
+    }
+}
