@@ -2461,6 +2461,11 @@ fn operation_rows_read_back() {
 /// A protocol subject `A::Local` refined by the concrete protocol `Impl`,
 /// whose step rows are `rows`.
 fn protocol_rows(rows: &[&str]) -> (String, Vec<Vec<u8>>) {
+    protocol_rows_running("sequence Main { }", rows)
+}
+
+/// [`protocol_rows`] whose concrete protocol `Impl` runs `run`.
+fn protocol_rows_running(run: &str, rows: &[&str]) -> (String, Vec<Vec<u8>>) {
     let (unit, documents) = protocol_subject();
     let unit = unit.replace(
         "refinement R using inf abstract A::Local concrete C {}",
@@ -2469,7 +2474,7 @@ fn protocol_rows(rows: &[&str]) -> (String, Vec<Vec<u8>>) {
              role w on C::Widget;\n\
              channel ch from w to w carries Boolean ordering unordered delivery unknown \
              capacity 2 overflow block;\n\
-             run sequence Main {{ }}\n\
+             run {run}\n\
              finish Done as (d: Boolean) {{ true }};\n\
              }}\n\
              refinement R using inf abstract A::Local concrete C {{\n{}\n}}",
@@ -2557,4 +2562,128 @@ fn protocol_step_rows_read_back() {
         documents,
     });
     assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// [`PROTOCOL_ROWS`] with a `tso` parallel `Par` in `Impl`'s run: its
+/// `fork`/`join` rows and the `memory drain` and `memory flush` rows.
+const MEMORY_RUN: &str = "sequence Main { parallel Par memory tso { branch a sequence Ay { } \
+     branch b sequence Bee { } } join all [a, b]; }";
+const MEMORY_ROWS: [&str; 7] = [
+    "step memory flush -> stutter;",
+    "step lose C::Impl::ch -> stutter;",
+    "step fork C::Impl::Par -> stutter;",
+    "step memory drain -> stutter;",
+    "step C::Impl::Done -> stutter;",
+    "step join C::Impl::Par -> stutter;",
+    "step duplicate C::Impl::ch -> stutter;",
+];
+
+/// The checked package and emission of [`protocol_rows_running`].
+fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
+    let (unit, documents) = protocol_rows_running(run, rows);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the memory rows emit");
+    Emitted {
+        package,
+        emission,
+        documents,
+    }
+}
+
+/// QSpec FR-375-AC-19 (the memory rows, QSL-1181 7ce810ed): the `memory`
+/// rows come after every declaration-naming row, `drain` before `flush`,
+/// neither with a `source_node`; writing the rows in another order changes
+/// neither the node id nor the package id.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn memory_rows_go_last_drain_before_flush() {
+    let forward = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let reversed: Vec<&str> = MEMORY_ROWS.iter().rev().copied().collect();
+    let reversed = memory_emission(MEMORY_RUN, &reversed);
+    let node = refinement_node(&forward.emission);
+    let steps = node["body"]["steps"].as_array().expect("steps");
+    let tail: Vec<&Value> = steps[steps.len() - 2..].iter().collect();
+    assert_eq!(
+        tail.iter()
+            .map(|step| step["source_class"].as_str().expect("a class"))
+            .collect::<Vec<_>>(),
+        ["memory drain", "memory flush"]
+    );
+    for step in &tail {
+        assert!(step.get("source_node").is_none(), "{step}");
+    }
+    for step in &steps[..steps.len() - 2] {
+        assert!(step.get("source_node").is_some(), "{step}");
+    }
+    assert_eq!(
+        refinement_node(&reversed.emission)["node_id"],
+        node["node_id"]
+    );
+    assert_eq!(
+        wire(&reversed.emission)["package_id"],
+        wire(&forward.emission)["package_id"]
+    );
+}
+
+/// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
+/// `sc`, `tso` and `ra` (and a second `sc`), the concrete catalog holds
+/// `memory drain` once per model in the order `ra`, `sc`, `tso`, each with
+/// `drain: store-buffer-flush` and no `node` or `binder_types`, then
+/// `memory flush` once for `tso`.
+#[trace("FR-375-AC-23", "FR-375-AC-26", "TC-310")]
+#[test]
+fn memory_catalog_entries_are_one_drain_per_model_then_flush() {
+    let parallel = |name: &str, memory: &str| {
+        format!(
+            "parallel {name} memory {memory} {{ branch a sequence {name}A {{ }} \
+             branch b sequence {name}B {{ }} }} join all [a, b];"
+        )
+    };
+    let run = format!(
+        "sequence Main {{ {} {} {} {} }}",
+        parallel("Sc", "sc"),
+        parallel("Tso", "tso"),
+        parallel("Ra", "ra"),
+        parallel("Again", "sc"),
+    );
+    let mut rows: Vec<String> = PROTOCOL_ROWS.iter().map(|row| (*row).to_owned()).collect();
+    for name in ["Sc", "Tso", "Ra", "Again"] {
+        rows.push(format!("step fork C::Impl::{name} -> stutter;"));
+        rows.push(format!("step join C::Impl::{name} -> stutter;"));
+    }
+    rows.push("step memory drain -> stutter;".to_owned());
+    rows.push("step memory flush -> stutter;".to_owned());
+    let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+    let emitted = memory_emission(&run, &rows);
+    let node = refinement_node(&emitted.emission);
+    let memory: Vec<&Value> = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("a concrete catalog")
+        .iter()
+        .filter(|entry| {
+            entry["class"]
+                .as_str()
+                .is_some_and(|class| class.starts_with("memory "))
+        })
+        .collect();
+    assert_eq!(
+        memory,
+        [
+            &json!({"class": "memory drain", "memory_model": "ra", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory drain", "memory_model": "sc", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory drain", "memory_model": "tso", "drain": "store-buffer-flush"}),
+            &json!({"class": "memory flush", "memory_model": "tso"}),
+        ]
+    );
+}
+
+/// The memory rows and catalog entries read back once IR's catalog rebuild
+/// agrees with FR-375 (IR-874).
+#[trace("FR-375-AC-19", "FR-375-AC-26", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn memory_rows_read_back() {
+    let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let admitted = read(&emitted);
+    assert!(admitted.is_ok(), "the memory rows read back: {admitted:?}");
 }
