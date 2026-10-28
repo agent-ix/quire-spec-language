@@ -41,7 +41,7 @@ use crate::model_check::fair_walk::{fairness_constraints, FairModel};
 use crate::zone_check::concretise::{concretise, Stage, Target};
 use crate::zone_check::liveness::{next_cell, Cells, Sign};
 use crate::zone_check::search::{
-    constrain_at, scaled, widen, zone_bytes, Halt, Run, ZoneCheckRefusal, ZoneUndecided,
+    constrain_at, scaled, widen, zone_bytes, Halt, Run, ZoneCheckRefusal, ZoneStats, ZoneUndecided,
 };
 use crate::zone_check::{Bound, Dbm};
 
@@ -128,7 +128,30 @@ impl Product<'_, '_> {
     ///
     /// [`ZoneUndecided::LassoNotConcretized`] when a violating component
     /// exists and none concretises, or the run's budgets and faults.
-    pub(super) fn liveness(&mut self, run: &mut Run<'_, '_, '_>) -> Result<Lived, Halt> {
+    /// The liveness product's own counts come with the decision, whatever
+    /// it is: its vertices, its arcs and its zones' bytes.
+    pub(super) fn liveness(
+        &mut self,
+        run: &mut Run<'_, '_, '_>,
+    ) -> (Result<Lived, Halt>, ZoneStats) {
+        let mut live = match self.live_product(run) {
+            Ok(live) => live,
+            Err(halt) => return (Err(halt), ZoneStats::default()),
+        };
+        let decided = self.decide_live(run, &mut live);
+        let stats = ZoneStats {
+            symbolic_states: widen(live.nodes.len()),
+            retained_edges: widen(live.arcs.len()),
+            automaton_states: 0,
+            zone_bytes: live.nodes.iter().fold(0, |bytes: u64, node| {
+                bytes.saturating_add(zone_bytes(&node.zone))
+            }),
+        };
+        (decided, stats)
+    }
+
+    /// The empty liveness product of `run`'s subject.
+    fn live_product(&self, run: &Run<'_, '_, '_>) -> Result<Live, Halt> {
         let concrete_fairness: Vec<_> = self
             .refinement
             .concrete_operation_fairness()
@@ -155,7 +178,7 @@ impl Product<'_, '_> {
         if dense {
             bounds.push(Some(run.scale.clone()));
         }
-        let mut live = Live {
+        Ok(Live {
             nodes: Vec::new(),
             arcs: Vec::new(),
             out: Vec::new(),
@@ -165,8 +188,12 @@ impl Product<'_, '_> {
             dim,
             bounds,
             judged: BTreeMap::new(),
-        };
-        if let Some(ends) = self.build(run, &mut live)? {
+        })
+    }
+
+    /// The decision over `live`, built here.
+    fn decide_live(&mut self, run: &mut Run<'_, '_, '_>, live: &mut Live) -> Result<Lived, Halt> {
+        if let Some(ends) = self.build(run, live)? {
             return Ok(Lived::Ends(ends));
         }
         let mut enabled = BTreeMap::new();
@@ -210,7 +237,7 @@ impl Product<'_, '_> {
         };
         let mut not_concretised = false;
         for class in &classes {
-            let (model, within, kept) = self.fair_model(run, &mut live, class, &enabled)?;
+            let (model, within, kept) = self.fair_model(run, live, class, &enabled)?;
             let analyses = analyze(&model.graph, &within, &model.constraints, run.cancel)
                 .map_err(|error| fairness(run, error))?;
             for component in Analysis::fair_in(&analyses) {
@@ -237,7 +264,7 @@ impl Product<'_, '_> {
                         .ok_or(ZoneCheckRefusal::Fault("walk-edge"))?;
                     cycle.push(index);
                 }
-                if let Some(found) = self.lasso(run, &mut live, class, entry.index(), &cycle)? {
+                if let Some(found) = self.lasso(run, live, class, entry.index(), &cycle)? {
                     return Ok(Lived::Violated(Box::new(found)));
                 }
                 not_concretised = true;
@@ -763,7 +790,9 @@ impl Product<'_, '_> {
                 .iter()
                 .position(|&arc| live.arcs[arc].via == Via::Stutter)
                 .ok_or(ZoneCheckRefusal::Fault("idle-entry"))?;
-            let (initial, stages) = stages_along(run, live, &stem[..tail], entry)?;
+            // With no step before the tail, the quiescent state is initial.
+            let quiescent = live.arcs[stem[tail]].from;
+            let (initial, stages) = stages_along(run, live, &stem[..tail], quiescent)?;
             let Ok(concrete) = concretise(run.timed, places, &stages, &Target::Any, &run.scale)
             else {
                 return Ok(None);

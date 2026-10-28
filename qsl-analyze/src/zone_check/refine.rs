@@ -215,7 +215,8 @@ pub enum TimedLivenessHalf {
 #[derive(Clone, Debug)]
 pub enum TimedLivenessOutcome {
     /// Every time-divergent behaviour of the concrete subject that is fair
-    /// under `F_C` satisfies `F_A`. It has no certificate, since the core
+    /// under `F_C` satisfies `F_A`. Each variant's counts are the liveness
+    /// product's own, not the safety half's. It has no certificate, since the core
     /// has no checker for it (ADR-020 CT-4), so its `proved` is
     /// `Uncertified`.
     HoldsReduced {
@@ -402,35 +403,37 @@ fn unsupported_liveness(refinement: &CheckedRefinement) -> Option<TimedLivenessH
     }
 }
 
-/// The liveness half over the product of a holding safety half.
+/// The liveness half over the product of a holding safety half; its
+/// counts are the liveness product's own.
 fn liveness(
     product: &mut Product<'_, '_>,
     run: &mut Run<'_, '_, '_>,
 ) -> Result<TimedLivenessOutcome, TimedRefinementRefusal> {
-    Ok(match product.liveness(run) {
+    let (decided, stats) = product.liveness(run);
+    Ok(match decided {
         Ok(live::Lived::Holds) => TimedLivenessOutcome::HoldsReduced {
             reductions: Vec::new(),
-            stats: run.stats(),
+            stats,
         },
         Ok(live::Lived::Violated(counterexample)) => TimedLivenessOutcome::Violated {
             counterexample,
-            stats: run.stats(),
+            stats,
         },
         Ok(live::Lived::Ends(ends)) => match ends {
-            Decided::Undecided { cause, stats } => TimedLivenessOutcome::Undecided { cause, stats },
-            Decided::Stopped { cause, stats } => TimedLivenessOutcome::Stopped { cause, stats },
-            Decided::Fault { fault, stats } => TimedLivenessOutcome::Fault { fault, stats },
+            Decided::Undecided { cause, .. } => TimedLivenessOutcome::Undecided { cause, stats },
+            Decided::Stopped { cause, .. } => TimedLivenessOutcome::Stopped { cause, stats },
+            Decided::Fault { fault, .. } => TimedLivenessOutcome::Fault { fault, stats },
             Decided::Holds { .. } | Decided::Violated { .. } => {
                 return Err(ZoneCheckRefusal::Fault("liveness-end").into())
             }
         },
         Err(Halt::Refusal(refusal)) => return Err(refusal.into()),
         Err(Halt::Outcome(searched)) => match *searched {
-            Searched::Stopped { cause, stats } => TimedLivenessOutcome::Stopped {
+            Searched::Stopped { cause, .. } => TimedLivenessOutcome::Stopped {
                 cause: TimedRefinementStop::Zone(cause),
                 stats,
             },
-            Searched::Undecided { cause, stats } => TimedLivenessOutcome::Undecided {
+            Searched::Undecided { cause, .. } => TimedLivenessOutcome::Undecided {
                 cause: TimedRefinementUndecided::Zone(cause),
                 stats,
             },
