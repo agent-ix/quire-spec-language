@@ -2268,7 +2268,8 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::ModelCheckMaxLiveInstances
             | Setting::ModelCheckMaxStoreBuffer
             | Setting::ModelCheckMaxMessages
-            | Setting::ExpansionMaxCandidates => Err(setting),
+            | Setting::ExpansionMaxCandidates
+            | Setting::InspectMaxViewEntries => Err(setting),
         }
     }
 }
@@ -3171,6 +3172,7 @@ impl CheckRefusal {
             | IllTypedCause::AffineUnitArithmetic
             | IllTypedCause::DistinctUnits
             | IllTypedCause::MalformedDecimalType
+            | IllTypedCause::MalformedBoundedQuantityType
             | IllTypedCause::DistinctIeeeWidths
             | IllTypedCause::IeeeWithExactOperand
             | IllTypedCause::IeeeToNonRationalExact => IllTypedCause::TypeMismatch,

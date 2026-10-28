@@ -104,12 +104,17 @@ beside it as a separate item.
 - The item's value SHALL be:
   - the safety half's value when the safety half is not `Holds`;
   - `Proved{basis: Exhaustive, certification: Certified}` when the safety
-    half holds, FR-149 accepts its certificate and `liveness` is `None`;
+    half holds, FR-149 accepts its certificate and `liveness` is `None`, for
+    a concrete subject that does not declare `time dense`; for one that
+    does, `Proved{basis: ZoneCertified, certification: Certified}` when the
+    safety half holds, FR-245 accepts its refinement-form zone certificate
+    (FR-244) and `liveness` is `None`;
   - the liveness half's value when it is `Checked`;
   - `Unsupported(unsupported-requested-capability)` when it is
     `Unsupported`, with the record carrying the safety half's value
-    `Proved{basis: Exhaustive, certification: Certified}` beside it (ADR-020
-    AX-5).
+    `Proved{basis: Exhaustive, certification: Certified}` beside it, or
+    `Proved{basis: ZoneCertified, certification: Certified}` for a `time dense`
+    concrete subject (ADR-020 AX-5).
 - Each half's value SHALL come from FR-127's map, with
   `Undecided(MappingUndetermined)` settling V-6 `inconclusive`,
   `Inconclusive(MappingUndetermined)`, and an `UndefinedEvaluation`
@@ -126,11 +131,16 @@ beside it as a separate item.
 - The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
-  `proved` only after FR-149's checker accepts its certificate; a rejection
+  `proved` only after FR-149's checker accepts its certificate; for a
+  concrete subject that declares `time dense`, the certificate is the zone
+  certificate of FR-244's refinement form and the checker is FR-245's
+  (FR-430); a rejection
   SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
   V-7 naming the limit, a cancelled check V-7 naming the cancellation, and a check stopped by an expansion that names no limit V-7 `ResourceExhausted` (ADR-020 CT-3).
 - **Certificate identity.** Before it calls FR-149's checker, FR-144 SHALL refuse
-  `stale_dependency`/`content-mismatch` a certificate whose `concrete_package`,
+  `stale_dependency`/`content-mismatch` a certificate (FR-149's, or for a
+  `time dense` concrete subject FR-244's refinement part, whose checker is
+  FR-245) whose `concrete_package`,
   `abstract_package` or `obligation` differs from the item's recompile (FR-098);
   the checker compares the refinement node (FR-149 "Identity").
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's

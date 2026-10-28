@@ -274,7 +274,7 @@ impl SettingLimits for EngineLimits {
 }
 
 /// Every limit type a caller can configure, one field per stage or engine.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CallerLimits {
     /// S1, I1, S3, type-environment admission and the I2 read.
     pub spine: SpineLimits,
@@ -296,8 +296,29 @@ pub struct CallerLimits {
     pub prepare: PrepareLimits,
     /// FR-255's analysis-engine limits.
     pub engines: EngineLimits,
+    /// The typed-view entry limit consumed by `qsl-inspect`.
+    pub inspect_max_view_entries: u64,
     /// The call's accounting budgets (`quire.value.accounting/v1`).
     pub accounting: AccountingLimits,
+}
+
+impl Default for CallerLimits {
+    fn default() -> Self {
+        Self {
+            spine: SpineLimits::default(),
+            library: LibraryLimits::default(),
+            admission: PopulationAdmissionLimits::default(),
+            observation: ObservationLimits::default(),
+            explore: ExploreLimits::default(),
+            replay: ReplayLimits::default(),
+            format: qsl_cst::format::FormatLimits::default(),
+            render: RenderLimits::default(),
+            prepare: PrepareLimits::default(),
+            engines: EngineLimits::default(),
+            inspect_max_view_entries: 10_000_000,
+            accounting: AccountingLimits::default(),
+        }
+    }
 }
 
 impl CallerLimits {
@@ -376,7 +397,12 @@ impl CallerLimits {
 
 impl SettingLimits for CallerLimits {
     fn bounds(&self) -> Vec<(Setting, u64)> {
-        self.parts().iter().flat_map(|part| part.bounds()).collect()
+        let mut bounds: Vec<_> = self.parts().iter().flat_map(|part| part.bounds()).collect();
+        bounds.push((
+            Setting::InspectMaxViewEntries,
+            self.inspect_max_view_entries,
+        ));
+        bounds
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
@@ -392,6 +418,10 @@ impl SettingLimits for CallerLimits {
             &mut self.prepare,
             &mut self.engines,
         ];
+        if setting == Setting::InspectMaxViewEntries {
+            self.inspect_max_view_entries = bound;
+            return true;
+        }
         parts.into_iter().any(|part| part.set_bound(setting, bound))
     }
 }
@@ -448,6 +478,7 @@ mod tests {
         mapped.set_bound(Setting::IntakeInputBytes, 35);
         mapped.set_bound(Setting::FormatOutputBytes, 36);
         mapped.set_bound(Setting::RenderOutputBytes, 38);
+        mapped.set_bound(Setting::InspectMaxViewEntries, 41);
         mapped.set_bound(Setting::PrepareCompileWorkUnits, 39);
         mapped.set_bound(Setting::PrepareCodeBytes, 40);
         let built = CallerLimits {
@@ -494,6 +525,7 @@ mod tests {
             replay: ReplayLimits::default().with_input_bytes(18),
             format: qsl_cst::format::FormatLimits::default().with_output_bytes(36),
             render: RenderLimits { output_bytes: 38 },
+            inspect_max_view_entries: 41,
             prepare: PrepareLimits {
                 compile_work_units: 39,
                 code_bytes: 40,

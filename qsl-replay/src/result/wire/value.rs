@@ -801,6 +801,8 @@ impl TypeLeafWire {
             },
             ValueType::Option(_)
             | ValueType::Collection(_)
+            | ValueType::BoundedQuantity(_)
+            | ValueType::Map(_)
             | ValueType::Uuid
             | ValueType::Timestamp => return None,
         })
@@ -1221,7 +1223,10 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                     },
                 },
                 Emit::Type(value_type) => match value_type {
-                    ValueType::Uuid | ValueType::Timestamp => {
+                    ValueType::Uuid
+                    | ValueType::Timestamp
+                    | ValueType::Map(_)
+                    | ValueType::BoundedQuantity(_) => {
                         self.unsupported.set(true);
                         return Err(quire_canonical::Error::Serialize(
                             "the selected type has no deciding-element encoding".to_owned(),

@@ -35,8 +35,9 @@ option below and closed the decisions in Decision.
 is the one source grammar, and the type report is produced by the S3 binding
 phase and family checkers of ADR-011, from the same parse that feeds the
 checker.** One `Source` is read once. One parse of it yields the `CheckedGraph`
-and the `TypeReport`. The checked unit compares one digest on every side. The
-composed linker and checker are not re-read over the new forms: each composed
+and the `TypeReport`. The checked unit carries that source's one reference; no
+copied digest comparison re-establishes their shared origin. The composed
+linker and checker are not re-read over the new forms: each composed
 family is deleted when that family's type phase moves into S3, as ADR-011
 rules, and the label-only match is deleted when the producer lands.
 
@@ -51,9 +52,10 @@ Reasons:
 2. The dependency direction forbids the opposite choice. The root crate depends
    on `qsl-cst`, `qsl-forms` and `qsl-semantics`, so the layer crates cannot
    be re-based on the root crate's syntax.
-3. The digest comparison is true by construction and still a real check. Both
-   sides are built from one `Source`, and a graph or report from other bytes is
-   refused.
+3. The graph and type report are outputs of one `Source` and one parse, so
+   their association is established by the producer's construction. A
+   separately supplied graph/report pair is not accepted and there is no
+   mismatch refusal to test.
 4. It deletes the interim label match instead of keeping a second route.
 
 The cost is the type solver: its binding and typing are written as S3 phases
@@ -164,21 +166,22 @@ Measured on main when this was written.
   `native_*_emission` goldens belong to the protocol-artifact lane that is
   deleted; they are not re-digested. Model digests, checked node identities
   and `package_id` do not depend on the profile line's spelling.
-- *What the checked unit compares:* the single source digest. The selected
-  formal source, the graph's `RawSourceRef` and the type report unit's
-  `Source::reference()` are equal as whole references (authority, identity,
-  digest).
-- *The interim label match:* `UnitLabel`, `UnitLabelMismatch` and the
-  label-only `CheckedUnit::new` are deleted when the producer lands.
+- *Source reference:* the checked unit carries the `Source`'s single
+  `RawSourceRef`. The graph and type report do not carry separate unit-level
+  source digest fields; their source locations resolve through the checked
+  unit's reference, without a copied-reference binding guard.
+- *The interim constructor:* `UnitLabel`, `UnitLabelMismatch` and the
+  constructor that accepts a formal source, graph and type report separately
+  are deleted when the producer lands; no mismatch refusal replaces them.
 - *One `CheckedUnit`:* the spine's `spine::CheckedUnit` is the one type. It
-  carries the type report, the formal identity and the digest comparison. The
+  carries the type report, the formal identity and the source's one reference. The
   type report is one-unit by construction, so a report that covers two units
   cannot be built. The inventory's own `CheckedUnit` is deleted; `qsl_inventory`
   lives in `qsl_replay` and reads `spine::CheckedUnit`, no longer in the root
   crate's `checking::source_inventory`.
 - *Several source units (amended 2026-10-22 by FR-480):* a package compiled from several source
   units has one `spine::CheckedUnit` per source unit, each reading its own
-  `Source` once with the one grammar and comparing its own digest; the shared
+  `Source` once with the one grammar and carrying that source's reference; the shared
   checked graph lists every unit in `lock.sources`. "One source text" holds
   for each unit, and a package is not limited to one unit, because QSpec
   FR-151 and FR-322 define a package of linked source units, each with its
@@ -221,8 +224,9 @@ Option A+D is adopted: the complete-V1 grammar is the single source grammar,
 the type report is produced by the S3 binding phase and family checkers of
 ADR-011 from the same parse that feeds the checker, the composed linker and
 checker are deleted family by family as each family's type phase moves (not
-re-read over S2 forms), the checked unit compares whole `RawSourceRef`s, and no
-compatibility layer, bridge or second grammar exists. FR-362 is the normative
+re-read over S2 forms), the checked unit carries the source's one
+`RawSourceRef` without a copied-reference comparison, and no compatibility
+layer, bridge or second grammar exists. FR-362 is the normative
 text. These points follow from it and are decided.
 
 - **Moved and unmoved families.** The producer admits a family only once its
@@ -260,12 +264,13 @@ The implementing slice is sequenced after the supplied-budget and union slices.
 
 ## Consequences
 
-- One `Source` and one digest name the unit on every side of the checked unit.
+- One `Source` reference is carried by the checked unit; graph and type-report
+  association follows from their creation in its one parse.
 - The composed profile spelling and the composed parser disappear family by
   family; the remaining retirement is open work tracked as QSL-868.
 - The interim label match has no successor and no flag.
-- The owner-issued source inventory cannot be built from a graph and a type
-  report that do not describe the same bytes.
+- The owner-issued source inventory reads only the producer-created checked
+  unit, so callers cannot combine a graph and type report from separate parses.
 - FR-035, FR-036, FR-040 and FR-049 keep describing the composed lane until
   each family's PR retires its part, so the two bodies of text apply to
   disjoint families at every point.
@@ -281,8 +286,9 @@ The implementing slice is sequenced after the supplied-budget and union slices.
 - **A shared text with a pre-pass that strips the composed profile suffix.**
   Rejected as Option C: a second reading of the text in a grammar the
   complete-V1 parser does not define.
-- **Keep the label match and add a digest check beside it.** Rejected: a
-  label-only route stays reachable, and the guarantee is the weaker one.
+- **Keep the label match and add a digest check beside it.** Rejected: it keeps
+  a duplicate binding guard after the producer has already established the
+  source association by construction.
 - **A second `CheckedUnit` beside the spine's.** Rejected: two public types
   for one concept.
 

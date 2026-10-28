@@ -542,6 +542,9 @@ pub(crate) fn separate(
     let separation = match package.check_separation(&qualified, observations, claim, meter) {
         Ok(separation) => separation,
         Err(CallFailure::Fault(fault)) => return Err(ReplayRefusal::Fault(fault)),
+        // Separation evaluates the checked package through the interpreter;
+        // it has no host-body registration path.
+        Err(CallFailure::Body(_)) => unreachable!("separation registers no host bodies"),
         Err(CallFailure::Storage { parameter, failure }) => {
             return Err(ReplayRefusal::Storage {
                 position: parameter,

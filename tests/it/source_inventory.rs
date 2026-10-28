@@ -15,9 +15,7 @@ use quire_contract_model::source_obligation::{
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_spec_language::checking::composed::{self, TypeLimits};
-use quire_spec_language::checking::source_inventory::{
-    qsl_inventory, CheckedUnit, UnitLabel, UnitLabelMismatch,
-};
+use quire_spec_language::checking::source_inventory::{qsl_inventory, CheckedUnit};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding::{self};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
@@ -107,7 +105,8 @@ fn a_fully_traversed_source_reports_rows_and_no_stop_cause() {
         BindingLimits::default(),
         TypeLimits::default(),
         |binding, formal, types| {
-            let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
+            let unit = CheckedUnit::new(formal, &graph, types);
+            assert_eq!(unit.source_reference(), formal.source().reference());
             let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             assert_eq!(envelope.owner(), SourceInventoryOwner::Qsl);
             assert_eq!(
@@ -147,7 +146,7 @@ fn requirement_and_pending_sets_stay_separate_identity_kinds() {
         BindingLimits::default(),
         TypeLimits::default(),
         |_, formal, types| {
-            let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
+            let unit = CheckedUnit::new(formal, &graph, types);
             let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             let requirements: Vec<_> = envelope
                 .items()
@@ -209,7 +208,7 @@ fn exhausted_type_work_keeps_its_native_fields() {
         },
         |binding, formal, types| {
             let native = types.exhaustion().expect("the budget is exhausted");
-            let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
+            let unit = CheckedUnit::new(formal, &graph, types);
             let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             let SourceInventoryCompleteness::Incomplete(
                 SourceInventoryIncompleteReason::TypeWorkExhausted(reported),
@@ -251,7 +250,7 @@ fn an_unfinished_declaration_is_distinct_from_exhaustion() {
         TypeLimits::default(),
         |binding, formal, types| {
             assert!(types.exhaustion().is_none());
-            let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
+            let unit = CheckedUnit::new(formal, &graph, types);
             let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             assert_eq!(
                 envelope.completeness(),
@@ -263,94 +262,4 @@ fn an_unfinished_declaration_is_distinct_from_exhaustion() {
             );
         },
     );
-}
-
-fn label(authority: &str, identity: &str) -> UnitLabel {
-    UnitLabel {
-        authority: authority.into(),
-        identity: identity.into(),
-    }
-}
-
-#[test]
-fn a_graph_of_another_source_is_refused_with_both_labels() {
-    let graph = graph(SourceIdentity::new("a", "u", "git", "1"));
-    typed(
-        CALLS,
-        BindingLimits::default(),
-        TypeLimits::default(),
-        |_, formal, types| {
-            let refused = CheckedUnit::new(formal, &graph, types).expect_err("another source");
-            assert_eq!(
-                refused,
-                UnitLabelMismatch::Graph {
-                    selected: label("test", "unit:main"),
-                    graph: label("a", "u"),
-                }
-            );
-        },
-    );
-}
-
-#[test]
-fn a_type_report_of_another_source_is_refused_with_both_labels() {
-    let graph = matching_graph();
-    typed_named(
-        "other",
-        CALLS,
-        BindingLimits::default(),
-        TypeLimits::default(),
-        |_, formal, types| {
-            let refused = CheckedUnit::new(formal, &graph, types).expect_err("another source");
-            assert_eq!(
-                refused,
-                UnitLabelMismatch::Graph {
-                    selected: label("test", "unit:other"),
-                    graph: label("test", "unit:main"),
-                }
-            );
-        },
-    );
-}
-
-#[test]
-fn a_formal_source_that_is_not_the_reports_unit_is_refused() {
-    let graph = matching_graph();
-    let model = setup::model("Primary");
-    let foreign = setup::formal_sources(&[setup::source("foreign", &model, CALLS)]);
-    typed(
-        CALLS,
-        BindingLimits::default(),
-        TypeLimits::default(),
-        |_, _, types| {
-            let refused = CheckedUnit::new(&foreign[0], &graph, types).expect_err("foreign");
-            assert_eq!(
-                refused,
-                UnitLabelMismatch::TypeReport {
-                    selected: label("test", "unit:foreign"),
-                    unit: label("test", "unit:main"),
-                }
-            );
-        },
-    );
-}
-
-#[test]
-fn a_report_over_two_units_is_not_one_checked_unit() {
-    let graph = matching_graph();
-    let model = setup::model("Primary");
-    let sources = [
-        setup::source("main", &model, CALLS),
-        setup::source(
-            "second",
-            &model,
-            "predicate Other using S (): Boolean { true }",
-        ),
-    ];
-    let formal = setup::formal_sources(&sources);
-    setup::with_binding(&sources, &[&model], BindingLimits::default(), |binding| {
-        let types = composed::admit_types(binding, &formal, TypeLimits::default());
-        let refused = CheckedUnit::new(&formal[0], &graph, &types).expect_err("two units");
-        assert_eq!(refused, UnitLabelMismatch::NotOneUnit { count: 2 });
-    });
 }

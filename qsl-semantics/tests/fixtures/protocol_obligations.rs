@@ -94,11 +94,13 @@ pub fn obligation_model_with(extra: Vec<DomainPackageRecord>) -> SelectedModel {
             key: key("Mode/Off"),
             owner: key("Mode"),
             case: "Off".to_owned(),
+            payload_type: None,
         }),
         DomainPackageRecord::Variant(VariantRecord {
             key: key("Mode/On"),
             owner: key("Mode"),
             case: "On".to_owned(),
+            payload_type: None,
         }),
         DomainPackageRecord::ObjectType(ObjectTypeRecord {
             key: key("Node"),
