@@ -249,8 +249,8 @@ fn an_each_clause_has_an_activate_class_with_the_trigger_record() {
     assert!(!classes(catalog.concrete()).contains(&"activate Local"));
 }
 
-/// A contributing clause that is not written yet (it holds a `choice`,
-/// QSL-1186) has no node for its classes, so it leaves the catalog
+/// A contributing clause that is not written yet (it holds a post-test
+/// `repeat`, STD-493) has no node for its classes, so it leaves the catalog
 /// unlowered: the refinement has its checked catalog but no keyed one, so
 /// it is not in the V2 emission slice.
 #[trace("FR-375-AC-23", "TC-310")]
@@ -261,15 +261,15 @@ fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
         "run sequence Main { }",
         "run sequence Main {\n\
          attempt Try by w on Impl::Counter::peek contracts [] as (r: Boolean) { true };\n\
-         choice Pick by w visible () { case yes when { true } sequence A { } \
-         case no when { false } sequence B { } }\n\
+         repeat Again by w visible (e.ok) while { not e.ok } \
+         sequence Body { event E by w as (e: Ack) { true }; }\n\
          }",
     );
     let spec = counter_spec();
     let (_, declarations) = assemble(
         PROFILES,
         &[("Spec", SPEC, &spec), ("Impl", SUB, &sub)],
-        &format!("{local}{SUB_ROWS}"),
+        &format!("record Ack {{ ok: Boolean; }}\n{local}{SUB_ROWS}"),
     );
     let graph = declarations
         .expect("the unit assembles")
@@ -282,4 +282,42 @@ fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
     assert!(classes(catalog.concrete()).contains(&"Local::Try"));
     assert!(refinement.class_catalog_keys().is_none());
     assert!(!refinement.v2_row_empty_body());
+}
+
+/// A contributing clause holding a `choice` and a pre-test `repeat`, both
+/// written as V2 control nodes (QSL-1186b), keys its class catalog: the
+/// events inside the case and the repeat body are classes with nodes
+/// (SR-1737002 FND-003).
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+fn a_clause_holding_a_choice_and_a_repeat_keys_its_catalog() {
+    let sub = sub_counter();
+    let local = LOCAL.replace(
+        "run sequence Main { }",
+        "run sequence Main {\n\
+         choice Pick by w visible () { \
+         case a when { true } sequence A { event Ea by w as (ea: Boolean) { true }; } \
+         case b when { false } sequence B { event Eb by w as (eb: Boolean) { true }; } }\n\
+         repeat Again by w visible () max 1 while { true } \
+         sequence Body { event E by w as (e: Boolean) { true }; } exhausted sequence Out { }\n\
+         }",
+    );
+    let spec = counter_spec();
+    let (_, declarations) = assemble(
+        PROFILES,
+        &[("Spec", SPEC, &spec), ("Impl", SUB, &sub)],
+        &format!("{local}{SUB_ROWS}"),
+    );
+    let graph = declarations
+        .expect("the unit assembles")
+        .with_unwritten_refinements()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let refinement = the_refinement(&graph);
+    let catalog = refinement.class_catalog().expect("a checked catalog");
+    let concrete = classes(catalog.concrete());
+    for class in ["Local::Ea", "Local::Eb", "Local::E"] {
+        assert!(concrete.contains(&class), "{class} in {concrete:?}");
+    }
+    assert!(refinement.class_catalog_keys().is_some());
 }
