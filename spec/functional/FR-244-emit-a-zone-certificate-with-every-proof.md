@@ -64,7 +64,7 @@ pub struct RefinementPart {                     // FR-430
     pub concrete_package: PackageId,
     pub abstract_package: PackageId,
     pub positions: Vec<CertifiedPosition>,      // FR-149's type, unchanged
-    pub taken: Vec<Option<Taken>>,              // FR-141's Taken, one per entry of `edges`, in order; None for an edge out of the locked region
+    pub taken: Vec<Option<Taken>>,              // FR-141's Taken, one per entry of `edges`, in order; None for every edge whose target is in the locked region, the failing edge into the entry included
 }
 ```
 
@@ -121,7 +121,7 @@ pub struct RefinementPart {                     // FR-430
   - `refinement`, `concrete_package` and `abstract_package` SHALL be those
     of the item, as FR-149 requires of its certificate;
   - edges inside the locked region are concrete steps only, are not judged by
-    `check_step` and carry `taken` `None`.
+    `check_step` and carry `taken` `None`, as does the failing edge into the locked entry node (whose `Taken` does not exist). `taken` is serialized with the edges in canonical edge order, one entry per edge, `None` as an absent value, so equal runs give byte-equal bytes.
   The certificate has no other new member, and the obligation identity is
   the refinement item's.
 - The certificate SHALL carry the obligation identity of the item, the
