@@ -158,6 +158,19 @@ impl PropertyAutomaton {
         state: StateId,
         max_key_bytes: u64,
     ) -> Result<AutomatonStateKey, AutomatonError> {
+        let key = self.state_key_value(state)?;
+        let bytes = quire_canonical::to_vec(&key, Limits::new(max_key_bytes)).map_err(|_| {
+            AutomatonError::KeyEncodingLimit {
+                limit: max_key_bytes,
+            }
+        })?;
+        Ok(AutomatonStateKey::canonical(bytes))
+    }
+
+    /// The canonical value underlying a reached property-state key. Hyper
+    /// product identities encode this value in their own bounded writer,
+    /// avoiding an intermediate allocation outside that writer's limit.
+    pub(crate) fn state_key_value(&self, state: StateId) -> Result<Enc, AutomatonError> {
         let config = self
             .reached
             .key(state)
@@ -197,17 +210,11 @@ impl PropertyAutomaton {
                     .map_or(Enc::Null, Enc::Bool),
             ]),
         ]);
-        let key = Enc::Array(vec![
+        Ok(Enc::Array(vec![
             Enc::text(AUTOMATON_STATE_KEY_V1),
             context,
             config.key_value(),
-        ]);
-        let bytes = quire_canonical::to_vec(&key, Limits::new(max_key_bytes)).map_err(|_| {
-            AutomatonError::KeyEncodingLimit {
-                limit: max_key_bytes,
-            }
-        })?;
-        Ok(AutomatonStateKey::canonical(bytes))
+        ]))
     }
 
     /// The `holds` atoms of the clause: atom `i` of the letter is

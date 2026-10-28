@@ -35,7 +35,6 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
@@ -43,13 +42,13 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{
-    translate_itself, translate_negation, AtomSymmetry, AutomatonError, AutomatonStateKey,
-    PropertyAutomaton, StateId,
+    translate_itself, translate_negation, AtomSymmetry, AutomatonError, PropertyAutomaton, StateId,
 };
 use crate::hyper::copy_swap::{CopySwap, CopySwapInputs};
 use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
 use crate::hyper::seam::{HyperLetters, ParameterBinding, StepLabel, StepMatch};
 use crate::hyper::witness::{Partner, WitnessSet};
+use crate::simulation::model::encode::Enc;
 use crate::simulation::model::{ModelFinding, ModelKey, ModelSimState, ModelSystem};
 use crate::simulation::{
     EncodingRefusal, Expansion, ExpansionStop, OfferedReductions, Permutation, SymmetryGroup,
@@ -172,12 +171,12 @@ pub struct HyperKey {
 }
 
 enum PropertyKey {
-    After(Result<AutomatonStateKey, AutomatonError>),
+    After(Result<Enc, AutomatonError>),
     Dead,
     Undefined,
     Rejected,
     MatchUndefined,
-    Witnesses(Vec<(Vec<ModelKey>, Result<AutomatonStateKey, AutomatonError>)>),
+    Witnesses(Vec<(Vec<ModelKey>, Result<Enc, AutomatonError>)>),
 }
 
 impl HyperKey {
@@ -188,7 +187,7 @@ impl HyperKey {
         state: &HyperState,
         automaton: &PropertyAutomaton,
     ) -> Self {
-        let state_key = |state| automaton.state_key(state, IdentityLimits::default().input_bytes);
+        let state_key = |state| automaton.state_key_value(state);
         Self {
             components: systems
                 .iter()
@@ -262,15 +261,13 @@ impl Encode for HyperKey {
 }
 
 fn encode_property_state_key<S: Sink + ?Sized>(
-    key: &Result<AutomatonStateKey, AutomatonError>,
+    key: &Result<Enc, AutomatonError>,
     writer: &mut Writer<'_, S>,
 ) -> Result<(), quire_canonical::Error> {
     let key = key
         .as_ref()
         .map_err(|error| quire_canonical::Error::Serialize(error.to_string()))?;
-    let text = std::str::from_utf8(key.as_bytes())
-        .map_err(|error| quire_canonical::Error::Serialize(error.to_string()))?;
-    writer.string(text)
+    key.encode_into(writer)
 }
 
 /// What an expansion found beside its successors.
