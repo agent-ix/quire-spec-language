@@ -1407,8 +1407,16 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                      invariant states"
                 ),
                 TemporalCause::ConflictingClockWrite { .. } => format!(
-                    "{message}: a postcondition writes a clock collection once, and resets \
-                     none of its clocks beside the write"
+                    "{message}: a postcondition writes a clock place or clock collection \
+                     at most once"
+                ),
+                TemporalCause::UnprovedPresence { .. } => format!(
+                    "{message}: `value(p)` of a guarded clock place is read only where \
+                     `present(p)` holds"
+                ),
+                TemporalCause::PresenceNotChecked { .. } => format!(
+                    "{message}: `present(p)` of a guarded clock place is not checked in \
+                     this position yet"
                 ),
                 TemporalCause::UnknownClock { .. } => {
                     format!("{message}: a time invariant bounds a clock of `self`")

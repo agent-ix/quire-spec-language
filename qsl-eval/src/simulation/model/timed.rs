@@ -1101,22 +1101,16 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     pub fn invariants(&self, state: &ModelSimState) -> Result<Vec<PlaceConstraint>, TimedStop> {
         let mut bounds = Vec::new();
         for invariant in self.model.invariants() {
-            let readings = self.about(state, invariant.predicate(), invariant.context(), || {
-                TimedSite::Invariant {
+            let holding = self.holding(
+                state,
+                invariant.alternatives(),
+                invariant.context(),
+                &|| TimedSite::Invariant {
                     name: invariant.name().to_owned(),
-                }
-            })?;
-            for (object, holds) in readings {
-                let present = || {
-                    self.presences_hold(
-                        state,
-                        &object,
-                        invariant.presences().iter().map(|clock| (*clock, true)),
-                    )
-                };
-                if holds && present() {
-                    bounds.extend(self.over(&object, invariant.bounds(), state));
-                }
+                },
+            )?;
+            for object in holding {
+                bounds.extend(self.over(&object, invariant.bounds(), state));
             }
         }
         Ok(bounds)
@@ -1132,30 +1126,51 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// As [`Self::invariants`].
     pub fn broken_invariant(&self, state: &TimedState) -> Result<Option<String>, TimedStop> {
         for invariant in self.model.invariants() {
-            let readings = self.about(
+            let holding = self.holding(
                 &state.discrete,
-                invariant.predicate(),
+                invariant.alternatives(),
                 invariant.context(),
-                || TimedSite::Invariant {
+                &|| TimedSite::Invariant {
                     name: invariant.name().to_owned(),
                 },
             )?;
-            for (object, holds) in readings {
-                if holds
-                    && self.presences_hold(
-                        &state.discrete,
-                        &object,
-                        invariant.presences().iter().map(|clock| (*clock, true)),
-                    )
-                    && !self
-                        .over(&object, invariant.bounds(), &state.discrete)
-                        .all(|bound| bound.holds(&state.clocks))
+            for object in holding {
+                if !self
+                    .over(&object, invariant.bounds(), &state.discrete)
+                    .all(|bound| bound.holds(&state.clocks))
                 {
                     return Ok(Some(invariant.name().to_owned()));
                 }
             }
         }
         Ok(None)
+    }
+
+    /// The objects of type `context` at `state` of which one of
+    /// `alternatives` holds: its data predicate holds of the object and the
+    /// object's `Option<Clock>` places have the presences it requires
+    /// (FR-230 "Presence bit"), in object order.
+    fn holding(
+        &self,
+        state: &ModelSimState,
+        alternatives: &[qsl_semantics::check::StateAlternative],
+        context: EffectiveId,
+        site: &dyn Fn() -> TimedSite,
+    ) -> Result<Vec<ObjectReference>, TimedStop> {
+        let mut holding: Vec<ObjectReference> = Vec::new();
+        for alternative in alternatives {
+            for (object, holds) in self.about(state, alternative.predicate(), context, site)? {
+                if holds
+                    && !holding.contains(&object)
+                    && self.presences_hold(state, &object, alternative.presences().iter().copied())
+                {
+                    holding.push(object);
+                }
+            }
+        }
+        let objects = self.objects.get(&context).map_or(&[][..], Vec::as_slice);
+        holding.sort_by_key(|object| objects.iter().position(|held| held == object));
+        Ok(holding)
     }
 
     /// `constraints` over `object`'s places live at `state`: a clock place
@@ -1208,13 +1223,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             if let Urgency::When {
                 name,
                 context,
-                predicate,
+                alternatives,
             } = urgency
             {
-                let readings = self.about(state, predicate, *context, || TimedSite::Urgency {
-                    name: name.clone(),
+                let holding = self.holding(state, alternatives, *context, &|| {
+                    TimedSite::Urgency { name: name.clone() }
                 })?;
-                if readings.iter().any(|(_, holds)| *holds) {
+                if !holding.is_empty() {
                     return Ok(true);
                 }
             }

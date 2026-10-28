@@ -4599,6 +4599,67 @@ fn an_option_clock_has_a_presence_bit() {
     assert_eq!(next.clocks().get(v), Some(&exact(0, 1)));
 }
 
+/// FR-230-AC-25 and AC-39 (TC-685), the timed subject's part, over `v:
+/// Option<Clock>`. A `max` `"3"` constraint on `Call` applying to every
+/// clock bounds `x` in both initial states and `v` only where present. The
+/// time invariant `when { not present(self.v) or self.late } { self.x <= 5
+/// ms }` applies where `v` is absent, and `urgent Due when {
+/// present(self.v) }` makes only the present state urgent.
+#[trace("TC-685")]
+#[test]
+fn present_reads_the_bit_in_invariants_bounds_and_urgency() {
+    let mut document: Json = serde_json::from_slice(&option_clock_document()).expect("JSON");
+    let identity = ident("Call");
+    document["types"][1]["constraints"] = json!([{
+        "identity": format!("{identity}/constraints/max"), "keyword": "max",
+        "operands": {"value": "3"}, "appliesTo": CLOCK,
+        "diagnosticCode": "bound.max", "origin": origin(&identity),
+    }]);
+    let world = world_over(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(
+            &["work"],
+            "time invariant Idle when { not present(self.v) or self.late } { self.x <= 5 ms }\n\
+             urgent Due when { present(self.v) };\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let [absent, present] = &initial[..] else {
+        panic!("two initial states: {initial:?}");
+    };
+    let name = |place: usize| {
+        timed
+            .model()
+            .clock(timed.places()[place].clock())
+            .expect("a clock")
+            .name()
+            .to_owned()
+    };
+    let bounded = |state: &TimedState| {
+        let mut bounds: Vec<(String, Rational)> = timed
+            .invariants(state.discrete())
+            .expect("decided")
+            .iter()
+            .map(|bound| (name(bound.place()), bound.bound().clone()))
+            .collect();
+        bounds.sort();
+        bounds
+    };
+    assert_eq!(
+        bounded(absent),
+        [("x".to_owned(), exact(3, 1)), ("x".to_owned(), exact(5, 1))]
+    );
+    assert_eq!(
+        bounded(present),
+        [("v".to_owned(), exact(3, 1)), ("x".to_owned(), exact(3, 1))]
+    );
+    assert!(!timed.is_urgent(absent.discrete()).expect("decided"));
+    assert!(timed.is_urgent(present.discrete()).expect("decided"));
+}
+
 /// FR-230-AC-12 (TC-685): `self.v = 0 ms` makes an absent `v` present at
 /// 0: from the absent initial state, `work`'s write gives the one state
 /// with `v` present, never one keeping it absent.

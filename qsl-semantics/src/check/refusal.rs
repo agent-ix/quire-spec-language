@@ -1300,6 +1300,21 @@ pub enum TemporalCause {
         /// The later write's span.
         span: Span,
     },
+    /// FR-230 "Guards": `value(p)` of a guarded place read where the guard
+    /// conjunct or the time invariant's predicate does not establish
+    /// `present(p)`: `undefined_expression`/`unproved-presence`, located at
+    /// the read.
+    UnprovedPresence {
+        /// The read's span.
+        span: Span,
+    },
+    /// FR-230 "Presence bit": `present(p)` of an `Option<Clock>` place in a
+    /// position this slice does not read yet (a quantifier body, another
+    /// object's place, a disjunction in a postcondition): no clock is read.
+    PresenceNotChecked {
+        /// The presence read's span.
+        span: Span,
+    },
     /// FR-230: a time invariant bound's operand names no clock of the
     /// state object. Located at the operand.
     UnknownClock {
@@ -1828,6 +1843,8 @@ impl TemporalCause {
             | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
             | Self::ConflictingClockWrite { span }
+            | Self::UnprovedPresence { span }
+            | Self::PresenceNotChecked { span }
             | Self::TimeInvariantShape { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
@@ -1913,6 +1930,8 @@ impl TemporalCause {
             | Self::TimeInvariantShape { .. }
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
+            Self::UnprovedPresence { .. } => Code::UndefinedExpression,
+            Self::PresenceNotChecked { .. } => Code::UnsupportedConstruct,
             Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 Code::InvalidModelBinding
@@ -1981,6 +2000,8 @@ impl TemporalCause {
             Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
             Self::ClockWrite { .. } => "clock-write",
             Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
+            Self::UnprovedPresence { .. } => "unproved-presence",
+            Self::PresenceNotChecked { .. } => "not-yet-implemented",
             Self::TimeInvariantShape { .. } => "time-invariant-shape",
             Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
             Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),

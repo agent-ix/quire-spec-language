@@ -1179,7 +1179,16 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         initial: Option<usize>,
         arrival: Option<Arrival>,
     ) -> Result<Option<usize>, Halt> {
-        let (state, zone, permutation) = self.canonical(state, zone)?;
+        let (state, mut zone, permutation) = self.canonical(state, zone)?;
+        // A place that is not live at the state (an absent or dropped
+        // `Option<Clock>`, a union case that does not hold) has no valuation
+        // (FR-230 "Presence bit"): its dimension is free, so nodes differing
+        // only in a dead clock are one.
+        for (index, place) in self.timed.places().iter().enumerate() {
+            if !self.timed.live(place, &state) {
+                zone.free(index + 1)?;
+            }
+        }
         let (mut key, _) = self
             .timed
             .system()
