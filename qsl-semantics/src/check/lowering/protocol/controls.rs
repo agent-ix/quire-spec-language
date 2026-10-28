@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-466's step-control nodes: the `protocol`/`control` node each `sequence`,
 //! `send`, `receive`, `attempt`, `effect`, `event`, `commit`, `check`,
-//! `fence` and `await` of a protocol's `run` tree emits, with the argument
+//! `fence`, `await`, `parallel`, `choice` and `repeat` of a protocol's `run`
+//! tree emits, with the argument
 //! layout of QSpec FR-466 "Control layouts" (FR-383-AC-7).
 //!
 //! A control is its own node, declared at `P`, `run` and the control names
@@ -14,13 +15,14 @@
 //!
 //! A node is keyed after every node it names: its children, and the control
 //! a `receive`, an `effect` or an `await` is anchored at, which may follow it
-//! in the tree. A `parallel` is written with FR-466's layout, except one
-//! whose join is a predicate, which names a function; `choice` and `repeat`
-//! are not written here
-//! ([`ProtocolConstruct::Control`](crate::check::refusal::ProtocolConstruct)).
-//! A `branch` is no node: its body is held by its `parallel`, and is
-//! declared at the `parallel`'s declaration followed by its own name
-//! (QSpec FR-464 "Control tree").
+//! in the tree. A `parallel`, a `choice` and a `repeat` are written with
+//! FR-466's layouts, except a `parallel` whose join is a predicate, which
+//! names a function, and a post-test `repeat`, whose guard reads its body's
+//! binders where FR-466 reads only the repeat's entry
+//! ([`ProtocolConstruct`](crate::check::refusal::ProtocolConstruct)).
+//! A `branch` or a `case` is no node: its body is held by its `parallel` or
+//! `choice`, and is declared at that control's declaration followed by its
+//! own name (QSpec FR-464 "Control tree").
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -190,8 +192,12 @@ impl Lowering<'_> {
         let mut keys: BTreeMap<ProtocolNodeId, NodeKey> = BTreeMap::new();
         for node in controls.build_order()? {
             let control = tree.control(node).ok_or_else(unchecked)?;
-            // A branch's body is held by its `parallel`, which reads it.
-            if control.kind == ProtocolNodeKind::Branch {
+            // A branch's or a case's body is held by its `parallel` or its
+            // `choice`, which reads it.
+            if matches!(
+                control.kind,
+                ProtocolNodeKind::Branch | ProtocolNodeKind::Case
+            ) {
                 continue;
             }
             let location = protocol_location(name, ProtocolSite::Control(&control.path));
@@ -475,10 +481,16 @@ impl Lowering<'_> {
                 "parallel",
                 self.parallel_arguments(protocol, control, keys, location)?,
             ),
+            ProtocolNodeKind::Choice => (
+                "choice",
+                self.choice_arguments(controls, control, entry, keys, location)?,
+            ),
+            ProtocolNodeKind::Repeat => (
+                "repeat",
+                self.repeat_arguments(controls, control, entry, keys, location)?,
+            ),
             // Not written yet: refused before any node is built.
-            ProtocolNodeKind::Choice
-            | ProtocolNodeKind::Repeat
-            | ProtocolNodeKind::Branch
+            ProtocolNodeKind::Branch
             | ProtocolNodeKind::Case
             | ProtocolNodeKind::Finish
             | ProtocolNodeKind::CompensateTemplate => return Err(unchecked()),
@@ -581,6 +593,201 @@ impl Lowering<'_> {
             MemberTerm::binding("joined", BindingValue::Group(GroupTerm::new(joined))),
             MemberTerm::binding("outstanding", outstanding),
         ])
+    }
+
+    /// The arguments of the `choice` `control` (FR-466 "Control layouts"):
+    /// its owning role, its `visible` entries as a set of nodes, and its
+    /// `cases` sorted by label as UTF-8 bytes, each with its guard and its
+    /// body's key in `keys`. The entries and guards are lowered over the
+    /// binders readable at the choice's entry, so a guard that reads an
+    /// entry names that entry's node.
+    fn choice_arguments(
+        &mut self,
+        controls: &Controls<'_, '_>,
+        control: &CheckedControl,
+        entry: &BTreeSet<usize>,
+        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        location: &quire_semantic_value::location::Location,
+    ) -> Result<Vec<MemberTerm>, CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let protocol = controls.protocol;
+        let form = protocol
+            .form
+            .choices
+            .iter()
+            .find(|choice| choice.declaration == control.node.0)
+            .ok_or_else(unchecked)?;
+        let checked = protocol
+            .checked
+            .slots
+            .choices
+            .iter()
+            .find(|choice| choice.node == control.node)
+            .ok_or_else(unchecked)?;
+        let owner = controls.role(&form.owner.name).ok_or_else(unchecked)?;
+        let visible = self.visible_entries(controls, &checked.visible, entry, location)?;
+        let mut cases: Vec<(&str, LeafTerm, NodeKey)> = Vec::with_capacity(control.children.len());
+        for case in &control.children {
+            let case = protocol
+                .checked
+                .controls
+                .control(*case)
+                .filter(|case| case.kind == ProtocolNodeKind::Case)
+                .ok_or_else(unchecked)?;
+            let [body] = case.children[..] else {
+                return Err(unchecked());
+            };
+            let body = keys.get(&body).copied().ok_or_else(unchecked)?;
+            let guard = checked
+                .cases
+                .iter()
+                .find(|checked| checked.name == case.name)
+                .ok_or_else(unchecked)?;
+            let guard = self.scoped_body(controls, &guard.guard, entry, location)?;
+            cases.push((case.name.as_str(), guard, body));
+        }
+        cases.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+        let mut records = Vec::with_capacity(cases.len());
+        for (label, guard, body) in cases {
+            records.push(TupleMember::Group(GroupTerm::new(vec![
+                member("label", self.text_literal(label, location)?),
+                member("guard", guard),
+                member("body", LeafTerm::reference(body)),
+            ])));
+        }
+        Ok(vec![
+            MemberTerm::bound("owner", LeafTerm::reference(owner)),
+            MemberTerm::binding("visible", visible),
+            MemberTerm::binding("cases", BindingValue::Tuple(TupleTerm::new(records))),
+        ])
+    }
+
+    /// The arguments of the `repeat` `control` (FR-466 "Control layouts"):
+    /// its owning role, its `visible` entries, the written `maximum`, the
+    /// `proof` Group (empty, or `invariant` and `variant`), the `while`
+    /// guard, the body's key and the `exhausted` control's key, present
+    /// exactly when a maximum is. The entries, guard and proof are lowered
+    /// over the binders readable at the repeat's entry; a post-test repeat,
+    /// whose guard reads its body's binders, is refused before this.
+    fn repeat_arguments(
+        &mut self,
+        controls: &Controls<'_, '_>,
+        control: &CheckedControl,
+        entry: &BTreeSet<usize>,
+        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        location: &quire_semantic_value::location::Location,
+    ) -> Result<Vec<MemberTerm>, CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let protocol = controls.protocol;
+        let form = protocol
+            .form
+            .repeats
+            .iter()
+            .find(|repeat| repeat.declaration == control.node.0)
+            .ok_or_else(unchecked)?;
+        let checked = protocol
+            .checked
+            .slots
+            .repeats
+            .iter()
+            .find(|repeat| repeat.node == control.node)
+            .filter(|repeat| !repeat.post_test)
+            .ok_or_else(unchecked)?;
+        let within = |span: qsl_foundation::Span| {
+            control
+                .children
+                .iter()
+                .copied()
+                .find(|child| {
+                    protocol
+                        .form
+                        .declarations
+                        .get(child.0)
+                        .is_some_and(|declaration| {
+                            span.start <= declaration.name.span.start
+                                && declaration.name.span.end <= span.end
+                        })
+                })
+                .and_then(|child| keys.get(&child).copied())
+                .ok_or_else(unchecked)
+        };
+        let body = within(form.body)?;
+        let exhausted = match form.exhausted {
+            None => empty_group(),
+            Some(span) => BindingValue::Group(GroupTerm::references([within(span)?])),
+        };
+        let owner = controls.role(&form.owner.name).ok_or_else(unchecked)?;
+        let visible = self.visible_entries(controls, &checked.visible, entry, location)?;
+        let maximum = match checked.max {
+            None => empty_group(),
+            Some(max) => BindingValue::Group(GroupTerm::new(vec![GroupMember::Leaf(
+                self.integer_literal(Integer::from(max), location)?,
+            )])),
+        };
+        let proof = match &checked.loop_proof {
+            None => Vec::new(),
+            Some(proof) => vec![
+                member(
+                    "invariant",
+                    self.scoped_body(controls, &proof.invariant, entry, location)?,
+                ),
+                member(
+                    "variant",
+                    self.scoped_body(controls, &proof.variant, entry, location)?,
+                ),
+            ],
+        };
+        let guard = self.scoped_body(controls, &checked.guard, entry, location)?;
+        Ok(vec![
+            MemberTerm::bound("owner", LeafTerm::reference(owner)),
+            MemberTerm::binding("visible", visible),
+            MemberTerm::binding("maximum", maximum),
+            MemberTerm::binding("proof", BindingValue::Group(GroupTerm::new(proof))),
+            MemberTerm::bound("guard", guard),
+            MemberTerm::bound("body", LeafTerm::reference(body)),
+            MemberTerm::binding("exhausted", exhausted),
+        ])
+    }
+
+    /// A `choice`'s or `repeat`'s `visible` entries as the set of their
+    /// nodes (FR-466 "Decision facts"), each lowered over the binders
+    /// readable at the control's entry. An entry that lowers to no node, a
+    /// bare literal, is refused before this.
+    fn visible_entries(
+        &mut self,
+        controls: &Controls<'_, '_>,
+        visible: &[CheckedBody],
+        entry: &BTreeSet<usize>,
+        location: &quire_semantic_value::location::Location,
+    ) -> Result<BindingValue, CheckRefusal> {
+        let mut nodes = Vec::with_capacity(visible.len());
+        for body in visible {
+            match self.scoped_body(controls, body, entry, location)? {
+                LeafTerm::Reference { target } => nodes.push(target.0),
+                LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
+                    return Err(fault(location, KeyFault::UncheckedProtocolFact));
+                }
+            }
+        }
+        Ok(BindingValue::Group(GroupTerm::references(sorted(nodes))))
+    }
+
+    /// `body`, lowered over the binders readable at a control's entry
+    /// `entry`.
+    fn scoped_body(
+        &mut self,
+        controls: &Controls<'_, '_>,
+        body: &CheckedBody,
+        entry: &BTreeSet<usize>,
+        location: &quire_semantic_value::location::Location,
+    ) -> Result<LeafTerm, CheckRefusal> {
+        let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
+        let scope = entry
+            .iter()
+            .map(|slot| controls.binders.get(slot).copied().ok_or_else(unchecked))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut binders = Binders::new(&controls.slot_names, &scope);
+        self.expression(body.root(), &mut binders)
     }
 
     /// The constraint or condition of the control `node`, lowered over the
@@ -700,6 +907,15 @@ impl AwaitParts {
 }
 
 impl Controls<'_, '_> {
+    /// The node of the role named `name`.
+    fn role(&self, name: &str) -> Option<NodeKey> {
+        self.inputs
+            .roles
+            .iter()
+            .find(|(declared, _)| declared == name)
+            .map(|(_, key)| *key)
+    }
+
     /// The controls of the tree in an order that keys each after every node
     /// it names: its children, and the control it is anchored at. A cycle is
     /// a fact S3 refused (QSpec FR-464 "Derived causal relation").

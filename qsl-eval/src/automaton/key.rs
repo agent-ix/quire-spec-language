@@ -14,6 +14,11 @@
 //! these facts alone, never of the order states were reached, and no graph
 //! index enters it.
 //!
+//! The safety shape above describes [`SafetyTranslation`]. The general
+//! [`PropertyAutomaton::state_key`] encoder uses the same outer discriminator
+//! and a context for the automaton kind, subject algebra, lowered formula and
+//! activation, followed by the reached translation configuration.
+//!
 //! Both items here are `G a` over one current atom. Reading a letter expands
 //! the carried root: the atom is discharged when it holds and removes the
 //! branch otherwise, and `G a` is carried to the next position. So the
@@ -59,7 +64,9 @@ const RACE_FREEDOM: &str = "race-freedom";
 /// order is ascending unsigned lexicographic octet order.
 ///
 /// A [`SafetyTranslation`] builds a key by encoding one of its states or by
-/// admitting octets against its context. [`AutomatonStateKey::imported`]
+/// admitting octets against its context. [`PropertyAutomaton::state_key`](super::PropertyAutomaton::state_key)
+/// uses the same type for reached bounded, safety and liveness states.
+/// [`AutomatonStateKey::imported`]
 /// wraps octets read from a certificate as they arrived: such a key is
 /// unadmitted, and a checker admits it against its own context before it
 /// is used for membership.
@@ -77,6 +84,11 @@ impl std::fmt::Debug for AutomatonStateKey {
 }
 
 impl AutomatonStateKey {
+    /// A key written by one of the automaton's canonical encoders.
+    pub(crate) fn canonical(octets: Vec<u8>) -> Self {
+        Self(octets)
+    }
+
     /// The octets of a key as a certificate carried them, not yet admitted.
     pub fn imported(octets: Vec<u8>) -> Self {
         Self(octets)

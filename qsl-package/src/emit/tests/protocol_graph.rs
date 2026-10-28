@@ -728,20 +728,6 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
                 "true",
             ),
         ),
-        (
-            C::Control("choice"),
-            "QSL-1126",
-            vec![C::Control("choice")],
-            false,
-            plain(
-                "on origin",
-                "",
-                "sequence Main { choice Pick by Buyer visible () { \
-                 case yes when { true } sequence A { } \
-                 case no when { false } sequence B { } } }",
-                "true",
-            ),
-        ),
     ];
     let clauses = |graph: &qsl_semantics::check::CheckedGraph| {
         graph

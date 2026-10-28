@@ -38,6 +38,7 @@ use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration,
 use quire_semantic_value::location::Location;
 
 mod expression_depth;
+mod place_rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 

@@ -38,6 +38,7 @@ use qsl_semantics::check::{
     PlaceStep, QuantifiedFamily, SlotRef, TimeSourceKind, TimedModel, Urgency,
 };
 
+use qsl_semantics::model::object_environment::PlacePresences;
 use quire_checked::key::DeclarationKey;
 
 use super::encode::declaration_text;
@@ -529,7 +530,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 .iter()
                 .filter_map(|step| match step {
                     PlaceStep::Slot(shape) => Some(shape.min),
-                    PlaceStep::Field(_) => None,
+                    PlaceStep::Field(_) | PlaceStep::Union(_) => None,
                 })
                 .fold(1_u64, u64::saturating_mul);
             let held = per_element
@@ -634,7 +635,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let through = field
                 .path()
                 .iter()
-                .rposition(|step| matches!(step, PlaceStep::Slot(_)))
+                .rposition(|step| matches!(step, PlaceStep::Slot(_) | PlaceStep::Union(_)))
                 .map_or(0, |last| last + 1);
             if through == 0 {
                 // An absent `Option<Clock>` holds no clock.
@@ -665,10 +666,21 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let mut pending = vec![(value, &field.path()[1..through])];
             while let Some((value, rest)) = pending.pop() {
                 match rest.split_first() {
+                    // An element of a `Sequence<Option<Clock>>` is live
+                    // while its bit is set.
+                    None if field.presence_bit()
+                        && !matches!(value, quire_exact::Value::Boolean(true)) => {}
                     None => live = live.saturating_add(1),
                     Some((PlaceStep::Field(name), rest)) => {
                         if let Some(next) = typing.component(value, name) {
                             pending.push((next, rest));
+                        }
+                    }
+                    // A union case's clock is live while the value is
+                    // that case.
+                    Some((PlaceStep::Union(case), rest)) => {
+                        if is_case(value, case) {
+                            pending.push((value, rest));
                         }
                     }
                     Some((PlaceStep::Slot(_), rest)) => match value {
@@ -781,14 +793,21 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     }
 
     /// Whether the presence bits of `post` are the ones `vector`'s step
-    /// writes (FR-230 "Presence bit"): a reset of an `Option<Clock>` of the
-    /// receiver makes it present, a drop (`self.v = absent`) makes it
-    /// absent, and every other bit of an object `pre` holds keeps its value.
-    /// A frame writing the field enumerates both values of the bit; this
-    /// keeps the written one.
+    /// writes and its postconditions require (FR-230 "Presence bit"): a
+    /// guarded place a postcondition requires present or absent is so at
+    /// `post`; a reset of an `Option<Clock>` of the receiver, or a write of
+    /// a union field's clock case constructor, makes it present, a drop
+    /// (`self.v = absent`, a write of another case) makes it absent, and
+    /// every other guarded place of an object `pre` holds keeps its
+    /// presence, except that a union value may leave a clock case (QSpec
+    /// FR-415-AC-21). A frame writing the field enumerates every value; this
+    /// keeps the written one, so a case switch into a clock case that no
+    /// write makes leaves no successor: there is no implicit reset. A reset
+    /// of a `Clock` parameter writes the place `instance` binds it to.
     fn bits_follow(
         &self,
         vector: &super::frames::EnabledVector,
+        instance: &[(usize, usize)],
         pre: &ModelSimState,
         post: &ModelSimState,
     ) -> bool {
@@ -807,20 +826,150 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .filter(|reset| reset.selection().is_none() && reset.parameter().is_none())
             .map(|reset| reset.clock())
             .collect();
+        // The places a reset of a `Clock` parameter writes for `instance`.
+        let bound: Vec<usize> = clauses
+            .iter()
+            .flat_map(|resets| resets.resets())
+            .filter(|reset| reset.selection().is_none())
+            .filter_map(|reset| {
+                let parameter = reset.parameter()?;
+                instance
+                    .iter()
+                    .find(|(position, _)| *position == parameter)
+                    .map(|(_, place)| *place)
+                    .filter(|place| {
+                        self.places
+                            .get(*place)
+                            .is_some_and(|held| held.clock == reset.clock())
+                    })
+            })
+            .collect();
         let dropped: Vec<ClockId> = clauses
             .iter()
             .flat_map(|resets| resets.drops())
             .copied()
             .collect();
-        let bit = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| {
-            place.stored(state).map(|stored| {
-                matches!(
-                    stored.fields.get(field),
-                    Some(quire_exact::Value::Boolean(true))
-                )
+        // A postcondition's presence requirements on the receiver's
+        // post-state (`present(self.v)`, `not present(self.v)`).
+        let required = clauses.iter().flat_map(|resets| resets.requires()).copied();
+        if !self.presences_hold(post, &vector.receiver, required) {
+            return false;
+        }
+        self.places.iter().enumerate().all(|(index, place)| {
+            // An `Option<Clock>` place, or a union case's clock outside
+            // collections: guarded by its presence.
+            // An element of a `Sequence<Option<Clock>>` follows once the
+            // step's resets are known ([`Self::slot_bits_follow`]).
+            let guarded = place.slots.is_empty()
+                && self.model.clock(place.clock).is_some_and(|field| {
+                    field.presence_bit()
+                        || field
+                            .path()
+                            .iter()
+                            .any(|step| matches!(step, PlaceStep::Union(_)))
+                });
+            if !guarded {
+                return true;
+            }
+            if place.stored(pre).is_none() || place.stored(post).is_none() {
+                return true;
+            }
+            let (before, after) = (self.live(place, pre), self.live(place, post));
+            let receiver = place.holds(&vector.receiver);
+            if receiver && dropped.contains(&place.clock) {
+                return !after;
+            }
+            let written = (receiver && set.contains(&place.clock)) || bound.contains(&index);
+            // QSpec FR-415-AC-21: a place becomes present only by a write
+            // of its clock. An `Option<Clock>` bit does not change unless
+            // written; a union value may leave its case, dropping the case's
+            // clock, but never enters a clock case unwritten.
+            let union = self
+                .model
+                .clock(place.clock)
+                .is_some_and(|field| !field.presence_bit());
+            if union {
+                !after || written || before
+            } else {
+                after == (written || before)
+            }
+        })
+    }
+
+    /// The presence at `state` of every guarded place outside collections
+    /// a predicate names `r.f` or `r.f.c`, by object, field and union case:
+    /// what `present(r.f)` of another object reads (FR-230 "Presence is
+    /// derived").
+    fn place_presences(&self, state: &ModelSimState) -> PlacePresences {
+        // FR-415-AC-20: each `Sequence<Option<Clock>>`'s element bits, which
+        // `forall(e in r.q: present(e))` reads.
+        let mut slots = std::collections::BTreeMap::new();
+        for holder in &self.holders {
+            let Some(field) = self
+                .model
+                .clock(holder.clock)
+                .filter(|field| field.presence_bit())
+            else {
+                continue;
+            };
+            let [PlaceStep::Field(name), PlaceStep::Slot(_)] = field.path() else {
+                continue;
+            };
+            let Some(quire_exact::Value::Collection(bits)) = holder
+                .stored(state)
+                .and_then(|stored| stored.fields.get(field.field()))
+            else {
+                continue;
+            };
+            slots.insert(
+                (holder.object.clone(), name.clone()),
+                bits.elements()
+                    .iter()
+                    .map(|bit| matches!(bit, quire_exact::Value::Boolean(true)))
+                    .collect(),
+            );
+        }
+        let places = self
+            .places
+            .iter()
+            .filter(|place| place.slots.is_empty())
+            .filter_map(|place| {
+                let field = self.model.clock(place.clock)?;
+                let (name, case) = match field.path() {
+                    [PlaceStep::Field(name)] if field.presence_bit() => (name, None),
+                    [PlaceStep::Field(name), PlaceStep::Union(case)] => (name, Some(case.clone())),
+                    _ => return None,
+                };
+                Some((
+                    (place.object.clone(), name.clone(), case),
+                    self.live(place, state),
+                ))
             })
+            .collect();
+        PlacePresences { places, slots }
+    }
+
+    /// Whether the presence bit of every element of a
+    /// `Sequence<Option<Clock>>` that its collection holds at `post` follows
+    /// the step's writes (FR-230 "Presence bit", QSpec FR-415-AC-21): an
+    /// element whose place `writes` resets is present, one held at `pre` too
+    /// keeps its bit, and one the step adds unwritten is absent. There is no
+    /// implicit reset or drop, as of an `Option<Clock>` field.
+    fn slot_bits_follow(
+        &self,
+        pre: &ModelSimState,
+        post: &ModelSimState,
+        writes: &[usize],
+    ) -> bool {
+        let bits = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| match place
+            .stored(state)?
+            .fields
+            .get(field)?
+        {
+            quire_exact::Value::Collection(bits) => Some(bits.elements().len()),
+            _ => None,
         };
-        self.places.iter().all(|place| {
+        self.places.iter().enumerate().all(|(at, place)| {
             let Some(field) = self
                 .model
                 .clock(place.clock)
@@ -828,18 +977,23 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             else {
                 return true;
             };
-            let (Some(before), Some(after)) = (
-                bit(pre, place, field.field()),
-                bit(post, place, field.field()),
-            ) else {
+            let [slot] = place.slots[..] else {
                 return true;
             };
-            let receiver = place.holds(&vector.receiver);
-            if receiver && dropped.contains(&place.clock) {
-                return !after;
+            let held = |state: &ModelSimState| {
+                bits(state, place, field.field()).is_some_and(|len| slot < len)
+            };
+            if !held(post) {
+                return true;
             }
-            let written = receiver && set.contains(&place.clock);
-            after == (written || before)
+            let after = self.live(place, post);
+            if writes.contains(&at) {
+                after
+            } else if held(pre) {
+                after == self.live(place, pre)
+            } else {
+                !after
+            }
         })
     }
 
@@ -896,13 +1050,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         };
         // An `Option<Clock>` place is live while its presence bit is set
         // (FR-230 "Presence bit").
-        if field.presence_bit() {
+        if field.presence_bit() && place.slots.is_empty() {
             return matches!(
                 stored.fields.get(field.field()),
                 Some(quire_exact::Value::Boolean(true))
             );
         }
-        if place.slots.is_empty() {
+        let guarded = field
+            .path()
+            .iter()
+            .any(|step| matches!(step, PlaceStep::Union(_)));
+        if place.slots.is_empty() && !guarded {
             return true;
         }
         let typing = self.system.typing();
@@ -912,7 +1070,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let through = field
             .path()
             .iter()
-            .rposition(|step| matches!(step, PlaceStep::Slot(_)))
+            .rposition(|step| matches!(step, PlaceStep::Slot(_) | PlaceStep::Union(_)))
             .map_or(0, |last| last + 1);
         let mut steps = field.path()[..through].iter();
         let Some(PlaceStep::Field(first)) = steps.next() else {
@@ -931,6 +1089,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         for step in steps {
             let next = match step {
                 PlaceStep::Field(name) => typing.component(value, name),
+                // FR-230: a union case's place is live while the value is
+                // that case.
+                PlaceStep::Union(case) => is_case(value, case).then_some(value),
                 PlaceStep::Slot(_) => match (value, slots.next()) {
                     (quire_exact::Value::Collection(collection), Some(slot)) => {
                         collection.elements().get(*slot)
@@ -948,7 +1109,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 None => return false,
             }
         }
-        true
+        // An element of a `Sequence<Option<Clock>>` is live while the
+        // collection holds it and its bit is set (FR-230-AC-41).
+        !field.presence_bit() || matches!(value, quire_exact::Value::Boolean(true))
     }
 
     /// The initial timed states: each initial model state with every clock 0.
@@ -1055,7 +1218,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .iter()
             .map(|object| (predicate, Some(object)))
             .collect();
-        let readings = self.system.state_predicates(state, &bound)?;
+        let bound: Vec<_> = bound
+            .into_iter()
+            .map(|(predicate, over)| (predicate, over, Vec::new()))
+            .collect();
+        let readings =
+            self.system
+                .state_predicates_with(state, &bound, self.place_presences(state))?;
         objects
             .iter()
             .zip(readings)
@@ -1210,6 +1379,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 name,
                 context,
                 alternatives,
+                ..
             } = urgency
             {
                 let holding = self.holding(state, alternatives, *context, &|| {
@@ -1263,10 +1433,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     continue;
                 };
                 self.within_max_clocks(post)?;
-                if !self.bits_follow(&vector, state, post) {
-                    continue;
-                }
                 for instance in &instances {
+                    if !self.bits_follow(&vector, instance, state, post) {
+                        continue;
+                    }
                     let transition = &self
                         .instance_transition(transition, instance)
                         .ok_or_else(|| stop(BROKEN))?;
@@ -1338,7 +1508,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     // then writes the element the post-state holds.
                     let mut resets: Vec<(usize, Rational)> = Vec::new();
                     let mut carries = self.written(&vector.receiver, post, &mut resets);
-                    self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
+                    // The fresh elements a frame enumerates are no write.
+                    let (whole, unwritten) = (resets.len(), {
+                        self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
+                        resets.len()
+                    });
                     for (clause, reset) in self
                         .model
                         .resets()
@@ -1407,6 +1581,14 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             }
                         }
                     }
+                    let writes: Vec<usize> = resets[..whole]
+                        .iter()
+                        .chain(&resets[unwritten..])
+                        .map(|(place, _)| *place)
+                        .collect();
+                    if !self.slot_bits_follow(state, post, &writes) {
+                        continue;
+                    }
                     // A clock whose object or slot the step makes live takes
                     // the constant of its write, 0 when the step writes none
                     // (QSpec FR-181 "Timed subjects").
@@ -1453,7 +1635,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// live at `state`, by parameter position and place index (FR-230
     /// "Operation parameters"): a parameter ranges over the places of the
     /// clock fields of its range, every clock field when the model lists
-    /// none. One empty binding for an operation with none.
+    /// none. One empty binding for an operation with none. A parameter the
+    /// postcondition resets also binds an absent `Option<Clock>` place
+    /// outside collections, which the reset makes present (QSpec
+    /// FR-415-AC-21).
     fn instances(
         &self,
         vector: &super::frames::EnabledVector,
@@ -1470,6 +1655,14 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         };
         let mut instances: Vec<Vec<(usize, usize)>> = vec![Vec::new()];
         for (position, _) in declaration.clock_parameters() {
+            let reset = self.model.resets().iter().any(|resets| {
+                resets.operation().declaring == vector.declaring
+                    && resets.operation().declaration.name() == vector.name
+                    && resets
+                        .resets()
+                        .iter()
+                        .any(|reset| reset.parameter() == Some(*position))
+            });
             let range = self.model.clock_parameters().iter().find(|listed| {
                 listed.position() == *position
                     && listed.operation().declaring == vector.declaring
@@ -1484,7 +1677,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         range.range().contains(&place.clock)
                             && (!range.receiver_only().contains(&place.clock)
                                 || place.holds(&vector.receiver))
-                    }) && self.live(place, state)
+                    }) && (self.live(place, state)
+                        || (reset
+                            && place.slots.is_empty()
+                            && self
+                                .model
+                                .clock(place.clock)
+                                .is_some_and(|field| field.presence_bit())))
                 })
                 .map(|(index, _)| index)
                 .collect();
@@ -1581,10 +1780,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 .find(|(position, _)| Some(*position) == constraint.parameter())
                 .map(|(_, place)| *place)
                 .filter(|place| {
-                    self.places
-                        .get(*place)
-                        .is_some_and(|held| held.clock == constraint.clock())
+                    self.places.get(*place).is_some_and(|held| {
+                        held.clock == constraint.clock() && self.live(held, state)
+                    })
                 });
+            // A guard reading the parameter where the instance binds it to an
+            // absent place has no part.
             let Some(place) = place else {
                 return Ok(None);
             };
@@ -1765,6 +1966,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 PlaceStep::Field(name) => {
                     post_value = typing.component(post_value, name)?;
                     pre_value = pre_value.and_then(|value| typing.component(value, name));
+                }
+                PlaceStep::Union(case) => {
+                    if !is_case(post_value, case) {
+                        return None;
+                    }
+                    pre_value = pre_value.filter(|value| is_case(value, case));
                 }
                 PlaceStep::Slot(shape) => {
                     let slot = *slots.next()?;
@@ -2099,10 +2306,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         elements: Vec<quire_exact::Value>,
         site: impl Fn() -> TimedSite,
     ) -> Result<bool, TimedStop> {
-        let [reading] = &self
-            .system
-            .state_predicates_with(state, &[(predicate, Some(object), elements)])?[..]
-        else {
+        let [reading] = &self.system.state_predicates_with(
+            state,
+            &[(predicate, Some(object), elements)],
+            self.place_presences(state),
+        )?[..] else {
             return Err(TimedStop::undecided(site(), object.clone(), None));
         };
         match reading {
@@ -2571,8 +2779,14 @@ impl<L: crate::model_subject::ModelLetters> crate::temporal::TemporalLetters
     }
 }
 
+/// Whether `value` is a union value of the case named `case`.
+fn is_case(value: &quire_exact::Value, case: &str) -> bool {
+    matches!(value, quire_exact::Value::Union(union) if union.member().identifier().as_str() == case)
+}
+
 /// One step of a clock place's path in the state digest's byte form: a
-/// field by name, a slot by its index, taken from `slots` in path order.
+/// field by name, a union case by name, a slot by its index, taken from
+/// `slots` in path order.
 fn place_step_enc<'s>(
     step: &PlaceStep,
     slots: &mut impl Iterator<Item = &'s usize>,
@@ -2581,6 +2795,10 @@ fn place_step_enc<'s>(
         PlaceStep::Field(name) => super::encode::Enc::tagged(
             "field",
             vec![("name", super::encode::Enc::text(name.as_str()))],
+        ),
+        PlaceStep::Union(case) => super::encode::Enc::tagged(
+            "union",
+            vec![("case", super::encode::Enc::text(case.as_str()))],
         ),
         PlaceStep::Slot(_) => super::encode::Enc::tagged(
             "slot",

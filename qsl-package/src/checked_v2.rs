@@ -118,7 +118,7 @@ pub use terminal::{
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
     CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,
-    ClockSlotSelector, ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
+    ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
 };
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
