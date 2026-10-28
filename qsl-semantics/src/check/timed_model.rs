@@ -568,6 +568,7 @@ pub struct ClockResets {
     resets: Vec<ClockReset>,
     writes: Vec<CollectionWrite>,
     drops: Vec<ClockId>,
+    requires: Vec<(ClockId, bool)>,
 }
 
 impl ClockResets {
@@ -597,6 +598,15 @@ impl ClockResets {
     /// clock unconstrained, and no clock is reset.
     pub fn drops(&self) -> &[ClockId] {
         &self.drops
+    }
+
+    /// The presences the postcondition requires of the receiver's guarded
+    /// places in the post-state, each top-level conjunct `present(self.v)`
+    /// (present), `self.v != absent` (present) or `not present(self.v)`
+    /// (absent) (FR-230 "Presence bit"): a successor whose presences differ
+    /// does not satisfy the postcondition.
+    pub fn requires(&self) -> &[(ClockId, bool)] {
+        &self.requires
     }
 }
 
@@ -888,6 +898,9 @@ struct ResetsDraft {
     resets: Vec<ResetDraft>,
     writes: Vec<CollectionWrite>,
     drops: Vec<ClockId>,
+    requires: Vec<(ClockId, bool)>,
+    /// Each requirement's span, beside `requires`.
+    require_spans: Vec<Span>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -1997,7 +2010,7 @@ enum ClauseClocks {
     /// A precondition's guard parts.
     Guard(Vec<PartDraft>),
     /// A postcondition's resets.
-    Resets(Vec<ResetDraft>, Vec<CollectionWrite>, Vec<ClockId>),
+    Resets(ResetCut),
 }
 
 /// What a postcondition's resets cut from its body: each reset conjunct,
@@ -2016,6 +2029,79 @@ struct ResetCut {
     /// The guarded places written so far, by a reset or a drop: an
     /// `Option<Clock>`, or each clock case of a union field written whole.
     option_writes: BTreeSet<ClockId>,
+    /// The post-state presences the postcondition requires.
+    requires: Vec<(ClockId, bool)>,
+    /// Each requirement's span, beside `requires`.
+    require_spans: Vec<Span>,
+}
+
+/// QSpec FR-415-AC-21: a postcondition that requires `present(p)` of a
+/// guarded place it does not write has no successor from a state where `p`
+/// is absent; where the operation's precondition establishes `p` absent
+/// (every part of one of its guards requires `p` absent), that is decided
+/// here and refuses `invalid_timed_model`/`clock-presence-unwritten` at the
+/// requirement.
+fn unwritten_presence(
+    resets: &[ResetsDraft],
+    guards: &[(usize, Vec<PartDraft>)],
+    state_clauses: &[StateClauseDeclaration],
+) -> Result<(), TemporalCause> {
+    for written in resets {
+        for (&(clock, present), &span) in written.requires.iter().zip(&written.require_spans) {
+            // A reset of a `Clock` parameter whose range holds the place
+            // writes it for the instance binding the parameter there.
+            let writes = written
+                .resets
+                .iter()
+                .any(|reset| reset.clock == clock && reset.selection.is_none());
+            if !present || writes {
+                continue;
+            }
+            let absent = guards.iter().any(|(index, parts)| {
+                let same = state_clauses
+                    .get(*index)
+                    .and_then(|clause| clause.operation.as_ref())
+                    .is_some_and(|operation| {
+                        operation.declaring == written.operation.declaring
+                            && operation.declaration.name() == written.operation.declaration.name()
+                    });
+                same && !parts.is_empty()
+                    && parts
+                        .iter()
+                        .all(|part| part.presences.contains(&(clock, false)))
+            });
+            if absent {
+                return Err(TemporalCause::ClockPresenceUnwritten { span });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The post-state presence the top-level postcondition conjunct `id`
+/// requires of a guarded place of the receiver: `present(p)`, `p !=
+/// absent` and `not (p = absent)` present, `not present(p)` and `not (p !=
+/// absent)` absent. `p = absent` is a drop, not a requirement.
+fn post_presence(located: &Located<'_>, id: ExprId) -> Option<(ClockId, bool)> {
+    if let Some(clock) = located.presence(id) {
+        return Some((clock, true));
+    }
+    if let Some((clock, true)) = located.absent_test(id) {
+        return Some((clock, true));
+    }
+    match located.node(id)? {
+        // `not present(p)`, and `not (p = absent)` / `not (p != absent)`,
+        // the negation of the test.
+        ExprNode::Not(operand) => located
+            .presence(*operand)
+            .map(|clock| (clock, false))
+            .or_else(|| {
+                located
+                    .absent_test(*operand)
+                    .map(|(clock, present)| (clock, !present))
+            }),
+        _ => None,
+    }
 }
 
 /// The resets of a postcondition: each top-level conjunct `self.x = c` that
@@ -2036,6 +2122,15 @@ fn resets(
     let mut cut = ResetCut::default();
     for conjunct in conjuncts(located) {
         if !located.reads_clock(conjunct) {
+            continue;
+        }
+        // `present(self.v)`, `self.v != absent` or `not present(self.v)`: a
+        // requirement on the post-state's presence, read as a data
+        // predicate over it (FR-230 "Presence bit").
+        if let Some(required) = post_presence(located, conjunct) {
+            cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+            cut.requires.push(required);
+            cut.require_spans.push(located.span(conjunct));
             continue;
         }
         if let Some(reset) = quantified::reset(located, conjunct, clocks, clause.context, &written)?
@@ -2615,7 +2710,7 @@ fn read_clause(
             (leaves, ClauseClocks::Guard(parts))
         }
         StateClauseKind::Postcondition => {
-            let cut = resets(&located, clause, clocks).map_err(timed)?;
+            let mut cut = resets(&located, clause, clocks).map_err(timed)?;
             if let Some(span) = stray_literal(&located, clocks, &cut.literals) {
                 return Err(timed(TemporalCause::ClockWrite { span }));
             }
@@ -2637,11 +2732,8 @@ fn read_clause(
                     span: reset.span,
                 }));
             }
-            removed = cut.removed;
-            (
-                cut.leaves,
-                ClauseClocks::Resets(cut.resets, cut.writes, cut.drops),
-            )
+            removed = std::mem::take(&mut cut.removed);
+            (std::mem::take(&mut cut.leaves), ClauseClocks::Resets(cut))
         }
     };
     let rewritten = form
@@ -3166,23 +3258,29 @@ fn prepare_models(
                     }
                     guards.push((index, parts));
                 }
-                ClauseClocks::Resets(written, writes, drops) => {
+                ClauseClocks::Resets(cut) => {
                     if let (false, Some(operation)) = (
-                        written.is_empty() && writes.is_empty() && drops.is_empty(),
+                        cut.resets.is_empty()
+                            && cut.writes.is_empty()
+                            && cut.drops.is_empty()
+                            && cut.requires.is_empty(),
                         &clause.operation,
                     ) {
                         resets.push(ResetsDraft {
                             clause: clause.name.clone(),
                             operation: operation.clone(),
                             context: clause.context,
-                            resets: written,
-                            writes,
-                            drops,
+                            resets: cut.resets,
+                            writes: cut.writes,
+                            drops: cut.drops,
+                            requires: cut.requires,
+                            require_spans: cut.require_spans,
                         });
                     }
                 }
             }
         }
+        unwritten_presence(&resets, &guards, state_clauses).map_err(timed)?;
         let mut invariants = Vec::new();
         let mut urgency_drafts = Vec::new();
         for form in &declarations {
@@ -3564,6 +3662,7 @@ pub(crate) fn check(
                 resets: checked,
                 writes: written.writes,
                 drops: written.drops,
+                requires: written.requires,
             });
         }
         models.push(TimedModel {

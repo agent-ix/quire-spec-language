@@ -2146,10 +2146,11 @@ fn two_writes_of_an_option_clock_conflict() {
 /// absence; `not present(self.v) or self.late` in a time invariant's `when`
 /// is two alternatives, one requiring `v` absent and one reading `late`;
 /// `urgent U when { present(self.v) and self.late }` requires `v` present.
-/// A presence read this slice does not read (a postcondition, a quantifier
-/// body, another object's place) refuses
+/// A presence read this slice does not read yet (under `or` in a
+/// postcondition, a quantifier body, another object's place) refuses
 /// `unsupported_construct`/`not-yet-implemented` at the read, never as a
-/// clock read.
+/// clock read. STD-526 (QSL FR-230-AC-51) rules the last two in; the
+/// stacked QSL-580t slice builds them.
 #[trace("TC-685")]
 #[test]
 fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
@@ -2199,7 +2200,7 @@ fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
 
     for (clause, read) in [
         (
-            "post Kept using v on Config::Call::bump { present(self.v) }\n",
+            "post Either using v on Config::Call::bump { present(self.v) or self.late }\n",
             "present(self.v)",
         ),
         (
@@ -2393,6 +2394,39 @@ fn a_union_case_clock_is_a_guarded_place() {
     );
 }
 
+/// FR-230 "Presence bit" (TC-685), part of FR-230-AC-39: a top-level
+/// postcondition conjunct `present(self.v)`, `self.v != absent` or `not
+/// (self.v = absent)` requires `v` present in the post-state, and `not
+/// present(self.v)` or `not (self.v != absent)` requires it absent; each is recorded on the postcondition's resets, with no reset or
+/// drop.
+#[trace("TC-685")]
+#[test]
+fn a_postcondition_requires_a_presence_of_its_post_state() {
+    let document = option_clock_document();
+    for (conjunct, present) in [
+        ("present(self.v)", true),
+        ("self.v != absent", true),
+        ("not (self.v = absent)", true),
+        ("not present(self.v)", false),
+        ("not (self.v != absent)", false),
+    ] {
+        let body =
+            format!("{UNITS}{DENSE}post Kept using v on Config::Call::bump {{ {conjunct} }}\n");
+        let graph =
+            check(&document, &body).unwrap_or_else(|refusals| panic!("{conjunct}: {refusals:?}"));
+        let model = timed(&graph);
+        let (v, _) = model
+            .clock_fields()
+            .find(|(_, field)| field.name() == "v")
+            .expect("v is a place");
+        let [resets] = model.resets() else {
+            panic!("{conjunct}: one postcondition");
+        };
+        assert_eq!(resets.requires(), [(v, present)], "{conjunct}");
+        assert!(resets.resets().is_empty() && resets.drops().is_empty());
+    }
+}
+
 /// FR-230 "Records, tuples and unions" (TC-685), part of FR-230-AC-12:
 /// writing a clock-bearing union field. With a second clock case
 /// `Waiting(Clock)`, `self.state = Config::Mode::Armed(0 ms)` resets
@@ -2464,4 +2498,89 @@ fn a_union_field_is_written_once_and_never_read_whole() {
             "{clause}"
         );
     }
+}
+
+/// QSpec FR-415-AC-21, the vectors FP-11 and FP-12 (TC-685): a
+/// postcondition that requires `present(p)` of a place it does not write,
+/// where the operation's precondition establishes `p` absent, has no
+/// successor, decided statically: `invalid_timed_model`/
+/// `clock-presence-unwritten` at the requirement, for `v: Option<Clock>`
+/// and for the union case `state.Armed` alike. With the write (`self.v = 5
+/// ms`, the constructor `Armed(5 ms)`) it checks.
+#[trace("TC-685")]
+#[test]
+fn a_presence_the_precondition_denies_and_nothing_writes_refuses() {
+    for (document, place, write) in [
+        (option_clock_document(), "self.v", "self.v = 5 ms"),
+        (
+            union_clock_document_with(false),
+            "self.state.Armed",
+            "self.state = Config::Mode::Armed(5 ms)",
+        ),
+    ] {
+        let pre = format!("pre Off using v on Config::Call::bump {{ not present({place}) }}\n");
+        let (cause, text) = refused(
+            &document,
+            &format!(
+                "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ present({place}) }}\n"
+            ),
+        );
+        let requirement = format!("present({place})");
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (
+                Code::InvalidTimedModel,
+                "clock-presence-unwritten",
+                requirement.as_str()
+            )
+        );
+        check(
+            &document,
+            &format!(
+                "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ {write} and present({place}) }}\n"
+            ),
+        )
+        .unwrap_or_else(|refusals| panic!("{place} written: {refusals:?}"));
+    }
+}
+
+/// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21): a reset of a
+/// `Clock` parameter whose range holds the place writes it for the instance
+/// binding the parameter there. Over `bump(c: Clock)` with a frame naming
+/// `v: Option<Clock>` and `x`, `pre { not present(self.v) }` and `post { c
+/// = 0 ms and present(self.v) }` check: the instance binding `c` to `v`
+/// writes `v`, so no `clock-presence-unwritten` is decided statically.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_reset_ranging_over_the_place_writes_it() {
+    let clock = "ix://quire/native/Clock";
+    let mut document: Value =
+        serde_json::from_slice(&clock_parameter_document(clock, None, &["v", "x"])).expect("JSON");
+    let mut v = field("v", clock);
+    v["presence"] = json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}\
+             pre Off using v on Config::Call::bump {{ not present(self.v) }}\n\
+             post On using v on Config::Call::bump {{ c = 0 ms and present(self.v) }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("c ranges over v: {refusals:?}"));
+    let model = timed(&graph);
+    let [range] = model.clock_parameters() else {
+        panic!("one clock parameter: {:?}", model.clock_parameters());
+    };
+    let mut names: Vec<&str> = range
+        .range()
+        .iter()
+        .map(|clock| model.clock(*clock).expect("a clock").name())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["v", "x"]);
 }
