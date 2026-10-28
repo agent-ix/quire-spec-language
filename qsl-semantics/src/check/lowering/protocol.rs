@@ -605,9 +605,6 @@ impl Lowering<'_> {
             Err(other) => return Err(other),
         };
         let mut unemitted = protocol.unemitted();
-        if cyclic {
-            unemitted.push(ProtocolConstruct::ReferenceCycle);
-        }
         if self.fifo_key_unstable(protocol, &location)? {
             unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
         }
@@ -629,6 +626,10 @@ impl Lowering<'_> {
             self.set_protocol_key(index, ProtocolKey::AfterClauses);
             return Ok(Vec::new());
         }
+        let placeholder = match self.protocol_keys.get(index) {
+            Some(ProtocolKey::Keyed(key)) if cyclic => Some(*key),
+            _ => None,
+        };
         let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
             self.set_protocol_key(index, ProtocolKey::Unkeyed);
             return Ok(Vec::new());
@@ -645,7 +646,11 @@ impl Lowering<'_> {
             &location,
         ) {
             Ok(key) => {
-                self.set_protocol_key(index, ProtocolKey::Keyed(key));
+                if let Some(placeholder) = placeholder {
+                    self.placeholders.insert(placeholder, Some(key));
+                } else {
+                    self.set_protocol_key(index, ProtocolKey::Keyed(key));
+                }
                 Ok(Vec::new())
             }
             // A protocol this one refers to has no node (its refusal is
