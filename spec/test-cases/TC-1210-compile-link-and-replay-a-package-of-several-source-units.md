@@ -47,8 +47,8 @@ the identities their step names.
 7. Replay step 1's first package through FR-098 with the canonical
    reference, the reversed reference, a repeated source, `U2` dropped and a
    definition document.
-8. Read AC-2's checked units, and build a checked unit from `A`'s type
-   report and `B`'s source.
+8. Read AC-2's checked units and inspect the source reference and type report
+   carried by each.
 9. Run FR-027-AC-14's native-compile/1 requests: the `[U1, U2]` array, the
    reversed array, an array with a `0-draft` second unit, an empty array and
    the over-`dependent_bytes` array.
@@ -78,8 +78,9 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
   canonical and the reversed reference; `invalid_package`/`invalid-value`
   at `/package/sources` before any recompile for the repeated source; `stale_dependency`/`content-mismatch` on the
   `package_id` comparison; a refusal before any recompile.
-- Step 8: two checked units, each with its own digest; the mismatched
-  binding is refused by FR-362's digest comparison.
+- Step 8: two checked units, each carrying its own source reference and a type
+  report from that source's parse; the API provides no separate report/source
+  rebinding operation.
 - Step 9: the FR-278 bytes, equal for both arrays, exit 0;
   `unknown_edition` at the second unit's edition literal, naming its file;
   `invalid-request`; an intake refusal naming `dependent_bytes`.
