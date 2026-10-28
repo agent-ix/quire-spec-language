@@ -87,17 +87,26 @@ use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::{ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm};
-use qsl_semantics::model::observation::AdmissionFailure;
+use qsl_package::{CheckedPackage, EmitRefusal};
+use qsl_semantics::check::{
+    CheckedRefinement, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,
+};
+use qsl_semantics::library::PackageId;
+use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef};
 use quire_exact::{Cancel, Integer, Meter, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::closure::CertificateRejection;
+use super::simulation::{position_matches, CertifiedPosition, EvaluationOutcome};
 use super::zone::{LuBounds, Zone, ZoneError};
 use super::{CertificateLocus, CertificateMember, CertificateRule};
 use crate::model_check::identity::node_occurrence;
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::IncompleteCause;
+use crate::refinement::{
+    check_initial, check_step, open_systems, ConcreteStep, RefinementPosition, StepVerdict,
+    SubjectRefusal, Taken,
+};
 
 /// FR-244's certificate of a zone search's proof of the item `obligation`
 /// names (ADR-013 O-09).
@@ -131,6 +140,43 @@ pub struct ZoneCertificate<O> {
     /// The witness that the subject admits a time-divergent behaviour
     /// (ADR-026 TD-6).
     pub admitted: DivergenceWitness,
+    /// FR-244's refinement part, for the safety half of a timed
+    /// refinement (QSpec FR-430); `None` otherwise.
+    pub refinement: Option<RefinementPart>,
+}
+
+/// FR-244's refinement part: the reachability part is read over the
+/// refinement product, each node's `automaton_state` an index into
+/// `positions`, or `positions.len()` for a node of the locked region.
+///
+/// FR-244's `initials` is the certificate's `initial`, which already lists
+/// one node per concrete initial state that admits a valuation, in index
+/// order (spec gap STD-493: FR-244 names one `initial` and a separate
+/// `initials`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefinementPart {
+    /// The refinement's declared name, as FR-149's certificate names it.
+    pub refinement: String,
+    /// The package of the concrete subject.
+    pub concrete_package: PackageId,
+    /// The package holding the abstract model.
+    pub abstract_package: PackageId,
+    /// The product positions, FR-149's type.
+    pub positions: Vec<CertifiedPosition>,
+    /// What `check_step` took on each edge, one per entry of `edges` in
+    /// order; `None` for an edge into or inside the locked region.
+    pub taken: Vec<Option<Taken>>,
+}
+
+/// What FR-245 compares a refinement part's identity by.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefinementIdentity {
+    /// The refinement's declared name.
+    pub refinement: String,
+    /// The concrete subject's package.
+    pub concrete_package: PackageId,
+    /// The abstract model's package.
+    pub abstract_package: PackageId,
 }
 
 /// What a node of FR-240's liveness product carries beyond a search
@@ -444,6 +490,16 @@ pub enum CertifiedItem<'a> {
     DeadlockFreedom,
     /// FR-232's derived time-lock-freedom item.
     TimeLockFreedom,
+    /// The safety half of a timed refinement (QSpec FR-430), whose concrete
+    /// subject is `simulation` and whose concrete model is `model`.
+    Refinement {
+        /// The checked refinement.
+        refinement: &'a CheckedRefinement,
+        /// The package holding the abstract model.
+        abstract_package: &'a CheckedPackage,
+        /// The abstract model's initial states.
+        abstract_initial: &'a [DocumentRef],
+    },
 }
 
 /// The item an obligation names, as the checker compares it with the
@@ -457,6 +513,13 @@ pub enum CertificateItem<'o> {
     DeadlockFreedom,
     /// The derived time-lock-freedom item.
     TimeLockFreedom,
+    /// A refinement's record, against the abstract initial states.
+    Refinement {
+        /// The refinement's requirement occurrence (FR-144).
+        occurrence: &'o OccurrenceKey,
+        /// The abstract initial states.
+        abstract_initial: &'o BTreeSet<DocumentRef>,
+    },
     /// Any other item, which no zone certificate proves.
     Other,
 }
@@ -472,6 +535,13 @@ pub enum ItemIdentity {
     DeadlockFreedom,
     /// The derived time-lock-freedom item.
     TimeLockFreedom,
+    /// A refinement's record, against the abstract initial states.
+    Refinement {
+        /// The refinement's requirement occurrence (FR-144).
+        occurrence: OccurrenceKey,
+        /// The abstract initial states.
+        abstract_initial: BTreeSet<DocumentRef>,
+    },
     /// Any other item.
     Other,
 }
@@ -482,6 +552,13 @@ impl From<CertificateItem<'_>> for ItemIdentity {
             CertificateItem::Clause(occurrence) => Self::Clause(occurrence.clone()),
             CertificateItem::DeadlockFreedom => Self::DeadlockFreedom,
             CertificateItem::TimeLockFreedom => Self::TimeLockFreedom,
+            CertificateItem::Refinement {
+                occurrence,
+                abstract_initial,
+            } => Self::Refinement {
+                occurrence: occurrence.clone(),
+                abstract_initial: abstract_initial.clone(),
+            },
             CertificateItem::Other => Self::Other,
         }
     }
@@ -515,6 +592,8 @@ pub enum CheckerFault {
     CancellationWithoutCause,
     /// The claim automaton broke an invariant of its own.
     Automaton,
+    /// `check_initial` or `check_step` returned an internal fault.
+    RefinementStep,
 }
 
 /// Why [`check_zone_certificate`] checked nothing: the request, not the
@@ -537,6 +616,17 @@ pub enum ZoneCertificateRefusal<O> {
         /// The recompiled item's.
         recompiled: Box<ItemIdentity>,
     },
+    /// The refinement part names another refinement or package than the
+    /// recompiled ones (FR-245 "Refinement form"):
+    /// `stale_dependency`/`content-mismatch`, naming both.
+    RefinementMismatch {
+        /// The part's.
+        certificate: Box<RefinementIdentity>,
+        /// The recompiled.
+        recompiled: Box<RefinementIdentity>,
+    },
+    /// A package the refinement part names writes no `package_id`.
+    Package(Box<EmitRefusal>),
     /// FR-106's admission of the subject failed.
     Admission(Box<AdmissionFailure>),
     /// The model's timed reading does not build (FR-231).
@@ -556,9 +646,10 @@ impl<O> ZoneCertificateRefusal<O> {
     /// The refusal's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ObligationMismatch { .. } | Self::IdentityMismatch { .. } => {
-                Code::StaleDependency
-            }
+            Self::ObligationMismatch { .. }
+            | Self::IdentityMismatch { .. }
+            | Self::RefinementMismatch { .. } => Code::StaleDependency,
+            Self::Package(refusal) => refusal.code(),
             Self::UnsupportedItem => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
@@ -618,6 +709,38 @@ fn undecided<T, O, E>(_: E) -> Step<T, O> {
     Err(Halt::Refusal(ZoneCertificateRefusal::Undecided))
 }
 
+fn malformed_verdict(member: CertificateMember) -> ZoneCertificateVerdict {
+    ZoneCertificateVerdict::Rejected(CertificateRejection {
+        rule: CertificateRule::Malformed,
+        at: CertificateLocus::CertificateMember(member),
+    })
+}
+
+fn at_edge(edge: usize) -> CertificateLocus {
+    CertificateLocus::ZoneEdge {
+        edge: u64::try_from(edge).unwrap_or(u64::MAX),
+    }
+}
+
+/// Why a refinement's subjects do not open, as the check's refusal.
+fn subject_refusal<O>(refusal: SubjectRefusal) -> ZoneCertificateRefusal<O> {
+    match refusal {
+        SubjectRefusal::Admission(failure) => ZoneCertificateRefusal::Admission(failure),
+        SubjectRefusal::NoUniverse => ZoneCertificateRefusal::Unbounded,
+        SubjectRefusal::NoModels
+        | SubjectRefusal::ProtocolSubject
+        | SubjectRefusal::ProtocolAbstractSide => ZoneCertificateRefusal::UnsupportedItem,
+    }
+}
+
+/// A refinement form's check (FR-245 "Refinement form"): `check_step` in
+/// place of the claim automaton, over the positions the part lists.
+struct Refined<'c, 'a> {
+    refinement: &'c CheckedRefinement,
+    abstract_system: &'c ModelSystem<'a>,
+    part: &'c RefinementPart,
+}
+
 /// FR-245: check `certificate` for `request`'s item, whose obligation is
 /// `item` and names the item `item_of` reads from it, under `limits`,
 /// polling `cancel` throughout.
@@ -659,6 +782,16 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             }),
         CertifiedItem::DeadlockFreedom => ItemIdentity::DeadlockFreedom,
         CertifiedItem::TimeLockFreedom => ItemIdentity::TimeLockFreedom,
+        CertifiedItem::Refinement {
+            refinement,
+            abstract_initial,
+            ..
+        } => refinement
+            .requirement_occurrence()
+            .map_or(ItemIdentity::Other, |occurrence| ItemIdentity::Refinement {
+                occurrence: occurrence.clone(),
+                abstract_initial: abstract_initial.iter().cloned().collect(),
+            }),
     };
     if named != recompiled || recompiled == ItemIdentity::Other {
         return Err(ZoneCertificateRefusal::IdentityMismatch {
@@ -666,9 +799,63 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             recompiled: Box::new(recompiled),
         });
     }
-    let system = ModelSystem::new(request.simulation)
-        .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
-    let timed = TimedSystem::with_max_clocks(&system, request.model, request.max_clocks)
+    // FR-245 "Refinement form": both packages recompiled, the part's
+    // identity compared before any system is opened.
+    let opened;
+    let system;
+    let (concrete, refined) = match request.item {
+        CertifiedItem::Refinement {
+            refinement,
+            abstract_package,
+            abstract_initial,
+        } => {
+            let Some(part) = &certificate.refinement else {
+                return Ok(malformed_verdict(CertificateMember::Refinement));
+            };
+            let package_id = |package: &CheckedPackage| {
+                qsl_package::emit_checked(package)
+                    .map(|emission| emission.package().package_id())
+                    .map_err(|refusal| ZoneCertificateRefusal::Package(Box::new(refusal)))
+            };
+            let recompiled = RefinementIdentity {
+                refinement: refinement.name().to_owned(),
+                concrete_package: package_id(request.simulation.package)?,
+                abstract_package: package_id(abstract_package)?,
+            };
+            let listed = RefinementIdentity {
+                refinement: part.refinement.clone(),
+                concrete_package: part.concrete_package,
+                abstract_package: part.abstract_package,
+            };
+            if listed != recompiled {
+                return Err(ZoneCertificateRefusal::RefinementMismatch {
+                    certificate: Box::new(listed),
+                    recompiled: Box::new(recompiled),
+                });
+            }
+            opened = open_systems(
+                refinement,
+                &request.simulation,
+                abstract_package,
+                abstract_initial.to_vec(),
+            )
+            .map_err(subject_refusal)?;
+            (
+                &opened.concrete,
+                Some(Refined {
+                    refinement,
+                    abstract_system: &opened.abstract_system,
+                    part,
+                }),
+            )
+        }
+        _ => {
+            system = ModelSystem::new(request.simulation)
+                .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
+            (&system, None)
+        }
+    };
+    let timed = TimedSystem::with_max_clocks(concrete, request.model, request.max_clocks)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
     let mut live = None;
     let (claim, window) = match request.item {
@@ -679,7 +866,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
             ) {
                 return Err(ZoneCertificateRefusal::UnsupportedItem);
             }
-            let instances = system
+            let instances = concrete
                 .instances(&clause.over().1)
                 .map_err(|_| ZoneCertificateRefusal::Unbounded)?;
             let atom = qsl_eval::automaton::invariant_atom(clause);
@@ -735,7 +922,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 let mut operations = Vec::new();
                 for constraint in clause.fairness() {
                     let operation = constraint.operation();
-                    let text = system
+                    let text = concrete
                         .operation_text(operation.declaring_type(), operation.name())
                         .ok_or(ZoneCertificateRefusal::Undecided)?;
                     operations.push(text.to_owned());
@@ -760,7 +947,9 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 window,
             )
         }
-        CertifiedItem::DeadlockFreedom | CertifiedItem::TimeLockFreedom => (None, None),
+        CertifiedItem::DeadlockFreedom
+        | CertifiedItem::TimeLockFreedom
+        | CertifiedItem::Refinement { .. } => (None, None),
     };
     let time_lock = matches!(request.item, CertifiedItem::TimeLockFreedom);
     let count = certificate.nodes.len();
@@ -770,6 +959,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         window,
         live,
         time_lock,
+        refined,
         certificate,
         cancel,
         cover: certificate.lu_bounds.clone(),
@@ -779,6 +969,8 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         covers: vec![None; certificate.edges.len()],
         bound: BTreeMap::new(),
         binds: BTreeMap::new(),
+        known: Vec::new(),
+        refinement_failures: BTreeMap::new(),
         read: Cell::new(0),
         max_edges: limits.max_certificate_edges,
         max_automaton_states: limits.max_automaton_states,
@@ -851,6 +1043,8 @@ struct Checker<'c, 'a, O> {
     live: Option<product::LiveClaim<'c>>,
     /// Whether the item is time-lock freedom, with its divergence part.
     time_lock: bool,
+    /// A refinement form's check.
+    refined: Option<Refined<'c, 'a>>,
     certificate: &'c ZoneCertificate<O>,
     cancel: &'c Cancel,
     /// The bounds coverage is read under: the certificate's, or for the
@@ -869,6 +1063,12 @@ struct Checker<'c, 'a, O> {
     /// names, and back: a certificate numbers states in its own order.
     bound: BTreeMap<usize, usize>,
     binds: BTreeMap<usize, usize>,
+    /// A refinement form's position at each index of `positions`, once a
+    /// passing initial state or step yields it.
+    known: Vec<Option<RefinementPosition>>,
+    /// A refinement form's first rejection out of each node, by node,
+    /// reported in node order before the node's own checks.
+    refinement_failures: BTreeMap<usize, CertificateRejection>,
     /// The certificate edges the check has read, against
     /// `max_certificate_edges`: each listed edge once, and each edge of a
     /// divergence cycle again at each round of its repetition check.
@@ -884,7 +1084,7 @@ impl<O> Checker<'_, '_, O> {
         self.poll()?;
         self.budgets(limits)?;
         self.members()?;
-        if self.claim.is_none() {
+        if self.claim.is_none() && self.refined.is_none() {
             // FR-232's deadlocks are not preserved by the aLU simulation:
             // coverage is read under the aM bisimulation.
             for (lower, upper) in self.cover.lower.iter_mut().zip(self.cover.upper.iter_mut()) {
@@ -901,6 +1101,9 @@ impl<O> Checker<'_, '_, O> {
         let divergent = self.divergent()?;
         for node in 0..self.certificate.nodes.len() {
             self.poll()?;
+            if let Some(rejection) = self.refinement_failures.remove(&node) {
+                return Err(Halt::Verdict(ZoneCertificateVerdict::Rejected(rejection)));
+            }
             if self.states[node].is_some() {
                 self.node(node, &divergent)?;
             }
@@ -1046,12 +1249,31 @@ impl<O> Checker<'_, '_, O> {
         {
             return malformed(CertificateMember::Bounds);
         }
+        // A refinement form's part: present exactly for a refinement item,
+        // with its positions and one `taken` per edge.
+        let positions = match (&self.refined, &certificate.refinement) {
+            (Some(refined), _) => {
+                if refined.part.positions.is_empty() {
+                    return malformed(CertificateMember::Positions);
+                }
+                if refined.part.taken.len() != certificate.edges.len() {
+                    return malformed(CertificateMember::Edges);
+                }
+                Some(refined.part.positions.len())
+            }
+            (None, Some(_)) => return malformed(CertificateMember::Refinement),
+            (None, None) => None,
+        };
         let nodes = certificate.nodes.len();
         let windowed = self.window.is_some();
         let live = self.live.as_ref();
         let node_ok = |node: &CertNode| {
             node.zone.dim() == self.dim()
-                && (windowed || live.is_some() || node.automaton_state == 0)
+                && match positions {
+                    // Each node's position, or the locked region's index.
+                    Some(reserved) => node.automaton_state <= reserved,
+                    None => windowed || live.is_some() || node.automaton_state == 0,
+                }
                 && match (live, node.product) {
                     (Some(live), Some(mark)) => mark.instance < live.instances.len(),
                     (None, None) => true,
@@ -1245,6 +1467,11 @@ impl<O> Checker<'_, '_, O> {
     /// Whether the certificate's automaton state `listed` names the
     /// checker's `q`, binding the two when neither is bound yet.
     fn binds(&mut self, listed: usize, q: usize) -> bool {
+        if self.refined.is_some() {
+            // A refinement form's second component is a position, which
+            // `check_step` judges on the edge, not an automaton state.
+            return true;
+        }
         if self.window.is_none() && self.live.is_none() {
             return listed == 0 && q == 0;
         }
@@ -1264,6 +1491,9 @@ impl<O> Checker<'_, '_, O> {
     fn initial(&mut self) -> Step<(), O> {
         if self.live.is_some() {
             return self.live_initial_nodes();
+        }
+        if self.refined.is_some() {
+            return self.refined_initial();
         }
         let certificate = self.certificate;
         for start in self.timed.initial() {
@@ -1297,6 +1527,208 @@ impl<O> Checker<'_, '_, O> {
             self.states[node].get_or_insert(state);
         }
         Ok(())
+    }
+
+    /// A refinement form's initial nodes (FR-245 "Refinement form"): each
+    /// concrete initial state's symbolic state is covered by its listed
+    /// node (`InitialMissing`), which carries the position `check_initial`
+    /// yields, or, when it fails, is a `locked` entry node with the reserved
+    /// index (`InitialMismatch`). Whether a `locked` node is time-locked is
+    /// the `BadState` rule's, read with the other nodes.
+    fn refined_initial(&mut self) -> Step<(), O> {
+        let Some(Refined {
+            refinement,
+            abstract_system,
+            part,
+        }) = self.refined
+        else {
+            return Ok(());
+        };
+        let certificate = self.certificate;
+        let reserved = part.positions.len();
+        self.known = vec![None; reserved];
+        let mut listed = certificate.initial.iter();
+        for (index, start) in self.timed.initial().iter().enumerate() {
+            self.poll()?;
+            let state = start.discrete().clone();
+            let digest = self.digest(&state)?;
+            let mut zone = Zone::zero(self.dim());
+            self.settle(&state, &mut zone)?;
+            if zone.is_empty() {
+                continue;
+            }
+            let covering = match listed.next() {
+                Some(&node) => {
+                    let entry = &certificate.nodes[node];
+                    (entry.state_key == digest && zone.alu_covered_by(&entry.zone, &self.cover)?)
+                        .then_some(node)
+                }
+                None => None,
+            };
+            let Some(node) = covering else {
+                return reject(
+                    CertificateRule::InitialMissing,
+                    CertificateLocus::ModelState(digest),
+                );
+            };
+            let entry = &certificate.nodes[node];
+            let verdict = check_initial(
+                refinement,
+                self.timed.system(),
+                abstract_system,
+                index,
+                state.state(),
+            );
+            let holds = match verdict {
+                StepVerdict::Passes { post, .. } => {
+                    let holds = !entry.locked
+                        && entry.automaton_state < reserved
+                        && self.position_is(entry.automaton_state, &post)?;
+                    if holds {
+                        self.know(entry.automaton_state, post);
+                    }
+                    holds
+                }
+                failed => {
+                    self.unsound(&failed)?;
+                    entry.locked && entry.automaton_state == reserved
+                }
+            };
+            if !holds {
+                return reject(CertificateRule::InitialMismatch, at_node(node));
+            }
+            self.states[node].get_or_insert(state);
+        }
+        Ok(())
+    }
+
+    /// A refinement form's judgement of edge `index` out of `node`, by
+    /// `step`: out of a positioned node, `check_step` passes with the
+    /// target's position and the edge's `taken` (`PostDiffers`), or fails
+    /// into a `locked` entry node (`StepFails`); out of the locked region,
+    /// the edge stays in it with no `taken` (`PostDiffers`). The first
+    /// rejection out of a node is kept for the node's turn.
+    fn refine_edge(&mut self, node: usize, index: usize, step: &GuardedStep) -> Step<(), O> {
+        let Some(Refined {
+            refinement,
+            abstract_system,
+            part,
+        }) = self.refined
+        else {
+            return Ok(());
+        };
+        let certificate = self.certificate;
+        let reserved = part.positions.len();
+        let source = &certificate.nodes[node];
+        let edge = &certificate.edges[index];
+        let target = &certificate.nodes[edge.to];
+        let taken = part.taken.get(index).and_then(Option::as_ref);
+        let entry = target.locked && target.automaton_state == reserved;
+        let rule = if source.automaton_state == reserved {
+            // The locked region, on concrete steps only.
+            (taken.is_some() || target.automaton_state != reserved)
+                .then_some(CertificateRule::PostDiffers)
+        } else {
+            let Some(pre) = self.known.get(source.automaton_state).cloned().flatten() else {
+                // A node entered by a rejected edge has no position; that
+                // edge's rejection decides the check.
+                return Ok(());
+            };
+            let verdict = check_step(
+                refinement,
+                self.timed.system(),
+                abstract_system,
+                &pre,
+                &ConcreteStep {
+                    position: u64::try_from(index).unwrap_or(u64::MAX),
+                    transition: Some(step.transition()),
+                    post: step.post(),
+                },
+            )
+            .verdict;
+            match verdict {
+                StepVerdict::Passes {
+                    post,
+                    taken: yielded,
+                } => {
+                    let holds = !target.locked
+                        && target.automaton_state < reserved
+                        && taken == Some(&yielded)
+                        && self.position_is(target.automaton_state, &post)?;
+                    if holds {
+                        self.know(target.automaton_state, post);
+                    }
+                    (!holds).then_some(CertificateRule::PostDiffers)
+                }
+                failed => {
+                    self.unsound(&failed)?;
+                    if !entry {
+                        Some(CertificateRule::StepFails)
+                    } else if taken.is_some() {
+                        Some(CertificateRule::PostDiffers)
+                    } else {
+                        None
+                    }
+                }
+            }
+        };
+        if let Some(rule) = rule {
+            self.refinement_failures
+                .entry(node)
+                .or_insert(CertificateRejection {
+                    rule,
+                    at: at_edge(index),
+                });
+        }
+        Ok(())
+    }
+
+    /// Whether the part's position `at` is `position`.
+    fn position_is(&self, at: usize, position: &RefinementPosition) -> Step<bool, O> {
+        let Some(Refined {
+            abstract_system,
+            part,
+            ..
+        }) = self.refined
+        else {
+            return Ok(false);
+        };
+        let Some(listed) = part.positions.get(at) else {
+            return Ok(false);
+        };
+        position_matches(self.timed.system(), abstract_system, listed, position).or_else(undecided)
+    }
+
+    /// Record the position `at` holds, once.
+    fn know(&mut self, at: usize, position: RefinementPosition) {
+        if let Some(slot) = self.known.get_mut(at) {
+            slot.get_or_insert(position);
+        }
+    }
+
+    /// A failing verdict's end of the check when it is no finding: a run
+    /// stop, a fault, or an `Undetermined` that only ran out of the
+    /// evaluation meter, which stops the check (V-7), never rejects it.
+    fn unsound(&self, verdict: &StepVerdict) -> Step<(), O> {
+        let stop = |limit, value| {
+            Err(Halt::Verdict(ZoneCertificateVerdict::Stopped(
+                IncompleteCause::LimitReached { limit, value },
+            )))
+        };
+        match verdict {
+            StepVerdict::Stopped(reached) => stop(reached.limit, reached.value),
+            StepVerdict::Fault(_) => Err(fault(CheckerFault::RefinementStep)),
+            StepVerdict::Undetermined(undetermined) => {
+                match EvaluationOutcome::of_undetermined(undetermined).meter_counter() {
+                    Some(counter) => stop(
+                        ModelCheckLimit::EvaluationMeter { counter },
+                        crate::meter_bound(&self.timed.system().meter(), counter),
+                    ),
+                    None => Ok(()),
+                }
+            }
+            _ => Ok(()),
+        }
     }
 
     /// The liveness product's initial nodes: for each initial state and
@@ -1387,6 +1819,9 @@ impl<O> Checker<'_, '_, O> {
                         };
                     if same && self.binds(target.automaton_state, successor.q) {
                         self.covers[index] = Some(position);
+                        if let Some(step) = &successor.step {
+                            self.refine_edge(node, index, step)?;
+                        }
                         if self.states[edge.to].is_none() {
                             let post = successor
                                 .step
@@ -1617,7 +2052,9 @@ impl<O> Checker<'_, '_, O> {
     /// Whether `node` violates the item at some valuation of its zone.
     fn bad(&self, node: usize) -> Step<bool, O> {
         let state = self.state(node)?;
-        if self.time_lock || self.live.is_some() {
+        if self.time_lock || self.live.is_some() || self.refined.is_some() {
+            // A refinement form's badness is `check_step`'s, judged on
+            // each edge in `reach`.
             // Time-lock freedom is read from the divergence part, and a
             // liveness product's bad cycles from its components.
             return Ok(false);
@@ -1899,6 +2336,14 @@ impl<O> Checker<'_, '_, O> {
         let fails = |at: usize| reject(CertificateRule::WitnessFails, at_node(at));
         if !self.certificate.initial.contains(&at) || self.states[at].is_none() {
             return fails(at);
+        }
+        // A refinement form's witness starts at a positioned initial node: a
+        // locked one has no admitted behaviour (FR-245).
+        if let Some(refined) = &self.refined {
+            let listed = &self.certificate.nodes[at];
+            if listed.locked || listed.automaton_state >= refined.part.positions.len() {
+                return fails(at);
+            }
         }
         let Some(mut zone) = self.initial_zone(at)? else {
             return fails(at);
@@ -2351,6 +2796,21 @@ fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
     }
     for witness in certificate.divergence.iter().flatten() {
         parts = parts.saturating_add(witness_bytes(witness));
+    }
+    if let Some(part) = &certificate.refinement {
+        let mut refined = u64::try_from(part.refinement.len()).unwrap_or(u64::MAX);
+        for position in &part.positions {
+            let history = u64::try_from(position.history.len()).unwrap_or(u64::MAX);
+            let states = u64::try_from(position.abstract_states.len()).unwrap_or(u64::MAX);
+            refined = refined
+                .saturating_add(40)
+                .saturating_add(history)
+                .saturating_add(states.saturating_mul(40));
+        }
+        let taken = u64::try_from(part.taken.len()).unwrap_or(u64::MAX);
+        parts = parts
+            .saturating_add(refined)
+            .saturating_add(taken.saturating_mul(8));
     }
     bytes
         .saturating_add(edges.saturating_mul(48))
