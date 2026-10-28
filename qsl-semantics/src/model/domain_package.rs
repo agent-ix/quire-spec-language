@@ -77,6 +77,26 @@ pub struct RecordValueTypeRecord {
     pub supertypes: Vec<DeclarationKey>,
 }
 
+/// A closed, identity-free ordered tuple value type (FR-208).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TupleValueTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+}
+
+/// One position of a tuple value type, identified only by its ordinal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TuplePositionRecord {
+    /// This position's original declaration key (`<tuple>/pN`).
+    pub key: DeclarationKey,
+    /// The tuple that owns this position.
+    pub owner: DeclarationKey,
+    /// Its zero-based position in the product.
+    pub ordinal: usize,
+    /// The admitted value type of the position.
+    pub value_type: ValueTypeRef,
+}
+
 /// An event type (FR-208): an identity-free type whose occurrence field
 /// resolves to native Timestamp. Event subtypes retain the occurrence field
 /// and other effective members through their authored `supertypes`.
@@ -909,6 +929,10 @@ pub enum DomainPackageRecord {
     FieldMember(FieldMemberRecord),
     /// A record value type (FR-208).
     RecordValueType(RecordValueTypeRecord),
+    /// A tuple value type (FR-208).
+    TupleValueType(TupleValueTypeRecord),
+    /// One ordered position of a tuple value type (FR-208).
+    TuplePosition(TuplePositionRecord),
     /// An event type (FR-208).
     EventType(EventTypeRecord),
     /// A state machine (FR-208).
@@ -953,6 +977,8 @@ impl DomainPackageRecord {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
+            Self::TupleValueType(record) => &record.key,
+            Self::TuplePosition(record) => &record.key,
             Self::EventType(record) => &record.key,
             Self::StateMachine(record) => &record.key,
             Self::Process(record) => &record.key,

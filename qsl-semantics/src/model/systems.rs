@@ -220,6 +220,7 @@ pub fn classify(
             DomainPackageRecord::RecordValueType(record) => {
                 record_value_types.insert(record.key.clone());
             }
+            DomainPackageRecord::TupleValueType(_) | DomainPackageRecord::TuplePosition(_) => {}
             DomainPackageRecord::EventType(_) => {}
             DomainPackageRecord::Enum(_) | DomainPackageRecord::Variant(_) => {}
             DomainPackageRecord::StateMachine(_) => {}

@@ -42,6 +42,7 @@ pub(super) fn bind(
         }
         meaning::NAMESPACE => super::namespace::bind(context).map_err(Refusals::from),
         meaning::VARIANT_TYPE => super::variant_type::bind(context),
+        meaning::TUPLE_VALUE_TYPE => super::tuple_value_type::bind(context),
         _ => return None,
     })
 }
