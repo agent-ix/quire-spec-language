@@ -574,10 +574,6 @@ pub struct CheckedGraph {
     header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
-    /// FR-110: the temporal profiles the unit's header selects, in source
-    /// order. An emitted `await` reads a clock role, so the lock selects them
-    /// (QSpec FR-464 "Profiles and laws").
-    temporal_profiles: Vec<TemporalProfile>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
     time_units: time_units::TimeUnits,
     /// FR-104: every checked state clause, in declaration order.
@@ -2815,6 +2811,18 @@ impl PackageDeclarations {
             std::collections::BTreeSet::new();
         let mut protocol_places: Vec<Option<usize>> = Vec::with_capacity(self.protocols.len());
         let mut protocol_refused: Vec<bool> = Vec::with_capacity(self.protocols.len());
+        // The header's temporal profiles with their aliases, in source order:
+        // an `await` reads its clock role under one of them.
+        let temporal_aliases: Vec<(&str, TemporalProfile)> = self
+            .profile_selections
+            .iter()
+            .filter_map(|selection| {
+                Some((
+                    selection.alias.as_str(),
+                    TemporalProfile::from_identity(&selection.identity)?,
+                ))
+            })
+            .collect();
         for (index, protocol) in self.protocols.iter().enumerate() {
             let refusals_before = refusals.len();
             let attempts = self
@@ -2832,7 +2840,7 @@ impl PackageDeclarations {
                 &state_clause_forms,
                 protocol_clause::Selections {
                     protocol: protocol_profile.as_deref(),
-                    temporal: !self.temporal_selections.is_empty(),
+                    temporal: &temporal_aliases,
                 },
             );
             // FR-381: the protocol's activation, captures and compensation
@@ -4116,7 +4124,8 @@ impl PackageDeclarations {
         }
         // FR-092: the node of each protocol that holds an `attempt`, now that
         // the operation anchors and state clauses its attempts name are keyed.
-        if refusals.is_empty() {
+        let attempt_nodes_written = refusals.is_empty();
+        if attempt_nodes_written {
             let attempts: Vec<Vec<lowering::AttemptNodes>> = protocol_bindings
                 .iter()
                 .zip(&lowered_attempts)
@@ -4170,6 +4179,16 @@ impl PackageDeclarations {
                             &refusal.cause,
                             CheckCause::ProtocolReference(cause)
                                 if cause.construct().is_some()
+                        ) => {}
+                // An attempt-bearing protocol is keyed only when no earlier
+                // refusal skipped its node; the earlier refusal is reported.
+                Err(refusal)
+                    if !attempt_nodes_written
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct()
+                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
                         ) => {}
                 Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
@@ -5008,11 +5027,6 @@ impl PackageDeclarations {
             model_selections,
             model_roots,
             header_layers,
-            temporal_profiles: self
-                .temporal_selections
-                .iter()
-                .map(|selection| selection.profile)
-                .collect(),
             time_sources: self.time_sources,
             time_units: time_units.clone(),
             state_clauses,
@@ -5352,11 +5366,6 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
-    /// The temporal profiles the unit's header selects, in source order.
-    pub fn temporal_profiles(&self) -> &[TemporalProfile] {
-        &self.temporal_profiles
-    }
-
     /// Checked time sources of this package, in declaration order.
     pub fn time_sources(&self) -> &[ModelTimeSource] {
         &self.time_sources

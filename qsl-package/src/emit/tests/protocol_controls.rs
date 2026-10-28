@@ -544,3 +544,205 @@ fn an_await_emits_its_anchor_clock_window_event_then_and_timeout() {
         "{selected:?}"
     );
 }
+
+/// The `Main` sequence of an `event` and an `await` after it, whose `then`
+/// and `timeout` each hold an `event` with a binder, `using` the profile
+/// alias `using`.
+fn awaiting(using: &str) -> String {
+    format!(
+        "sequence Main {{\n\
+         event Done by Buyer as (done: Boolean) {{ true }};\n\
+         await Wait after Done using {using} clock \"ticks\" within [0,1] \
+         match event Seen by Seller as (seen: Boolean) {{ true }}; \
+         then sequence Then {{ event After by Buyer as (later: Boolean) {{ true }}; }} \
+         timeout sequence Late {{ event Gave by Buyer as (gave: Boolean) {{ true }}; }}\n}}"
+    )
+}
+
+fn lock_selections(wire: &Value) -> Vec<Value> {
+    wire["lock"]["profile_selections"]
+        .as_array()
+        .expect("selections")
+        .clone()
+}
+
+fn temporal_rows(wire: &Value) -> Vec<Value> {
+    lock_selections(wire)
+        .into_iter()
+        .filter(|row| row["role"] == "temporal_profile")
+        .collect()
+}
+
+/// FR-464 "Profiles and laws": an `await` in a protocol that emits no node
+/// (no protocol profile is selected) leaves the lock, and so the package,
+/// unchanged by the unit's temporal profile.
+#[trace("FR-383-AC-7", "TC-1061")]
+#[test]
+fn an_await_without_a_protocol_profile_leaves_the_lock_unchanged() {
+    let profiles = "profile t = \"quire.temporal.infinite-trace/v1\";\n";
+    let with = lower_with(document(), profiles, &flow(&awaiting("t")));
+    assert!(with.ir.is_ok(), "{:?}\n{}", with.ir.err(), with.text);
+    assert!(
+        controls(&with.wire).is_empty(),
+        "no control node is emitted"
+    );
+    assert!(lock_selections(&with.wire).is_empty());
+}
+
+/// FR-464 "Profiles and laws", FR-322: an emitted `await` selects exactly
+/// the one temporal profile its `using` alias names, though the header
+/// selects two.
+#[trace("FR-383-AC-7", "TC-1061")]
+#[test]
+fn an_emitted_await_selects_exactly_one_temporal_profile() {
+    let profiles = format!(
+        "{PROFILES}profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         profile u = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
+    );
+    for (alias, identity) in [
+        ("t", "quire.temporal.infinite-trace/v1"),
+        ("u", "quire.temporal.timestamped-event.finite-window/v1"),
+    ] {
+        let lowered = lower_with(document(), &profiles, &flow(&awaiting(alias)));
+        assert!(lowered.verified, "{}", lowered.text);
+        assert_eq!(
+            temporal_rows(&lowered.wire),
+            [json!({
+                "role": "temporal_profile",
+                "definition": {"authority": "agent-ix", "identity": identity}
+            })],
+            "{alias}"
+        );
+    }
+}
+
+/// FR-466 "Binder scope" (QSpec): the binder levels along an `await` are the
+/// sizes of each entry set: the input is 0, `done` 1, the matched event's
+/// binder 2, a binder in `then` 3 and one in `timeout` 2.
+#[trace("FR-383-AC-9", "TC-1062")]
+#[test]
+fn await_then_and_timeout_binders_are_levelled_by_their_entry_sets() {
+    let profiles = format!("{PROFILES}profile t = \"quire.temporal.infinite-trace/v1\";\n");
+    let lowered = lower_with(document(), &profiles, &flow(&awaiting("t")));
+    assert!(lowered.verified, "{}", lowered.text);
+    let wire = &lowered.wire;
+    let named = |name: &str| -> &Value {
+        let found: Vec<&Value> = nodes(wire)
+            .iter()
+            .filter(|node| {
+                node["semantic_form"] == "control"
+                    && node["declaration"]["qualified_name"]
+                        .as_array()
+                        .and_then(|path| path.last())
+                        == Some(&json!(name))
+            })
+            .collect();
+        let [node] = found[..] else {
+            panic!("one control {name}: {found:?}");
+        };
+        node
+    };
+    for (name, expected) in [
+        ("Done", pair("done", "1")),
+        ("Seen", pair("seen", "2")),
+        ("After", pair("later", "3")),
+        ("Gave", pair("gave", "2")),
+    ] {
+        assert_eq!(binder_of(wire, named(name)), expected, "{name}");
+    }
+}
+
+/// FR-466 (QSpec): a `fence` emits each of its orderings, not only
+/// `seq_cst`.
+#[trace("FR-383-AC-7", "TC-1061")]
+#[test]
+fn a_fence_emits_each_of_its_orderings() {
+    for ordering in ["acquire", "release", "acq_rel", "seq_cst"] {
+        let lowered = emitted(&flow(&RUN.replace("seq_cst", ordering)));
+        let barrier = run_control(&lowered.wire, "Barrier");
+        assert_eq!(operator(barrier), "fence");
+        assert_eq!(
+            argument(barrier, &["ordering"], "ordering")["value"],
+            ordering
+        );
+    }
+}
+
+/// FR-466 (QSpec): an `attempt`'s `ordering` group is written only for an
+/// attempt the checker admits an ordering on. MA-1 shares no place outside a
+/// `parallel`, so an attempt in a `sequence` is `Local` and an ordering on it
+/// is refused at S3; the `Some` branch of the group is reachable once
+/// `parallel` is written (QSL-1126 c2), and is exercised there.
+#[trace("FR-383-AC-7", "TC-1061")]
+#[test]
+fn an_attempt_ordering_outside_a_parallel_is_refused_so_the_group_is_empty() {
+    let packages = qsl_semantics::model::intake::package_input([domain_document()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         model Config = \"example/config-version\" version \"1.0.0\" \
+         digest \"sha256-jcs:{digest}\";\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         role R on Config::ConfigVersion;\n\
+         run attempt Update by R on Config::ConfigVersion::attemptUpdate \
+         ordering seq_cst contracts [] as (tried: Boolean) {{ true }};\n\
+         finish End as (outcome: Boolean) {{ true }};\n}}\n"
+    );
+    let refusals = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("an ordering on a local attempt is refused");
+    let text = format!("{refusals:?}");
+    assert!(
+        text.contains("AccessOrdering") && text.contains("Local"),
+        "{text}"
+    );
+    let unordered = admitted_config(
+        "protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
+         role R on Config::ConfigVersion;\n\
+         run attempt Update by R on Config::ConfigVersion::attemptUpdate \
+         contracts [] as (tried: Boolean) { true };\n\
+         finish End as (outcome: Boolean) { true };\n}\n",
+    );
+    assert_eq!(
+        control(&unordered, &["Flow", "run", "Update"])["body"]["arguments"][2]["value"],
+        json!({"term": "aggregate", "members": []})
+    );
+}
+
+/// FR-383-AC-12 (QSpec): an `attempt`'s `contracts` are its state clauses'
+/// keys in digest order, whatever order the source lists them in.
+#[trace("FR-383-AC-12", "TC-1061")]
+#[test]
+fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
+    let contracts = |listed: &str| -> Vec<Value> {
+        let wire = admitted_config(&format!(
+            "post Alpha using v on Config::ConfigVersion::attemptUpdate {{ 1 < 2 }}\n\
+             post Beta using v on Config::ConfigVersion::attemptUpdate {{ 2 < 3 }}\n\
+             protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+             role R on Config::ConfigVersion;\n\
+             run attempt Update by R on Config::ConfigVersion::attemptUpdate \
+             contracts [{listed}] as (tried: Boolean) {{ true }};\n\
+             finish End as (outcome: Boolean) {{ true }};\n}}\n"
+        ));
+        control(&wire, &["Flow", "run", "Update"])["body"]["arguments"][3]["value"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|member| member["target"].clone())
+            .collect()
+    };
+    let forward = contracts("Alpha, Beta");
+    assert_eq!(forward.len(), 2);
+    let digests: Vec<&str> = forward
+        .iter()
+        .map(|id| id["digest"].as_str().unwrap())
+        .collect();
+    assert!(digests[0] < digests[1], "{digests:?}");
+    assert_eq!(forward, contracts("Beta, Alpha"));
+}

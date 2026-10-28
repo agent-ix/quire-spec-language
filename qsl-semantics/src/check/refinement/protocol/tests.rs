@@ -1952,3 +1952,24 @@ fn a_refused_abstract_clause_reports_alone_over_a_concrete_protocol() {
         );
     }
 }
+
+/// A refinement whose rows select a protocol with an `attempt` adds no
+/// `ReferenceToAttemptProtocol` refusal of its own when another declaration
+/// of the unit is already refused: the attempt-bearing node is written after
+/// the state clauses only for a unit with no earlier refusal, and the
+/// earlier refusal alone is reported.
+#[trace("TC-541", "FR-136-AC-1")]
+#[test]
+fn a_refinement_over_an_attempt_protocol_adds_no_attempt_reference_refusal() {
+    let text = unit(&fill(""), ROWS) + "function bad using v(): Boolean pure { 1 }\n";
+    let refusals = refused(&text);
+    assert!(
+        refusals.iter().all(|refused| !matches!(
+            &refused.refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if cause.construct() == Some(crate::check::ProtocolConstruct::ReferenceToAttemptProtocol)
+        )),
+        "{refusals:?}"
+    );
+    assert!(!refusals.is_empty());
+}
