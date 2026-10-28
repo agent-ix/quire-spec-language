@@ -1260,8 +1260,10 @@ operation anchor node they share.
   fixes: one per (operation anchor, eligible Boolean field), derived at S4,
   with `pre` and `post` bound to the conjunction (`quire.op.boolean.and`) of
   the operation's preconditions and of the postconditions that constrain the
-  field. Every authored clause keeps its own `state_clause` node. QSpec FR-341
-  needs no change. A transition is otherwise a protocol control that carries a
+  field. Every authored clause keeps its own `state_clause` node. QSpec FR-341's wire
+  shape needs no change, but its occurrence rule ("one `claim` occurrence per
+  declaration"), its "no conjunction node is synthesized" sentence and its OPEN
+  paragraph need a wording follow-up (QSpec STD ticket). A transition is otherwise a protocol control that carries a
   `protocol_profile` law and belongs to `ProtocolClause`'s protocol emission
   (#218).
 
