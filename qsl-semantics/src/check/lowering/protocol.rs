@@ -2071,8 +2071,7 @@ mod requirement_key_tests {
     #[test]
     fn a_required_temporal_without_a_key_is_unkeyable_requirements() {
         let location = Location::root(Origin::Expression);
-        let Err(refusal) =
-            resolve_temporal_requirement_keys([7], &BTreeMap::new(), &location)
+        let Err(refusal) = resolve_temporal_requirement_keys([7], &BTreeMap::new(), &location)
         else {
             panic!("a missing required temporal key is an internal key fault");
         };

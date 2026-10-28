@@ -73,7 +73,7 @@ fn read_mutated_wire(mut wire: Value) -> Read {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), &document)
+        .insert_domain_package_document(digest.as_str(), document.as_slice())
         .expect("fresh model evidence");
     let pinned = qsl_semantics::library::fixtures::single_pin(library(), package_id);
     read_v2(
@@ -144,7 +144,10 @@ fn requirement_wire_mutations_refuse() {
         .as_array_mut()
         .unwrap()
         .retain(|dependency| dependency != &original_target);
-    assert!(matches!(read_mutated_wire(missing_dependency), Read::Refused(_)));
+    assert!(matches!(
+        read_mutated_wire(missing_dependency),
+        Read::Refused(_)
+    ));
 
     let mut wrong_form = valid.wire.clone();
     let replacement = wrong_form["semantic_graph"]["nodes"]
