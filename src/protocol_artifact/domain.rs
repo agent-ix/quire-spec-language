@@ -104,7 +104,9 @@ pub(super) fn exports<'a>(
             DomainPackageRecord::OperationMember(operation) => {
                 (w::ExportKind::Operation, &operation.owner)
             }
-            DomainPackageRecord::ObjectType(_) | DomainPackageRecord::RecordValueType(_) => {
+            DomainPackageRecord::ObjectType(_)
+            | DomainPackageRecord::RecordValueType(_)
+            | DomainPackageRecord::TupleValueType(_) => {
                 let Some(ty) = DomainType::new(package, declaration) else {
                     return Err(Error::Invalid(Invalid::Model));
                 };
@@ -188,6 +190,7 @@ pub(super) fn exports<'a>(
             | DomainPackageRecord::AliasType(_)
             | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::EventType(_)
+            | DomainPackageRecord::TuplePosition(_)
             | DomainPackageRecord::StateMachine(_)
             | DomainPackageRecord::Process(_)
             | DomainPackageRecord::Clause(_)

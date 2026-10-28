@@ -8,8 +8,10 @@ use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
 use quire_exact::Cancel;
 
-use crate::timed_world::{ident, timers_document, world_holding, World, DENSE};
-use crate::zone_search::{claim, deadlock, operations, violated, INFINITE};
+use crate::timed_world::{
+    document, ident, timers_document, wire_field, world_holding, World, DENSE,
+};
+use crate::zone_search::{claim, deadlock, deadlock_result, operations, violated, INFINITE};
 
 /// `ts: Sequence<Timer>[0, max]` (`Timer { x: Clock; n: Phase }`) granted by
 /// `grow`, with the precondition `guard` and the further text `claim`.
@@ -176,4 +178,87 @@ temporal Stable using inf over (c: M::Call) clock "model-steps" on origin {{ alw
             "{kind}"
         );
     }
+}
+
+/// `u: Sequence<Clock>`, `Bag<Clock>` or `Set<Clock>` of `[lower, upper]`
+/// on `Call`, with `work` always enabled and writing nothing.
+fn bare_clocks(lower: u64, upper: Option<u64>, unique: bool) -> World {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&document(&[], &[("work", &[])])).expect("JSON");
+    let mut u = wire_field("u", "ix://quire/native/Clock");
+    u["multiplicity"] = serde_json::json!({"lower": lower, "ordered": !unique, "unique": unique});
+    if let Some(upper) = upper {
+        u["multiplicity"]["upper"] = serde_json::json!(upper);
+    }
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(u);
+    world_holding(
+        document.to_string().as_bytes(),
+        INFINITE,
+        &format!("{DENSE}pre Work using v on M::Call::work {{ true }}\n"),
+        &serde_json::json!({}),
+    )
+}
+
+/// FR-230-AC-47 and AC-48 (TC-685 steps 31 and 32) as EN-6 settlements: a
+/// `Set<Clock>[2, 5]` holds at most one bare clock, so the subject has no
+/// initial state and the deadlock-freedom item settles
+/// `Undecided(NoInitialState)` (FR-239); `u: Sequence<Clock>` with no
+/// declared maximum ranges its initial count up from 0, and under
+/// `max_clocks` 2 the count-3 state past the bound stops the run
+/// `limit-reached` on `max_clocks`, an incomplete run, never a verdict.
+#[trace("TC-685")]
+#[test]
+fn en6_settles_the_bare_clock_counts() {
+    use qsl_analyze::zone_check::{
+        check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckRequest, ZoneStop, ZoneUndecided,
+    };
+    use qsl_eval::simulation::model::{ModelSystem, TimedSystem};
+    use qsl_route::deadlock::{ItemObligation, ObligationKind};
+    use qsl_route::reductions::{ObligationReductions, Reductions};
+
+    let empty = bare_clocks(2, Some(5), true);
+    let outcome = deadlock_result(&empty, &Reductions::default());
+    assert!(
+        matches!(
+            outcome,
+            Ok(ZoneCheckOutcome::Undecided {
+                cause: ZoneUndecided::NoInitialState,
+                ..
+            })
+        ),
+        "{outcome:?}"
+    );
+
+    let unbounded = bare_clocks(0, None, false);
+    let system: ModelSystem<'_> = unbounded.system();
+    let timed =
+        TimedSystem::with_max_clocks(&system, "M", std::num::NonZeroU64::new(2).expect("2"))
+            .expect("a timed subject");
+    let outcome = check_timed_model(
+        ZoneCheckRequest {
+            subject: &timed,
+            item: ZoneCheckItem::DeadlockFreedom,
+            obligation: ItemObligation {
+                subject: "c",
+                kind: ObligationKind::DeadlockFreedom,
+                reductions: ObligationReductions::default(),
+            },
+            limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
+        },
+        &Cancel::new(),
+    );
+    assert!(
+        matches!(
+            outcome,
+            Ok(ZoneCheckOutcome::Stopped {
+                cause: ZoneStop::LimitReached(ZoneCheckLimit::MaxClocks(2)),
+                ..
+            })
+        ),
+        "{outcome:?}"
+    );
 }

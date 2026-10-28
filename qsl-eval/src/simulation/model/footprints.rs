@@ -513,7 +513,14 @@ impl<'a> ModelSystem<'a> {
             })
             .ok_or_else(unknown)?;
 
-        if application.declaration.parameters().len() != transition.arguments().len() {
+        // A timed transition carries one place argument per `Clock`
+        // parameter after its data arguments (FR-230 "Operation
+        // parameters"); a footprint reads the data arguments.
+        let declared = application.declaration.parameters().len()
+            + application.declaration.clock_parameters().len();
+        if declared != transition.arguments().len()
+            && application.declaration.parameters().len() != transition.arguments().len()
+        {
             return Err(unknown());
         }
         let mut arguments = Vec::new();

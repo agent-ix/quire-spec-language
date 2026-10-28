@@ -41,5 +41,6 @@ pub mod refusal;
 pub mod state;
 mod state_machine;
 pub mod systems;
+mod tuple_value_type;
 pub mod type_invariant;
 mod variant_type;

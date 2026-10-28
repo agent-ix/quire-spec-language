@@ -1804,3 +1804,122 @@ fn a_clock_bound_needs_dense_time_and_reaches_through_aliases() {
         ["s", "w"]
     );
 }
+
+/// [`rpc_document_with`]`(&["x", "y"])` whose `bump` takes `c` typed
+/// `param` and returns `returns`, its frame naming `frame`, with a clock
+/// alias `Stopwatch`.
+fn clock_parameter_document(param: &str, returns: Option<&str>, frame: &[&str]) -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x", "y"], false)).expect("JSON");
+    let types = document["types"].as_array_mut().expect("types");
+    let mut stopwatch = wire_type(
+        &package("Stopwatch"),
+        "unused",
+        json!({"target": "ix://quire/native/Clock"}),
+    );
+    stopwatch["kind"] = json!("alias");
+    types.push(stopwatch);
+    for operation in types[1]["operations"].as_array_mut().expect("operations") {
+        if operation["name"] != "bump" {
+            continue;
+        }
+        let identity = call("bump/c");
+        operation["params"] = json!([{
+            "identity": identity, "name": "c", "typeRef": param, "presence": "required",
+            "nullable": false, "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+            "origin": {"generated": {"generatorIdentity": identity, "generatorVersion": "1.0.0",
+                "inputIdentities": [identity]}},
+        }]);
+        if let Some(returns) = returns {
+            operation["returns"] = json!({"typeRef": returns, "nullable": false,
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false}});
+        }
+        operation["frame"]["modifies"] =
+            json!(frame.iter().map(|field| call(field)).collect::<Vec<_>>());
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-13 and FR-230-AC-16 (TC-685): a domain-package operation
+/// `bump(c: Clock): Clock` checks, its `Clock` parameter and result no data
+/// member of the checked operation. With the postcondition `c = 0 ms` and a
+/// frame naming `Call.x` the parameter ranges over the places of `Call.x`
+/// and the reset is recorded once, for `x`, tagged with the parameter; the
+/// same postcondition with an empty frame refuses
+/// `invalid_timed_model`/`clock-write` at the reset. With the precondition
+/// `c >= 1 ms` and no reset it ranges over every clock field, `x` and `y`,
+/// one constraint for each, each tagged with the parameter. A parameter
+/// typed by the alias `Stopwatch` of `Clock` is a `Clock` parameter too, and
+/// `c` read as data (`c = c`) is a clock comparison, never a data read.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_ranges_over_the_places_it_may_write() {
+    let clock = "ix://quire/native/Clock";
+    let post = format!("{UNITS}{DENSE}post Bumped using v on Config::Call::bump {{ c = 0 ms }}\n");
+    let graph = check(&clock_parameter_document(clock, Some(clock), &["x"]), &post)
+        .unwrap_or_else(|refusals| panic!("bump(c: Clock): Clock checks: {refusals:?}"));
+    let model = timed(&graph);
+    let names = |clock: qsl_semantics::check::ClockId| {
+        model.clock(clock).expect("a clock").name().to_owned()
+    };
+    let [range] = model.clock_parameters() else {
+        panic!("one clock parameter: {:?}", model.clock_parameters());
+    };
+    assert_eq!(range.position(), 0);
+    assert_eq!(
+        range
+            .range()
+            .iter()
+            .map(|clock| names(*clock))
+            .collect::<Vec<_>>(),
+        ["x"]
+    );
+    let resets: Vec<(String, Option<usize>)> = model
+        .resets()
+        .iter()
+        .flat_map(|resets| resets.resets())
+        .map(|reset| (names(reset.clock()), reset.parameter()))
+        .collect();
+    assert_eq!(resets, [("x".to_owned(), Some(0))]);
+
+    let (cause, text) = refused(&clock_parameter_document(clock, None, &[]), &post);
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (Code::InvalidTimedModel, "clock-write", "c = 0 ms")
+    );
+
+    let pre = format!("{UNITS}{DENSE}pre Late using v on Config::Call::bump {{ c >= 1 ms }}\n");
+    for param in [clock.to_owned(), package("Stopwatch")] {
+        let graph = check(&clock_parameter_document(&param, None, &[]), &pre)
+            .unwrap_or_else(|refusals| panic!("{param}: {refusals:?}"));
+        let model = timed(&graph);
+        let mut constrained: Vec<(String, Option<usize>)> = model
+            .guards()
+            .iter()
+            .flat_map(|guard| guard.parts())
+            .flat_map(|part| part.clocks())
+            .map(|constraint| {
+                (
+                    model
+                        .clock(constraint.clock())
+                        .expect("a clock")
+                        .name()
+                        .to_owned(),
+                    constraint.parameter(),
+                )
+            })
+            .collect();
+        constrained.sort();
+        assert_eq!(
+            constrained,
+            [("x".to_owned(), Some(0)), ("y".to_owned(), Some(0))],
+            "{param}"
+        );
+    }
+    let (cause, _) = refused(
+        &clock_parameter_document(clock, None, &[]),
+        &format!("{UNITS}{DENSE}pre Same using v on Config::Call::bump {{ c = c }}\n"),
+    );
+    assert_eq!(cause.tag(), "clock-comparison");
+}

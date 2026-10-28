@@ -38,6 +38,8 @@ use qsl_semantics::check::{
     PlaceStep, QuantifiedFamily, SlotRef, TimeSourceKind, TimedModel, Urgency,
 };
 
+use quire_checked::key::DeclarationKey;
+
 use super::encode::declaration_text;
 use super::state_predicate::PredicateReading;
 use super::walk::{expand_enabled, stop};
@@ -641,7 +643,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let Some(PlaceStep::Field(first)) = field.path().first() else {
                 continue;
             };
-            let Ok(Some(fields)) = self.system.model.fields(&stored.type_identity) else {
+            let Some(fields) = self.system.fields.get(&stored.type_identity) else {
                 continue;
             };
             let Some(value) = fields
@@ -661,13 +663,19 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             pending.push((next, rest));
                         }
                     }
-                    Some((PlaceStep::Slot(_), rest)) => {
-                        if let quire_exact::Value::Collection(collection) = value {
+                    Some((PlaceStep::Slot(_), rest)) => match value {
+                        quire_exact::Value::Collection(collection) => {
                             pending.extend(
                                 collection.elements().iter().map(|element| (element, rest)),
                             );
                         }
-                    }
+                        // A collection of bare clocks: one live clock per
+                        // element its count member holds.
+                        quire_exact::Value::Integer(count) => {
+                            live = live.saturating_add(count.to_u64().unwrap_or(u64::MAX));
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
@@ -702,19 +710,21 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// Whether a step of the model may carry a clock between slots
     /// ([`GuardedStep::carries`]): a step writes a clock collection whole
     /// (FR-230 "Collection-valued writes"), or a clock lies below a set or
-    /// bag slot, whose elements a step matches by equal data wherever they
-    /// land (FR-120-AC-26). The refinement zone checker has not yet mapped
-    /// these carried clock places.
+    /// bag slot of elements with data, which a step matches by equal data
+    /// wherever they land (FR-120-AC-26). The refinement zone checker has
+    /// not yet mapped these carried clock places.
     pub fn carries_clocks(&self) -> bool {
         self.model
             .resets()
             .iter()
             .any(|resets| !resets.writes().is_empty())
-            || self.model.clocks().iter().any(|clock| {
-                clock
-                    .path()
+            || self.model.clocks().iter().any(|clock| match clock.path() {
+                // A collection of bare clocks: its slots hold no data, so
+                // they keep their clocks by position.
+                [PlaceStep::Field(_), PlaceStep::Slot(_)] => false,
+                path => path
                     .iter()
-                    .any(|step| matches!(step, PlaceStep::Slot(shape) if !shape.ordered))
+                    .any(|step| matches!(step, PlaceStep::Slot(shape) if !shape.ordered)),
             })
     }
 
@@ -811,7 +821,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let Some(PlaceStep::Field(first)) = steps.next() else {
             return false;
         };
-        let Ok(Some(fields)) = self.system.model.fields(&stored.type_identity) else {
+        let Some(fields) = self.system.fields.get(&stored.type_identity) else {
             return false;
         };
         let Some(mut value) = fields
@@ -827,6 +837,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 PlaceStep::Slot(_) => match (value, slots.next()) {
                     (quire_exact::Value::Collection(collection), Some(slot)) => {
                         collection.elements().get(*slot)
+                    }
+                    // A collection of bare clocks: its count member
+                    // (FR-120-AC-26) holds the slots below it.
+                    (quire_exact::Value::Integer(count), Some(slot)) => {
+                        return quire_exact::Integer::from(*slot as u64) < *count;
                     }
                     _ => None,
                 },
@@ -844,14 +859,88 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         // A slot the initial state does not hold is not live; its value is
         // reset when the slot becomes live.
         let zero = ClockValuation(vec![zero(); self.places.len()]);
-        self.system
-            .initial
-            .iter()
-            .map(|discrete| TimedState {
-                discrete: discrete.clone(),
+        let mut discrete: Vec<(u64, ModelSimState)> = Vec::new();
+        for state in &self.system.initial {
+            discrete.extend(self.unbounded_counts(state));
+        }
+        // Ascending count (FR-230 "Initial element count"), each base
+        // state's own order kept among equal counts.
+        discrete.sort_by_key(|(added, _)| *added);
+        discrete
+            .into_iter()
+            .map(|(_, discrete)| TimedState {
+                discrete,
                 clocks: zero.clone(),
             })
             .collect()
+    }
+
+    /// `state` with each element count of a pure-clock collection with no
+    /// declared maximum ranging up from its `min` (FR-230 "Initial element
+    /// count"), each with the elements it adds: every distribution of `k`
+    /// added elements over the counts, for `k` = 0, 1, … while the live
+    /// clocks stay within `max_clocks`, then one state past the bound, at
+    /// which the analysis stops `limit-reached`. Every element adds one live
+    /// clock, so every distribution of one `k` is within the bound or none
+    /// is.
+    fn unbounded_counts(&self, state: &ModelSimState) -> Vec<(u64, ModelSimState)> {
+        let holders: Vec<(DeclarationKey, String, DeclarationKey, u64)> = self
+            .system
+            .clock_counts
+            .iter()
+            .filter(|(_, _, _, max)| max.is_none())
+            .flat_map(|(type_key, field, min, _)| {
+                state
+                    .state
+                    .populations
+                    .iter()
+                    .flat_map(move |(population, objects)| {
+                        objects
+                            .iter()
+                            .filter(move |(_, object)| object.type_identity == *type_key)
+                            .map(move |(key, _)| {
+                                (population.clone(), key.clone(), field.key.clone(), *min)
+                            })
+                    })
+            })
+            .collect();
+        if holders.is_empty() {
+            return vec![(0, state.clone())];
+        }
+        let grown = |added: &[u64]| {
+            let mut next = state.clone();
+            for ((population, key, field, min), extra) in holders.iter().zip(added) {
+                let Some(object) = next
+                    .state
+                    .populations
+                    .get_mut(population)
+                    .and_then(|objects| objects.get_mut(key))
+                else {
+                    continue;
+                };
+                object.fields.insert(
+                    field.clone(),
+                    quire_exact::Value::Integer(Integer::from(min.saturating_add(*extra))),
+                );
+            }
+            next
+        };
+        let mut states = Vec::new();
+        for total in 0_u64.. {
+            let level: Vec<ModelSimState> = distributions(total, holders.len())
+                .iter()
+                .map(|added| grown(added))
+                .collect();
+            let Some(first) = level.first() else {
+                break;
+            };
+            if self.live_clocks(first) > self.max_clocks.get() {
+                states.push((total, first.clone()));
+                break;
+            }
+            states.extend(level.into_iter().map(|state| (total, state)));
+        }
+        states
     }
 
     /// Each predicate at `state` about each object of `context`'s universe:
@@ -1042,138 +1131,171 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let (expansion, enabled) = expand_enabled(self.system, state)?;
         let mut steps = Vec::new();
         for vector in enabled {
+            // Each binding of the operation's `Clock` parameters to places
+            // (FR-230 "Operation parameters"): one instance per binding.
+            let instances = self.instances(&vector, state);
             for position in vector.successors.clone() {
                 let Some((transition, post)) = expansion.successors.get(position) else {
                     continue;
                 };
                 self.within_max_clocks(post)?;
-                let mut parts = vec![Vec::new()];
-                let mut guards = Vec::new();
-                for guard in self.model.guards() {
-                    let operation = guard.operation();
-                    if operation.declaring != vector.declaring
-                        || operation.declaration.name() != vector.name
-                    {
-                        continue;
-                    }
-                    guards.push(guard.clause().to_owned());
-                    let mut clause_parts = Vec::new();
-                    for part in guard.parts() {
-                        let data = match (
-                            part.data(),
-                            self.elements(state, &vector.receiver, part.elements()),
-                        ) {
-                            (None, _) => true,
-                            // A part reading a slot the collection does not
-                            // hold is not enabled.
-                            (Some(_), None) => false,
-                            (Some(data), Some(elements)) => {
-                                self.about_one(state, data, &vector.receiver, elements, || {
-                                    TimedSite::Guard {
+                for instance in &instances {
+                    let transition = &self
+                        .instance_transition(transition, instance)
+                        .ok_or_else(|| stop(BROKEN))?;
+                    let mut parts = vec![Vec::new()];
+                    let mut guards = Vec::new();
+                    for guard in self.model.guards() {
+                        let operation = guard.operation();
+                        if operation.declaring != vector.declaring
+                            || operation.declaration.name() != vector.name
+                        {
+                            continue;
+                        }
+                        guards.push(guard.clause().to_owned());
+                        let mut clause_parts = Vec::new();
+                        for part in guard.parts() {
+                            let data = match (
+                                part.data(),
+                                self.elements(state, &vector.receiver, part.elements()),
+                            ) {
+                                (None, _) => true,
+                                // A part reading a slot the collection does not
+                                // hold is not enabled.
+                                (Some(_), None) => false,
+                                (Some(data), Some(elements)) => {
+                                    self.about_one(state, data, &vector.receiver, elements, || {
+                                        TimedSite::Guard {
+                                            clause: guard.clause().to_owned(),
+                                        }
+                                    })?
+                                }
+                            };
+                            if data {
+                                // A part reading a `Clock` parameter bound to a
+                                // place of another clock is not this instance's.
+                                let Some(base) =
+                                    self.bound(state, &vector.receiver, part.clocks(), instance)?
+                                else {
+                                    continue;
+                                };
+                                clause_parts.extend(self.instantiated(
+                                    state,
+                                    &vector.receiver,
+                                    part.families(),
+                                    base,
+                                    &|| TimedSite::Guard {
                                         clause: guard.clause().to_owned(),
-                                    }
-                                })?
+                                    },
+                                )?);
                             }
-                        };
-                        if data {
-                            let base = self.placed(state, &vector.receiver, part.clocks())?;
-                            clause_parts.extend(self.instantiated(
-                                state,
-                                &vector.receiver,
-                                part.families(),
-                                base,
-                                &|| TimedSite::Guard {
-                                    clause: guard.clause().to_owned(),
-                                },
-                            )?);
                         }
-                    }
-                    parts = parts
-                        .iter()
-                        .flat_map(|left| {
-                            clause_parts.iter().map(move |right| {
-                                left.iter().chain(right).cloned().collect::<Vec<_>>()
+                        parts = parts
+                            .iter()
+                            .flat_map(|left| {
+                                clause_parts.iter().map(move |right| {
+                                    left.iter().chain(right).cloned().collect::<Vec<_>>()
+                                })
                             })
+                            .collect();
+                    }
+                    // The clocks the step carries with their elements and the
+                    // fresh elements' zeros first: a reset of the post-state
+                    // then writes the element the post-state holds.
+                    let mut resets: Vec<(usize, Rational)> = Vec::new();
+                    let mut carries = self.written(&vector.receiver, post, &mut resets);
+                    self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
+                    for (clause, reset) in self
+                        .model
+                        .resets()
+                        .iter()
+                        .filter(|resets| {
+                            resets.operation().declaring == vector.declaring
+                                && resets.operation().declaration.name() == vector.name
                         })
-                        .collect();
-                }
-                // The clocks the step carries with their elements and the
-                // fresh elements' zeros first: a reset of the post-state
-                // then writes the element the post-state holds.
-                let mut resets: Vec<(usize, Rational)> = Vec::new();
-                let mut carries = self.written(&vector.receiver, post, &mut resets);
-                self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
-                for (clause, reset) in self
-                    .model
-                    .resets()
-                    .iter()
-                    .filter(|resets| {
-                        resets.operation().declaring == vector.declaring
-                            && resets.operation().declaration.name() == vector.name
-                    })
-                    .flat_map(|resets| resets.resets().iter().map(|reset| (resets.clause(), reset)))
-                {
-                    let Some(selection) = reset.selection() else {
-                        if let Some(place) = self.place(&vector.receiver, reset.clock()) {
-                            resets.push((place, reset.value().clone()));
-                        }
-                        continue;
-                    };
-                    // Each slot the post-state holds whose element the
-                    // selection's predicate admits: the postcondition reads
-                    // the collection the step leaves.
-                    for slot in 0_u64.. {
-                        let Some(place) = self.place_at(&vector.receiver, reset.clock(), &[slot])
-                        else {
-                            break;
-                        };
-                        let binding = ElementBinding::new(
-                            selection.name().to_owned(),
-                            selection.path().to_vec(),
-                            SlotRef::Held(slot),
-                        );
-                        let Some(elements) =
-                            self.elements(post, &vector.receiver, std::slice::from_ref(&binding))
-                        else {
+                        .flat_map(|resets| {
+                            resets.resets().iter().map(|reset| (resets.clause(), reset))
+                        })
+                    {
+                        let Some(selection) = reset.selection() else {
+                            let place = match reset.parameter() {
+                                Some(parameter) => instance
+                                    .iter()
+                                    .find(|(position, _)| *position == parameter)
+                                    .map(|(_, place)| *place)
+                                    .filter(|place| {
+                                        self.places
+                                            .get(*place)
+                                            .is_some_and(|held| held.clock == reset.clock())
+                                    }),
+                                None => self.place(&vector.receiver, reset.clock()),
+                            };
+                            if let Some(place) = place {
+                                resets.push((place, reset.value().clone()));
+                            }
                             continue;
                         };
-                        let selected = match selection.predicate() {
-                            None => true,
-                            Some(predicate) => {
-                                self.about_one(post, predicate, &vector.receiver, elements, || {
-                                    TimedSite::Reset {
+                        // Each slot the post-state holds whose element the
+                        // selection's predicate admits: the postcondition reads
+                        // the collection the step leaves.
+                        for slot in 0_u64.. {
+                            let Some(place) =
+                                self.place_at(&vector.receiver, reset.clock(), &[slot])
+                            else {
+                                break;
+                            };
+                            let binding = ElementBinding::new(
+                                selection.name().to_owned(),
+                                selection.path().to_vec(),
+                                SlotRef::Held(slot),
+                            );
+                            let Some(elements) = self.elements(
+                                post,
+                                &vector.receiver,
+                                std::slice::from_ref(&binding),
+                            ) else {
+                                continue;
+                            };
+                            let selected = match selection.predicate() {
+                                None => true,
+                                Some(predicate) => self.about_one(
+                                    post,
+                                    predicate,
+                                    &vector.receiver,
+                                    elements,
+                                    || TimedSite::Reset {
                                         clause: clause.to_owned(),
-                                    }
-                                })?
+                                    },
+                                )?,
+                            };
+                            if selected {
+                                resets.push((place, reset.value().clone()));
                             }
-                        };
-                        if selected {
-                            resets.push((place, reset.value().clone()));
                         }
                     }
-                }
-                // A clock whose object or slot the step makes live takes
-                // the constant of its write, 0 when the step writes none
-                // (QSpec FR-181 "Timed subjects").
-                for (place, clock) in self.places.iter().enumerate() {
-                    if !self.live(clock, state)
-                        && self.live(clock, post)
-                        && resets.iter().all(|(reset, _)| *reset != place)
-                        && carries.iter().all(|(carried, _)| *carried != place)
-                    {
-                        resets.push((place, zero()));
+                    // A clock whose object or slot the step makes live takes
+                    // the constant of its write, 0 when the step writes none
+                    // (QSpec FR-181 "Timed subjects").
+                    for (place, clock) in self.places.iter().enumerate() {
+                        if !self.live(clock, state)
+                            && self.live(clock, post)
+                            && resets.iter().all(|(reset, _)| *reset != place)
+                            && carries.iter().all(|(carried, _)| *carried != place)
+                        {
+                            resets.push((place, zero()));
+                        }
                     }
+                    steps.push(GuardedStep {
+                        transition: transition.clone(),
+                        receiver: vector.receiver.clone(),
+                        operation: vector.operation.clone(),
+                        post: post.clone(),
+                        parts,
+                        resets,
+                        carries,
+                        guards,
+                    });
                 }
-                steps.push(GuardedStep {
-                    transition: transition.clone(),
-                    receiver: vector.receiver.clone(),
-                    operation: vector.operation.clone(),
-                    post: post.clone(),
-                    parts,
-                    resets,
-                    carries,
-                    guards,
-                });
             }
         }
         // FR-101 canonical transition order: by the identity's canonical
@@ -1191,6 +1313,154 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
         let steps = keyed.into_iter().map(|(_, step)| step).collect();
         Ok(steps)
+    }
+
+    /// Each binding of `vector`'s operation's `Clock` parameters to places
+    /// live at `state`, by parameter position and place index (FR-230
+    /// "Operation parameters"): a parameter ranges over the places of the
+    /// clock fields of its range, every clock field when the model lists
+    /// none. One empty binding for an operation with none.
+    fn instances(
+        &self,
+        vector: &super::frames::EnabledVector,
+        state: &ModelSimState,
+    ) -> Vec<Vec<(usize, usize)>> {
+        let Some(declaration) = self
+            .system
+            .operations
+            .declared_by(vector.declaring)
+            .iter()
+            .find(|declared| declared.name() == vector.name)
+        else {
+            return vec![Vec::new()];
+        };
+        let mut instances: Vec<Vec<(usize, usize)>> = vec![Vec::new()];
+        for (position, _) in declaration.clock_parameters() {
+            let range = self.model.clock_parameters().iter().find(|listed| {
+                listed.position() == *position
+                    && listed.operation().declaring == vector.declaring
+                    && listed.operation().declaration.name() == vector.name
+            });
+            let places: Vec<usize> = self
+                .places
+                .iter()
+                .enumerate()
+                .filter(|(_, place)| {
+                    range.is_none_or(|range| {
+                        range.range().contains(&place.clock)
+                            && (!range.receiver_only().contains(&place.clock)
+                                || place.holds(&vector.receiver))
+                    }) && self.live(place, state)
+                })
+                .map(|(index, _)| index)
+                .collect();
+            instances = instances
+                .into_iter()
+                .flat_map(|bound| {
+                    places.iter().map(move |place| {
+                        let mut next = bound.clone();
+                        next.push((*position, *place));
+                        next
+                    })
+                })
+                .collect();
+        }
+        instances
+    }
+
+    /// `transition` with each `Clock` parameter's argument the place
+    /// `instance` binds it to: an opaque `clock_place` document naming the
+    /// object, the clock field and the slots, which no data value encodes
+    /// as. The place arguments follow the data arguments, in declared
+    /// order, so a data argument keeps its index among the data parameters
+    /// that every reader (hyper step reads, footprints) indexes by.
+    fn instance_transition(
+        &self,
+        transition: &quire_semantic_value::model_transition::ModelTransition,
+        instance: &[(usize, usize)],
+    ) -> Option<quire_semantic_value::model_transition::ModelTransition> {
+        if instance.is_empty() {
+            return Some(transition.clone());
+        }
+        let mut arguments: Vec<String> = transition.arguments().to_vec();
+        let mut bound: Vec<&(usize, usize)> = instance.iter().collect();
+        bound.sort();
+        for (_, place) in bound {
+            let text = self
+                .place_enc(*place)?
+                .canonical_text(quire_canonical::Limits::new(u64::MAX))
+                .ok()?;
+            arguments.push(text);
+        }
+        quire_semantic_value::model_transition::ModelTransition::new(
+            transition.operation().to_owned(),
+            transition.receiver().map(str::to_owned),
+            arguments,
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .ok()
+    }
+
+    /// The place at index `place` as an opaque `clock_place` document.
+    fn place_enc(&self, place: usize) -> Option<super::encode::Enc> {
+        let place = self.places.get(place)?;
+        let field = self.model.clock(place.clock)?;
+        let mut slots = place.slots.iter();
+        Some(super::encode::Enc::tagged(
+            "clock_place",
+            vec![
+                ("object", super::encode::reference_enc(&place.object)),
+                ("field", super::encode::declaration_enc(field.field())),
+                (
+                    "path",
+                    super::encode::Enc::Array(
+                        field
+                            .path()
+                            .iter()
+                            .map(|step| place_step_enc(step, &mut slots))
+                            .collect(),
+                    ),
+                ),
+            ],
+        ))
+    }
+
+    /// [`Self::placed`] for an instance: a constraint reading a `Clock`
+    /// parameter constrains the place `instance` binds it to; `None` when
+    /// that place is not of the constraint's clock, so the part is not this
+    /// instance's.
+    fn bound(
+        &self,
+        state: &ModelSimState,
+        receiver: &ObjectReference,
+        constraints: &[ClockConstraint],
+        instance: &[(usize, usize)],
+    ) -> Result<Option<Vec<PlaceConstraint>>, ExpansionStop> {
+        let (parameters, own): (Vec<&ClockConstraint>, Vec<&ClockConstraint>) = constraints
+            .iter()
+            .partition(|constraint| constraint.parameter().is_some());
+        let own: Vec<ClockConstraint> = own.into_iter().cloned().collect();
+        let mut placed = self.placed(state, receiver, &own)?;
+        for constraint in parameters {
+            let place = instance
+                .iter()
+                .find(|(position, _)| Some(*position) == constraint.parameter())
+                .map(|(_, place)| *place)
+                .filter(|place| {
+                    self.places
+                        .get(*place)
+                        .is_some_and(|held| held.clock == constraint.clock())
+                });
+            let Some(place) = place else {
+                return Ok(None);
+            };
+            placed.push(PlaceConstraint {
+                place,
+                op: constraint.op(),
+                bound: constraint.bound().clone(),
+            });
+        }
+        Ok(Some(placed))
     }
 
     /// The carries of the collections the step to `post` wrote whole on
@@ -1627,7 +1897,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     ) -> Option<&'t quire_exact::CollectionValue> {
         let (first, below) = path.split_first()?;
         let stored = self.stored(state, object)?;
-        let fields = self.system.model.fields(&stored.type_identity).ok()??;
+        let fields = self.system.fields.get(&stored.type_identity)?;
         let field = fields.iter().find(|field| field.name == *first)?;
         let typing = self.system.typing();
         let mut value = stored.fields.get(&field.key)?;
@@ -2215,4 +2485,24 @@ fn at_slot(binding: &ElementBinding, slot: u64) -> ElementBinding {
     } else {
         binding.clone()
     }
+}
+
+/// Every way to distribute `total` over `parts` counts, in lexicographic
+/// order.
+fn distributions(total: u64, parts: usize) -> Vec<Vec<u64>> {
+    let Some(rest) = parts.checked_sub(1) else {
+        return if total == 0 {
+            vec![Vec::new()]
+        } else {
+            Vec::new()
+        };
+    };
+    let mut all = Vec::new();
+    for first in 0..=total {
+        for mut tail in distributions(total - first, rest) {
+            tail.insert(0, first);
+            all.push(tail);
+        }
+    }
+    all
 }

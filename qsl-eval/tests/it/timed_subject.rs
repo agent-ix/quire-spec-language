@@ -3939,6 +3939,529 @@ fn a_model_variant_union_is_finite_by_its_payloads() {
     assert_eq!(format!("{:?}", bound.domains).matches("Node {").count(), 1);
 }
 
+/// FR-120-AC-26 (TC-1270) with the STD-508 ruling on collections of bare
+/// clocks: `sk: Sequence<Clock>[0, 3]` has 4 values and `st: Set<Clock>`
+/// with no declared maximum 2, one for each element count, each a root no
+/// requires-bound check refuses; an initial state ranges over every count
+/// (4 and 2 initial states). From `sk` holding one clock at 5 ms, the
+/// candidate count 2 keeps 5 ms in slot 0 and holds a fresh 0 ms in slot 1.
+/// A frame-granted `Sequence<Clock>` with no declared maximum is an
+/// unbounded frame-granted value, so it requires a bound (FR-120; FR-230's
+/// `[min, ∞)` initial range is for an ungranted one).
+#[trace("TC-1270")]
+#[test]
+fn a_collection_of_bare_clocks_ranges_over_its_counts() {
+    use qsl_eval::simulation::TransitionSystem;
+
+    let clock = "ix://quire/native/Clock".to_owned();
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world_of = |name: &str, max: Option<u64>, ordered: bool, unique: bool| {
+        world_holding(
+            cells_document(
+                vec![],
+                vec![(name, clock.clone(), Some(shape(max, ordered, unique)))],
+                &[name],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": timer.clone()}),
+        )
+    };
+    let counts = |world: &World, name: &str| {
+        let held = system(world);
+        check_model_bounds(&held, BOUND_POSITIONS)
+            .unwrap_or_else(|refusal| panic!("{name} is bounded: {refusal:?}"));
+        (held.initial().len(), granted_values(world, "work", name))
+    };
+    let (initial, values) = counts(&world_of("sk", Some(3), true, false), "sk");
+    assert_eq!((initial, values.len()), (4, 4), "{values:?}");
+    assert!(values[3].contains("Integer(3)"), "{values:?}");
+    let (initial, values) = counts(&world_of("st", None, false, true), "st");
+    assert_eq!((initial, values.len()), (2, 2), "{values:?}");
+    let unbounded = world_of("sk", None, true, false);
+    assert!(matches!(
+        check_model_bounds(&system(&unbounded), BOUND_POSITIONS),
+        Err(NotSimulated::RequiresBound(_))
+    ));
+
+    // Positions keep their clocks; a new slot is fresh.
+    let world = world_of("sk", Some(3), true, false);
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let key = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/sk"),
+    };
+    let count = |state: &TimedState| {
+        state
+            .discrete()
+            .state()
+            .populations
+            .values()
+            .find_map(|objects| objects.get("c"))
+            .and_then(|object| object.fields.get(&key))
+            .map(|value| format!("{value:?}"))
+            .unwrap_or_default()
+    };
+    let one = timed
+        .initial()
+        .into_iter()
+        .find(|state| count(state).contains("Integer(1)"))
+        .expect("an initial state holding one clock");
+    let five = Rational::new(Integer::from(5_i64), Integer::from(1_i64)).expect("5");
+    let later = TimedState::new(one.discrete().clone(), one.clocks().delayed(&five));
+    let (_, two) = timed
+        .steps(&later)
+        .expect("the state expands")
+        .into_iter()
+        .find(|(step, next)| {
+            step.operation().contains("Call/work\"") && count(next).contains("Integer(2)")
+        })
+        .expect("a step to two clocks");
+    let mut slots: Vec<(usize, Rational)> = timed
+        .places()
+        .iter()
+        .zip(two.clocks().values())
+        .filter(|(place, _)| timed.live(place, two.discrete()) && !place.slots().is_empty())
+        .map(|(place, value)| (place.slots()[0], value.clone()))
+        .collect();
+    slots.sort();
+    let zero = Rational::new(Integer::from(0_i64), Integer::from(1_i64)).expect("0");
+    assert_eq!(slots, [(0, five), (1, zero)]);
+}
+
+/// [`rpc_document`] whose `work` takes `c: Clock` (FR-230 "Operation
+/// parameters") and whose frame names `frame`.
+fn clock_parameter_document(frame: &[&str]) -> Vec<u8> {
+    clock_operation_document(&[("c", CLOCK)], frame, &[], None)
+}
+
+const CLOCK: &str = "ix://quire/native/Clock";
+
+/// [`rpc_document`] whose `work` declares the parameters `params` (name,
+/// type), writes `frame` on every object and `receiver` on its receiver
+/// only (`modifies self.f`), and returns `returns` when given.
+fn clock_operation_document(
+    params: &[(&str, &str)],
+    frame: &[&str],
+    receiver: &[&str],
+    returns: Option<&str>,
+) -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    let fields = |names: &[&str]| {
+        json!(names
+            .iter()
+            .map(|field| ident(&format!("Call/{field}")))
+            .collect::<Vec<_>>())
+    };
+    for operation in document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        if operation["name"] == "work" {
+            operation["params"] = json!(params
+                .iter()
+                .map(|(name, type_ref)| {
+                    let identity = ident(&format!("Call/work/{name}"));
+                    json!({
+                        "identity": identity, "origin": origin(&identity), "name": name,
+                        "typeRef": type_ref, "presence": "required", "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+                    })
+                })
+                .collect::<Vec<_>>());
+            operation["frame"]["modifies"] = fields(frame);
+            if !receiver.is_empty() {
+                operation["frame"]["modifies_receiver"] = fields(receiver);
+            }
+            if let Some(returns) = returns {
+                operation["returns"] = json!({"typeRef": returns, "nullable": false,
+                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false}});
+            }
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-13 (TC-685), with FR-230-AC-16's domain-package `Clock`
+/// parameter: over two calls `c1` and `c2`, `work(c: Clock)` with the
+/// postcondition `c = 0 ms` and a frame naming `Call.x` has one instance
+/// for each object's place of `Call.x`, each transition naming its place as
+/// an opaque `clock_place` argument, and resets that place alone; with the
+/// precondition `c >= 1 ms` and no reset it has one instance for each live
+/// clock place of the model, each enabled only once its place reads 1 ms.
+/// The data clauses never read `c`: the argument is no data value.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_has_one_instance_per_place() {
+    let objects = json!([
+        {"key": "c1", "type": ident("Call"), "fields": initial_fields(json!({}))},
+        {"key": "c2", "type": ident("Call"), "fields": initial_fields(json!({}))},
+    ]);
+    let reset = world_of(
+        clock_parameter_document(&["x"]),
+        "",
+        &only(
+            &["work"],
+            "post Work using v on M::Call::work { c = 0 ms }\n",
+        ),
+        objects.clone(),
+    );
+    let held = system_over(&reset, &["c1", "c2"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let two = Rational::new(Integer::from(2_i64), Integer::from(1_i64)).expect("2");
+    let later = TimedState::new(initial.discrete().clone(), initial.clocks().delayed(&two));
+    let steps = timed.steps(&later).expect("the state expands");
+    // Two receivers, each with one instance per object's `x`.
+    assert_eq!(steps.len(), 4);
+    for (step, next) in &steps {
+        let arguments = step.transition().arguments();
+        let [place] = arguments else {
+            panic!("one argument: {arguments:?}");
+        };
+        assert!(
+            place.contains("clock_place") && place.contains("Call/x"),
+            "{place}"
+        );
+        // The named place is reset; every other place kept its 2 ms.
+        let zeros: Vec<usize> = timed
+            .places()
+            .iter()
+            .zip(next.clocks().values())
+            .enumerate()
+            .filter(|(_, (_, value))| value.numerator().is_zero())
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(zeros.len(), 1, "{place}");
+        let object = timed.places()[zeros[0]].object();
+        let named = format!(
+            "\"identity\":\"{}\"",
+            hex(object.object().as_str().as_bytes())
+        );
+        assert!(place.contains(&named), "{place} names {object:?}");
+    }
+
+    let check = world_of(
+        clock_parameter_document(&[]),
+        "",
+        &only(
+            &["work"],
+            "pre Work using v on M::Call::work { c >= 1 ms }\n",
+        ),
+        objects,
+    );
+    let held = system_over(&check, &["c1", "c2"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let live = timed
+        .places()
+        .iter()
+        .filter(|place| timed.live(place, initial.discrete()))
+        .count();
+    let steps = timed.steps(&initial).expect("the state expands");
+    // Each receiver, each live place: the guard `place >= 1` is no part at
+    // 0 ms, and every one is at 1 ms.
+    assert_eq!(steps.len(), 0);
+    let one = Rational::new(Integer::from(1_i64), Integer::from(1_i64)).expect("1");
+    let later = TimedState::new(initial.discrete().clone(), initial.clocks().delayed(&one));
+    assert_eq!(timed.steps(&later).expect("expands").len(), 2 * live);
+}
+
+/// The places `next` holds at 0 ms, by index.
+fn zero_places(timed: &TimedSystem<'_, '_>, next: &TimedState) -> Vec<usize> {
+    timed
+        .places()
+        .iter()
+        .zip(next.clocks().values())
+        .enumerate()
+        .filter(|(_, (_, value))| value.numerator().is_zero())
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// Two calls `c1` and `c2` at 2 ms, each with `x`.
+fn two_calls_at_two(
+    document: Vec<u8>,
+    body: &str,
+    check: impl FnOnce(&TimedSystem<'_, '_>, &[(qsl_eval::simulation::model::GuardedStep, TimedState)]),
+) {
+    let objects = json!([
+        {"key": "c1", "type": ident("Call"), "fields": initial_fields(json!({}))},
+        {"key": "c2", "type": ident("Call"), "fields": initial_fields(json!({}))},
+    ]);
+    let world = world_of(document, "", &only(&["work"], body), objects);
+    let held = system_over(&world, &["c1", "c2"]);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let two = Rational::new(Integer::from(2_i64), Integer::from(1_i64)).expect("2");
+    let later = TimedState::new(initial.discrete().clone(), initial.clocks().delayed(&two));
+    let steps = timed.steps(&later).expect("the state expands");
+    check(&timed, &steps);
+}
+
+/// SR-1709001 FND-001 (TC-685, part of FR-230-AC-13): a `Clock`
+/// parameter reset under the receiver-scoped frame `modifies self.x`
+/// (FR-103) ranges over the receiver's `x` alone: over two calls, one
+/// instance for each receiver, each resetting its own `x` and no other
+/// object's.
+#[trace("TC-685")]
+#[test]
+fn a_receiver_scoped_clock_parameter_binds_the_receivers_place() {
+    two_calls_at_two(
+        clock_operation_document(&[("c", CLOCK)], &[], &["x"], None),
+        "post Work using v on M::Call::work { c = 0 ms }\n",
+        |timed, steps| {
+            assert_eq!(steps.len(), 2);
+            for (step, next) in steps {
+                let [zero] = zero_places(timed, next)[..] else {
+                    panic!("one reset place");
+                };
+                assert_eq!(timed.places()[zero].object(), step.receiver());
+            }
+        },
+    );
+}
+
+/// SR-1709001 FND-002 (TC-685, part of FR-230-AC-13): over `work(c: Clock,
+/// a: Boolean, b: Boolean)` with the precondition `b`, a timed transition
+/// writes its data arguments first, `b` at its index among the data
+/// parameters, and the place argument after them, so a reader of `b`
+/// decodes `b`'s argument and the footprint of the timed transition is
+/// that of its data transition.
+#[trace("TC-685")]
+#[test]
+fn a_data_argument_after_a_clock_parameter_keeps_its_index() {
+    let boolean = "ix://quire/native/Boolean";
+    let document = clock_operation_document(
+        &[("c", CLOCK), ("a", boolean), ("b", boolean)],
+        &["x"],
+        &[],
+        None,
+    );
+    let world = world_over(
+        document,
+        "",
+        &only(
+            &["work"],
+            "pre B using v on M::Call::work { b }\npost Work using v on M::Call::work { c = 0 ms }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let steps = timed.steps(&initial).expect("the state expands");
+    // `a` takes both values, `b` only `true`, and `c` the one place.
+    assert_eq!(steps.len(), 2);
+    for (step, _) in &steps {
+        let transition = step.transition();
+        let [_, b, place] = transition.arguments() else {
+            panic!("three arguments: {:?}", transition.arguments());
+        };
+        assert_eq!(b, r#"{"type":"boolean","value":true}"#);
+        assert!(place.contains("clock_place"), "{place}");
+        assert!(held.footprint(transition).is_ok(), "{transition:?}");
+    }
+}
+
+/// GA SR-1709002 FND-001 (TC-685, part of FR-230-AC-13): two `Clock`
+/// parameters bind independently: over two calls, `work(c: Clock, d:
+/// Clock)` resetting `c` under a frame naming `x` binds `c` to either
+/// object's `x` and `d`, which no clause resets, to every live place, so
+/// each receiver has `2 × 2` instances, each with two place arguments, and
+/// each resets `c`'s place alone.
+#[trace("TC-685")]
+#[test]
+fn two_clock_parameters_bind_every_pair_of_places() {
+    two_calls_at_two(
+        clock_operation_document(&[("c", CLOCK), ("d", CLOCK)], &["x"], &[], None),
+        "post Work using v on M::Call::work { c = 0 ms }\n",
+        |timed, steps| {
+            assert_eq!(steps.len(), 8);
+            let mut pairs = std::collections::BTreeSet::new();
+            for (step, next) in steps {
+                let [c, d] = step.transition().arguments() else {
+                    panic!("two place arguments");
+                };
+                pairs.insert((step.receiver().clone(), c.clone(), d.clone()));
+                let [zero] = zero_places(timed, next)[..] else {
+                    panic!("one reset place");
+                };
+                let named = format!(
+                    "\"identity\":\"{}\"",
+                    hex(timed.places()[zero].object().object().as_str().as_bytes())
+                );
+                assert!(c.contains(&named), "{c} names the reset place");
+            }
+            assert_eq!(pairs.len(), 8);
+        },
+    );
+}
+
+/// GA SR-1709002 FND-001 (TC-685, part of FR-230-AC-16): a domain-package
+/// operation `work(): Clock` steps like any other: its `Clock` result is
+/// no data result, so no transition carries a result value and the timed
+/// subject expands it.
+#[trace("TC-685")]
+#[test]
+fn an_operation_with_a_clock_result_steps() {
+    let world = world_over(
+        clock_operation_document(&[], &["x"], &[], Some(CLOCK)),
+        "",
+        &only(
+            &["work"],
+            "post Work using v on M::Call::work { self.x = 0 ms }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let steps = timed.steps(&initial).expect("the state expands");
+    assert_eq!(steps.len(), 1);
+    assert!(steps[0].0.transition().arguments().is_empty());
+}
+
+/// SR-1709001 FND-004 (TC-685, part of FR-230-AC-13; FR-152): under the
+/// permutation swapping `c1` and `c2`, a `work(c: Clock)` transition's
+/// `clock_place` argument names the image of its object: the image of each
+/// transition is the transition of the swapped receiver at the swapped
+/// place, never one naming the old object.
+#[trace("TC-685")]
+#[test]
+fn a_permutation_renames_a_clock_place_argument() {
+    two_calls_at_two(
+        clock_parameter_document(&["x"]),
+        "post Work using v on M::Call::work { c = 0 ms }\n",
+        |timed, steps| {
+            let calls = DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: ident("calls"),
+            };
+            let swap = qsl_eval::simulation::Permutation::of(
+                &calls,
+                [
+                    ("c1".to_owned(), "c2".to_owned()),
+                    ("c2".to_owned(), "c1".to_owned()),
+                ],
+            );
+            let transitions: Vec<&ModelTransition> =
+                steps.iter().map(|(step, _)| step.transition()).collect();
+            assert_eq!(transitions.len(), 4);
+            for transition in &transitions {
+                let image = timed
+                    .system()
+                    .permute_transition(transition, &swap)
+                    .expect("the transition renames");
+                assert!(transitions.contains(&&image), "{image:?}");
+                let named = |transition: &ModelTransition, key: &str| {
+                    let [place] = transition.arguments() else {
+                        panic!("one place argument");
+                    };
+                    place.contains(&format!("\"identity\":\"{}\"", hex(key.as_bytes())))
+                };
+                for (from, to) in [("c1", "c2"), ("c2", "c1")] {
+                    if named(transition, from) {
+                        assert!(named(&image, to), "{image:?} names the image of {from}");
+                    }
+                }
+            }
+        },
+    );
+}
+
+/// FR-230-AC-46, AC-47 and AC-48 (TC-685), the bare-clock collections: a
+/// pure-clock collection's initial element count ranges over `[min, max]`,
+/// one initial state each. `s: Sequence<Clock>[1, 3]` gives 3, `b:
+/// Bag<Clock>[0, 2]` 3; a set holds at most one bare clock, so `t:
+/// Set<Clock>[0, 5]` and `o: OrderedSet<Clock>[0, 5]` give 2, and
+/// `Set<Clock>[2, 5]` none. With no declared maximum and no frame granting
+/// it, `u: Sequence<Clock>`'s initial states run in ascending count from 0
+/// while the live clocks (`t.x`, `t.y`, `x` and one per element) stay
+/// within `max_clocks` 5, then one past it: counts 0, 1, 2 and 3, the last
+/// stopping `MaxClocks` when expanded; the bound check admits the model.
+/// Each count is its own state key: the record writes one `Clock` shell
+/// per element.
+/// Not covered: AC-46's `Sequence<Stopwatch>` and `Sequence<Option<Clock>>`
+/// (580q) and AC-47's `Map`, which a domain package cannot declare.
+#[trace("TC-685")]
+#[test]
+fn a_bare_clock_collection_ranges_its_initial_count() {
+    let clock = "ix://quire/native/Clock".to_owned();
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world_of = |min: u64, max: Option<u64>, ordered: bool, unique: bool, granted: &[&str]| {
+        let mut multiplicity = json!({"lower": min, "ordered": ordered, "unique": unique});
+        if let Some(max) = max {
+            multiplicity["upper"] = json!(max);
+        }
+        world_holding(
+            cells_document(
+                vec![],
+                vec![("u", clock.clone(), Some(multiplicity))],
+                granted,
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": timer.clone()}),
+        )
+    };
+    let counts = |world: &World, max_clocks: u64| {
+        let held = system(world);
+        check_model_bounds(&held, BOUND_POSITIONS).expect("the model is bounded");
+        let timed = TimedSystem::with_max_clocks(
+            &held,
+            "M",
+            std::num::NonZeroU64::new(max_clocks).expect("positive"),
+        )
+        .expect("a timed subject");
+        timed
+            .initial()
+            .iter()
+            .map(|state| format!("{:?}", field_of(state, "c", "u")))
+            .collect::<Vec<_>>()
+    };
+    let integer = |count: u64| format!("{:?}", quire_exact::Value::Integer(Integer::from(count)));
+    for (min, max, ordered, unique, expected) in [
+        (1, Some(3), true, false, vec![1, 2, 3]),
+        (0, Some(2), false, false, vec![0, 1, 2]),
+        (0, Some(5), false, true, vec![0, 1]),
+        (0, Some(5), true, true, vec![0, 1]),
+        (2, Some(5), false, true, vec![]),
+    ] {
+        let world = world_of(min, max, ordered, unique, &["u"]);
+        assert_eq!(
+            counts(&world, 1024),
+            expected.into_iter().map(integer).collect::<Vec<_>>(),
+            "[{min}, {max:?}] ordered {ordered} unique {unique}"
+        );
+    }
+
+    let world = world_of(0, None, true, false, &[]);
+    assert_eq!(counts(&world, 5), (0..=3).map(integer).collect::<Vec<_>>());
+    let held = system(&world);
+    let timed = TimedSystem::with_max_clocks(&held, "M", std::num::NonZeroU64::new(5).expect("5"))
+        .expect("a timed subject");
+    let initial = timed.initial();
+    assert!(timed.steps(&initial[2]).is_ok());
+    assert_eq!(
+        timed.steps(&initial[3]).err(),
+        Some(TimedStop::MaxClocks { max_clocks: 5 })
+    );
+    // Each count is a distinct state key: the record writes one `Clock`
+    // shell per element.
+    let keys: std::collections::BTreeSet<Vec<u8>> = initial
+        .iter()
+        .map(|state| held.state_key(state.discrete()).expect("a key").0)
+        .collect();
+    assert_eq!(keys.len(), 4);
+    let (two, _) = held.state_key(initial[2].discrete()).expect("a key");
+    let text = String::from_utf8(two).expect("UTF-8");
+    let shell = r#"{"components":[],"name":"Clock","type":"tuple"}"#;
+    assert_eq!(text.matches(shell).count(), 2, "{text}");
+}
+
 /// QSpec FR-430 "Reductions over a dense-time subject" over clock
 /// collections: swapping `c1` and `c2`, each holding `ts: Sequence<Timer>`
 /// of at most 2 elements, maps every clock place of one object to the

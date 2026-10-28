@@ -279,7 +279,8 @@ impl Site {
             DeclarationKind::ObjectType
             | DeclarationKind::Interface
             | DeclarationKind::ValueType
-            | DeclarationKind::RecordValueType => {
+            | DeclarationKind::RecordValueType
+            | DeclarationKind::TupleValueType => {
                 matches!(self, Self::Type | Self::Role)
             }
             DeclarationKind::Part | DeclarationKind::Port => matches!(self, Self::Role),
@@ -295,6 +296,7 @@ impl Site {
             | DeclarationKind::StateMachine
             | DeclarationKind::Process
             | DeclarationKind::PersistenceInterface
+            | DeclarationKind::TuplePosition
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Population => false,
