@@ -361,7 +361,10 @@ fn zone_loci_are_written_in_their_fr331_forms() {
     for (locus, written) in [
         (node(3), serde_json::json!({"node": "3"})),
         (
-            CertificateLocus::ZoneEdge { edge: 7 },
+            CertificateLocus::ZoneEdge {
+                edge: 7,
+                verdict: None,
+            },
             serde_json::json!({"edge": "7"}),
         ),
         (

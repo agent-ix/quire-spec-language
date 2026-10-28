@@ -383,10 +383,12 @@ impl Product<'_, '_> {
                 // time-divergent continuation; otherwise it holds
                 // vacuously.
                 Judgement::Fails(failed) => {
-                    if !zone.is_empty()
-                        && run
-                            .escape(&discrete, &zone, &scale, &lower, &upper)?
-                            .diverges
+                    if zone.is_empty() {
+                        continue;
+                    }
+                    if run
+                        .escape(&discrete, &zone, &scale, &lower, &upper)?
+                        .diverges
                     {
                         let (failure, kind) = *failed;
                         return Ok(Decided::Violated {
@@ -394,7 +396,15 @@ impl Product<'_, '_> {
                             stats: run.stats(),
                         });
                     }
+                    // A time-locked initial state: the `locked` entry of a
+                    // locked region, as a failing step's post-state is
+                    // (ADR-026 TV-1, per initial state).
                     locked_failure = true;
+                    if let Some(node) = run.insert(discrete, LOCKED, zone, Some(index), None)? {
+                        run.nodes[node].locked = true;
+                        self.depth.push(0);
+                        queue.push_back(node);
+                    }
                     continue;
                 }
                 Judgement::Ends(outcome) => return Ok(outcome),
@@ -408,7 +418,7 @@ impl Product<'_, '_> {
                 queue.push_back(node);
             }
         }
-        if queue.is_empty() {
+        if roots.is_empty() {
             let cause = if locked_failure {
                 ZoneUndecided::NoAdmittedBehaviour
             } else {

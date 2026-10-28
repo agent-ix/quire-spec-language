@@ -657,6 +657,7 @@ impl<O> Checker<'_, '_, O> {
                         CertificateRule::BackwardEdge,
                         CertificateLocus::ZoneEdge {
                             edge: u64::try_from(index).unwrap_or(u64::MAX),
+                            verdict: None,
                         },
                     );
                 }

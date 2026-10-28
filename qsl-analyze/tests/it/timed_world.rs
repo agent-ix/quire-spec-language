@@ -359,6 +359,8 @@ pub(crate) struct Refining {
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     /// `M`'s initial state.
     pub(crate) concrete_initial: DocumentRef,
+    /// A second initial state of `M`, with `inflight` and `retried` true.
+    pub(crate) retried_initial: DocumentRef,
     /// `A`'s initial state.
     pub(crate) abstract_initial: DocumentRef,
 }
@@ -457,52 +459,56 @@ pub(crate) fn refining_from(
                 .collect::<Vec<_>>()
         })?;
     let mut snapshots = BTreeMap::new();
-    let mut snapshot = |package: &str, document: &[u8], name: &str, inflight: bool| {
-        let digest = packages
-            .iter()
-            .find(|(_, bytes)| bytes.as_slice() == document)
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned");
-        let identity = |suffix: &str| format!("ix://{package}/{suffix}");
-        let snapshot = json!({
-            "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-                "revision": "fixture:1"},
-            "observation": "current",
-            "model": {"identity": package, "version": "1.0.0",
-                "digest": format!("sha256-jcs:{digest}")},
-            "anchor": {"kind": "initialization", "name": "start"},
-            "populations": [{"population": identity("calls"), "complete": true,
-                "objects": [{"key": "c", "type": identity("Call"),
-                    "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": inflight},
-                        "late": {"boolean": false}, "retried": {"boolean": false}}}]}],
-        });
-        let bytes = snapshot.to_string().into_bytes();
-        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        snapshots.insert(digest, bytes);
-        DocumentRef {
-            authority: "test".to_owned(),
-            identity: name.to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "fixture:1".to_owned(),
-            digest,
-        }
-    };
+    let mut snapshot =
+        |package: &str, document: &[u8], name: &str, inflight: bool, retried: bool| {
+            let digest = packages
+                .iter()
+                .find(|(_, bytes)| bytes.as_slice() == document)
+                .map(|(digest, _)| hex(digest))
+                .expect("the package is provisioned");
+            let identity = |suffix: &str| format!("ix://{package}/{suffix}");
+            let snapshot = json!({
+                "format": "quire.state.snapshot/v1",
+                "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
+                    "revision": "fixture:1"},
+                "observation": "current",
+                "model": {"identity": package, "version": "1.0.0",
+                    "digest": format!("sha256-jcs:{digest}")},
+                "anchor": {"kind": "initialization", "name": "start"},
+                "populations": [{"population": identity("calls"), "complete": true,
+                    "objects": [{"key": "c", "type": identity("Call"),
+                        "fields": {"phase": {"integer": "0"}, "inflight": {"boolean": inflight},
+                            "late": {"boolean": false}, "retried": {"boolean": retried}}}]}],
+            });
+            let bytes = snapshot.to_string().into_bytes();
+            let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+            let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+                .expect("canonical fixture")
+                .as_bytes();
+            snapshots.insert(digest, bytes);
+            DocumentRef {
+                authority: "test".to_owned(),
+                identity: name.to_owned(),
+                revision_namespace: "fixture".to_owned(),
+                revision: "fixture:1".to_owned(),
+                digest,
+            }
+        };
     let abstract_initial = snapshot(
         &abstract_package,
         abstract_document,
         "a0",
         abstract_inflight,
+        false,
     );
-    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0", false);
+    let concrete_initial = snapshot(PACKAGE, concrete_document, "m0", false, false);
+    let retried_initial = snapshot(PACKAGE, concrete_document, "m1", true, true);
     Ok(Refining {
         package: CheckedPackage::link(graph),
         packages,
         snapshots,
         concrete_initial,
+        retried_initial,
         abstract_initial,
     })
 }

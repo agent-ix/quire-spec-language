@@ -172,6 +172,7 @@ fn a_tampered_component_part_is_rejected() {
             CertificateRule::BackwardEdge,
             CertificateLocus::ZoneEdge {
                 edge: u64::try_from(first).expect("a small index"),
+                verdict: None,
             }
         )
     );
