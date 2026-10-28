@@ -146,8 +146,14 @@ fn collection_type(shape: CollectionShape, inner: &str) -> String {
     format!("{kind}<{inner}>")
 }
 
-/// The element type of the rendered collection type `rendered`.
+/// The element type of the rendered collection type `rendered`, read
+/// through an `Option<..>` around it (QSL FR-230-AC-19's `o:
+/// Option<Sequence<Clock>[0, 2]>`).
 fn element_type(rendered: &str) -> &str {
+    let rendered = rendered
+        .strip_prefix("Option<")
+        .and_then(|inner| inner.strip_suffix('>'))
+        .unwrap_or(rendered);
     ["Sequence<", "Set<", "Bag<", "OrderedSet<"]
         .iter()
         .find_map(|prefix| rendered.strip_prefix(prefix)?.strip_suffix('>'))

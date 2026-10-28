@@ -314,7 +314,7 @@ fn a_clock_place_reads_back() {
 /// collection `Sequence<ix://quire/native/Clock>`.
 #[trace("TC-685")]
 #[test]
-#[ignore = "IR renders a collection field row without its collection and refuses malformed-clock-place (STD-526 IR delta, luna)"]
+#[ignore = "IR-1083 (validate symbolic timed slots, SL-01..05): the pinned IR renders a collection field row without its collection and refuses malformed-clock-place"]
 fn a_template_slot_place_reads_back() {
     let typed = read_back(&clocked_document())
         .unwrap_or_else(|failure| panic!("the I2 read admits the template places: {failure}"));
@@ -326,4 +326,156 @@ fn a_template_slot_place_reads_back() {
         .clock_places
         .iter()
         .all(|place| place.guards.is_empty()));
+}
+
+/// ConfigVersion with the record `Timer { x: Clock; n: VersionNumber }`, the
+/// package sequence type `Ticks` of `Clock`, and the fields of QSpec's
+/// timed-slot-selector vectors: `ts: Sequence<Timer>[0, 3]` (SL-01), `g:
+/// Sequence<Ticks>` unbounded, the `Sequence<Sequence<Clock>>` of SL-05,
+/// and `s: Sequence<Clock>` unbounded (SL-08).
+fn vector_document() -> Vec<u8> {
+    const PREFIX: &str = "ix://example/config-version";
+    let mut document: Value =
+        serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
+            .expect("the fixture is JSON");
+    let generated = |identity: &str| {
+        json!({"generated": {"generatorIdentity": identity, "generatorVersion": "1.0.0",
+            "inputIdentities": [identity]}})
+    };
+    let field = |owner: &str, name: &str, type_ref: &str, multiplicity: Value| {
+        let identity = format!("{PREFIX}/{owner}/{name}");
+        json!({"identity": identity, "name": name, "typeRef": type_ref,
+            "presence": "required", "nullable": false, "defaultKind": "none",
+            "multiplicity": multiplicity, "origin": generated(&identity)})
+    };
+    let single = json!({"lower": 1, "upper": 1, "ordered": false, "unique": false});
+    let declared_type = |name: &str, kind: Value, extra: Value| {
+        let identity = format!("{PREFIX}/{name}");
+        let mut node = json!({"identity": identity, "displayName": identity, "kind": kind,
+            "roles": [], "origin": generated(&identity), "constraints": [], "extensions": [],
+            "unknownPolicy": "reject"});
+        for (key, value) in extra.as_object().expect("members") {
+            node[key] = value.clone();
+        }
+        node
+    };
+    let constructs = document["constructs"].as_array_mut().expect("constructs");
+    let mut record = constructs[0].clone();
+    record["kind"]["name"] = json!("value_record");
+    record["construct"]["meaning"] =
+        json!(qsl_semantics::model::intake::meaning::RECORD_VALUE_TYPE);
+    constructs.push(record);
+    let types = document["types"].as_array_mut().expect("types");
+    types.push(declared_type(
+        "Timer",
+        json!({"module": "example/config-version", "name": "value_record"}),
+        json!({"fields": [
+            field("Timer", "x", "ix://quire/native/Clock", single.clone()),
+            field("Timer", "n", &format!("{PREFIX}/VersionNumber"),
+                json!({"lower": 1, "upper": 1, "ordered": false, "unique": true})),
+        ]}),
+    ));
+    types.push(declared_type(
+        "Ticks",
+        json!("sequence"),
+        json!({"items": "ix://quire/native/Clock"}),
+    ));
+    let fields = types[1]["fields"].as_array_mut().expect("fields");
+    let unbounded = json!({"lower": 0, "ordered": true, "unique": false});
+    fields.push(field(
+        "ConfigVersion",
+        "ts",
+        &format!("{PREFIX}/Timer"),
+        json!({"lower": 0, "upper": 3, "ordered": true, "unique": false}),
+    ));
+    fields.push(field(
+        "ConfigVersion",
+        "g",
+        &format!("{PREFIX}/Ticks"),
+        unbounded.clone(),
+    ));
+    fields.push(field(
+        "ConfigVersion",
+        "s",
+        "ix://quire/native/Clock",
+        unbounded,
+    ));
+    serde_json::to_vec(&document).expect("the fixture stays JSON")
+}
+
+/// QSpec FR-322-AC-148/149 conformance (TC-685 step 33): the emitted
+/// template places of `ts`, `g` and `s` equal the `node` of the published
+/// timed-slot-selector vectors SL-01, SL-05 and SL-08 (body and
+/// dependencies), once the vectors' `acme/orders` model node digest and
+/// type identities are read as this package's. Reads the vectors from
+/// `$QSPEC_DIR` (skipped, and passing, when it is unset; `make
+/// conformance` requires it); nothing of QSpec is copied here.
+#[trace("TC-685")]
+#[test]
+fn conformance_the_template_places_match_the_slot_selector_vectors() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/timed-slot-selector-vectors.json");
+    let vectors: Value = serde_json::from_slice(
+        &std::fs::read(&path).unwrap_or_else(|failure| panic!("{}: {failure}", path.display())),
+    )
+    .expect("the vectors are JSON");
+    let document = vector_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let graph = assemble_with_models(clocked_unit(&packages, "").as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let place = |name: &str| {
+        nodes(&wire)
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "clock_place"
+                    && steps(member(&node["body"], "path"))[0][1].1 == name
+            })
+            .unwrap_or_else(|| panic!("the place of {name}"))
+            .clone()
+    };
+    let vector_model = vectors["type_nodes"]["model"]
+        .as_str()
+        .expect("the model digest");
+    for (case, name) in [("SL-01", "ts"), ("SL-05", "g"), ("SL-08", "s")] {
+        let emitted = place(name);
+        let model = member(&emitted["body"], "model")["target"]["digest"]
+            .as_str()
+            .expect("a model reference")
+            .to_owned();
+        let published = vectors["cases"]
+            .as_array()
+            .expect("cases")
+            .iter()
+            .find(|vector| vector["id"] == case)
+            .unwrap_or_else(|| panic!("{case} is published"));
+        let read = serde_json::to_string(&published["node"])
+            .expect("JSON")
+            .replace(vector_model, &model)
+            .replace(
+                "ix://acme/orders/Order",
+                "ix://example/config-version/ConfigVersion",
+            )
+            .replace("ix://acme/orders/", "ix://example/config-version/");
+        let published: Value = serde_json::from_str(&read).expect("JSON");
+        assert_eq!(emitted["body"], published["body"], "{case}");
+        let digests = |node: &Value| {
+            let mut digests: Vec<String> = node["dependencies"]
+                .as_array()
+                .expect("dependencies")
+                .iter()
+                .map(|dependency| dependency["digest"].as_str().unwrap_or_default().to_owned())
+                .collect();
+            digests.sort();
+            digests
+        };
+        assert_eq!(digests(&emitted), digests(&published), "{case}");
+    }
 }
