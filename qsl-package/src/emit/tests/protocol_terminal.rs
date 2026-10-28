@@ -168,7 +168,7 @@ fn an_each_terminal_condition_reads_nothing_and_over_is_an_ir_gap() {
     );
     assert_eq!(
         ProtocolConstruct::TerminalReadsOverUnderEach.tracking(),
-        "IR-874"
+        "IR-1069"
     );
 }
 

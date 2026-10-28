@@ -804,7 +804,7 @@ pub enum ProtocolConstruct {
     /// each`. QSpec FR-464 stage `terminal` and vector TC-947 TM11 admit it,
     /// but IR's reader (`protocol_body.rs` `check_finish_terminal`, at
     /// 8b49bd4 and c103a5e) lets only an `origin` protocol's terminal read
-    /// `over`, so the package would be refused: IR-874.
+    /// `over`, so the package would be refused: IR-1069.
     TerminalReadsOverUnderEach,
     /// A `relationship` member (FR-464 "Clause body"): a real model package
     /// cannot name a relationship yet, so the clause `relationships` set is
@@ -839,7 +839,8 @@ impl ProtocolConstruct {
     /// The ticket that writes this construct's node.
     pub const fn tracking(self) -> &'static str {
         match self {
-            Self::WholeModelRole | Self::TerminalReadsOverUnderEach => "IR-874",
+            Self::WholeModelRole => "IR-874",
+            Self::TerminalReadsOverUnderEach => "IR-1069",
             Self::Control(_) => "QSL-1126",
             Self::Requirements | Self::Compensations => "QSL-1127",
             Self::FinishReadsDeclaration
