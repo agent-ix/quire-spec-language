@@ -879,6 +879,8 @@ pub struct VariantRecord {
     pub owner: DeclarationKey,
     /// The declared case name, compared as exact UTF-8 bytes.
     pub case: String,
+    /// Its single resolved value payload, or `None` for a nullary member.
+    pub payload_type: Option<ValueTypeRef>,
 }
 
 impl VariantRecord {

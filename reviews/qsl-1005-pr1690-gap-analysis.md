@@ -87,3 +87,37 @@ findings:
 ```
 
 +++
+
+## Dispositions, round 2 (head 355ac1251)
+
+
+Round 2 (final). Fix 355ac1251.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | `reads_reductions` now covers exactly the item kinds FR-159's preservation table reads: `temporal-satisfaction` (TP-1 to TP-4 and the deadlock-freedom item) and `refinement` (both halves). `items_with_reductions` routes every item through `reduced_candidates`, which restricts those kinds by `restrict_to_reductions`. |
+
+**A refinement item can no longer run unreduced.**
+- A refinement item selecting symmetry has no candidate among backends that lack it, and settles V-8 naming `Symmetry`. When a backend advertises symmetry, the item routes there only.
+- A `value-validity` item is unaffected.
+- An empty selection keeps every candidate, since an empty set is a subset of any.
+- The unit test drives `reduced_candidates` directly, because no refinement `RequirementRecord` can be built until QSL-544. The writer calls the same function for every kind, so the test exercises the production branch.
+
+Gates at 355ac1251 (locked-build, jobs 4, debug info off):
+- fmt: exit 0.
+- qsl-route: 19 + 77, including `a_refinement_item_is_restricted_by_its_requests_reductions`.
+- qsl-analyze `reduction_manifest`: 6/6.
+- clippy on qsl-route and qsl-analyze with `-D warnings`: exit 0.
+
+**Verdict: mergeable.** No open findings remain in SR-1690001 or SR-1690002.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+- fnd: FND-004
+  outcome: fixed
+  after_excerpt: 'fn reads_reductions(kind: Capability) -> bool { matches!(kind, Capability::TemporalSatisfaction | Capability::Refinement) }'
+```
+
++++

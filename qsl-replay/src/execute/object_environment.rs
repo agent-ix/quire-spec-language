@@ -124,6 +124,7 @@ pub(super) fn holds_reference(types: &TypeEnvironment, declared: &[ValueType]) -
             ValueType::Reference(_) => return true,
             ValueType::Option(payload) => pending.push(payload),
             ValueType::Collection(collection) => pending.push(collection.element()),
+            ValueType::Map(map) => pending.push(map.values()),
             ValueType::Composite(declaration) => {
                 if !entered.insert(*declaration) {
                     continue;
@@ -148,6 +149,7 @@ pub(super) fn holds_reference(types: &TypeEnvironment, declared: &[ValueType]) -
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
             | ValueType::String
             | ValueType::Text(_)
             | ValueType::Enum(_)

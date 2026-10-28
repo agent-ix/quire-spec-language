@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.2.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=792cd89d27b424f2ca5eaad5c6ca5e77924ad150#792cd89d27b424f2ca5eaad5c6ca5e77924ad150"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=8858b42e8aeaa0dcd7f325626222293e2788df86#8858b42e8aeaa0dcd7f325626222293e2788df86"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -18,12 +18,12 @@ dependencies = [
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.1.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=792cd89d27b424f2ca5eaad5c6ca5e77924ad150#792cd89d27b424f2ca5eaad5c6ca5e77924ad150"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=8858b42e8aeaa0dcd7f325626222293e2788df86#8858b42e8aeaa0dcd7f325626222293e2788df86"
 
 [[package]]
 name = "agent-ix-semantic-schema"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-core-data?branch=main#792cd89d27b424f2ca5eaad5c6ca5e77924ad150"
+source = "git+https://github.com/agent-ix/filament-core-data?branch=main#8858b42e8aeaa0dcd7f325626222293e2788df86"
 
 [[package]]
 name = "ahash"
@@ -1643,7 +1643,7 @@ dependencies = [
 [[package]]
 name = "quire-checked"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#a464a64f9ee0dfbfc94f18697b7b32a9779ef588"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#5406acf3e95092bf64775e14e2b1b4df8d33a9ba"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1656,7 +1656,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#8b49bd487cc2de387524ad270aa2193277d77965"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#c103a5e876612574830955c85dc9e117f60e5e88"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1680,7 +1680,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#a464a64f9ee0dfbfc94f18697b7b32a9779ef588"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#5406acf3e95092bf64775e14e2b1b4df8d33a9ba"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1690,7 +1690,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#f6d62c09774fc29822273061e910b7163dee89cf"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#f4d9c97fbbc87e7d2d65d25a9ba214de1a86273a"
 dependencies = [
  "allocator-api2",
  "num-bigint",
@@ -1726,7 +1726,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#2cab5d0bc66567f6753657f79726fb76bd0a048d"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#68a6b45c74e334f21f9e6fb994e4708299f07845"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1771,7 +1771,7 @@ dependencies = [
 [[package]]
 name = "quire-verification-contracts"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#fe19108d1468ada949e255c9d03aefaafa067258"
+source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#80c735dd8d8a789b240cbc7c29d18ae83c56d2fb"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",

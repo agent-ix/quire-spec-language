@@ -69,3 +69,12 @@ covered.
 | --- | --- | --- | --- |
 | FND-001 | low | Two settlement paths have no EN-6 test: `SymmetryBroken`, where the initial states are not closed under the group (V-6 inconclusive through FR-160's row), and the `Symmetry` admission refusal. A partial class (an object outside every declared class) is also untested. My local probe shows that case correct: three timers, group `[[t1,t2]]`, the same verdicts reduced and unreduced, and lifted counterexamples that replay. Add one test for each. | qsl-analyze/tests/it/zone_dense.rs |
 | FND-002 | low | AC-3 is satisfied only in part, and the rest needs tracking. "At negotiation" (V-8 with no candidate run, through qsl-route and the manifest's `reductions`) and the FR-159-AC-4 identity effect are deferred to slice "1005a2". No Linear ticket by that name exists; QSL-1005 has no children. Record 1005a2's scope on QSL-1005, so the AC-3 remainder has an owner beyond the PR body. | FR-430-AC-3; FR-159-AC-3, AC-4, AC-5 |
+
+## Dispositions
+
+Round 1, fix commit 8ad9b7408. The gates are as recorded in SR-1671001's dispositions.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `symmetry_admission_is_judged_before_the_search` covers three cases: `SymmetryBroken` with no state stored (`t1` armed, `t2` not), which settles `Inconclusive(SymmetryBroken)` through `settle_zone_check`; an undeclared key refused as `ZoneCheckRefusal::Symmetry(UnknownKey)`; and the time-lock item settling V-8 before admission. `a_partial_class_fixes_the_timers_outside_it` covers a partial class: three timers under `[[t1, t2]]`, deadlock holding both reduced and unreduced, and the latching variant giving equal delays, every receiver, and a lifted counterexample that replays. This matches my earlier local probe. |
+| FND-002 | fixed | 1005a2 is tracked: QSL-1005a2 is PR #1690, whose PR body owns the "at negotiation" half of FR-430-AC-3 and the FR-159-AC-4 identity effect, and it has its own review (SR-1690002 on QSL-1005). |

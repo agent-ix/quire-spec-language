@@ -238,6 +238,54 @@ impl ModelOwner {
     }
 }
 
+/// The owner of a selected model package's `model_root` node (QSpec FR-322
+/// `ModelRootOwner`): the selected package's identity and `sha256-jcs` digest
+/// as lowercase hex, never a declaration or an alias.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
+pub struct ModelRootOwner {
+    digest: String,
+    identity: String,
+    kind: ModelRootOwnerKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
+#[serde(rename_all = "snake_case")]
+enum ModelRootOwnerKind {
+    ModelRoot,
+}
+
+impl ModelRootOwner {
+    /// The root owner `{kind: "model_root", identity, digest}`.
+    pub fn new(
+        identity: impl Into<String>,
+        digest: impl Into<String>,
+    ) -> Result<Self, InvalidModelOwner> {
+        let identity = identity.into();
+        let digest = digest.into();
+        if identity.is_empty() {
+            return Err(InvalidModelOwner::EmptyIdentity);
+        }
+        if digest.is_empty() {
+            return Err(InvalidModelOwner::EmptyNode);
+        }
+        Ok(Self {
+            digest,
+            identity,
+            kind: ModelRootOwnerKind::ModelRoot,
+        })
+    }
+
+    /// The selected package's identity.
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    /// The selected package's digest, lowercase hex.
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+}
+
 /// A structural node's `owner` (FR-092, FR-094): a source-declared node's
 /// [`SourceOwner`] or a model-owned node's [`ModelOwner`]. Serialized as the
 /// owner itself; its `kind` member tells the two apart.
@@ -248,6 +296,8 @@ pub enum Owner {
     Source(SourceOwner),
     /// A node standing for a domain package's declaration or clause.
     Model(ModelOwner),
+    /// A selected model package's root node.
+    ModelRoot(ModelRootOwner),
 }
 
 /// A `NodeRef` (`{domain, digest}`) naming a checked node by key.
@@ -2113,7 +2163,7 @@ fn typed_preimage<'a>(
         // FR-094: a model-owned node's `declaration` is `null`.
         let consistent = match node.owner {
             Some(Owner::Source(_)) => node.declaration.is_some(),
-            Some(Owner::Model(_)) | None => node.declaration.is_none(),
+            Some(Owner::Model(_) | Owner::ModelRoot(_)) | None => node.declaration.is_none(),
         };
         if !consistent {
             return Err(NodeKeyRefusal::OwnerDeclarationMismatch);

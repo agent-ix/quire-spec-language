@@ -109,7 +109,8 @@ pub(crate) use model::{
     QuantityKind, RecordKeyError,
 };
 pub use model::{
-    AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause, PlaceStep,
+    model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause,
+    ModelRootKeyError, PlaceStep,
 };
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
@@ -1320,6 +1321,10 @@ impl<'w> LeafWalk<'w> {
                 segment: Some(WalkSegment::Inner),
                 value_type: collection.element(),
             }),
+            ValueType::Map(map) => queued.push(LeafVisit::Type {
+                segment: Some(WalkSegment::Inner),
+                value_type: map.values(),
+            }),
             ValueType::Composite(declaration) => {
                 // A composite from which no text type is reachable adds no
                 // leaf, open or not, so the walk does not enter it (rules 3
@@ -1368,6 +1373,7 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
             | ValueType::Enum(_)
             | ValueType::Reference(_)
             | ValueType::Population(_) => {}
@@ -1418,6 +1424,7 @@ impl<'w> LeafWalk<'w> {
                     ValueType::Text(_) => direct = true,
                     ValueType::Option(payload) => members.push(payload),
                     ValueType::Collection(collection) => members.push(collection.element()),
+                    ValueType::Map(map) => members.push(map.values()),
                     ValueType::Composite(next) => match self.reach.get(next) {
                         Some(true) => direct = true,
                         Some(false) => {}
@@ -1433,6 +1440,7 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
+                    | ValueType::BoundedQuantity(_)
                     | ValueType::String
                     | ValueType::Enum(_)
                     | ValueType::Reference(_)
@@ -2096,6 +2104,12 @@ impl<'a> Lowering<'a> {
                 }
             }
             ValueType::Quantity(unit) => self.quantity_type(*unit, location),
+            // No checked type node carries a map or a bounded quantity yet:
+            // a typed refusal, never a guessed node.
+            ValueType::Map(_) | ValueType::BoundedQuantity(_) => Err(refuse(
+                location,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+            )),
             ValueType::Reference(target) => self.reference_type(*target, location),
             // FR-094: a `Population<T>[N]` node is built from its binding's
             // resolved type form ([`Self::binder_type`]); the checked type
@@ -4605,8 +4619,15 @@ impl<'a> Lowering<'a> {
                 });
             }
             ValueType::Enum(_) => "enum",
-            ValueType::Quantity(_) => "quantity",
+            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => "quantity",
             ValueType::Reference(_) => "reference",
+            // QSpec FR-149 states no map equality relation.
+            ValueType::Map(_) => {
+                return Err(refuse(
+                    location,
+                    CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),
+                ))
+            }
             // FR-093 "Native scalar equality": no law, mode, member or
             // leaves, and no text-profile selection.
             ValueType::String => "string",

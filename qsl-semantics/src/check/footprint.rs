@@ -247,6 +247,7 @@ fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
         ValueType::Reference(target) => found.push(*target),
         ValueType::Option(payload) => referenced_types(payload, found),
         ValueType::Collection(collection) => referenced_types(collection.element(), found),
+        ValueType::Map(map) => referenced_types(map.values(), found),
         ValueType::Boolean
         | ValueType::Integer
         | ValueType::Int(_)
@@ -254,6 +255,7 @@ fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::BoundedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid
