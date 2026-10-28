@@ -651,12 +651,198 @@ fn an_urgency_predicate_is_a_located_expression_node() {
         located >= at("self.versionNumber > 0") && located < at("self.versionNumber > 0") + 22,
         "{located}"
     );
-    let reads_self = nodes(&wire).iter().any(|node| {
+    let reads_self = reached(&wire, predicate).iter().any(|node| {
         node["semantic_form"] == "parameter"
             && member(&node["body"], "name")["value"] == "self"
             && member(&node["body"], "level")["value"] == "0"
     });
-    assert!(reads_self, "self is a level-0 parameter node");
+    assert!(
+        reads_self,
+        "the predicate reads self, a level-0 parameter node"
+    );
+}
+
+/// Every node `from` reaches through its dependencies, `from` included.
+fn reached<'w>(wire: &'w Value, from: &'w Value) -> Vec<&'w Value> {
+    let mut seen: Vec<&Value> = Vec::new();
+    let mut pending = vec![from];
+    while let Some(node) = pending.pop() {
+        if seen.iter().any(|known| known["node_id"] == node["node_id"]) {
+            continue;
+        }
+        for dependency in node["dependencies"].as_array().into_iter().flatten() {
+            if let Some(next) = nodes(wire)
+                .iter()
+                .find(|candidate| &candidate["node_id"] == dependency)
+            {
+                pending.push(next);
+            }
+        }
+        seen.push(node);
+    }
+    seen
+}
+
+/// The emitted wire of [`clocked_unit`] over `document` with `body`.
+fn emitted(document: &[u8], body: &str) -> (String, Value) {
+    let packages = qsl_semantics::model::intake::package_input([document]);
+    let unit = clocked_unit(&packages, body);
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    (unit, wire(&emission))
+}
+
+/// The `urgency` nodes the timed root lists, in order.
+fn listed_urgencies(wire: &Value) -> Vec<&Value> {
+    let [root] = nodes(wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "timed_model")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one timed root");
+    };
+    member(&root["body"], "urgencies")["members"]
+        .as_array()
+        .expect("urgencies")
+        .iter()
+        .map(|reference| {
+            nodes(wire)
+                .iter()
+                .find(|node| node["node_id"] == reference["target"])
+                .expect("a listed urgency")
+        })
+        .collect()
+}
+
+/// SR-1770001 FND-001, SR-1770002 FND-001 (TC-685, FR-230-AC-53): two
+/// `urgent` declarations of equal content, `when` over one predicate or
+/// `operation` over one operation, are one `urgency` node (its key is its
+/// content) listed once by the root, with one `expression` occurrence at
+/// each declaration (QSpec FR-322: a node has one or more source
+/// occurrences); I2 admits the package and reads the node back once.
+#[trace("TC-685", "FR-230-AC-53")]
+#[test]
+fn equal_urgencies_are_one_node_located_at_each_declaration() {
+    for body in [
+        "urgent A when { self.versionNumber > 0 };
+urgent B when { self.versionNumber > 0 };
+",
+        "urgent A Config::ConfigVersion::attemptUpdate;
+         urgent B Config::ConfigVersion::attemptUpdate;
+",
+    ] {
+        let document = clocked_document_with(false);
+        let (unit, wire) = emitted(&document, body);
+        let [urgency] = listed_urgencies(&wire)[..] else {
+            panic!("{body}: one listed urgency");
+        };
+        let mut starts: Vec<(u64, u64)> = wire["source_map"]
+            .as_array()
+            .expect("source map")
+            .iter()
+            .filter(|entry| entry["node_id"] == urgency["node_id"])
+            .map(|entry| {
+                (
+                    entry["ordinal"].as_u64().expect("an ordinal"),
+                    entry["regions"][0]["start"].as_u64().expect("a start"),
+                )
+            })
+            .collect();
+        starts.sort_unstable();
+        let at = |text: &str| unit.find(text).expect("declared") as u64;
+        assert_eq!(starts, [(0, at("urgent A")), (1, at("urgent B"))], "{body}");
+        let typed = read_back_with(&document, body)
+            .unwrap_or_else(|failure| panic!("{body}: the I2 read admits it: {failure}"));
+        assert_eq!(typed[0].urgencies.len(), 1, "{body}");
+    }
+}
+
+/// SR-1770002 FND-002 (TC-685, FR-230-AC-53): a predicate that reads no
+/// `self` (`1 > 0`) writes no `parameter` node: its expression node reaches
+/// none.
+#[trace("TC-685", "FR-230-AC-53")]
+#[test]
+fn a_self_free_urgency_predicate_writes_no_parameter() {
+    let (_, wire) = emitted(
+        &clocked_document_with(false),
+        "urgent Now when { 1 > 0 };
+",
+    );
+    let [urgency] = listed_urgencies(&wire)[..] else {
+        panic!("one listed urgency");
+    };
+    let predicate = nodes(&wire)
+        .iter()
+        .find(|node| node["node_id"] == member(&urgency["body"], "predicate")["target"])
+        .expect("the predicate node");
+    assert!(
+        reached(&wire, predicate)
+            .iter()
+            .all(|node| node["semantic_form"] != "parameter"),
+        "no parameter node"
+    );
+}
+
+/// SR-1770002 FND-002 (TC-685, FR-230-AC-50/53): an `urgent when` reading
+/// another object's presence (`present(self.peer.v)`) or a quantified
+/// element presence (`forall(e in self.q : present(e))`) has no lowered
+/// form yet, so its model is refused `TimedModelNotEmitted`.
+#[trace("TC-685")]
+#[test]
+fn an_urgency_reading_another_presence_is_not_emitted() {
+    let mut document: Value = serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields");
+    let template = fields.last().expect("x").clone();
+    let field = |name: &str, type_ref: &str, presence: &str, bounds: (u64, u64), ordered: bool| {
+        let identity = format!("ix://example/config-version/ConfigVersion/{name}");
+        let mut field = template.clone();
+        field["identity"] = json!(identity);
+        field["name"] = json!(name);
+        field["typeRef"] = json!(type_ref);
+        field["presence"] = json!(presence);
+        field["multiplicity"] =
+            json!({"lower": bounds.0, "upper": bounds.1, "ordered": ordered, "unique": !ordered});
+        field["origin"]["generated"]["generatorIdentity"] = json!(identity);
+        field["origin"]["generated"]["inputIdentities"] = json!([identity]);
+        field
+    };
+    let clock = "ix://quire/native/Clock";
+    fields.push(field("v", clock, "optional", (1, 1), false));
+    fields.push(field("q", clock, "optional", (0, 2), true));
+    fields.push(field(
+        "peer",
+        "ix://example/config-version/ConfigVersion",
+        "required",
+        (1, 1),
+        false,
+    ));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    for body in [
+        "urgent Peer when { present(self.peer.v) };
+",
+        "urgent All when { forall(e in self.q : present(e)) };
+",
+    ] {
+        let unit = clocked_unit(&packages, body);
+        let refusals = assemble_with_models(unit.as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .expect_err("a presence urgency is not written yet");
+        assert!(
+            refusals.iter().any(|refusal| matches!(
+                &refusal.cause,
+                qsl_semantics::check::CheckCause::Temporal(cause)
+                    if matches!(**cause, qsl_semantics::check::TemporalCause::TimedModelNotEmitted { .. })
+            )),
+            "{body}: {refusals:?}"
+        );
+    }
 }
 
 /// FR-230-AC-50 and AC-53 (TC-685 step 36): an `urgent when` whose

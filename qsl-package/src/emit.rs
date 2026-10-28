@@ -2061,9 +2061,12 @@ fn emit_package_inner(
             // order"), each located at its declaration so that its order key
             // is its own region. S3 refuses a model whose `urgent when`
             // predicate it has not lowered (FR-230-AC-50), so each `when`
-            // here names its predicate's expression node.
-            let mut urgency_regions: BTreeMap<CheckedNodeId, (u64, u64)> = BTreeMap::new();
-            let mut urgencies = Vec::new();
+            // here names its predicate's expression node. Declarations of
+            // equal content are one node (its key is its content) with one
+            // `expression` occurrence at each declaration (FR-322: every node
+            // has one or more source occurrences); the root lists it once.
+            let mut urgency_regions: BTreeMap<CheckedNodeId, Vec<(u64, u64)>> = BTreeMap::new();
+            let mut declared = Vec::new();
             for timed in graph
                 .timed_models()
                 .iter()
@@ -2103,12 +2106,64 @@ fn emit_package_inner(
                         }
                     };
                     let span = urgency.span();
-                    urgency_regions.insert(id, (span.start as u64, span.end as u64));
-                    urgencies.push((span.start, span.end, node));
+                    declared.push(((span.start as u64, span.end as u64), node));
                 }
             }
-            urgencies.sort_by_key(|(start, end, _)| (*start, *end));
-            model.urgencies = urgencies.into_iter().map(|(_, _, node)| node).collect();
+            declared.sort_by_key(|(region, _)| *region);
+            let mut urgencies: Vec<CheckedUrgency> = Vec::new();
+            for (region, node) in declared {
+                let same = urgencies
+                    .iter_mut()
+                    .find(|written| match (&**written, &node) {
+                        (
+                            CheckedUrgency::When { predicate, .. },
+                            CheckedUrgency::When {
+                                predicate: other, ..
+                            },
+                        ) => predicate == other,
+                        (
+                            CheckedUrgency::Operation {
+                                model,
+                                operation_name,
+                                ..
+                            },
+                            CheckedUrgency::Operation {
+                                model: other_model,
+                                operation_name: other_name,
+                                ..
+                            },
+                        ) => model == other_model && operation_name == other_name,
+                        _ => false,
+                    });
+                let (written, metadata) = match same {
+                    Some(written) => {
+                        let metadata = match written {
+                            CheckedUrgency::When { metadata, .. }
+                            | CheckedUrgency::Operation { metadata, .. } => metadata,
+                        };
+                        let ordinal = metadata.occurrences.len() as u64;
+                        metadata.occurrences.push(CheckedOccurrence {
+                            role: CheckedOccurrenceRole::Expression,
+                            ordinal,
+                        });
+                        (true, metadata.node_id.clone())
+                    }
+                    None => {
+                        let id = match &node {
+                            CheckedUrgency::When { metadata, .. }
+                            | CheckedUrgency::Operation { metadata, .. } => {
+                                metadata.node_id.clone()
+                            }
+                        };
+                        (false, id)
+                    }
+                };
+                urgency_regions.entry(metadata).or_default().push(region);
+                if !written {
+                    urgencies.push(node);
+                }
+            }
+            model.urgencies = urgencies;
             if !model.clock_places.is_empty() {
                 push_scalar_type(
                     &mut nodes,
@@ -2188,26 +2243,28 @@ fn emit_package_inner(
                 .write_nodes()
                 .map_err(EmitRefusal::TimedModelWriterInvariant)?
             {
-                let occurrence =
-                    node.occurrences
-                        .first()
-                        .ok_or(EmitRefusal::TimedModelWriterInvariant(
-                            "timed nodes must retain their source occurrence",
-                        ))?;
-                let (start, end) = urgency_regions
-                    .get(&node.node_id)
-                    .copied()
-                    .unwrap_or((source_region.start(), source_region.end()));
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: node.node_id.clone(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(graph.source()),
-                        start,
-                        end,
-                    }],
-                });
+                if node.occurrences.is_empty() {
+                    return Err(EmitRefusal::TimedModelWriterInvariant(
+                        "timed nodes must retain their source occurrence",
+                    ));
+                }
+                let regions = urgency_regions.get(&node.node_id);
+                for (at, occurrence) in node.occurrences.iter().enumerate() {
+                    let (start, end) = regions
+                        .and_then(|regions| regions.get(at))
+                        .copied()
+                        .unwrap_or((source_region.start(), source_region.end()));
+                    source_map.push(CheckedSourceMapEntry {
+                        node_id: node.node_id.clone(),
+                        role: occurrence.role.clone(),
+                        ordinal: occurrence.ordinal,
+                        regions: vec![CheckedSourceRegion {
+                            source: source_artifact(graph.source()),
+                            start,
+                            end,
+                        }],
+                    });
+                }
                 nodes.push(node);
             }
         }
