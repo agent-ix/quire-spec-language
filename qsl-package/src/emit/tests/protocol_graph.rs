@@ -759,12 +759,34 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
             ),
         ),
         (
-            C::Control("check"),
+            C::ControlReadsDeclaration,
+            "QSL-1121g",
+            plain(
+                "on origin",
+                "",
+                "sequence Main { check Gate using v { ok() }; }",
+                "true",
+            ),
+        ),
+        (
+            C::ControlReadsDeclaration,
+            "QSL-1121g",
+            with_other(plain(
+                "on origin",
+                "",
+                "sequence Main { check Gate using v { protocol Other }; }",
+                "true",
+            )),
+        ),
+        (
+            C::Control("choice"),
             "QSL-1126",
             plain(
                 "on origin",
                 "",
-                "sequence Main { check Gate using v { true }; }",
+                "sequence Main { choice Pick by Buyer visible () { \
+                 case yes when { true } sequence A { } \
+                 case no when { false } sequence B { } } }",
                 "true",
             ),
         ),

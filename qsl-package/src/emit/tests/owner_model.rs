@@ -44,7 +44,7 @@ fn emitted(text: &str) -> Lowered {
 }
 
 /// The reference targets of `term`, in document order.
-fn targets(term: &Value, found: &mut Vec<Value>) {
+pub(super) fn targets(term: &Value, found: &mut Vec<Value>) {
     match term {
         Value::Object(members) => {
             if members.get("term") == Some(&json!("reference")) {
@@ -68,7 +68,7 @@ fn clause_position(wire: &Value) -> usize {
 
 /// IR's verdict on `envelope`: `admitted`, or `<code> at <path>`, with the
 /// cause when the reader gives one.
-fn verdict(lowered: &Lowered, envelope: &Value) -> String {
+pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in lowered.wire["lock"]["required_features"]
         .as_array()
@@ -106,7 +106,7 @@ fn verdict(lowered: &Lowered, envelope: &Value) -> String {
 /// Replaces the clause's exact `dependencies` with the body's reference
 /// targets plus `owner`, once each in ascending digest order (QSpec FR-464
 /// "dependencies").
-fn depend_on(envelope: &mut Value, position: usize, owner: &Value) {
+pub(super) fn depend_on(envelope: &mut Value, position: usize, owner: &Value) {
     let node = &mut envelope["semantic_graph"]["nodes"][position];
     let mut found = vec![owner.clone()];
     targets(&node["body"], &mut found);
@@ -315,7 +315,9 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                 }
             }),
             true,
-            format!("IllTyped at {clause_path}/owner_model (Some(OperatorIneligible))"),
+            format!(
+                "InvalidModelBinding at {clause_path}/owner_model (Some(MalformedDeclaration))"
+            ),
         ),
         (
             "the target is no node of the graph",

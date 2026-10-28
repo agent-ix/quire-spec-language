@@ -86,6 +86,9 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
     )
 }
 
+const CHOICE_ROOT: &str = "sequence Main { choice Pick by R visible () { \
+     case yes when { true } sequence A { } case no when { false } sequence B { } } }";
+
 const ATTEMPT_ROOT: &str = "attempt Update by R on Config::ConfigVersion::attemptUpdate \
      contracts [] as (tried: Boolean) { true };";
 
@@ -118,7 +121,7 @@ fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
 #[trace("FR-092-AC-18", "FR-218-AC-8", "TC-1021")]
 #[test]
 fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
-    let attempt = not_emitted(ProtocolConstruct::Control("attempt"));
+    let attempt = not_emitted(ProtocolConstruct::Control("choice"));
     assert_eq!(attempt.code(), qsl_foundation::Code::UnsupportedConstruct);
     assert_eq!(attempt.cause(), Some("not-yet-implemented"));
     for (construct, ticket) in [
@@ -126,7 +129,7 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Relationships, "QSL-1141"),
         (ProtocolConstruct::ChannelCarriesBounded, "QSL-1137"),
         (ProtocolConstruct::ChannelKeyNotEqualityStable, "QSL-1142"),
-        (ProtocolConstruct::Control("attempt"), "QSL-1126"),
+        (ProtocolConstruct::Control("choice"), "QSL-1126"),
         (ProtocolConstruct::Requirements, "QSL-1127"),
         (ProtocolConstruct::Compensations, "QSL-1127"),
         (ProtocolConstruct::TerminalReadsDeclaration, "QSL-1121g"),
@@ -140,18 +143,37 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
     }
 
-    let declared = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, false), false)
+    let declared = check_attempt_unit(&rooted(CHOICE_ROOT, true, false), false)
         .expect_err("the protocol names an unwritten construct");
     assert_eq!(
         declared.iter().map(|r| &r.cause).collect::<Vec<_>>(),
         [&attempt]
     );
 
-    let referred = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, true), false)
+    let referred = check_attempt_unit(&rooted(CHOICE_ROOT, true, true), false)
         .expect_err("the reference refuses too");
     assert_eq!(referred.len(), 2, "{referred:?}");
     assert!(referred.iter().all(|r| r.cause == attempt));
     assert_ne!(referred[0].location, referred[1].location);
+}
+
+/// A protocol with an `attempt` is written after the state clauses its
+/// `contracts` name, so a function that refers to it cannot be keyed before
+/// the clauses: the reference refuses typed (`not-yet-implemented`,
+/// QSL-1121g), while the protocol alone checks.
+#[trace("FR-092-AC-18", "TC-1021")]
+#[test]
+fn a_function_referring_to_a_protocol_with_an_attempt_refuses_typed() {
+    check_attempt_unit(&rooted(ATTEMPT_ROOT, true, false), false)
+        .unwrap_or_else(|refusals| panic!("the attempt protocol checks: {refusals:?}"));
+    let construct = ProtocolConstruct::ReferenceToAttemptProtocol;
+    assert_eq!(construct.tracking(), "QSL-1121g");
+    let refusals = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, true), false)
+        .expect_err("the reference refuses");
+    assert_eq!(
+        refusals.iter().map(|r| &r.cause).collect::<Vec<_>>(),
+        [&not_emitted(construct)]
+    );
 }
 
 pub(super) fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
