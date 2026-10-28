@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::Reductions;
 use qsl_analyze::zone_check::{
     certificate_item, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
