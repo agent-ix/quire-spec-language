@@ -300,7 +300,7 @@ ci-docs:
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored), and builds on the pinned stable toolchain with no sanitizer:
+# gitignored), and builds on the toolchain declared by rust-toolchain.toml with no sanitizer:
 # QSL's crates forbid `unsafe`, so the run checks panics, aborts
 # and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000
