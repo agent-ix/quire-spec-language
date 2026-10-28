@@ -189,6 +189,7 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
         items: vec![StateGraphItem {
             claim: world.claim("ReachesTwo"),
         }],
+        reductions: Default::default(),
         deadlock_freedom: false,
         max_depth: None,
         limits: no_samples(),
@@ -218,6 +219,30 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
     assert!(settled.records[0]
         .iter()
         .all(|record| record.method == EXPLICIT_STATE));
+}
+
+/// FR-167-AC-4 and FR-169-AC-9: the public check-and-settle pipeline returns
+/// a selected non-preserving reduction without expanding or invoking replay.
+#[trace("TC-592", "FR-167-AC-4", "FR-169-AC-9")]
+#[test]
+fn the_pipeline_settles_non_preserving_reduction_before_expansion() {
+    let world = job_world(false, false);
+    let mut request = world.request(&["j"], vec![world.item("InOneWay")], no_samples());
+    request.reductions.partial_order = true;
+
+    let settled =
+        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
+            panic!("a refusal before exploration has no evidence to replay")
+        })
+        .expect("the request is settled");
+    assert!(settled.run.graph.nodes.is_empty());
+    assert!(matches!(
+        settled.records[0][0].value,
+        TerminalValue::Inconclusive(InconclusiveCause::StateGraphReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::PartialOrder,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        })
+    ));
 }
 
 /// FR-169-AC-9 (settlement half): `ReachesTwo` for `c = a` under default

@@ -407,6 +407,7 @@ impl World {
         StateGraphRequest {
             subject: self.subject(keys, UNLIMITED),
             items,
+            reductions: Default::default(),
             deadlock_freedom: false,
             max_depth: None,
             limits,
@@ -664,9 +665,14 @@ pub(crate) const IN_ONE_WAY: &str = "unique path InOneWay using v over (j: M::Jo
 
 /// §7.3's job world over `{j}`, initially all false.
 pub(crate) fn job_world(sequenced: bool, reset: bool) -> World {
+    job_world_with_claims(sequenced, reset, "")
+}
+
+/// §7.3's job with additional state-graph claims for shared-exploration tests.
+pub(crate) fn job_world_with_claims(sequenced: bool, reset: bool, claims: &str) -> World {
     World::new(
         job(reset),
-        &format!("{}{IN_ONE_WAY}", job_contract(sequenced, reset)),
+        &format!("{}{IN_ONE_WAY}{claims}", job_contract(sequenced, reset)),
         &[&[("j", &[("a", 0), ("b", 0), ("done", 0)])]],
     )
 }

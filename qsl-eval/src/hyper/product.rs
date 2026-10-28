@@ -264,9 +264,14 @@ fn encode_property_state_key<S: Sink + ?Sized>(
     key: &Result<Enc, AutomatonError>,
     writer: &mut Writer<'_, S>,
 ) -> Result<(), quire_canonical::Error> {
-    let key = key
-        .as_ref()
-        .map_err(|error| quire_canonical::Error::Serialize(error.to_string()))?;
+    let key = key.as_ref().map_err(|error| match error {
+        AutomatonError::UnknownState { .. } => quire_canonical::Error::Internal {
+            invariant: "hyper-product-key-refers-to-unreached-automaton-state",
+        },
+        _ => quire_canonical::Error::Internal {
+            invariant: "hyper-product-automaton-key-encoding-failed",
+        },
+    })?;
     key.encode_into(writer)
 }
 

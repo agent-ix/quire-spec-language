@@ -159,11 +159,8 @@ impl PropertyAutomaton {
         max_key_bytes: u64,
     ) -> Result<AutomatonStateKey, AutomatonError> {
         let key = self.state_key_value(state)?;
-        let bytes = quire_canonical::to_vec(&key, Limits::new(max_key_bytes)).map_err(|_| {
-            AutomatonError::KeyEncodingLimit {
-                limit: max_key_bytes,
-            }
-        })?;
+        let bytes = quire_canonical::to_vec(&key, Limits::new(max_key_bytes))
+            .map_err(|error| state_key_encoding_error(error, max_key_bytes))?;
         Ok(AutomatonStateKey::canonical(bytes))
     }
 
@@ -472,6 +469,50 @@ impl PropertyAutomaton {
             *slot = Some(row);
         }
         Ok(())
+    }
+}
+
+fn state_key_encoding_error(error: quire_canonical::Error, max_key_bytes: u64) -> AutomatonError {
+    match error {
+        quire_canonical::Error::Limit(limit)
+            if limit.kind == quire_canonical::LimitKind::CanonicalBytes =>
+        {
+            AutomatonError::KeyEncodingLimit {
+                limit: max_key_bytes,
+            }
+        }
+        _ => invariant("property-automaton-key-canonical-encoding"),
+    }
+}
+
+#[cfg(test)]
+mod state_key_encoding_tests {
+    use super::state_key_encoding_error;
+    use crate::automaton::AutomatonError;
+    use quire_canonical::{Error, LimitExceeded, LimitKind};
+
+    #[test]
+    fn only_the_canonical_byte_limit_is_reported_as_key_encoding_limit() {
+        let limit = LimitExceeded {
+            kind: LimitKind::CanonicalBytes,
+            bound: 12,
+            required: 13,
+        };
+        assert_eq!(
+            state_key_encoding_error(Error::Limit(limit), 12),
+            AutomatonError::KeyEncodingLimit { limit: 12 }
+        );
+        assert_eq!(
+            state_key_encoding_error(
+                Error::Internal {
+                    invariant: "test-invariant",
+                },
+                12,
+            ),
+            AutomatonError::Invariant {
+                invariant: "property-automaton-key-canonical-encoding",
+            }
+        );
     }
 }
 

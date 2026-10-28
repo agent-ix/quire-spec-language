@@ -39,6 +39,7 @@ use qsl_replay::{
     ModelCheckOutcome, OpenCause, ReachedLimit, RunEnd, StateGraphInstanceOutcome,
     StateGraphMethod, StateGraphOutcome, StateGraphRecord, DEFAULT_WITNESS_SEED,
 };
+use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
     StateGraphForm,
@@ -64,6 +65,8 @@ pub struct StateGraphRequest<'a> {
     pub subject: ModelSubject<'a>,
     /// The subject's state-graph items.
     pub items: Vec<StateGraphItem<'a>>,
+    /// State-space reductions selected by the request (FR-159, ADR-022 GR-1).
+    pub reductions: Reductions,
     /// Whether the run also decides the subject's derived deadlock-freedom
     /// item (FR-124).
     pub deadlock_freedom: bool,
@@ -457,6 +460,41 @@ pub fn check_state_graph(
             seed,
         });
     }
+    let reductions = request
+        .items
+        .iter()
+        .map(|item| non_preserving(&request.reductions, item.claim.form()))
+        .collect::<Vec<_>>();
+    if !request.deadlock_freedom
+        && reductions.iter().all(Option::is_some)
+        && views.iter().all(|instances| !instances.is_empty())
+    {
+        return Ok(StateGraphRun {
+            graph: explore::empty(RunEnd::Completed),
+            items: views
+                .iter()
+                .zip(&request.items)
+                .zip(reductions)
+                .map(|((instances, item), reduction)| {
+                    let reduction = reduction.expect("all populated items reject a reduction");
+                    instances
+                        .iter()
+                        .map(|view| StateGraphInstanceOutcome {
+                            over: view.over.clone(),
+                            outcome: StateGraphOutcome::ReductionNotPreserving {
+                                reduction,
+                                form: item.claim.form().into(),
+                            },
+                            sampled: Vec::new(),
+                            walks_stopped: 0,
+                        })
+                        .collect()
+                })
+                .collect(),
+            deadlock: None,
+            seed,
+        });
+    }
     let possible: Vec<&InstanceView<'_>> = views
         .iter()
         .zip(&request.items)
@@ -496,9 +534,24 @@ pub fn check_state_graph(
     let items = views
         .iter()
         .zip(&request.items)
-        .map(|(item, entry)| {
+        .enumerate()
+        .map(|(index, (item, entry))| {
             if item.is_empty() {
                 return Ok(vec![no_instance()]);
+            }
+            if let Some(reduction) = reductions[index] {
+                return Ok(item
+                    .iter()
+                    .map(|view| StateGraphInstanceOutcome {
+                        over: view.over.clone(),
+                        outcome: StateGraphOutcome::ReductionNotPreserving {
+                            reduction,
+                            form: entry.claim.form().into(),
+                        },
+                        sampled: Vec::new(),
+                        walks_stopped: 0,
+                    })
+                    .collect());
             }
             item.iter()
                 .map(|view| {
@@ -524,6 +577,26 @@ pub fn check_state_graph(
         deadlock: explored.deadlock,
         seed,
     })
+}
+
+/// ADR-022 GR-1: selected state-space reductions are rejected by the form's
+/// preservation row before any expansion.
+fn non_preserving(
+    reductions: &Reductions,
+    form: &StateGraphForm,
+) -> Option<qsl_foundation::ReductionKind> {
+    reductions
+        .selected()
+        .into_iter()
+        .find(|reduction| match reduction {
+            qsl_foundation::ReductionKind::Symmetry => {
+                matches!(form, StateGraphForm::UniquePath { .. })
+            }
+            qsl_foundation::ReductionKind::PartialOrder => {
+                !matches!(form, StateGraphForm::Possible { .. })
+            }
+            qsl_foundation::ReductionKind::StateConstraint => false,
+        })
 }
 
 /// A state-graph run and the FR-169 settlement record for each claim instance.
