@@ -43,6 +43,10 @@ use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 pub enum PlaceStep {
     /// A field, by its member name.
     Field(String),
+    /// The payload of the union case named, whose place is guarded by the
+    /// case: live while the value is that case (FR-230 "Records, tuples and
+    /// unions").
+    Union(String),
     /// A slot of the collection the steps before it reach: each element
     /// the collection holds is one slot (FR-230 "Clock collections").
     Slot(CollectionShape),
@@ -81,6 +85,10 @@ pub(crate) struct PackagePlace {
     /// the path: an `Option<Clock>`, whose presence is a bit (FR-230
     /// "Presence bit").
     pub(crate) bit: bool,
+    /// Whether the place is a union case's payload directly under the
+    /// object's field, guarded by the case (FR-230 "Records, tuples and
+    /// unions"), with no other guard on its path.
+    pub(crate) case: bool,
     /// The clock aliases the member holding the clock is typed by, directly
     /// or as a sequence's items, each alias of an alias on the chain.
     pub(crate) aliases: Vec<DeclarationKey>,
@@ -103,7 +111,7 @@ impl PackagePlace {
         self.path
             .iter()
             .map(|step| match step {
-                PlaceStep::Field(name) => name.as_str(),
+                PlaceStep::Field(name) | PlaceStep::Union(name) => name.as_str(),
                 PlaceStep::Slot(_) => "[slot]",
             })
             .collect::<Vec<_>>()
@@ -1034,6 +1042,7 @@ impl AdmittedModel {
                 path: vec![PlaceStep::Field(name.to_owned())],
                 optional: false,
                 bit: false,
+                case: false,
                 aliases: Vec::new(),
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
@@ -1108,6 +1117,28 @@ impl AdmittedModel {
             ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => return,
         };
         match self.records.get(key) {
+            // A variant type: each case whose payload is `Clock` is a place
+            // guarded by the case.
+            Some(DomainPackageRecord::Enum(variant_type)) => {
+                for record in self.records.values() {
+                    let DomainPackageRecord::Variant(case) = record else {
+                        continue;
+                    };
+                    let clock = case.owner == variant_type.key
+                        && case.payload_type.as_ref().is_some_and(|payload| {
+                            crate::model::domain_package::unaliased(payload, |key| {
+                                self.records.get(key)
+                            }) == Some((&ValueTypeRef::Clock, 0))
+                        });
+                    if clock {
+                        let mut below = at.clone();
+                        below.path.push(PlaceStep::Union(case.case.clone()));
+                        below.case = !below.optional && below.path.len() == 2;
+                        below.optional = true;
+                        places.push(below);
+                    }
+                }
+            }
             Some(DomainPackageRecord::RecordValueType(_)) if !visiting.contains(&key) => {
                 visiting.push(key);
                 for record in self.records.values() {

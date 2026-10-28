@@ -1098,7 +1098,10 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
                 RawForm::Collection(..),
                 quire_exact::ValueType::Collection(_)
             )
-            | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (
+                RawForm::Record(_) | RawForm::Variant(_),
+                quire_exact::ValueType::Composite(_)
+            )
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     ) || matches!(raw.form(), RawForm::Native(_))
 }
@@ -1138,7 +1141,10 @@ fn object_field_kind_matches(
                 RawForm::Collection(..),
                 quire_exact::ValueType::Collection(_)
             )
-            | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (
+                RawForm::Record(_) | RawForm::Variant(_),
+                quire_exact::ValueType::Composite(_)
+            )
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
 }
@@ -1426,6 +1432,9 @@ fn admit_leaf(
         }
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
+        }
+        (RawForm::Variant(variant), quire_exact::ValueType::Composite(handle)) => {
+            admit_union_case(references, variant, *handle)
         }
         (RawForm::Native(native), value_type) => admit_native(native, value_type, references.types),
         _ => Err(admission_record(
@@ -1743,6 +1752,58 @@ fn admit_variant(
                 u32::try_from(rank).ok()?,
             )))
         })
+        .ok_or_else(|| refuse("invalid-value"))
+}
+
+/// A `variant` form admitted as a value of the union type `handle` (FR-360
+/// item 9's form): a case with no data payload, such as a case whose
+/// payload is `Clock`, which FR-230 makes a clock place and no data. The
+/// first defect refuses in [`admit_variant`]'s order: a missing `type` or
+/// `case`, an extra payload member, a `type` naming any declaration other
+/// than the slot's variant type (`wrong-value-kind`), and a `case` that is
+/// no case of it without a data payload (`invalid-value`).
+fn admit_union_case(
+    references: &References<'_>,
+    variant: super::RawVariant<'_>,
+    handle: quire_exact::NodeKey,
+) -> Result<Value, AdmissionRecord> {
+    let refuse = |cause: &'static str| admission_record(Code::InvalidRuntimeInput, cause);
+    let (Some(type_identity), Some(case)) = (variant.type_identity(), variant.case()) else {
+        let member = if variant.type_identity().is_none() {
+            "type"
+        } else {
+            "case"
+        };
+        return Err(refuse("missing-member").with("member", member));
+    };
+    if variant.has_extra_member() {
+        return Err(refuse("unknown-member"));
+    }
+    let unbounded = qsl_foundation::IdentityLimits {
+        input_bytes: u64::MAX,
+    };
+    let names = references.views.iter().any(|view| {
+        view.view.domain_package().records.iter().any(|record| {
+            matches!(
+                record,
+                crate::model::domain_package::DomainPackageRecord::Enum(_)
+            ) && record.key().node == type_identity
+                && crate::check::record_node_key(record, unbounded)
+                    .is_ok_and(|key| key == Some(handle))
+        })
+    });
+    let Some(CompositeShape::Union(members)) = names
+        .then(|| references.types.composite(handle))
+        .flatten()
+        .map(|declared| declared.shape())
+    else {
+        return Err(refuse("wrong-value-kind"));
+    };
+    members
+        .iter()
+        .find(|member| member.identifier().as_str() == case && member.positions().is_empty())
+        .and_then(|member| member.member())
+        .map(|member| quire_exact::UnionValue::from_admitted(member.clone(), Vec::new()))
         .ok_or_else(|| refuse("invalid-value"))
 }
 

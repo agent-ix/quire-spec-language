@@ -85,6 +85,9 @@ pub struct ClockField {
     /// Whether the place is an `Option<Clock>`, whose presence is a bit of
     /// the state (FR-230 "Presence bit").
     bit: bool,
+    /// Whether reading the place needs its presence: an `Option<Clock>`, or
+    /// a union case's payload, present while the value is that case.
+    guarded: bool,
 }
 
 impl ClockField {
@@ -123,7 +126,7 @@ impl ClockField {
     /// and `None` when one of them declares no maximum.
     pub fn bound(&self) -> Option<u64> {
         self.path.iter().try_fold(1_u64, |count, step| match step {
-            PlaceStep::Field(_) => Some(count),
+            PlaceStep::Field(_) | PlaceStep::Union(_) => Some(count),
             PlaceStep::Slot(shape) => count.checked_mul(shape.max?),
         })
     }
@@ -132,7 +135,7 @@ impl ClockField {
     pub fn slots(&self) -> impl Iterator<Item = &CollectionShape> {
         self.path.iter().filter_map(|step| match step {
             PlaceStep::Slot(shape) => Some(shape),
-            PlaceStep::Field(_) => None,
+            PlaceStep::Field(_) | PlaceStep::Union(_) => None,
         })
     }
 }
@@ -927,7 +930,9 @@ impl Clocks<'_> {
         self.fields
             .iter()
             .position(|clock| {
-                clock.path == path && clock.bit == bit && self.model.conforms(context, clock.owner)
+                same_place(&clock.path, &path)
+                    && clock.guarded == bit
+                    && self.model.conforms(context, clock.owner)
             })
             .map(ClockId)
     }
@@ -940,7 +945,9 @@ impl Clocks<'_> {
         self.fields
             .iter()
             .position(|clock| {
-                clock.bit && clock.path == path && self.model.conforms(context, clock.owner)
+                clock.guarded
+                    && same_place(&clock.path, &path)
+                    && self.model.conforms(context, clock.owner)
             })
             .map(ClockId)
     }
@@ -1100,6 +1107,7 @@ fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
             path: place.path.clone(),
             aliases: place.aliases.clone(),
             bit: place.bit,
+            guarded: place.bit || place.case,
         })
         .collect()
 }
@@ -1231,7 +1239,11 @@ const OPEN_SLOT: CollectionShape = CollectionShape {
 fn same_place(left: &[PlaceStep], right: &[PlaceStep]) -> bool {
     left.len() == right.len()
         && left.iter().zip(right).all(|steps| match steps {
-            (PlaceStep::Field(left), PlaceStep::Field(right)) => left == right,
+            // A read path names a union case as a field (`self.state.Armed`).
+            (
+                PlaceStep::Field(left) | PlaceStep::Union(left),
+                PlaceStep::Field(right) | PlaceStep::Union(right),
+            ) => left == right,
             (PlaceStep::Slot(_), PlaceStep::Slot(_)) => true,
             _ => false,
         })
@@ -1382,7 +1394,7 @@ impl<'f> Located<'f> {
                 .fields
                 .iter()
                 .enumerate()
-                .filter(|(_, field)| field.bit)
+                .filter(|(_, field)| field.guarded)
                 .map(|(index, _)| ClockId(index))
                 .collect(),
             parameter,
@@ -1957,6 +1969,20 @@ fn resets(
             cut.writes.push(write);
             continue;
         }
+        if let Some(write) = union_write(located, *left, *right, clocks, clause.context) {
+            let write = write?;
+            if !written.contains(write.field) {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            if let Some(name) = write.nullary {
+                cut.leaves.insert(*right, ExprNode::Name(name));
+            }
+            if let Some((clock, value)) = write.reset {
+                cut.resets.push(ResetDraft::single(clock, value, span));
+            }
+            cut.drops.extend(write.drops);
+            continue;
+        }
         if clocks.bears(located.form, *left, clause.context) {
             let Some(ExprNode::Record { .. }) = located.node(*right) else {
                 return Err(located.outside(*right));
@@ -2065,6 +2091,82 @@ fn resets(
     Ok(cut)
 }
 
+/// A postcondition write `self.f = M::T::C(c)` or `self.f = M::T::D` of a
+/// variant field whose cases hold clocks (FR-230 "Records, tuples and
+/// unions"): the field it writes, the reset of the written case's clock to
+/// `c`, which makes it present, the drops of every other case's clock, and
+/// the nullary member the data write keeps in place of `M::T::C(c)`, whose
+/// clock is no data payload.
+struct UnionWrite<'c> {
+    field: &'c DeclarationKey,
+    reset: Option<(ClockId, Rational)>,
+    drops: Vec<ClockId>,
+    nullary: Option<qsl_forms::NameForm>,
+}
+
+/// The [`UnionWrite`] the conjunct `left = right` is, `None` when `left` is
+/// no variant field holding a case's clock.
+fn union_write<'c>(
+    located: &Located<'_>,
+    left: ExprId,
+    right: ExprId,
+    clocks: &'c Clocks<'_>,
+    context: EffectiveId,
+) -> Option<Result<UnionWrite<'c>, TemporalCause>> {
+    let path = self_path(located.form, left)?;
+    let cases: Vec<(ClockId, &ClockField)> = clocks
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(_, clock)| {
+            clock.path.len() == path.len() + 1
+                && same_place(&clock.path[..path.len()], &path)
+                && matches!(clock.path.last(), Some(PlaceStep::Union(_)))
+                && clocks.model.conforms(context, clock.owner)
+        })
+        .map(|(index, clock)| (ClockId(index), clock))
+        .collect();
+    let (_, first) = cases.first()?;
+    let span = located.span(right);
+    let (name, arguments) = match located.node(right) {
+        Some(ExprNode::Call { name, arguments }) => (name, arguments.as_slice()),
+        Some(ExprNode::Name(name)) => (name, &[][..]),
+        _ => return Some(Err(located.outside(right))),
+    };
+    let case = name.segments.last()?;
+    let mut write = UnionWrite {
+        field: &first.field,
+        reset: None,
+        drops: Vec::new(),
+        nullary: None,
+    };
+    for (clock, field) in &cases {
+        let Some(PlaceStep::Union(held)) = field.path.last() else {
+            continue;
+        };
+        if held != case {
+            write.drops.push(*clock);
+            continue;
+        }
+        let [argument] = arguments else {
+            return Some(Err(TemporalCause::ClockWrite { span }));
+        };
+        if located.reads_clock(*argument) {
+            return Some(Err(TemporalCause::ClockWrite { span }));
+        }
+        let value = match located.constant(*argument, clocks) {
+            Ok(value) => value,
+            Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                return Some(Err(TemporalCause::ClockWrite { span }))
+            }
+            Err(cause) => return Some(Err(cause)),
+        };
+        write.reset = Some((*clock, value));
+        write.nullary = Some(name.clone());
+    }
+    Some(Ok(write))
+}
+
 /// One postcondition conjunct `self.f = literal` writing a clock-bearing
 /// record: the clause, the receiver's type, the model's clocks, the fields
 /// the operation's frame writes and the conjunct's span.
@@ -2135,7 +2237,7 @@ impl RecordWrite<'_, '_, '_> {
         let omitted = self.places_below(&path).any(|(_, clock)| {
             clock.path.get(path.len()).is_some_and(|step| match step {
                 PlaceStep::Field(component) => !named.contains(component.as_str()),
-                PlaceStep::Slot(_) => false,
+                PlaceStep::Slot(_) | PlaceStep::Union(_) => false,
             })
         });
         if omitted {
@@ -2503,7 +2605,7 @@ fn time_invariant(
         clocks
             .fields
             .get(bound.clock.0)
-            .is_some_and(|field| field.bit)
+            .is_some_and(|field| field.guarded)
             && !presences.contains(&bound.clock)
     }) {
         return Err(CheckCause::Unproved(
@@ -2766,10 +2868,9 @@ fn prepare_models(
                 // A place under an optional member is guarded by a presence
                 // FR-230 does not yet give S3 a reading of (STD-493 item
                 // 17).
-                if AdmittedModel::clock_places(model)
-                    .iter()
-                    .any(|place| place.optional && !(place.bit && place.path.len() == 1))
-                {
+                if AdmittedModel::clock_places(model).iter().any(|place| {
+                    place.optional && !((place.bit && place.path.len() == 1) || place.case)
+                }) {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,
                         span: source.span,

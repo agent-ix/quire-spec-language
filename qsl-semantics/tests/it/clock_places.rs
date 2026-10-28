@@ -2101,3 +2101,125 @@ fn absent_drops_an_option_clock() {
         (Code::InvalidTimedModel, "clock-write", "self.v = absent")
     );
 }
+
+/// [`rpc_document_with`]`(&["x"])` with the variant type `Mode { Idle,
+/// Armed(Clock) }` held by the `Call` field `state`, which `bump` writes.
+fn union_clock_document() -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mode = package("Mode");
+    let case = |name: &str, line: u64, payload: Option<&str>| {
+        let mut case = json!({
+            "identity": package(&format!("variant/Mode-{name}")), "name": name,
+            "origin": {"source": {"sourceIdentity": package("spec"), "path": "spec.qspec",
+                "startLine": line, "startColumn": 3}},
+        });
+        if let Some(payload) = payload {
+            case["payloadType"] = json!(payload);
+        }
+        case
+    };
+    let mut variant = wire_type(
+        &mode,
+        "mode",
+        json!({"variants": [case("Idle", 10, None), case("Armed", 11, Some("ix://quire/native/Clock"))]}),
+    );
+    variant["displayName"] = json!("Mode");
+    document["types"]
+        .as_array_mut()
+        .expect("types")
+        .push(variant);
+    let mut construct = wire_construct(
+        "mode",
+        meaning::VARIANT_TYPE,
+        json!({"variants": "required"}),
+    );
+    construct["construct"]["shape"] = json!("enumeration");
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(construct);
+    let call_type = &mut document["types"][1];
+    call_type["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(field("state", &mode));
+    for operation in call_type["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "bump" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("frame")
+                .push(json!(call("state")));
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-12 (TC-685), a union case's clock: over `state: Mode` with
+/// `Mode { Idle, Armed(Clock) }`, the case `Armed(Clock)` is the place
+/// `Call.state.Armed`, guarded by the case, with no presence bit.
+/// `present(self.state.Armed) and
+/// value(self.state.Armed) >= 1 ms` is one part `state.Armed >= 1`
+/// requiring the case, `self.state = Config::Mode::Armed(0 ms)` resets the
+/// place, which selects the case, and `self.state = Config::Mode::Idle`
+/// drops it; `value(self.state.Armed) >= 1 ms` without the presence
+/// refuses `undefined_expression`/`unproved-presence`.
+#[trace("TC-685")]
+#[test]
+fn a_union_case_clock_is_a_guarded_place() {
+    use qsl_semantics::check::{CheckCause, Obligation};
+
+    let document = union_clock_document();
+    let body = format!(
+        "{UNITS}{DENSE}\
+         pre Armed using v on Config::Call::reply {{ present(self.state.Armed) and value(self.state.Armed) >= 1 ms }}\n\
+         post Arm using v on Config::Call::bump {{ self.state = Config::Mode::Armed(0 ms) }}\n"
+    );
+    let graph = check(&document, &body).expect("a union case's clock checks");
+    let model = timed(&graph);
+    let (armed, field) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "state.Armed")
+        .expect("state.Armed is a place");
+    assert_eq!(
+        field.path(),
+        [
+            PlaceStep::Field("state".to_owned()),
+            PlaceStep::Union("Armed".to_owned())
+        ]
+    );
+    assert!(!field.presence_bit());
+    let [part] = model.guards()[0].parts() else {
+        panic!("one part");
+    };
+    assert_eq!(part.presences(), [(armed, true)]);
+    assert_eq!(part.clocks()[0].clock(), armed);
+    let resets: Vec<_> = model
+        .resets()
+        .iter()
+        .flat_map(|resets| resets.resets())
+        .map(|reset| (reset.clock(), reset.value().clone()))
+        .collect();
+    assert_eq!(resets, [(armed, exact(0, 1))]);
+
+    let idle = format!(
+        "{UNITS}{DENSE}post Disarm using v on Config::Call::bump {{ self.state = Config::Mode::Idle }}\n"
+    );
+    let graph = check(&document, &idle).expect("another case checks");
+    let [resets] = timed(&graph).resets() else {
+        panic!("one postcondition");
+    };
+    assert_eq!(resets.drops(), [armed]);
+    assert!(resets.resets().is_empty());
+
+    let unproved = format!(
+        "{UNITS}{DENSE}pre Late using v on Config::Call::reply {{ value(self.state.Armed) >= 1 ms }}\n"
+    );
+    let refusals = check(&document, &unproved).expect_err("the case is not established");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| matches!(refusal.cause, CheckCause::Unproved(Obligation::Presence))),
+        "{refusals:?}"
+    );
+}
