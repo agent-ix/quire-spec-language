@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-48. Every unit of steps 1 to 7 and 10 to 32 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
+Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-51. Every unit of steps 1 to 7 and 10 to 34 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
 
 ## Test Procedure
 
@@ -52,6 +52,8 @@ For each input in steps 1 to 5, read its S2 forms before the S3 check. Assert th
 30. Check the presence predicates, writes, drops, snapshot-derived and ranging initial bits and the `option`-shell presence encoding in the state key of FR-230-AC-39 to FR-230-AC-42 over `v: Option<Clock>`, `Armed(Clock)`, `q: Sequence<Option<Clock>>[0, 2]` and `Option<Timer>`.
 31. Check the place ids of FR-230-AC-43 to FR-230-AC-45: distinct ids for distinct runtime places, the stored positions, equality and ordering uses, the package `reference` value, the slot reorder and the refused snapshot identities.
 32. Check the initial element counts of FR-230-AC-46 to FR-230-AC-48: the ranges, the set cap, the Map exclusion and the unbounded `u`.
+33. Check the template place of FR-230-AC-49 and the guards of FR-230-AC-50 against the vectors QSpec FR-322-AC-148 to FR-322-AC-150 name: the slot selector, one node for all instances, the slot components of the place ids, and the empty or refused guards.
+34. Check the derived presence of FR-230-AC-51: `present(other.v)`, `present(self.q[i])` and `present(e)` in a `forall` and an `exists` body over two objects, with no member added to any declaration and the refusals of QSpec FR-322-AC-156.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -89,3 +91,5 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 30: `present` is a `Boolean` data predicate in the convex part (AC-39); the make-present and drop records and the missing bound after a drop (AC-40); presence from data or `member`, and 2 initial states for `v` (AC-41); the `option`-shell key and its differing keys (AC-42).
 - Step 31: distinct place ids per object and per slot, a falsifiable `ref(self.x) = ref(other.x)` (AC-43); the stored positions, `<` refused, slot kept across a reorder and the `reference` value (AC-44); `invalid_runtime_input`/`invalid-value` for each snapshot identity (AC-45).
 - Step 32: the ranges and three initial states for `s`, the snapshot count for `r` (AC-46); `[0, 1]` for every set with no data part, `NoInitialState` for `Set<Clock>[2, 5]` and `Map` taken from the snapshot (AC-47); `incomplete`/`limit-reached` on `max_clocks` for `u` with no `RequiresBound` (AC-48).
+- Step 33: one `clock_place` node with a symbolic selector and no index for the three places (AC-49), place ids of slots 0 and 1 that differ only in the last `<slots>` component, `TimedModelNotEmitted` for a model with a guard not yet written and empty aggregates for a model with none (AC-50).
+- Step 34: each presence is a `Boolean` data predicate of the named owner and slot (the second object's `v` independent of the first's), `forall` true and `exists` false on an empty `q`, no `Option<Boolean>` or other member declared, and the model declaration keys unchanged by `v` (AC-51); a wrong slot count or owner type refused.
