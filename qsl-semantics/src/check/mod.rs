@@ -410,7 +410,8 @@ pub use temporal_clause::{
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
     ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConvexPart, ElementBinding,
-    QuantifiedFamily, SlotRef, SlotSelection, TimeInvariant, TimedModel, Urgency, Written,
+    QuantifiedFamily, SlotRef, SlotSelection, StateAlternative, TimeInvariant, TimedModel, Urgency,
+    Written,
 };
 
 /// A checked function.
