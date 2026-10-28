@@ -12,12 +12,19 @@ relationships:
 
 ## Summary
 
-The new requirement-bearing statements name S3 as subject and state concrete
-SHALL behavior for supplied, absent, and unknown keys. No EARS grammar or
-semantic ambiguity was found in the touched FR-104 text.
+The first draft used an untestable "existing applicability" reference and did
+not state the accepted point/kind pairing. FR-104 now names S3 as subject and
+gives concrete refusal behavior for inapplicable variants and mismatched
+operations.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No EARS conformance issue found in the touched FR-104 statements. | FR-104-AC-15 |
+| FND-001 | medium | The original applicability statement did not specify the invalid condition, result or location. | FR-104-AC-15 |
+
+## Resolution
+
+The revised FR-104 SHALL statements name point variants by clause kind,
+operation-name source, `invalid_model_binding`/`malformed-declaration`, and
+the clause-name span. TC-475 makes those cases observable.

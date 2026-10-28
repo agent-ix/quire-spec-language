@@ -41,16 +41,17 @@ Scope: FR-104-AC-15; FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8 to FR-10
    read; decode (`state`, `state_clause`, `quire.op.state.clause`,
    `constraint`).
 8. Compile a unit with only an attempt naming `attemptUpdate`, then units with
-   both the attempt and `VersionUnchanged`, once with the attempt before the
-   clause and once after it; compare the frame occurrence's region and its
-   `(node id, role, ordinal)`.
-9. Supply the accepted points for authored clauses through TC-471's S3 input,
+   both the attempt and a point-bearing `pre` clause for `attemptUpdate`, once
+   with the attempt before the clause and once after it. Supply the `pre`
+   clause's accepted point through TC-475's input; compare the frame
+   occurrence's region and its `(node id, role, ordinal)`.
+9. Supply the accepted points for authored clauses through TC-475's S3 input,
    keyed by each clause's exact source name. For accepted initialization and
    handler invariants and pre/post clauses, compare each emitted execution
    point to the accepted ClauseBinding; mutate
    its variant and anchor name independently, and compare the resulting
    `state_clause` and `operation_anchor` identities. Include a protocol-only
-   attempt anchor with no execution point.
+   attempt anchor for the same operation as a point-bearing precondition.
 
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
@@ -100,8 +101,15 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
   the qualified operation reference in the attempt, not its declared name.
   With both declarations, attempt-first selects the attempt reference and
   clause-first selects the clause reference. The frame occurrence's
-  `(node_id, role, ordinal)` is identical after reordering.
-- Step 9: each accepted point exactly matches its accepted ClauseBinding; a
-  change to the variant or anchor name changes the affected node identity;
-  the operation clause's `state_clause` and `operation_anchor` carry the same
-  point. A protocol-only anchor omits it.
+  `(node_id, role, ordinal)` is identical after reordering. The point-bearing
+  precondition's `state_clause` and its operation anchor carry the same point;
+  the protocol-only attempt anchor omits it and has a distinct node identity.
+- Step 9: initialization and handler invariants with equal bodies retain
+  distinct points and node identities; the constraint in TC-475 also carries
+  its accepted initialization point. Each operation point exactly matches
+  the ClauseBinding and the operation authored in `on M::T::op`; a change to
+  the variant or anchor name changes the affected node identity. The
+  operation clause's `state_clause` and `operation_anchor` carry the same
+  point. A point-bearing precondition and the same operation's protocol-only
+  attempt have distinct anchor identities; the attempt anchor omits the
+  point.
