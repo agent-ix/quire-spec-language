@@ -1923,3 +1923,338 @@ fn a_clock_parameter_ranges_over_the_places_it_may_write() {
     );
     assert_eq!(cause.tag(), "clock-comparison");
 }
+
+/// [`rpc_document_with`]`(&["x"])` with the optional clock field `v`
+/// (`Option<Clock>`), which `bump` writes.
+fn option_clock_document() -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mut v = field("v", "ix://quire/native/Clock");
+    v["presence"] = json!("optional");
+    let call_type = &mut document["types"][1];
+    call_type["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    for operation in call_type["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "bump" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("frame")
+                .push(json!(call("v")));
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-12 and FR-230-AC-39 (TC-685), S3's part: over `v:
+/// Option<Clock>`, the place `v` holds a presence bit. The guard
+/// `present(self.v) and value(self.v) >= 1 ms` checks to one convex part
+/// `v >= 1` requiring `v` present, with no data predicate; `not
+/// present(self.v)` is a part requiring it absent, never a clock
+/// constraint. `self.v = 0 ms` records a reset of `v`, which makes it
+/// present, and `when present(self.v) { value(self.v) <= 3 ms }` records
+/// the bound with the presence it requires. `value(self.v) >= 1 ms`
+/// without `present(self.v)`, in a guard or a time invariant, refuses
+/// `undefined_expression`/`unproved-presence`.
+#[trace("TC-685")]
+#[test]
+fn an_option_clock_reads_its_presence_bit() {
+    let document = option_clock_document();
+    let body = format!(
+        "{UNITS}{DENSE}\
+         pre Armed using v on Config::Call::bump {{ present(self.v) and value(self.v) >= 1 ms }}\n\
+         pre Idle using v on Config::Call::reply {{ not present(self.v) }}\n\
+         post Arm using v on Config::Call::bump {{ self.v = 0 ms }}\n\
+         time invariant Bound when {{ present(self.v) }} {{ value(self.v) <= 3 ms }}\n"
+    );
+    let graph = check(&document, &body).expect("an Option<Clock> place checks");
+    let model = timed(&graph);
+    let (v, field) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "v")
+        .expect("v is a place");
+    assert!(field.presence_bit());
+    let parts: Vec<_> = model
+        .guards()
+        .iter()
+        .map(|guard| {
+            let [part] = guard.parts() else {
+                panic!("one part: {:?}", guard.parts());
+            };
+            (
+                part.presences().to_vec(),
+                part.clocks()
+                    .iter()
+                    .map(|constraint| (constraint.clock(), constraint.op()))
+                    .collect::<Vec<_>>(),
+                part.data().is_none(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            (vec![(v, true)], vec![(v, ClockOp::GreaterOrEqual)], true),
+            (vec![(v, false)], vec![], true),
+        ]
+    );
+    let resets: Vec<_> = model
+        .resets()
+        .iter()
+        .flat_map(|resets| resets.resets())
+        .map(|reset| (reset.clock(), reset.value().clone()))
+        .collect();
+    assert_eq!(resets, [(v, exact(0, 1))]);
+    let [invariant] = model.invariants() else {
+        panic!("one invariant");
+    };
+    let [alternative] = invariant.alternatives() else {
+        panic!("one alternative");
+    };
+    assert_eq!(alternative.presences(), [(v, true)]);
+    assert_eq!(invariant.bounds()[0].clock(), v);
+
+    // FR-230-AC-12: the refusal is located at the read.
+    for (clause, read) in [
+        (
+            "pre Late using v on Config::Call::bump { value(self.v) >= 1 ms }\n",
+            "value(self.v) >= 1 ms",
+        ),
+        (
+            "time invariant Loose when { true } { value(self.v) <= 3 ms }\n",
+            "value(self.v) <= 3 ms",
+        ),
+        (
+            "time invariant Either when { present(self.v) or self.late } { value(self.v) <= 3 ms }\n",
+            "value(self.v) <= 3 ms",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::UndefinedExpression, "unproved-presence", read),
+            "{clause}"
+        );
+    }
+}
+
+/// The STD-493 ruling on FR-230 "Presence bit" (TC-685): `absent` is an
+/// option literal typed by the `Option<T>` its context expects. It checks
+/// as an equality operand on either side of an `Option<Integer>` and as a
+/// function body whose result is `Option<Integer>`; where an `Integer` is
+/// expected it refuses `ill_typed`/`type-mismatch`, and with no expected
+/// type (`absent = absent`) it refuses `ill_typed` as an ambiguous literal.
+#[trace("TC-685")]
+#[test]
+fn absent_takes_the_option_type_its_context_expects() {
+    use qsl_semantics::check::CheckCause;
+    use quire_exact::IllTypedCause;
+
+    let document = rpc_document_with(&["x"], false);
+    for function in [
+        "function f using v(o: Option<Integer>): Boolean pure { o = absent }\n",
+        "function f using v(o: Option<Integer>): Boolean pure { absent != o }\n",
+        "function f using v(): Option<Integer> pure { absent }\n",
+    ] {
+        if let Err(refusals) = check(&document, &format!("{UNITS}{DENSE}{function}")) {
+            panic!("{function}: {refusals:?}");
+        }
+    }
+    for (function, expected) in [
+        (
+            "function f using v(): Integer pure { absent }\n",
+            IllTypedCause::TypeMismatch,
+        ),
+        (
+            "function f using v(): Boolean pure { absent = absent }\n",
+            IllTypedCause::AmbiguousLiteral,
+        ),
+    ] {
+        let refusals = check(&document, &format!("{UNITS}{DENSE}{function}"))
+            .expect_err("absent needs an expected option type");
+        assert!(
+            refusals
+                .iter()
+                .any(|refusal| refusal.cause == CheckCause::IllTyped(expected)),
+            "{function}: {refusals:?}"
+        );
+    }
+}
+
+/// FR-230-AC-12 (TC-685), the drop: `self.v = absent` over `v:
+/// Option<Clock>` records a drop of `v` and no reset; with a frame not
+/// naming `v`, the drop and a reset `self.v = 0 ms` each refuse
+/// `invalid_timed_model`/`clock-write`.
+#[trace("TC-685")]
+#[test]
+fn absent_drops_an_option_clock() {
+    let document = option_clock_document();
+    let body =
+        format!("{UNITS}{DENSE}post Disarm using v on Config::Call::bump {{ self.v = absent }}\n");
+    let graph = check(&document, &body).expect("the drop checks");
+    let model = timed(&graph);
+    let (v, _) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "v")
+        .expect("v is a place");
+    let [resets] = model.resets() else {
+        panic!("one postcondition");
+    };
+    assert_eq!(resets.drops(), [v]);
+    assert!(resets.resets().is_empty());
+
+    for write in ["self.v = absent", "self.v = 0 ms"] {
+        let reply =
+            format!("{UNITS}{DENSE}post Outside using v on Config::Call::reply {{ {write} }}\n");
+        let (cause, text) = refused(&document, &reply);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "clock-write", write)
+        );
+    }
+}
+
+/// FR-230 "Presence bit" (TC-685), part of FR-230-AC-12: a postcondition
+/// writes one `Option<Clock>` place at most once. A reset and a drop, in
+/// either order, or two resets give the place no one presence and value,
+/// and refuse `invalid_timed_model`/`conflicting-clock-write` at the second
+/// write.
+#[trace("TC-685")]
+#[test]
+fn two_writes_of_an_option_clock_conflict() {
+    let document = option_clock_document();
+    for (writes, second) in [
+        ("self.v = 0 ms and self.v = absent", "self.v = absent"),
+        ("self.v = absent and self.v = 0 ms", "self.v = 0 ms"),
+        ("self.v = 0 ms and self.v = 1 ms", "self.v = 1 ms"),
+    ] {
+        let body =
+            format!("{UNITS}{DENSE}post Both using v on Config::Call::bump {{ {writes} }}\n");
+        let (cause, text) = refused(&document, &body);
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, "conflicting-clock-write", second),
+            "{writes}"
+        );
+    }
+}
+
+/// FR-230-AC-39 (TC-685), S3's part: `present(self.v)` is a `Boolean` data
+/// predicate over the presence bit beyond a guard's top-level conjunct.
+/// `self.v != absent` and `self.v = absent` in a guard are its presence and
+/// absence; `not present(self.v) or self.late` in a time invariant's `when`
+/// is two alternatives, one requiring `v` absent and one reading `late`;
+/// `urgent U when { present(self.v) and self.late }` requires `v` present.
+/// A presence read this slice does not read (a postcondition, a quantifier
+/// body, another object's place) refuses
+/// `unsupported_construct`/`not-yet-implemented` at the read, never as a
+/// clock read.
+#[trace("TC-685")]
+#[test]
+fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
+    let document = option_clock_document();
+    let body = format!(
+        "{UNITS}{DENSE}\
+         pre Armed using v on Config::Call::bump {{ self.v != absent and value(self.v) >= 1 ms }}\n\
+         pre Idle using v on Config::Call::reply {{ self.v = absent }}\n\
+         time invariant Idle when {{ not present(self.v) or self.late }} {{ self.x <= 5 ms }}\n\
+         urgent Due when {{ present(self.v) and self.late }};\n"
+    );
+    let graph = check(&document, &body).expect("presence reads check");
+    let model = timed(&graph);
+    let (v, _) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "v")
+        .expect("v is a place");
+    let guards: Vec<_> = model
+        .guards()
+        .iter()
+        .map(|guard| {
+            guard
+                .parts()
+                .iter()
+                .map(|part| part.presences().to_vec())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(guards, [vec![vec![(v, true)]], vec![vec![(v, false)]]]);
+    let [invariant] = model.invariants() else {
+        panic!("one invariant");
+    };
+    let alternatives: Vec<_> = invariant
+        .alternatives()
+        .iter()
+        .map(|alternative| alternative.presences().to_vec())
+        .collect();
+    assert_eq!(alternatives, [vec![(v, false)], vec![]]);
+    let [qsl_semantics::check::Urgency::When { alternatives, .. }] = model.urgency() else {
+        panic!("one urgent when");
+    };
+    let urgent: Vec<_> = alternatives
+        .iter()
+        .map(|alternative| alternative.presences().to_vec())
+        .collect();
+    assert_eq!(urgent, [vec![(v, true)]]);
+
+    for (clause, read) in [
+        (
+            "post Kept using v on Config::Call::bump { present(self.v) }\n",
+            "present(self.v)",
+        ),
+        (
+            "time invariant All when { forall(c in allInstances<Config::Call>(Config::calls) : present(c.v)) } { self.x <= 5 ms }\n",
+            "present(c.v)",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::UnsupportedConstruct, "not-yet-implemented", read),
+            "{clause}"
+        );
+    }
+}
+
+/// The STD-493 `absent` ruling (TC-685), lowering: `absent` lowers to QSpec
+/// FR-322's `none` literal, a `value`/`literal` node of kind `none` whose
+/// type is the `Option<Integer>` it was typed by, the function's result.
+#[trace("TC-685")]
+#[test]
+fn absent_lowers_to_the_none_literal_of_its_option() {
+    let document = rpc_document_with(&["x"], false);
+    let graph = check(
+        &document,
+        &format!("{UNITS}{DENSE}function f using v(): Option<Integer> pure {{ absent }}\n"),
+    )
+    .expect("absent checks");
+    let nodes: Vec<Value> = graph
+        .semantic_graph()
+        .nodes()
+        .map(|node| serde_json::from_slice(node.preimage()).expect("a JSON preimage"))
+        .collect();
+    let [none] = nodes
+        .iter()
+        .filter(|node| node["body"]["term"] == "literal" && node["body"]["value_kind"] == "none")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one none literal");
+    };
+    assert_eq!(
+        (
+            &none["node_tag"],
+            &none["semantic_form"],
+            &none["body"]["value"]
+        ),
+        (&json!("value"), &json!("literal"), &Value::Null)
+    );
+    // Typed by the function's result type, `Option<Integer>`.
+    let function = nodes
+        .iter()
+        .find(|node| node["node_tag"] == "function")
+        .expect("the function node");
+    assert_eq!(none["body"]["type"], function["semantic_type"]);
+    assert!(nodes
+        .iter()
+        .any(|node| node["semantic_form"] == "option" && node["node_tag"] == "composite_type"));
+}

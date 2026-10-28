@@ -53,9 +53,11 @@ their exits.
   `make ci`.
 - The gate process SHALL write the report to stdout and exit with the
   verdict's code from the table below, and with no other code.
-- A make target SHALL fail exactly when its gate exits with a code other
-  than 0, so any tool failure, unresolved result or regression in a real
-  corpus fails `make ci`.
+- The `refinement-versioning` make target SHALL fail exactly when its CLI
+  exits with a code other than 0. The `refinement-layering` target SHALL
+  apply FR-345-AC-9's expected-exit rule: its CLI exits 21 for the expected
+  unresolved report, and the target succeeds only for that exit code and
+  report; it fails for any other code or report.
 
 ## Behavior
 

@@ -127,6 +127,7 @@ fn show(expression: ExprRef<'_>) -> String {
     let children: Vec<String> = expression.children().into_iter().map(show).collect();
     let head = match expression.node() {
         ExprNode::Boolean(value) => format!("{value}"),
+        ExprNode::Absent => "absent".into(),
         ExprNode::Integer(value) => format!("{value}"),
         ExprNode::Float32(bits) => format!("float32({bits:08x})"),
         ExprNode::Float64(bits) => format!("float64({bits:016x})"),
