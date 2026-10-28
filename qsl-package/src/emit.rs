@@ -88,14 +88,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
-    CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
-    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
-    PACKAGE_DOMAIN_V2,
+    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedExecutionPoint, CheckedNodeId,
+    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
+    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion,
+    CheckedTerm, NominalIdentityPreimage, NominalOwner, ProtocolForm, StateForm, ValueForm,
+    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -107,7 +107,7 @@ use qsl_foundation::source::provenance::{
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, CheckedRefinement, LawRole,
-    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode,
+    LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
@@ -658,10 +658,59 @@ impl<'g> Candidate<'g> {
             }),
             owner: node.owner().map(wire_owner),
             owner_model: node.owner_model().map(node_id),
-            body: CheckedTerm::deserialize(node.wire_body().map_err(encoding)?)
-                .map_err(encoding)?,
+            body: checked_body(node, self.tag)?,
         })
     }
+}
+
+/// The point-bearing operation-anchor body is a contextual bare-value
+/// binding in V2, not an ordinary expression term. Decode it through IR's
+/// typed body so emission and read-back use the same closed carrier.
+/// `#[string_edge]`: node-kind and member discriminators select this one
+/// contextual V2 body shape.
+#[string_edge]
+fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm, EmitRefusal> {
+    let body = node.wire_body().map_err(encoding)?;
+    if CheckedNodeKind::decode(tag, node.semantic_form())
+        == Some(CheckedNodeKind::State(StateForm::OperationAnchor))
+        && body["members"].as_array().is_some_and(|members| {
+            members.len() == 4
+                && members.last().is_some_and(|member| {
+                    member["term"] == "binding" && member["name"] == "execution_point"
+                })
+        })
+    {
+        let members = body["members"]
+            .as_array()
+            .ok_or_else(|| encoding("operation-anchor body members are not an array"))?;
+        let [context, operation, frame, point] = members.as_slice() else {
+            return Err(encoding(
+                "point-bearing operation-anchor body does not have four members",
+            ));
+        };
+        let execution_point = point
+            .get("value")
+            .cloned()
+            .ok_or_else(|| encoding("operation-anchor execution point has no value"))?;
+        let execution_point: CheckedExecutionPoint =
+            CheckedExecutionPoint::deserialize(execution_point).map_err(encoding)?;
+        let members = [context, operation, frame]
+            .into_iter()
+            .cloned()
+            .map(CheckedTerm::deserialize)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(encoding)?;
+        let [context, operation, frame] = members.try_into().map_err(|_| {
+            encoding("operation-anchor body does not have three expression members")
+        })?;
+        return Ok(CheckedTerm::OperationAnchorBody(Box::new(
+            CheckedOperationAnchorBody {
+                members: [context, operation, frame],
+                execution_point: Some(execution_point),
+            },
+        )));
+    }
+    CheckedTerm::deserialize(body).map_err(encoding)
 }
 
 /// A structural node's `owner` as the v2 wire writes it (FR-093): exactly the
@@ -1693,6 +1742,52 @@ fn candidates_of<'g>(
     Ok(candidates)
 }
 
+/// The temporal profile the lock selects for the clock-reading control nodes
+/// actually written into `nodes` (QSpec FR-464 "Profiles and laws": the lock
+/// selects a `temporal_profile` for an `await` or `compensate` node). A
+/// protocol whose controls are not emitted, for want of a protocol profile or
+/// a refused construct, selects nothing, so the package identity of a unit
+/// that writes no such node is unchanged. The lock holds one row per role
+/// (FR-322), so the first emitted node's profile in source order is the one
+/// selected. QSL-1127 adds `compensate` templates to the same trigger.
+fn clock_control_profile(
+    graph: &CheckedGraph,
+    nodes: &[CheckedSemanticNodeV2],
+) -> Option<TemporalProfile> {
+    graph
+        .protocols()
+        .iter()
+        .flat_map(|protocol| {
+            protocol.awaits.iter().filter_map(move |awaited| {
+                let control = protocol.controls.control(awaited.node)?;
+                let mut path = vec![protocol.name.as_str(), "run"];
+                path.extend(control.path.iter().map(String::as_str));
+                Some((path, awaited.profile?))
+            })
+        })
+        .find(|(path, _)| {
+            nodes.iter().any(|node| {
+                is_control_node(node)
+                    && node.declaration.as_ref().is_some_and(|declaration| {
+                        declaration
+                            .qualified_name
+                            .iter()
+                            .map(AsRef::as_ref)
+                            .eq(path.iter().copied())
+                    })
+            })
+        })
+        .map(|(_, profile)| profile)
+}
+
+/// Whether a written node is a protocol `control`, decoded through IR's closed
+/// vocabulary rather than compared by spelling.
+fn is_control_node(node: &CheckedSemanticNodeV2) -> bool {
+    CheckedNodeTag::from_wire(&node.node_tag)
+        .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+        == Some(CheckedNodeKind::Protocol(ProtocolForm::Control))
+}
+
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
 /// `fault` runs against each node's id, in graph order, just before that
 /// node would be written; every production call site is `emit_package`,
@@ -1978,6 +2073,20 @@ fn emit_package_inner(
             definition: CheckedArtifactRef {
                 authority: "agent-ix".into(),
                 identity: refinement.profile().identity.as_str().into(),
+            },
+        };
+        if !profile_selections.contains(&selection) {
+            profile_selections.push(selection);
+        }
+    }
+    // A clock-reading control node needs the lock to select a temporal
+    // profile (QSpec FR-464 "Profiles and laws").
+    if let Some(profile) = clock_control_profile(graph, &nodes) {
+        let selection = CheckedSelection {
+            role: CheckedSelectionRole::TemporalProfile,
+            definition: CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: profile.identity().into(),
             },
         };
         if !profile_selections.contains(&selection) {

@@ -130,12 +130,35 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 Cut::default(),
             ));
         }
+        let mut access_findings = Vec::new();
+        for (mut names, shape) in accesses.deferred_local_orderings() {
+            let potentially_shared: Vec<_> = names
+                .iter()
+                .filter(|location| self.potential.shared().contains(*location))
+                .cloned()
+                .collect();
+            if !potentially_shared.is_empty() {
+                names = potentially_shared;
+            }
+            access_findings.push(ModelFinding::WeakAccessDeferred {
+                names,
+                shape: Box::new(shape),
+            });
+        }
+        access_findings.extend(
+            accesses
+                .shared()
+                .iter()
+                .cloned()
+                .map(|location| ModelFinding::WeakAccessShared { location }),
+        );
         let mut gathered = Gathered {
             budget,
             successors: Vec::new(),
             findings: self.model.invariant_findings(&state.model)?,
             cut: Cut::default(),
         };
+        gathered.findings.extend(access_findings);
         let mut running = Vec::new();
         for (ordinal, instance) in &state.instances {
             for (path, thread) in &instance.threads {
@@ -1253,10 +1276,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 })
             });
             let access = self.access(ordinal, path, node, &applied, &observed, accesses)?;
+            let memory_access = self.memory_access(node, &applied, &observed, access, accesses)?;
             let written = self.memory.write(
                 &state.memory,
                 path,
-                &access,
+                &memory_access,
                 read,
                 &state.model,
                 applied.state.clone(),
@@ -1274,9 +1298,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         .collect(),
                 )
                 .choosing(chosen.choice);
-                if matches!(access.class, AccessClass::Load | AccessClass::Rmw) {
+                if matches!(memory_access.class, AccessClass::Load | AccessClass::Rmw) {
                     if let (Some(shared), Some(read_depth)) = (
-                        access.shared,
+                        memory_access.shared,
                         chosen.choice.as_ref().and_then(|choice| choice.read_depth),
                     ) {
                         let limits = quire_canonical::Limits::new(u64::MAX);
@@ -1305,13 +1329,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 let mut next = state.clone();
                 next.model = model;
                 next.memory = memory;
-                if let Some(shared) = access.shared {
+                if let Some(shared) = memory_access.shared {
                     let record = AccessRecord {
                         thread: path.clone(),
                         location: shared.location.clone(),
-                        reads: matches!(access.class, AccessClass::Load | AccessClass::Rmw),
-                        writes: matches!(access.class, AccessClass::Store | AccessClass::Rmw),
-                        ordering: access.ordering,
+                        reads: matches!(memory_access.class, AccessClass::Load | AccessClass::Rmw),
+                        writes: matches!(
+                            memory_access.class,
+                            AccessClass::Store | AccessClass::Rmw
+                        ),
+                        ordering: memory_access.ordering,
                     };
                     self.carry_after(&mut next, &record);
                     identity = identity.accessing(record).racing(chosen.race);
@@ -1328,6 +1355,88 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             }
         }
         Ok(())
+    }
+
+    /// Route an enabled application through memory backing reserved by its
+    /// potential footprint, while keeping EN-1 classification tied to the
+    /// enabled footprints in `accesses`. A currently local application can
+    /// still need the reserved message/store-buffer representation so that a
+    /// later enabled application can observe it.
+    fn memory_access<'a>(
+        &'a self,
+        node: ProtocolNodeId,
+        applied: &Applied,
+        observed: &ModelSimState,
+        classified: Access<'a>,
+        accesses: &StateWeakAccesses,
+    ) -> Result<Access<'a>, ProtocolRefusal> {
+        if classified.shared.is_some() {
+            return Ok(classified);
+        }
+        let Some(potential) = self.potential.of(node) else {
+            return Ok(classified);
+        };
+        let Some(instance) = potential.instance(&applied.transition) else {
+            return Ok(classified);
+        };
+        let super::access::InstanceAccess::Access {
+            class: class @ (AccessClass::Load | AccessClass::Store | AccessClass::Rmw),
+            location: Some(location),
+        } = instance
+        else {
+            return Ok(classified);
+        };
+        if !self.deferred_memory_location(location, accesses) {
+            return Ok(classified);
+        }
+        let Some(cell) = self.potential.cell(location) else {
+            return Err(ProtocolRefusal::fault(
+                "a-potential-shared-location-has-a-cell",
+            ));
+        };
+        let unchanged = observed
+            .cell(cell)
+            .map(|value| value_enc(value, self.model.typing()))
+            == applied
+                .state
+                .cell(cell)
+                .map(|value| value_enc(value, self.model.typing()));
+        Ok(Access {
+            class: if *class == AccessClass::Rmw && unchanged {
+                AccessClass::Load
+            } else {
+                *class
+            },
+            ordering: potential.ordering,
+            shared: Some(SharedCell {
+                location,
+                cell,
+                non_atomic: self.non_atomic.contains(location),
+            }),
+        })
+    }
+
+    /// Whether `location` must use reserved weak-memory backing while an
+    /// ordered potential access to it is still locally classified. This does
+    /// not mark the location shared for EN-1's refusal or race checks.
+    fn deferred_memory_location(&self, location: &Location, accesses: &StateWeakAccesses) -> bool {
+        if accesses.shared().contains(location) {
+            return false;
+        }
+        self.potential.attempts().any(|attempt| {
+            attempt.ordering.is_some()
+                && attempt
+                    .instances
+                    .iter()
+                    .any(|instance| match &instance.access {
+                        InstanceAccess::Access {
+                            location: Some(candidate),
+                            ..
+                        } => candidate == location,
+                        InstanceAccess::Shape { locations } => locations.contains(location),
+                        InstanceAccess::Access { location: None, .. } => false,
+                    })
+        })
     }
 
     /// ADR-025 DR-3: the views queued `send`s carry are happens-before
@@ -1349,7 +1458,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// `path` read there (FR-229); empty for a location the model gives one
     /// observation of.
     fn reading<'s, 'a>(
-        &self,
+        &'a self,
         state: &'s ProtocolState<M>,
         ordinal: u64,
         path: &ThreadPath,
@@ -1362,35 +1471,72 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             path: path.clone(),
             node,
         };
-        let Some(weak) = accesses.attempt(&key) else {
-            return reading;
-        };
-        for instance in &weak.instances {
-            let InstanceAccess::Access {
-                class: AccessClass::Load | AccessClass::Rmw,
-                location: Some(location),
-            } = &instance.access
-            else {
-                continue;
-            };
-            let Some(cell) = accesses.cell(location) else {
-                continue;
-            };
-            if reading.contains_key(location) {
-                continue;
+        if let Some(weak) = accesses.attempt(&key) {
+            for instance in &weak.instances {
+                let InstanceAccess::Access {
+                    class: AccessClass::Load | AccessClass::Rmw,
+                    location: Some(location),
+                } = &instance.access
+                else {
+                    continue;
+                };
+                let Some(cell) = accesses.cell(location) else {
+                    continue;
+                };
+                if reading.contains_key(location) {
+                    continue;
+                }
+                let reads = self.memory.reads(
+                    &state.memory,
+                    path,
+                    &state.model,
+                    &SharedCell {
+                        location,
+                        cell,
+                        non_atomic: self.non_atomic.contains(location),
+                    },
+                );
+                if !reads.is_empty() {
+                    reading.insert(location, reads);
+                }
             }
-            let reads = self.memory.reads(
-                &state.memory,
-                path,
-                &state.model,
-                &SharedCell {
-                    location,
-                    cell,
-                    non_atomic: self.non_atomic.contains(location),
-                },
-            );
-            if !reads.is_empty() {
-                reading.insert(location, reads);
+        }
+        // Potential footprints reserve only the backing needed to preserve
+        // operations that may become enabled. Their locations do not enter
+        // EN-1 sharing or refusal classification.
+        if let Some(potential) = self.potential.of(node) {
+            for instance in &potential.instances {
+                let InstanceAccess::Access {
+                    class: class @ (AccessClass::Load | AccessClass::Rmw),
+                    location: Some(location),
+                } = &instance.access
+                else {
+                    continue;
+                };
+                if *class == AccessClass::Load && !self.non_atomic.contains(location) {
+                    continue;
+                }
+                if !self.deferred_memory_location(location, accesses)
+                    || reading.contains_key(location)
+                {
+                    continue;
+                }
+                let Some(cell) = self.potential.cell(location) else {
+                    continue;
+                };
+                let reads = self.memory.reads(
+                    &state.memory,
+                    path,
+                    &state.model,
+                    &SharedCell {
+                        location,
+                        cell,
+                        non_atomic: self.non_atomic.contains(location),
+                    },
+                );
+                if !reads.is_empty() {
+                    reading.insert(location, reads);
+                }
             }
         }
         reading
@@ -1399,7 +1545,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// The shared location the application `applied` of the attempt `node`
     /// loads or reads-modifies-writes (FR-220).
     fn loaded<'a>(
-        &self,
+        &'a self,
         ordinal: u64,
         path: &ThreadPath,
         node: ProtocolNodeId,
@@ -1411,13 +1557,32 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             path: path.clone(),
             node,
         };
-        match accesses.attempt(&key)?.instance(&applied.transition)? {
-            InstanceAccess::Access {
-                class: AccessClass::Load | AccessClass::Rmw,
-                location: Some(location),
-            } => Some(location),
-            InstanceAccess::Access { .. } | InstanceAccess::Shape { .. } => None,
+        if let Some(access) = accesses
+            .attempt(&key)
+            .and_then(|weak| weak.instance(&applied.transition))
+        {
+            match access {
+                InstanceAccess::Access {
+                    class: AccessClass::Load | AccessClass::Rmw,
+                    location: Some(location),
+                } => return Some(location),
+                InstanceAccess::Access {
+                    class: AccessClass::Local,
+                    ..
+                } => {}
+                InstanceAccess::Access { .. } | InstanceAccess::Shape { .. } => return None,
+            }
         }
+        self.potential
+            .of(node)
+            .and_then(|potential| potential.instance(&applied.transition))
+            .and_then(|access| match access {
+                InstanceAccess::Access {
+                    class: AccessClass::Load | AccessClass::Rmw,
+                    location: Some(location),
+                } if self.deferred_memory_location(location, accesses) => Some(location),
+                InstanceAccess::Access { .. } | InstanceAccess::Shape { .. } => None,
+            })
     }
 
     /// FR-220: what the application `applied` of the attempt `node` is, as

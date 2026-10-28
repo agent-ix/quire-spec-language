@@ -827,6 +827,14 @@ pub enum ProtocolConstruct {
     /// the node is written before the functions are, so the constraint
     /// cannot name them yet. QSL-1121g.
     FinishReadsDeclaration,
+    /// A control's constraint or condition that calls a function or refers
+    /// to a protocol: the node is written before the functions are, so the
+    /// body cannot name them yet. QSL-1121g.
+    ControlReadsDeclaration,
+    /// A reference, from a function or a clause, to a protocol that holds an
+    /// `attempt`: that protocol's node is written after the state clauses
+    /// its attempts list, which are written after the functions. QSL-1121g.
+    ReferenceToAttemptProtocol,
     /// A clause whose `over` input is not a reference to an object type of a
     /// selected model: there is no exact local model declaration node to
     /// name as the clause's `owner_model`
@@ -846,7 +854,9 @@ impl ProtocolConstruct {
             Self::FinishReadsDeclaration
             | Self::TerminalReadsDeclaration
             | Self::CaptureReadsDeclaration
-            | Self::ActivationGuardReadsDeclaration => "QSL-1121g",
+            | Self::ActivationGuardReadsDeclaration
+            | Self::ControlReadsDeclaration
+            | Self::ReferenceToAttemptProtocol => "QSL-1121g",
             Self::ChannelCarriesBounded => "QSL-1137",
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
@@ -2429,6 +2439,9 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// An accepted execution point is inapplicable to its authored state
+    /// clause or names a different operation member (FR-104-AC-15).
+    ExecutionPointBinding(ExecutionPointRefusal),
     /// `invalid_timed_model` / `clock-read-outside-constraint`: a call of the
     /// named clock-reading declaration outside an operation precondition, a
     /// time invariant body or another clock-reading declaration (FR-230
@@ -2988,6 +3001,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Code::MissingDeclaration,
+            Self::ExecutionPointBinding(_) => Code::InvalidModelBinding,
             Self::ClockReadingCall(_) => Code::InvalidTimedModel,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
@@ -3063,6 +3077,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Some("missing-name"),
+            Self::ExecutionPointBinding(_) => Some("malformed-declaration"),
             Self::ClockReadingCall(_) => Some("clock-read-outside-constraint"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")

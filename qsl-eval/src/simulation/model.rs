@@ -61,7 +61,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::model_subject::ModelInstance;
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
-use crate::simulation::footprint::Footprint;
+use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::protocol::WeakAccessShape;
@@ -329,6 +329,19 @@ pub enum ModelFinding {
     /// EN-1 found one or more weak-memory access shapes at this reachable
     /// protocol state (FR-220, ADR-025 MA-4).
     WeakAccessShape(Box<WeakAccessShape>),
+    /// EN-1 deferred a local ordered access until reachable-state
+    /// classification completes (FR-220).
+    WeakAccessDeferred {
+        /// The names this attempt transition accesses while classified local.
+        names: Vec<Location>,
+        /// The local-ordering mismatch to report if no name is shared.
+        shape: Box<WeakAccessShape>,
+    },
+    /// EN-1 classified this name shared in a reachable state (FR-220).
+    WeakAccessShared {
+        /// The canonical model location shared by enabled footprints.
+        location: Location,
+    },
     /// An invariant was false for an object of the state.
     InvariantViolated {
         /// The clause's name.
