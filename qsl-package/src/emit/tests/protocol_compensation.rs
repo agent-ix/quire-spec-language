@@ -19,8 +19,10 @@ fn unit_text(digest: &str, declarations: &str, guard: &str, retry: &str) -> Stri
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          {declarations}\n\
+         temporal Due using t over (c: M::Ledger) clock \"steps\" on origin {{ always true }}\n\
          protocol Flow using v over (input: M::Ledger) on origin {{\n\
          role R on M::Ledger;\n\
+         requires temporal Due;\n\
          compensate Full for Main::Applied as (fwd: M::Money) by R \
            on M::Ledger::pay using t clock \"c\" {{\n\
            capture saved: M::Money = fwd;\n\

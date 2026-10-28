@@ -16,8 +16,8 @@
 //!
 //! What this writes is what QSL can prove IR admits. A protocol that names a
 //! construct whose node is not written yet (a role, a channel, a `choice`,
-//! `parallel` or `repeat`, a `terminal` member, a
-//! compensation, a protocol reference written directly in a capture, guard,
+//! `parallel` or `repeat`, a `terminal` member, a protocol reference written
+//! directly in a capture, guard,
 //! terminal, control or `finish` body) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
@@ -196,10 +196,6 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::ChannelCarriesBounded);
         }
-        if !form.requirements.is_empty() {
-            // The target temporal nodes are keyed after the first protocol
-            // pass and are attached in `protocol_nodes_after_temporal`.
-        }
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
             // A `branch` and a `case` are held by the `parallel` and the
@@ -296,7 +292,7 @@ impl ProtocolInput<'_> {
     /// refer to, each by declaration index, ascending and once. Each is a
     /// node the protocol's own key hashes, so it is keyed before this
     /// protocol is (FR-093 `Call` row, FR-464 `protocol_reference`).
-    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>) {
+    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
         let roots = self.body_roots();
         let mut functions = Vec::new();
         let mut protocols = Vec::new();
@@ -308,7 +304,15 @@ impl ProtocolInput<'_> {
             list.sort_unstable();
             list.dedup();
         }
-        (functions, protocols)
+        let mut requirements: Vec<usize> = self
+            .checked
+            .requirements
+            .iter()
+            .map(|requirement| requirement.temporal)
+            .collect();
+        requirements.sort_unstable();
+        requirements.dedup();
+        (functions, protocols, requirements)
     }
 }
 
@@ -423,6 +427,29 @@ impl Lowering<'_> {
         self.protocol_compensations = vec![Vec::new(); count];
     }
 
+    /// Record a temporal clause key for the protocols that require it.
+    pub(crate) fn record_temporal_key(&mut self, index: usize, key: NodeKey) {
+        self.temporal_keys.insert(index, key);
+    }
+
+    fn required_temporal_keys(
+        &self,
+        protocol: &ProtocolInput<'_>,
+        location: &Location,
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+        protocol
+            .checked
+            .requirements
+            .iter()
+            .map(|requirement| {
+                self.temporal_keys
+                    .get(&requirement.temporal)
+                    .copied()
+                    .ok_or_else(|| fault(location, KeyFault::UnkeyableRequirements))
+            })
+            .collect()
+    }
+
     /// Lower and key the `index`-th protocol, recording its one
     /// `declaration` occurrence. A package that selects no protocol profile
     /// has no `protocol_profile` law to carry (ADR-011 §2.4): no node is
@@ -479,10 +506,7 @@ impl Lowering<'_> {
             self.set_protocol_key(index, ProtocolKey::AfterClauses);
             return Ok(Vec::new());
         }
-        if !protocol.checked.requirements.is_empty() {
-            self.set_protocol_key(index, ProtocolKey::AfterTemporal);
-            return Ok(Vec::new());
-        }
+        let requirements = self.required_temporal_keys(protocol, &location)?;
         match self.protocol_node(
             protocol,
             &law,
@@ -490,7 +514,7 @@ impl Lowering<'_> {
             ProtocolMembers {
                 attempts: &[],
                 compensations: &[],
-                requirements: &[],
+                requirements: &requirements,
             },
             &location,
         ) {
@@ -522,8 +546,7 @@ impl Lowering<'_> {
 
     /// Retain attempt and compensation nodes and write clauses that hold an
     /// `attempt` once their state clauses and operation anchors are keyed.
-    /// Clauses with temporal requirements remain open until those temporal
-    /// clause nodes are keyed as well.
+    /// The mixed dependency order has already keyed temporal requirements.
     pub(crate) fn protocol_nodes_with_attempts(
         &mut self,
         protocols: &[ProtocolInput<'_>],
@@ -549,10 +572,7 @@ impl Lowering<'_> {
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
             let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
             let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
-            if !protocol.checked.requirements.is_empty() {
-                self.protocol_keys[index] = ProtocolKey::AfterTemporal;
-                continue;
-            }
+            let requirements = self.required_temporal_keys(protocol, &location)?;
             let key = self.protocol_node(
                 protocol,
                 &law,
@@ -560,55 +580,6 @@ impl Lowering<'_> {
                 ProtocolMembers {
                     attempts: nodes,
                     compensations: compensation_nodes,
-                    requirements: &[],
-                },
-                &location,
-            )?;
-            self.protocol_keys[index] = ProtocolKey::Keyed(key);
-        }
-        Ok(())
-    }
-
-    /// Finish protocol clauses that require temporal nodes, after those nodes
-    /// have been keyed. Their exact declaration positions select the targets.
-    pub(crate) fn protocol_nodes_after_temporal(
-        &mut self,
-        protocols: &[ProtocolInput<'_>],
-        temporal_keys: &[(usize, NodeKey)],
-    ) -> Result<(), CheckRefusal> {
-        let by_position: BTreeMap<usize, NodeKey> = temporal_keys.iter().copied().collect();
-        for (index, protocol) in protocols.iter().enumerate() {
-            if !matches!(
-                self.protocol_keys.get(index),
-                Some(ProtocolKey::AfterTemporal)
-            ) {
-                continue;
-            }
-            let location = protocol.location();
-            let law = self.law(LawRole::ProtocolProfile, &location)?;
-            let owner = self
-                .owner_model_object(protocol)
-                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
-            let requirements = protocol
-                .checked
-                .requirements
-                .iter()
-                .map(|requirement| {
-                    by_position
-                        .get(&requirement.temporal)
-                        .copied()
-                        .ok_or_else(|| fault(&location, KeyFault::UnkeyableRequirements))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let attempts = self.protocol_attempts[index].clone();
-            let compensations = self.protocol_compensations[index].clone();
-            let key = self.protocol_node(
-                protocol,
-                &law,
-                owner,
-                ProtocolMembers {
-                    attempts: &attempts,
-                    compensations: &compensations,
                     requirements: &requirements,
                 },
                 &location,
@@ -1903,9 +1874,6 @@ impl Lowering<'_> {
                 ProtocolConstruct::ReferenceToAttemptProtocol,
                 location,
             )),
-            Some(ProtocolKey::AfterTemporal) => {
-                Err(not_emitted(ProtocolConstruct::Requirements, location))
-            }
             Some(ProtocolKey::Unselected) | None => Err(refuse(
                 location,
                 CheckCause::MissingSelection {
@@ -2077,9 +2045,6 @@ pub(super) enum ProtocolKey {
     /// The protocol holds an `attempt`: its node is written once the state
     /// clauses it lists are ([`Lowering::protocol_nodes_with_attempts`]).
     AfterClauses,
-    /// The protocol's required temporal clause nodes are keyed in the
-    /// temporal lowering pass.
-    AfterTemporal,
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),

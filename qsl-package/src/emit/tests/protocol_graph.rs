@@ -649,10 +649,9 @@ pub(super) fn checked_package(
 /// no `protocol_clause` node, so a protocol is never written without part of
 /// its graph. The same protocol with only the written constructs checks and
 /// writes the clause.
-/// Requirements, compensations and relationships are refused by the same
-/// `unemitted()` gate and tested in qsl-semantics (a requirement and a
-/// compensation need a temporal clause and an `attempt` unit; a relationship
-/// cannot be named from a real model package, QSL-1141).
+/// Relationships are checked separately in qsl-semantics because a real
+/// model package cannot yet name one (QSL-1141). Requirements and
+/// compensations are emitted and exercised by their positive package tests.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {

@@ -781,10 +781,6 @@ pub enum ProtocolConstruct {
     /// `quire-contract-ir` `9a84e654` admits only the reference form of
     /// `model`, so the node cannot be proved admitted: an IR gap, IR-874.
     WholeModelRole,
-    /// A `requires temporal` member (FR-464 "Activation relation"): QSL-1127.
-    Requirements,
-    /// A `compensate` template (FR-466 "Compensation"): QSL-1127.
-    Compensations,
     /// A control of the `run` tree other than a `sequence`, by its keyword
     /// (FR-466): QSL-1126.
     Control(&'static str),
@@ -847,7 +843,6 @@ impl ProtocolConstruct {
             Self::WholeModelRole => "IR-874",
             Self::TerminalReadsOverUnderEach => "IR-1069",
             Self::Control(_) => "QSL-1126",
-            Self::Requirements | Self::Compensations => "QSL-1127",
             Self::ReferenceCycle => "QSL-844",
             Self::ReferenceToAttemptProtocol | Self::ProtocolReferenceInBody => "QSL-1121g",
             Self::ChannelCarriesBounded => "QSL-1137",
