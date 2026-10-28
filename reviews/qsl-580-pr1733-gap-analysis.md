@@ -48,3 +48,11 @@ Ticket: QSL-580 (580q part 2). Plan completion: not assessed.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Add tests for six cases. (a) Two clock cases in one union: a switch resets the target case and drops the other. (b) `Armed(2 ms)` from `Armed` resets to 2. (c) A union write outside the frame refuses `clock-write`. (d) A whole read of the clock-bearing union refuses `clock-read-outside-constraint` (a guard `self.state = M::Mode::Idle`; `self.state = pre(self.state)`). (e) `when { present(self.state.Armed) }` bounds only the armed state. (f) Two writes of the field in one postcondition refuse `conflicting-clock-write` (SR-1733001 FND-001). Probes for (a) to (e) pass. | qsl-semantics/tests/it/clock_places.rs; qsl-eval/tests/it/timed_subject.rs; probe_1733.diff; FR-230 "Records, tuples and unions" |
+
+## Dispositions
+
+Round 1, fix commit 742127c84. The gates are those in SR-1733001's dispositions; workspace clippy fails there (SR-1733001 FND-004).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `clock_places::a_union_field_is_written_once_and_never_read_whole` covers the conflicting double writes (same case, a case switch plus reset, two clock cases), a union write outside the frame refusing `clock-write`, and the whole-read refusals. `timed_subject::a_union_write_resets_its_case_and_drops_the_others` covers two clock cases, where a switch resets one and drops the other; a rewrite of the same case; and the case-guarded invariant. Both pass. |

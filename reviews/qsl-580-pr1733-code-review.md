@@ -60,3 +60,26 @@ The probes are in `probe_1733.diff`, not committed.
 | FND-001 | high | A postcondition that writes a clock-bearing union field twice is not refused. `union_write` keeps no record of places already written, unlike #1721's `option_writes`. So `self.state = M::Mode::Armed(0 ms) and self.state = M::Mode::Armed(1 ms)` checks, and from `Idle` it gives one successor with resets `[(Armed, 0), (Armed, 1)]` and the clock at 1. That postcondition has no satisfying post-state (the case's clock cannot be both 0 and 1), so this is a wrong successor: an invented behaviour for safety, and a wrong enabled step for deadlock freedom. A case switch plus a reset (`Armed(0 ms) and Idle`) checks too. It has no successor only because the data conjuncts contradict, where #1721 refuses a reset plus a drop of one place with `conflicting-clock-write`. Track the places each union write resets or drops (sharing #1721's set), refuse any second write of the field `conflicting-clock-write` at the second write, and add a test. | qsl-semantics/src/check/timed_model.rs:2087-2100 (`resets`), 2229-2290 (`union_write`); FR-230 "Presence bit", "Records, tuples and unions" |
 | FND-002 | medium | Spec gap, for STD-493: no spec text gives the snapshot (FR-106) form of a value in a union slot. FR-360 item 9's `variant` form is defined for a payload-free variant type (QSpec FR-208), and FR-106's grammar has no union or payload form. Yet FR-230-AC-41 reads a union case's presence "from the snapshot's `member`". The PR admits `{"variant": {"type", "case"}}` into a union slot for a case with no data payload. That is reasonable, but it is an unstated extension, and a case with a data payload has no admissible form at all. Ask the spec owner for the union snapshot form (with and without data payload, and a `Clock`-payload case), and cite the ruling in `admit_union_case`. | qsl-semantics/src/model/observation/document.rs:1765 (`admit_union_case`); QSL spec FR-106, FR-360 item 9; FR-230-AC-41 |
 | FND-003 | low | The interim `clock_place` argument writes a union step as `{"type":"union","case":…}`, an encoding that no spec gives (the place-id form waits on the selector ruling). It is internal to transition text today. Make sure the selector ruling covers the union step, so the interim text is not frozen into a format. | qsl-eval/src/simulation/model/timed.rs (`place_step_enc`); FR-230 "Checked package" (`clock_place` path) |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The workspace clippy gate fails at 742127c84: `cargo clippy --workspace --all-targets --all-features -- -D warnings` stops with "function `union_clock_document` is never used" (qsl-eval/tests/it/timed_subject.rs:4743). The round-1 refactor routes every caller through `union_clock_document_with`, and the doc links that still name the old function are not uses. The tests pass, but the gate is red. Delete the wrapper and repoint its doc links, or call it. | qsl-eval/tests/it/timed_subject.rs:4743-4796 |
+
+## Dispositions
+
+Round 1, fix commit 742127c84.
+
+Gates (locked-build, jobs 4, debug info off, `--all-features`, QSPEC_DIR 48373530):
+- qsl-semantics and qsl-eval tests: all pass (semantics it 1336, eval it 812).
+- qsl-analyze and qsl-replay `zone`/`timed`/`refinement`/`clock`: 12 + 210 + 49 + 71, all pass.
+- Workspace clippy `-D warnings`: **fails** (FND-004).
+
+I re-ran the probe on the head; it is in `probe_1733_r1.diff`, not committed.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Each union write now enters every clock case it resets or drops into the `option_writes` set it shares with `Option<Clock>` places. A second write touching any of them refuses `conflicting-clock-write` at the second conjunct. Re-run probes: `Armed(0 ms) and Armed(1 ms)`, `Armed(0 ms) and Idle`, `Idle and Armed(0 ms)`, and (with two clock cases) `Armed(0 ms) and Waiting(0 ms)` each refuse `ConflictingClockWrite` at the second write's span. A single write still behaves as reviewed: a switch, a rewrite of the same case, and frame-only havoc. |
+| FND-002 | fixed | Filed on STD-493 (comment 747158c5, item 1): the union snapshot form, with and without a data payload, and for a `Clock` case. `admit_union_case` cites it and states that a case with a data payload is not admitted. The spec gap stays open on STD-493. |
+| FND-003 | fixed | STD-526 (QSpec 7d8d2090) rules the `clock_place` path as ordered `field(name)`, `tuple(index)`, `union(case)` and `slot(…)` entries, so the union step has a spec encoding (`union(case)`). The eval-side argument text `{"type":"union","case":…}` is internal, and matches that step's name and member. When `clock_place` emission lands, derive the argument from the node path. |

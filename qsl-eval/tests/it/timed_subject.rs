@@ -4740,12 +4740,7 @@ fn absent_drops_an_option_clock() {
 
 /// [`cells_document`] with `Mode { Idle, Armed(Clock) }` held by the `Call`
 /// field `state`, which `work` writes.
-fn union_clock_document() -> Vec<u8> {
-    union_clock_document_with(false)
-}
-
-/// [`union_clock_document`], with the second clock case `Waiting(Clock)`
-/// when `waiting` holds.
+/// With `waiting`, also the second clock case `Waiting(Clock)`.
 fn union_clock_document_with(waiting: bool) -> Vec<u8> {
     let case = |name: &str, line: u64, payload: Option<&str>| {
         let mut case = json!({"identity": ident(&format!("variant/Mode-{name}")), "name": name,
@@ -4776,7 +4771,7 @@ fn union_clock_document_with(waiting: bool) -> Vec<u8> {
     )
 }
 
-/// A world over [`union_clock_document`], `work` and `tick` both writing
+/// A world over [`union_clock_document_with`], `work` and `tick` both writing
 /// `state` under `body`, with `c` starting `Idle`.
 fn union_world(body: &str) -> World {
     union_world_holding(
