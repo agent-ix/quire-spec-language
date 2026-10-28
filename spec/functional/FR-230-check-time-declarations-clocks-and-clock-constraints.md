@@ -353,7 +353,20 @@ ill-formed use.
   case, or the removal of the slot) sets the presence false and leaves the dropped
   clock **unconstrained**: no zone constraint, time invariant bound or elapse
   applies to it, it has no valuation, and a later write that makes it present
-  resets it afresh. "Every present clock is 0 in every initial state" (QSpec
+  resets it afresh. **No implicit reset** (QSpec FR-415-AC-21): a place
+  SHALL become present only by a write of its clock (a reset, an `Option`
+  write, a clock case constructor, or a reset of a `Clock` parameter for the
+  instance that binds it to the place). An `Option<Clock>` bit SHALL NOT
+  change unwritten, and an element a frame adds to a `Sequence<Option<Clock>>`
+  unwritten is absent; a union value MAY leave its clock case unwritten (the
+  clock is dropped) but SHALL NOT enter one. A presence requirement in a
+  postcondition (`present(p)`, `not present(p)`) is a constraint on the
+  successor, never a write: one that nothing writes leaves no successor from
+  a state that contradicts it, and where the operation's precondition
+  establishes the place absent and the postcondition requires it present
+  without a write, the checker SHALL refuse
+  `invalid_timed_model`/`clock-presence-unwritten` at the requirement.
+  "Every present clock is 0 in every initial state" (QSpec
   FR-415, FR-231, FR-239's zero valuation) therefore reads over the present
   clocks only. **State-key form.** A presence bit SHALL be held only for a **live** guarded
   place that has **no snapshot member**: an `Option<Clock>` (as a field, a
@@ -750,6 +763,7 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-49 | The emitted `clock_place` of `ts.x` below `ts: Sequence<Timer>[0, 3]` is one node for the three places `ts.0.x`, `ts.1.x` and `ts.2.x`, its slot step carries the symbolic element selector of QSpec FR-322-AC-148 and no index, and the place ids of slots 0 and 1 differ only in the final component of `<slots>`; the same holds for `Set`, `Bag`, `OrderedSet` and a nested `Sequence` (two `<slots>` components). | Test |
 | FR-230-AC-50 | A checked timed model with a guard is refused `TimedModelNotEmitted` until the guard is written, and is never emitted with an empty `guards` aggregate; a model with no guard emits empty aggregates and reads back (QSpec FR-322-AC-150). | Test |
 | FR-230-AC-51 | Over `v: Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]` on two objects, `present(other.v)`, `present(self.q[i])`, and `present(e)` in the bodies of `forall(e in self.q: ...)` and `exists(e in self.q: ...)` each check as a `Boolean` data predicate resolved through the place identity, are recorded as data predicates of the convex part at the owner and slot, declare no `Option<Boolean>` or other member, and leave every model declaration key as it is without `v`; a `present` with a wrong slot count or owner type is refused as QSpec FR-322-AC-156 states. | Test |
+| FR-230-AC-52 | Over `v: Option<Clock>` and `st: Mode` (`Idle` or `Armed` holding a clock), both in an operation's frame, the vectors `FP-01`..`FP-14` of QSpec's `clock-presence-frame-vectors.json` step as published: a requirement of an absent place with no write has no successor, and refuses `invalid_timed_model`/`clock-presence-unwritten` when the precondition establishes it absent; a write makes it present with its clock, a drop makes it absent, an unwritten `v` keeps its bit while an unwritten `Armed` `st` may also step to `Idle`, and each `Option` vector's pairing with its union twin holds of the observed results (QSpec FR-415-AC-21, TC-367 CK-31). | Test |
 
 ## Dependencies
 

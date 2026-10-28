@@ -240,6 +240,17 @@ fn world_holding(document: Vec<u8>, profiles: &str, unit_body: &str, fields: Jso
 
 /// [`world_over`] whose initial state holds the `Call` objects `objects`.
 fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -> World {
+    try_world_of(document, profiles, unit_body, objects)
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
+}
+
+/// [`world_of`], or the refusals S3 gives the unit.
+fn try_world_of(
+    document: Vec<u8>,
+    profiles: &str,
+    unit_body: &str,
+    objects: Json,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -276,8 +287,7 @@ fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -
     )
     .expect("the unit assembles")
     .with_unwritten_timed_members()
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    .check(CheckingLimits::default())?;
     let header = json!({"identity": PACKAGE, "version": "1.0.0",
         "digest": format!("sha256-jcs:{}", hex(&digest))});
     let document = json!({
@@ -293,7 +303,7 @@ fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -
     let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    World {
+    Ok(World {
         package: CheckedPackage::link(graph),
         packages,
         snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
@@ -304,7 +314,7 @@ fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -
             revision: "fixture:1".to_owned(),
             digest: snapshot_digest,
         },
-    }
+    })
 }
 
 /// The initial `Call`'s field values: `phase` 0, `inflight` and `late`
@@ -5263,6 +5273,16 @@ fn union_world_holding(body: &str, state: Json) -> World {
 
 /// [`union_world_holding`] over [`union_clock_document_with`]`(waiting)`.
 fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
+    try_union_world_over(waiting, body, state)
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
+}
+
+/// [`union_world_over`], or the refusals S3 gives the unit.
+fn try_union_world_over(
+    waiting: bool,
+    body: &str,
+    state: Json,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let mut document: Json =
         serde_json::from_slice(&union_clock_document_with(waiting)).expect("JSON");
     for operation in document["types"][1]["operations"]
@@ -5273,14 +5293,15 @@ fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
             operation["frame"]["modifies"] = json!([ident("Call/state")]);
         }
     }
-    world_holding(
+    let fields = json!({
+        "t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
+        "state": state,
+    });
+    try_world_of(
         serde_json::to_vec(&document).expect("JSON"),
         "",
         &only(&["work", "tick"], body),
-        json!({
-            "t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
-            "state": state,
-        }),
+        json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(fields)}]),
     )
 }
 
@@ -5294,8 +5315,12 @@ fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
 /// `expected`: no clock becomes live without its write, an unwritten clock
 /// keeps its value, a requirement is never a write, an `Option<Clock>` bit
 /// never changes unwritten, and a union value may leave its clock case.
-/// `FP-11` and `FP-12` are S3 refusals (qsl-semantics `clock_places`).
-#[trace("TC-685")]
+/// `FP-11` and `FP-12`, whose precondition establishes the place absent
+/// (`not present(..)`), refuse `invalid_timed_model`/
+/// `clock-presence-unwritten` at S3. Each vector's pairing with its twin
+/// holds of the observed results: `same` where they are equal, `differs`
+/// where they are not (TC-367 CK-31).
+#[trace("TC-685", "FR-230-AC-52")]
 #[test]
 fn the_clock_presence_frame_vectors_step_as_published() {
     let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
@@ -5315,12 +5340,56 @@ fn the_clock_presence_frame_vectors_step_as_published() {
         Some(exact(amount, 1))
     };
     let mut ran = 0;
+    // Each vector's observed result: its successors, or its refusal.
+    let mut results: BTreeMap<String, Result<Vec<(bool, Option<Rational>)>, String>> =
+        BTreeMap::new();
     for vector in vectors["cases"].as_array().expect("cases") {
         let id = vector["id"].as_str().expect("an id");
-        if vector["expected"].get("refused").is_some() {
+        let union = vector["form"] == "union";
+        if let Some(refused) = vector["expected"].get("refused") {
+            assert_eq!(vector["precondition_establishes_absent"], true, "{id}");
+            let place = if union { "self.state.Armed" } else { "self.v" };
+            let requires = vector["requires"]
+                .as_str()
+                .expect("a requirement")
+                .replace("self.st.", "self.state.");
+            let body = format!(
+                "pre Absent using v on M::Call::work {{ not present({place}) }}\n\
+                 post P using v on M::Call::work {{ {requires} }}\n"
+            );
+            let refusals = match if union {
+                try_union_world_over(
+                    false,
+                    &format!("{body}pre NoTick using v on M::Call::tick {{ false }}\n"),
+                    case("Idle"),
+                )
+            } else {
+                try_world_of(
+                    option_clock_document(),
+                    "",
+                    &only(&["work"], &body),
+                    json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(json!({}))}]),
+                )
+            } {
+                Ok(_) => panic!("{id}: refused"),
+                Err(refusals) => refusals,
+            };
+            let [refusal] = refusals.as_slice() else {
+                panic!("{id}: one refusal: {refusals:?}");
+            };
+            let got = (refusal.cause.code().as_str(), refusal.cause.cause());
+            assert_eq!(
+                got,
+                (
+                    refused["code"].as_str().expect("a code"),
+                    refused["cause"].as_str()
+                ),
+                "{id}"
+            );
+            results.insert(id.to_owned(), Err(format!("{got:?}")));
+            ran += 1;
             continue;
         }
-        let union = vector["form"] == "union";
         let requires = vector["requires"]
             .as_str()
             .map(|text| text.replace("self.st.", "self.state."));
@@ -5402,9 +5471,22 @@ fn the_clock_presence_frame_vectors_step_as_published() {
             successors.dedup();
         }
         assert_eq!(observed, expected, "{id}: {post}");
+        results.insert(id.to_owned(), Ok(observed));
         ran += 1;
     }
-    assert_eq!(ran, 12);
+    assert_eq!(ran, 14);
+    for vector in vectors["cases"].as_array().expect("cases") {
+        let id = vector["id"].as_str().expect("an id");
+        let twin = vector["pair"]["with"].as_str().expect("a twin");
+        let same = vector["pair"]["outcome"] == "same";
+        assert_eq!(
+            results[id] == results[twin],
+            same,
+            "{id} with {twin}: {:?} / {:?}",
+            results[id],
+            results[twin]
+        );
+    }
 }
 
 /// FR-106 over a union whose case holds a clock (FR-230 "Records, tuples
