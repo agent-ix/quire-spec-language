@@ -564,6 +564,13 @@ fn a_clock_read_through_a_predicate_or_function_is_refused_at_the_call() {
 /// the time invariant `when self.dead { x <= 0 }`. `trap` and `dead` map
 /// to the abstract `late` and `retried`, which stay false.
 pub(crate) fn dead_undo(dead: bool) -> Refining {
+    undo_world(dead, dead)
+}
+
+/// FR-430-AC-6's model with `undo` setting `dead` when `retried`, under
+/// the time invariant `when self.dead { x <= 0 }` when `invariant`: with
+/// `retried` and no invariant, `undo`'s post-state is time-divergent.
+pub(crate) fn undo_world(retried: bool, invariant: bool) -> Refining {
     let model = document(
         &["x"],
         &[
@@ -572,13 +579,15 @@ pub(crate) fn dead_undo(dead: bool) -> Refining {
             ("undo", &["inflight", "retried"]),
         ],
     );
-    let (undone, invariant) = if dead {
-        (
-            "not self.inflight and self.retried",
-            "time invariant Dead when { self.retried } { self.x <= 0 ms }\n",
-        )
+    let undone = if retried {
+        "not self.inflight and self.retried"
     } else {
-        ("not self.inflight and not self.retried", "")
+        "not self.inflight and not self.retried"
+    };
+    let invariant = if invariant {
+        "time invariant Dead when { self.retried } { self.x <= 0 ms }\n"
+    } else {
+        ""
     };
     let contracts = format!(
         "post ASend using v on A::Call::send {{ self.inflight }}\n\

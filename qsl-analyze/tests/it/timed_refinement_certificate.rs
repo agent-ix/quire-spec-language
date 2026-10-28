@@ -18,7 +18,8 @@ use qsl_route::deadlock::ItemObligation;
 use quire_exact::Cancel;
 
 use crate::timed_refinement::{
-    certificate_request, dead_undo, obligation, refinement, req, safety, treq, unit, CONTRACTS,
+    certificate_request, dead_undo, obligation, refinement, req, safety, treq, undo_world, unit,
+    CONTRACTS,
 };
 use crate::timed_world::{refining, refining_from, Refining, DENSE};
 
@@ -498,5 +499,37 @@ fn no_positioned_initial_state_is_no_admitted_behaviour() {
             }
         ),
         "{outcome:?}"
+    );
+}
+
+/// FR-245 "Refinement form" (TC-700, SR-1757002 FND-001): a step-level
+/// `locked` entry, entered by a failing `check_step`, whose forward closure
+/// is not time-locked is `BadState`. FR-430-AC-6's `Holds` certificate,
+/// forged for the variant whose `undo` post-state has no time invariant
+/// (its half `Violated`), with the entry widened to the universe so it
+/// covers that post-state, is rejected `BadState` at the entry.
+#[trace("TC-700", "FR-245-AC-8")]
+#[test]
+fn a_forged_step_level_locked_entry_that_diverges_is_a_bad_state() {
+    use qsl_replay::Zone;
+    let live = undo_world(true, false);
+    assert!(matches!(safety(&live), TimedSafetyOutcome::Violated { .. }));
+    let mut forged = certified(&dead_undo(true));
+    let entry = (0..forged.nodes.len())
+        .find(|&at| forged.nodes[at].locked)
+        .expect("the locked entry node");
+    let package = qsl_package::emit_checked(&live.package)
+        .expect("the package emits")
+        .package()
+        .package_id();
+    let part = forged.refinement.as_mut().expect("the part");
+    part.concrete_package = package;
+    part.abstract_package = package;
+    forged.obligation = obligation(&live);
+    let dim = forged.nodes[entry].zone.dim();
+    forged.nodes[entry].zone = Zone::universe(dim);
+    assert_eq!(
+        verdict(&live, &forged),
+        rejected(CertificateRule::BadState, node(entry))
     );
 }
