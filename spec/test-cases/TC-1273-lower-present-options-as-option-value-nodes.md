@@ -22,9 +22,10 @@ expression used by FR-140-AC-11, plus the S3 type-mismatch refusal.
 
 Compile a checked function whose result is `Option<Integer>` and whose body is
 `Some(x)` for `x: Integer`. Read its emitted checked package through FR-264.
-Have the test obtain the package id computed by that read from the checked
-package contents, then assert that the emitted package id equals that computed
-id and that the read returns `Verified`. Confirm the option value and its key,
+Require `Verified`; take `package.package_id()` from the returned verified
+package and assert that it equals the emitted wire's `package_id`. The test
+computes the compared id from the read package and stores no literal digest.
+Confirm the option value and its key,
 type, payload dependency, and absence of a `Some` application follow the
 carrier contract in QSpec FR-322; this test does not redefine that wire
 contract or record a copied package digest.
