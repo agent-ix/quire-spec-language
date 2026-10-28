@@ -1602,10 +1602,11 @@ impl<S: SubjectSystem> Run<'_, S> {
 
     fn has_unresolved_local_access(&self) -> bool {
         self.deferred_local.values().any(|candidate| {
-            !candidate
-                .names
-                .iter()
-                .any(|name| self.shared_names.contains(name))
+            candidate.names.is_empty()
+                || candidate
+                    .names
+                    .iter()
+                    .any(|name| !self.shared_names.contains(name))
         })
     }
 
@@ -1614,10 +1615,11 @@ impl<S: SubjectSystem> Run<'_, S> {
             .deferred_local
             .values()
             .filter(|candidate| {
-                !candidate
-                    .names
-                    .iter()
-                    .any(|name| self.shared_names.contains(name))
+                candidate.names.is_empty()
+                    || candidate
+                        .names
+                        .iter()
+                        .any(|name| !self.shared_names.contains(name))
             })
             .flat_map(|candidate| candidate.shape.failures.iter().cloned())
             .collect();

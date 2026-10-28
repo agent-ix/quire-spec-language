@@ -131,7 +131,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             ));
         }
         let mut access_findings = Vec::new();
-        for (names, shape) in accesses.deferred_local_orderings() {
+        for (mut names, shape) in accesses.deferred_local_orderings() {
+            let potentially_shared: Vec<_> = names
+                .iter()
+                .filter(|location| self.potential.shared().contains(*location))
+                .cloned()
+                .collect();
+            if !potentially_shared.is_empty() {
+                names = potentially_shared;
+            }
             access_findings.push(ModelFinding::WeakAccessDeferred {
                 names,
                 shape: Box::new(shape),
@@ -1466,12 +1474,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(weak) = accesses.attempt(&key) {
             for instance in &weak.instances {
                 let InstanceAccess::Access {
-                    class: AccessClass::Load | AccessClass::Rmw,
+                    class: class @ (AccessClass::Load | AccessClass::Rmw),
                     location: Some(location),
                 } = &instance.access
                 else {
                     continue;
                 };
+                if *class == AccessClass::Load && !self.non_atomic.contains(location) {
+                    continue;
+                }
                 let Some(cell) = accesses.cell(location) else {
                     continue;
                 };
@@ -1499,12 +1510,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(potential) = self.potential.of(node) {
             for instance in &potential.instances {
                 let InstanceAccess::Access {
-                    class: AccessClass::Load | AccessClass::Rmw,
+                    class: class @ (AccessClass::Load | AccessClass::Rmw),
                     location: Some(location),
                 } = &instance.access
                 else {
                     continue;
                 };
+                if *class == AccessClass::Load && !self.non_atomic.contains(location) {
+                    continue;
+                }
                 if !self.deferred_memory_location(location, accesses)
                     || reading.contains_key(location)
                 {
