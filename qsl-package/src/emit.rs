@@ -1769,20 +1769,32 @@ fn clock_control_profile(
     graph: &CheckedGraph,
     nodes: &[CheckedSemanticNodeV2],
 ) -> Option<TemporalProfile> {
-    graph
-        .protocols()
-        .iter()
-        .flat_map(|protocol| {
-            protocol.awaits.iter().filter_map(move |awaited| {
-                let control = protocol.controls.control(awaited.node)?;
-                let mut path = vec![protocol.name.as_str(), "run"];
-                path.extend(control.path.iter().map(String::as_str));
-                Some((path, awaited.profile?))
-            })
+    let awaits = graph.protocols().iter().flat_map(|protocol| {
+        protocol.awaits.iter().filter_map(move |awaited| {
+            let control = protocol.controls.control(awaited.node)?;
+            let mut path = vec![protocol.name.as_str(), "run"];
+            path.extend(control.path.iter().map(String::as_str));
+            Some((path, awaited.profile?))
         })
+    });
+    let compensations = graph.protocols().iter().flat_map(|protocol| {
+        protocol
+            .obligations
+            .compensations
+            .iter()
+            .filter_map(move |template| {
+                let profile = template.temporal_profile?;
+                Some((
+                    vec![protocol.name.as_str(), "compensate", template.name.as_str()],
+                    profile,
+                ))
+            })
+    });
+    awaits
+        .chain(compensations)
         .find(|(path, _)| {
             nodes.iter().any(|node| {
-                is_control_node(node)
+                is_control_node(node) || is_compensation_node(node)
                     && node.declaration.as_ref().is_some_and(|declaration| {
                         declaration
                             .qualified_name
@@ -1801,6 +1813,13 @@ fn is_control_node(node: &CheckedSemanticNodeV2) -> bool {
     CheckedNodeTag::from_wire(&node.node_tag)
         .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
         == Some(CheckedNodeKind::Protocol(ProtocolForm::Control))
+}
+
+/// Whether a written node is a protocol compensation template.
+fn is_compensation_node(node: &CheckedSemanticNodeV2) -> bool {
+    CheckedNodeTag::from_wire(&node.node_tag)
+        .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+        == Some(CheckedNodeKind::Protocol(ProtocolForm::Compensation))
 }
 
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].

@@ -50,6 +50,15 @@ pub(crate) struct AttemptNodes {
     pub(crate) contracts: Vec<NodeKey>,
 }
 
+/// The operation anchor of a checked compensation template.
+#[derive(Clone, Debug)]
+pub(crate) struct CompensationNodes {
+    /// The template's index among checked compensation declarations.
+    pub(crate) declaration: usize,
+    /// The operation's `operation_anchor` node.
+    pub(crate) anchor: NodeKey,
+}
+
 /// What [`Lowering::run_nodes`] reads of the nodes written before the `run`
 /// tree.
 pub(super) struct RunInputs<'a> {
@@ -72,6 +81,7 @@ pub(super) struct RunInputs<'a> {
 pub(super) struct Run {
     pub(super) root: NodeKey,
     pub(super) readable: Vec<Binder>,
+    pub(super) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
 }
 
 /// What the lowering of one control reads of its protocol.
@@ -208,7 +218,11 @@ impl Lowering<'_> {
             .map(|slot| controls.binders.get(slot).copied().ok_or_else(unchecked))
             .collect::<Result<Vec<_>, _>>()?;
         let root = keys.get(&root.node).copied().ok_or_else(unchecked)?;
-        Ok(Run { root, readable })
+        Ok(Run {
+            root,
+            readable,
+            nodes: keys,
+        })
     }
 
     /// The operator of the control `node` and its arguments, in the order of
