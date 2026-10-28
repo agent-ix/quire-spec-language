@@ -38,3 +38,13 @@ Gaps:
 ## Verdict
 
 Mergeable. All three findings are low.
+
+## Dispositions
+
+Round 1, head addc801df.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `conformance_the_template_places_match_the_slot_selector_vectors` compares the emitted `ts`, `g` and `s` places with SL-01, SL-05 and SL-08 from QSPEC_DIR (body and dependency digests); passes against QSpec 161d231d. The v and q presence places are added in #1763 |
+| FND-002 | fixed | `element_type` reads through `Option<..>`; unit test `the_element_type_reads_through_an_option` passes |
+| FND-003 | fixed | The union-case row identity is filed on STD-493 (comment a7060596) |
