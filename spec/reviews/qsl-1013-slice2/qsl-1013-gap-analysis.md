@@ -1,15 +1,15 @@
 ---
 id: SR-16363
-title: "Gap analysis of QSL-1013 slice 2 at 77276554c"
+title: "Gap analysis of QSL-1013 slice 2 at <sha removed>"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; FR-230 (AC-1..5, AC-7, AC-8, AC-32), TC-685 step 26; TC-685-tagged tests in the 77276554c diff; qsl-package/src/emit.rs S4 guard"
+scope: "agent-ix/quire-spec-language; FR-230 (AC-1..5, AC-7, AC-8, AC-32), TC-685 step 26; TC-685-tagged tests in the <sha removed> diff; qsl-package/src/emit.rs S4 guard"
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-1013. PR agent-ix/quire-spec-language#1403, reviewed SHA 77276554c518595877ff2728e341865a8bfab905. Planless gap analysis: FR-230 and TC-685 at head (taken unchanged from main by the merge), the trace tags on the slice's tests (`quire trace --id TC-685`: 28 structural claims, 0 citations), and the two `#[ignore]`d end-to-end tests, run explicitly with `--include-ignored`.
+Ticket: QSL-1013. PR agent-ix/quire-spec-language#1403, reviewed SHA <sha removed>. Planless gap analysis: FR-230 and TC-685 at head (taken unchanged from main by the merge), the trace tags on the slice's tests (`quire trace --id TC-685`: 28 structural claims, 0 citations), and the two `#[ignore]`d end-to-end tests, run explicitly with `--include-ignored`.
 
 Plan completion: not assessed. `quire matrix --format tsv` at head completed in about 4 minutes: FR-230-AC-1..35 are all `untagged`, and AC-36/37 are tagged by qsl-package/src/checked_v2/tests.rs:1781 (from main). The slice claims no FR-230 criterion, which matches its partial scope.
 
@@ -29,6 +29,6 @@ Plan completion: not assessed. `quire matrix --format tsv` at head completed in 
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | Verified at c643f88da. |
-| FND-002 | fixed | Verified at c643f88da. |
-| FND-003 | fixed | Verified at c643f88da. |
+| FND-001 | fixed | Verified at <sha removed>. |
+| FND-002 | fixed | Verified at <sha removed>. |
+| FND-003 | fixed | Verified at <sha removed>. |

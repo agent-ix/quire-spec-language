@@ -5,7 +5,6 @@ type: SpecReview
 analysis: risk-complexity
 scope: "FR-005, IT-005, TM-003, TC-020–024 and current boundary documentation"
 review_set: all
-evaluated_revision: "858a628e71df8f2bbc498fb6a410ea1f95166e24"
 ---
 
 ## Summary

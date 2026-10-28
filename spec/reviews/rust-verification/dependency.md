@@ -5,12 +5,11 @@ type: SpecReview
 analysis: dependency
 scope: "FR-012, NFR-005, IT-004 and associated lineage/producer-gate amendments"
 review_set: all
-evaluated_revision: "11a9128"
 ---
 
 ## Summary
 
-Manual CI addendum: specification revision `1649ef7` was reviewed before
+Manual CI addendum: specification revision <sha removed> was reviewed before
 workflow changes. Local Rust and Quire checks retain their existing inputs and version pins. Removing automatic hosted triggers adds no dependency; the specification repository currently contains no hosted workflow to alter.
 The bounded review remains PASS. Both changed artifacts validate with the six
 previously recorded installed-registry diagnostics; no clean-registry claim is made.
@@ -33,7 +32,7 @@ result, not an invented owner acceptance of other contracts or publication.
 ## Scope and provenance
 
 This follow-up reviews FR-012/NFR-005/IT-004 and the associated NFR-002,
-IT-001, US-004, StR-001 and master lineage amendments at `11a9128`. It does not
+IT-001, US-004, StR-001 and master lineage amendments at <sha removed>. It does not
 reopen or accept the remaining native evaluator/shared-interface scope.
 The owner's existing selection is base plus all seven Quoin analyses; the
 optional gap-analysis semantic comparison remains declined. Agent A performed
@@ -84,17 +83,17 @@ reader is required to inspect the historical packet honestly.
 
 ## Reviewed implementation clarification
 
-Specification revision `085dd09` clarifies the fixed role-profile layout and
+Specification revision <sha removed> clarifies the fixed role-profile layout and
 one-byte growth sentinel before the affected mode implementation. No new dependency edge: the profile is already a selected role-audit input. Shared checked I/O remains the prerequisite for all mode reads.
 The scoped review result remains PASS; no additional blocking finding was
 identified. Existing owner/external qualification gates remain unchanged.
 
 ## Canonical trace marker clarification
 
-Reviewed NFR-005 clarification at `86c47c7`: the installed module declares
+Reviewed NFR-005 clarification at <sha removed>: the installed module declares
 `rust-trace-attribute` as canonical, while doc-comment/name tags are legacy.
 New audit tests use the existing shared ix-trace-rs macro at
-2ce4ebf47f726b9d76388220545cd0abda8a5cfb, retaining AGPL-3.0-or-later.
+<sha removed>, retaining AGPL-3.0-or-later.
 The macro checks argument shape; actual Quire binding remains a separate gate.
 This resolves the older default skill convention without inventing a grammar
 or a marker crate. No obligation/method identity changed, and the scoped

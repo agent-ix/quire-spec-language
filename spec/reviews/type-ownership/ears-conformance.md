@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit `660aa25` (branch `task/211-type-ownership`):
+Reviewed commit <sha removed> (branch `task/211-type-ownership`):
 `spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md` and its
 index row in `spec/spec.md` (line 398, plus the `contains` edge at line 167).
 The index row matches the ADR Status ("Proposed", #211).
@@ -124,10 +124,10 @@ Round-2 verdict: ACCEPT WITH FINDINGS. All twelve round-1 findings are
 resolved, seven as proposed and five by a different fix; the residuals of FND-001, FND-004 and FND-007 are carried as FND-013, FND-014 and FND-016. The four new findings
 are low, and none blocks.
 
-## Round 3 (commit 4152eb8)
+## Round 3 (commit <sha removed>)
 
-PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
-and ADR-012 at 10664aa. The full finding table is in
+PR #236 re-review of the delta <sha removed>..<sha removed>, against ADR-011 at <sha removed>
+and ADR-012 at <sha removed>. The full finding table is in
 [base.md](base.md) Round 3.
 
 - The new local ids QC-18 and QC-19 run in sequence, are each defined once,

@@ -3,13 +3,13 @@ id: SR-1085
 title: "Spec review of PR #580 (checked-input and canonical-types drift gates, ADR-032, FR-270 to FR-273)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language@dcf73683dbb09cd48a60f820480a45b8d9626d5f; spec/decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md, spec/functional/FR-270 to FR-273, spec/usecase/US-028, spec/test-cases/TC-745 to TC-748, spec/spec.md, spec/tests.md"
+scope: "agent-ix/quire-spec-language; spec/decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md, spec/functional/FR-270 to FR-273, spec/usecase/US-028, spec/test-cases/TC-745 to TC-748, spec/spec.md, spec/tests.md"
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-391. Review of `git diff origin/main...HEAD` at dcf73683
+Ticket: QSL-391. Review of `git diff origin/main...HEAD` at <sha removed>
 against the four owner rulings (R-1 on demand until no namesakes remain,
 then `make ci`; R-2 delete or rename each namesake by meaning, with the
 verdict for each type listed in the spec; R-3 a doc-comment tag, not a
@@ -17,7 +17,7 @@ dependency or a reserved-name list; R-4 no QSpec half) and the wave-B/wave-C
 owner rulings.
 
 FR-273's verdict table was checked against quire-spec-language origin/main
-(9647e5a8). Every namesake path in the table exists on main. Seven rows were
+(<sha removed>). Every namesake path in the table exists on main. Seven rows were
 checked for meaning by reading the definitions. Four are right:
 `qsl_semantics::model::accounting::LimitKind` (a `ModelNormalizationLimits`
 counter, rename), root `command::LimitKind` (a command intake ceiling,
@@ -56,11 +56,11 @@ sound apart from FND-004 and FND-005.
 
 ## New findings (disposition pass 1)
 
-Delta reviewed: dcf73683..1b844d36 (48804542 fixes SR-1085; 1b844d36 gives root SEAM namesakes delete verdicts citing M-6c, M-6d or M-6e, ADR-032 DT-7). Checked against quire-spec-language origin/main 9647e5a8.
+Delta reviewed: <sha removed>..<sha removed> (48804542 fixes SR-1085; <sha removed> gives root SEAM namesakes delete verdicts citing M-6c, M-6d or M-6e, ADR-032 DT-7). Checked against quire-spec-language origin/main <sha removed>.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-008 | high | The keep rule cannot be met for quire-exact types. quire-exact declares `mod integer;` and `mod location;` as private modules and exports `Integer` and `Origin` only through crate-root `pub use` (quire-exact/src/lib.rs:117, :119, :190 on main 9647e5a8, a deliberate private-mod-behind-pub-use layout), so `pub use quire_exact::integer::Integer` and `pub use quire_exact::location::Origin` in qsl-replay do not compile. The existing `pub use quire_exact::{Origin, ...}` and `{..., Integer, ...}` (qsl-replay/src/lib.rs:88, :101) do not name the defining module, so FR-272's re-export rule (FR-272:53-56, ADR-032 DT-2) reports them and FR-273-AC-1 cannot pass. FR-272-AC-1 contradicts its own rule: it says `pub use k::Value` in W 'names K's defining module' and gives no finding, while K defines Value in `self::value` and re-exports it at its root (FR-272:73). State the rule as 'a path through the owner crate's public API, with no `as`' and make the keep rows name `quire_exact::Origin` and `quire_exact::Integer`. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:53-54, 110-111 |
+| FND-008 | high | The keep rule cannot be met for quire-exact types. quire-exact declares `mod integer;` and `mod location;` as private modules and exports `Integer` and `Origin` only through crate-root `pub use` (quire-exact/src/lib.rs:117, :119, :190 on main <sha removed>, a deliberate private-mod-behind-pub-use layout), so `pub use quire_exact::integer::Integer` and `pub use quire_exact::location::Origin` in qsl-replay do not compile. The existing `pub use quire_exact::{Origin, ...}` and `{..., Integer, ...}` (qsl-replay/src/lib.rs:88, :101) do not name the defining module, so FR-272's re-export rule (FR-272:53-56, ADR-032 DT-2) reports them and FR-273-AC-1 cannot pass. FR-272-AC-1 contradicts its own rule: it says `pub use k::Value` in W 'names K's defining module' and gives no finding, while K defines Value in `self::value` and re-exports it at its root (FR-272:73). State the rule as 'a path through the owner crate's public API, with no `as`' and make the keep rows name `quire_exact::Origin` and `quire_exact::Integer`. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:53-54, 110-111 |
 | FND-009 | medium | Three delete rows cite the wrong slice. On main, SEAM-2 code imports both modules: `checking::composed::proofs::engine` uses `crate::checking::proof::{self, facts, GraphId, Kind, Node, ValueKey}` (src/checking/composed/proofs/engine.rs:12) and `checking::composed::solver` matches `crate::linking::DeclarationKey::Value` (src/checking/composed/solver.rs:446). ADR-011's SEAM-1 row says code shared with SEAM-2 belongs to SEAM-2, so these items go with M-6e, not M-6c. FR-273's Behavior says a row citing a slice is an item 'that slice deletes with its module', which is false for these rows, and an M-6c implementer following the table would delete items the composed checker still uses. Cite M-6e for the three rows. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:73, 77, 100 |
 | FND-010 | medium | FR-273-AC-1, and with it FR-272's joining `make ci` (FR-272:23-25), waits on M-6d for the SEAM-3 rows (`protocol_artifact::*`, FR-273:72, :80, :89-90, :98, :103). ADR-011's SEAM-3 row ties the M-6d deletion to agent-ix/quire-contract-ir#141 (ADR-011:890), so a QSL gate's entry into `make ci` waits on a downstream repo, against the rule that QSL never waits on downstream repos. Give the SEAM-3 rows a verdict QSL can carry out alone (rename now, or delete with a QSL-only slice), or state the gate's `make ci` membership without that dependency. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:118 |
 
@@ -69,17 +69,17 @@ Delta reviewed: dcf73683..1b844d36 (48804542 fixes SR-1085; 1b844d36 gives root 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | 48804542 |
-| FND-002 | fixed | 1b844d36 |
+| FND-002 | fixed | <sha removed> |
 | FND-003 | fixed | 48804542 |
 | FND-004 | fixed | 48804542 |
 | FND-005 | fixed | 48804542 |
 | FND-006 | fixed | 48804542 |
 | FND-007 | fixed | 48804542 |
 
-Round 2, reviewed at 8c4c7213871b0f138eb98f584ca1011b9c7eb101.
+Round 2.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-008 | fixed | 8c4c7213: The keep rule is a path through the owner crate's public API, and the rows name `quire_exact::Integer` and `quire_exact::Origin`. |
-| FND-009 | fixed | 8c4c7213: `checking::proof::Meter`, `checking::proof::Value` and `linking::DeclarationKey` are deleted with M-6e, SEAM-2. |
-| FND-010 | fixed | 8c4c7213: `canonical-types` runs on demand until M-6d lands and no merge gate waits on IR, per the plan lead's ruling (ADR-032 R-1). |
+| FND-008 | fixed | <sha removed>: The keep rule is a path through the owner crate's public API, and the rows name `quire_exact::Integer` and `quire_exact::Origin`. |
+| FND-009 | fixed | <sha removed>: `checking::proof::Meter`, `checking::proof::Value` and `linking::DeclarationKey` are deleted with M-6e, SEAM-2. |
+| FND-010 | fixed | <sha removed>: `canonical-types` runs on demand until M-6d lands and no merge gate waits on IR, per the plan lead's ruling (ADR-032 R-1). |

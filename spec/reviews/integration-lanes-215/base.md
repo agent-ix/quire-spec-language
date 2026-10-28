@@ -5,7 +5,6 @@ type: SpecReview
 analysis: base
 scope: "FR-058, FR-059, FR-060, FR-061, IT-013, TC-156, TC-157, TC-158, TC-159"
 review_set: subset
-evaluated_revision: "6f287b3"
 ---
 
 ## Summary
@@ -13,7 +12,7 @@ evaluated_revision: "6f287b3"
 Reviewed FR-058 through FR-061, IT-013 and TC-156 through TC-159 (all new)
 plus the `spec/spec.md` frontmatter/table additions, against the Checklist and
 the six test-coverage rules, and against the real implementation
-(`tools/arch-lint/`, `integration/current-head/`) at `4cd5174`. This is a
+(`tools/arch-lint/`, `integration/current-head/`) at <sha removed>. This is a
 `subset` review (base plus `dependency` and `evidence`, the two analyses most
 applicable to a change whose entire content is a dependency-graph lane and a
 set of checks whose central requirement is honest, non-vacuous reporting);
@@ -25,10 +24,10 @@ scoped architecture-tooling change, not a new domain model.
 
 **PASS.** No blocking finding. Three real defects were found and fixed during
 this review pass itself (not deferred): an EARS-grammar/passive-voice defect
-in FR-059/FR-061 (fixed at `4cd5174`); an overclaim in FR-060-AC-4/TC-157 that
+in FR-059/FR-061 (fixed at <sha removed>); an overclaim in FR-060-AC-4/TC-157 that
 the real T12-B/T12-C run reproduces ADR-013 OBS-018 exactly — the real run
 finds one additional genuine site (`src/value/node.rs:322`) OBS-018's text
-does not name, and the spec now says so (fixed at `0906f29`); and a
+does not name, and the spec now says so (fixed at <sha removed>); and a
 test-tracing-tag gap (FND-004) where new tests used a stale doc-comment
 convention instead of this repo's real `#[trace(...)]` attribute, which left
 all 18 of FR-058 through FR-061's ACs showing as `unbacked_rows` in `quire
@@ -168,7 +167,7 @@ Evaluated against real data, not only synthetic fixtures: `arch-lint
 direction` was run against real local checkouts of quire-contract-ir,
 quire-contract-runtime and quire-contract-codegen; `arch-lint api-surface` and
 `arch-lint duplicate-revisions` were run against this repository's own real
-`src/` tree and `Cargo.lock` at `4cd5174`. `cargo fmt --check` and `cargo
+`src/` tree and `Cargo.lock` at <sha removed>. `cargo fmt --check` and `cargo
 clippy --all-targets -- -D warnings` were run and passed clean (after fixes,
 see Checklist and Test Coverage below) over the root workspace (`arch-lint`)
 and each of the current-head lane's three separate manifests (lane, tool,
@@ -298,7 +297,7 @@ PR's own reported evidence a first-class thing to check, not a formality.
   against real inputs (not only against the unit-test fixtures): `direction`
   against real local checkouts of the three backend repositories reproduces
   ADR-011 OBS-029's FB-05 violation and its FB-11 cycles; `api-surface`
-  against this repository's own `src/` at `4cd5174` reports T12-A pending,
+  against this repository's own `src/` at <sha removed> reports T12-A pending,
   T12-C failing at both OBS-018 sites, and T12-B failing at the one OBS-018
   site plus one additional real site (**superseded by R1, #249 review**: with
   `node_key_of(` added to T12-B's call patterns, the real, current count is

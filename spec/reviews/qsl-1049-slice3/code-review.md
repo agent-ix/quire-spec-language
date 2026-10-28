@@ -3,7 +3,7 @@ id: SR-17015
 title: "Code review of QSL-1065 state-local EN-1 classification"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; QSL-1065 diff from 4c9ec096: qsl-analyze/tests/it/{litmus.rs,weak_memory.rs}, qsl-eval/src/simulation/{protocol.rs,protocol/access.rs,protocol/footprint.rs,protocol/steps.rs}"
+scope: "agent-ix/quire-spec-language; QSL-1065 diff from <sha removed>: qsl-analyze/tests/it/{litmus.rs,weak_memory.rs}, qsl-eval/src/simulation/{protocol.rs,protocol/access.rs,protocol/footprint.rs,protocol/steps.rs}"
 review_set: subset
 ---
 

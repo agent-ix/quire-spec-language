@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1072. PR: quire-spec-language#1523 (head 56043f5ba). This run used `quoin advise --json` (quoin 0.29.1) over the PR head. FR-487-AC-1 to FR-487-AC-8 are authored `Test` (TC-1264). The advisor's `property_shapes: example` rule recommends `bdd-spec-by-example` and `unit-testing`, both class Test, with `mismatch: false` and `inconclusive: false`. FR-315-AC-43 is authored `Test` (TC-1264). Besides the two example-shape methods, the advisor also lists `model-checking` (Analysis) and `runtime-monitoring` from the `temporal` characteristic, with `mismatch: false`. Since AC-43 asserts exact SMT-LIB script text, a test is the right primary method. The temporal recommendations describe the query's purpose, not this criterion. `quire properties` classifies all nine criteria `example` / `assertion`, so no property-based test is implied.
+Ticket: QSL-1072. PR: quire-spec-language#1523 (head <sha removed>). This run used `quoin advise --json` (quoin 0.29.1) over the PR head. FR-487-AC-1 to FR-487-AC-8 are authored `Test` (TC-1264). The advisor's `property_shapes: example` rule recommends `bdd-spec-by-example` and `unit-testing`, both class Test, with `mismatch: false` and `inconclusive: false`. FR-315-AC-43 is authored `Test` (TC-1264). Besides the two example-shape methods, the advisor also lists `model-checking` (Analysis) and `runtime-monitoring` from the `temporal` characteristic, with `mismatch: false`. Since AC-43 asserts exact SMT-LIB script text, a test is the right primary method. The temporal recommendations describe the query's purpose, not this criterion. `quire properties` classifies all nine criteria `example` / `assertion`, so no property-based test is implied.
 
 Examined units: FR-487-AC-1 to FR-487-AC-8 and FR-315-AC-43 (examined).
 
@@ -28,4 +28,4 @@ Clean: every authored method agrees with the catalog's recommendation.
 
 ## Dispositions
 
-Round 1, head bd9361749. `quoin advise --json` re-run: FR-487-AC-9 to FR-487-AC-12 and FR-172-AC-7 are authored `Test`, with `mismatch: false` and `inconclusive: false`. The SR is still clean, so there is no finding to dispose.
+Round 1, head <sha removed>. `quoin advise --json` re-run: FR-487-AC-9 to FR-487-AC-12 and FR-172-AC-7 are authored `Test`, with `mismatch: false` and `inconclusive: false`. The SR is still clean, so there is no finding to dispose.

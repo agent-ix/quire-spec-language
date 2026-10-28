@@ -1,17 +1,17 @@
 ---
 id: SR-16362
-title: "Code review of QSL-1013 slice 2 at 77276554c"
+title: "Code review of QSL-1013 slice 2 at <sha removed>"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; git diff origin/main...77276554c518595877ff2728e341865a8bfab905: qsl-package/src/emit.rs, qsl-package/src/emit/tests/timed_source.rs, qsl-replay/src/spine.rs, qsl-semantics/src/check/{assemble,check,mod,refusal,time_units}.rs, qsl-semantics/src/check/hybrid/cause.rs, qsl-semantics/src/check/lowering/model.rs, qsl-semantics/tests/it/timed_declarations.rs, qsl-forms/tests/it/time_forms.rs"
+scope: "agent-ix/quire-spec-language; git diff origin/main...<sha removed>: qsl-package/src/emit.rs, qsl-package/src/emit/tests/timed_source.rs, qsl-replay/src/spine.rs, qsl-semantics/src/check/{assemble,check,mod,refusal,time_units}.rs, qsl-semantics/src/check/hybrid/cause.rs, qsl-semantics/src/check/lowering/model.rs, qsl-semantics/tests/it/timed_declarations.rs, qsl-forms/tests/it/time_forms.rs"
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-1013. PR agent-ix/quire-spec-language#1403, reviewed SHA 77276554c518595877ff2728e341865a8bfab905, based on main. Code review with the rust-review lane folded in. Covers the S2 retention of timed forms, the S3 facet gate and time-source check, tick operation resolution, the new TemporalCause variants and their codes, the S4 `TimedModelNotEmitted` guard, and the merge-fix commits (NoTimeDimension struct-variant patterns in hybrid/cause.rs and qsl-replay/src/spine.rs, seven new spine.rs message arms).
+Ticket: QSL-1013. PR agent-ix/quire-spec-language#1403, reviewed SHA <sha removed>, based on main. Code review with the rust-review lane folded in. Covers the S2 retention of timed forms, the S3 facet gate and time-source check, tick operation resolution, the new TemporalCause variants and their codes, the S4 `TimedModelNotEmitted` guard, and the merge-fix commits (NoTimeDimension struct-variant patterns in hybrid/cause.rs and qsl-replay/src/spine.rs, seven new spine.rs message arms).
 
-Prior review SR-16358 reviewed fba5bbcf1, before the merge of main that brought QSL-1022 (typed timed-model nodes, `emit_timed_models`) and the FR-230 AC-29..37 rewrite. It does not cover this head.
+Prior review SR-16358 reviewed <sha removed>, before the merge of main that brought QSL-1022 (typed timed-model nodes, `emit_timed_models`) and the FR-230 AC-29..37 rewrite. It does not cover this head.
 
 ## Verdict
 
@@ -32,5 +32,5 @@ Commands run, each in its own target dir and one at a time: `cargo test -p qsl-s
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | deferred | The guard is kept as a tracked fail-closed interim. Its doc, error message and inline comment now say so, and cite FR-230-AC-32, TC-685 step 26 and emit_timed_models. QSL-1032 (Backlog, QSL V1 Architecture Spine) owns mapping CheckedGraph::time_sources into timed_model nodes and removing the guard. |
-| FND-002 | fixed | Verified at c643f88da. |
-| FND-003 | fixed | Verified at c643f88da. |
+| FND-002 | fixed | Verified at <sha removed>. |
+| FND-003 | fixed | Verified at <sha removed>. |

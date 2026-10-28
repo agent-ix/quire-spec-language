@@ -41,36 +41,11 @@ mod expression_depth;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
-const FR_094: &str = include_str!(
-    "../../../../../spec/functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md"
-);
-
-/// FR-094's golden vectors by name: `(key, preimage)`.
+/// FR-094's golden vectors by name: `(key, preimage)`, each key recomputed
+/// from the vector's preimage. The vectors that name a QSpec key are absent
+/// while `QSPEC_DIR` is unset.
 fn vectors() -> BTreeMap<String, (String, String)> {
-    let mut vectors = BTreeMap::new();
-    let mut lines = FR_094.lines();
-    while let Some(line) = lines.next() {
-        let Some(rest) = line.strip_prefix("**") else {
-            continue;
-        };
-        let Some((name, _)) = rest.split_once("**: ") else {
-            continue;
-        };
-        if lines.next() != Some("") || lines.next() != Some("```json") {
-            continue;
-        }
-        let preimage = lines.next().expect("a vector preimage line").to_owned();
-        assert_eq!(lines.next(), Some("```"), "{name}: one preimage line");
-        assert_eq!(lines.next(), Some(""));
-        let key = lines
-            .next()
-            .and_then(|line| line.strip_prefix("Key: `"))
-            .and_then(|line| line.strip_suffix('`'))
-            .expect("a vector key line")
-            .to_owned();
-        vectors.insert(name.to_owned(), (key, preimage));
-    }
-    vectors
+    crate::check::lowering::spec_vectors::vectors("FR-094")
 }
 
 fn vector_key(name: &str) -> NodeKey {
@@ -1050,7 +1025,7 @@ mod quantities {
     }
 
     fn node_id(key: &str) -> Json {
-        json!({"domain": "quire.checked-semantic-node/v1", "digest": key})
+        json!({"domain": "quire.checked-semantic-node/v1", "digest": resolved(key)})
     }
 
     fn dimension(name: &str) -> DimensionPreimage {
@@ -1076,12 +1051,36 @@ mod quantities {
         .expect("a root unit")
     }
 
-    const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
-    const TIME: &str = "628777f8df3c2700593d56dc20fb110640214dd09bc6cb961d802fdb9b7f6077";
-    const METRE: &str = "79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4";
-    const SECOND: &str = "d0f0c5d24d6accb2f1d9afff7c6cdda3143df382e50af4bda0704d48c67ed998";
+    // QSpec's nominal vectors, by name; the keys are read from
+    // `$QSPEC_DIR` at run time, and the tests that need them are skipped
+    // while it is unset.
+    const LENGTH: &str = "dimension-length";
+    const TIME: &str = "dimension-time";
+    const METRE: &str = "unit-metre";
+    const SECOND: &str = "unit-second";
+
+    /// Whether QSpec's vectors are available; prints why the caller skips
+    /// when they are not.
+    fn qspec_vectors_available() -> bool {
+        let available = crate::check::lowering::spec_vectors::qspec_available();
+        if !available {
+            println!("skipped: QSPEC_DIR not set");
+        }
+        available
+    }
+
+    /// `name_or_hex`, with a QSpec vector name replaced by that vector's key.
+    fn resolved(name_or_hex: &str) -> String {
+        if name_or_hex.starts_with("dimension-") || name_or_hex.starts_with("unit-") {
+            crate::check::lowering::spec_vectors::qspec_key(name_or_hex)
+                .unwrap_or_else(|| panic!("QSpec publishes no vector {name_or_hex}"))
+        } else {
+            name_or_hex.to_owned()
+        }
+    }
 
     fn node_key(hex: &str) -> NodeKey {
+        let hex = &resolved(hex);
         let mut digest = [0_u8; 32];
         for (index, byte) in digest.iter_mut().enumerate() {
             *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).expect("hex");
@@ -1133,6 +1132,9 @@ mod quantities {
     #[trace("FR-094-AC-6", "TC-419")]
     #[test]
     fn quantity_types_key_to_the_unit_node_or_a_compound_unit_node() {
+        if !qspec_vectors_available() {
+            return;
+        }
         let package = |body: Expression| PackageDeclarations {
             types: TypeEnvironment::default().with_units(units()),
             aliases: vec![
@@ -1231,7 +1233,7 @@ mod quantities {
         let u2 = preimage(graph.node(vector_key("U2")).unwrap());
         assert_eq!(
             u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
-            json!(METRE)
+            json!(resolved(METRE))
         );
         assert_ne!(vector_key("U4"), node_key(METRE));
     }
@@ -1243,6 +1245,9 @@ mod quantities {
     #[trace("FR-093-AC-3", "TC-415")]
     #[test]
     fn a_quantity_conversion_is_exact() {
+        if !qspec_vectors_available() {
+            return;
+        }
         use crate::value::semantic_node::NodeIdentityPreimage;
         let kilometre = UnitPreimage::from_json(json!({
             "version": "quire.unit-node/v1",
@@ -1313,6 +1318,9 @@ mod quantities {
     #[trace("FR-094-AC-7", "TC-419")]
     #[test]
     fn an_unheld_compound_unit_is_an_internal_fault() {
+        if !qspec_vectors_available() {
+            return;
+        }
         let unheld = UnitId::compound([5; 32]);
         let (result, graph) = lower(&[], units(), |lowering| {
             lowering.type_node(&ValueType::Quantity(unheld), &generated_location())
@@ -1335,6 +1343,9 @@ mod quantities {
     #[trace("FR-094-AC-7", "TC-419")]
     #[test]
     fn a_declared_unit_with_no_admitted_node_is_an_internal_fault() {
+        if !qspec_vectors_available() {
+            return;
+        }
         let mut table = UnitTable::default();
         for unit in unit_graph().units() {
             table

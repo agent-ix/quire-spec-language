@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1072. PR: quire-spec-language#1523 (head 56043f5ba). This lens checks that FR-487's statements, and the three amended FR-315 statements, follow EARS form. `quire validate` emits no `ears:*` warning for FR-487, TC-1264 or FR-315. A manual read found each Behavior bullet ubiquitous (`The S3 hyper check SHALL ...`, `evaluate_hyper_holds SHALL ...`) or unwanted-behaviour (`If ..., then ... SHALL ...`), each with a named subject and response.
+Ticket: QSL-1072. PR: quire-spec-language#1523 (head <sha removed>). This lens checks that FR-487's statements, and the three amended FR-315 statements, follow EARS form. `quire validate` emits no `ears:*` warning for FR-487, TC-1264 or FR-315. A manual read found each Behavior bullet ubiquitous (`The S3 hyper check SHALL ...`, `evaluate_hyper_holds SHALL ...`) or unwanted-behaviour (`If ..., then ... SHALL ...`), each with a named subject and response.
 
 Examined units: FR-487 (statement and every Behavior bullet), plus FR-315 Joint steps, Property and Product-identity refusal order (amended text). All were examined.
 
@@ -29,7 +29,7 @@ Conforms, with two low wording findings.
 
 ## Dispositions
 
-Round 1, head bd9361749 (fix commit be4e0bad6).
+Round 1, head <sha removed> (fix commit <sha removed>).
 
 | FND | outcome | reason |
 | --- | --- | --- |

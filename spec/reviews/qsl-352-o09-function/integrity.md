@@ -3,7 +3,7 @@ id: SR-1086
 title: "Integrity review of the QSL-352 function-contract obligation identity"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language@7b1ba3a3c; ADR-013 O-09 and O-26, ADR-011 E7, FR-121, TC-516, spec/spec.md, spec/tests.md"
+scope: "agent-ix/quire-spec-language@<sha removed>; ADR-013 O-09 and O-26, ADR-011 E7, FR-121, TC-516, spec/spec.md, spec/tests.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-013

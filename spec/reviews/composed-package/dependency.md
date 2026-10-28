@@ -5,7 +5,6 @@ type: SpecReview
 analysis: dependency
 scope: "Compiler FR-035/036 and their existing source/parser/model/package seams; TC-113–115, IT-009 and TM-003"
 review_set: all
-evaluated_revision: "fa07b079861286c884e2f44380a3ed8f9508ef86"
 review_date: "2026-09-10"
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-035, type: reviews }
@@ -72,7 +71,7 @@ canonicalizer is required to produce the specified bound template.
 
 1. Select the coherent standard and affected producer contracts for enablement.
    The review input is standard commit
-   `d7483f3d0abe7e71614f73ee18eb51a677ebe3d8`; its PR-15 acceptance is still pending.
+   <sha removed>; its PR-15 acceptance is still pending.
    Existing compiler seams remain independently inspectable during that work.
 2. Extend edition-aware token classification and structured parsing under FR-035,
    preserving the historical path and source/resource contracts; TC-113 is the

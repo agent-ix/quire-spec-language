@@ -3,7 +3,7 @@ id: SR-17186
 title: "QSL-1072 PR #1523 gap analysis: matrix rows of FR-487 and FR-315-AC-43"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@56043f5ba; PR #1523 (branch qsl-1072-lowering-spec); spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md, spec/functional/FR-315-encode-the-smt-lib-transition-relation.md, spec/test-cases/TC-1264-hyper-atoms-and-match-conjuncts-are-lowered-and-evaluated.md"
+scope: "agent-ix/quire-spec-language@<sha removed>; PR #1523 (branch qsl-1072-lowering-spec); spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md, spec/functional/FR-315-encode-the-smt-lib-transition-relation.md, spec/test-cases/TC-1264-hyper-atoms-and-match-conjuncts-are-lowered-and-evaluated.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-487
@@ -36,7 +36,7 @@ FAIL by the mechanical rule, because nine criteria are untagged. This is not a m
 
 ## Dispositions
 
-Round 1, head bd9361749. `quire matrix --scope . --format json` at the head gives `untagged` for FR-487-AC-1 to FR-487-AC-12, FR-315-AC-43, FR-172-AC-7 and FR-172-AC-5, 15 rows in all.
+Round 1, head <sha removed>. `quire matrix --scope . --format json` at the head gives `untagged` for FR-487-AC-1 to FR-487-AC-12, FR-315-AC-43, FR-172-AC-7 and FR-172-AC-5, 15 rows in all.
 
 | FND | outcome | reason |
 | --- | --- | --- |

@@ -1,9 +1,9 @@
 ---
 id: SR-17222
-title: "spec-review disposition of SR-17221 findings on hyper emission FR-488 and TC-1266 (quire-spec-language PR 1548, head f6fd494f8)"
+title: "spec-review disposition of SR-17221 findings on hyper emission FR-488 and TC-1266 (quire-spec-language PR 1548, head <sha removed>)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@f6fd494f8; spec/functional/FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md; spec/test-cases/TC-1266-a-hyper-clause-emits-a-hyperproperty-claim-node.md; spec/functional/FR-315-encode-the-smt-lib-transition-relation.md; spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md"
+scope: "agent-ix/quire-spec-language@<sha removed>; spec/functional/FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md; spec/test-cases/TC-1266-a-hyper-clause-emits-a-hyperproperty-claim-node.md; spec/functional/FR-315-encode-the-smt-lib-transition-relation.md; spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-488
@@ -18,7 +18,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1071. Re-review of fix commit f6fd494f8 against SR-17221. `quire validate` is clean (no errors; only the repo-wide duplicate-archetype and inline-data-schema warnings that every spec file shows) for FR-488, FR-315, FR-487, TC-1266, `spec/reviews/qsl-1071-pr1548/base.md` and the root `reviews/qsl-1071-pr1548-17221-spec-review.md`, run from the repository root. Nine of nine SR-17221 findings are resolved in FR-488. Two new findings: TC-1266 still cites the pre-split AC numbers, and PR 1548 was merged at e72495ac3 before the fix commit, so the fixes are not on main. QSpec-owned Q-1..Q-6 are not judged beyond QSL's local choices.
+Ticket: QSL-1071. Re-review of fix commit <sha removed> against SR-17221. `quire validate` is clean (no errors; only the repo-wide duplicate-archetype and inline-data-schema warnings that every spec file shows) for FR-488, FR-315, FR-487, TC-1266, `spec/reviews/qsl-1071-pr1548/base.md` and the root `reviews/qsl-1071-pr1548-17221-spec-review.md`, run from the repository root. Nine of nine SR-17221 findings are resolved in FR-488. Two new findings: TC-1266 still cites the pre-split AC numbers, and PR 1548 was merged at <sha removed> before the fix commit, so the fixes are not on main. QSpec-owned Q-1..Q-6 are not judged beyond QSL's local choices.
 
 ## Dispositions
 
@@ -41,7 +41,7 @@ No contradiction found with merged FR-315 ("Product identity", AC-12), FR-487 (s
 | ID | Severity | Summary | Refs | Escape Cause |
 |----|----------|---------|-------|-------|
 | FND-001 | medium | TC-1266 still maps its steps to the pre-split AC numbers. Step 1 expects "the wrapper and slots of FR-488-AC-2" (AC-2 is the quantifier/parameter content; the wrapper is AC-4/5); step 2 "AC-3's subjects, parameters and slots" (AC-3 is the reader triple; SavesPower is AC-6); step 3 "AC-4's conjunct terms" and its action "match variants of FR-488-AC-4" (AC-4 is the wrapper; match is AC-7/8/9); step 4 "AC-5's anchor references" (AC-10); step 5 "AC-6's NodeIds" (AC-11/12); step 6 "AC-7's fairness aggregates" (AC-13); step 7 "AC-8's equal occurrences and lookup refusals" (AC-14/15); step 8 "AC-9" (AC-16/17/18, and the timed clause is AC-18). Only step 10 (AC-19..21) and the Scope line match. A tester following TC-1266 verifies the wrong criteria and AC-15 and AC-18 have no step. Fix: renumber steps 1..9 expected results to the split ACs, add AC-15 (wrapper skipped) to step 7 and AC-18 to step 8. | TC-1266 Test Procedure, Expected Results | wrong-requirement |
-| FND-002 | high | PR 1548 is MERGED (merge 683db94d8, head e72495ac3, 2026-10-25T15:50Z). f6fd494f8 exists only on the branch and is not on main, so main carries the unfixed FR-488 and TC-1266 and SR-17220/17221 findings are unresolved there. Pushing to the branch cannot land. Fix: open a follow-up PR from this branch (rebased on main) with the fix commit, the TC-1266 renumbering of FND-001, and these reviews. | PR 1548 state | correct-requirement-no-evidence |
+| FND-002 | high | PR 1548 is MERGED (merge <sha removed>, head <sha removed>, 2026-10-25T15:50Z). <sha removed> exists only on the branch and is not on main, so main carries the unfixed FR-488 and TC-1266 and SR-17220/17221 findings are unresolved there. Pushing to the branch cannot land. Fix: open a follow-up PR from this branch (rebased on main) with the fix commit, the TC-1266 renumbering of FND-001, and these reviews. | PR 1548 state | correct-requirement-no-evidence |
 
 ## Verdict
 

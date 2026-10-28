@@ -29,7 +29,7 @@ CONDITIONAL — correct the three affirmative Findings rows in the changed self-
 | QSL FR-129 and ADR-011 X-11 | context_only | QSL owns strong-kind defaults and checker behavior; ADR places shared values below QSL |
 | Changed author self-review artifacts | examined | Five artifacts checked for alignment with the changed requirement and reviewer data contract |
 
-Merged-tree validation: `make check-spec-validation` exited 0 on scratch merge of QSL main `33066f7656e7091eaafe015f0a8b645aecd09508` and PR head `ab18f7e3cdc8567a90810fd28860aa6ceedb2b1f`. Existing warnings remain. Separate `cargo deny --workspace check bans --config deny.toml` exits with “unexpected argument '--config'”; this is the unchanged QSL Makefile command, so the cargo-deny lane is not established as passing by this review.
+Merged-tree validation: `make check-spec-validation` exited 0 on scratch merge of QSL main <sha removed> and PR head <sha removed>. Existing warnings remain. Separate `cargo deny --workspace check bans --config deny.toml` exits with “unexpected argument '--config'”; this is the unchanged QSL Makefile command, so the cargo-deny lane is not established as passing by this review.
 
 ## Findings
 
@@ -41,4 +41,4 @@ Merged-tree validation: `make check-spec-validation` exited 0 on scratch merge o
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | At `ed2d905f3a3d8b96b225eb6634f0f944fef416e2`, the dependency, integrity and scope-boundary author reviews each use `No findings (placeholder)` in the Findings row. The ten independent review artifacts were copied byte-identically. Scratch merge `50ef861687bf0269a6a4d2b2a4a8cb30ac202cc2` of QSL main `33066f7656e7091eaafe015f0a8b645aecd09508` and this PR head passes `make check-spec-validation`. |
+| FND-001 | fixed | At <sha removed>, the dependency, integrity and scope-boundary author reviews each use `No findings (placeholder)` in the Findings row. The ten independent review artifacts were copied byte-identically. Scratch merge <sha removed> of QSL main <sha removed> and this PR head passes `make check-spec-validation`. |

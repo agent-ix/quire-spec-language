@@ -2,15 +2,18 @@
 
 Follow [AGENTS.md](AGENTS.md) for repository instructions.
 
-## Hash / digest / pin antipattern: present, slated for removal
+## Hash / digest / pin prohibition
 
-This repository still contains hashes, digests, SHAs, pins, checksum catalogs and
-records that track files, versions or tools. That is an antipattern and it is slated
-for removal. Do not introduce any new use of it. When you touch code or specs that
-contain one, remove it as part of the change. The only hash that stays is a canonical
-identity digest that binds a proof to the exact content it proved. Package versions
-live in Cargo.toml / package.json and their lockfiles only; reports name the app
-version they ran.
+Do not add, keep or refresh any SHA, digest, hash, checksum, pin, lock, revision,
+fingerprint, golden value, stamp or inventory that records, compares against or
+gates on a frozen file, version, revision or tool outside Cargo.toml and
+Cargo.lock, whatever it is named. A rename, wrapper, helper, derived digest or
+move of such a record is the same violation. When you touch code, specs, docs
+or comments that contain one, remove it in the same change. Package and tool
+versions live in Cargo.toml, Cargo.lock and rust-toolchain.toml only; text points
+there or states nothing. Reports and reviews do not record commit SHAs. A question
+about a content-identity digest goes to a specification ruling (STD-551), not to
+an exemption written here.
 
 For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
 

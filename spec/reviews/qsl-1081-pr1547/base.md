@@ -3,7 +3,7 @@ id: SR-17219
 title: "spec-review of spec capture emission FR-337-AC-8 to AC-12 and TC-1267 (quire-spec-language PR 1547)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@a19017481; spec/functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md; spec/functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md; spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md; spec/test-cases/TC-1056-s3-checks-channels-relationships-requirements-and-choice-visibility.md; spec/test-cases/TC-1265-an-on-each-clause-emits-its-trigger-and-guard.md; spec/test-cases/TC-1267-a-temporal-clause-with-a-capture-checks-emits-and-is-observed-at-activation.md"
+scope: "agent-ix/quire-spec-language@<sha removed>; spec/functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md; spec/functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md; spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md; spec/test-cases/TC-1056-s3-checks-channels-relationships-requirements-and-choice-visibility.md; spec/test-cases/TC-1265-an-on-each-clause-emits-its-trigger-and-guard.md; spec/test-cases/TC-1267-a-temporal-clause-with-a-capture-checks-emits-and-is-observed-at-activation.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-337
@@ -18,7 +18,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1081. One spec-review pass over `git diff origin/main...a19017481`, with the ear/integrity/dependency/evidence/failure-domain checks folded into this one file. Checked against FR-104-AC-12, FR-125, FR-126, FR-156, FR-172, FR-218-AC-16, FR-322, FR-338, FR-339, FR-381, FR-383, FR-447 and QSpec FR-370 item 4 (captures aggregate: one binding per capture in source order, named, holding the initializer term; matches). FR-172 has no capture or activation text, so no contradiction there. FR-338's state key (context `[root, profile, activation, binding]`) really carries no capture vector, so the CaptureRead rationale holds. S3 order (activation, captures, holds), the S4 level rule (1 + e + j, as FR-383 numbers protocol captures) and the removals (FR-337-AC-7 NotEmitted sentence, TC-1265 step 4 and its expected result, TC-1056 row 23a, the "Clauses S4 does not emit" interim text) are consistent with each other and leave no stale capture-NotEmitted reference in spec/. Two defects make the new ACs unsatisfiable as written (FND-001, FND-002).
+Ticket: QSL-1081. One spec-review pass over `git diff origin/main...<sha removed>, with the ear/integrity/dependency/evidence/failure-domain checks folded into this one file. Checked against FR-104-AC-12, FR-125, FR-126, FR-156, FR-172, FR-218-AC-16, FR-322, FR-338, FR-339, FR-381, FR-383, FR-447 and QSpec FR-370 item 4 (captures aggregate: one binding per capture in source order, named, holding the initializer term; matches). FR-172 has no capture or activation text, so no contradiction there. FR-338's state key (context `[root, profile, activation, binding]`) really carries no capture vector, so the CaptureRead rationale holds. S3 order (activation, captures, holds), the S4 level rule (1 + e + j, as FR-383 numbers protocol captures) and the removals (FR-337-AC-7 NotEmitted sentence, TC-1265 step 4 and its expected result, TC-1056 row 23a, the "Clauses S4 does not emit" interim text) are consistent with each other and leave no stale capture-NotEmitted reference in spec/. Two defects make the new ACs unsatisfiable as written (FND-001, FND-002).
 
 ## Findings
 

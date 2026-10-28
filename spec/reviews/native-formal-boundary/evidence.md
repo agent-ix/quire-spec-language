@@ -5,7 +5,6 @@ type: SpecReview
 analysis: evidence
 scope: "FR-005, IT-005, TM-003, TC-020–024 and current boundary documentation"
 review_set: all
-evaluated_revision: "858a628e71df8f2bbc498fb6a410ea1f95166e24"
 ---
 
 ## Summary
@@ -44,9 +43,9 @@ cargo +1.98.1 clippy --offline --locked --target-dir target --all-targets --all-
 QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core cargo +1.98.1 test --offline --locked --target-dir target --test fixture_audit -- --ignored
 ```
 
-Observed rustc: 1.98.1 (48a229cea 2026-09-01); Cargo: 1.98.1
-(797e8a9bc 2026-08-05). Runtime source, Cargo.lock and workflow bytes match
-d6c6515; this amendment did not migrate their pins. Final validation including
+Observed rustc: 1.98.1 (<sha removed> 2026-09-01); Cargo: 1.98.1
+(<sha removed> 2026-08-05). Runtime source, Cargo.lock and workflow bytes match
+<sha removed>; this amendment did not migrate their pins. Final validation including
 these eight reviews reports 100/100 specification documents grammar-clean.
 
 ## Provenance

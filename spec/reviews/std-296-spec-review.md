@@ -3,7 +3,7 @@ id: SR-16090
 title: "Spec review of STD-296 guarded closure certificate (QSL PR #1271)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language@08536762e6f26a23df6d1729e1046749d43eb3cd; spec/functional/FR-338-check-an-en-1-closure-certificate.md, spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md, spec/test-cases/TC-525-an-en-1-closure-certificate-is-checked.md, spec/test-cases/TC-521-explicit-state-model-check.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-338-check-an-en-1-closure-certificate.md, spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md, spec/test-cases/TC-525-an-en-1-closure-certificate-is-checked.md, spec/test-cases/TC-521-explicit-state-model-check.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-338
@@ -19,7 +19,7 @@ relationships:
 
 ## Summary
 
-Ticket: STD-296. The diff is `origin/main...08536762e`, and main is an ancestor of the head. It is spec only. The reviewer checked it against QSL FR-125, FR-126, FR-338 and FR-339, and against QSpec FR-370 on origin/main.
+Ticket: STD-296. The diff is `origin/main...<sha removed>, and main is an ancestor of the head. It is spec only. The reviewer checked it against QSL FR-125, FR-126, FR-338 and FR-339, and against QSpec FR-370 on origin/main.
 
 These claims hold:
 
@@ -56,7 +56,7 @@ The design is sound. The condition is bound through the clause root's content id
 
 ## Dispositions
 
-Round 1 is at head 202af2833. Main is an ancestor of the head. `make check-spec-validation` exits 0 with no diagnostic in a changed file. Both new lead defaults are sound. Reading the condition at a stutter position on the last model state's letter matches how the atoms are read there, and it stays a function of the terminal model state, so keys stay deterministic. The initial-state locus rule only chooses where to report a rejection that always happens, so it cannot let a bad certificate through. FND-007 covers its one missing case.
+Round 1 is at head <sha removed>. Main is an ancestor of the head. `make check-spec-validation` exits 0 with no diagnostic in a changed file. Both new lead defaults are sound. Reading the condition at a stutter position on the last model state's letter matches how the atoms are read there, and it stays a function of the terminal model state, so keys stay deterministic. The initial-state locus rule only chooses where to report a rejection that always happens, so it cannot let a bad certificate through. FND-007 covers its one missing case.
 
 | FND | outcome | reason |
 | --- | --- | --- |

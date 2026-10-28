@@ -3,13 +3,13 @@ id: SR-5668
 title: QSL-672 PR 731 integrity review
 type: SpecReview
 analysis: integrity
-scope: agent-ix/quire-spec-language@bef47c6353ef00207df211d79fe4c9304bc3ae23; spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md, spec/test-cases/TC-394-value-expression-mapping-and-precedence.md, spec/test-cases/TC-396-s2-refuses-unrepresented-and-foreign-constructs.md
+scope: agent-ix/quire-spec-language; spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md, spec/test-cases/TC-394-value-expression-mapping-and-precedence.md, spec/test-cases/TC-396-s2-refuses-unrepresented-and-foreign-constructs.md
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-672. The revised S2/check boundary, law ownership, OQ-5 split, and complete-value-only slash promotion agree with QSpec FR-147, FR-149, FR-044 and shared grammar at 9b709948c39ecc40210589ba5ec418ef5a81c295. The new test vector does not discriminate two of the required laws.
+Ticket: QSL-672. The revised S2/check boundary, law ownership, OQ-5 split, and complete-value-only slash promotion agree with QSpec FR-147, FR-149, FR-044 and shared grammar at <sha removed>. The new test vector does not discriminate two of the required laws.
 
 ## Verdict
 
@@ -63,10 +63,10 @@ The optional repository-wide `quire matrix` scan produced no rows before the wor
 
 ## Dispositions
 
-Re-reviewed at c3c65a7b0cd72f76f8c51967d88027c2884699d9. **PASS**; no new findings. Original finding text and review scope are retained above.
+Re-reviewed at <sha removed>. **PASS**; no new findings. Original finding text and review scope are retained above.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed c3c65a7b0cd72f76f8c51967d88027c2884699d9 | TC-394 now supplies all four sign quadrants for each law. All 12 quotient/remainder cells independently match integer arithmetic; Euclidean mod is 1, 2, 1, 2 under every selection. |
+| FND-001 | fixed <sha removed> | TC-394 now supplies all four sign quadrants for each law. All 12 quotient/remainder cells independently match integer arithmetic; Euclidean mod is 1, 2, 1, 2 under every selection. |
 
 The whole added-line scan confirms both changed AC Verification cells are exactly `Test` and both trace examples contain only AC IDs. Prior semantic admission, OQ-5 and FR-044/FR-149 promotion conclusions remain valid. Remote PR head matches the reviewed head; body is `Refs QSL-672`. Author validation is 3/3 grammar-clean; parse/lint completed 3/3 with existing advisory module warnings. No builds or repository edits were performed.

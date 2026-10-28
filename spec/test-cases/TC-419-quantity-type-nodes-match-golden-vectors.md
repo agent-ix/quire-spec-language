@@ -62,8 +62,7 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
 ## Expected Results
 
-- Step 1: the semantic type is QSpec's `unit-metre` key,
-  `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, and the
+- Step 1: the semantic type is QSpec's `unit-metre` key, and the
   graph holds no `compound_unit` node. It holds the `metre` node, a
   `scalar_type`/`unit` node carrying its `quire.unit-node/v1` preimage, whose
   bytes hash to that key, typed by the `dimension-length` node, which it also
@@ -87,10 +86,10 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
   of the nodes is the `m` unit node.
 - Step 7: one `scalar_type`/`dimension_equivalence` node with no
   `declaration`, self-typed, preimage ids in ascending digest order, key
-  `bbf770ea…00d4` and `root_scale` 1/1 under QSpec's vector owner, exactly the two
+  the QSpec vector's and `root_scale` 1/1 under QSpec's vector owner, exactly the two
   package `Time` keys as dependencies and one `anchor` occurrence of ordinal 0; the
   reversed spelling gives the same key; the added `R::Time ~ Time` is a second node of
-  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 and key `d707eb94…6c24` in
+  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 and the QSpec vector's key in
   both spellings; the `Time` nodes keep their keys; the node is emitted with no
   quantity type naming either dimension; IR admits each package and refuses each
   changed `root_scale` with `invalid_semantic_graph`.

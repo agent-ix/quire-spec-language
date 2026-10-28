@@ -3,7 +3,7 @@ id: SR-17014
 title: "Code review of QSL-1064 state-local V-8 refusals"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; QSL-1064 worktree diff from main 9b186cab: qsl-analyze/src/model_check/check.rs, qsl-analyze/tests/it/{weak_memory.rs,release_acquire.rs}, qsl-eval/src/simulation/{model.rs,protocol.rs,protocol/access.rs,protocol/selection.rs,protocol/steps.rs}, qsl-replay/src/{lib.rs,model_check/settle.rs,outcome.rs,proof_result.rs}"
+scope: "agent-ix/quire-spec-language; QSL-1064 worktree diff from main <sha removed>: qsl-analyze/src/model_check/check.rs, qsl-analyze/tests/it/{weak_memory.rs,release_acquire.rs}, qsl-eval/src/simulation/{model.rs,protocol.rs,protocol/access.rs,protocol/selection.rs,protocol/steps.rs}, qsl-replay/src/{lib.rs,model_check/settle.rs,outcome.rs,proof_result.rs}"
 review_set: subset
 ---
 

@@ -124,7 +124,7 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   `expression` occurrence per read; the scalar nodes typing P1's body
   literals have a `generated` occurrence.
 - Step 5: the three members carry the label
-  `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6`, their
+  the group digest of FR-092 vectors G4 to G6, their
   graph order is G5, G6, G4 (ordinals 0 to 2), and step 2's recomputation
   from graph order gives G4 to G6.
 - Step 6: every emitted list equals its rebuilt list. In ascending digest

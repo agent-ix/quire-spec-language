@@ -3,7 +3,7 @@ id: SR-16625
 title: "QSL-1012 base review: Quantity<ms> probabilistic values"
 type: SpecReview
 analysis: base
-scope: "QSL-1012 PR #1431 at 0122d306f; FR-120-AC-16 and FR-189-AC-15 implementation, tests, and linked Quantity contracts"
+scope: "QSL-1012 PR #1431 at <sha removed>; FR-120-AC-16 and FR-189-AC-15 implementation, tests, and linked Quantity contracts"
 review_set: all
 ---
 

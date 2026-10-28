@@ -211,7 +211,7 @@ so unchecked input cannot reach an evaluator or backend.
 
 ## Usage
 
-Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) pins the toolchain,
+Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) selects the toolchain,
 and `rustup` installs it automatically. No other tools or services are needed.
 
 ```sh

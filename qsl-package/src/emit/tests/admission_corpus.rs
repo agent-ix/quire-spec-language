@@ -2622,7 +2622,7 @@ fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
     }
 }
 
-/// QSpec FR-375-AC-19 (the memory rows, QSL-1181 7ce810ed): the `memory`
+/// QSpec FR-375-AC-19 (the memory rows, QSL-1181): the `memory`
 /// rows come after every declaration-naming row, `drain` before `flush`,
 /// neither with a `source_node`; writing the rows in another order changes
 /// neither the node id nor the package id.
