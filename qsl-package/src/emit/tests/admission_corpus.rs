@@ -1077,12 +1077,9 @@ fn two_refinements_of_different_meanings_both_emit() {
     assert_ne!(refinements[0]["node_id"], refinements[1]["node_id"]);
 }
 
-/// The declaration occurrence is provenance rather than refinement identity:
-/// moving the authored declaration changes its source-map region while the
-/// refinement node and package identities stay fixed.
-#[trace("FR-375", "QSL-1102")]
-#[test]
-fn a_row_empty_refinement_identity_excludes_its_source_region() {
+/// The row-empty refinement `R` of the state-machine model `A` by `C`, and
+/// the two model documents.
+fn row_empty_refinement() -> (String, Vec<Vec<u8>>) {
     let abstract_document = state_machine_document("example/refinement-abstract");
     let concrete_document = state_machine_document("example/refinement-concrete");
     let abstract_digest = document_digest(&abstract_document);
@@ -1093,7 +1090,81 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
          model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
          refinement R using inf abstract A concrete C {{}}\n"
     );
-    let documents = vec![abstract_document, concrete_document];
+    (unit, vec![abstract_document, concrete_document])
+}
+
+/// QSpec FR-375-AC-20's refusal half: the reader recomputes the refinement
+/// node's key from the closed `quire.refinement-node/v1` preimage, so
+/// changing only its `semantic_type` root, or only one body row, while
+/// keeping its node id (the package id and dependencies recomputed) refuses
+/// `invalid_package`/`stale-node-key` at that node.
+#[trace("FR-375-AC-20", "TC-310")]
+#[test]
+fn a_refinement_changed_under_its_node_id_is_a_stale_node_key() {
+    let (unit, documents) = row_empty_refinement();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the row-empty refinement emits");
+    let wire = wire(&emission);
+    let position = nodes(&wire)
+        .iter()
+        .position(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node");
+    let refinement = &wire["semantic_graph"]["nodes"][position];
+    let abstract_root = refinement["body"]["abstract"].clone();
+    let verdict = |envelope: &Value| {
+        let mut evidence = read_evidence(&emission);
+        for document in &documents {
+            evidence
+                .insert_domain_package_document(document_digest(document), document.to_vec())
+                .expect("a fresh evidence key");
+        }
+        match quire_contract_model::read_checked_package(
+            &jcs(envelope),
+            quire_contract_model::CheckedPackageReadLimits::bounded(),
+            &evidence,
+        ) {
+            quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {
+                "admitted".to_owned()
+            }
+            quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => format!(
+                "{:?} at {} ({:?})",
+                refusal.code,
+                refusal.path.as_ref().map_or("-", |path| path.as_str()),
+                refusal.cause
+            ),
+            other => format!("{other:?}"),
+        }
+    };
+    assert_eq!(verdict(&wire), "admitted");
+    let expected =
+        format!("InvalidPackage at /semantic_graph/nodes/{position}/node_id (Some(StaleNodeKey))");
+
+    // The concrete root swapped for the abstract one: the subject changes,
+    // the dependencies (the abstract root alone) do not.
+    let mut retyped = wire.clone();
+    retyped["semantic_graph"]["nodes"][position]["semantic_type"] = abstract_root.clone();
+    crate::checked_v2::tests::refresh_frame_identity(&mut retyped);
+    assert_ne!(retyped["package_id"], wire["package_id"]);
+    assert_eq!(verdict(&retyped), expected);
+
+    // One body member changed: the selected profile. This model has no
+    // population or object to write a valid row over, so the profile is the
+    // body change that leaves every other member admissible.
+    let mut reprofiled = wire.clone();
+    reprofiled["semantic_graph"]["nodes"][position]["body"]["profile"]["identity"] =
+        json!("quire.temporal.finite-trace/v1");
+    crate::checked_v2::tests::refresh_frame_identity(&mut reprofiled);
+    assert_eq!(verdict(&reprofiled), expected);
+}
+
+/// The declaration occurrence is provenance rather than refinement identity:
+/// moving the authored declaration changes its source-map region while the
+/// refinement node and package identities stay fixed.
+#[trace("FR-375", "QSL-1102")]
+#[trace("FR-375-AC-20")]
+#[test]
+fn a_row_empty_refinement_identity_excludes_its_source_region() {
+    let (unit, documents) = row_empty_refinement();
     let compile = |source: &str| {
         let package = modelled_with_documents(source, &documents, Vec::new());
         let emission = emit_checked(&package).expect("the row-empty refinement emits");
@@ -1139,6 +1210,39 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
     assert_eq!(first_node["semantic_type"], concrete_root);
     assert_eq!(first_node["body"]["abstract"], abstract_root);
     assert_eq!(first_node["dependencies"], json!([abstract_root]));
+    // QSpec FR-375-AC-20: the typed body writes exactly the nine closed
+    // members, every row array present and empty, and no optional member.
+    let mut members: Vec<&str> = first_node["body"]
+        .as_object()
+        .expect("an object body")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    members.sort_unstable();
+    assert_eq!(
+        members,
+        [
+            "abstract",
+            "assume",
+            "ensure",
+            "histories",
+            "objects",
+            "populations",
+            "profile",
+            "steps",
+            "term"
+        ]
+    );
+    for array in [
+        "assume",
+        "ensure",
+        "histories",
+        "objects",
+        "populations",
+        "steps",
+    ] {
+        assert_eq!(first_node["body"][array], json!([]), "{array}");
+    }
     assert_eq!(first_node["node_id"], shifted_node["node_id"]);
     assert_eq!(first.package.package_id(), shifted.package.package_id());
     let declaration_region = |emission: &Emission, node: &Value| {
