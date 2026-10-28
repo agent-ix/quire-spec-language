@@ -13,7 +13,9 @@ use qsl_eval::simulation::SampleProvenance;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
+use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
+use qsl_semantics::check::StateGraphForm;
 use quire_exact::{ObjectReference, ScalarLimits};
 use quire_semantic_value::location::Location;
 use serde::{Serialize, Serializer};
@@ -47,6 +49,39 @@ pub struct ModelLasso {
     pub path: ModelPath,
     /// The position the loop re-enters, in `0..=path.steps.len()`.
     pub loop_entry: u32,
+}
+
+/// The form name carried when a selected reduction does not preserve a
+/// state-graph claim (FR-167, FR-169).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StateGraphPropertyForm {
+    /// `possible`.
+    Possible,
+    /// `always possible`.
+    AlwaysPossible,
+    /// `unique path`.
+    UniquePath,
+}
+
+impl StateGraphPropertyForm {
+    /// The FR-331 wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Possible => "possible",
+            Self::AlwaysPossible => "always-possible",
+            Self::UniquePath => "unique-path",
+        }
+    }
+}
+
+impl From<&StateGraphForm> for StateGraphPropertyForm {
+    fn from(form: &StateGraphForm) -> Self {
+        match form {
+            StateGraphForm::Possible { .. } => Self::Possible,
+            StateGraphForm::AlwaysPossible { .. } => Self::AlwaysPossible,
+            StateGraphForm::UniquePath { .. } => Self::UniquePath,
+        }
+    }
 }
 
 /// One initial state's HP-5 witness: a lasso on which the body is true and
@@ -431,6 +466,14 @@ pub enum StateGraphOutcome {
     HoldsReduced {
         /// The applied reductions, in symmetry then partial-order order.
         reductions: Vec<AppliedReduction>,
+    },
+    /// A selected reduction's preservation table rejects this form before
+    /// expansion (FR-169, ADR-021 RV-2).
+    ReductionNotPreserving {
+        /// The first selected reduction that the form does not preserve.
+        reduction: ReductionKind,
+        /// The claim form.
+        form: StateGraphPropertyForm,
     },
     /// No decisive evidence.
     NoDecision {
