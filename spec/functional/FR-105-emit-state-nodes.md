@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-340
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-341
+    type: depends_on
 ---
 # FR-105: Emit state clause, operation anchor and frame nodes in checked-package/v2
 
@@ -66,6 +68,14 @@ source map (FR-095).
 | `state`/`operation_anchor` | the declaring type's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) | `aggregate[ binding("context", reference(declaring type node)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)), binding("execution_point", <accepted ClauseBinding point>)? ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
 | `state`/`frame` | the declaring type's node (as the anchor's) | QSpec FR-340's frame term: `modifies`, `creates`, `deletes` and `deletes_scoped`, with each field `modifies` entry an (object type node, field name) pair carrying its `scope`, each `creates`/`deletes` entry an `object_type` node, and each `deletes_scoped` entry `receiver` or a reference parameter's name (FR-154) | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way. Each occurrence carries one region: the span of the operation reference (the qualified operation name) in the first clause or protocol attempt, in source order, that names the operation |
 
+- Exception for derived nodes. A derived `state_clause` node and a
+  `state`/`transition` node (see "Boolean model-field transitions") have no
+  declaration that checks to them, so the "one `claim` occurrence per
+  declaration that checks to this node" rule above does not apply to them.
+  Each carries one `claim` occurrence per contributing authored declaration,
+  in source order, each with that declaration's region, because the V2 schema
+  requires at least one occurrence. QSpec FR-341's wording of the same rule is
+  to be reworded to admit them (QSL-owned follow-up, a QSpec STD ticket).
 - `<kind>` is `invariant`, `constraint` (a state constraint, FR-158),
   `precondition` or `postcondition`. The anchor is the context's node
   (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) for an
@@ -157,11 +167,109 @@ source map (FR-095).
   A `deletes_scoped` entry names no node and adds no `dependencies` entry.
   The scope and the scoped deletes are part of the frame node's content, so
   they take part in its node id.
-- S4 SHALL emit no `state`/`snapshot` and no `state`/`transition` node for a
-  state clause (ADR-012 §15.4).
+- S4 SHALL emit no `state`/`snapshot` node (ADR-012 §15.4). It SHALL emit a
+  `state`/`transition` node only as "Boolean model-field transitions" below
+  fixes, and for no other state clause.
 - S4 SHALL emit bytes that are independent of any snapshot or invocation: the
   same unit and packages give the same `package_id` whatever observations a
   later run supplies.
+
+### Boolean model-field transitions
+
+QSpec FR-341 "State transition body" carries one `state`/`transition` node per
+(`anchor`, `subject`) pair, binding at most one `pre` and exactly one `post`
+`state_clause` node by reference, while FR-104 lets an operation hold any
+number of preconditions and postconditions. S4 SHALL close that gap without a
+QSpec or IR change, as follows. Every authored clause keeps its own
+`state_clause` node and its own occurrences, so authored conditions and
+diagnostics are unchanged. The transition is a derived node, not a source
+construct: it adds nothing to the checked graph, the in-process name table or
+the `requirements` hook, and no source clause refers to it.
+
+- **Eligible subject.** For an operation anchor `A` (context `C`, operation
+  `op`) and a field `F`, S4 SHALL emit one `state`/`transition` node for
+  (`A`, `F`) exactly when all of these hold: `F` is a required-presence,
+  single-valued `Boolean` field of `C` (not `Option<Boolean>`, not a
+  collection) that `op`'s frame `modifies` with a field entry; every parameter
+  of `op` is `Boolean` (QSpec FR-341 `inputs`); the package holds the no-point
+  operation anchor of (`C`, `op`) and no `precondition` or `postcondition` of
+  `op` carries an execution point (a protocol attempt never carries one and
+  is not a clause here); no `precondition` or `postcondition` of `op` names
+  the operation through a proper subtype of the anchor's context (`on
+  M::Sub::op`), because FR-120 applies such a clause only to receivers
+  conforming to the subtype, and a transition over the base anchor would claim
+  more than the contract gives; the package's lock selects the protocol
+  profile (QSpec FR-341 `laws`); and at least one postcondition of `op`
+  constrains `F`. A postcondition constrains `F` when its condition holds the
+  subject node itself, the `quire.op.record.project` over `deref(self)` that
+  FR-093 lowers `self.F` to, outside every `quire.op.state.pre` application.
+  A read that lowers to another node does not constrain `F`: `self.peer.on`,
+  `let s = self in s.on` (the binder `s` is a parameter node of its own) and
+  `result.on` are not constraining, and a read of `F` inside `pre(e)` is not.
+- **Not eligible: not emitted.** An (`A`, `F`) for which any condition above
+  fails gets no transition. The compile does not refuse, S3 records nothing,
+  and every authored clause is emitted as FR-105 states above. An optional or
+  multi-valued Boolean field, a field of another scalar type, an operation
+  with a non-Boolean or reference parameter, a clause with an execution
+  point, a clause on a subtype, and a field no postcondition constrains are all outside the
+  transition vocabulary and keep only their clause nodes. A package with no
+  eligible pair holds no `state`/`transition` node, as before.
+- **`post`.** Let `Q` be the postconditions of `op` that constrain `F`. Count
+  `Q` by distinct node id, not by declaration: two declarations that check to
+  one node (FR-104-AC-6) are one clause. When `Q` holds one clause, `post`
+  references that clause's node. When `Q` holds
+  two or more, S4 SHALL emit one derived `state`/`state_clause` node of kind
+  `postcondition` on `A` and `post` references it. Its parameter aggregate and
+  anchor are those of the clauses of `Q`, and its condition is the left fold of
+  `quire.op.boolean.and` over the conditions of `Q` in ascending clause-name
+  order (UTF-8 bytes; a node shared by several declarations sorts by its least
+  clause name), the order FR-107 evaluates postconditions in.
+- **`pre`.** Let `R` be every precondition of `op`, not only those that read
+  `F`: the transition states that `op` carries a state satisfying the
+  operation's whole precondition to a state satisfying `post`, and a `pre` that
+  omitted a precondition would claim more than the contract gives. `R` is counted by distinct node id as `Q` is. `pre` is the
+  empty aggregate when `R` is empty, a reference to the clause's node when `R`
+  holds one clause, and otherwise a reference to one derived
+  `state`/`state_clause` node of kind `precondition` built from `R` as the
+  derived postcondition is built from `Q`.
+- **Exactness.** The `and` of the conditions is exact, and is checked
+  structurally: the derived condition is the left fold of
+  `quire.op.boolean.and` whose operands reference the contributing authored
+  conditions' expression nodes in the order above, so it has no verdict of its
+  own beyond the conjunction of theirs. FR-107 holds an
+  operation's preconditions true only when every one is true, and its
+  postconditions true only when every one is, so the conjunction of `R` is the
+  operation's precondition and the conjunction of `Q` is implied by the
+  operation's postcondition. The transition, true when `op` carries a state
+  satisfying `pre` to one satisfying `post` (QSpec FR-341), is then implied by
+  the authored contract and states nothing it does not. `Q` is the clauses
+  that constrain `F`, so `post` may be weaker than the operation's complete
+  postcondition, and a consumer SHALL NOT read it as complete (QSpec FR-341
+  "Several postconditions and preconditions on one operation").
+- **Derived clause nodes.** A derived `state_clause` node is keyed as any
+  other (FR-093's application preimage) and has no `declaration`. Two
+  subjects with the same `R` share one derived precondition node, because the
+  node is content-keyed. A derived node's id never equals an authored node's: `R` holds every
+  precondition of `op`, and any authored postcondition holding the fold holds
+  the subject node and so is in `Q`, so the left fold over a set that contains
+  an authored node `X` is never `X`, and a different anchor, kind or execution
+  point changes the id or makes the pair ineligible. A derived node carries one
+  `claim` occurrence per contributing authored clause declaration, in source
+  order, each with that declaration's region (the Outputs exception above).
+  A region may then be claimed by two nodes: FR-095's locus rule maps an
+  occurrence key (node id, role, ordinal) to regions only, and QSpec FR-322
+  allows the regions of different occurrences to nest or overlap. The derived node is not a name in the in-process table: `run` selects by authored
+  clause name only (FR-109).
+- **Transition node.** `anchor` is the no-point operation anchor, `subject` is
+  the `expression`/`query` node FR-093 lowers `deref(self).F` to, `inputs`
+  are the operation's parameters in declared order, and the application
+  carries the protocol-profile law the lock selects. The node has no
+  `declaration`; it carries one `claim` occurrence per declaration of a clause
+  of `Q`, in source order, each with that declaration's region. S4 emits at
+  most one transition per (`A`, `F`), in line with QSpec's uniqueness refusal.
+- **All or nothing.** The transition and derived nodes are part of the
+  package's all-or-nothing emission (above): a fault on any of them refuses the
+  compile and emits no state node.
 
 ## Acceptance Criteria
 
@@ -179,6 +287,11 @@ source map (FR-095).
 | FR-105-AC-10 | Adding `constraint Low using v on Config::ConfigVersion at current { self.versionNumber <= 1 }` to the ConfigVersion unit of FR-104-AC-1 adds exactly one `state_clause` node, whose body is a `quire.op.state.clause` application with kind member `{kind: "state_clause", clause: "constraint"}`, a parameter aggregate holding only the `self` `value`/`parameter` node, the `ConfigVersion` `model`/`object_type` node as anchor, and the lowered condition; it has one `claim` occurrence and adds no `operation_anchor` or `frame` node. Replacing `constraint` with `invariant` in that declaration gives a node with a different node id, and the package passes QSL's I2 read in both cases. `(state, state_clause, quire.op.state.clause, constraint)` decodes to `Constraint`. | Test (TC-462) |
 | FR-105-AC-11 | With only `attempt Update by R on Config::ConfigVersion::attemptUpdate contracts []` naming `attemptUpdate`, the frame's `generated` occurrence has one region: the qualified operation reference `Config::ConfigVersion::attemptUpdate` in the attempt, not the attempt name `Update`. When that attempt and `VersionUnchanged` both name `attemptUpdate`, the occurrence's region is the operation reference in whichever declaration appears first in source order: the attempt when it precedes the clause, and the clause when it follows it. Reordering those declarations leaves the occurrence's `(node id, role, ordinal)` unchanged. | Test (TC-462) |
 | FR-105-AC-12 | The accepted `ClauseBinding.execution_point` is emitted in the `state_clause` operation member and, for an operation clause, the referenced `operation_anchor` body using the closed `Initialization{name}`, `Handler{name}`, `Pre{operation}` or `Post{operation}` shape; both carrier locations participate in their node preimages. The names and variant match the checked clause, the clause and anchor points agree, different points create different node identities, and a protocol-attempt-only anchor omits the point. QSL's V2 read admits the exact bytes and rejects altered, inapplicable or mismatched points. | Test (TC-462, TC-463) |
+| FR-105-AC-13 | Over a fixture whose lock selects the protocol profile, with object type `Switch`, required Boolean fields `on` and `lit`, an optional `Option<Boolean>` field `armed`, an `Integer` field `count`, and operation `set(flag: Boolean)` whose frame modifies `on`, `lit`, `armed` and `count`, with `pre P1 { flag or self.on }`, `post Q1 { self.on }`, and postconditions `Qa { self.armed = pre(self.armed) }`, `Qc { self.count = pre(self.count) }` and `Qs` reading a `Sequence<Boolean>` field `seq` that `set` also modifies, the package holds exactly one `state`/`transition` node for (`set`, `on`): `anchor` the no-point anchor, `subject` the `deref(self).on` projection, `inputs` `[flag]`, `pre` a reference to `P1`'s node and `post` a reference to `Q1`'s node. It holds no derived `state_clause` node, no transition for `lit` (no postcondition constrains it), and none for `armed`, `count` or `seq` although a postcondition constrains each, and `P1` and `Q1` keep their own nodes and occurrences. The package passes QSL's I2 read. | Test (TC-1271) |
+| FR-105-AC-14 | Adding `post Q2 { self.on = pre(self.on) or flag }` and `pre P2 { not flag or self.lit }` to AC-13's unit, the (`set`, `on`) transition's `post` references one derived `postcondition` node whose condition is `and(Q1's condition, Q2's condition)` in ascending clause-name order and whose anchor and parameter aggregate equal `Q1`'s, and its `pre` references one derived `precondition` node `and(P1, P2)`; `P1`, `P2`, `Q1` and `Q2` keep their own nodes; the package holds exactly one `state`/`transition` node; swapping the declaration order of `Q1` and `Q2` in source leaves every node id and the `package_id` unchanged. `Q1` and `P1` are each one distinct node in `Q` and `R` when a second declaration checks to the same node. A postcondition reading `on` only inside `pre(...)` is not in `Q`, and a precondition that does not read `on` is still in `R`. | Test (TC-1271) |
+| FR-105-AC-15 | The conjunction is structurally exact: in AC-14's unit the derived `pre` condition is `quire.op.boolean.and` over `ref(P1's condition)` and `ref(P2's condition)` and the derived `post` condition is `quire.op.boolean.and` over `ref(Q1's condition)` and `ref(Q2's condition)`, in that order, with no other operand; with a third clause the fold is left-nested. The authored clauses' nodes, names, occurrences and `requirements` records are the same with and without the transition. | Test (TC-1271) |
+| FR-105-AC-16 | Each of these gives no `state`/`transition` node, no derived node and no refusal, and leaves every authored clause node as before, and each carries a postcondition that would constrain the field were the variant eligible: `Switch.set2(n: Integer)` (a non-Boolean parameter) with `post { self.on }`; an operation whose frame does not modify `on`, with `post { self.on }`; `armed: Option<Boolean>`, a `Sequence<Boolean>` field `seq` and an `Integer` field `count`, each with a postcondition that reads it; a postcondition `{ self.peer.on }`, `{ let s = self in s.on }` or `{ result.on }`, or `{ pre(self.on) }`, alone (not constraining `on`); a `pre` or `post` of the operation carrying an execution point; a postcondition `post QS on M::SubSwitch::set { self.on }` on a proper subtype (AC-13's unit gains no transition for `on` once `QS` is added); a lock that selects no protocol profile. FR-105-AC-1's ConfigVersion package (no Boolean field) holds no `state`/`transition` node. | Test (TC-1271) |
+| FR-105-AC-17 | Compiling AC-14's unit twice gives identical bytes; two eligible subjects `on` and `lit` with the same preconditions share one derived `precondition` node and give two transitions with different `post` and `subject`; each transition occurrence carries the region of a contributing postcondition declaration. A fault injected on the transition node or a derived node refuses the compile and emits no state node. | Test (TC-1271) |
 
 ## Dependencies
 

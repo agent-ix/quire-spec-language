@@ -945,6 +945,36 @@ fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
     }
 }
 
+/// SR-1708001 FND-001 (FR-432-AC-8, FR-375 "Checked class catalog"): the
+/// entry `memory drain` makes exactly the drain class internal, a class of
+/// every source-default model: over `Full` (`parallel par memory tso`)
+/// alone and beside `memory flush`, and over the same protocol under `sc`
+/// and `ra`, where `memory flush` names no class.
+#[trace("TC-552", "FR-147-AC-8")]
+#[test]
+fn a_memory_drain_entry_makes_the_drain_class_internal_under_every_model() {
+    for model in ["tso", "sc", "ra"] {
+        let protocol = full().replace("memory tso", &format!("memory {model}"));
+        let unit = format!("{protocol}{}", refinement("Spec", "Full"));
+        let graph = checked(&unit, internal(&["memory drain"]));
+        assert_eq!(
+            spellings(the_refinement(&graph)),
+            ["memory drain"],
+            "{model}"
+        );
+        if model == "tso" {
+            let graph = checked(&unit, internal(&["memory drain", "memory flush"]));
+            assert_eq!(
+                spellings(the_refinement(&graph)),
+                ["memory drain", "memory flush"]
+            );
+        } else {
+            let found = refused(&unit, internal(&["memory flush"]), RefinementSupport::BUILD);
+            assert_eq!(only(&found).code_and_cause(), MISSING, "{model}");
+        }
+    }
+}
+
 /// The protocol `Rich`: an `await` (the `timeout` class), an `on each`
 /// trigger (the `activate` class) and a compensation template `Undo` (the
 /// `cattempt` and `cend` classes) over the counter model, whose record
@@ -1048,6 +1078,7 @@ fn class_catalog_is_complete_and_independent_of_refinement_rows() {
         "ParallelLocal::Done",
         "fork ParallelLocal::par",
         "join ParallelLocal::par",
+        "memory drain",
         "memory flush",
     ];
     expected_concrete.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
@@ -1093,6 +1124,7 @@ fn class_catalog_is_complete_and_independent_of_refinement_rows() {
         "lose Full::ch",
         "spawn Full::pool",
         "retire Full::pool",
+        "memory drain",
         "memory flush",
     ];
     expected.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
@@ -1546,4 +1578,117 @@ fn an_argument_of_the_wrong_type_is_refused_at_its_field() {
             "{target}: {actual:?}"
         );
     }
+}
+
+/// A concrete protocol `Mem` whose `parallel` controls default to the given
+/// models, one control per entry, over the implementation counter.
+fn memory_protocol(models: &[&str]) -> String {
+    let controls: String = models
+        .iter()
+        .enumerate()
+        .map(|(index, model)| {
+            format!(
+                "parallel p{index} memory {model} {{\n\
+                 branch left sequence L{index} {{ }} branch right sequence R{index} {{ }}\n\
+                 }} join all [left, right];\n"
+            )
+        })
+        .collect();
+    format!(
+        "protocol Mem using v over (i: Impl::Counter) on origin {{\n\
+         role worker on Impl::Counter;\n\
+         run sequence Main {{\n{controls}}}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// The `(class, memory_model, drain)` memory entries of the concrete side.
+fn memory_entries(graph: &CheckedGraph) -> Vec<(String, String, Option<&'static str>)> {
+    the_refinement(graph)
+        .class_catalog()
+        .expect("protocol subject contributes a class catalog")
+        .concrete()
+        .iter()
+        .filter(|class| class.class().starts_with("memory "))
+        .map(|class| {
+            (
+                class.class().to_owned(),
+                class
+                    .memory_model()
+                    .expect("memory class has a model")
+                    .label()
+                    .to_owned(),
+                class.drain(),
+            )
+        })
+        .collect()
+}
+
+fn entry(class: &str, model: &str, drain: bool) -> (String, String, Option<&'static str>) {
+    (
+        class.to_owned(),
+        model.to_owned(),
+        drain.then_some("store-buffer-flush"),
+    )
+}
+
+fn memory_graph(models: &[&str]) -> CheckedGraph {
+    checked(
+        &format!(
+            "{}{}{}{}",
+            full(),
+            impl_protocol(),
+            memory_protocol(models),
+            refinement("Spec", "Full")
+        ),
+        None,
+    )
+}
+
+/// STD-494 / FR-375-AC-23: each source-default model defines `memory drain`
+/// (`store-buffer-flush`, a no-op under `sc`) and only `tso` defines
+/// `memory flush`, which carries no drain. TC-310 CC-12.
+#[trace("TC-310", "FR-375-AC-23")]
+#[test]
+fn each_source_default_model_defines_a_drain_class() {
+    // The abstract `Full` already selects `tso`, so its catalog is the same
+    // for every case; the concrete side is the one under test.
+    for (model, flush) in [("sc", false), ("tso", true), ("ra", false)] {
+        let graph = memory_graph(&[model]);
+        let mut expected = vec![entry("memory drain", model, true)];
+        if flush {
+            expected.push(entry("memory flush", model, false));
+        }
+        assert_eq!(memory_entries(&graph), expected, "{model}");
+    }
+}
+
+/// FR-375-AC-26 / TC-310 CC-12, CC-15: the three drains are ordered `ra`,
+/// `sc`, `tso`, then `memory flush` for `tso`, in any source order, and two
+/// controls selecting `tso` yield one drain and one flush.
+#[trace("TC-310", "FR-375-AC-26")]
+#[test]
+fn drains_are_keyed_by_model_ordered_and_unique() {
+    let canonical = vec![
+        entry("memory drain", "ra", true),
+        entry("memory drain", "sc", true),
+        entry("memory drain", "tso", true),
+        entry("memory flush", "tso", false),
+    ];
+    for models in [
+        ["sc", "tso", "ra"],
+        ["tso", "sc", "ra"],
+        ["ra", "tso", "sc"],
+    ] {
+        assert_eq!(memory_entries(&memory_graph(&models)), canonical);
+    }
+    assert_eq!(
+        memory_entries(&memory_graph(&["tso", "tso", "sc"])),
+        vec![
+            entry("memory drain", "sc", true),
+            entry("memory drain", "tso", true),
+            entry("memory flush", "tso", false),
+        ]
+    );
 }

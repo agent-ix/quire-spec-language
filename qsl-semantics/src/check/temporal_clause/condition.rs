@@ -316,6 +316,9 @@ enum Goal<'t> {
     Any,
 }
 
+// A `BoundedQuantity` is deliberately not exact-numeric here: no source form
+// builds the type yet (QSL-1155), so a threshold or aggregate of that type is
+// refused conservatively rather than compared as a `Quantity` unchecked.
 fn is_exact_numeric(value_type: &ValueType) -> bool {
     matches!(
         value_type,

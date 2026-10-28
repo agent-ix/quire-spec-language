@@ -1271,6 +1271,48 @@ fn a_weak_memory_model_needs_a_row_for_each_internal_step() {
     assert_eq!(flushes, 1);
 }
 
+/// SR-1708001 FND-001 (FR-432-AC-3, FR-375-AC-19): `memory drain` is a
+/// memory step of every source-default model, so a `step memory drain` row
+/// resolves under `sc`, `tso` and `ra` (with `tso`'s `memory flush` row
+/// beside it). Whether a drain row is required is not yet decided in
+/// QSpec, so a refinement with none still checks.
+#[trace("TC-541", "FR-136-AC-6")]
+#[test]
+fn a_memory_drain_row_resolves_under_every_source_default_model() {
+    let drain = "step memory drain -> stutter;";
+    let flush = "step memory flush -> stutter;";
+    for (memory, rows) in [
+        ("", format!("{ROWS}\n{drain}")),
+        ("memory ra", format!("{ROWS}\n{drain}")),
+        ("memory tso", format!("{ROWS}\n{drain}\n{flush}")),
+    ] {
+        let graph = checks(&unit(&fill(memory), &rows));
+        let kinds: Vec<MemoryStepKind> = only_refinement(&graph)
+            .steps()
+            .iter()
+            .filter_map(|row| match row.class {
+                StepClass::MemoryStep(kind) => Some(kind),
+                _ => None,
+            })
+            .collect();
+        let expected: &[MemoryStepKind] = if memory == "memory tso" {
+            &[MemoryStepKind::Drain, MemoryStepKind::Flush]
+        } else {
+            &[MemoryStepKind::Drain]
+        };
+        assert!(
+            expected.iter().all(|kind| kinds.contains(kind)),
+            "{memory}: {kinds:?}"
+        );
+        let without = if memory == "memory tso" {
+            format!("{ROWS}\n{flush}")
+        } else {
+            ROWS.to_owned()
+        };
+        checks(&unit(&fill(memory), &without));
+    }
+}
+
 /// An operation row for an operation no attempt uses is admitted
 /// (FR-136-AC-6); two attempts with one node name in different scopes make
 /// a row naming it ambiguous.
