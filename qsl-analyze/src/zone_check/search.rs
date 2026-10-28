@@ -224,6 +224,15 @@ impl ZoneStats {
     }
 }
 
+/// Where [`Run::insert_at`] put a symbolic state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Inserted {
+    /// A new node.
+    New(usize),
+    /// The stored node that covers it.
+    Covered(usize),
+}
+
 /// A stored symbolic state.
 #[derive(Clone, Debug)]
 pub(super) struct SymbolicNode {
@@ -1173,6 +1182,22 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         initial: Option<usize>,
         arrival: Option<Arrival>,
     ) -> Result<Option<usize>, Halt> {
+        Ok(match self.insert_at(state, q, zone, initial, arrival)? {
+            Inserted::New(node) => Some(node),
+            Inserted::Covered(_) => None,
+        })
+    }
+
+    /// [`Self::insert`], naming the covering node when the state is
+    /// covered.
+    pub(super) fn insert_at(
+        &mut self,
+        state: ModelSimState,
+        q: usize,
+        zone: Dbm,
+        initial: Option<usize>,
+        arrival: Option<Arrival>,
+    ) -> Result<Inserted, Halt> {
         let (state, mut zone, permutation) = self.canonical(state, zone)?;
         // A place that is not live at the state (an absent or dropped
         // `Option<Clock>`, a union case that does not hold) has no valuation
@@ -1201,7 +1226,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                             piece: arrival.piece,
                         })?;
                     }
-                    return Ok(None);
+                    return Ok(Inserted::Covered(candidate));
                 }
             }
         }
@@ -1233,7 +1258,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
             None => None,
         };
         self.parent.push(parent);
-        Ok(Some(index))
+        Ok(Inserted::New(index))
     }
 
     /// `(state, zone)` canonicalised under the run's group, with the

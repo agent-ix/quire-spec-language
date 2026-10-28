@@ -403,3 +403,48 @@ fn the_zone_search_frees_an_absent_option_clock() {
         1
     );
 }
+
+/// FR-230 "Presence bit" and FR-232 (TC-685), SR-1743002 FND-002: a
+/// postcondition presence requirement reaches the zone search through the
+/// timed subject's steps. `arm`, whose only postcondition is
+/// `present(self.v)` and which writes no clock, steps from the present
+/// initial state only; from the absent one nothing is enabled, so the
+/// deadlock-freedom item does not hold. Requiring `not present(self.v)`
+/// instead disables it from the present state likewise; with no
+/// requirement, both states step and the item holds.
+#[trace("TC-685")]
+#[test]
+fn a_presence_requirement_disables_the_step_in_the_zone_search() {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&document(&["x"], &[("arm", &["v"])])).expect("JSON");
+    let mut v = wire_field("v", "ix://quire/native/Clock");
+    v["presence"] = serde_json::json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let outcome = |post: &str| {
+        let world = world_holding(
+            document.to_string().as_bytes(),
+            INFINITE,
+            &format!("{DENSE}{post}"),
+            &serde_json::json!({}),
+        );
+        deadlock(&world)
+    };
+    for post in [
+        "post Need using v on M::Call::arm { present(self.v) }\n",
+        "post Need using v on M::Call::arm { not present(self.v) }\n",
+    ] {
+        let outcome = outcome(post);
+        assert!(
+            !matches!(outcome, ZoneCheckOutcome::Holds { .. }),
+            "{post}: a deadlock is reached: {outcome:?}"
+        );
+    }
+    let outcome = outcome("");
+    assert!(
+        matches!(outcome, ZoneCheckOutcome::Holds { .. }),
+        "with no requirement both states step: {outcome:?}"
+    );
+}

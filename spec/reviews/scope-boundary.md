@@ -59,7 +59,7 @@ flowchart LR
 | Agent C / existing Quire extraction | Opaque body, selected source region/map and existing-repository adapter | assumed | Language IT-003; CO01 ownership/amendment proposal. No second Markdown expression compiler. |
 | TL session / temporal work | Temporal capability and clock semantics | assumed and excluded from this profile | No temporal capability is inherited by a finite-state syntax result. |
 | Quoin/Quire catalog tools | Authoring, grammar, trace and method analysis | assumed with observed limitations | Recorded versions/manifests; DuplicateArchetype/DuplicateInverseEdge remain external diagnostics. |
-| Artifact owner / publication decision | Accepted review, included-file rights and standard grant | assumed, not approved by this review | LICENSE-DECISION.md and NFR-004; AGPL-3.0-only applies to new implementation, standard prose grant deferred. |
+| Artifact owner / publication decision | Accepted review, included-file rights and standard grant | assumed, not approved by this review | NFR-004; AGPL-3.0-only applies to new implementation, standard prose grant deferred. |
 
 ## Responsibility allocation
 
