@@ -119,7 +119,7 @@ use quire_exact::{Cancel, Integer, NodeKey, Origin, Role, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
-use crate::checked_v2::CheckedTimedModel;
+use crate::checked_v2::{CheckedClockPlace, CheckedTimedModel};
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -1354,6 +1354,48 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
+/// Add the built-in scalar type node `id` of `form` (QSpec FR-092) to
+/// `nodes`, with a `generated` source-map entry at `region`, unless the
+/// graph holds it already: a timed node's literal or selector type.
+fn push_scalar_type(
+    nodes: &mut Vec<CheckedSemanticNodeV2>,
+    source_map: &mut Vec<CheckedSourceMapEntry>,
+    id: &CheckedNodeId,
+    form: &str,
+    region: &CheckedSourceRegion,
+) {
+    if nodes.iter().any(|node| node.node_id == *id) {
+        return;
+    }
+    let occurrence = CheckedOccurrence {
+        role: CheckedOccurrenceRole::Generated,
+        ordinal: 0,
+    };
+    source_map.push(CheckedSourceMapEntry {
+        node_id: id.clone(),
+        role: occurrence.role.clone(),
+        ordinal: occurrence.ordinal,
+        regions: vec![region.clone()],
+    });
+    nodes.push(CheckedSemanticNodeV2 {
+        owner_model: None,
+        node_id: id.clone(),
+        schema_version: GRAPH_V2.into(),
+        node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+        semantic_form: form.into(),
+        semantic_type: id.clone(),
+        dependencies: Vec::new(),
+        occurrences: vec![occurrence],
+        recursion_group: None,
+        nominal_identity_preimage: None,
+        declaration: None,
+        owner: None,
+        body: CheckedTerm::Aggregate {
+            members: Vec::new(),
+        },
+    });
+}
+
 /// Rebuild the structural identities and references of typed timed nodes
 /// after their bodies are serialized. Timed graph edges are acyclic by the
 /// closed FR-322 forms, so repeated digest passes propagate child-key changes
@@ -1956,7 +1998,7 @@ fn emit_package_inner(
                 domain: NODE_KEY_DOMAIN.into(),
                 digest: format!("timed-{kind}-{index}").into(),
             };
-            let model = CheckedTimedModel::from_checked_time_source(
+            let mut model = CheckedTimedModel::from_checked_time_source(
                 source,
                 placeholder("source"),
                 placeholder("root"),
@@ -1977,75 +2019,52 @@ fn emit_package_inner(
                 source.span.end as u64,
             )
             .map_err(encoding)?;
-            if !nodes.iter().any(|node| node.node_id == text_type) {
-                let occurrence = CheckedOccurrence {
-                    role: CheckedOccurrenceRole::Generated,
-                    ordinal: 0,
-                };
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: text_type.clone(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(graph.source()),
-                        start: source_region.start(),
-                        end: source_region.end(),
-                    }],
-                });
-                nodes.push(CheckedSemanticNodeV2 {
-                    owner_model: None,
-                    node_id: text_type.clone(),
-                    schema_version: GRAPH_V2.into(),
-                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
-                    semantic_form: "text".into(),
-                    semantic_type: text_type.clone(),
-                    dependencies: Vec::new(),
-                    occurrences: vec![occurrence],
-                    recursion_group: None,
-                    nominal_identity_preimage: None,
-                    declaration: None,
-                    owner: None,
-                    body: CheckedTerm::Aggregate {
-                        members: Vec::new(),
-                    },
-                });
-            }
+            let generated = CheckedSourceRegion {
+                source: source_artifact(graph.source()),
+                start: source_region.start(),
+                end: source_region.end(),
+            };
+            push_scalar_type(&mut nodes, &mut source_map, &text_type, "text", &generated);
             if matches!(
                 &source.source,
                 qsl_semantics::check::TimeSourceKind::Tick { .. }
-            ) && !nodes.iter().any(|node| node.node_id == rational_type)
-            {
-                let occurrence = CheckedOccurrence {
-                    role: CheckedOccurrenceRole::Generated,
-                    ordinal: 0,
-                };
-                source_map.push(CheckedSourceMapEntry {
-                    node_id: rational_type.clone(),
-                    role: occurrence.role.clone(),
-                    ordinal: occurrence.ordinal,
-                    regions: vec![CheckedSourceRegion {
-                        source: source_artifact(graph.source()),
-                        start: source_region.start(),
-                        end: source_region.end(),
-                    }],
-                });
-                nodes.push(CheckedSemanticNodeV2 {
-                    owner_model: None,
-                    node_id: rational_type.clone(),
-                    schema_version: GRAPH_V2.into(),
-                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
-                    semantic_form: "rational".into(),
-                    semantic_type: rational_type.clone(),
-                    dependencies: Vec::new(),
-                    occurrences: vec![occurrence],
-                    recursion_group: None,
-                    nominal_identity_preimage: None,
-                    declaration: None,
-                    owner: None,
-                    body: CheckedTerm::Aggregate {
-                        members: Vec::new(),
-                    },
-                });
+            ) {
+                push_scalar_type(
+                    &mut nodes,
+                    &mut source_map,
+                    &rational_type,
+                    "rational",
+                    &generated,
+                );
+            }
+            // QSpec FR-322 "Timed-model nodes": one template `clock_place`
+            // for each clock path, its slot steps' symbolic selector the
+            // Integer type node.
+            let integer_type = node_id(qsl_semantics::check::builtin_integer_type_key());
+            model.clock_places = graph
+                .timed_models()
+                .iter()
+                .filter(|timed| timed.model() == source.model)
+                .flat_map(|timed| timed.clocks())
+                .enumerate()
+                .map(|(at, clock)| {
+                    CheckedClockPlace::template(
+                        clock,
+                        placeholder(&format!("place-{at}")),
+                        &model.model,
+                        &integer_type,
+                    )
+                })
+                .collect();
+            if !model.clock_places.is_empty() {
+                push_scalar_type(
+                    &mut nodes,
+                    &mut source_map,
+                    &integer_type,
+                    "integer",
+                    &generated,
+                );
+                model.literal_types.integer = Some(integer_type);
             }
             for nominal in &source.nominal_nodes {
                 let id = node_id(nominal.key);

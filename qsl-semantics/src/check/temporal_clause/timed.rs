@@ -63,7 +63,9 @@ pub struct ModelTimeSource {
     pub model: String,
     /// The complete source `time` declaration, for FR-322 occurrence mapping.
     pub span: Span,
-    /// The selected package's unique semantic model-root node.
+    /// The model node of the selected package's one object type, the state
+    /// object: the timed root's and every clock place's `model` (QSpec FR-322
+    /// "Timed-model nodes", FR-415-AC-17).
     pub model_node: quire_exact::NodeKey,
     /// The FCD declaration key of a tick operation, used by S4 to build its
     /// checked operation-anchor node.

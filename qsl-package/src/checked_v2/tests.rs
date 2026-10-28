@@ -2364,10 +2364,8 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         .expect("fixture text key value")
         .node_id
         .clone();
-    let super::timed_model::ClockPathStep::Slot {
-        selector: super::timed_model::ClockSlotSelector::Key(selector),
-        ..
-    } = &mut changed_path.clock_places[0].path[1]
+    let super::timed_model::ClockPathStep::Slot { selector, .. } =
+        &mut changed_path.clock_places[0].path[1]
     else {
         panic!("fixture clock path has a map key selector");
     };
