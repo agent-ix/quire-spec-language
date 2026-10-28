@@ -488,6 +488,7 @@ fn view_of<'v>(declaration: &'v StateGraphDeclaration, body: &'v Expression) -> 
         context_population: declaration.context_population,
         frame_population: None,
         binders: &[],
+        presence_places: &[],
         body,
     }
 }

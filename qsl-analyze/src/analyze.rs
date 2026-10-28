@@ -668,8 +668,8 @@ mod tests {
         }
     }
 
-    /// FR-489-AC-5: linked registrations are borrowed from the EN-1 and EN-4
-    /// engines and retain each engine's own identity and advertised kind.
+    /// FR-489-AC-5: linked registrations are borrowed from the EN-1, EN-4 and
+    /// EN-6 engines and retain each engine's own identity and advertised kind.
     #[trace("TC-1272", "FR-489-AC-5")]
     #[test]
     fn linked_engine_registrations_expose_the_owned_descriptors() {
@@ -681,10 +681,10 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4"]
+            ["en-1", "en-4", "en-6"]
         );
-        let [en1, en4] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1 and EN-4");
+        let [en1, en4, _en6] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4 and EN-6");
         };
         assert!(registrations
             .iter()

@@ -367,8 +367,10 @@ pub enum NodeTag {
 }
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
-/// term that holds no other term.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+/// term that holds no other term. Its depth is fixed, so it encodes through
+/// `quire-canonical`'s serde path (its `flatten` and tag only make the
+/// derived depth an overestimate).
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 // No `deny_unknown_fields`: serde does not combine it with the literal's
 // `flatten`, and the conformance test compares re-encoded bytes with the
