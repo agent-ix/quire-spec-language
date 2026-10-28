@@ -33,9 +33,11 @@ use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateRead
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
+use qsl_replay::ReplayRefusal;
 use qsl_replay::{
-    IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, OpenCause, ReachedLimit,
-    RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, DEFAULT_WITNESS_SEED,
+    settle_state_graph, GraphReplayResult, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, OpenCause, ReachedLimit, RunEnd, StateGraphInstanceOutcome,
+    StateGraphMethod, StateGraphOutcome, StateGraphRecord, DEFAULT_WITNESS_SEED,
 };
 use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
@@ -522,6 +524,84 @@ pub fn check_state_graph(
         deadlock: explored.deadlock,
         seed,
     })
+}
+
+/// A state-graph run and the FR-169 settlement record for each claim instance.
+#[derive(Debug)]
+pub struct SettledStateGraphRun {
+    /// The explored graph and per-instance evidence produced by FR-168.
+    pub run: StateGraphRun,
+    /// FR-169 records in item and instance order, aligned with `run.items`.
+    pub records: Vec<Vec<StateGraphRecord>>,
+}
+
+/// Why the combined state-graph check and settlement could not run.
+#[derive(Debug, thiserror::Error)]
+pub enum StateGraphPipelineRefusal {
+    /// The engine refused before producing a run.
+    #[error(transparent)]
+    Engine(#[from] ModelCheckRefusal),
+    /// The request horizon cannot be represented in FR-169's `u64` record.
+    #[error("the state-graph search horizon is outside the terminal record range")]
+    HorizonOutOfRange,
+}
+
+/// Run FR-166–FR-168 and settle every state-graph item instance under FR-169.
+///
+/// `replay` is called only for evidence rows whose verdict requires replay;
+/// package identity and certificate checks remain in the core settlement map.
+/// The optional deadlock-freedom result remains on `run` for its own FR-127
+/// settlement path.
+pub fn check_and_settle_state_graph(
+    request: StateGraphRequest<'_>,
+    package_id: DigestRecord,
+    cancel: &Cancel,
+    mut replay: impl FnMut(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
+) -> Result<SettledStateGraphRun, StateGraphPipelineRefusal> {
+    let max_depth = request
+        .max_depth
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|_| StateGraphPipelineRefusal::HorizonOutOfRange)?;
+    let claims = request
+        .items
+        .iter()
+        .map(|item| item.claim)
+        .collect::<Vec<_>>();
+    let simulation = request.subject.simulation.clone();
+    let proof_bounds = request.subject.proof_bounds.clone();
+    let limits = request.limits;
+    let run = check_state_graph(request, cancel)?;
+    let subject = ModelSubject {
+        simulation,
+        proof_bounds,
+    };
+    let method = StateGraphMethod {
+        limits,
+        max_depth,
+        seed: run.seed,
+    };
+    let records = claims
+        .into_iter()
+        .zip(&run.items)
+        .map(|(claim, instances)| {
+            instances
+                .iter()
+                .map(|instance| {
+                    settle_state_graph(
+                        instance,
+                        &method,
+                        &package_id,
+                        &subject,
+                        claim,
+                        cancel,
+                        |_| replay(instance),
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    Ok(SettledStateGraphRun { run, records })
 }
 
 /// The run phase 0 stopped before any exploration: every instance and the

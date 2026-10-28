@@ -25,13 +25,13 @@ use crate::certificate::state_graph::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::identity::{ClauseRootRefusal, StateGraphIdentity};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE};
+use crate::model_check::settle::{Execution, ResultLabel, Row, Truth};
 use crate::model_check::state_graph::{
     GraphUndefined, GraphWitness, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
     WitnessSource,
 };
 use crate::proof_result::{
-    IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
 use crate::result::DisagreementCause;
 
@@ -126,7 +126,7 @@ pub fn settle_state_graph(
     instance: &StateGraphInstanceOutcome,
     method: &StateGraphMethod,
     package_id: &DigestRecord,
-    subject: ModelSubject<'_>,
+    subject: &ModelSubject<'_>,
     claim: &CheckedStateGraphClaim,
     cancel: &Cancel,
     replay: impl FnOnce(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
@@ -154,7 +154,10 @@ pub fn settle_state_graph(
     }
     let check = Certified {
         request: StateGraphCertificateRequest {
-            subject,
+            subject: ModelSubject {
+                simulation: subject.simulation.clone(),
+                proof_bounds: subject.proof_bounds.clone(),
+            },
             claim,
             over: instance.over.clone(),
         },
@@ -186,6 +189,19 @@ pub fn settle_state_graph(
         StateGraphOutcome::Holds { certificate } => check.row(certificate, || {
             Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
         }),
+        StateGraphOutcome::HoldsReduced { reductions } => Row::proof(
+            ProofBasis::Reduced {
+                reductions: reductions.clone(),
+            },
+            Certification::Uncertified,
+            SettlementBasis::ClosedScope,
+        ),
+        StateGraphOutcome::ReductionNotPreserving { reduction, form } => {
+            Row::inconclusive(InconclusiveCause::StateGraphReductionNotPreserving {
+                reduction: *reduction,
+                form: *form,
+            })
+        }
         StateGraphOutcome::WitnessedUnchecked {
             paths,
             end: run_end,
@@ -260,7 +276,7 @@ fn record_of(
         basis: row.basis,
         execution: row.execution,
         truth: row.truth,
-        method: EXPLICIT_STATE,
+        method: crate::model_check::settle::EXPLICIT_STATE,
         max_depth: method.max_depth,
         limits: method.limits.used(),
         limit_reached: row.limit_reached,
@@ -309,7 +325,9 @@ fn replayed(
         Ok(GraphReplayResult {
             package_id: replayed,
             ..
-        }) if !replayed.matches(package_id) => Row::stale(),
+        }) if !replayed.matches(package_id) => {
+            Row::stale_dependency(*package_id, replayed.record())
+        }
         Ok(GraphReplayResult { settlement, .. }) => match settlement {
             GraphReplaySettlement::Reproduced => reproduced(),
             GraphReplaySettlement::Inconclusive(cause) => {
@@ -323,6 +341,10 @@ fn replayed(
                 Some(reached),
             ),
         },
+        Err(ReplayRefusal::PackageIdMismatch {
+            requested,
+            recompiled,
+        }) => Row::stale_dependency(requested, recompiled.record()),
         Err(refusal) => Row::refused(&refusal),
     }
 }
