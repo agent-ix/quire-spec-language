@@ -1666,6 +1666,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                     self.meter,
                 ))?
             }
+            NodeKind::OptionSome(_) => {
+                let ValueType::Option(payload_type) = node.value_type() else {
+                    return Err(invariant("option-some-result-type-invalid"));
+                };
+                let payload = self.pop()?;
+                let value = OptionValue::from_admitted((**payload_type).clone(), Some(payload));
+                outcome_into_stop(retain_composite(value, self.meter))?
+            }
             // FR-107: `reaches(source, target, edge)`, checked
             // only inside a state clause.
             NodeKind::Reaches { edge, .. } => {

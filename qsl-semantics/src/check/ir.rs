@@ -948,6 +948,8 @@ pub enum NodeKind {
     },
     /// The payload of an `Option` operand.
     Value(NodeId),
+    /// A present `Option` value constructed by `Some(operand)`.
+    OptionSome(NodeId),
     /// A call of a function of this package. Its checked identity is the
     /// key of the `expression` node the FR-093 lowering builds for it
     /// (`check::lowering`), minted after every callee is keyed.
@@ -1331,6 +1333,7 @@ impl NodeKind {
                 reference: operand, ..
             }
             | NodeKind::Value(operand)
+            | NodeKind::OptionSome(operand)
             | NodeKind::ConvertCollection { operand, .. }
             | NodeKind::ConvertScalar(_, operand)
             | NodeKind::IeeeToRational(operand, _)
