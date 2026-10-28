@@ -82,6 +82,7 @@ pub(crate) fn field_member(
         presence: quire_exact::Presence::Required,
         subsets: vec![],
         redefines: None,
+        position: 0,
     })
 }
 

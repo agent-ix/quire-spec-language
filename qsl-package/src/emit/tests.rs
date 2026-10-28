@@ -1395,6 +1395,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
         RefinementNotEmitted,
+        SameMeaningRefinements,
         UnlocatedRefinementDeclaration,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
@@ -1411,6 +1412,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
+            Err(EmitRefusal::SameMeaningRefinements { .. }) => Seen::SameMeaningRefinements,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
             }
@@ -3195,6 +3197,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
             presence: Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("ConfigVersion/attemptUpdate"),

@@ -490,7 +490,7 @@ impl ModelSystem<'_> {
                         position,
                     ) {
                         Some(support) => Some(Domain::Listed(support.values())),
-                        None => Domain::of(value_type, &[], self.types),
+                        None => Domain::of(value_type, &[], self.types, &self.record_orders),
                     }
                 })
                 .collect();

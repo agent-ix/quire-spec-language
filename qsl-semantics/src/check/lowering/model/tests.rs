@@ -219,6 +219,7 @@ fn acme(version: &str) -> DomainPackage {
                 presence: Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
+                position: 0,
             }),
             query("Order/size", "Order", None),
             query("Order/count", "Order", None),

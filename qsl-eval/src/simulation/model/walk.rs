@@ -262,6 +262,12 @@ fn expand(
     enforcement: Option<&Enforcement<'_>>,
     mut enabled: Option<&mut Vec<frames::EnabledVector>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+    // FR-120: every expansion entry point runs the bound check first, so an
+    // expansion never meets a granted field with no finite domain.
+    debug_assert!(
+        system.bounded(),
+        "FR-120: a system the requires-bound check refuses is never expanded"
+    );
     let walk = walk_of(system, state, enforcement)?;
     let mut budget = system.budget();
 

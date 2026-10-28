@@ -35,12 +35,9 @@ use std::collections::{BTreeMap, VecDeque};
 use num_bigint::BigInt;
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
-    check_model_bounds, GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop,
-    TimedSystem,
+    GuardedStep, ModelSimState, PlaceConstraint, TerminalClass, TimedStop, TimedSystem,
 };
-use qsl_eval::simulation::{
-    NotSimulated, Permutation, RequiresBound, SymmetryGroup, BOUND_POSITIONS,
-};
+use qsl_eval::simulation::{NotSimulated, Permutation, RequiresBound, SymmetryGroup};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::ReductionKind;
 use qsl_replay::{
@@ -360,10 +357,9 @@ pub enum ZoneCheckRefusal {
     /// The clause's negation automaton could not be built (FR-240).
     #[error("the clause's automaton could not be built: {0}")]
     Automaton(AutomatonError),
-    /// A step of the model writes a clock collection whole, so a clock may
-    /// move between slots (FR-230 "Collection-valued writes"), and EN-6's
-    /// zones map no carried clock between places yet.
-    #[error("the model writes a clock collection whole, whose carried clocks EN-6 does not map")]
+    /// The refinement checker has not mapped clock places moved by a
+    /// collection-valued write yet.
+    #[error("the refinement checker does not map carried clock places")]
     CarriedClocks,
     /// A symmetry declaration does not admit (FR-151).
     #[error(transparent)]
@@ -449,9 +445,6 @@ pub fn check_timed_model<S: Clone>(
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
     }
-    if request.subject.writes_collections() {
-        return Err(ZoneCheckRefusal::CarriedClocks);
-    }
     // QSpec FR-430: EN-6 applies symmetry and no other reduction, so a
     // request selecting partial-order reduction or a state constraint
     // settles V-8 before anything is read, naming the first in the order
@@ -464,10 +457,8 @@ pub fn check_timed_model<S: Clone>(
     {
         return Ok(reduced(ZoneReduction::Unsupported { reduction }));
     }
-    // FR-239: an unbounded population root refuses before any state is
-    // explored, as FR-126 states.
+    // FR-239's bound check ran when the timed subject was built.
     let system = request.subject.system();
-    check_model_bounds(system, BOUND_POSITIONS).map_err(not_simulated)?;
     let mut symmetric = !reductions.symmetry.is_empty();
     // EN-6 applies symmetry to its search only: the time-lock search and
     // the liveness product read the unreduced graph's edges, so an item
@@ -1040,9 +1031,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 if next.is_empty() {
                     continue;
                 }
-                for (place, value) in step.resets() {
-                    next.reset(place + 1, &scaled(value, factor))?;
-                }
+                apply_step_clocks(&mut next, step, factor)?;
                 constrain_at(&mut next, &target, factor)?;
                 if next.is_empty() {
                     continue;
@@ -1733,25 +1722,33 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         step: &GuardedStep,
     ) -> Result<Vec<Vec<PlaceConstraint>>, Halt> {
         let target = self.timed(self.timed.invariants(step.post()))?;
-        let reset_breaks = target.iter().any(|bound| {
-            step.resets()
+        let mut pulled_back = Vec::with_capacity(target.len());
+        for bound in target {
+            if let Some((_, value)) = step
+                .resets()
                 .iter()
-                .rev()
                 .find(|(place, _)| *place == bound.place())
-                .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
-        });
-        if reset_breaks {
-            return Ok(Vec::new());
+            {
+                if !bound.op().holds(value, bound.bound()) {
+                    return Ok(Vec::new());
+                }
+                continue;
+            }
+            let place = step
+                .carries()
+                .iter()
+                .find(|(target, _)| *target == bound.place())
+                .map_or(bound.place(), |(_, source)| *source);
+            pulled_back.push(PlaceConstraint::new(
+                place,
+                bound.op(),
+                bound.bound().clone(),
+            ));
         }
-        let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
-        let unreset: Vec<PlaceConstraint> = target
-            .into_iter()
-            .filter(|bound| !reset.contains(&bound.place()))
-            .collect();
         Ok(step
             .parts()
             .iter()
-            .map(|part| part.iter().chain(&unreset).cloned().collect())
+            .map(|part| part.iter().chain(&pulled_back).cloned().collect())
             .collect())
     }
 
@@ -1787,9 +1784,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                         .get(part)
                         .ok_or(ZoneCheckRefusal::Fault("edge-part"))?,
                 )?;
-                for (place, value) in step.resets() {
-                    zone.reset(place + 1, &self.scaled(value))?;
-                }
+                apply_step_clocks(&mut zone, step, &self.scale)?;
                 zone
             }
             Some(_) => return Err(ZoneCheckRefusal::Fault("entry-parent").into()),
@@ -1815,12 +1810,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 .ok_or(ZoneCheckRefusal::Fault("path-part"))?;
             let target = self.timed(self.timed.invariants(step.post()))?;
             self.constrain(&mut region, &target)?;
-            for (place, value) in step.resets().iter().rev() {
-                let value = self.scaled(value);
-                region.constrain(place + 1, 0, Bound::le(value.clone()))?;
-                region.constrain(0, place + 1, Bound::le(-value))?;
-                region.free(place + 1)?;
-            }
+            region = preimage_step_clocks(&region, step, &self.scale)?;
             self.constrain(&mut region, part)?;
             let invariants = self.timed(self.timed.invariants(source))?;
             self.constrain(&mut region, &invariants)?;
@@ -2176,6 +2166,44 @@ pub(super) struct Successor {
     pub tick: bool,
 }
 
+/// Apply one timed model step's simultaneous clock carries and resets.
+pub(super) fn apply_step_clocks(
+    zone: &mut Dbm,
+    step: &GuardedStep,
+    factor: &BigInt,
+) -> Result<(), DbmError> {
+    let carries: Vec<_> = step
+        .carries()
+        .iter()
+        .map(|(target, source)| (target + 1, source + 1))
+        .collect();
+    let resets: Vec<_> = step
+        .resets()
+        .iter()
+        .map(|(place, value)| (place + 1, scaled(value, factor)))
+        .collect();
+    zone.assign_clocks(&carries, &resets)
+}
+
+/// The exact predecessor zone through one timed model step's clock update.
+pub(super) fn preimage_step_clocks(
+    zone: &Dbm,
+    step: &GuardedStep,
+    factor: &BigInt,
+) -> Result<Dbm, DbmError> {
+    let carries: Vec<_> = step
+        .carries()
+        .iter()
+        .map(|(target, source)| (target + 1, source + 1))
+        .collect();
+    let resets: Vec<_> = step
+        .resets()
+        .iter()
+        .map(|(place, value)| (place + 1, scaled(value, factor)))
+        .collect();
+    zone.preimage_clocks(&carries, &resets)
+}
+
 /// Intersect `zone` with `constraints`, bounds in units of `1 / factor`.
 pub(super) fn constrain_at(
     zone: &mut Dbm,
@@ -2212,14 +2240,36 @@ pub(super) fn intersect(zone: &mut Dbm, other: &Dbm) -> Result<(), DbmError> {
 }
 
 /// The parts of `zone` no zone of `covers` holds, as zones whose union is
-/// `zone` minus the union of `covers`.
+/// `zone` minus the union of `covers`. Equal covers count once: many steps
+/// share one guard (a granted collection's candidates each give a step),
+/// and the subtraction splits once per cover.
 pub(super) fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
+    let mut distinct: Vec<Dbm> = Vec::with_capacity(covers.len());
+    for cover in covers {
+        if !distinct.contains(cover) {
+            distinct.push(cover.clone());
+        }
+    }
+    subtract(zone, &distinct)
+}
+
+/// [`uncovered`] over covers already distinct: a cover that holds all of
+/// `zone` leaves nothing, and one disjoint from it is skipped.
+fn subtract(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError> {
     if zone.is_empty() {
         return Ok(Vec::new());
     }
     let Some((first, rest)) = covers.split_first() else {
         return Ok(vec![zone.clone()]);
     };
+    if first.includes(zone)? {
+        return Ok(Vec::new());
+    }
+    let mut meet = zone.clone();
+    intersect(&mut meet, first)?;
+    if meet.is_empty() {
+        return subtract(zone, rest);
+    }
     let mut parts = Vec::new();
     for i in 0..zone.dim() {
         for j in 0..zone.dim() {
@@ -2240,7 +2290,7 @@ pub(super) fn uncovered(zone: &Dbm, covers: &[Dbm]) -> Result<Vec<Dbm>, DbmError
                 Bound::lt(-value)
             };
             outside.constrain(j, i, negation)?;
-            parts.extend(uncovered(&outside, rest)?);
+            parts.extend(subtract(&outside, rest)?);
         }
     }
     Ok(parts)
@@ -2273,16 +2323,23 @@ fn scaled_bounds(
             upper[clock].push(bound.clone());
         }
     };
-    for guard in model.guards() {
-        for part in guard.parts() {
-            for constraint in part.clocks() {
-                record(
-                    constraint.clock().index(),
-                    constraint.op(),
-                    constraint.bound(),
-                );
-            }
+    // Every guard part, and every part of a quantifier family below one
+    // (FR-230 "Quantified reads"): a family's template constrains each slot
+    // place of its clock.
+    let mut parts: Vec<&qsl_semantics::check::ConvexPart> = model
+        .guards()
+        .iter()
+        .flat_map(|guard| guard.parts())
+        .collect();
+    while let Some(part) = parts.pop() {
+        for constraint in part.clocks() {
+            record(
+                constraint.clock().index(),
+                constraint.op(),
+                constraint.bound(),
+            );
         }
+        parts.extend(part.families().iter().flat_map(|family| family.parts()));
     }
     for invariant in model.invariants() {
         for constraint in invariant.bounds() {

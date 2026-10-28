@@ -88,6 +88,7 @@ mod units;
 mod universe_obligation;
 mod weak_memory;
 mod zone_certificate;
+mod zone_clock_collections;
 mod zone_dense;
 mod zone_live_certificate;
 mod zone_liveness;

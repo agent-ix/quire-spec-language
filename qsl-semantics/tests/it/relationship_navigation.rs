@@ -201,6 +201,7 @@ fn field(owner: &str, name: &str, value_type: &str) -> DomainPackageRecord {
         presence: Presence::Required,
         subsets: Vec::new(),
         redefines: None,
+        position: 0,
     })
 }
 

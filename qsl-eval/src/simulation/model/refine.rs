@@ -186,7 +186,7 @@ impl ModelSystem<'_> {
         value_type: &ValueType,
         objects: &[ObjectReference],
     ) -> Result<Vec<Value>, ExpansionStop> {
-        let domain = Domain::of(value_type, objects, self.types)
+        let domain = Domain::of(value_type, objects, self.types, &self.record_orders)
             .ok_or_else(|| exhausted(ExpansionLimit::MaxCandidates))?;
         if domain.len() > u128::from(self.limits.max_candidates) {
             return Err(exhausted(ExpansionLimit::MaxCandidates));

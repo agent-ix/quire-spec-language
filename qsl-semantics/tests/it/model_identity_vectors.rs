@@ -59,6 +59,7 @@ fn field(
         presence: quire_exact::Presence::Required,
         subsets: subsets.iter().map(|target| key(target)).collect(),
         redefines: redefines.map(key),
+        position: 0,
     })
 }
 

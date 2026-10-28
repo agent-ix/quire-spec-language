@@ -11,6 +11,38 @@ use quire_exact::{
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, TypeEnvironment, UnionMemberDeclaration,
 };
+use std::collections::BTreeMap;
+
+/// Each record type's slot indices in declaration order, the first the most
+/// significant component of its enumerated domain (FR-120, FR-215). A record
+/// it does not list enumerates in slot order.
+pub(crate) type RecordOrders = BTreeMap<NodeKey, Vec<usize>>;
+
+/// The slot indices of each record of `types` in the declaration order
+/// `declared` names its fields, then any slot it does not name in slot
+/// order.
+pub(crate) fn record_orders(
+    types: &TypeEnvironment,
+    declared: &BTreeMap<NodeKey, Vec<String>>,
+) -> RecordOrders {
+    declared
+        .iter()
+        .filter_map(|(declaration, names)| {
+            let CompositeShape::Record(fields) = types.composite(*declaration)?.shape() else {
+                return None;
+            };
+            let mut order: Vec<usize> = names
+                .iter()
+                .filter_map(|name| fields.iter().position(|field| field.name() == name))
+                .collect();
+            let rest: Vec<usize> = (0..fields.len())
+                .filter(|slot| !order.contains(slot))
+                .collect();
+            order.extend(rest);
+            Some((*declaration, order))
+        })
+        .collect()
+}
 
 /// Whether this module can enumerate `value_type`: `Boolean`, `Int[..]`,
 /// `Option<T>`, `Reference<T>` and a sequence with a declared maximum over
@@ -45,12 +77,14 @@ pub(crate) fn enumerable(value_type: &ValueType) -> bool {
 /// enumerates, an enum, a record with optional fields, or a record or tuple of
 /// such, indexed in declaration order with the last field moving fastest and
 /// an absent optional field first.
-enum Space {
+pub(super) enum Space {
     Plain(Domain),
     Enum(Vec<Value>),
     Composite {
         declaration: NodeKey,
         fields: Vec<(bool, Space)>,
+        /// The slot indices, most significant first.
+        order: Vec<usize>,
     },
     /// A union: its members in declaration order, each with the spaces of
     /// its payload positions.
@@ -64,6 +98,7 @@ impl Space {
         value_type: &ValueType,
         objects: &[ObjectReference],
         types: &TypeEnvironment,
+        orders: &RecordOrders,
         visiting: &mut Vec<NodeKey>,
     ) -> Option<Self> {
         match value_type {
@@ -95,14 +130,25 @@ impl Space {
                     }
                     CompositeShape::Union(declared) => {
                         visiting.push(*declaration);
+                        // FR-120: cases in ascending UTF-8 bytes of their
+                        // names.
+                        let mut declared: Vec<_> = declared.iter().collect();
+                        declared.sort_by(|left, right| {
+                            left.identifier()
+                                .as_str()
+                                .as_bytes()
+                                .cmp(right.identifier().as_str().as_bytes())
+                        });
                         let spaces = declared
-                            .iter()
+                            .into_iter()
                             .map(|member| {
                                 let verified = member.member()?.clone();
                                 let positions = member
                                     .positions()
                                     .iter()
-                                    .map(|position| Self::of(position, objects, types, visiting))
+                                    .map(|position| {
+                                        Self::of(position, objects, types, orders, visiting)
+                                    })
                                     .collect::<Option<Vec<_>>>()?;
                                 Some((verified, positions))
                             })
@@ -115,16 +161,23 @@ impl Space {
                 let fields = members
                     .into_iter()
                     .map(|(optional, member)| {
-                        Self::of(member, objects, types, visiting).map(|space| (optional, space))
+                        Self::of(member, objects, types, orders, visiting)
+                            .map(|space| (optional, space))
                     })
-                    .collect::<Option<Vec<_>>>();
+                    .collect::<Option<Vec<_>>>()?;
                 visiting.pop();
+                let order = orders
+                    .get(declaration)
+                    .filter(|order| order.len() == fields.len())
+                    .cloned()
+                    .unwrap_or_else(|| (0..fields.len()).collect());
                 Some(Self::Composite {
                     declaration: *declaration,
-                    fields: fields?,
+                    fields,
+                    order,
                 })
             }
-            other => Domain::of(other, objects, types).map(Self::Plain),
+            other => Domain::of(other, objects, types, orders).map(Self::Plain),
         }
     }
 
@@ -177,27 +230,34 @@ impl Space {
             Self::Composite {
                 declaration,
                 fields,
+                order,
             } => {
                 if index >= self.len() {
                     return None;
                 }
                 let mut remaining = index;
-                let mut slots = Vec::with_capacity(fields.len());
-                for (optional, space) in fields.iter().rev() {
+                let mut slots: Vec<Option<FieldValue>> = vec![None; fields.len()];
+                for slot in order.iter().rev() {
+                    let (optional, space) = fields.get(*slot)?;
                     let radix = space.len().saturating_add(u128::from(*optional));
                     let digit = remaining.checked_rem(radix)?;
                     remaining = remaining.checked_div(radix)?;
-                    slots.push(match (optional, digit.checked_sub(1)) {
+                    *slots.get_mut(*slot)? = Some(match (optional, digit.checked_sub(1)) {
                         (true, None) => FieldValue::Absent,
                         (true, Some(inner)) => FieldValue::Present(space.nth(inner)?),
                         (false, _) => FieldValue::Present(space.nth(digit)?),
                     });
                 }
-                slots.reverse();
+                let slots = slots.into_iter().collect::<Option<Vec<_>>>()?;
                 Some(from_admitted_slots(*declaration, slots.into_boxed_slice()))
             }
         }
     }
+}
+
+/// Whether `value_type` has a finite FR-120 value domain ([`Domain::of`]).
+pub(crate) fn finite(value_type: &ValueType, types: &TypeEnvironment) -> bool {
+    Domain::of(value_type, &[], types, &RecordOrders::new()).is_some()
 }
 
 /// Whether [`composite_values`] and [`Domain`] together enumerate `value_type`:
@@ -205,9 +265,14 @@ impl Space {
 /// fields (ADR-027 ST-11: the records of a template's attempt type).
 pub(crate) fn enumerable_in(value_type: &ValueType, types: &TypeEnvironment) -> bool {
     match value_type {
-        ValueType::Composite(_) | ValueType::Enum(_) => {
-            Space::of(value_type, &[], types, &mut Vec::new()).is_some()
-        }
+        ValueType::Composite(_) | ValueType::Enum(_) => Space::of(
+            value_type,
+            &[],
+            types,
+            &RecordOrders::new(),
+            &mut Vec::new(),
+        )
+        .is_some(),
         other => enumerable(other),
     }
 }
@@ -256,7 +321,7 @@ pub(crate) fn unenumerable_paths(value_type: &ValueType, types: &TypeEnvironment
                 visiting.pop();
             }
             other => {
-                if Domain::of(other, &[], types).is_none() {
+                if Domain::of(other, &[], types, &RecordOrders::new()).is_none() {
                     found.push(path.clone());
                 }
             }
@@ -282,9 +347,10 @@ pub(super) fn composite_values<E>(
     value_type: &ValueType,
     objects: &[ObjectReference],
     types: &TypeEnvironment,
+    orders: &RecordOrders,
     mut charge: impl FnMut() -> Result<(), E>,
 ) -> Result<Option<Vec<Value>>, E> {
-    let Some(space) = Space::of(value_type, objects, types, &mut Vec::new()) else {
+    let Some(space) = Space::of(value_type, objects, types, orders, &mut Vec::new()) else {
         return Ok(None);
     };
     let mut values = Vec::new();
@@ -318,9 +384,22 @@ pub(super) enum Domain {
         min: u64,
         max: u64,
     },
+    /// A `Set` (`repeat` false) or a `Bag` (`repeat` true) with a declared
+    /// maximum (FR-120-AC-26): its values by element count, then each
+    /// count's combinations of ascending element indices, the smallest
+    /// element most significant.
+    Combinations {
+        collection: CollectionType,
+        element: Box<Domain>,
+        min: u64,
+        max: u64,
+        repeat: bool,
+    },
     /// A random parameter's support, in declared order (FR-187, ADR-024
     /// PM-1): its finite domain whatever its declared type.
     Listed(Vec<Value>),
+    /// An enum, or a record or tuple of finite components.
+    Space(Box<Space>),
 }
 
 impl Domain {
@@ -331,6 +410,7 @@ impl Domain {
         value_type: &ValueType,
         objects: &[ObjectReference],
         types: &TypeEnvironment,
+        orders: &RecordOrders,
     ) -> Option<Self> {
         match value_type {
             ValueType::Boolean => Some(Self::Boolean),
@@ -343,8 +423,17 @@ impl Domain {
             }
             ValueType::Option(payload) => Some(Self::Option {
                 payload_type: (**payload).clone(),
-                inner: Box::new(Self::of(payload, objects, types)?),
+                inner: Box::new(Self::of(payload, objects, types, orders)?),
             }),
+            // FR-120 "Applications" (STD-508): an enum, a record or tuple
+            // whose components all have a finite domain, the first declared
+            // most significant, and a model-variant union whose payload
+            // positions all have one; a clock component is a place, not a
+            // component of the checked value.
+            ValueType::Enum(_) | ValueType::Composite(_) => {
+                Space::of(value_type, objects, types, orders, &mut Vec::new())
+                    .map(|space| Self::Space(Box::new(space)))
+            }
             ValueType::Reference(target) => Some(Self::Reference(
                 objects
                     .iter()
@@ -352,17 +441,29 @@ impl Domain {
                     .cloned()
                     .collect(),
             )),
+            // FR-120-AC-26: a sequence, set or bag with a declared maximum
+            // over a finite element; an ordered set stays unbounded.
             ValueType::Collection(collection) => {
                 let bound = collection.bound()?;
-                if collection.kind() != CollectionKind::Sequence {
-                    return None;
+                let element = Box::new(Self::of(collection.element(), objects, types, orders)?);
+                let (collection, min, max) =
+                    ((**collection).clone(), bound.minimum(), bound.maximum());
+                match collection.kind() {
+                    CollectionKind::Sequence => Some(Self::Sequence {
+                        collection,
+                        element,
+                        min,
+                        max,
+                    }),
+                    CollectionKind::Set | CollectionKind::Bag => Some(Self::Combinations {
+                        repeat: collection.kind() == CollectionKind::Bag,
+                        collection,
+                        element,
+                        min,
+                        max,
+                    }),
+                    CollectionKind::OrderedSet => None,
                 }
-                Some(Self::Sequence {
-                    collection: (**collection).clone(),
-                    element: Box::new(Self::of(collection.element(), objects, types)?),
-                    min: bound.minimum(),
-                    max: bound.maximum(),
-                })
             }
             _ => None,
         }
@@ -376,12 +477,25 @@ impl Domain {
             Self::Option { inner, .. } => inner.len().saturating_add(1),
             Self::Reference(objects) => objects.len() as u128,
             Self::Listed(values) => values.len() as u128,
+            Self::Space(space) => space.len(),
             Self::Sequence {
                 element, min, max, ..
             } => {
                 let base = element.len();
                 (*min..=*max).fold(0u128, |total, length| {
                     total.saturating_add(power(base, length))
+                })
+            }
+            Self::Combinations {
+                element,
+                min,
+                max,
+                repeat,
+                ..
+            } => {
+                let base = element.len();
+                (*min..=*max).fold(0u128, |total, count| {
+                    total.saturating_add(combinations(base, u128::from(count), *repeat))
                 })
             }
         }
@@ -417,6 +531,7 @@ impl Domain {
                 .cloned()
                 .map(Value::Reference),
             Self::Listed(values) => values.get(usize::try_from(index).ok()?).cloned(),
+            Self::Space(space) => space.nth(index),
             Self::Sequence {
                 collection,
                 element,
@@ -444,8 +559,82 @@ impl Domain {
                 }
                 None
             }
+            Self::Combinations {
+                collection,
+                element,
+                min,
+                max,
+                repeat,
+            } => {
+                let base = element.len();
+                let mut remaining = index;
+                for count in *min..=*max {
+                    let count = u128::from(count);
+                    let total = combinations(base, count, *repeat);
+                    if remaining >= total {
+                        remaining -= total;
+                        continue;
+                    }
+                    // Unrank the ascending index combination: each position
+                    // takes the least index whose completions cover
+                    // `remaining`.
+                    let mut indices = Vec::new();
+                    let mut least = 0u128;
+                    for position in 0..count {
+                        let left = count - position - 1;
+                        let mut candidate = least;
+                        loop {
+                            if candidate >= base {
+                                return None;
+                            }
+                            let after = if *repeat { candidate } else { candidate + 1 };
+                            let completions = combinations(base - after, left, *repeat);
+                            if remaining < completions {
+                                break;
+                            }
+                            remaining -= completions;
+                            candidate += 1;
+                        }
+                        indices.push(candidate);
+                        least = if *repeat { candidate } else { candidate + 1 };
+                    }
+                    let elements = indices
+                        .into_iter()
+                        .map(|digit| element.nth(digit))
+                        .collect::<Option<Vec<Value>>>()?;
+                    return Some(from_admitted(collection.clone(), elements));
+                }
+                None
+            }
         }
     }
+}
+
+/// The number of `count`-element subsets of `base` values, or of
+/// `count`-element multisets when `repeat`, saturating at `u128::MAX`.
+fn combinations(base: u128, count: u128, repeat: bool) -> u128 {
+    let pool = if repeat {
+        match (base + count).checked_sub(1) {
+            Some(pool) => pool,
+            None => return u128::from(count == 0),
+        }
+    } else {
+        base
+    };
+    if count > pool {
+        return 0;
+    }
+    let count = count.min(pool - count);
+    let mut total = 1u128;
+    for step in 0..count {
+        // Exact at every step: the product of `step + 1` consecutive
+        // integers is divisible by `(step + 1)!`.
+        total = match total.checked_mul(pool - step) {
+            Some(product) => product / (step + 1),
+            None => return u128::MAX,
+        };
+    }
+    total
 }
 
 /// Every combination of digits `0..radix` for a list of radices, the last
@@ -532,14 +721,21 @@ mod tests {
     #[trace("TC-471", "FR-120-AC-2")]
     #[test]
     fn integers_ascend_and_an_option_starts_absent() {
-        let domain = Domain::of(&int(-1, 1), &[], &types()).expect("Int is enumerable");
+        let domain = Domain::of(&int(-1, 1), &[], &types(), &RecordOrders::new())
+            .expect("Int is enumerable");
         let values: Vec<String> = (0..domain.len())
             .map(|index| integer(&domain.nth(index).expect("in range")))
             .collect();
         assert_eq!(values, ["-1", "0", "1"]);
         assert!(domain.nth(3).is_none());
 
-        let option = Domain::of(&ValueType::option(int(0, 1)), &[], &types()).expect("enumerable");
+        let option = Domain::of(
+            &ValueType::option(int(0, 1)),
+            &[],
+            &types(),
+            &RecordOrders::new(),
+        )
+        .expect("enumerable");
         assert_eq!(option.len(), 3);
         let Some(Value::Option(none)) = option.nth(0) else {
             panic!("index 0 is an option")
@@ -558,7 +754,8 @@ mod tests {
             int(0, 1),
             Some(CardinalityBound::new(0, 2).expect("bound")),
         ));
-        let domain = Domain::of(&sequence, &[], &types()).expect("enumerable");
+        let domain =
+            Domain::of(&sequence, &[], &types(), &RecordOrders::new()).expect("enumerable");
         assert_eq!(domain.len(), 7);
         let lengths: Vec<usize> = (0..7)
             .map(|index| match domain.nth(index) {
@@ -591,7 +788,7 @@ mod tests {
     #[test]
     fn an_unenumerable_type_has_no_domain() {
         assert!(!enumerable(&ValueType::Integer));
-        assert!(Domain::of(&ValueType::String, &[], &types()).is_none());
+        assert!(Domain::of(&ValueType::String, &[], &types(), &RecordOrders::new()).is_none());
     }
 
     /// The type environment of `Inner { e: Boolean, o?: Boolean }` and
@@ -633,10 +830,16 @@ mod tests {
         let (types, inner, outer) = nested();
         let mut charged = 0;
         let values = |declaration, charged: &mut u32| {
-            composite_values::<()>(&ValueType::Composite(declaration), &[], &types, || {
-                *charged += 1;
-                Ok(())
-            })
+            composite_values::<()>(
+                &ValueType::Composite(declaration),
+                &[],
+                &types,
+                &RecordOrders::new(),
+                || {
+                    *charged += 1;
+                    Ok(())
+                },
+            )
             .expect("no stop")
             .expect("a finite domain")
         };
@@ -685,9 +888,15 @@ mod tests {
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
         assert!(enumerable_in(&ValueType::Composite(union), &types));
-        let values = composite_values::<()>(&ValueType::Composite(union), &[], &types, || Ok(()))
-            .expect("no stop")
-            .expect("a finite domain");
+        let values = composite_values::<()>(
+            &ValueType::Composite(union),
+            &[],
+            &types,
+            &RecordOrders::new(),
+            || Ok(()),
+        )
+        .expect("no stop")
+        .expect("a finite domain");
         assert_eq!(values.len(), 2 + 4 + 1);
         let written = quire_canonical::to_vec(
             &super::super::encode::typed_value_enc(&values[1], &types, &[]),
@@ -701,6 +910,48 @@ mod tests {
                 "05".repeat(32)
             )
         );
+    }
+
+    /// FR-120 "Applications": a model-variant union's cases are ordered by
+    /// ascending UTF-8 bytes of their names, whatever their declared order:
+    /// `Zed` declared before `Alpha` still lists `Alpha` first.
+    #[trace("TC-1270")]
+    #[test]
+    fn a_variant_union_orders_its_cases_by_name() {
+        use quire_exact::{Identifier, UnionMember};
+        use quire_semantic_value::declaration::UnionMemberDeclaration;
+        let union = NodeKey::from_digest([12; 32]);
+        let case = |byte: u8, name: &str| {
+            UnionMember::from_admitted(
+                union,
+                NodeKey::from_digest([byte; 32]),
+                Identifier::new(name).expect("an identifier"),
+            )
+        };
+        let (zed, alpha) = (case(13, "Zed"), case(14, "Alpha"));
+        let declaration = CompositeDeclaration::new(
+            union,
+            "Ordered",
+            CompositeShape::Union(vec![
+                UnionMemberDeclaration::from_verified(zed.clone(), vec![]),
+                UnionMemberDeclaration::from_verified(alpha.clone(), vec![]),
+            ]),
+        );
+        let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        let domain = Domain::of(
+            &ValueType::Composite(union),
+            &[],
+            &types,
+            &RecordOrders::new(),
+        )
+        .expect("a finite domain");
+        let names: Vec<String> = (0..domain.len())
+            .map(|index| match domain.nth(index) {
+                Some(Value::Union(value)) => value.member().identifier().as_str().to_owned(),
+                other => panic!("a union value: {other:?}"),
+            })
+            .collect();
+        assert_eq!(names, ["Alpha", "Zed"]);
     }
 
     /// FR-120-AC-25 / TC-1270: an admitted model variant union adds the
@@ -731,9 +982,15 @@ mod tests {
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
         assert!(enumerable_in(&ValueType::Composite(union), &types));
-        let values = composite_values::<()>(&ValueType::Composite(union), &[], &types, || Ok(()))
-            .expect("no stop")
-            .expect("the union has a finite domain");
+        let values = composite_values::<()>(
+            &ValueType::Composite(union),
+            &[],
+            &types,
+            &RecordOrders::new(),
+            || Ok(()),
+        )
+        .expect("no stop")
+        .expect("the union has a finite domain");
         assert_eq!(values.len(), 3);
         let Value::Union(empty_value) = &values[0] else {
             panic!("the nullary case is first")
@@ -757,10 +1014,16 @@ mod tests {
     #[test]
     fn a_record_value_is_written_in_fr_120_s_record_form() {
         let (types, inner, _) = nested();
-        let first = composite_values::<()>(&ValueType::Composite(inner), &[], &types, || Ok(()))
-            .expect("no stop")
-            .expect("a finite domain")
-            .remove(0);
+        let first = composite_values::<()>(
+            &ValueType::Composite(inner),
+            &[],
+            &types,
+            &RecordOrders::new(),
+            || Ok(()),
+        )
+        .expect("no stop")
+        .expect("a finite domain")
+        .remove(0);
         let written = quire_canonical::to_vec(
             &super::super::encode::typed_value_enc(&first, &types, &[]),
             quire_canonical::Limits::new(u64::MAX),

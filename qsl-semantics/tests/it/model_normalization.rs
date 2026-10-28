@@ -95,6 +95,7 @@ fn field_member_redefining(
         presence: quire_exact::Presence::Required,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
+        position: 0,
     })
 }
 
@@ -439,6 +440,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: None,
+                position: 0,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey {
@@ -451,6 +453,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
+                position: 0,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey {
@@ -463,6 +466,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
+                position: 0,
             }),
         ],
     )
@@ -572,6 +576,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: None,
+                position: 0,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey {
@@ -584,6 +589,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
+                position: 0,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey {
@@ -596,6 +602,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
+                position: 0,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey {
@@ -608,6 +615,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                 presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
+                position: 0,
             }),
         ],
     )

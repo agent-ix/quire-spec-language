@@ -4,9 +4,7 @@
 //! replayed (TC-692, TC-694, TC-697).
 
 use ix_trace_rs::trace;
-use qsl_analyze::zone_check::{
-    ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRefusal, ZoneStop,
-};
+use qsl_analyze::zone_check::{ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome, ZoneStop};
 use qsl_replay::{CertificateCheckLimits, ZoneCertificateVerdict};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
@@ -14,8 +12,8 @@ use quire_exact::{Cancel, CancelCause, Integer, Rational};
 use crate::timed_world::{document_unbounded, World};
 use crate::zone_replay::{replay, reproduced};
 use crate::zone_search::{
-    check, claim, delays, operations, proved, request, rpc_claim, rpc_world, violated, Outcome,
-    SUBJECT, TIMED,
+    check, claim, delays, operations, proved, rpc_claim, rpc_world, violated, Outcome, SUBJECT,
+    TIMED,
 };
 
 /// ADR-026 §11's `Settles` over `Rpc` with deadline `t`, its `eventually`
@@ -130,7 +128,8 @@ fn a_settles_certificate_is_checked_against_the_rebuilt_automaton() {
 /// Part of FR-239-AC-4 (TC-694): `Settles` over `Rpc` whose `send` also
 /// takes `n: Integer`, an unbounded population root, refuses
 /// `RequiresBound` (FR-126), naming the unbounded domain; the refusal is
-/// read before any state is explored. Two runs refuse alike.
+/// read before any state is explored, when the timed subject is built. Two
+/// runs refuse alike.
 #[trace("TC-694")]
 #[test]
 fn an_unbounded_root_requires_a_bound() {
@@ -144,10 +143,18 @@ fn an_unbounded_root_requires_a_bound() {
         ],
     );
     let world = rpc_world(&document, 4, TIMED, &settles_clause("[0 ms, 3 ms]"));
-    let refusal = request(&world).expect_err("an unbounded root is refused");
-    let ZoneCheckRefusal::RequiresBound(roots) = &refusal else {
-        panic!("expected RequiresBound, got {refusal:?}");
+    // A timed subject is built only to be expanded, so the bound check
+    // refuses it before EN-6 is asked.
+    let refused = || {
+        let system = world.system();
+        qsl_eval::simulation::model::TimedSystem::new(&system, "M").err()
+    };
+    let Some(qsl_eval::simulation::model::TimedSubjectRefusal::NotSimulated(
+        qsl_eval::simulation::NotSimulated::RequiresBound(roots),
+    )) = refused()
+    else {
+        panic!("expected RequiresBound, got {:?}", refused());
     };
     assert!(!roots.domains.is_empty(), "{roots:?}");
-    assert_eq!(request(&world).expect_err("refused"), refusal);
+    assert_eq!(refused(), refused());
 }

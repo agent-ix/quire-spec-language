@@ -306,29 +306,33 @@ impl<O> Checker<'_, '_, O> {
     /// reset; none when a reset value breaks a target bound.
     fn enabling_parts(&self, step: &GuardedStep) -> Step<Vec<Vec<PlaceConstraint>>, O> {
         let target = self.invariants(step.post())?;
-        let breaks = target.iter().any(|bound| {
-            step.resets()
+        let mut pulled_back = Vec::with_capacity(target.len());
+        for bound in target {
+            if let Some((_, value)) = step
+                .resets()
                 .iter()
-                .rev()
                 .find(|(place, _)| *place == bound.place())
-                .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
-        });
-        if breaks {
-            return Ok(Vec::new());
+            {
+                if !bound.op().holds(value, bound.bound()) {
+                    return Ok(Vec::new());
+                }
+                continue;
+            }
+            let place = step
+                .carries()
+                .iter()
+                .find(|(target, _)| *target == bound.place())
+                .map_or(bound.place(), |(_, source)| *source);
+            pulled_back.push(PlaceConstraint::new(
+                place,
+                bound.op(),
+                bound.bound().clone(),
+            ));
         }
-        let unreset: Vec<PlaceConstraint> = target
-            .into_iter()
-            .filter(|bound| {
-                !step
-                    .resets()
-                    .iter()
-                    .any(|(place, _)| *place == bound.place())
-            })
-            .collect();
         Ok(step
             .parts()
             .iter()
-            .map(|part| part.iter().chain(&unreset).cloned().collect())
+            .map(|part| part.iter().chain(&pulled_back).cloned().collect())
             .collect())
     }
 
@@ -496,9 +500,7 @@ impl<O> Checker<'_, '_, O> {
                     if next.is_empty() {
                         continue;
                     }
-                    for (place, value) in step.resets() {
-                        next.reset(place + 1, &self.scaled(value)?)?;
-                    }
+                    self.apply_clock_updates(&mut next, &step)?;
                     self.constrain(&mut next, &target)?;
                     if next.is_empty() {
                         continue;

@@ -484,6 +484,7 @@ mod tests {
             presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
+            position: 0,
         })
     }
 

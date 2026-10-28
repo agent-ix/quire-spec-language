@@ -272,6 +272,7 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
                 "echo",
                 "work",
                 "spin",
+                "grow",
                 "arm",
                 "disarm",
             ]
