@@ -19,8 +19,9 @@ the currently absent refinement-witness providers as absent.
 1. Build two independent snapshots with
    `RegistrySnapshot::production()`.
 2. Query each snapshot for EN-1's `temporal-satisfaction` capability. Query
-   EN-4's `probabilistic-satisfaction` capability with the evidence kind in
-   EN-4's descriptor, following FR-075-AC-13. Then query for the
+   `probabilistic-satisfaction` separately with the statistical evidence kind
+   from EN-4 and the exact evidence kind from EN-5, following FR-075-AC-13.
+   Then query for the
    `ValueValidity` and `OperationContract` capabilities used by FR-345's
    witness rows.
 3. Construct a test-only factory with an injected descriptor source that
@@ -39,12 +40,13 @@ assertion verifies.
 ## Expected Results
 
 - The two snapshots are equal. The registration accessor yields exactly the
-  EN-1 `temporal-satisfaction` descriptor and the EN-4
-  `probabilistic-satisfaction` descriptor owned by `Engines::qsl()`. For each
-  descriptor, the snapshot retains its exact `BackendId`, origin and
+  EN-1 `temporal-satisfaction`, EN-4 statistical
+  `probabilistic-satisfaction`, and EN-5 exact
+  `probabilistic-satisfaction` descriptors owned by `Engines::qsl()`. For
+  each descriptor, the snapshot retains its exact `BackendId`, origin and
   capability set. Candidate queries yield EN-1 only for
-  `temporal-satisfaction` and EN-4 only for `probabilistic-satisfaction` when
-  supplied the evidence kind in EN-4's descriptor;
+  `temporal-satisfaction`, EN-4 only for the statistical evidence kind, and
+  EN-5 only for the exact evidence kind;
   neither descriptor is replaced or supplemented with an ad hoc candidate.
 - The `ValueValidity` and `OperationContract` candidate outcomes are empty
   while their provider tickets are incomplete. The no-provider witness result

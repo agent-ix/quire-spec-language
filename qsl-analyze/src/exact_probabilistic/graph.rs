@@ -29,6 +29,7 @@ pub fn bottom_components(product: &ProbProduct) -> Vec<Vec<ProbStateId>> {
                 product
                     .outgoing(ProbStateId(*state))
                     .iter()
+                    .filter(|edge| !edge.probability.is_zero())
                     .all(|edge| inside.contains(&edge.to.index()))
             })
         })
@@ -105,7 +106,11 @@ fn has_internal_action(product: &ProbProduct, state: usize, candidate: &[bool]) 
         }
         if edges[cursor..end]
             .iter()
+            .filter(|edge| !edge.probability.is_zero())
             .all(|edge| candidate[edge.to.index()])
+            && edges[cursor..end]
+                .iter()
+                .any(|edge| !edge.probability.is_zero())
         {
             return true;
         }
@@ -131,7 +136,7 @@ fn strongly_connected(
         let edges = product.outgoing(ProbStateId(state));
         if product.kind == ProductKind::Dtmc {
             for edge in edges {
-                if included[edge.to.index()] {
+                if !edge.probability.is_zero() && included[edge.to.index()] {
                     adjacency[state].push(edge.to.index());
                     reverse[edge.to.index()].push(state);
                 }
@@ -146,11 +151,15 @@ fn strongly_connected(
                 end += 1;
             }
             let group = &edges[cursor..end];
-            if allowed_actions
-                .is_none_or(|allowed| group.iter().all(|edge| allowed[edge.to.index()]))
-            {
+            if allowed_actions.is_none_or(|allowed| {
+                group
+                    .iter()
+                    .filter(|edge| !edge.probability.is_zero())
+                    .all(|edge| allowed[edge.to.index()])
+                    && group.iter().any(|edge| !edge.probability.is_zero())
+            }) {
                 for edge in group {
-                    if included[edge.to.index()] {
+                    if !edge.probability.is_zero() && included[edge.to.index()] {
                         adjacency[state].push(edge.to.index());
                         reverse[edge.to.index()].push(state);
                     }
@@ -257,6 +266,13 @@ mod tests {
         }
     }
 
+    fn zero_edge(from: usize, action: usize, to: usize) -> ProbEdge {
+        ProbEdge {
+            probability: Rational::from_integer(Integer::zero()),
+            ..edge(from, action, to)
+        }
+    }
+
     fn product(kind: ProductKind, edges: Vec<ProbEdge>, count: usize) -> ProbProduct {
         ProbProduct {
             states: (0..count).map(key).collect(),
@@ -283,6 +299,19 @@ mod tests {
         let graph = product(
             ProductKind::Mdp,
             vec![edge(0, 0, 0), edge(0, 1, 1), edge(1, 2, 1)],
+            2,
+        );
+        assert_eq!(
+            maximal_end_components(&graph),
+            vec![vec![ProbStateId(0)], vec![ProbStateId(1)]]
+        );
+    }
+
+    #[test]
+    fn zero_probability_successors_do_not_break_an_end_component() {
+        let graph = product(
+            ProductKind::Mdp,
+            vec![edge(0, 0, 0), zero_edge(0, 0, 1), edge(1, 1, 1)],
             2,
         );
         assert_eq!(

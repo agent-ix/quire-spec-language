@@ -273,6 +273,9 @@ fn evaluate_chain(
             return Err(ReachabilityFault::ProbabilityMass);
         }
         for edge in edges {
+            if edge.probability.is_zero() {
+                continue;
+            }
             transitions[index].push((edge.to.index(), edge.probability.clone()));
             reverse[edge.to.index()].push(index);
         }

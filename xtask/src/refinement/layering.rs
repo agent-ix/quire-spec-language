@@ -1222,7 +1222,8 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1 and EN-4 registrations and leaves the missing witness kinds empty.
+    /// EN-1, EN-4 and EN-5 registrations and leaves the missing witness kinds
+    /// empty.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1264,6 +1265,25 @@ mod tests {
                 .map(|candidate| candidate.id().as_str())
                 .collect::<Vec<_>>(),
             ["en-4"]
+        );
+        assert_eq!(registrations[2].id().as_str(), "en-5");
+        assert_eq!(
+            registrations[2].evidence_kinds(),
+            &BTreeSet::from([EvidenceKind::Exact])
+        );
+        let CandidateOutcome::Candidates(exact) = first.candidates_for_evidence(
+            Capability::ProbabilisticSatisfaction,
+            &ItemEvidence::Kind(EvidenceKind::Exact),
+        ) else {
+            panic!("EN-5 gives an evidence-qualified candidate set");
+        };
+        assert_eq!(
+            exact
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-5"]
         );
         for kind in [Capability::ValueValidity, Capability::OperationContract] {
             let CandidateOutcome::Candidates(candidates) = first.candidates(kind) else {

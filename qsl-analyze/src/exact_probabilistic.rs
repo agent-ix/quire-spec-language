@@ -28,6 +28,7 @@
 mod build;
 mod finite;
 pub mod graph;
+pub mod manifest;
 pub(crate) mod plan;
 pub mod unbounded;
 

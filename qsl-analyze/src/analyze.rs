@@ -72,6 +72,16 @@ impl Engine {
         model_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
     }
 
+    /// EN-5, the exact probabilistic engine.
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse EN-5's own manifest.
+    pub fn exact_probabilistic() -> Result<Self, RegistrationRefusal> {
+        crate::exact_probabilistic::manifest::descriptor(ProviderOrigin::Linked, linked_digest())
+            .map(Self::new)
+    }
+
     /// EN-4, the statistical engine.
     ///
     /// # Errors
@@ -125,7 +135,8 @@ pub struct Engines {
 }
 
 impl Engines {
-    /// The layer-A engines `analyze` has an item adapter for: EN-1 and EN-4.
+    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4 and
+    /// EN-5.
     ///
     /// # Errors
     ///
@@ -133,7 +144,11 @@ impl Engines {
     /// manifest.
     pub fn qsl() -> Result<Self, RegistrationRefusal> {
         Ok(Self {
-            engines: vec![Engine::model_check()?, Engine::statistical()?],
+            engines: vec![
+                Engine::model_check()?,
+                Engine::statistical()?,
+                Engine::exact_probabilistic()?,
+            ],
         })
     }
 
@@ -615,8 +630,8 @@ mod tests {
         }
     }
 
-    /// FR-489-AC-5: linked registrations are borrowed from the EN-1 and EN-4
-    /// engines and retain each engine's own identity and advertised kind.
+    /// FR-489-AC-5: linked registrations are borrowed from the EN-1, EN-4 and
+    /// EN-5 engines and retain each engine's own identity and advertised kind.
     #[trace("TC-1272", "FR-489-AC-5")]
     #[test]
     fn linked_engine_registrations_expose_the_owned_descriptors() {
@@ -628,10 +643,10 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4"]
+            ["en-1", "en-4", "en-5"]
         );
-        let [en1, en4] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1 and EN-4");
+        let [en1, en4, en5] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4 and EN-5");
         };
         assert!(registrations
             .iter()
@@ -642,6 +657,13 @@ mod tests {
         assert!(en4
             .advertises()
             .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
+        assert!(en5
+            .advertises()
+            .any(|(kind, mode)| kind == Capability::ProbabilisticSatisfaction
+                && mode == Mode::Unbounded));
+        assert!(en5
+            .evidence_kinds()
+            .contains(&qsl_route::EvidenceKind::Exact));
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as
