@@ -69,7 +69,16 @@ pub struct ObjectEnvironment {
     history: BTreeMap<(ObjectReference, String), Value>,
     /// Where an evaluation over this environment records what it reads.
     read_log: Option<ReadLog>,
+    /// The presence of each guarded clock place of a timed model's
+    /// objects: by object, field and union case (FR-230 "Presence is
+    /// derived"); empty outside a timed predicate's evaluation.
+    place_presence: PlacePresences,
 }
+
+/// The presence of guarded clock places, by the owning object, the field
+/// holding the place and the union case whose payload it is (`None` for an
+/// `Option<Clock>` field).
+pub type PlacePresences = BTreeMap<(ObjectReference, String, Option<String>), bool>;
 
 impl ObjectEnvironment {
     /// The environment over `objects`, with no population recorded yet.
@@ -86,7 +95,27 @@ impl ObjectEnvironment {
             population_completeness: BTreeMap::new(),
             history: BTreeMap::new(),
             read_log: None,
+            place_presence: BTreeMap::new(),
         }
+    }
+
+    /// Records the presence of each guarded clock place a timed predicate
+    /// may read (FR-230 "Presence is derived").
+    pub fn set_place_presence(&mut self, presence: PlacePresences) {
+        self.place_presence = presence;
+    }
+
+    /// Whether the guarded clock place `field` (its union case `case`) of
+    /// `object` is present, when recorded.
+    pub fn place_presence(
+        &self,
+        object: &ObjectReference,
+        field: &str,
+        case: Option<&str>,
+    ) -> Option<bool> {
+        self.place_presence
+            .get(&(object.clone(), field.to_owned(), case.map(str::to_owned)))
+            .copied()
     }
 
     /// Records the history fields a refinement keeps for these objects, so

@@ -4660,6 +4660,79 @@ fn present_reads_the_bit_in_invariants_bounds_and_urgency() {
     assert!(timed.is_urgent(present.discrete()).expect("decided"));
 }
 
+/// QSpec FR-322-AC-155 and QSL FR-230 "Presence is derived" (TC-685 step
+/// 34), the timed subject's part: with `c1` and `c2` each the other's
+/// `peer`, `present(self.peer.v)` reads the presence bit of the referenced
+/// object's `v` as data. `time invariant P when { present(self.peer.v) } {
+/// self.x <= 5 ms }` bounds an object's `x` exactly where its peer's `v` is
+/// present, in each of the four initial states.
+#[trace("TC-685")]
+#[test]
+fn another_objects_presence_reads_its_bit() {
+    let mut document: Json = serde_json::from_slice(&option_clock_document()).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("peer", &ident("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let peer = |key: &str| json!({"reference": {"population": ident("calls"), "key": key}});
+    let object = |key: &str, other: &str| {
+        json!({"key": key, "type": ident("Call"),
+            "fields": initial_fields(json!({"peer": peer(other)}))})
+    };
+    let world = world_of(
+        document,
+        "",
+        &only(
+            &["work"],
+            "time invariant P when { present(self.peer.v) } { self.x <= 5 ms }\n",
+        ),
+        json!([object("c1", "c2"), object("c2", "c1")]),
+    );
+    let system = system_over(&world, &["c1", "c2"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let key = |place: usize| timed.places()[place].object().object().as_str().to_owned();
+    let name = |place: usize| {
+        timed
+            .model()
+            .clock(timed.places()[place].clock())
+            .expect("a clock")
+            .name()
+            .to_owned()
+    };
+    let initial = timed.initial();
+    assert_eq!(initial.len(), 4, "{initial:?}");
+    let mut seen = Vec::new();
+    for state in &initial {
+        let mut bounded: Vec<String> = timed
+            .invariants(state.discrete())
+            .expect("decided")
+            .iter()
+            .map(|bound| key(bound.place()))
+            .collect();
+        bounded.sort();
+        let mut expected: Vec<String> = (0..timed.places().len())
+            .filter(|place| {
+                name(*place) == "v" && timed.live(&timed.places()[*place], state.discrete())
+            })
+            .map(|place| if key(place) == "c1" { "c2" } else { "c1" }.to_owned())
+            .collect();
+        expected.sort();
+        assert_eq!(bounded, expected);
+        seen.push(bounded);
+    }
+    seen.sort();
+    assert_eq!(
+        seen,
+        [
+            vec![],
+            vec!["c1".to_owned()],
+            vec!["c1".to_owned(), "c2".to_owned()],
+            vec!["c2".to_owned()]
+        ]
+    );
+}
+
 /// FR-230 "Presence bit" (TC-685), the timed subject's part of a
 /// postcondition presence requirement: `work`, whose postcondition is
 /// `present(self.v)` and which writes no clock, steps only from the state

@@ -629,6 +629,40 @@ pub struct TimeInvariant {
     bounds: Vec<ClockConstraint>,
 }
 
+/// A guarded clock place `present(r.f)` may name on an object `r` other
+/// than the receiver (FR-230 "Presence is derived"): the object type
+/// declaring the field, the field's name and the union case whose payload
+/// is the place (`None` for an `Option<Clock>`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PresencePlace {
+    pub(crate) owner: EffectiveId,
+    pub(crate) field: String,
+    pub(crate) case: Option<String>,
+}
+
+/// The guarded places of `clocks` a predicate names `r.f` or `r.f.c`:
+/// an `Option<Clock>` field of the object, or a clock case of its union
+/// field.
+fn presence_places(clocks: &[ClockField]) -> Vec<PresencePlace> {
+    clocks
+        .iter()
+        .filter(|clock| clock.guarded)
+        .filter_map(|clock| match clock.path.as_slice() {
+            [PlaceStep::Field(field)] => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: None,
+            }),
+            [PlaceStep::Field(field), PlaceStep::Union(case)] => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: Some(case.clone()),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 /// One disjunct of a state predicate that reads the presence of
 /// `Option<Clock>` places (FR-230 "Presence bit"): the presences it
 /// requires of `self`'s places and its data predicate. The predicate holds
@@ -999,6 +1033,31 @@ impl Clocks<'_> {
             .map(ClockId)
     }
 
+    /// Whether `id` of `form` is `r.f`, `f` an `Option<Clock>` field, or
+    /// `r.f.c`, `c` a clock case of the union field `f`, of some object
+    /// type of the model.
+    fn names_guarded(&self, form: &ExpressionForm, id: ExprId) -> bool {
+        let Some(ExprNode::Field { operand, field }) =
+            form.expression.get(id).map(|node| node.node())
+        else {
+            return false;
+        };
+        let union = match form.expression.get(*operand).map(|node| node.node()) {
+            Some(ExprNode::Field { field: union, .. }) => Some(union),
+            _ => None,
+        };
+        self.fields.iter().any(|clock| {
+            clock.guarded
+                && match clock.path.as_slice() {
+                    [PlaceStep::Field(name)] => name == field,
+                    [PlaceStep::Field(name), PlaceStep::Union(case)] => {
+                        case == field && union == Some(name)
+                    }
+                    _ => false,
+                }
+        })
+    }
+
     /// Whether the path `self.f…` at `id` of `form` is a value holding clock
     /// places below it: a clock-bearing record or union value.
     fn bears(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> bool {
@@ -1355,22 +1414,31 @@ impl<'f> Located<'f> {
         // parent is reached.
         for node in form.expression.iter() {
             let id = node.id();
+            // Another object's guarded place: a field read already taken
+            // as a clock read, named like an `Option<Clock>` field or a
+            // clock case of a union field.
+            let foreign_place = |operand: ExprId| {
+                first.get(operand.index()).copied().flatten().is_some()
+                    && clocks.names_guarded(form, operand)
+            };
             // A presence read of an `Option<Clock>` place, of `self` or of
-            // another object: a data read of its presence (FR-230
-            // "Presence bit"). Another object's place is a field read
-            // already taken as a clock read, named like an `Option<Clock>`
-            // field.
+            // another object (FR-230 "Presence bit").
             let option_place = |operand: ExprId| {
                 option.get(operand.index()).copied().flatten().is_some()
                     || clocks.option(form, operand, context).is_some()
-                    || (first.get(operand.index()).copied().flatten().is_some()
-                        && matches!(
-                            form.expression.get(operand).map(|node| node.node()),
-                            Some(ExprNode::Field { field, .. })
-                                if clocks.fields.iter().any(|clock| clock.bit
-                                    && clock.path == [PlaceStep::Field(field.clone())])
-                        ))
+                    || foreign_place(operand)
             };
+            // `present(r.f)` of another object's place is a data read of its
+            // presence, the typer's place presence: it reads no clock
+            // (FR-230 "Presence is derived", QSpec FR-322-AC-155).
+            if let ExprNode::Present(operand) = node.node() {
+                if foreign_place(*operand)
+                    && option.get(operand.index()).copied().flatten().is_none()
+                    && clocks.option(form, *operand, context).is_none()
+                {
+                    continue;
+                }
+            }
             let presence = match node.node() {
                 ExprNode::Present(operand) => option_place(*operand),
                 ExprNode::Binary {
@@ -3304,6 +3372,9 @@ pub(crate) struct Checking<'d, 'a> {
     pub(crate) declarations: &'d ClauseDeclarations<'a>,
     pub(crate) state_clauses: &'d [StateClauseDeclaration],
     pub(crate) complete_value: bool,
+    /// The guarded clock places of the model being checked, whose presence
+    /// a predicate reads as data (FR-230 "Presence is derived").
+    pub(crate) presence_places: &'d [PresencePlace],
 }
 
 /// The element type of the collection field `field` of `context`, as the
@@ -3390,7 +3461,11 @@ fn typed_alternative(
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
     let (predicate, used) = typed(
-        &state_view(&alternative.predicate, checking.complete_value),
+        &state_view(
+            &alternative.predicate,
+            checking.complete_value,
+            checking.presence_places,
+        ),
         &alternative.predicate.predicate,
         checking,
         cx,
@@ -3402,7 +3477,11 @@ fn typed_alternative(
     })
 }
 
-fn state_view<'v>(draft: &'v PredicateDraft, complete_value: bool) -> ClauseView<'v> {
+fn state_view<'v>(
+    draft: &'v PredicateDraft,
+    complete_value: bool,
+    presence_places: &'v [PresencePlace],
+) -> ClauseView<'v> {
     ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value,
@@ -3412,6 +3491,7 @@ fn state_view<'v>(draft: &'v PredicateDraft, complete_value: bool) -> ClauseView
         context_population: draft.population,
         frame_population: None,
         binders: &[],
+        presence_places,
         body: &draft.predicate.expression,
     }
 }
@@ -3457,6 +3537,7 @@ fn check_part(
                 context_population: clause.context_population,
                 frame_population: clause.frame_population,
                 binders: &binders,
+                presence_places: checking.presence_places,
                 body: &form.expression,
             };
             let (predicate, used) = typed(&view, form, checking, cx)?;
@@ -3496,6 +3577,11 @@ pub(crate) fn check(
     let mut nodes_used = checking.declarations.nodes_used;
     let mut models = Vec::with_capacity(drafts.models.len());
     for draft in drafts.models {
+        let places = presence_places(&draft.clocks);
+        let checking = &Checking {
+            presence_places: &places,
+            ..*checking
+        };
         let mut guards = Vec::with_capacity(draft.guards.len());
         for (index, parts) in draft.guards {
             let Some(clause) = checking.state_clauses.get(index) else {
@@ -3591,6 +3677,7 @@ pub(crate) fn check(
                                     context_population: None,
                                     frame_population: None,
                                     binders: &binders,
+                                    presence_places: checking.presence_places,
                                     body: &form.expression,
                                 };
                                 let (predicate, used) = typed(&view, &form, checking, cx)?;

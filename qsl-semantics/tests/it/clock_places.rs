@@ -2146,10 +2146,9 @@ fn two_writes_of_an_option_clock_conflict() {
 /// absence; `not present(self.v) or self.late` in a time invariant's `when`
 /// is two alternatives, one requiring `v` absent and one reading `late`;
 /// `urgent U when { present(self.v) and self.late }` requires `v` present.
-/// A presence read this slice does not read (under `or` in a postcondition,
-/// a quantifier body, another object's place: STD-526) refuses
-/// `unsupported_construct`/`not-yet-implemented` at the read, never as a
-/// clock read.
+/// A presence read of `self` this slice does not read (under `or` in a
+/// postcondition) refuses `unsupported_construct`/`not-yet-implemented` at
+/// the read, never as a clock read.
 #[trace("TC-685")]
 #[test]
 fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
@@ -2197,16 +2196,10 @@ fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
         .collect();
     assert_eq!(urgent, [vec![(v, true)]]);
 
-    for (clause, read) in [
-        (
-            "post Either using v on Config::Call::bump { present(self.v) or self.late }\n",
-            "present(self.v)",
-        ),
-        (
-            "time invariant All when { forall(c in allInstances<Config::Call>(Config::calls) : present(c.v)) } { self.x <= 5 ms }\n",
-            "present(c.v)",
-        ),
-    ] {
+    for (clause, read) in [(
+        "post Either using v on Config::Call::bump { present(self.v) or self.late }\n",
+        "present(self.v)",
+    )] {
         let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}"));
         assert_eq!(
             (cause.code(), cause.tag(), text.as_str()),
@@ -2495,4 +2488,46 @@ fn a_union_field_is_written_once_and_never_read_whole() {
             "{clause}"
         );
     }
+}
+
+/// QSpec FR-322-AC-155 and QSL FR-230 "Presence is derived" (TC-685 step
+/// 34), checking: with `peer: Reference<Call>`, `present(self.peer.v)` of
+/// the object `self.peer` refers to is a data read of that object's place
+/// presence, never a clock read, so a time invariant whose `when` reads it
+/// checks (QSpec PR-01, an owner other than `self`). An owner that is no
+/// object, `present(self.late.v)` over the `Boolean` `late`, refuses
+/// `ill_typed`/`type-mismatch` (PR-05).
+#[trace("TC-685")]
+#[test]
+fn another_objects_presence_is_a_data_read() {
+    let mut document: Value = serde_json::from_slice(&option_clock_document()).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(field("peer", &package("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}time invariant Peer when {{ present(self.peer.v) }} {{ self.x <= 5 ms }}\n"
+        ),
+    )
+    .expect("another object's presence checks");
+    let [invariant] = timed(&graph).invariants() else {
+        panic!("one invariant");
+    };
+    let [alternative] = invariant.alternatives() else {
+        panic!("one alternative");
+    };
+    assert!(alternative.presences().is_empty());
+    let (cause, _) = refused(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}time invariant Odd when {{ present(self.late.v) }} {{ self.x <= 5 ms }}\n"
+        ),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::IllTyped, "type-mismatch")
+    );
 }

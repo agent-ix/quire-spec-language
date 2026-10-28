@@ -49,7 +49,9 @@ impl ModelReferences {
 #[deny(clippy::wildcard_enum_match_arm)]
 pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
     let through = match node.kind() {
-        NodeKind::Attribute { reference, .. } | NodeKind::Navigate { reference, .. } => *reference,
+        NodeKind::Attribute { reference, .. }
+        | NodeKind::Navigate { reference, .. }
+        | NodeKind::PlacePresence { reference, .. } => *reference,
         NodeKind::Reaches { source, .. } | NodeKind::ReachesEnd { source, .. } => *source,
         NodeKind::Arithmetic(..)
         | NodeKind::IntegerDivision { .. }
