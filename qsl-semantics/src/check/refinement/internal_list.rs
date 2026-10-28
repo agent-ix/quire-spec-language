@@ -641,7 +641,7 @@ impl ProtocolClasses {
                 ));
             };
             let binder_types = self.records.get(name).cloned().unwrap_or_default();
-            let mut add_node = |spelling: String| {
+            let mut add_node = |spelling: String, binder_types: Vec<ValueType>| {
                 classes.insert(
                     spelling.clone(),
                     RefinementCatalogClass::declared(
@@ -650,19 +650,23 @@ impl ProtocolClasses {
                             protocol: self.protocol.clone(),
                             node,
                         },
-                        binder_types.clone(),
+                        binder_types,
                     ),
                 );
             };
+            // An `effect` or `commit` node is an `event`-kind class spelled
+            // by its bare path, with its binder record; an `await` node's
+            // class is its `timeout` (FR-426, FR-432).
             match class_kind {
-                NodeClass::Bare(_) => add_node(format!("{}::{name}", self.protocol)),
+                NodeClass::Bare(_) => add_node(format!("{}::{name}", self.protocol), binder_types),
                 NodeClass::Parallel => {
-                    add_node(format!("fork {}::{name}", self.protocol));
-                    add_node(format!("join {}::{name}", self.protocol));
+                    add_node(format!("fork {}::{name}", self.protocol), Vec::new());
+                    add_node(format!("join {}::{name}", self.protocol), Vec::new());
                 }
+                // FR-375-AC-28: the template's `cend` has no binder types.
                 NodeClass::Template => {
-                    add_node(format!("{}::{name}", self.protocol));
-                    add_node(format!("cend {}::{name}", self.protocol));
+                    add_node(format!("{}::{name}", self.protocol), binder_types);
+                    add_node(format!("cend {}::{name}", self.protocol), Vec::new());
                 }
             }
         }

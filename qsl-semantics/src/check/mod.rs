@@ -4361,6 +4361,19 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
         }
+        // FR-375: a protocol subject's `protocol` key, its abstract clause's
+        // node. A clause with no node refuses at the clause itself, and the
+        // refinement stays unemitted.
+        for checked in &mut refinements {
+            let AbstractSide::Protocol { clause } = &checked.abstract_side else {
+                continue;
+            };
+            checked.abstract_protocol = self
+                .protocols
+                .iter()
+                .position(|protocol| protocol.name.name == *clause)
+                .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
+        }
         // FR-337: each emitted temporal clause, after every function its
         // conditions may call, minting its node identity and recording its
         // `claim` occurrence.
@@ -5169,7 +5182,7 @@ impl PackageDeclarations {
                         ))),
                     });
                 };
-                (!checked.v2_empty_model_body()).then(|| {
+                (!checked.v2_row_empty_body()).then(|| {
                     refinement::not_emitted(
                         declaration.form.name.name.clone(),
                         declaration.form.span,
