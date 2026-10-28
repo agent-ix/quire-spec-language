@@ -28,12 +28,17 @@
 //! No core checker reads a zone product's simulation relation (FR-149
 //! reads explicit concrete successors, which ignore clock guards), so a
 //! half that holds carries no certificate (spec gap STD-493).
+//!
+//! This is the safety half only. Remaining work on QSL-1005: the liveness
+//! half over a timed concrete subject (ADR-026 TS-4), and the route of a
+//! refinement record whose concrete subject declares `time dense` to EN-6,
+//! which waits on the refinement node identity (QSL-544, IR-1014).
 
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_eval::simulation::model::{
-    check_model_bounds, GuardedStep, ModelSimState, ModelSimulationRequest, TimedSubjectRefusal,
-    TimedSystem,
+    check_model_bounds, GuardedStep, ModelSimState, ModelSimulationRequest, ModelSystem,
+    TimedSubjectRefusal, TimedSystem,
 };
 use qsl_eval::simulation::BOUND_POSITIONS;
 use qsl_package::CheckedPackage;
@@ -49,7 +54,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 use super::concretise::{concretise, Stage, Target};
 use super::search::{
-    not_simulated, Arrival, Halt, Judged, Run, Searched, ZoneCheckLimits, ZoneCheckRefusal,
+    not_simulated, widen, Arrival, Halt, Judged, Run, Searched, ZoneCheckLimits, ZoneCheckRefusal,
     ZoneStats, ZoneStop, ZoneUndecided,
 };
 use super::Dbm;
@@ -221,7 +226,7 @@ type PositionKey = (Vec<u8>, Vec<u8>, Vec<Vec<u8>>);
 /// nodes carry as their `q`.
 struct Product<'p, 'a> {
     refinement: &'p CheckedRefinement,
-    abstract_system: &'p qsl_eval::simulation::model::ModelSystem<'a>,
+    abstract_system: &'p ModelSystem<'a>,
     /// Each position, by the index a node's `q` names.
     positions: Vec<RefinementPosition>,
     known: BTreeMap<PositionKey, usize>,
@@ -235,7 +240,7 @@ enum Judgement {
     Passes(usize),
     /// The step or initial state fails: the failure and the counterexample
     /// kind.
-    Fails(RefinementFailure, CounterexampleKind),
+    Fails(Box<(RefinementFailure, CounterexampleKind)>),
     /// The run ends with this outcome.
     Ends(TimedSafetyOutcome),
 }
@@ -259,11 +264,12 @@ impl Product<'_, '_> {
                 Judgement::Passes(q) => q,
                 // An initial state is no edge: its failure refutes as
                 // FR-142's does, at position 0.
-                Judgement::Fails(failure, kind) => {
+                Judgement::Fails(failed) => {
+                    let (failure, kind) = *failed;
                     return Ok(TimedSafetyOutcome::Violated {
                         counterexample: Box::new(refuted(index, Vec::new(), failure, kind)),
                         stats: run.stats(),
-                    })
+                    });
                 }
                 Judgement::Ends(outcome) => return Ok(outcome),
             };
@@ -331,7 +337,8 @@ impl Product<'_, '_> {
                     let next = match self.judge(result.verdict, run)? {
                         Judgement::Passes(next) => Some(next),
                         Judgement::Ends(outcome) => return Ok(Some(outcome)),
-                        Judgement::Fails(failure, kind) => {
+                        Judgement::Fails(failed) => {
+                            let (failure, kind) = *failed;
                             // ADR-026 TV-1: only a pre-state with a
                             // time-divergent valuation refutes.
                             if run.node_escape(node)?.diverges {
@@ -376,7 +383,9 @@ impl Product<'_, '_> {
     fn judge(&mut self, verdict: StepVerdict, run: &Run<'_, '_, '_>) -> Result<Judgement, Halt> {
         Ok(match verdict {
             StepVerdict::Passes { post, .. } => Judgement::Passes(self.intern(post, run)?),
-            StepVerdict::Fails(failure) => Judgement::Fails(failure, CounterexampleKind::Formula),
+            StepVerdict::Fails(failure) => {
+                Judgement::Fails(Box::new((failure, CounterexampleKind::Formula)))
+            }
             StepVerdict::Undefined(evaluation) => {
                 let qsl_replay::UndefinedLocus::Mapping(site) = &evaluation.site.locus else {
                     return Err(
@@ -387,13 +396,13 @@ impl Product<'_, '_> {
                     position: evaluation.site.position,
                     row: site.row.clone(),
                 };
-                Judgement::Fails(
+                Judgement::Fails(Box::new((
                     failure,
                     CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                         site: evaluation.site,
                         cause: evaluation.cause,
                     }),
-                )
+                )))
             }
             StepVerdict::Undetermined(undetermined) => {
                 Judgement::Ends(TimedSafetyOutcome::Undecided {
@@ -492,8 +501,4 @@ fn refuted(
         blocked: Vec::new(),
         final_delay: None,
     }
-}
-
-fn widen(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
 }

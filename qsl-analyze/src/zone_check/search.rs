@@ -2346,7 +2346,7 @@ pub(super) fn zone_bytes(zone: &Dbm) -> u64 {
     bytes
 }
 
-fn widen(value: usize) -> u64 {
+pub(super) fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
