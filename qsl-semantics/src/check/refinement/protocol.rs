@@ -713,6 +713,9 @@ impl ProtocolRefinement<'_> {
         };
         let mut checker = Checker {
             declarations,
+            // A protocol subject's rows are completed with the clause; a
+            // clock place is still found by its path (QSpec FR-430).
+            clock_reading: &[],
             protocols: &[],
             abstract_side,
             concrete_side,

@@ -269,10 +269,10 @@ pub(super) struct SymbolicEdge {
 /// How a new node is reached: an edge from a stored node, with its step
 /// and piece.
 #[derive(Clone, Copy, Debug)]
-struct Arrival {
-    from: usize,
-    step: Option<(usize, usize)>,
-    piece: Option<usize>,
+pub(super) struct Arrival {
+    pub(super) from: usize,
+    pub(super) step: Option<(usize, usize)>,
+    pub(super) piece: Option<usize>,
 }
 
 impl SymbolicEdge {
@@ -777,7 +777,7 @@ pub(super) enum Searched {
 }
 
 /// What a run judges its nodes by.
-enum Judged<'r> {
+pub(super) enum Judged<'r> {
     /// An authored clause.
     Claim(Claim<'r>),
     /// The deadlock-freedom item: a node holding deadlocked valuations.
@@ -788,6 +788,10 @@ enum Judged<'r> {
     /// An authored clause decided on FR-240's liveness product, built
     /// after the search, which judges no node.
     Liveness(Claim<'r>),
+    /// A refinement's safety half (QSpec FR-430), which judges its edges,
+    /// not its nodes ([`super::refine`]); a node's `q` is its refinement
+    /// position.
+    Refinement,
 }
 
 pub(super) struct Claim<'r> {
@@ -843,7 +847,7 @@ pub(super) struct Run<'r, 's, 'a> {
 }
 
 impl<'r, 's, 'a> Run<'r, 's, 'a> {
-    fn new(
+    pub(super) fn new(
         timed: &'r TimedSystem<'s, 'a>,
         judged: Judged<'r>,
         window: Option<WindowClaim>,
@@ -902,11 +906,11 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     pub(super) fn claim(&self) -> Option<&Claim<'r>> {
         match &self.judged {
             Judged::Claim(claim) | Judged::Liveness(claim) => Some(claim),
-            Judged::DeadlockFreedom | Judged::TimeLockFreedom => None,
+            Judged::DeadlockFreedom | Judged::TimeLockFreedom | Judged::Refinement => None,
         }
     }
 
-    fn stats(&self) -> ZoneStats {
+    pub(super) fn stats(&self) -> ZoneStats {
         ZoneStats {
             symbolic_states: widen(self.nodes.len()),
             retained_edges: widen(self.edges.len()),
@@ -974,7 +978,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
 
     /// `zone` intersected with `state`'s invariants, let time elapse unless
     /// `state` is urgent, and intersected with them again.
-    fn settle(&self, state: &ModelSimState, zone: &mut Dbm) -> Result<(), Halt> {
+    pub(super) fn settle(&self, state: &ModelSimState, zone: &mut Dbm) -> Result<(), Halt> {
         self.settle_at(state, zone, &self.scale)
     }
 
@@ -1172,7 +1176,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// Store `(state, q, zone)` unless a stored state with equal `state`
     /// and `q` covers it: the new node, or `None` with the covering node
     /// recorded through `arrival`.
-    fn insert(
+    pub(super) fn insert(
         &mut self,
         state: ModelSimState,
         q: usize,
@@ -1608,7 +1612,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         let claim = match &self.judged {
             Judged::Claim(claim) => claim,
             Judged::DeadlockFreedom => return self.deadlock(node),
-            Judged::TimeLockFreedom | Judged::Liveness(_) => return Ok(None),
+            Judged::TimeLockFreedom | Judged::Liveness(_) | Judged::Refinement => return Ok(None),
         };
         if let Some(window) = &self.window {
             // A TT-2 clause is decided by its automaton state.
@@ -1798,7 +1802,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
     /// which its model steps are taken, each after an admissible delay: the
     /// exact predecessors of every valuation of the quiescent state it ends
     /// at, all of which diverge.
-    fn pre_path(&mut self, path: &[(ModelSimState, usize, usize)]) -> Result<Dbm, Halt> {
+    pub(super) fn pre_path(&mut self, path: &[(ModelSimState, usize, usize)]) -> Result<Dbm, Halt> {
         let mut region = Dbm::universe(self.dim());
         for (source, step, part) in path.iter().rev() {
             let steps = self.steps_for(source)?;
@@ -2342,7 +2346,7 @@ pub(super) fn zone_bytes(zone: &Dbm) -> u64 {
     bytes
 }
 
-fn widen(value: usize) -> u64 {
+pub(super) fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
@@ -2353,7 +2357,7 @@ fn zero_stamp() -> Rational {
 
 /// FR-126's refusals before any state is explored: `RequiresBound`, or an
 /// extent that could not be classified.
-fn not_simulated(refusal: NotSimulated) -> ZoneCheckRefusal {
+pub(super) fn not_simulated(refusal: NotSimulated) -> ZoneCheckRefusal {
     match refusal {
         NotSimulated::RequiresBound(roots) => ZoneCheckRefusal::RequiresBound(roots),
         NotSimulated::Extent(failure) => ZoneCheckRefusal::Extent(Box::new(failure)),

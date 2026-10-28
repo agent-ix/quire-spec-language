@@ -2524,6 +2524,12 @@ impl PackageDeclarations {
                 })),
             });
         }
+        // QSpec FR-430: the models a `time` declaration names are timed.
+        let timed_aliases: Vec<&str> = self
+            .time_sources
+            .iter()
+            .map(|source| source.model.as_str())
+            .collect();
         let mut refinement_slots: Vec<Option<CheckedRefinement>> = std::iter::repeat_with(|| None)
             .take(self.refinements.len())
             .collect();
@@ -2556,6 +2562,8 @@ impl PackageDeclarations {
                     lists: &internal_lists,
                     protocols: $views,
                     defer_abstract_protocol_resolution: $defer_abstract,
+                    timed_models: &timed_aliases,
+                    clock_reading: &self.clock_reading,
                 };
                 let (checked, used) = refinement::check_refinement(
                     $refinement,
