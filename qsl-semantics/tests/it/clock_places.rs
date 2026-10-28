@@ -2787,6 +2787,53 @@ fn quantified_presence_over_an_option_sequence_is_a_data_predicate() {
     .is_err());
 }
 
+/// SR-1763001 FND-003 (TC-685, STD-526 PR-03): over `q:
+/// Sequence<Option<Clock>>[0, 2]`, a quantifier whose body reads
+/// `present(e)` other than as the whole body (`not present(e)`, `present(e)
+/// and value(e) >= 1 ms`) reads no clock outside a constraint, and this
+/// slice does not read it yet: it refuses
+/// `unsupported_construct`/`not-yet-implemented` at the quantifier, in a
+/// guard and in a time invariant's `when` alike.
+#[trace("TC-685")]
+#[test]
+fn another_quantified_presence_body_is_not_yet_implemented() {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mut q = field("q", "ix://quire/native/Clock");
+    q["presence"] = json!("optional");
+    q["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(q);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    for (form, query) in [
+        (
+            "pre G using v on Config::Call::bump {{ {query} }}\n",
+            "exists(e in self.q : not present(e))",
+        ),
+        (
+            "pre G using v on Config::Call::bump {{ {query} }}\n",
+            "forall(e in self.q : present(e) and value(e) >= 1 ms)",
+        ),
+        (
+            "time invariant All when {{ {query} }} {{ self.x <= 5 ms }}\n",
+            "exists(e in self.q : not present(e))",
+        ),
+    ] {
+        let body = form
+            .replace("{{", "{")
+            .replace("}}", "}")
+            .replace("{query}", query);
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{body}"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::UnsupportedConstruct, "not-yet-implemented", query),
+            "{body}"
+        );
+    }
+}
+
 /// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21): a reset of a
 /// `Clock` parameter whose range holds the place writes it for the instance
 /// binding the parameter there. Over `bump(c: Clock)` with a frame naming

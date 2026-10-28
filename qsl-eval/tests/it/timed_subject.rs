@@ -4484,10 +4484,12 @@ fn a_sequence_of_option_clocks_holds_one_bit_per_element() {
     );
 }
 
-/// FR-230 "Presence bit" (TC-685), no implicit reset or drop of an
-/// element of `q: Sequence<Option<Clock>>[0, 2]`: `work`, whose frame
-/// writes `q` and which resets no clock, keeps the bit of every element the
-/// collection still holds; the elements it adds take either bit.
+/// FR-230 "Presence bit" and QSpec FR-415-AC-21 (TC-685, SR-1763001
+/// FND-001, SR-1763002 FND-002), no implicit reset or drop of an element of
+/// `q: Sequence<Option<Clock>>[0, 2]`: `work`, whose frame writes `q` and
+/// which resets no clock, keeps the bit of every element the collection
+/// still holds, and every element it adds is absent: `[] -> [true]` and
+/// `[false] -> [false, true]` are no successors.
 #[trace("TC-685")]
 #[test]
 fn an_option_element_keeps_its_bit_without_a_write() {
@@ -4508,20 +4510,89 @@ fn an_option_element_keeps_its_bit_without_a_write() {
         for bits in &after {
             let kept = bits.len().min(before.len());
             assert_eq!(bits[..kept], before[..kept], "{before:?} -> {bits:?}");
+            assert!(
+                bits[kept..].iter().all(|bit| !bit),
+                "{before:?} -> {bits:?}: an added element is absent"
+            );
         }
         if before.len() < 2 {
-            let grown: std::collections::BTreeSet<bool> = after
-                .iter()
-                .filter(|bits| bits.len() == before.len() + 1)
-                .map(|bits| bits[before.len()])
-                .collect();
-            assert_eq!(
-                grown.len(),
-                2,
-                "{before:?}: an added element takes either bit"
+            assert!(
+                after.iter().any(|bits| bits.len() == before.len() + 1),
+                "{before:?}: q grows"
             );
         }
     }
+}
+
+/// FR-230 "Presence bit" and QSpec FR-415 "Reset by selection" (TC-685,
+/// SR-1763001 FND-002, SR-1763002 FND-001): `forall(e in self.q : e = 0
+/// ms)` writes every element the post-state holds, so each is present at 0
+/// ms after `work`, from every initial state, `[false]` and `[false,
+/// false]` included.
+#[trace("TC-685")]
+#[test]
+fn a_reset_over_option_elements_makes_each_present() {
+    let world = option_sequence_world(
+        &["q"],
+        "post Reset using v on M::Call::work { forall(e in self.q : e = 0 ms) }\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    for state in &timed.initial() {
+        let before = option_bits(state);
+        let steps: Vec<_> = timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .collect();
+        assert!(!steps.is_empty(), "{before:?}");
+        for (_, next) in &steps {
+            let bits = option_bits(next);
+            assert!(bits.iter().all(|bit| *bit), "{before:?} -> {bits:?}");
+            for (place, value) in timed.places().iter().zip(next.clocks().values()) {
+                if !place.slots().is_empty() && timed.live(place, next.discrete()) {
+                    assert!(value.numerator().is_zero(), "{before:?} -> {bits:?}");
+                }
+            }
+        }
+    }
+}
+
+/// FR-230 "Presence bit" (TC-685, SR-1763002 FND-003): a present element
+/// that a shrink drops and a later step regrows is absent unless written:
+/// from `[true]`, `work` reaches `[]`, and from there every `[_]` successor
+/// is `[false]`.
+#[trace("TC-685")]
+#[test]
+fn a_dropped_element_regrows_absent() {
+    let world = option_sequence_world(&["q"], "");
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let work = |state: &TimedState| -> Vec<TimedState> {
+        timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| next)
+            .collect()
+    };
+    let present = timed
+        .initial()
+        .into_iter()
+        .find(|state| option_bits(state) == [true])
+        .expect("an initial [true]");
+    let empty = work(&present)
+        .into_iter()
+        .find(|next| option_bits(next).is_empty())
+        .expect("[true] -> []");
+    let regrown: Vec<Vec<bool>> = work(&empty)
+        .iter()
+        .map(option_bits)
+        .filter(|bits| bits.len() == 1)
+        .collect();
+    assert_eq!(regrown, [[false]]);
 }
 
 /// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), the timed

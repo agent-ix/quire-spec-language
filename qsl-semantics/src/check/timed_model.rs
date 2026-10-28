@@ -1090,19 +1090,57 @@ impl Clocks<'_> {
     /// r.q: present(e))` or `exists(e in r.q: present(e))`, `q` a
     /// `Sequence<Option<Clock>>` field of some object type of the model.
     fn slot_presences(&self, form: &ExpressionForm, id: ExprId) -> Option<ExprId> {
-        slot_presence_query(form.expression.at(id)).and_then(|(_, source, _)| {
-            let ExprNode::Field { field, .. } = form.expression.get(source)?.node() else {
-                return None;
-            };
-            self.fields
-                .iter()
-                .any(|clock| {
-                    clock.bit
-                        && matches!(clock.path.as_slice(),
-                            [PlaceStep::Field(name), PlaceStep::Slot(_)] if name == field)
-                })
-                .then_some(source)
+        slot_presence_query(form.expression.at(id))
+            .and_then(|(_, source, _)| self.bit_slots(form, source).then_some(source))
+    }
+
+    /// Whether `source` of `form` is `r.q`, `q` a `Sequence<Option<Clock>>`
+    /// field of some object type of the model.
+    fn bit_slots(&self, form: &ExpressionForm, source: ExprId) -> bool {
+        let Some(ExprNode::Field { field, .. }) =
+            form.expression.get(source).map(|node| node.node())
+        else {
+            return false;
+        };
+        self.fields.iter().any(|clock| {
+            clock.bit
+                && matches!(clock.path.as_slice(),
+                    [PlaceStep::Field(name), PlaceStep::Slot(_)] if name == field)
         })
+    }
+
+    /// Whether `id` of `form` is `forall(e in r.q: B)` or `exists(..)`
+    /// over a `Sequence<Option<Clock>>` whose body `B` reads `present(e)`
+    /// other than as the whole body: a presence read of the elements this
+    /// slice does not read yet (SR-1763001 FND-003).
+    fn slot_presence_body(&self, form: &ExpressionForm, id: ExprId) -> bool {
+        let Some(ExprNode::Query {
+            query: qsl_forms::BinderQuery::Forall | qsl_forms::BinderQuery::Exists,
+            binder,
+            source,
+            body,
+        }) = form.expression.get(id).map(|node| node.node())
+        else {
+            return false;
+        };
+        if !self.bit_slots(form, *source) {
+            return false;
+        }
+        let mut pending = vec![*body];
+        while let Some(at) = pending.pop() {
+            let Some(node) = form.expression.get(at).map(|node| node.node()) else {
+                continue;
+            };
+            if let ExprNode::Present(operand) = node {
+                if matches!(form.expression.get(*operand).map(|node| node.node()),
+                    Some(ExprNode::Name(name)) if name.segments.len() == 1 && name.name == *binder)
+                {
+                    return true;
+                }
+            }
+            pending.extend(node.children());
+        }
+        false
     }
 
     /// Whether `id` of `form` is `r.f`, `f` an `Option<Clock>` field, or
@@ -1455,6 +1493,9 @@ struct Located<'f> {
     /// object's place: a data predicate of the guard's convex part,
     /// typed through the place identity (FR-230-AC-51), never a clock read.
     data_presence: Vec<bool>,
+    /// For each node of a quantifier [`Clocks::slot_presence_body`]
+    /// accepts, the quantifier included: the quantifier.
+    unread: Vec<Option<ExprId>>,
 }
 
 impl<'f> Located<'f> {
@@ -1479,6 +1520,7 @@ impl<'f> Located<'f> {
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut presence_first = vec![false; form.expression.len()];
         let mut data_presence = vec![false; form.expression.len()];
+        let mut unread = vec![None; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
             for child in node.node().children() {
@@ -1513,6 +1555,22 @@ impl<'f> Located<'f> {
                 first[id.index()] = spans.get(id.index()).copied();
                 presence_first[id.index()] = true;
                 data_presence[id.index()] = true;
+                continue;
+            }
+            // Any other body reading `present(e)` of such an element: a
+            // presence read this slice does not read yet.
+            if clocks.slot_presence_body(form, id) {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                let mut pending = vec![id];
+                while let Some(at) = pending.pop() {
+                    if let Some(slot) = unread.get_mut(at.index()) {
+                        *slot = Some(id);
+                    }
+                    if let Some(node) = form.expression.get(at) {
+                        pending.extend(node.node().children());
+                    }
+                }
                 continue;
             }
             // `present(r.f)` of another object's place is a data read of its
@@ -1668,7 +1726,15 @@ impl<'f> Located<'f> {
             first,
             presence_first,
             data_presence,
+            unread,
         })
+    }
+
+    /// The quantifier over a `Sequence<Option<Clock>>` holding `id` whose
+    /// body reads its elements' presences in a form this slice does not
+    /// read yet (SR-1763001 FND-003).
+    fn unread(&self, id: ExprId) -> Option<ExprId> {
+        self.unread.get(id.index()).copied().flatten()
     }
 
     /// Whether every read under `id` is `present(r.f)` of another object's
@@ -1967,6 +2033,9 @@ fn guard(
     let quantified = quantified::bodies(located, clocks, context);
     for node in located.form.expression.iter() {
         let id = node.id();
+        if let Some(query) = located.unread(id) {
+            return Err(timed(located.outside(query)));
+        }
         if quantified.contains(&id) {
             continue;
         }

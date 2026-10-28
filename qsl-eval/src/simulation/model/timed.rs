@@ -949,16 +949,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         PlacePresences { places, slots }
     }
 
-    /// Whether every element of a `Sequence<Option<Clock>>` that its
-    /// collection holds at both `pre` and `post` keeps its presence bit,
-    /// unless `resets` resets its place, which makes it present (FR-230
-    /// "Presence bit"; no implicit reset or drop, as of an `Option<Clock>`
-    /// field). An element the step adds or removes follows the collection.
+    /// Whether the presence bit of every element of a
+    /// `Sequence<Option<Clock>>` that its collection holds at `post` follows
+    /// the step's writes (FR-230 "Presence bit", QSpec FR-415-AC-21): an
+    /// element whose place `writes` resets is present, one held at `pre` too
+    /// keeps its bit, and one the step adds unwritten is absent. There is no
+    /// implicit reset or drop, as of an `Option<Clock>` field.
     fn slot_bits_follow(
         &self,
         pre: &ModelSimState,
         post: &ModelSimState,
-        resets: &[(usize, Rational)],
+        writes: &[usize],
     ) -> bool {
         let bits = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| match place
             .stored(state)?
@@ -982,11 +983,17 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let held = |state: &ModelSimState| {
                 bits(state, place, field.field()).is_some_and(|len| slot < len)
             };
-            if !held(pre) || !held(post) {
+            if !held(post) {
                 return true;
             }
-            let (before, after) = (self.live(place, pre), self.live(place, post));
-            before == after || (after && resets.iter().any(|(reset, _)| *reset == at))
+            let after = self.live(place, post);
+            if writes.contains(&at) {
+                after
+            } else if held(pre) {
+                after == self.live(place, pre)
+            } else {
+                !after
+            }
         })
     }
 
@@ -1500,7 +1507,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     // then writes the element the post-state holds.
                     let mut resets: Vec<(usize, Rational)> = Vec::new();
                     let mut carries = self.written(&vector.receiver, post, &mut resets);
-                    self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
+                    // The fresh elements a frame enumerates are no write.
+                    let (whole, unwritten) = (resets.len(), {
+                        self.matched(&vector.receiver, state, post, &mut resets, &mut carries);
+                        resets.len()
+                    });
                     for (clause, reset) in self
                         .model
                         .resets()
@@ -1569,7 +1580,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             }
                         }
                     }
-                    if !self.slot_bits_follow(state, post, &resets) {
+                    let writes: Vec<usize> = resets[..whole]
+                        .iter()
+                        .chain(&resets[unwritten..])
+                        .map(|(place, _)| *place)
+                        .collect();
+                    if !self.slot_bits_follow(state, post, &writes) {
                         continue;
                     }
                     // A clock whose object or slot the step makes live takes
