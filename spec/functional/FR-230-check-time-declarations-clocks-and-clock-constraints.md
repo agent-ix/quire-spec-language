@@ -334,7 +334,19 @@ ill-formed use.
   count ranges of "Initial element count". `present(p)` of a guarded place SHALL check as a `Boolean`
   data predicate over the place's presence (its bit or its data), read through the data-predicate path and never
   as a clock read; the recorded guard carries it as a data predicate of its
-  convex part. A write that makes the place present (`self.v = c`) sets the presence
+  convex part.
+  **Presence is derived.** `present(p)` is the derived Boolean predicate of
+  QSpec FR-415 "Presence is derived" and FR-322 "Timed-model nodes" (Presence),
+  FR-322-AC-155 to FR-322-AC-157, not a field. The checker SHALL resolve it
+  through the place identity of "Place identity" (the owner object, the
+  `clock_place` node and the slots) and SHALL NOT declare an `Option<Boolean>`
+  or any other member for it, so no model's declaration identity changes for
+  holding an `Option<Clock>`. `p` MAY name a place of another object
+  (`present(other.v)`, evaluated at `other`) and the element bound by a
+  quantifier (`present(e)` in `forall(e in self.q: ...)` or `exists`,
+  evaluated at each live slot `e` binds), and SHALL be recorded as a data
+  predicate of the convex part at that owner and slot.
+  A write that makes the place present (`self.v = c`) sets the presence
   (the bit, or the data) and resets the clock to `c`. A **drop** (`self.v = absent`, another union
   case, or the removal of the slot) sets the presence false and leaves the dropped
   clock **unconstrained**: no zone constraint, time invariant bound or elapse
@@ -735,6 +747,7 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-48 | Over `u: Sequence<Clock>` with no declared maximum, initial states are produced in ascending count from 0 and the analysis stops `incomplete` with `limit-reached` whose `limit` is `max_clocks` once the live clocks exceed it, and it does not return `NotSimulated::RequiresBound`. | Test |
 | FR-230-AC-49 | The emitted `clock_place` of `ts.x` below `ts: Sequence<Timer>[0, 3]` is one node for the three places `ts.0.x`, `ts.1.x` and `ts.2.x`, its slot step carries the symbolic element selector of QSpec FR-322-AC-148 and no index, and the place ids of slots 0 and 1 differ only in the final component of `<slots>`; the same holds for `Set`, `Bag`, `OrderedSet` and a nested `Sequence` (two `<slots>` components). | Test |
 | FR-230-AC-50 | A checked timed model with a guard is refused `TimedModelNotEmitted` until the guard is written, and is never emitted with an empty `guards` aggregate; a model with no guard emits empty aggregates and reads back (QSpec FR-322-AC-150). | Test |
+| FR-230-AC-51 | Over `v: Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]` on two objects, `present(other.v)`, `present(self.q[i])`, and `present(e)` in the bodies of `forall(e in self.q: ...)` and `exists(e in self.q: ...)` each check as a `Boolean` data predicate resolved through the place identity, are recorded as data predicates of the convex part at the owner and slot, declare no `Option<Boolean>` or other member, and leave every model declaration key as it is without `v`; a `present` with a wrong slot count or owner type is refused as QSpec FR-322-AC-156 states. | Test |
 
 ## Dependencies
 
