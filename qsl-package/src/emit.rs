@@ -1133,8 +1133,8 @@ fn inspection_source_map(
 
 /// The first FR-375 emission slice: the complete row-empty model refinement
 /// body. Mapped refinements are added by later slices; this body is legal in
-/// its own right and its identity is bound to the concrete state-machine
-/// declaration.
+/// its own right and its identity is bound to the concrete model's
+/// `model_root` node.
 fn empty_model_refinement_node(
     refinement: &CheckedRefinement,
     region: &SourceRegion,
@@ -1338,15 +1338,19 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
 /// region is the first byte of the checked unit (QSpec: the entry is a
 /// producer assertion no reader verifies, and the published regions are
 /// one-byte placeholders).
-fn append_model_roots(
-    selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+fn append_model_roots<'a>(
+    roots: impl Iterator<
+        Item = (
+            &'a qsl_semantics::model::domain_package::DomainPackageRef,
+            NodeKey,
+        ),
+    >,
     source: &RawSourceRef,
-    limits: qsl_foundation::IdentityLimits,
     nodes: &mut Vec<CheckedSemanticNodeV2>,
     source_map: &mut Vec<CheckedSourceMapEntry>,
-) -> Result<(), EmitRefusal> {
-    for selection in selections {
-        let root = model_root_node(selection, limits)?;
+) {
+    for (selection, key) in roots {
+        let root = model_root_node(selection, key);
         source_map.push(CheckedSourceMapEntry {
             node_id: root.node_id.clone(),
             role: CheckedOccurrenceRole::Generated,
@@ -1359,19 +1363,17 @@ fn append_model_roots(
         });
         nodes.push(root);
     }
-    Ok(())
 }
 
-/// The `model_root` node for one selection row. Its key is
-/// [`qsl_semantics::check::model_root_key`], the key a refinement over the
-/// model names.
+/// The `model_root` node for one selection row, under the key the check
+/// derived (`CheckedGraph::model_roots`), the key a refinement over the model
+/// names.
 fn model_root_node(
     selection: &qsl_semantics::model::domain_package::DomainPackageRef,
-    identity: qsl_foundation::IdentityLimits,
-) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
-    let key = qsl_semantics::check::model_root_key(selection, identity).map_err(encoding)?;
+    key: NodeKey,
+) -> CheckedSemanticNodeV2 {
     let id = node_id(key);
-    Ok(CheckedSemanticNodeV2 {
+    CheckedSemanticNodeV2 {
         owner_model: None,
         node_id: id.clone(),
         schema_version: GRAPH_V2.into(),
@@ -1393,7 +1395,7 @@ fn model_root_node(
         body: CheckedTerm::Aggregate {
             members: Vec::new(),
         },
-    })
+    }
 }
 
 /// The unique digest-ascending reference targets directly named by a body.
@@ -1964,12 +1966,11 @@ fn emit_package_inner(
         rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
     }
     append_model_roots(
-        graph.model_selections(),
+        graph.model_roots(),
         graph.source(),
-        qsl_foundation::IdentityLimits::default(),
         &mut nodes,
         &mut source_map,
-    )?;
+    );
     let (mut profile_selections, mut laws) = split_laws(&order);
     for refinement in emitted_refinements {
         let selection = CheckedSelection {

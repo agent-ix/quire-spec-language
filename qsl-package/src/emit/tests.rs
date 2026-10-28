@@ -2598,8 +2598,9 @@ fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
         version: "1".to_owned(),
         digest,
     };
-    let root =
-        model_root_node(&row, qsl_foundation::IdentityLimits::default()).expect("the root derives");
+    let key = qsl_semantics::check::model_root_key(&row, qsl_foundation::IdentityLimits::default())
+        .expect("the root derives");
+    let root = model_root_node(&row, key);
     assert_eq!(
         root.node_id.digest.as_ref(),
         "ff388429ac907bffe149b81b0c1b3f4099f6075df486c96736455f39a88d3041"

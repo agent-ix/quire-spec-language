@@ -786,15 +786,6 @@ impl AdmittedModel {
         Some((declaring, name.to_owned()))
     }
 
-    /// The declaring key of the package's sole state-machine record.
-    pub(crate) fn state_machine_declaration(&self) -> Option<DeclarationKey> {
-        let mut machines = self.records.iter().filter_map(|(key, record)| {
-            matches!(record, DomainPackageRecord::StateMachine(_)).then_some(key)
-        });
-        let declaration = machines.next()?.clone();
-        machines.next().is_none().then_some(declaration)
-    }
-
     /// Every operation owner of this package that `M::T::op` can name: an
     /// object type, a process or a state machine (FR-104, FR-115, FR-121),
     /// with its declaration key and effective identity.
@@ -1604,7 +1595,7 @@ pub fn model_root_key(
 }
 
 /// Why a selection has no `model_root` key.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum ModelRootKeyError {
     /// The selection's package identity is empty.
     #[error("the selected model package's identity is empty")]
