@@ -981,6 +981,7 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
+            ExprNode::Absent => self.absent_literal(hint.as_deref(), &location)?,
             // FR-185: a quantity literal is its magnitude, measured and
             // reduced as an exact value, in the unit its name declares.
             ExprNode::Quantity(quantity) => {

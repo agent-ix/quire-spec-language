@@ -530,6 +530,9 @@ pub enum ExprNode {
     Case(CaseForm),
     /// `true` or `false`.
     Boolean(bool),
+    /// `absent`, the absent option: it takes its type from the `Option<T>`
+    /// its context expects.
+    Absent,
     /// An integer literal.
     Integer(Integer),
     /// The exact bits of `float32(bits: 0xHHHHHHHH)`.
@@ -832,6 +835,7 @@ impl ExprNode {
                 .chain(case.arms.iter().map(|arm| arm.body))
                 .collect(),
             Self::Boolean(_)
+            | Self::Absent
             | Self::Integer(_)
             | Self::Float32(_)
             | Self::Float64(_)
@@ -939,6 +943,7 @@ impl ExprNode {
                 ..
             } => vec![accumulator, binder],
             Self::Boolean(_)
+            | Self::Absent
             | Self::Integer(_)
             | Self::Float32(_)
             | Self::Float64(_)
@@ -1013,6 +1018,7 @@ impl ExprNode {
                 binders: vec![accumulator, binder],
             },
             Self::Boolean(_)
+            | Self::Absent
             | Self::Integer(_)
             | Self::Float32(_)
             | Self::Float64(_)
@@ -1064,6 +1070,7 @@ impl ExprNode {
                 }
             }
             Self::Boolean(_)
+            | Self::Absent
             | Self::Integer(_)
             | Self::Float32(_)
             | Self::Float64(_)
@@ -1296,6 +1303,11 @@ impl Expression {
     /// `true` or `false`.
     pub fn boolean(value: bool) -> Self {
         Self::single(ExprNode::Boolean(value))
+    }
+
+    /// `absent`, the absent option.
+    pub fn absent() -> Self {
+        Self::single(ExprNode::Absent)
     }
 
     /// An integer literal.
