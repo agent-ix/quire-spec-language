@@ -746,3 +746,329 @@ fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
     assert!(digests[0] < digests[1], "{digests:?}");
     assert_eq!(forward, contracts("Beta, Alpha"));
 }
+
+/// A `send` and the `receive` of it, whose `got` record binder the
+/// `Seller`, the channel's `to` role, observes field by field.
+const RECEIVED: &str = "send Placed via Ch as (placed: Ack) { true };\n\
+    receive Got via Ch of Placed as (got: Ack) { true };\n";
+
+/// [`flow`] whose channel carries the record `Ack`, the decision facts'
+/// record.
+fn deciding(run: &str) -> String {
+    format!(
+        "record Ack {{ ok: Boolean; }}\n{}",
+        flow_with(&MEMBERS.replace("carries Boolean", "carries Ack"), run)
+    )
+}
+
+const CHOICE: [&str; 3] = ["owner", "visible", "cases"];
+const REPEAT: [&str; 7] = [
+    "owner",
+    "visible",
+    "maximum",
+    "proof",
+    "guard",
+    "body",
+    "exhausted",
+];
+
+fn references(wire: &Value, set: &Value) -> Vec<Value> {
+    set["members"]
+        .as_array()
+        .expect("a set")
+        .iter()
+        .map(|entry| target(wire, entry)["node_id"].clone())
+        .collect()
+}
+
+/// FR-466 "Control layouts" (FR-464-AC-1, AC-2, AC-4): a `choice` writes its
+/// owning role, its `visible` entries as nodes and its `cases` sorted by
+/// label as UTF-8 bytes, each with its guard and its body's control; a case
+/// body is declared at the `choice`'s declaration and its own name (the case
+/// label is no segment); a guard that reads a listed fact names that
+/// entry's node; and IR's reader admits the package.
+#[trace("FR-464-AC-1", "FR-464-AC-2", "FR-464-AC-4", "TC-1021")]
+#[test]
+fn a_choice_emits_its_owner_facts_and_sorted_cases_and_reads_back() {
+    let lowered = emitted(&deciding(&format!(
+        "sequence Main {{\n{RECEIVED}\
+         choice Pick by Seller visible (got.ok) {{ \
+         case yes when {{ got.ok }} sequence Yes {{ check Fine using v {{ true }}; }} \
+         case no when {{ not got.ok }} sequence No {{ }} }}\n}}"
+    )));
+    let wire = &lowered.wire;
+    let pick = run_control(wire, "Pick");
+    assert_eq!(operator(pick), "choice");
+    assert_eq!(names(pick), CHOICE);
+    let seller = control(wire, &["Flow", "role", "Seller"]);
+    assert_eq!(
+        target(wire, argument(pick, &CHOICE, "owner"))["node_id"],
+        seller["node_id"]
+    );
+    let got = binder_of(wire, run_control(wire, "Got"));
+    let visible = argument(pick, &CHOICE, "visible");
+    let [fact] = &references(wire, visible)[..] else {
+        panic!("one visible entry: {visible}");
+    };
+    // The fact projects `ok` of the receive's binder.
+    let projection = target(wire, &visible["members"][0]);
+    assert_eq!(
+        projection["body"]["operation"]["identity"],
+        "quire.op.record.project"
+    );
+    assert_eq!(
+        level(target(wire, &projection["body"]["arguments"][0])),
+        got
+    );
+
+    let cases = argument(pick, &CHOICE, "cases")["members"]
+        .as_array()
+        .expect("case records");
+    let labels: Vec<&str> = cases
+        .iter()
+        .map(|case| member(case, "label")["value"].as_str().expect("a label"))
+        .collect();
+    assert_eq!(labels, ["no", "yes"]);
+    let no = control(wire, &["Flow", "run", "Main", "Pick", "No"]);
+    let yes = control(wire, &["Flow", "run", "Main", "Pick", "Yes"]);
+    control(wire, &["Flow", "run", "Main", "Pick", "Yes", "Fine"]);
+    assert_eq!(member(&cases[0], "body")["target"], no["node_id"]);
+    assert_eq!(member(&cases[1], "body")["target"], yes["node_id"]);
+    // `got` is the listed fact itself; `not got` reads it.
+    assert_eq!(member(&cases[1], "guard")["target"], *fact);
+    let negated = target(wire, member(&cases[0], "guard"));
+    assert_eq!(negated["dependencies"], json!([fact]));
+}
+
+/// FR-466 "Control layouts" (FR-464-AC-1, AC-2, AC-4): a `repeat` writes its
+/// owning role, its `visible` entries, the written `maximum`, its `proof`
+/// Group, its guard, its body and the `exhausted` control present exactly
+/// with a maximum; unwritten optionals are the empty Group and an absent
+/// proof the empty Group; both packages read back.
+#[trace("FR-464-AC-1", "FR-464-AC-2", "FR-464-AC-4", "TC-1021")]
+#[test]
+fn a_repeat_emits_its_bound_proof_guard_body_and_exhausted_and_reads_back() {
+    let bounded = emitted(&deciding(&format!(
+        "sequence Main {{\n{RECEIVED}\
+         repeat Loop by Seller visible (got.ok) max 2 invariant {{ true }} variant {{ 1 }} \
+         while {{ got.ok }} sequence Body {{ event Tick by Seller as (tick: Boolean) {{ true }}; }} \
+         exhausted sequence Spent {{ }}\n}}"
+    )));
+    let wire = &bounded.wire;
+    let repeat = run_control(wire, "Loop");
+    assert_eq!(operator(repeat), "repeat");
+    assert_eq!(names(repeat), REPEAT);
+    let seller = control(wire, &["Flow", "role", "Seller"]);
+    assert_eq!(
+        target(wire, argument(repeat, &REPEAT, "owner"))["node_id"],
+        seller["node_id"]
+    );
+    let facts = references(wire, argument(repeat, &REPEAT, "visible"));
+    assert_eq!(facts.len(), 1);
+    assert_eq!(argument(repeat, &REPEAT, "guard")["target"], facts[0]);
+    assert_eq!(
+        argument(repeat, &REPEAT, "maximum")["members"][0]["value"],
+        "2"
+    );
+    let proof = argument(repeat, &REPEAT, "proof");
+    assert_eq!(
+        proof["members"]
+            .as_array()
+            .expect("proof bindings")
+            .iter()
+            .map(|binding| binding["name"].as_str().expect("a name"))
+            .collect::<Vec<_>>(),
+        ["invariant", "variant"]
+    );
+    let body = control(wire, &["Flow", "run", "Main", "Loop", "Body"]);
+    let spent = control(wire, &["Flow", "run", "Main", "Loop", "Spent"]);
+    control(wire, &["Flow", "run", "Main", "Loop", "Body", "Tick"]);
+    assert_eq!(argument(repeat, &REPEAT, "body")["target"], body["node_id"]);
+    assert_eq!(
+        argument(repeat, &REPEAT, "exhausted")["members"],
+        json!([{"term": "reference", "target": spent["node_id"]}])
+    );
+
+    let open = emitted(&flow(
+        "sequence Main { repeat Loop by Buyer visible () while { true } \
+         sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",
+    ));
+    let repeat = run_control(&open.wire, "Loop");
+    for empty in ["visible", "maximum", "proof", "exhausted"] {
+        assert_eq!(
+            argument(repeat, &REPEAT, empty)["members"],
+            json!([]),
+            "{empty}"
+        );
+    }
+}
+
+/// A `repeat` as a case's body and a `choice` as a `repeat`'s body read
+/// back, each declared at its holder's declaration and its own name (the
+/// case label is no segment).
+#[trace("FR-464-AC-4", "TC-1021")]
+#[test]
+fn choices_and_repeats_nest_in_each_other_and_read_back() {
+    let lowered = emitted(&flow(
+        "sequence Main { choice Pick by Buyer visible () { \
+         case a when { true } repeat Inner by Buyer visible () max 1 while { true } \
+         sequence Step { event Tick by Buyer as (tick: Boolean) { true }; } \
+         exhausted sequence Spent { } \
+         case b when { false } sequence Other { } } \
+         repeat Loop by Buyer visible () while { true } \
+         choice Each by Buyer visible () { \
+         case x when { true } sequence X { event Ex by Buyer as (ex: Boolean) { true }; } \
+         case y when { false } sequence Y { event Why by Buyer as (why: Boolean) { true }; } } }",
+    ));
+    let wire = &lowered.wire;
+    let pick = run_control(wire, "Pick");
+    let inner = control(wire, &["Flow", "run", "Main", "Pick", "Inner"]);
+    control(
+        wire,
+        &["Flow", "run", "Main", "Pick", "Inner", "Step", "Tick"],
+    );
+    let cases = argument(pick, &CHOICE, "cases")["members"]
+        .as_array()
+        .expect("case records");
+    assert_eq!(member(&cases[0], "body")["target"], inner["node_id"]);
+    let each = control(wire, &["Flow", "run", "Main", "Loop", "Each"]);
+    control(wire, &["Flow", "run", "Main", "Loop", "Each", "X", "Ex"]);
+    assert_eq!(
+        argument(run_control(wire, "Loop"), &REPEAT, "body")["target"],
+        each["node_id"]
+    );
+}
+
+/// A post-test `repeat`, whose guard reads a binder its body declares, has
+/// no FR-466 node form (the guard reads the repeat's entry only); nor has a
+/// literal or bare-binder `visible` entry (FR-466 lists `expression`
+/// nodes), nor a repeat whose `visible`
+/// entry, invariant or variant reads a body binder; a guard that refers to
+/// a protocol directly is not written yet either; QSpec #481 (STD-539)
+/// settles these as non-encodings. A repeat that steps only through a
+/// nested repeat has a node form (FR-464 "Nested `repeat` rule") but is
+/// withheld until IR's reader decides that rule (IR-1100). Each refuses the protocol
+/// `unsupported_construct`/`not-yet-implemented` naming the construct.
+#[trace("FR-092-AC-18", "TC-1021")]
+#[test]
+fn decisions_without_a_node_form_are_not_written() {
+    use super::protocol_graph::checked;
+    use super::protocol_reference::not_emitted;
+    use qsl_semantics::check::ProtocolConstruct;
+    let cases = [
+        (
+            ProtocolConstruct::PostTestRepeat,
+            "STD-539",
+            deciding(
+                "sequence Main { repeat Loop by Seller visible (got.ok) while { not got.ok } \
+                 sequence Body { send Placed via Ch as (placed: Ack) { true }; \
+                 receive Got via Ch of Placed as (got: Ack) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::VisibleEntryNotAnExpression,
+            "STD-539",
+            flow(
+                "sequence Main { event E by Buyer as (e: Boolean) { true }; \
+                 repeat Loop by Buyer visible (e) while { e } \
+                 sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::RepeatDecisionReadsBody,
+            "STD-539",
+            deciding(
+                "sequence Main { repeat Loop by Seller visible (got.ok) while { true } \
+                 sequence Body { send Placed via Ch as (placed: Ack) { true }; \
+                 receive Got via Ch of Placed as (got: Ack) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::RepeatDecisionReadsBody,
+            "STD-539",
+            deciding(
+                "sequence Main { repeat Loop by Seller visible () invariant { got.ok } \
+                 variant { 1 } while { true } sequence Body { send Placed via Ch as (placed: Ack) { true }; \
+                 receive Got via Ch of Placed as (got: Ack) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::RepeatDecisionReadsBody,
+            "STD-539",
+            deciding(
+                "sequence Main { repeat Loop by Seller visible () invariant { true } \
+                 variant { if got.ok then 1 else 0 } while { true } sequence Body { send Placed via Ch as (placed: Ack) { true }; \
+                 receive Got via Ch of Placed as (got: Ack) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::RepeatStepsThroughRepeat,
+            "IR-1100",
+            flow(
+                "sequence Main { repeat Loop by Buyer visible () while { true } \
+                 choice Pick by Buyer visible () { \
+                 case a when { true } sequence A { event Ea by Buyer as (ea: Boolean) { true }; } \
+                 case b when { false } repeat Inner by Buyer visible () while { true } \
+                 sequence S { event Eb by Buyer as (eb: Boolean) { true }; } } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::RepeatStepsThroughRepeat,
+            "IR-1100",
+            flow(
+                "sequence Main { repeat Loop by Buyer visible () while { true } \
+                 repeat Inner by Buyer visible () while { true } \
+                 sequence Step { event Tick by Buyer as (tick: Boolean) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::VisibleEntryNotAnExpression,
+            "STD-539",
+            flow(
+                "sequence Main { repeat Loop by Buyer visible (true) while { true } \
+                 sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",
+            ),
+        ),
+        (
+            ProtocolConstruct::ProtocolReferenceInBody,
+            "QSL-1121g",
+            format!(
+                "{}protocol Other using v over (input: M::Order) on origin {{\n\
+                 role Buyer on M::Order;\nrun sequence Main {{ }}\n\
+                 finish End as (outcome: Boolean) {{ true }};\n}}\n",
+                flow(
+                    "sequence Main { repeat Loop by Buyer visible () while { protocol Other } \
+                     sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } }",
+                )
+            ),
+        ),
+    ];
+    for (construct, ticket, text) in cases {
+        assert_eq!(construct.tracking(), ticket);
+        let refusals = checked(&text, false).expect_err(&text);
+        assert_eq!(
+            refusals
+                .iter()
+                .map(|refusal| &refusal.cause)
+                .collect::<Vec<_>>(),
+            [&not_emitted(construct)],
+            "{text}"
+        );
+    }
+}
+
+/// A decision that calls a function is written once the function's node is
+/// (QSL-1131): the guard names the call's node, and IR's reader admits the
+/// package.
+#[trace("FR-464-AC-1", "TC-1021")]
+#[test]
+fn a_decision_that_calls_a_function_reads_back() {
+    emitted(&format!(
+        "function ok using v(): Boolean pure {{ true }}\n{}",
+        flow(
+            "sequence Main { repeat Loop by Buyer visible () max 1 while { ok() } \
+             sequence Body { event Tick by Buyer as (tick: Boolean) { true }; } \
+             exhausted sequence Out { } }",
+        )
+    ));
+}

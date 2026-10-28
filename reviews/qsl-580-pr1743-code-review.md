@@ -47,3 +47,17 @@ Gates at 309d37970 (locked-build, jobs 4, `--all-features`, debug info off):
 ## Verdict
 
 Mergeable. FND-001 is low.
+
+## Dispositions
+
+Round 1, head 3d67f219f (STD-542, QSpec #485, FR-415-AC-21).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `post_presence` reads `not (p = absent)` and `not (p != absent)` through `absent_test`; probe `pre { not (self.v != absent) }` with `post { self.v != absent }` refuses `clock-presence-unwritten` |
+
+New this round:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | `unwritten_presence` counts only resets with no parameter: `bump(c: Clock)` whose range is `[v, x]` with `pre { not present(self.v) }` and `post { c = 0 ms and present(self.v) }` refuses `clock-presence-unwritten`, though binding `c` to `v` writes `v` and has a successor | FR-415-AC-21 |
