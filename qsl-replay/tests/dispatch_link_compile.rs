@@ -240,35 +240,35 @@ fn accepted_execution_points_are_keyed_to_authored_state_clauses_and_emitted() {
             "invariant Boot using v on Config::ConfigVersion at current { true }\n",
             "Boot",
             ExecutionPoint::Initialization {
-                name: AnchorName::new("boot").unwrap(),
+                name: AnchorName::new("boot").unwrap().into(),
             },
         ),
         (
             "invariant Validate using v on Config::ConfigVersion at current { true }\n",
             "Validate",
             ExecutionPoint::Handler {
-                name: AnchorName::new("validate").unwrap(),
+                name: AnchorName::new("validate").unwrap().into(),
             },
         ),
         (
             "constraint Guard using v on Config::ConfigVersion at current { true }\n",
             "Guard",
             ExecutionPoint::Initialization {
-                name: AnchorName::new("guard").unwrap(),
+                name: AnchorName::new("guard").unwrap().into(),
             },
         ),
         (
             "pre Before using v on Config::ConfigVersion::probe { true }\n",
             "Before",
             ExecutionPoint::Pre {
-                operation: AnchorName::new("probe").unwrap(),
+                operation: AnchorName::new("probe").unwrap().into(),
             },
         ),
         (
             "post After using v on Config::ConfigVersion::probe { true }\n",
             "After",
             ExecutionPoint::Post {
-                operation: AnchorName::new("probe").unwrap(),
+                operation: AnchorName::new("probe").unwrap().into(),
             },
         ),
     ];
@@ -348,7 +348,7 @@ fn execution_point_refuses_unknown_clause_keys_and_mismatched_operation_names() 
     unknown.insert(
         "NotAClause".to_owned(),
         ExecutionPoint::Pre {
-            operation: AnchorName::new("probe").unwrap(),
+            operation: AnchorName::new("probe").unwrap().into(),
         },
     );
     let (collision_text, packages) = unit(&document, collision);
@@ -403,7 +403,7 @@ fn execution_point_refuses_unknown_clause_keys_and_mismatched_operation_names() 
     mismatched.insert(
         "Before".to_owned(),
         ExecutionPoint::Pre {
-            operation: AnchorName::new("other").unwrap(),
+            operation: AnchorName::new("other").unwrap().into(),
         },
     );
     let refusal = compile_with_execution_points(&document, declaration, &mismatched, limits)
@@ -432,7 +432,7 @@ fn execution_point_refuses_unknown_clause_keys_and_mismatched_operation_names() 
     inapplicable.insert(
         "Before".to_owned(),
         ExecutionPoint::Handler {
-            name: AnchorName::new("validate").unwrap(),
+            name: AnchorName::new("validate").unwrap().into(),
         },
     );
     let refusal = compile_with_execution_points(&document, declaration, &inapplicable, limits)

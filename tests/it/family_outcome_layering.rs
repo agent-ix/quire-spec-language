@@ -424,7 +424,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // and `thiserror`; `serde` deserializes semantic wire values
             // built by layer 3. The wire contract, canonical encoder,
             // `quire-exact` and `thiserror` are optional, enabled by `std`
-            // (NFR-015). `serde_json` and `sha2` are used by tests only.
+            // (NFR-015). `serde_json` is optional too, enabled by `std`: the
+            // hybrid reader reads a typed application operation through its
+            // public `Serialize` form. `sha2` is used by tests only.
             // `ix-trace-rs`
             // (ADR-012 section 9) owns the `#[string_edge]` marker and is
             // exempt from the layer order below (FR-064): it is a
@@ -444,6 +446,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-exact",
                     "quire-semantic-value",
                     "serde",
+                    "serde_json",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
