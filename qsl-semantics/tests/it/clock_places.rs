@@ -2533,6 +2533,82 @@ fn another_objects_presence_is_a_data_read() {
     );
 }
 
+/// `document` with `Call`'s `peer: Reference<Call>` and `peers:
+/// Sequence<Reference<Call>>[0, 2]`.
+fn with_peers(document: &[u8]) -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(document).expect("JSON");
+    let mut peers = field("peers", &package("Call"));
+    peers["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields");
+    fields.push(field("peer", &package("Call")));
+    fields.push(peers);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-51 (TC-685 step 34), SR-1754001 FND-002 and SR-1754002
+/// FND-001..003: another object's presence is a data predicate of a guard's
+/// convex part. `pre G { present(self.peer.v) }` is one part whose data
+/// reads it, beside the clock constraint in `present(self.peer.v) and
+/// self.x >= 1 ms`; the union case `present(self.peer.state.Armed)` and
+/// `urgent U when { present(self.peer.v) }` check alike, and so does the
+/// quantified `forall(c in self.peers: present(c.v))`. In a postcondition,
+/// which this slice does not read it in, it refuses
+/// `unsupported_construct`/`not-yet-implemented` at the read, never as a
+/// type mismatch.
+#[trace("TC-685")]
+#[test]
+fn another_objects_presence_is_a_guard_data_predicate() {
+    let document = with_peers(&option_clock_document());
+    for (guard, clocks) in [
+        ("present(self.peer.v)", 0),
+        ("present(self.peer.v) and self.x >= 1 ms", 1),
+        ("forall(c in self.peers : present(c.v))", 0),
+    ] {
+        let graph = check(
+            &document,
+            &format!("{UNITS}{DENSE}pre G using v on Config::Call::bump {{ {guard} }}\n"),
+        )
+        .unwrap_or_else(|refusals| panic!("{guard}: {refusals:?}"));
+        let model = timed(&graph);
+        let [guarded] = model.guards() else {
+            panic!("{guard}: one guard");
+        };
+        let [part] = guarded.parts() else {
+            panic!("{guard}: one part");
+        };
+        assert!(part.data().is_some(), "{guard}");
+        assert!(part.presences().is_empty(), "{guard}");
+        assert_eq!(part.clocks().len(), clocks, "{guard}");
+    }
+    check(
+        &document,
+        &format!("{UNITS}{DENSE}urgent U when {{ present(self.peer.v) }};\n"),
+    )
+    .unwrap_or_else(|refusals| panic!("urgency: {refusals:?}"));
+    let union = with_peers(&union_clock_document_with(false));
+    check(
+        &union,
+        &format!(
+            "{UNITS}{DENSE}time invariant A when {{ present(self.peer.state.Armed) }} {{ self.x <= 5 ms }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("a union case: {refusals:?}"));
+    let (cause, text) = refused(
+        &document,
+        &format!("{UNITS}{DENSE}post Q using v on Config::Call::bump {{ present(self.peer.v) }}\n"),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::UnsupportedConstruct,
+            "not-yet-implemented",
+            "present(self.peer.v)"
+        )
+    );
+}
+
 /// QSpec FR-415-AC-21, the vectors FP-11 and FP-12 (TC-685): a
 /// postcondition that requires `present(p)` of a place it does not write,
 /// where the operation's precondition establishes `p` absent, has no

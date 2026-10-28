@@ -1381,6 +1381,10 @@ struct Located<'f> {
     /// `Option<Clock>` place (`present(p)`, `p = absent`, `p != absent`):
     /// a data read of its presence, never a clock read.
     presence_first: Vec<bool>,
+    /// Whether every read under each node is `present(r.f)` of another
+    /// object's place: a data predicate of the guard's convex part,
+    /// typed through the place identity (FR-230-AC-51), never a clock read.
+    data_presence: Vec<bool>,
 }
 
 impl<'f> Located<'f> {
@@ -1404,6 +1408,7 @@ impl<'f> Located<'f> {
         let mut option = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut presence_first = vec![false; form.expression.len()];
+        let mut data_presence = vec![false; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
             for child in node.node().children() {
@@ -1432,12 +1437,17 @@ impl<'f> Located<'f> {
             };
             // `present(r.f)` of another object's place is a data read of its
             // presence, the typer's place presence: it reads no clock
-            // (FR-230 "Presence is derived", QSpec FR-322-AC-155).
+            // (FR-230 "Presence is derived", QSpec FR-322-AC-155). It is
+            // located like a presence read, so a clause that cannot take it
+            // as a data predicate refuses it at the read.
             if let ExprNode::Present(operand) = node.node() {
                 if foreign_place(*operand)
                     && option.get(operand.index()).copied().flatten().is_none()
                     && clocks.option(form, *operand, context).is_none()
                 {
+                    first[id.index()] = spans.get(id.index()).copied();
+                    presence_first[id.index()] = true;
+                    data_presence[id.index()] = true;
                     continue;
                 }
             }
@@ -1496,7 +1506,10 @@ impl<'f> Located<'f> {
             // traversal's binder (`e.n`, `e.x`): a clock or a clock-bearing
             // value is a read no constraint takes; a data part reads none.
             if let Some(path) = element_path(form, id, &parents) {
-                if clocks.reaches(&path, context) {
+                // A clock field of an object an element of a reference
+                // collection names (`c.v` of `c in self.peers`) is another
+                // object's place, as through any other path.
+                if clocks.reaches(&path, context) || clocks.foreign(form, id, context, &parents) {
                     first[id.index()] = spans.get(id.index()).copied();
                 }
                 continue;
@@ -1550,6 +1563,12 @@ impl<'f> Located<'f> {
                 first[id.index()] = first.get(child.index()).copied().flatten();
                 presence_first[id.index()] =
                     presence_first.get(child.index()).copied().unwrap_or(false);
+                data_presence[id.index()] = node
+                    .node()
+                    .children()
+                    .into_iter()
+                    .filter(|child| first.get(child.index()).copied().flatten().is_some())
+                    .all(|child| data_presence.get(child.index()).copied().unwrap_or(false));
             }
         }
         Some(Self {
@@ -1568,7 +1587,14 @@ impl<'f> Located<'f> {
             parameters,
             first,
             presence_first,
+            data_presence,
         })
+    }
+
+    /// Whether every read under `id` is `present(r.f)` of another object's
+    /// place: a data predicate, read through the place identity.
+    fn data_presence(&self, id: ExprId) -> bool {
+        self.data_presence.get(id.index()).copied().unwrap_or(false)
     }
 
     /// Whether `clock` is an `Option<Clock>` place.
@@ -1864,7 +1890,14 @@ fn guard(
         if quantified.contains(&id) {
             continue;
         }
-        let (pos, neg) = if !located.reads_clock(id) {
+        // A data predicate whose only reads are another object's presences
+        // is a data literal of the part, and leaves the clause the data
+        // reading takes (FR-230-AC-51).
+        let presence = located.data_presence(id);
+        if presence {
+            atoms.insert(id);
+        }
+        let (pos, neg) = if !located.reads_clock(id) || presence {
             (
                 vec![(vec![(DataLiteral::Site(id), true)], Vec::new())],
                 vec![(vec![(DataLiteral::Site(id), false)], Vec::new())],
@@ -2204,6 +2237,11 @@ fn resets(
     for conjunct in conjuncts(located) {
         if !located.reads_clock(conjunct) {
             continue;
+        }
+        // Another object's presence in a postcondition is a reading of the
+        // post-state this slice does not take.
+        if located.data_presence(conjunct) {
+            return Err(located.outside(conjunct));
         }
         // `present(self.v)`, `self.v != absent` or `not present(self.v)`: a
         // requirement on the post-state's presence, read as a data

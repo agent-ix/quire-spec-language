@@ -4664,7 +4664,11 @@ fn present_reads_the_bit_in_invariants_bounds_and_urgency() {
 /// `peer`, `present(self.peer.v)` reads the presence bit of the referenced
 /// object's `v` as data. `time invariant P when { present(self.peer.v) } {
 /// self.x <= 5 ms }` bounds an object's `x` exactly where its peer's `v` is
-/// present, in each of the four initial states.
+/// present, in each of the four initial states; `urgent Due when {
+/// present(self.peer.v) }` makes a state urgent exactly where some peer's
+/// `v` is present (SR-1754002 FND-003), and the guard `pre G {
+/// present(self.peer.v) }` enables an object's `work` exactly where its
+/// peer's `v` is present (SR-1754001 FND-002).
 #[trace("TC-685")]
 #[test]
 fn another_objects_presence_reads_its_bit() {
@@ -4684,7 +4688,9 @@ fn another_objects_presence_reads_its_bit() {
         "",
         &only(
             &["work"],
-            "time invariant P when { present(self.peer.v) } { self.x <= 5 ms }\n",
+            "time invariant P when { present(self.peer.v) } { self.x <= 5 ms }\n\
+             urgent Due when { present(self.peer.v) };\n\
+             pre G using v on M::Call::work { present(self.peer.v) }\n",
         ),
         json!([object("c1", "c2"), object("c2", "c1")]),
     );
@@ -4718,6 +4724,20 @@ fn another_objects_presence_reads_its_bit() {
             .collect();
         expected.sort();
         assert_eq!(bounded, expected);
+        assert_eq!(
+            timed.is_urgent(state.discrete()).expect("decided"),
+            !expected.is_empty()
+        );
+        let mut working: Vec<String> = timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(step, _)| step.receiver().object().as_str().to_owned())
+            .collect();
+        working.sort();
+        working.dedup();
+        assert_eq!(working, expected);
         seen.push(bounded);
     }
     seen.sort();
