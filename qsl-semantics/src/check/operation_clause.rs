@@ -66,6 +66,7 @@ impl OperationClauseDeclaration {
             context_population: None,
             frame_population: None,
             binders: &[],
+            presence_places: &[],
             body: &self.clause.expression,
         }
     }

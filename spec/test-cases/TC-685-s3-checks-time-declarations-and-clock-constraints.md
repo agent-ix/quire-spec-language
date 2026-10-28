@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-51. Every unit of steps 1 to 7 and 10 to 34 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
+Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-53. Every unit of steps 1 to 7 and 10 to 36 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
 
 ## Test Procedure
 
@@ -54,6 +54,8 @@ For each input in steps 1 to 5, read its S2 forms before the S3 check. Assert th
 32. Check the initial element counts of FR-230-AC-46 to FR-230-AC-48: the ranges, the set cap, the Map exclusion and the unbounded `u`.
 33. Check the template place of FR-230-AC-49 and the guards of FR-230-AC-50 against the vectors QSpec FR-322-AC-148 to FR-322-AC-150 name: the slot selector, one node for all instances, the slot components of the place ids, and the empty or refused guards.
 34. Check the derived presence of FR-230-AC-51: `present(other.v)`, `present(self.q[i])` and `present(e)` in a `forall` and an `exists` body over two objects, with no member added to any declaration and the refusals of QSpec FR-322-AC-156.
+35. Step each vector `FP-01`..`FP-14` of QSpec's `clock-presence-frame-vectors.json` (FR-230-AC-52): `v: Option<Clock>` or `st: Mode` in `work`'s frame, the vector's pre-state, its requirement and its write as `work`'s postcondition, and for `FP-11` and `FP-12` a precondition `not present(..)` establishing the place absent; then compare each vector's result with its twin's.
+36. Emit and read back the urgency of FR-230-AC-53: an `urgent when` over a data predicate and an `urgent O`, then an `urgent when` reading a clock presence.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -93,3 +95,5 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 32: the ranges and three initial states for `s`, the snapshot count for `r` (AC-46); `[0, 1]` for every set with no data part, `NoInitialState` for `Set<Clock>[2, 5]` and `Map` taken from the snapshot (AC-47); `incomplete`/`limit-reached` on `max_clocks` for `u` with no `RequiresBound` (AC-48).
 - Step 33: one `clock_place` node with a symbolic selector and no index for the three places (AC-49), place ids of slots 0 and 1 that differ only in the last `<slots>` component, `TimedModelNotEmitted` for a model with a guard not yet written and empty aggregates for a model with none (AC-50).
 - Step 34: each presence is a `Boolean` data predicate of the named owner and slot (the second object's `v` independent of the first's), `forall` true and `exists` false on an empty `q`, no `Option<Boolean>` or other member declared, and the model declaration keys unchanged by `v` (AC-51); a wrong slot count or owner type refused.
+- Step 35: each vector's successors are its `expected` (presence and clock), `FP-11` and `FP-12` refuse `invalid_timed_model`/`clock-presence-unwritten`, and the pairs `FP-05`/`FP-06` and `FP-13`/`FP-14` differ while every other pair agrees (AC-52).
+- Step 36: two `urgency` nodes in declared order, each located at its declaration, the `when` one referencing the located expression node of its predicate with `self` a level-0 `parameter`, the `operation` one naming the model node and `attemptUpdate`, both read back by I2; the presence urgency refused `TimedModelNotEmitted` (AC-53).

@@ -597,9 +597,12 @@ impl CheckedRefinement {
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
         let local = |key: NodeKey| RefinementKey::Local(v2_node_id(key));
+        // A leaf's typed V2 term: its canonical bytes, read back as the
+        // term they spell.
         let term = |leaf: &crate::check::node_key::LeafTerm| {
-            serde_json::to_value(leaf)
-                .and_then(serde_json::from_value::<quire_contract_model::CheckedTerm>)
+            let bytes = quire_canonical::to_vec(leaf, quire_canonical::Limits::new(u64::MAX))
+                .map_err(RefinementV2EncodingError::Term)?;
+            serde_json::from_slice::<quire_contract_model::CheckedTerm>(&bytes)
                 .map_err(RefinementV2EncodingError::Body)
         };
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
@@ -815,11 +818,10 @@ impl CheckedRefinement {
         semantic_type: NodeKey,
         body: &quire_contract_model::CheckedTerm,
     ) -> Result<NodeKey, RefinementV2EncodingError> {
-        let preimage = serde_json::json!({
-            "version": "quire.refinement-node/v1",
-            "semantic_type": v2_node_id(semantic_type),
-            "body": serde_json::to_value(body).map_err(RefinementV2EncodingError::Body)?,
-        });
+        let preimage = RefinementPreimage {
+            semantic_type: v2_node_id(semantic_type),
+            body,
+        };
         let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
             .map_err(RefinementV2EncodingError::Identity)?;
         Ok(NodeKey::from_digest(*digest.as_bytes()))
@@ -937,6 +939,30 @@ pub struct RefinementV2Emission {
     pub proof_eligible: bool,
 }
 
+/// QSpec FR-375's relation-node identity preimage,
+/// `{version, semantic_type, body}`, pushed straight into the canonical
+/// encoder: the body encodes itself from an explicit stack.
+struct RefinementPreimage<'a> {
+    semantic_type: quire_contract_model::CheckedNodeId,
+    body: &'a quire_contract_model::CheckedTerm,
+}
+
+impl quire_canonical::Encode for RefinementPreimage<'_> {
+    fn encode_into<S: quire_canonical::Sink + ?Sized>(
+        &self,
+        writer: &mut quire_canonical::Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        writer.begin_object()?;
+        writer.name("version")?;
+        writer.string("quire.refinement-node/v1")?;
+        writer.name("semantic_type")?;
+        writer.serialize(&self.semantic_type)?;
+        writer.name("body")?;
+        self.body.encode_into(writer)?;
+        writer.end_object()
+    }
+}
+
 /// A refinement's checked V2 body could not be constructed.
 #[derive(Debug)]
 pub enum RefinementV2EncodingError {
@@ -944,8 +970,10 @@ pub enum RefinementV2EncodingError {
     MissingSubject,
     /// The authored rows are not lowered to node keys.
     MissingRows,
-    /// The FR-375 body did not serialize for its identity preimage.
+    /// A row term's canonical bytes did not read back as a V2 term.
     Body(serde_json::Error),
+    /// A row term could not be canonically encoded.
+    Term(quire_canonical::Error),
     /// The FR-375 identity preimage could not be canonically encoded.
     Identity(quire_canonical::Error),
 }

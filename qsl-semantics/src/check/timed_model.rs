@@ -34,7 +34,7 @@ use qsl_forms::{
 };
 use qsl_foundation::Span;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{EffectiveId, Rational, ValueType};
+use quire_exact::{EffectiveId, NodeKey, Rational, ValueType};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 pub use self::collection_write::{CollectionWrite, Written};
@@ -304,9 +304,21 @@ pub struct CheckedTimedPredicate {
     parameters: Vec<(String, ValueType)>,
     body: CheckedBody,
     slots: usize,
+    /// Each slot's binder name, for the parameter nodes lowering writes.
+    slot_names: Vec<String>,
 }
 
 impl CheckedTimedPredicate {
+    /// The checked body.
+    pub(crate) fn checked_body(&self) -> &CheckedBody {
+        &self.body
+    }
+
+    /// Each slot's binder name.
+    pub(crate) fn slot_names(&self) -> &[String] {
+        &self.slot_names
+    }
+
     /// The slots the body is checked over, in order: `self`, then the
     /// operation's parameters for a guard part.
     pub fn parameters(&self) -> &[(String, ValueType)] {
@@ -629,6 +641,91 @@ pub struct TimeInvariant {
     bounds: Vec<ClockConstraint>,
 }
 
+/// A guarded clock place `present(r.f)` may name on an object `r` other
+/// than the receiver (FR-230 "Presence is derived"): the object type
+/// declaring the field, the field's name and the union case whose payload
+/// is the place (`None` for an `Option<Clock>`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PresencePlace {
+    pub(crate) owner: EffectiveId,
+    pub(crate) field: String,
+    pub(crate) case: Option<String>,
+    /// Whether the place is the element of a `Sequence<Option<Clock>>`
+    /// field, whose presences `forall(e in r.f: present(e))` reads.
+    pub(crate) slot: bool,
+}
+
+/// `forall(e in c: present(e))` or `exists(e in c: present(e))` at
+/// `query`: whether it is `forall`, its collection operand and its binder.
+pub(crate) fn slot_presence_query(query: qsl_forms::ExprRef<'_>) -> Option<(bool, ExprId, &str)> {
+    let ExprNode::Query {
+        query: kind,
+        binder,
+        source,
+        body,
+    } = query.node()
+    else {
+        return None;
+    };
+    let all = match kind {
+        qsl_forms::BinderQuery::Forall => true,
+        qsl_forms::BinderQuery::Exists => false,
+        _ => return None,
+    };
+    let ExprNode::Present(operand) = query.at(*body).node() else {
+        return None;
+    };
+    let ExprNode::Name(name) = query.at(*operand).node() else {
+        return None;
+    };
+    (name.segments.len() == 1 && name.name == *binder).then_some((all, *source, binder.as_str()))
+}
+
+/// Whether a place with a presence bit at `path` is one the timed
+/// system holds the bit of: an `Option<Clock>` field, or an element of a
+/// `Sequence<Option<Clock>>` field with a declared maximum, one bit for each
+/// slot (FR-230 "Presence bit", FR-230-AC-41/42).
+fn bit_path(path: &[PlaceStep]) -> bool {
+    match path {
+        [PlaceStep::Field(_)] => true,
+        [PlaceStep::Field(_), PlaceStep::Slot(shape)] => {
+            shape.ordered && !shape.unique && shape.max.is_some()
+        }
+        _ => false,
+    }
+}
+
+/// The guarded places of `clocks` a predicate names `r.f` or `r.f.c`:
+/// an `Option<Clock>` field of the object, or a clock case of its union
+/// field.
+fn presence_places(clocks: &[ClockField]) -> Vec<PresencePlace> {
+    clocks
+        .iter()
+        .filter(|clock| clock.guarded)
+        .filter_map(|clock| match clock.path.as_slice() {
+            [PlaceStep::Field(field)] => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: None,
+                slot: false,
+            }),
+            [PlaceStep::Field(field), PlaceStep::Union(case)] => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: Some(case.clone()),
+                slot: false,
+            }),
+            [PlaceStep::Field(field), PlaceStep::Slot(_)] if clock.bit => Some(PresencePlace {
+                owner: clock.owner,
+                field: field.clone(),
+                case: None,
+                slot: true,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 /// One disjunct of a state predicate that reads the presence of
 /// `Option<Clock>` places (FR-230 "Presence bit"): the presences it
 /// requires of `self`'s places and its data predicate. The predicate holds
@@ -684,6 +781,8 @@ pub enum Urgency {
     When {
         /// The declared name.
         name: String,
+        /// The declaration's span.
+        span: Span,
         /// The object type `self` ranges over.
         context: EffectiveId,
         /// The predicate's alternatives ([`TimeInvariant::alternatives`]).
@@ -693,9 +792,44 @@ pub enum Urgency {
     Operation {
         /// The declared name.
         name: String,
+        /// The declaration's span.
+        span: Span,
         /// The operation's declaration key.
         operation: DeclarationKey,
+        /// The operation's declared name, which the `urgency` node writes
+        /// (QSpec FR-322 "Timed-model nodes").
+        operation_name: String,
     },
+}
+
+impl Urgency {
+    /// The declaration's span.
+    pub fn span(&self) -> Span {
+        match self {
+            Self::When { span, .. } | Self::Operation { span, .. } => *span,
+        }
+    }
+}
+
+/// The `urgent when` predicate S3 lowers to a checked expression node
+/// (QSpec FR-322 "Timed-model nodes": an `urgency` of kind `when` references
+/// its data predicate): one alternative that reads no clock presence,
+/// typed at its own site so that its nodes are located.
+#[derive(Debug)]
+pub(crate) struct UrgencyPredicate {
+    /// The site the predicate was typed at ([`urgency_site`]).
+    pub(crate) site: String,
+    /// The predicate's source spans, which locate the site.
+    pub(crate) spans: qsl_forms::ExpressionSpans,
+    /// The predicate's expression node, once lowered.
+    pub(crate) node: Option<NodeKey>,
+}
+
+/// The `Origin::TypeDeclaration` name of the `urgent when` predicate at
+/// `index` among the urgency declarations of the timed model `model`.
+/// Spaced, so it names no declared type.
+pub(crate) fn urgency_site(model: &str, index: usize) -> String {
+    format!("urgency {model} {index}")
 }
 
 /// FR-230's checked `TimedModel`, for one dense time source: the model's
@@ -717,6 +851,9 @@ pub struct TimedModel {
     resets: Vec<ClockResets>,
     invariants: Vec<TimeInvariant>,
     urgency: Vec<Urgency>,
+    /// Beside `urgency`: the lowered predicate of each `urgent when` S3
+    /// writes, `None` for one it does not write yet and for `urgent O`.
+    urgency_predicates: Vec<Option<UrgencyPredicate>>,
 }
 
 impl TimedModel {
@@ -786,16 +923,49 @@ impl TimedModel {
     }
 
     /// Whether the model has a member no S4 emission writes yet: a guard,
-    /// reset, time invariant, urgency or `Clock` parameter. Its clock
-    /// places alone are written as `clock_place` templates (QSpec FR-322
-    /// "Timed-model nodes"); a model with a guard is refused rather than
-    /// written with an empty `guards` aggregate (FR-230-AC-50).
+    /// reset, time invariant, `Clock` parameter, or an `urgent when` whose
+    /// predicate S3 has not lowered (one reading a clock presence). Its
+    /// clock places are written as `clock_place` templates and its urgency
+    /// as `urgency` nodes (QSpec FR-322 "Timed-model nodes"); a model with
+    /// a guard is refused rather than written with an empty `guards`
+    /// aggregate (FR-230-AC-50).
     pub fn has_unwritten_members(&self) -> bool {
         !self.guards.is_empty()
             || !self.resets.is_empty()
             || !self.invariants.is_empty()
-            || !self.urgency.is_empty()
             || !self.clock_parameters.is_empty()
+            || self
+                .urgency
+                .iter()
+                .zip(&self.urgency_predicates)
+                .any(|(urgency, predicate)| {
+                    matches!(urgency, Urgency::When { .. }) && predicate.is_none()
+                })
+    }
+
+    /// The expression node of the urgency at `index`'s `when` predicate,
+    /// once S3 lowered it.
+    pub fn urgency_predicate_node(&self, index: usize) -> Option<NodeKey> {
+        self.urgency_predicates
+            .get(index)
+            .and_then(Option::as_ref)
+            .and_then(|predicate| predicate.node)
+    }
+
+    /// Each `urgent when` predicate S3 writes, with its index among
+    /// [`Self::urgency`].
+    pub(crate) fn urgency_predicates_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (usize, &Urgency, &mut UrgencyPredicate)> {
+        self.urgency
+            .iter()
+            .zip(self.urgency_predicates.iter_mut())
+            .enumerate()
+            .filter_map(|(index, (urgency, predicate))| {
+                predicate
+                    .as_mut()
+                    .map(|predicate| (index, urgency, predicate))
+            })
     }
 }
 
@@ -833,11 +1003,14 @@ struct PredicateDraft {
 enum UrgencyDraft {
     When {
         name: String,
+        span: Span,
         alternatives: Vec<AlternativeDraft>,
     },
     Operation {
         name: String,
+        span: Span,
         operation: DeclarationKey,
+        operation_name: String,
     },
 }
 
@@ -999,6 +1172,88 @@ impl Clocks<'_> {
                     && self.model.conforms(context, clock.owner)
             })
             .map(ClockId)
+    }
+
+    /// The collection operand of `id` of `form` when it is `forall(e in
+    /// r.q: present(e))` or `exists(e in r.q: present(e))`, `q` a
+    /// `Sequence<Option<Clock>>` field of some object type of the model.
+    fn slot_presences(&self, form: &ExpressionForm, id: ExprId) -> Option<ExprId> {
+        slot_presence_query(form.expression.at(id))
+            .and_then(|(_, source, _)| self.bit_slots(form, source).then_some(source))
+    }
+
+    /// Whether `source` of `form` is `r.q`, `q` a `Sequence<Option<Clock>>`
+    /// field of some object type of the model.
+    fn bit_slots(&self, form: &ExpressionForm, source: ExprId) -> bool {
+        let Some(ExprNode::Field { field, .. }) =
+            form.expression.get(source).map(|node| node.node())
+        else {
+            return false;
+        };
+        self.fields.iter().any(|clock| {
+            clock.bit
+                && matches!(clock.path.as_slice(),
+                    [PlaceStep::Field(name), PlaceStep::Slot(_)] if name == field)
+        })
+    }
+
+    /// Whether `id` of `form` is `forall(e in r.q: B)` or `exists(..)`
+    /// over a `Sequence<Option<Clock>>` whose body `B` reads `present(e)`
+    /// other than as the whole body: a presence read of the elements this
+    /// slice does not read yet (SR-1763001 FND-003).
+    fn slot_presence_body(&self, form: &ExpressionForm, id: ExprId) -> bool {
+        let Some(ExprNode::Query {
+            query: qsl_forms::BinderQuery::Forall | qsl_forms::BinderQuery::Exists,
+            binder,
+            source,
+            body,
+        }) = form.expression.get(id).map(|node| node.node())
+        else {
+            return false;
+        };
+        if !self.bit_slots(form, *source) {
+            return false;
+        }
+        let mut pending = vec![*body];
+        while let Some(at) = pending.pop() {
+            let Some(node) = form.expression.get(at).map(|node| node.node()) else {
+                continue;
+            };
+            if let ExprNode::Present(operand) = node {
+                if matches!(form.expression.get(*operand).map(|node| node.node()),
+                    Some(ExprNode::Name(name)) if name.segments.len() == 1 && name.name == *binder)
+                {
+                    return true;
+                }
+            }
+            pending.extend(node.children());
+        }
+        false
+    }
+
+    /// Whether `id` of `form` is `r.f`, `f` an `Option<Clock>` field, or
+    /// `r.f.c`, `c` a clock case of the union field `f`, of some object
+    /// type of the model.
+    fn names_guarded(&self, form: &ExpressionForm, id: ExprId) -> bool {
+        let Some(ExprNode::Field { operand, field }) =
+            form.expression.get(id).map(|node| node.node())
+        else {
+            return false;
+        };
+        let union = match form.expression.get(*operand).map(|node| node.node()) {
+            Some(ExprNode::Field { field: union, .. }) => Some(union),
+            _ => None,
+        };
+        self.fields.iter().any(|clock| {
+            clock.guarded
+                && match clock.path.as_slice() {
+                    [PlaceStep::Field(name)] => name == field,
+                    [PlaceStep::Field(name), PlaceStep::Union(case)] => {
+                        case == field && union == Some(name)
+                    }
+                    _ => false,
+                }
+        })
     }
 
     /// Whether the path `self.f…` at `id` of `form` is a value holding clock
@@ -1322,6 +1577,13 @@ struct Located<'f> {
     /// `Option<Clock>` place (`present(p)`, `p = absent`, `p != absent`):
     /// a data read of its presence, never a clock read.
     presence_first: Vec<bool>,
+    /// Whether every read under each node is `present(r.f)` of another
+    /// object's place: a data predicate of the guard's convex part,
+    /// typed through the place identity (FR-230-AC-51), never a clock read.
+    data_presence: Vec<bool>,
+    /// For each node of a quantifier [`Clocks::slot_presence_body`]
+    /// accepts, the quantifier included: the quantifier.
+    unread: Vec<Option<ExprId>>,
 }
 
 impl<'f> Located<'f> {
@@ -1345,6 +1607,8 @@ impl<'f> Located<'f> {
         let mut option = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut presence_first = vec![false; form.expression.len()];
+        let mut data_presence = vec![false; form.expression.len()];
+        let mut unread = vec![None; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
             for child in node.node().children() {
@@ -1357,22 +1621,62 @@ impl<'f> Located<'f> {
         // parent is reached.
         for node in form.expression.iter() {
             let id = node.id();
+            // Another object's guarded place: a field read already taken
+            // as a clock read, named like an `Option<Clock>` field or a
+            // clock case of a union field.
+            let foreign_place = |operand: ExprId| {
+                first.get(operand.index()).copied().flatten().is_some()
+                    && clocks.names_guarded(form, operand)
+            };
             // A presence read of an `Option<Clock>` place, of `self` or of
-            // another object: a data read of its presence (FR-230
-            // "Presence bit"). Another object's place is a field read
-            // already taken as a clock read, named like an `Option<Clock>`
-            // field.
+            // another object (FR-230 "Presence bit").
             let option_place = |operand: ExprId| {
                 option.get(operand.index()).copied().flatten().is_some()
                     || clocks.option(form, operand, context).is_some()
-                    || (first.get(operand.index()).copied().flatten().is_some()
-                        && matches!(
-                            form.expression.get(operand).map(|node| node.node()),
-                            Some(ExprNode::Field { field, .. })
-                                if clocks.fields.iter().any(|clock| clock.bit
-                                    && clock.path == [PlaceStep::Field(field.clone())])
-                        ))
+                    || foreign_place(operand)
             };
+            // `forall(e in r.q: present(e))` / `exists(..)` over a
+            // `Sequence<Option<Clock>>`: a data read of its elements'
+            // presences, never a clock read (QSpec FR-415-AC-20, STD-526
+            // PR-03).
+            if clocks.slot_presences(form, id).is_some() {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                data_presence[id.index()] = true;
+                continue;
+            }
+            // Any other body reading `present(e)` of such an element: a
+            // presence read this slice does not read yet.
+            if clocks.slot_presence_body(form, id) {
+                first[id.index()] = spans.get(id.index()).copied();
+                presence_first[id.index()] = true;
+                let mut pending = vec![id];
+                while let Some(at) = pending.pop() {
+                    if let Some(slot) = unread.get_mut(at.index()) {
+                        *slot = Some(id);
+                    }
+                    if let Some(node) = form.expression.get(at) {
+                        pending.extend(node.node().children());
+                    }
+                }
+                continue;
+            }
+            // `present(r.f)` of another object's place is a data read of its
+            // presence, the typer's place presence: it reads no clock
+            // (FR-230 "Presence is derived", QSpec FR-322-AC-155). It is
+            // located like a presence read, so a clause that cannot take it
+            // as a data predicate refuses it at the read.
+            if let ExprNode::Present(operand) = node.node() {
+                if foreign_place(*operand)
+                    && option.get(operand.index()).copied().flatten().is_none()
+                    && clocks.option(form, *operand, context).is_none()
+                {
+                    first[id.index()] = spans.get(id.index()).copied();
+                    presence_first[id.index()] = true;
+                    data_presence[id.index()] = true;
+                    continue;
+                }
+            }
             let presence = match node.node() {
                 ExprNode::Present(operand) => option_place(*operand),
                 ExprNode::Binary {
@@ -1428,7 +1732,10 @@ impl<'f> Located<'f> {
             // traversal's binder (`e.n`, `e.x`): a clock or a clock-bearing
             // value is a read no constraint takes; a data part reads none.
             if let Some(path) = element_path(form, id, &parents) {
-                if clocks.reaches(&path, context) {
+                // A clock field of an object an element of a reference
+                // collection names (`c.v` of `c in self.peers`) is another
+                // object's place, as through any other path.
+                if clocks.reaches(&path, context) || clocks.foreign(form, id, context, &parents) {
                     first[id.index()] = spans.get(id.index()).copied();
                 }
                 continue;
@@ -1482,6 +1789,12 @@ impl<'f> Located<'f> {
                 first[id.index()] = first.get(child.index()).copied().flatten();
                 presence_first[id.index()] =
                     presence_first.get(child.index()).copied().unwrap_or(false);
+                data_presence[id.index()] = node
+                    .node()
+                    .children()
+                    .into_iter()
+                    .filter(|child| first.get(child.index()).copied().flatten().is_some())
+                    .all(|child| data_presence.get(child.index()).copied().unwrap_or(false));
             }
         }
         Some(Self {
@@ -1500,7 +1813,22 @@ impl<'f> Located<'f> {
             parameters,
             first,
             presence_first,
+            data_presence,
+            unread,
         })
+    }
+
+    /// The quantifier over a `Sequence<Option<Clock>>` holding `id` whose
+    /// body reads its elements' presences in a form this slice does not
+    /// read yet (SR-1763001 FND-003).
+    fn unread(&self, id: ExprId) -> Option<ExprId> {
+        self.unread.get(id.index()).copied().flatten()
+    }
+
+    /// Whether every read under `id` is `present(r.f)` of another object's
+    /// place: a data predicate, read through the place identity.
+    fn data_presence(&self, id: ExprId) -> bool {
+        self.data_presence.get(id.index()).copied().unwrap_or(false)
     }
 
     /// Whether `clock` is an `Option<Clock>` place.
@@ -1793,10 +2121,20 @@ fn guard(
     let quantified = quantified::bodies(located, clocks, context);
     for node in located.form.expression.iter() {
         let id = node.id();
+        if let Some(query) = located.unread(id) {
+            return Err(timed(located.outside(query)));
+        }
         if quantified.contains(&id) {
             continue;
         }
-        let (pos, neg) = if !located.reads_clock(id) {
+        // A data predicate whose only reads are another object's presences
+        // is a data literal of the part, and leaves the clause the data
+        // reading takes (FR-230-AC-51).
+        let presence = located.data_presence(id);
+        if presence {
+            atoms.insert(id);
+        }
+        let (pos, neg) = if !located.reads_clock(id) || presence {
             (
                 vec![(vec![(DataLiteral::Site(id), true)], Vec::new())],
                 vec![(vec![(DataLiteral::Site(id), false)], Vec::new())],
@@ -2135,10 +2473,25 @@ fn resets(
         .iter()
         .flat_map(|operation| operation.declaration.effect().written_fields())
         .collect();
+    // A quantifier reading its elements' presences in a form this slice
+    // does not read: a requirement, never a write (QSpec FR-415-AC-21).
+    if let Some(query) = located
+        .form
+        .expression
+        .iter()
+        .find_map(|node| located.unread(node.id()))
+    {
+        return Err(located.outside(query));
+    }
     let mut cut = ResetCut::default();
     for conjunct in conjuncts(located) {
         if !located.reads_clock(conjunct) {
             continue;
+        }
+        // Another object's presence in a postcondition is a reading of the
+        // post-state this slice does not take.
+        if located.data_presence(conjunct) {
+            return Err(located.outside(conjunct));
         }
         // `present(self.v)`, `self.v != absent` or `not present(self.v)`: a
         // requirement on the post-state's presence, read as a data
@@ -3025,6 +3378,7 @@ fn urgency(
             let (context, population) = state().map_err(timed)?;
             Ok(UrgencyDraft::When {
                 name: form.name.name.clone(),
+                span: form.span,
                 alternatives: state_alternatives(predicate, clocks, context, population, budget)?,
             })
         }
@@ -3045,7 +3399,13 @@ fn urgency(
             }
             Ok(UrgencyDraft::Operation {
                 name: form.name.name.clone(),
+                span: form.span,
                 operation: (*key).clone(),
+                operation_name: operation
+                    .segments
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| operation.name.clone()),
             })
         }
     }
@@ -3143,9 +3503,11 @@ fn prepare_models(
             Some(source) if matches!(source.source, TimeSourceKind::Dense) => {
                 // A place under an optional member is guarded by a presence
                 // FR-230 does not yet give S3 a reading of (STD-493 item
-                // 17).
+                // 17), except an `Option<Clock>`, a union case and an
+                // element of a bounded `Sequence<Option<Clock>>`, whose
+                // presences are bits or data.
                 if AdmittedModel::clock_places(model).iter().any(|place| {
-                    place.optional && !((place.bit && place.path.len() == 1) || place.case)
+                    place.optional && !((place.bit && bit_path(&place.path)) || place.case)
                 }) {
                     return Err(CheckCause::TimedNotChecked {
                         construct: TimedConstruct::Clock,
@@ -3363,6 +3725,9 @@ pub(crate) struct Checking<'d, 'a> {
     pub(crate) declarations: &'d ClauseDeclarations<'a>,
     pub(crate) state_clauses: &'d [StateClauseDeclaration],
     pub(crate) complete_value: bool,
+    /// The guarded clock places of the model being checked, whose presence
+    /// a predicate reads as data (FR-230 "Presence is derived").
+    pub(crate) presence_places: &'d [PresencePlace],
 }
 
 /// The element type of the collection field `field` of `context`, as the
@@ -3415,27 +3780,35 @@ fn typed(
     checking: &Checking<'_, '_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
 ) -> Result<(CheckedTimedPredicate, u64), CheckRefusal> {
-    let typed = check_clause(
-        view,
-        checking.declarations,
-        &mut cx.reborrow(checking.declarations.scope),
-    )
-    .map_err(|refused| {
-        let span = form
-            .spans
-            .at(&refused.location.path())
-            .or_else(|| form.spans.span(form.spans.root()))
-            .unwrap_or(Span { start: 0, end: 0 });
-        refusal(timed(TemporalCause::TimedPredicate {
-            cause: Box::new(refused.cause),
-            span,
-        }))
-    })?;
+    typed_in(view, form, checking.declarations, cx)
+}
+
+/// [`typed`] against `declarations`.
+fn typed_in(
+    view: &ClauseView<'_>,
+    form: &ExpressionForm,
+    declarations: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+) -> Result<(CheckedTimedPredicate, u64), CheckRefusal> {
+    let typed = check_clause(view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
+        |refused| {
+            let span = form
+                .spans
+                .at(&refused.location.path())
+                .or_else(|| form.spans.span(form.spans.root()))
+                .unwrap_or(Span { start: 0, end: 0 });
+            refusal(timed(TemporalCause::TimedPredicate {
+                cause: Box::new(refused.cause),
+                span,
+            }))
+        },
+    )?;
     Ok((
         CheckedTimedPredicate {
             parameters: typed.parameters,
             body: typed.body,
             slots: typed.slots,
+            slot_names: typed.slot_names,
         },
         typed.nodes_used,
     ))
@@ -3448,10 +3821,26 @@ fn typed_alternative(
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
-    let (predicate, used) = typed(
-        &state_view(&alternative.predicate, checking.complete_value),
+    typed_alternative_in(alternative, checking, checking.declarations, cx, nodes_used)
+}
+
+/// [`typed_alternative`] against `declarations`, whose location roots the
+/// typed predicate's nodes.
+fn typed_alternative_in(
+    alternative: AlternativeDraft,
+    checking: &Checking<'_, '_>,
+    declarations: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+    nodes_used: &mut u64,
+) -> Result<StateAlternative, CheckRefusal> {
+    let (predicate, used) = typed_in(
+        &state_view(
+            &alternative.predicate,
+            checking.complete_value,
+            checking.presence_places,
+        ),
         &alternative.predicate.predicate,
-        checking,
+        declarations,
         cx,
     )?;
     *nodes_used = (*nodes_used).max(used);
@@ -3461,7 +3850,11 @@ fn typed_alternative(
     })
 }
 
-fn state_view<'v>(draft: &'v PredicateDraft, complete_value: bool) -> ClauseView<'v> {
+fn state_view<'v>(
+    draft: &'v PredicateDraft,
+    complete_value: bool,
+    presence_places: &'v [PresencePlace],
+) -> ClauseView<'v> {
     ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value,
@@ -3471,6 +3864,7 @@ fn state_view<'v>(draft: &'v PredicateDraft, complete_value: bool) -> ClauseView
         context_population: draft.population,
         frame_population: None,
         binders: &[],
+        presence_places,
         body: &draft.predicate.expression,
     }
 }
@@ -3516,6 +3910,7 @@ fn check_part(
                 context_population: clause.context_population,
                 frame_population: clause.frame_population,
                 binders: &binders,
+                presence_places: checking.presence_places,
                 body: &form.expression,
             };
             let (predicate, used) = typed(&view, form, checking, cx)?;
@@ -3555,6 +3950,11 @@ pub(crate) fn check(
     let mut nodes_used = checking.declarations.nodes_used;
     let mut models = Vec::with_capacity(drafts.models.len());
     for draft in drafts.models {
+        let places = presence_places(&draft.clocks);
+        let checking = &Checking {
+            presence_places: &places,
+            ..*checking
+        };
         let mut guards = Vec::with_capacity(draft.guards.len());
         for (index, parts) in draft.guards {
             let Some(clause) = checking.state_clauses.get(index) else {
@@ -3602,31 +4002,97 @@ pub(crate) fn check(
             });
         }
         let mut urgency = Vec::with_capacity(draft.urgency.len());
+        let mut urgency_predicates = Vec::with_capacity(draft.urgency.len());
         for declared in draft.urgency {
-            urgency.push(match declared {
-                UrgencyDraft::When { name, alternatives } => {
+            let index = urgency.len();
+            let (declared, predicate) = match declared {
+                UrgencyDraft::When {
+                    name,
+                    span,
+                    alternatives,
+                } => {
                     let Some(context) = alternatives
                         .first()
                         .map(|alternative| alternative.predicate.context)
                     else {
                         continue;
                     };
-                    let alternatives = alternatives
-                        .into_iter()
-                        .map(|alternative| {
-                            typed_alternative(alternative, checking, cx, &mut nodes_used)
+                    // One alternative with no presence: the predicate whole,
+                    // typed at its own site so S3 lowers it located. A
+                    // predicate with a clock presence is not written yet.
+                    let written = match alternatives.as_slice() {
+                        [only] if only.presences.is_empty() => Some(UrgencyPredicate {
+                            site: urgency_site(&draft.model, index),
+                            spans: only.predicate.predicate.spans.clone(),
+                            node: None,
+                        }),
+                        _ => None,
+                    };
+                    let alternatives = match &written {
+                        Some(predicate) => {
+                            let location = quire_semantic_value::location::Location::root(
+                                quire_semantic_value::location::Origin::TypeDeclaration {
+                                    name: predicate.site.clone(),
+                                },
+                            );
+                            let declarations = ClauseDeclarations {
+                                location: &location,
+                                ..checking.declarations.at()
+                            };
+                            alternatives
+                                .into_iter()
+                                .map(|alternative| {
+                                    typed_alternative_in(
+                                        alternative,
+                                        checking,
+                                        &declarations,
+                                        cx,
+                                        &mut nodes_used,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, CheckRefusal>>()?
+                        }
+                        None => alternatives
+                            .into_iter()
+                            .map(|alternative| {
+                                typed_alternative(alternative, checking, cx, &mut nodes_used)
+                            })
+                            .collect::<Result<Vec<_>, CheckRefusal>>()?,
+                    };
+                    // A predicate reading another object's presence has no
+                    // lowered form yet.
+                    let written = written.filter(|_| {
+                        alternatives.iter().all(|alternative| {
+                            !alternative.predicate.checked_body().reads_presence_place()
                         })
-                        .collect::<Result<Vec<_>, CheckRefusal>>()?;
-                    Urgency::When {
+                    });
+                    (
+                        Urgency::When {
+                            name,
+                            span,
+                            context,
+                            alternatives,
+                        },
+                        written,
+                    )
+                }
+                UrgencyDraft::Operation {
+                    name,
+                    span,
+                    operation,
+                    operation_name,
+                } => (
+                    Urgency::Operation {
                         name,
-                        context,
-                        alternatives,
-                    }
-                }
-                UrgencyDraft::Operation { name, operation } => {
-                    Urgency::Operation { name, operation }
-                }
-            });
+                        span,
+                        operation,
+                        operation_name,
+                    },
+                    None,
+                ),
+            };
+            urgency.push(declared);
+            urgency_predicates.push(predicate);
         }
         let mut resets = Vec::with_capacity(draft.resets.len());
         for written in draft.resets {
@@ -3650,6 +4116,7 @@ pub(crate) fn check(
                                     context_population: None,
                                     frame_population: None,
                                     binders: &binders,
+                                    presence_places: checking.presence_places,
                                     body: &form.expression,
                                 };
                                 let (predicate, used) = typed(&view, &form, checking, cx)?;
@@ -3691,6 +4158,7 @@ pub(crate) fn check(
             resets,
             invariants,
             urgency,
+            urgency_predicates,
         });
     }
     Ok((models, nodes_used))

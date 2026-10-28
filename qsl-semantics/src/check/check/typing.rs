@@ -235,6 +235,14 @@ enum Frame<'e, 'r> {
     Unary(Box<UnaryFrame<'r>>),
     /// `e.f`: the field name and the form's location.
     Field(&'e str, Location),
+    /// `present(r.f)` or `present(r.f.c)` of a guarded clock place: the
+    /// field's name, the union case, and the `present` node's location;
+    /// admits the typed owner `r` (FR-230 "Presence is derived").
+    PlacePresence(&'e str, Option<&'e str>, Location),
+    /// `forall(e in r.q: present(e))` (`true`) or `exists(..)` over a
+    /// `Sequence<Option<Clock>>` place: the field, the quantifier and the
+    /// query's location; admits the typed owner `r` (FR-415-AC-20).
+    SlotPresence(&'e str, bool, Location),
     Attribute(Box<AttributeFrame<'e>>),
     Application(Box<ApplicationFrame<'e, 'r>>),
     Record(Box<RecordFrame<'e, 'r>>),
@@ -1192,6 +1200,15 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(operand, None, operand_location)));
             }
             ExprNode::Present(operand) => {
+                // `present(r.f)` / `present(r.f.c)` of a guarded clock
+                // place: its owner `r` is typed, the place is no value.
+                if let Some((owner, field, case, depth)) =
+                    self.place_operand(expression.at(*operand))
+                {
+                    let owner_location = (0..=depth).fold(location.clone(), |at, _| at.child(0));
+                    frames.push(Frame::PlacePresence(field, case, location));
+                    return Ok(Step::Descend(Goal::Infer(owner, None, owner_location)));
+                }
                 let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Present, goal, location, frames));
             }
@@ -1356,6 +1373,14 @@ impl<'a> Typer<'a> {
                 source,
                 body,
             } => {
+                // `forall(e in r.q: present(e))` over a
+                // `Sequence<Option<Clock>>` place: its owner is typed, the
+                // place is no value (QSpec FR-415-AC-20).
+                if let Some((owner, field, all)) = self.slot_presence_operand(expression) {
+                    let owner_location = location.child(0).child(0);
+                    frames.push(Frame::SlotPresence(field, all, location));
+                    return Ok(Step::Descend(Goal::Infer(owner, None, owner_location)));
+                }
                 let source_location = location.child(0);
                 // FR-391: a quantifier ranges over a named population.
                 let domain = match query {
@@ -2054,6 +2079,12 @@ impl<'a> Typer<'a> {
                     .map(Step::Typed)
             }
             Frame::Field(field, location) => self.field(typed, field, &location).map(Step::Typed),
+            Frame::SlotPresence(field, all, location) => self
+                .slot_presence(typed, field, all, &location)
+                .map(Step::Typed),
+            Frame::PlacePresence(field, case, location) => self
+                .place_presence(typed, field, case, &location)
+                .map(Step::Typed),
             Frame::Reaches(frame) => {
                 let ReachesFrame {
                     edge,

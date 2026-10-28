@@ -353,7 +353,30 @@ ill-formed use.
   case, or the removal of the slot) sets the presence false and leaves the dropped
   clock **unconstrained**: no zone constraint, time invariant bound or elapse
   applies to it, it has no valuation, and a later write that makes it present
-  resets it afresh. "Every present clock is 0 in every initial state" (QSpec
+  resets it afresh. **No implicit reset** (QSpec FR-415-AC-21): a place
+  SHALL become present only by a write of its clock (a reset, an `Option`
+  write, a clock case constructor, or a reset of a `Clock` parameter for the
+  instance that binds it to the place). An `Option<Clock>` bit SHALL NOT
+  change unwritten, and an element a frame adds to a `Sequence<Option<Clock>>`
+  unwritten is absent; a union value MAY leave its clock case unwritten (the
+  clock is dropped) but SHALL NOT enter one. A presence requirement in a
+  postcondition (`present(p)`, `not present(p)`) is a constraint on the
+  successor, never a write. `present(p)` of a place absent in the
+  predecessor that nothing writes leaves no successor, for an `Option<Clock>`
+  place and a union case alike. Where the operation's precondition or an
+  invariant establishes the place absent and the postcondition requires it
+  present without a write, the requirement is decided statically: the
+  checker SHALL refuse `invalid_timed_model`/`clock-presence-unwritten` at
+  the `present(p)` requirement, whose span names the place `p`. This slice
+  decides the precondition case; a state invariant that reads a clock
+  presence refuses `unsupported_construct`/`not-yet-implemented` at the read
+  first, so the invariant case is not reached yet. For absence the two forms
+  split as QSpec FR-415 "The same rule for absence" states: `not
+  present(self.v)` of a present, unwritten `v` has no successor, since an
+  `Option<Clock>` bit does not change unwritten, while `not
+  present(self.st.Armed)` of an `Armed` `st` has the successor in which `st`
+  is a clockless case (`Idle`) and the clock is dropped.
+  "Every present clock is 0 in every initial state" (QSpec
   FR-415, FR-231, FR-239's zero valuation) therefore reads over the present
   clocks only. **State-key form.** A presence bit SHALL be held only for a **live** guarded
   place that has **no snapshot member**: an `Option<Clock>` (as a field, a
@@ -439,6 +462,21 @@ ill-formed use.
   `TimedModelNotEmitted`; it SHALL NOT be emitted with an empty `guards`
   aggregate. An empty aggregate is written only for a place or model that has
   no guard.
+  **Urgency.** Each `urgent` declaration SHALL be written as one `urgency`
+  node, listed in the root's `urgencies` in declared order and located at its
+  declaration, so that its order key is its own source region. Two
+  declarations of equal content (one predicate, or one operation) SHALL be
+  one node, listed once, with one `expression` occurrence located at each
+  declaration (QSpec FR-322: a node has one or more source occurrences). `urgent O`
+  writes the kind `operation`, the model node and `O`'s declared operation
+  name. `urgent when { P }` writes the kind `when` and a reference to the
+  checked expression node of `P`, which S3 lowers at `P`'s own site so each
+  of its nodes is located; `self` is a `parameter` node at level 0 typed
+  `Reference<T>`, `T` the object type `P` ranges over, written only when `P`
+  reads it. A `when` predicate that reads a clock presence (`present(p)` of a
+  place of `self` or of another object, or of a quantified element) has no
+  lowered form yet: a model with one SHALL be refused `TimedModelNotEmitted`
+  and never emitted without it.
   The remaining node data records guards;
   reset target and exact converted value; guard/invariant constraint terms;
   urgency predicate or operation; and every bound's comparison, exact value
@@ -750,6 +788,8 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-49 | The emitted `clock_place` of `ts.x` below `ts: Sequence<Timer>[0, 3]` is one node for the three places `ts.0.x`, `ts.1.x` and `ts.2.x`, its slot step carries the symbolic element selector of QSpec FR-322-AC-148 and no index, and the place ids of slots 0 and 1 differ only in the final component of `<slots>`; the same holds for `Set`, `Bag`, `OrderedSet` and a nested `Sequence` (two `<slots>` components). | Test |
 | FR-230-AC-50 | A checked timed model with a guard is refused `TimedModelNotEmitted` until the guard is written, and is never emitted with an empty `guards` aggregate; a model with no guard emits empty aggregates and reads back (QSpec FR-322-AC-150). | Test |
 | FR-230-AC-51 | Over `v: Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]` on two objects, `present(other.v)`, `present(self.q[i])`, and `present(e)` in the bodies of `forall(e in self.q: ...)` and `exists(e in self.q: ...)` each check as a `Boolean` data predicate resolved through the place identity, are recorded as data predicates of the convex part at the owner and slot, declare no `Option<Boolean>` or other member, and leave every model declaration key as it is without `v`; a `present` with a wrong slot count or owner type is refused as QSpec FR-322-AC-156 states. | Test |
+| FR-230-AC-52 | Over `v: Option<Clock>` and `st: Mode` (`Idle` or `Armed` holding a clock), both in an operation's frame, the vectors `FP-01`..`FP-14` of QSpec's `clock-presence-frame-vectors.json` step as published: a requirement of an absent place with no write has no successor, and refuses `invalid_timed_model`/`clock-presence-unwritten` when the precondition establishes it absent; a write makes it present with its clock, a drop makes it absent, an unwritten `v` keeps its bit while an unwritten `Armed` `st` may also step to `Idle`, and each `Option` vector's pairing with its union twin holds of the observed results (QSpec FR-415-AC-21, TC-367 CK-31). | Test |
+| FR-230-AC-53 | A dense model whose only timed members are its clock `x`, `urgent Busy when { self.versionNumber > 0 }` and `urgent Prompt Config::ConfigVersion::attemptUpdate` emits two `urgency` nodes listed in declared order, each located at its declaration: the `when` one references the located Boolean expression node of the predicate, whose `self` is a level-0 `parameter` node, and the `operation` one the model node and `attemptUpdate`; I2 admits and reads both back. Two declarations of equal content are one node listed once with an occurrence at each declaration. `urgent Armed when { present(self.v) }` over `v: Option<Clock>` is refused `TimedModelNotEmitted`. | Test |
 
 ## Dependencies
 
