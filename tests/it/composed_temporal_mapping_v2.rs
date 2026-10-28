@@ -36,7 +36,7 @@ enum Kind {
 }
 
 /// One authored declaration per registered profile and operator direction.
-const DECLARATIONS: [(&str, R, Kind); 10] = [
+const DECLARATIONS: [(&str, R, Kind); 13] = [
     ("ByEvent", R::EventPosition, Kind::Future),
     ("BySample", R::FixedSample, Kind::Future),
     ("ByTimestamp", R::TimestampedWindow, Kind::Future),
@@ -47,22 +47,25 @@ const DECLARATIONS: [(&str, R, Kind); 10] = [
     ("PastTimestamp", R::TimestampedWindow, Kind::PastOnly),
     ("MixedEvent", R::EventPosition, Kind::Mixed),
     ("MixedTimestamp", R::TimestampedWindow, Kind::Mixed),
+    ("MixedUntilEvent", R::EventPosition, Kind::Mixed),
+    ("MixedReleaseSample", R::FixedSample, Kind::Mixed),
+    ("UntilSample", R::FixedSample, Kind::Future),
 ];
 
 fn inputs() -> Inputs {
     Inputs::new(&[
         Unit {
-            name: "event-clock",
+            name: "event-time",
             body: "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { always[0,1] holds(view.ready) }",
             declarations: &["ByEvent"],
         },
         Unit {
-            name: "sample-clock",
+            name: "sample-time",
             body: "temporal BySample using F over (view: M::Plain) clock \"sample-clock\" on origin { eventually[0,2] holds(view.ready) }",
             declarations: &["BySample"],
         },
         Unit {
-            name: "timestamp-clock",
+            name: "timestamp-time",
             body: "temporal ByTimestamp using W over (view: M::Plain) clock \"timestamp-clock\" on origin { always[0,1] holds(view.ready) }",
             declarations: &["ByTimestamp"],
         },
@@ -101,6 +104,21 @@ fn inputs() -> Inputs {
             body: "temporal MixedTimestamp using W over (view: M::Plain) clock \"mixed-timestamp-clock\" on origin { once[0,1] eventually[0,1] holds(view.ready) }",
             declarations: &["MixedTimestamp"],
         },
+        Unit {
+            name: "mixed-until-event-clock",
+            body: "temporal MixedUntilEvent using T over (view: M::Plain) clock \"mixed-until-event-clock\" on origin { once[0,1] holds(view.ready) and (holds(view.ready) until[0,1] holds(view.ready)) }",
+            declarations: &["MixedUntilEvent"],
+        },
+        Unit {
+            name: "mixed-release-sample-clock",
+            body: "temporal MixedReleaseSample using F over (view: M::Plain) clock \"mixed-release-sample-clock\" on origin { once[0,1] holds(view.ready) and (holds(view.ready) release[0,1] holds(view.ready)) }",
+            declarations: &["MixedReleaseSample"],
+        },
+        Unit {
+            name: "until-sample-clock",
+            body: "temporal UntilSample using F over (view: M::Plain) clock \"until-sample-clock\" on origin { holds(view.ready) until[0,1] holds(view.ready) }",
+            declarations: &["UntilSample"],
+        },
         // A compiled package must carry a protocol family; this consumer
         // requires every temporal declaration above.
         Unit {
@@ -117,6 +135,9 @@ fn inputs() -> Inputs {
                 requires temporal PastTimestamp;
                 requires temporal MixedEvent;
                 requires temporal MixedTimestamp;
+                requires temporal MixedUntilEvent;
+                requires temporal MixedReleaseSample;
+                requires temporal UntilSample;
                 run sequence Main {
                     event Happened by Service as (happened: M::Plain) { happened.ready };
                 }
@@ -310,8 +331,20 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                         unmatched,
                         "{name}: every unmatched dimension",
                     ),
-                    (Some(target), Support::Supported { target: named, .. }) => {
+                    (
+                        Some(target),
+                        Support::Supported {
+                            target: named,
+                            total_sample_valuation,
+                            ..
+                        },
+                    ) => {
                         assert_eq!(named.identity(), target, "{name} {closure:?}: TL target");
+                        assert_eq!(
+                            *total_sample_valuation,
+                            definition == R::FixedSample && matches!(kind, Kind::Future),
+                            "{name} {closure:?}: the total-sample-valuation condition",
+                        );
                     }
                     (expected, support) => {
                         panic!("{name} {closure:?}: expected {expected:?}, classified {support:?}")

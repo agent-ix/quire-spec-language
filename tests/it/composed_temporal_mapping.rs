@@ -94,7 +94,16 @@ struct Case {
 /// The operator kinds reachable from the declaration's root, read from the
 /// admitted arena rather than from the authored text.
 fn operators(package: &AdmittedPackage, declaration: usize) -> Operators {
-    Operators::of(&package.package().declarations[declaration].temporal)
+    let declaration = &package.package().declarations[declaration];
+    Operators::of(&declaration.temporal, root(declaration))
+}
+
+/// The arena index of a temporal declaration's root node.
+fn root(declaration: &w::Declaration) -> usize {
+    let w::Body::Temporal { root, .. } = &declaration.body else {
+        panic!("a temporal declaration has a temporal body");
+    };
+    root.index as usize
 }
 
 /// Require a disposition to be exactly what the table says.
@@ -320,6 +329,88 @@ fn cases() -> Vec<Case> {
             expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
         },
         Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) until[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) release[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) until[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: FIXED_SAMPLE,
+            body: "once[0,1] holds(view.ready) and (holds(view.ready) release[0,1] holds(view.ready))",
+            surrounding: Closure::Closed,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "(holds(view.ready) until[0,1] holds(view.ready)) or historically[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::MixedDirection,
+            profile: EVENT_POSITION,
+            body: "(holds(view.ready) release[0,1] holds(view.ready)) or historically[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Unsupported(&[Unmatched::MixedDirection]),
+        },
+        Case {
+            row: Row::FixedSampleFuture,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) until[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.closed-trace/v1",
+                total_sample_valuation: true,
+            },
+        },
+        Case {
+            row: Row::FixedSampleFuture,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) release[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.closed-trace/v1",
+                total_sample_valuation: true,
+            },
+        },
+        Case {
+            row: Row::FixedSampleFuture,
+            profile: FIXED_SAMPLE,
+            body: "holds(view.ready) until[0,1] holds(view.ready)",
+            surrounding: Closure::Open,
+            expect: Expect::Supported {
+                target: "mltl.online-prefix/v1",
+                total_sample_valuation: true,
+            },
+        },
+        Case {
+            row: Row::EventComplete,
+            profile: EVENT_POSITION,
+            body: "holds(view.ready) release[0,1] holds(view.ready)",
+            surrounding: Closure::Closed,
+            expect: Expect::Supported {
+                target: "mltl.closed-trace/v1",
+                total_sample_valuation: false,
+            },
+        },
+        Case {
             row: Row::EventComplete,
             profile: EVENT_POSITION,
             body: "always[0,1] holds(view.ready)",
@@ -473,8 +564,9 @@ fn the_disposition_follows_the_three_inputs_and_nothing_else() {
 }
 
 /// FR-045-AC-2: a timestamped-event request names the finite-window dimension
-/// and a mixed past/future request names the mixed-direction dimension. Neither carries a substitute formula, profile or clock, and no index
-/// conversion is inferred for the timestamped request.
+/// and a mixed past/future request names the mixed-direction dimension. Neither
+/// carries a substitute formula, profile or clock, and no index conversion is
+/// inferred for the timestamped request.
 #[trace("TC-125", "FR-045-AC-2")]
 #[test]
 fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
@@ -695,4 +787,65 @@ fn equal_formula_bytes_under_different_profiles_classify_differently() {
             });
         }
     });
+}
+
+/// FR-045-AC-1: only operators reachable from the declaration's root count. The
+/// arena may hold nodes the root never reaches, and admission does not refuse
+/// them (`unreachable_temporal_nodes_are_admitted`), so detection itself must
+/// ignore them: an unreferenced future node beside a past-only root leaves the
+/// request past-only, and an unreferenced past node beside a future-only root
+/// leaves it future-only.
+#[trace("TC-125", "FR-045-AC-1")]
+#[test]
+fn operators_unreachable_from_the_root_are_not_detected() {
+    // A copy of the admitted root with its operator swapped to the other
+    // direction, appended where no node refers to it.
+    let unreferenced = |root: &w::Temporal, operator: w::TemporalUnary, original_node: u32| {
+        let mut stray = root.clone();
+        stray.original_node = original_node;
+        let w::TemporalOperation::Unary { operator: slot, .. } = &mut stray.operation else {
+            panic!("the root of a single-operator body is a unary operator");
+        };
+        *slot = operator;
+        stray
+    };
+    for (body, reachable, stray) in [
+        (
+            "once[0,1] holds(view.ready)",
+            Operators {
+                future: false,
+                past: true,
+            },
+            w::TemporalUnary::Eventually,
+        ),
+        (
+            "eventually[0,1] holds(view.ready)",
+            Operators {
+                future: true,
+                past: false,
+            },
+            w::TemporalUnary::Once,
+        ),
+    ] {
+        admitted(&origin("Due", EVENT_POSITION, body), |package, at| {
+            let declaration = &package.package().declarations[at];
+            assert_eq!(operators(package, at), reachable, "{body}: as admitted");
+            let mut arena = declaration.temporal.clone();
+            arena.push(unreferenced(&arena[root(declaration)], stray, 1_000));
+            assert_eq!(
+                Operators::of(&arena, root(declaration)),
+                reachable,
+                "{body}: an unreferenced {stray:?} node is not reachable",
+            );
+            let all = arena.len() - 1;
+            assert_eq!(
+                Operators::of(&arena, all),
+                Operators {
+                    future: stray == w::TemporalUnary::Eventually,
+                    past: stray == w::TemporalUnary::Once,
+                },
+                "{body}: rooted at the stray node, it is reachable",
+            );
+        });
+    }
 }
