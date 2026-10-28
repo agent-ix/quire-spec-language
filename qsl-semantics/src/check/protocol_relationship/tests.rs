@@ -401,9 +401,9 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
             "QSL-1121g",
         ),
         (
-            bare("on origin", "terminal any;", "true"),
-            vec![C::Terminal],
-            "QSL-1121f",
+            bare("on origin", "terminal when { ok() };", "true"),
+            vec![C::TerminalReadsDeclaration],
+            "QSL-1121g",
         ),
         (
             bare("on origin", "", "ok()"),
