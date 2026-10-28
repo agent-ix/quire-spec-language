@@ -35,3 +35,12 @@ Gaps:
 ## Verdict
 
 Changes requested together with SR-1770001. Both findings are low.
+
+## Dispositions
+
+Round 1, head 55ad00e89.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `equal_urgencies_are_one_node_located_at_each_declaration` covers both forms, with an occurrence per declaration and one urgency read back |
+| FND-002 | fixed | `a_self_free_urgency_predicate_writes_no_parameter` (`1 > 0`) and `an_urgency_reading_another_presence_is_not_emitted` (`present(self.peer.v)`, `forall(e in self.q : present(e))` refuse `TimedModelNotEmitted`) |

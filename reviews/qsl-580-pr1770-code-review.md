@@ -68,3 +68,12 @@ Head 37cc994a9, base qsl-580v-slot-bits (#1763). Checked against:
 ## Verdict
 
 Changes requested (FND-001).
+
+## Dispositions
+
+Round 1, head 55ad00e89.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Equal-content urgencies are one node, listed once, with one `expression` occurrence per declaration (ordinals in declared order, each located at its own declaration); FR-230 Urgency and AC-53 state it. Probes: interleaved `P, Q, P` lists `[P, Q]` with P at both regions; `(x > 0)` merges with `x > 0`; `0 < x` and `x > 0` stay two nodes; mixed operation and `when` merge per kind; I2 reads each back |
+| FND-002 | deferred | Coordinator disposition: the repo convention (Origin is in quire-semantic-value, six QSL sites use the same pattern, no consumer reads it as a type) |
