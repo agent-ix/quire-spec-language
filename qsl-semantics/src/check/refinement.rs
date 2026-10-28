@@ -30,6 +30,7 @@ mod catalog;
 mod history;
 mod internal_list;
 mod protocol;
+mod rows;
 mod step_label;
 
 use std::collections::BTreeMap;
@@ -61,6 +62,10 @@ use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
 use quire_semantic_value::location::{Location, Origin};
+pub(crate) use rows::{
+    KeyedFairnessRow, KeyedObjectRow, KeyedPopulationRow, KeyedRefinementRows, KeyedStepRow,
+    KeyedStepTarget,
+};
 pub use step_label::{observation, LabelStep, RowObservation, StepLabel};
 
 use super::check::{
@@ -390,7 +395,6 @@ impl RefinementCause {
 
 /// The checked body of one row expression: its parameters (`self`, then a
 /// step's operation parameters), the body and the evaluation slots it needs.
-#[derive(Debug)]
 pub struct CheckedRow {
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
@@ -400,6 +404,27 @@ pub struct CheckedRow {
     /// the row is typed as (FR-104). A history update reads its post-state
     /// fields at `post` and `pre(..)` operands at `pre`.
     pub(crate) observations: Observations,
+    /// The name each body slot was bound under, indexed by slot.
+    pub(crate) slot_names: Vec<String>,
+    /// The declaration site the body's locations name: the row
+    /// expression, whose span tree [`Self::spans`] is (see [`row_site`]).
+    pub(crate) site: String,
+    /// The row expression's span tree, which locates the body's nodes.
+    pub(crate) spans: qsl_forms::ExpressionSpans,
+}
+
+/// The checked value, without the row's source site and span tree.
+impl std::fmt::Debug for CheckedRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckedRow")
+            .field("parameters", &self.parameters)
+            .field("body", &self.body)
+            .field("slots", &self.slots)
+            .field("uses", &self.uses)
+            .field("observations", &self.observations)
+            .field("slot_names", &self.slot_names)
+            .finish_non_exhaustive()
+    }
 }
 
 impl CheckedRow {
@@ -547,40 +572,175 @@ impl PopulationUse {
 }
 
 impl CheckedRefinement {
-    /// The typed V2 body and key for a row-empty refinement: its `abstract`
-    /// root, a protocol subject's `protocol` clause and internal list, and
-    /// its lowered class catalog.
+    /// The typed V2 body and key of this refinement (QSpec FR-375): its
+    /// `abstract` root, a protocol subject's `protocol` clause and internal
+    /// list, its keyed rows in canonical order and its lowered class
+    /// catalog, with, for each `steps` entry in that order, the position of
+    /// the source row it was written as (its [`Self::step_sources`] entry).
     /// Construction remains in the check core; the package writer can
     /// serialize the checked body without depending on JSON or minting a
     /// semantic identity.
-    pub fn v2_row_empty_emission(
-        &self,
-    ) -> Result<(NodeKey, quire_contract_model::CheckedTerm), RefinementV2EncodingError> {
+    pub fn v2_emission(&self) -> Result<RefinementV2Emission, RefinementV2EncodingError> {
+        use quire_contract_model::{
+            RefinementAssume, RefinementEnsure, RefinementField, RefinementKey, RefinementObject,
+            RefinementOpen, RefinementPopulation, RefinementStep, RefinementStepArgument,
+            RefinementStepTarget,
+        };
         let abstract_subject = self
             .abstract_subject_node
             .ok_or(RefinementV2EncodingError::MissingSubject)?;
         let concrete_subject = self
             .concrete_subject_node
             .ok_or(RefinementV2EncodingError::MissingSubject)?;
+        let rows = self
+            .row_keys
+            .as_ref()
+            .ok_or(RefinementV2EncodingError::MissingRows)?;
+        let local = |key: NodeKey| RefinementKey::Local(v2_node_id(key));
+        let term = |leaf: &crate::check::node_key::LeafTerm| {
+            serde_json::to_value(leaf)
+                .and_then(serde_json::from_value::<quire_contract_model::CheckedTerm>)
+                .map_err(RefinementV2EncodingError::Body)
+        };
+        let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
+            arguments
+                .iter()
+                .map(|argument| match argument {
+                    Some(leaf) => Ok(RefinementStepArgument::Term(Box::new(term(leaf)?))),
+                    None => Ok(RefinementStepArgument::Open(RefinementOpen {
+                        term: "open".into(),
+                    })),
+                })
+                .collect::<Result<Vec<_>, RefinementV2EncodingError>>()
+        };
+        let mut keyed_populations: Vec<&KeyedPopulationRow> = rows.populations.iter().collect();
+        keyed_populations.sort_by_key(|row| row.abstract_population);
+        let populations = keyed_populations
+            .into_iter()
+            .map(|row| RefinementPopulation {
+                r#abstract: local(row.abstract_population),
+                concrete: v2_node_id(row.concrete_population),
+            })
+            .collect();
+        let mut keyed_objects: Vec<&KeyedObjectRow> = rows.objects.iter().collect();
+        keyed_objects.sort_by_key(|row| row.abstract_type);
+        let objects = keyed_objects
+            .into_iter()
+            .map(|row| {
+                let mut fields = row
+                    .fields
+                    .iter()
+                    .map(|(name, expression)| {
+                        Ok(RefinementField {
+                            name: name.as_str().into(),
+                            expression: term(expression)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RefinementV2EncodingError>>()?;
+                fields.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
+                Ok(RefinementObject {
+                    abstract_type: local(row.abstract_type),
+                    concrete_type: v2_node_id(row.concrete_type),
+                    fields,
+                })
+            })
+            .collect::<Result<Vec<_>, RefinementV2EncodingError>>()?;
+        // FR-375: rows naming a declaration by its node digest, then the
+        // class spelling; a row naming none (a memory row) after them.
+        let mut ordered: Vec<&KeyedStepRow> = rows.steps.iter().collect();
+        ordered.sort_by(|left, right| {
+            (
+                left.source_node.is_none(),
+                left.source_node,
+                left.source_class.as_bytes(),
+            )
+                .cmp(&(
+                    right.source_node.is_none(),
+                    right.source_node,
+                    right.source_class.as_bytes(),
+                ))
+        });
+        let mut steps = Vec::with_capacity(ordered.len());
+        let mut step_sources = Vec::with_capacity(ordered.len());
+        for row in ordered {
+            let target = match &row.target {
+                KeyedStepTarget::Operation {
+                    operation,
+                    receiver,
+                    arguments: written,
+                } => RefinementStepTarget::Operation {
+                    operation: local(*operation),
+                    receiver: Box::new(term(receiver)?),
+                    arguments: arguments(written)?,
+                },
+                KeyedStepTarget::ProtocolStep {
+                    class,
+                    node,
+                    arguments: written,
+                } => RefinementStepTarget::ProtocolStep {
+                    class: class.as_str().into(),
+                    node: node.map(local),
+                    arguments: arguments(written)?,
+                },
+                KeyedStepTarget::Stutter => RefinementStepTarget::Stutter,
+                KeyedStepTarget::Any => RefinementStepTarget::Any,
+            };
+            steps.push(RefinementStep {
+                source_class: row.source_class.as_str().into(),
+                source_node: row.source_node.map(v2_node_id),
+                target,
+            });
+            step_sources.push(row.source);
+        }
+        let fairness = |rows: &[KeyedFairnessRow]| {
+            let mut rows: Vec<_> = rows
+                .iter()
+                .map(|row| {
+                    (
+                        row.operation,
+                        v2_fairness_kind(row.kind),
+                        v2_granularity(row.granularity),
+                    )
+                })
+                .collect();
+            rows.sort_by(|left, right| {
+                (left.0, fairness_label(left.1), granularity_label(left.2)).cmp(&(
+                    right.0,
+                    fairness_label(right.1),
+                    granularity_label(right.2),
+                ))
+            });
+            rows
+        };
+        let assume = fairness(&rows.assume)
+            .into_iter()
+            .map(|(operation, kind, granularity)| RefinementAssume {
+                operation: v2_node_id(operation),
+                kind,
+                granularity,
+            })
+            .collect();
+        let ensure = fairness(&rows.ensure)
+            .into_iter()
+            .map(|(operation, kind, granularity)| RefinementEnsure {
+                operation: local(operation),
+                kind,
+                granularity,
+            })
+            .collect();
         let body = quire_contract_model::CheckedTerm::Refinement {
-            abstract_key: Box::new(quire_contract_model::RefinementKey::Local(v2_node_id(
-                abstract_subject,
-            ))),
+            abstract_key: Box::new(local(abstract_subject)),
             profile: quire_contract_model::CheckedArtifactRef {
                 authority: "agent-ix".into(),
                 identity: self.profile.identity.as_str().into(),
             },
-            populations: Vec::new(),
-            objects: Vec::new(),
-            steps: Vec::new(),
+            populations,
+            objects,
+            steps,
             histories: Vec::new(),
-            assume: Vec::new(),
-            ensure: Vec::new(),
-            protocol: self.abstract_protocol.map(|clause| {
-                Box::new(quire_contract_model::RefinementKey::Local(v2_node_id(
-                    clause,
-                )))
-            }),
+            assume,
+            ensure,
+            protocol: self.abstract_protocol.map(|clause| Box::new(local(clause))),
             abstract_internal: (!self.abstract_internal.is_empty()).then(|| {
                 self.abstract_internal
                     .iter()
@@ -590,7 +750,24 @@ impl CheckedRefinement {
             class_catalog: self.class_catalog_keys.as_ref().map(v2_class_catalog),
         };
         let identity = Self::v2_identity(concrete_subject, &body)?;
-        Ok((identity, body))
+        let mut dependencies: Vec<NodeKey> = std::iter::once(abstract_subject)
+            .chain(self.abstract_protocol)
+            .chain(
+                self.class_catalog_keys
+                    .iter()
+                    .flat_map(KeyedClassCatalog::node_keys),
+            )
+            .chain(rows.node_keys())
+            .collect();
+        dependencies.sort();
+        dependencies.dedup();
+        Ok(RefinementV2Emission {
+            identity,
+            body,
+            dependencies,
+            step_sources,
+            proof_eligible: self.proof_eligible(),
+        })
     }
 
     /// FR-375: the class catalog of a model-abstract refinement, rebuilt
@@ -648,25 +825,34 @@ impl CheckedRefinement {
         Ok(NodeKey::from_digest(*digest.as_bytes()))
     }
 
-    /// Whether this declaration is in the current V2 emission slice: a model
-    /// or protocol subject whose checked base body has no authored mappings,
-    /// with its class catalog, when it has one, lowered to node keys, and a
-    /// protocol subject's clause keyed. Later slices admit mapped subjects.
-    pub fn v2_row_empty_body(&self) -> bool {
+    /// Whether this declaration is in the current V2 emission slice: its
+    /// rows and its class catalog, when it has one, lowered to node keys, a
+    /// protocol subject's clause keyed, and no history row (whose fields
+    /// are not written yet).
+    pub fn v2_emittable(&self) -> bool {
         let subject = match &self.abstract_side {
             AbstractSide::Model => self.abstract_internal.is_empty(),
             AbstractSide::Protocol { .. } => self.abstract_protocol.is_some(),
         };
         subject
-            && self.populations.is_empty()
-            && self.objects.is_empty()
-            && self.steps.is_empty()
+            && self.row_keys.is_some()
             && self.history.is_empty()
-            && self.concrete_fairness.is_empty()
-            && self.abstract_fairness.is_empty()
             && self.class_catalog.is_some() == self.class_catalog_keys.is_some()
             && self.abstract_subject_node.is_some()
             && self.concrete_subject_node.is_some()
+    }
+
+    /// Whether S5 states step-simulation obligations for this refinement
+    /// (QSpec FR-322's proof-eligible owner): no history row, no `any` step
+    /// and no hidden abstract field. Such an owner carries one `generated`
+    /// occurrence per obligation: the initial one, then one per step row.
+    pub fn proof_eligible(&self) -> bool {
+        self.history.is_empty()
+            && !self
+                .steps
+                .iter()
+                .any(|row| matches!(row.target, StepTarget::Any))
+            && self.objects.iter().all(|object| object.hidden.is_empty())
     }
 
     /// FR-139: checks the bounds that depend on a population's universe
@@ -734,11 +920,30 @@ impl CheckedRefinement {
     }
 }
 
-/// A row-empty refinement's checked V2 body could not be constructed.
+/// A refinement's typed V2 node: its key, its body, its dependencies, the
+/// source row of each step and whether it is proof-eligible.
+#[derive(Debug)]
+pub struct RefinementV2Emission {
+    /// The FR-375 node key.
+    pub identity: NodeKey,
+    /// The FR-375 body.
+    pub body: quire_contract_model::CheckedTerm,
+    /// Every local node the body names, ascending by digest.
+    pub dependencies: Vec<NodeKey>,
+    /// For each `steps` entry in body order, its source row's position among
+    /// the authored step rows.
+    pub step_sources: Vec<usize>,
+    /// See [`CheckedRefinement::proof_eligible`].
+    pub proof_eligible: bool,
+}
+
+/// A refinement's checked V2 body could not be constructed.
 #[derive(Debug)]
 pub enum RefinementV2EncodingError {
     /// The checked declaration has no selected model subject.
     MissingSubject,
+    /// The authored rows are not lowered to node keys.
+    MissingRows,
     /// The FR-375 body did not serialize for its identity preimage.
     Body(serde_json::Error),
     /// The FR-375 identity preimage could not be canonically encoded.
@@ -803,6 +1008,36 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                 KeyedCatalogClass::Memory(class) => RefinementAbstractClass::Memory(memory(*class)),
             })
             .collect(),
+    }
+}
+
+fn v2_fairness_kind(kind: FairnessKind) -> quire_contract_model::RefinementFairnessKind {
+    match kind {
+        FairnessKind::Weak => quire_contract_model::RefinementFairnessKind::Weak,
+        FairnessKind::Strong => quire_contract_model::RefinementFairnessKind::Strong,
+    }
+}
+
+fn v2_granularity(granularity: FairnessGranularity) -> quire_contract_model::RefinementGranularity {
+    match granularity {
+        FairnessGranularity::Each => quire_contract_model::RefinementGranularity::Each,
+        FairnessGranularity::Whole => quire_contract_model::RefinementGranularity::Whole,
+    }
+}
+
+/// The wire spelling a fairness row orders by after its operation.
+fn fairness_label(kind: quire_contract_model::RefinementFairnessKind) -> &'static str {
+    match kind {
+        quire_contract_model::RefinementFairnessKind::Weak => "weak",
+        quire_contract_model::RefinementFairnessKind::Strong => "strong",
+    }
+}
+
+/// The wire spelling a fairness row orders by after its kind.
+fn granularity_label(granularity: quire_contract_model::RefinementGranularity) -> &'static str {
+    match granularity {
+        quire_contract_model::RefinementGranularity::Each => "each",
+        quire_contract_model::RefinementGranularity::Whole => "whole",
     }
 }
 
@@ -933,6 +1168,23 @@ pub struct StepRow {
     pub class: StepClass,
     /// What it maps to.
     pub target: StepTarget,
+    /// The class's alias-free spelling (QSpec FR-375 `source_class`): its
+    /// FR-432 spelling with the concrete alias removed, such as
+    /// `Cell::increment`, `fork Flow::par` or `memory drain`.
+    pub(crate) spelling: String,
+}
+
+impl StepRow {
+    /// The class's alias-free spelling.
+    pub fn spelling(&self) -> &str {
+        &self.spelling
+    }
+}
+
+/// The declaration site of the row expression at `span`: one name per row
+/// expression of the unit, under which its span tree locates its nodes.
+pub(crate) fn row_site(span: Span) -> String {
+    format!("refinement row {}..{}", span.start, span.end)
 }
 
 /// The original source region of one checked, authored step row (FR-136,
@@ -1075,6 +1327,9 @@ pub struct CheckedRefinement {
     /// once every class node is minted; absent while a contributing
     /// protocol clause has no node.
     pub(crate) class_catalog_keys: Option<KeyedClassCatalog>,
+    /// The authored rows lowered to node keys, once every node they name is
+    /// minted; absent while one is not (QSpec FR-375).
+    pub(crate) row_keys: Option<KeyedRefinementRows>,
     /// The protocol clause the step rows select; absent for a model subject.
     /// The clause's node exists once the unit's protocol nodes are minted
     /// (FR-092), so the pipeline fills it after the check.
@@ -1194,6 +1449,47 @@ impl CheckedRefinement {
     /// is in the package graph.
     pub fn class_catalog_keys(&self) -> Option<&KeyedClassCatalog> {
         self.class_catalog_keys.as_ref()
+    }
+
+    /// Every row expression of the refinement: each field row, each step
+    /// target's receiver and arguments, and each history update.
+    pub(crate) fn rows(&self) -> impl Iterator<Item = &CheckedRow> {
+        let fields = self
+            .objects
+            .iter()
+            .flat_map(|object| object.fields.iter().map(|field| &field.expression));
+        let steps = self.steps.iter().flat_map(|step| match &step.target {
+            StepTarget::Abstract {
+                receiver,
+                arguments,
+                ..
+            } => std::iter::once(receiver)
+                .chain(arguments.iter().flatten())
+                .collect::<Vec<_>>(),
+            StepTarget::Node { arguments, .. } => arguments.iter().flatten().collect(),
+            StepTarget::Stutter | StepTarget::Any => Vec::new(),
+        });
+        let updates = self
+            .history
+            .iter()
+            .flat_map(|history| history.updates.iter().map(|update| &update.expression));
+        fields.chain(steps).chain(updates)
+    }
+
+    /// Whether every row expression has a node form: a whole population, a
+    /// history read and a `seq` have none yet (FR-139, FR-138; FR-093
+    /// gives no row for them), so a refinement with one is not emitted.
+    pub(crate) fn rows_have_nodes(&self) -> bool {
+        self.rows().all(|row| {
+            row.body().descendants().into_iter().all(|node| {
+                !matches!(
+                    node.kind(),
+                    NodeKind::PopulationObjects { .. }
+                        | NodeKind::History { .. }
+                        | NodeKind::Seq { .. }
+                )
+            })
+        })
     }
 
     /// The history rows, in source order (FR-138).
@@ -1837,6 +2133,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_object_types,
         class_catalog,
         class_catalog_keys: None,
+        row_keys: None,
         concrete_protocol: None,
         abstract_protocol: None,
         abstract_subject_node: None,
@@ -2655,7 +2952,12 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
         }
         let declarations = self.declarations;
-        let location = Location::root(Origin::Expression);
+        let Some(root_span) = expression.spans.at(&[]) else {
+            self.fault("row-expression-has-a-span");
+            return None;
+        };
+        let site = row_site(root_span);
+        let location = Location::root(Origin::TypeDeclaration { name: site.clone() });
         let RowContext {
             parameters,
             kind,
@@ -2745,10 +3047,10 @@ impl<'c, 'a> Checker<'c, 'a> {
                     None => CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch),
                 })?,
             };
-            Ok::<_, CheckRefusal>((body, typer.slots(), uses))
+            Ok::<_, CheckRefusal>((body, typer.slots(), typer.slot_names().to_vec(), uses))
         })();
         match typed {
-            Ok((body, slots, uses)) => {
+            Ok((body, slots, slot_names, uses)) => {
                 let observations =
                     Observations::of(body.root(), observation_of(kind), parameters.len());
                 Some(CheckedRow {
@@ -2757,6 +3059,9 @@ impl<'c, 'a> Checker<'c, 'a> {
                     slots,
                     uses,
                     observations,
+                    slot_names,
+                    site,
+                    spans: expression.spans.clone(),
                 })
             }
             Err(_) if outcome.is_some() => {
@@ -2893,12 +3198,24 @@ impl<'c, 'a> Checker<'c, 'a> {
                     cx,
                 ),
             };
+            // QSpec FR-375: the class is spelled by the object type the row
+            // names, as the catalog spells its owner's operations.
+            let Some(owner) = self
+                .concrete_side
+                .model
+                .declaration_key(object.id)
+                .and_then(|owner| type_identity_segment(&owner.package, &owner.node))
+            else {
+                self.fault("concrete-object-has-alias-free-identity-segment");
+                continue;
+            };
             if let Some(target) = target {
                 steps.push((
                     index,
                     StepRow {
                         class: StepClass::Operation(key.clone()),
                         target,
+                        spelling: format!("{owner}::{}", concrete.name()),
                     },
                 ));
             }

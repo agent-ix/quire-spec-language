@@ -440,7 +440,7 @@ impl Lowering<'_> {
     /// operation name), however many clauses name it (their contents are
     /// equal, so their keys are, but the occurrence is minted once per
     /// operation identity, not per node -- see [`Lowering::frame_occurrence`]).
-    fn operation_anchor(
+    pub(super) fn operation_anchor(
         &mut self,
         anchor: &AnchorInput<'_>,
         point: Option<&AcceptedPoint>,

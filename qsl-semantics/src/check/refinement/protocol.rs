@@ -370,6 +370,20 @@ struct Entry {
     need: Need,
 }
 
+impl Entry {
+    /// The class's alias-free spelling (QSpec FR-432 with `<C>::` removed),
+    /// as the class catalog spells it: `[keyword ]<protocol>::<name>`,
+    /// `activate <protocol>` or `memory <kind>`.
+    fn spelling(&self, protocol: &str) -> String {
+        match (&self.class, self.keyword) {
+            (StepClass::MemoryStep(_), _) => format!("memory {}", self.name),
+            (StepClass::Trigger, _) => format!("activate {protocol}"),
+            (_, Some(keyword)) => format!("{} {protocol}::{}", keyword.as_str(), self.name),
+            (_, None) => format!("{protocol}::{}", self.name),
+        }
+    }
+}
+
 /// What covers a class.
 enum Need {
     /// A row of its own.
@@ -1002,6 +1016,7 @@ impl<'a> Checker<'_, 'a> {
                 StepRow {
                     class: entry.class.clone(),
                     target,
+                    spelling: entry.spelling(&protocol),
                 },
             ));
         }
