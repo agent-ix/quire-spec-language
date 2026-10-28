@@ -18,10 +18,10 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_replay::{
-    settle_state_graph, CertificateLocus, CertificateRule, Certification, DisagreementCause,
-    Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness, IncompleteCause,
-    InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelPath, OpenCause, ProofBasis,
-    ReachedLimit, ResultLabel, RunEnd, SettlementBasis, StateGraphCertificate,
+    settle_state_graph, AppliedReduction, CertificateLocus, CertificateRule, Certification,
+    DisagreementCause, Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness,
+    IncompleteCause, InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelPath, OpenCause,
+    ProofBasis, ReachedLimit, ResultLabel, RunEnd, SettlementBasis, StateGraphCertificate,
     StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
     TerminalValue, Truth, Verdict, WitnessSource, DEFAULT_WITNESS_SEED, EXPLICIT_STATE,
 };
@@ -288,6 +288,49 @@ fn accepted_certificates_settle_proved_certified() {
     assert_eq!(record.value, exhaustive);
     assert_eq!(record.basis, SettlementBasis::ClosedScope);
     assert_eq!(replays, 0, "a `Holds` outcome carries no evidence");
+}
+
+/// FR-169-AC-9: a reduced state-graph proof keeps its reduction provenance
+/// and is never reported as a certified exhaustive proof.
+#[trace("FR-169-AC-9")]
+#[test]
+fn a_reduced_holds_outcome_settles_uncertified_with_its_reductions() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let result = run(world.request(AB, vec![world.item("ReachesTwo")], no_samples()));
+    let instance = &result.items[0][0];
+    assert!(matches!(
+        instance.outcome,
+        StateGraphOutcome::Witnessed { .. }
+    ));
+    let reductions = vec![AppliedReduction::PartialOrder {
+        proviso: qsl_replay::Proviso::BreadthFirstRevisit,
+    }];
+    let reduced = StateGraphInstanceOutcome {
+        outcome: StateGraphOutcome::HoldsReduced {
+            reductions: reductions.clone(),
+        },
+        ..instance.clone()
+    };
+
+    let mut replays = 0;
+    let record = settle(
+        &world,
+        AB,
+        "ReachesTwo",
+        &reduced,
+        no_samples(),
+        &mut replays,
+    );
+
+    assert_eq!(
+        record.value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Reduced { reductions },
+            certification: Certification::Uncertified,
+        }
+    );
+    assert_eq!(record.basis, SettlementBasis::ClosedScope);
+    assert_eq!(replays, 0, "a reduced proof carries no replayed witness");
 }
 
 /// FR-169-AC-10 (settlement half): AC-9's `ReachesTwo` outcome with its

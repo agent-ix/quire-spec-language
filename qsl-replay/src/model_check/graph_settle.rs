@@ -31,7 +31,7 @@ use crate::model_check::state_graph::{
     WitnessSource,
 };
 use crate::proof_result::{
-    IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
 use crate::result::DisagreementCause;
 
@@ -186,6 +186,13 @@ pub fn settle_state_graph(
         StateGraphOutcome::Holds { certificate } => check.row(certificate, || {
             Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
         }),
+        StateGraphOutcome::HoldsReduced { reductions } => Row::proof(
+            ProofBasis::Reduced {
+                reductions: reductions.clone(),
+            },
+            Certification::Uncertified,
+            SettlementBasis::ClosedScope,
+        ),
         StateGraphOutcome::WitnessedUnchecked {
             paths,
             end: run_end,

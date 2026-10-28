@@ -21,7 +21,7 @@ use serde::{Serialize, Serializer};
 use crate::certificate::state_graph::StateGraphCertificate;
 use crate::model_check::counterexample::ModelStep;
 use crate::model_check::limits::ReachedLimit;
-use crate::proof_result::IncompleteCause;
+use crate::proof_result::{AppliedReduction, IncompleteCause};
 
 /// A path of the subject's state graph (ADR-022 GX-1): an initial state and
 /// the steps taken from it.
@@ -424,6 +424,13 @@ pub enum StateGraphOutcome {
     Holds {
         /// The run's certificate of the claim (FR-169, ADR-022 GC-1).
         certificate: StateGraphCertificate,
+    },
+    /// The state-graph claim held over a reduced graph. No core certificate
+    /// covers that quotient, so settlement retains the reductions and marks
+    /// the proof uncertified (FR-169, ADR-021 RV-1).
+    HoldsReduced {
+        /// The applied reductions, in symmetry then partial-order order.
+        reductions: Vec<AppliedReduction>,
     },
     /// No decisive evidence.
     NoDecision {
