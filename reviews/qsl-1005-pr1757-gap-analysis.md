@@ -45,3 +45,11 @@ Mergeable. There is one low gap.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The `BadState` rule for a locked entry whose forward closure is not time-locked is tested at an initial node only (Init3 without the invariant). No test forges it at a step-level entry, entered by a failing `check_step`. My probe did: `dead_undo`'s certificate checked on `live_undo` with the entry widened gives `BadState`. That case should be pinned. | qsl-analyze/tests/it/timed_refinement_certificate.rs:460-489 |
+
+## Dispositions
+
+Round 1, head 554194815.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_forged_step_level_locked_entry_that_diverges_is_a_bad_state` forges the `Holds` certificate for the no-invariant variant (`undo_world(true, false)`, whose safety is `Violated`), widens the locked entry to the universe and asserts `BadState` at that entry; passes |
