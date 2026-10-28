@@ -75,7 +75,7 @@ fn quantifier<'f>(
         .into_iter()
         .map(|step| match step {
             PlaceStep::Field(name) => Some(name),
-            PlaceStep::Slot(_) => None,
+            PlaceStep::Slot(_) | PlaceStep::Union(_) => None,
         })
         .collect::<Option<Vec<_>>>()?;
     Some(Quantifier {

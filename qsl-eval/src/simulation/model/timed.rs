@@ -529,7 +529,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 .iter()
                 .filter_map(|step| match step {
                     PlaceStep::Slot(shape) => Some(shape.min),
-                    PlaceStep::Field(_) => None,
+                    PlaceStep::Field(_) | PlaceStep::Union(_) => None,
                 })
                 .fold(1_u64, u64::saturating_mul);
             let held = per_element
@@ -634,7 +634,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             let through = field
                 .path()
                 .iter()
-                .rposition(|step| matches!(step, PlaceStep::Slot(_)))
+                .rposition(|step| matches!(step, PlaceStep::Slot(_) | PlaceStep::Union(_)))
                 .map_or(0, |last| last + 1);
             if through == 0 {
                 // An absent `Option<Clock>` holds no clock.
@@ -669,6 +669,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     Some((PlaceStep::Field(name), rest)) => {
                         if let Some(next) = typing.component(value, name) {
                             pending.push((next, rest));
+                        }
+                    }
+                    // A union case's clock is live while the value is
+                    // that case.
+                    Some((PlaceStep::Union(case), rest)) => {
+                        if is_case(value, case) {
+                            pending.push((value, rest));
                         }
                     }
                     Some((PlaceStep::Slot(_), rest)) => match value {
@@ -902,7 +909,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 Some(quire_exact::Value::Boolean(true))
             );
         }
-        if place.slots.is_empty() {
+        let guarded = field
+            .path()
+            .iter()
+            .any(|step| matches!(step, PlaceStep::Union(_)));
+        if place.slots.is_empty() && !guarded {
             return true;
         }
         let typing = self.system.typing();
@@ -912,7 +923,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let through = field
             .path()
             .iter()
-            .rposition(|step| matches!(step, PlaceStep::Slot(_)))
+            .rposition(|step| matches!(step, PlaceStep::Slot(_) | PlaceStep::Union(_)))
             .map_or(0, |last| last + 1);
         let mut steps = field.path()[..through].iter();
         let Some(PlaceStep::Field(first)) = steps.next() else {
@@ -931,6 +942,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         for step in steps {
             let next = match step {
                 PlaceStep::Field(name) => typing.component(value, name),
+                // FR-230: a union case's place is live while the value is
+                // that case.
+                PlaceStep::Union(case) => is_case(value, case).then_some(value),
                 PlaceStep::Slot(_) => match (value, slots.next()) {
                     (quire_exact::Value::Collection(collection), Some(slot)) => {
                         collection.elements().get(*slot)
@@ -1766,6 +1780,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     post_value = typing.component(post_value, name)?;
                     pre_value = pre_value.and_then(|value| typing.component(value, name));
                 }
+                PlaceStep::Union(case) => {
+                    if !is_case(post_value, case) {
+                        return None;
+                    }
+                    pre_value = pre_value.filter(|value| is_case(value, case));
+                }
                 PlaceStep::Slot(shape) => {
                     let slot = *slots.next()?;
                     let Some(pre) = pre_value else {
@@ -2571,8 +2591,14 @@ impl<L: crate::model_subject::ModelLetters> crate::temporal::TemporalLetters
     }
 }
 
+/// Whether `value` is a union value of the case named `case`.
+fn is_case(value: &quire_exact::Value, case: &str) -> bool {
+    matches!(value, quire_exact::Value::Union(union) if union.member().identifier().as_str() == case)
+}
+
 /// One step of a clock place's path in the state digest's byte form: a
-/// field by name, a slot by its index, taken from `slots` in path order.
+/// field by name, a union case by name, a slot by its index, taken from
+/// `slots` in path order.
 fn place_step_enc<'s>(
     step: &PlaceStep,
     slots: &mut impl Iterator<Item = &'s usize>,
@@ -2581,6 +2607,10 @@ fn place_step_enc<'s>(
         PlaceStep::Field(name) => super::encode::Enc::tagged(
             "field",
             vec![("name", super::encode::Enc::text(name.as_str()))],
+        ),
+        PlaceStep::Union(case) => super::encode::Enc::tagged(
+            "union",
+            vec![("case", super::encode::Enc::text(case.as_str()))],
         ),
         PlaceStep::Slot(_) => super::encode::Enc::tagged(
             "slot",

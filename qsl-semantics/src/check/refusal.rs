@@ -828,6 +828,25 @@ pub enum ProtocolConstruct {
     /// it but the reader refuses the key (`ill_typed`/`operator-ineligible`):
     /// QSL-1142.
     ChannelKeyNotEqualityStable,
+    /// A post-test `repeat`, whose `while` guard reads a binder its body
+    /// declares (QSL FR-218). QSpec FR-466 "No post-test `repeat`" settles
+    /// that the checked package has no post-test form (STD-539).
+    PostTestRepeat,
+    /// A `repeat` whose `visible` entry, invariant or variant reads a binder
+    /// its body declares, while its guard does not. QSpec FR-466 "Binder
+    /// scope" reads them at the repeat's entry only (a `repeat` is
+    /// pre-test), so they have no node form (STD-539).
+    RepeatDecisionReadsBody,
+    /// A `choice` or `repeat` `visible` entry that is a literal or a bare
+    /// binder read: QSpec FR-466 "A `visible` entry is an `expression` node"
+    /// settles that neither has an encoding (STD-539).
+    VisibleEntryNotAnExpression,
+    /// A `repeat` whose body steps only through a nested `repeat` whose
+    /// guard cannot be false (QSL FR-218-AC-32). QSpec #481 (STD-539) now
+    /// supports it (FR-464 "Nested `repeat` rule"); it is withheld until
+    /// IR's reader decides that rule (IR-1100), which today refuses the
+    /// outer repeat.
+    RepeatStepsThroughRepeat,
     /// A reference, from a function or a clause, to a protocol that holds an
     /// `attempt`: that protocol's node is written after the state clauses
     /// its attempts list, which are written after the functions. QSL-1121g.
@@ -854,6 +873,10 @@ impl ProtocolConstruct {
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
             Self::NoOwnerModel => "QSL-1147",
+            Self::PostTestRepeat
+            | Self::RepeatDecisionReadsBody
+            | Self::VisibleEntryNotAnExpression => "STD-539",
+            Self::RepeatStepsThroughRepeat => "IR-1100",
         }
     }
 }
