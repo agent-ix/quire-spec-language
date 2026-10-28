@@ -1289,23 +1289,28 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
-/// Supplies, as domain package evidence, QSpec's selected `acme/orders`
-/// semantic IR document (`domain-package-acme-orders.json` under `$QSPEC_DIR`)
-/// when one of `envelope`'s `model_selections` rows selects its digest
-/// (QSpec FR-322 "Model-owned members" step 1).
+/// Supplies, as domain package evidence, every selected semantic IR document
+/// QSpec publishes as `proposals/checked-package-v2/domain-package-*.json`
+/// under `$QSPEC_DIR`: a document is supplied when one of `envelope`'s
+/// `model_selections` rows selects its JCS sha256 digest (QSpec FR-322
+/// "Model-owned members" step 1). Nothing of QSpec is copied here.
 fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
     let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
         return;
     };
-    for name in ["acme-orders", "acme-shapes"] {
-        let path = std::path::Path::new(&qspec).join(format!(
-            "proposals/checked-package-v2/domain-package-{name}.json"
-        ));
-        if !path.exists() {
-            continue;
-        }
-        let document = read_fixture(&path);
-        let bytes = jcs(&document);
+    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2");
+    let mut paths: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("domain-package-") && name.ends_with(".json"))
+        })
+        .collect();
+    paths.sort();
+    for path in paths {
+        let bytes = jcs(&read_fixture(&path));
         let digest = format!("{:x}", Sha256::digest(&bytes));
         let selected = envelope["lock"]["model_selections"]
             .as_array()
