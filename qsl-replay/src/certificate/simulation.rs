@@ -76,6 +76,29 @@ pub struct CertifiedPosition {
     pub abstract_states: Vec<DigestRecord>,
 }
 
+/// Whether the listed position `listed` is `position`: its concrete
+/// state's digest, its history key and its abstract states' digests, in
+/// order (FR-149, and FR-245's refinement form).
+pub(crate) fn position_matches(
+    concrete: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    listed: &CertifiedPosition,
+    position: &RefinementPosition,
+) -> Result<bool, qsl_eval::simulation::EncodingRefusal> {
+    let (_, state) = concrete.state_key_of(&position.concrete)?;
+    if listed.concrete != state {
+        return Ok(false);
+    }
+    if listed.history != position.history.key(concrete)? {
+        return Ok(false);
+    }
+    let mut digests = Vec::with_capacity(position.abstract_states.len());
+    for candidate in &position.abstract_states {
+        digests.push(abstract_system.state_key_of(candidate)?.1);
+    }
+    Ok(listed.abstract_states == digests)
+}
+
 /// One edge a simulation certificate retains.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedEdge {
@@ -143,7 +166,7 @@ pub enum EvaluationOutcome {
 impl EvaluationOutcome {
     /// The outcome of `cause`: a mapping read's evaluation, or a successor
     /// set that could not be decided.
-    fn of_undetermined(cause: &Undetermined) -> Self {
+    pub(crate) fn of_undetermined(cause: &Undetermined) -> Self {
         match cause {
             Undetermined::Mapping(mapping) => Self::of_mapping(&mapping.cause),
             Undetermined::UndecidedSuccessor => Self::Refused,
@@ -486,18 +509,12 @@ impl Run<'_, '_> {
 
     /// Whether the certificate's position `listed` is `position`.
     fn matches(&self, listed: &CertifiedPosition, position: &RefinementPosition) -> Step<bool> {
-        let (_, concrete) = Self::encoding(self.concrete.state_key_of(&position.concrete))?;
-        if listed.concrete != concrete {
-            return Ok(false);
-        }
-        if listed.history != Self::encoding(position.history.key(self.concrete))? {
-            return Ok(false);
-        }
-        let mut digests = Vec::with_capacity(position.abstract_states.len());
-        for state in &position.abstract_states {
-            digests.push(Self::encoding(self.abstract_system.state_key_of(state))?.1);
-        }
-        Ok(listed.abstract_states == digests)
+        Self::encoding(position_matches(
+            self.concrete,
+            self.abstract_system,
+            listed,
+            position,
+        ))
     }
 
     fn run(&mut self) -> Step<()> {

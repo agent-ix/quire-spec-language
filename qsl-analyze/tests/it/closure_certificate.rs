@@ -21,7 +21,6 @@ use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest
 use qsl_eval::automaton::{SafetyState, SafetyTranslation, StateContext};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -454,7 +453,10 @@ fn a_certificate_from_another_package_is_stale_before_closure_rules() {
     );
     assert_eq!(
         record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+            requested: foreign.record(),
+            recompiled: recompiled.record(),
+        })
     );
 }
 
@@ -857,7 +859,10 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
     assert_eq!(
         settle_at(&outcome, &elsewhere, &Cancel::new()).value,
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+            requested: elsewhere,
+            recompiled: package,
+        })
     );
 
     let ModelCheckOutcome::Holds { certificate, stats } = outcome else {

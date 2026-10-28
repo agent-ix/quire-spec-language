@@ -1219,6 +1219,7 @@ fn refinement_node(
             EmitRefusal::RefinementSubjectNotEmitted
         }
         qsl_semantics::check::RefinementV2EncodingError::Body(_)
+        | qsl_semantics::check::RefinementV2EncodingError::Term(_)
         | qsl_semantics::check::RefinementV2EncodingError::Identity(_) => {
             EmitRefusal::RefinementIdentityEncoding
         }

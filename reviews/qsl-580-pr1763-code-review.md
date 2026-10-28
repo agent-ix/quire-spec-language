@@ -70,3 +70,88 @@ Head bf657815b, base qsl-580t-general-presence (#1754). Checked against FR-230-A
 ## Verdict
 
 Changes requested (FND-001, FND-002).
+
+## Dispositions
+
+Round 1, head 07cfab04e. The fix is commit 07cfab04e; the other commits after bf657815b are merges of main and of the base branches.
+
+Checked against QSpec 161d231d: FR-415-AC-21, and FP-01..FP-14 through `the_clock_presence_frame_vectors_step_as_published`, which passes.
+
+Gates (`--all-features`, debug info off):
+
+| Suite | Result |
+| --- | --- |
+| qsl-eval it `timed_subject` | 71 |
+| qsl-eval lib | pass |
+| qsl-semantics it `clock_places timed` | 104 |
+| qsl-semantics lib | 812 |
+| qsl-package `clock_places` | 5 (1 ignored, IR-1083) |
+| clippy (3 packages) and fmt | exit 0 |
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `slot_bits_follow` now takes only the writes (`written` plus the postcondition's resets) and leaves out the fresh-element zeros that `matched` enumerates. A slot held at post but not at pre and not written must be absent. With `!after` mutated to `true`, `an_option_element_keeps_its_bit_without_a_write` and `a_dropped_element_regrows_absent` both fail. |
+| FND-002 | fixed | A written slot now requires `after`. With that branch mutated to `true`, `a_reset_over_option_elements_makes_each_present` fails. |
+| FND-003 | fixed | In a precondition guard, a state invariant and a time invariant's `when`, the bodies `not present(e)`, `present(e) and value(e) >= 1 ms`, `present(e) or present(e)` and `x >= 1 ms and exists(..not present(e))` all refuse `unsupported_construct`/`not-yet-implemented`. The whole-body `present(e)`, its `not forall`/`not exists` forms and its `when` forms still check. Residual, low and non-blocking: in a postcondition, `exists(e in self.q : not present(e))` refuses `invalid_timed_model`/`clock-write`, and a requirement is no write (FR-415-AC-21). This fails closed, so it is a wrong cause only. |
+
+## Round 2 (delta review)
+
+Head 92831e891, reviewed as a delta from 07cfab04e. It carries QSL-1209 in two commits: 8136e9ff0 (the spec edit and the frame-vector test) and 92831e891 (a clippy type alias). There is no source change.
+
+**Spec edit.** I compared the FR-230 "No implicit reset" paragraph, FR-230-AC-52 and TC-685 step 35 against QSpec 161d231d: FR-415 "No implicit reset on a presence change" and "The same rule for absence", FR-415-AC-21, TC-367 CK-31, and `clock-presence-frame-vectors.json`.
+- **Faithful:**
+  - A place becomes present only by a write.
+  - An unwritten `Option` bit never changes.
+  - A union may leave its clock case unwritten but never enter it.
+  - A requirement is never a write.
+  - `clock-presence-unwritten` applies when the precondition establishes the place absent.
+  - The pairs FP-05/FP-06 and FP-13/FP-14 differ, and every other pair agrees.
+- **Derived, not extra:**
+  - An element a frame adds to a `Sequence<Option<Clock>>` unwritten is absent. This is QSpec's one rule applied to slots.
+  - The `Clock`-parameter reset is FR-230's existing write.
+- **Two low gaps:** FND-004 and FND-005 below.
+
+**Validation.** `make check-spec-validation` exits 0 and gives no diagnostic on FR-230 or TC-685.
+
+**FP vectors.** `the_clock_presence_frame_vectors_step_as_published` now runs all 14 vectors from the file, asserting `ran == 14`:
+- FP-11 and FP-12 run through S3, with a precondition `not present(..)`. Each asserts its single refusal's `invalid_timed_model`/`clock-presence-unwritten` against the vector.
+- CK-31's `pair.outcome` (`same`/`differs`) is asserted over the observed results: successors, or the refusal.
+
+It passes with QSPEC_DIR set to 161d231d.
+
+**Gates** (`--all-features`, debug info off):
+
+| Suite | Result |
+| --- | --- |
+| qsl-eval it `timed_subject` | 71 |
+| qsl-eval clippy `-D warnings` | exit 0 |
+| fmt | exit 0 |
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | open | The residual of round 1 is not fixed: the delta changes no source. A postcondition `exists(e in self.q : not present(e))` still refuses `invalid_timed_model`/`clock-write`, and a requirement is no write (FR-415-AC-21). It fails closed, so it is low and non-blocking. |
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-230 "No implicit reset" refuses `clock-presence-unwritten` only "where the operation's precondition establishes the place absent". QSpec FR-415 says "the operation's precondition or an invariant", "at the `present(...)` requirement, naming the place". The invariant case and the naming of the place are dropped. | QSpec FR-415 "No implicit reset on a presence change", FR-415-AC-21 |
+| FND-005 | low | "One that nothing writes leaves no successor from a state that contradicts it" overstates the rule for a union. QSpec gives `not present(self.st.Armed)` of an `Armed` predecessor the `Idle` successor (FP-14), and only the `Option` form has none (FP-13). The sentence should state the `Option`/union split as FR-415 "The same rule for absence" does. | QSpec FR-415 "The same rule for absence", TC-367 CK-31 (FP-13/FP-14) |
+
+### Round 2 addendum: head f8b9481a0
+
+Commit f8b9481a0 adds the fix for the FND-003 residual. Before reading resets, `resets` now refuses through `located.outside(query)` any quantifier that `Located::unread` marks. Its test case is the postcondition row in `another_quantified_presence_body_is_not_yet_implemented`.
+- The postcondition `exists(e in self.q : not present(e))` now refuses `unsupported_construct`/`not-yet-implemented` at the quantifier, as it does in guards and invariants.
+- With the early return removed as a mutant, the test fails with exactly the old `clock-write`.
+
+Gates at f8b9481a0:
+
+| Suite | Result |
+| --- | --- |
+| qsl-semantics it `clock_places timed` | 104 |
+| qsl-semantics clippy `-D warnings` | exit 0 |
+| fmt | exit 0 |
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | Its postcondition residual is fixed at f8b9481a0, and the mutant is killed. |
+
+FND-004 and FND-005, the low spec-text gaps in FR-230, stay open. Neither blocks the merge.

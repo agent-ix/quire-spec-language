@@ -482,6 +482,7 @@ pub struct World {
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     spec_initial: DocumentRef,
+    spec_one: DocumentRef,
     cas_initial: DocumentRef,
     third_initial: DocumentRef,
 }
@@ -502,6 +503,12 @@ impl World {
             SPEC,
             &spec_document(SPEC),
             json!({"value": {"integer": "0"}}),
+            &mut snapshots,
+        );
+        let spec_one = snapshot(
+            SPEC,
+            &spec_document(SPEC),
+            json!({"value": {"integer": "1"}}),
             &mut snapshots,
         );
         let third_initial = snapshot(
@@ -525,6 +532,7 @@ impl World {
             packages: packages(variant),
             snapshots,
             spec_initial,
+            spec_one,
             cas_initial,
             third_initial,
         }
@@ -538,6 +546,11 @@ impl World {
     /// The abstract subject's initial snapshot.
     pub fn abstract_initial(&self) -> DocumentRef {
         self.spec_initial.clone()
+    }
+
+    /// An abstract initial snapshot whose counter's `value` is 1 (FR-144-AC-5).
+    pub fn abstract_initial_one(&self) -> DocumentRef {
+        self.spec_one.clone()
     }
 
     /// The request that builds the system over `model` with `initial`

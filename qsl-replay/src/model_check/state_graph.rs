@@ -13,7 +13,9 @@ use qsl_eval::simulation::SampleProvenance;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
+use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
+use qsl_semantics::check::StateGraphForm;
 use quire_exact::{ObjectReference, ScalarLimits};
 use quire_semantic_value::location::Location;
 use serde::{Serialize, Serializer};
@@ -21,7 +23,7 @@ use serde::{Serialize, Serializer};
 use crate::certificate::state_graph::StateGraphCertificate;
 use crate::model_check::counterexample::ModelStep;
 use crate::model_check::limits::ReachedLimit;
-use crate::proof_result::IncompleteCause;
+use crate::proof_result::{AppliedReduction, IncompleteCause};
 
 /// A path of the subject's state graph (ADR-022 GX-1): an initial state and
 /// the steps taken from it.
@@ -47,6 +49,39 @@ pub struct ModelLasso {
     pub path: ModelPath,
     /// The position the loop re-enters, in `0..=path.steps.len()`.
     pub loop_entry: u32,
+}
+
+/// The form name carried when a selected reduction does not preserve a
+/// state-graph claim (FR-167, FR-169).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StateGraphPropertyForm {
+    /// `possible`.
+    Possible,
+    /// `always possible`.
+    AlwaysPossible,
+    /// `unique path`.
+    UniquePath,
+}
+
+impl StateGraphPropertyForm {
+    /// The FR-331 wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Possible => "possible",
+            Self::AlwaysPossible => "always-possible",
+            Self::UniquePath => "unique-path",
+        }
+    }
+}
+
+impl From<&StateGraphForm> for StateGraphPropertyForm {
+    fn from(form: &StateGraphForm) -> Self {
+        match form {
+            StateGraphForm::Possible { .. } => Self::Possible,
+            StateGraphForm::AlwaysPossible { .. } => Self::AlwaysPossible,
+            StateGraphForm::UniquePath { .. } => Self::UniquePath,
+        }
+    }
 }
 
 /// One initial state's HP-5 witness: a lasso on which the body is true and
@@ -424,6 +459,21 @@ pub enum StateGraphOutcome {
     Holds {
         /// The run's certificate of the claim (FR-169, ADR-022 GC-1).
         certificate: StateGraphCertificate,
+    },
+    /// The state-graph claim held over a reduced graph. No core certificate
+    /// covers that quotient, so settlement retains the reductions and marks
+    /// the proof uncertified (FR-169, ADR-021 RV-1).
+    HoldsReduced {
+        /// The applied reductions, in symmetry then partial-order order.
+        reductions: Vec<AppliedReduction>,
+    },
+    /// A selected reduction's preservation table rejects this form before
+    /// expansion (FR-169, ADR-021 RV-2).
+    ReductionNotPreserving {
+        /// The first selected reduction that the form does not preserve.
+        reduction: ReductionKind,
+        /// The claim form.
+        form: StateGraphPropertyForm,
     },
     /// No decisive evidence.
     NoDecision {

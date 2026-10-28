@@ -597,9 +597,12 @@ impl CheckedRefinement {
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
         let local = |key: NodeKey| RefinementKey::Local(v2_node_id(key));
+        // A leaf's typed V2 term: its canonical bytes, read back as the
+        // term they spell.
         let term = |leaf: &crate::check::node_key::LeafTerm| {
-            serde_json::to_value(leaf)
-                .and_then(serde_json::from_value::<quire_contract_model::CheckedTerm>)
+            let bytes = quire_canonical::to_vec(leaf, quire_canonical::Limits::new(u64::MAX))
+                .map_err(RefinementV2EncodingError::Term)?;
+            serde_json::from_slice::<quire_contract_model::CheckedTerm>(&bytes)
                 .map_err(RefinementV2EncodingError::Body)
         };
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
@@ -815,11 +818,10 @@ impl CheckedRefinement {
         semantic_type: NodeKey,
         body: &quire_contract_model::CheckedTerm,
     ) -> Result<NodeKey, RefinementV2EncodingError> {
-        let preimage = serde_json::json!({
-            "version": "quire.refinement-node/v1",
-            "semantic_type": v2_node_id(semantic_type),
-            "body": serde_json::to_value(body).map_err(RefinementV2EncodingError::Body)?,
-        });
+        let preimage = RefinementPreimage {
+            semantic_type: v2_node_id(semantic_type),
+            body,
+        };
         let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
             .map_err(RefinementV2EncodingError::Identity)?;
         Ok(NodeKey::from_digest(*digest.as_bytes()))
@@ -937,6 +939,30 @@ pub struct RefinementV2Emission {
     pub proof_eligible: bool,
 }
 
+/// QSpec FR-375's relation-node identity preimage,
+/// `{version, semantic_type, body}`, pushed straight into the canonical
+/// encoder: the body encodes itself from an explicit stack.
+struct RefinementPreimage<'a> {
+    semantic_type: quire_contract_model::CheckedNodeId,
+    body: &'a quire_contract_model::CheckedTerm,
+}
+
+impl quire_canonical::Encode for RefinementPreimage<'_> {
+    fn encode_into<S: quire_canonical::Sink + ?Sized>(
+        &self,
+        writer: &mut quire_canonical::Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        writer.begin_object()?;
+        writer.name("version")?;
+        writer.string("quire.refinement-node/v1")?;
+        writer.name("semantic_type")?;
+        writer.serialize(&self.semantic_type)?;
+        writer.name("body")?;
+        self.body.encode_into(writer)?;
+        writer.end_object()
+    }
+}
+
 /// A refinement's checked V2 body could not be constructed.
 #[derive(Debug)]
 pub enum RefinementV2EncodingError {
@@ -944,8 +970,10 @@ pub enum RefinementV2EncodingError {
     MissingSubject,
     /// The authored rows are not lowered to node keys.
     MissingRows,
-    /// The FR-375 body did not serialize for its identity preimage.
+    /// A row term's canonical bytes did not read back as a V2 term.
     Body(serde_json::Error),
+    /// A row term could not be canonically encoded.
+    Term(quire_canonical::Error),
     /// The FR-375 identity preimage could not be canonically encoded.
     Identity(quire_canonical::Error),
 }
@@ -1345,9 +1373,61 @@ pub struct CheckedRefinement {
     /// The full authored declaration region used by the V2 relation-node
     /// occurrence and source map.
     pub(crate) declaration_span: Span,
+    /// The `declaration` occurrence of the refinement's V2 node, which keys
+    /// its FR-144 requirement record; set when S3 writes the record.
+    pub(crate) requirement: Option<qsl_foundation::source::provenance::OccurrenceKey>,
 }
 
 impl CheckedRefinement {
+    /// FR-144: the occurrence that keys the refinement's requirement record
+    /// in [`super::CheckedGraph::requirements`], the `declaration`
+    /// occurrence of its V2 node. `None` for a refinement S3 wrote no record
+    /// for, which a package that emits never holds.
+    pub fn requirement_occurrence(
+        &self,
+    ) -> Option<&qsl_foundation::source::provenance::OccurrenceKey> {
+        self.requirement.as_ref()
+    }
+
+    /// FR-144 (ADR-020 "Negotiation"): the TP-5 property form of the
+    /// refinement's record, with a liveness half exactly when `F_A` is
+    /// non-empty.
+    pub fn property_form(&self) -> quire_semantic_value::fairness::PropertyForm {
+        quire_semantic_value::fairness::PropertyForm::Refinement {
+            liveness: !self.abstract_fairness.is_empty(),
+        }
+    }
+
+    /// FR-144 "Requirement record": the requirements of the refinement's one
+    /// record, keyed at its V2 node `node`: `temporal-satisfaction` over the
+    /// concrete model subject, unbounded over the infinite-trace domain
+    /// rooted at the node, with the fairness kinds of `F_C` and `F_A` and the
+    /// TP-5 form.
+    pub(crate) fn requirements(
+        &self,
+        node: qsl_foundation::digest::WireNodeId,
+    ) -> crate::family::Requirements {
+        let domains = std::collections::BTreeMap::from([(
+            qsl_foundation::bound::DomainKey::Node {
+                node,
+                path: Vec::new(),
+            },
+            qsl_foundation::bound::DomainKind::InfiniteTrace,
+        )]);
+        crate::family::Requirements::new(
+            super::Capability::TemporalSatisfaction,
+            crate::family::ClaimExtent::from_domains(domains),
+        )
+        .over_model_subject()
+        .with_fairness(
+            self.concrete_fairness
+                .iter()
+                .chain(&self.abstract_fairness)
+                .map(RefinementFairness::kind),
+        )
+        .with_property_form(self.property_form())
+    }
+
     /// The declared name.
     pub fn name(&self) -> &str {
         &self.name
@@ -2138,6 +2218,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         abstract_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
+        requirement: None,
         declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported
