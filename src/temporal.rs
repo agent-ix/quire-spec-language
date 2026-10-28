@@ -246,7 +246,7 @@ fn classify_selected(
     Classification::new(
         classify(
             selected.profile,
-            Operators::of(&selected.declaration.temporal),
+            Operators::of(&selected.declaration.temporal, selected.root()),
             surrounding_execution,
         ),
         Retained {
@@ -312,6 +312,17 @@ struct Selected<'a> {
     body: &'a w::Body,
     activation: &'a w::Activation,
     profile: Profile,
+}
+
+impl Selected<'_> {
+    /// The arena index of the declaration's temporal root; an index too large
+    /// for the platform reaches nothing.
+    fn root(&self) -> usize {
+        match self.body {
+            w::Body::Temporal { root, .. } => usize::try_from(root.index).unwrap_or(usize::MAX),
+            _ => usize::MAX,
+        }
+    }
 }
 
 fn select(

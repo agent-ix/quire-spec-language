@@ -1093,7 +1093,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => {
                 Ok(form.expression.clone())
             }
-            DataLiteral::Family(_) => Err(CheckCause::TimedNotChecked {
+            DataLiteral::Family(_) | DataLiteral::Presence(_) => Err(CheckCause::TimedNotChecked {
                 construct: crate::check::refusal::TimedConstruct::Clock,
                 span: self.located.span(self.located.root()),
             }),

@@ -17,6 +17,7 @@ mod closure;
 pub mod collection_write;
 mod evaluate;
 mod family;
+mod protocol_slot;
 mod s6a;
 mod value_invariants;
 
@@ -38,6 +39,7 @@ pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use closure::{PackageClosure, PackageTask};
 pub use evaluate::refusal_record;
 pub use family::{InvalidQualifiedName, QualifiedName};
+pub use protocol_slot::{ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply, SuppliedValue};
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
     Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,

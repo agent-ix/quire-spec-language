@@ -277,6 +277,7 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::Flatten(_)
         | ExprNode::Accumulate { .. } => Some(LayerForm::ValueConstruct),
         ExprNode::Boolean(_)
+        | ExprNode::Absent
         | ExprNode::Integer(_)
         | ExprNode::Rational(..)
         | ExprNode::Quantity(_)
