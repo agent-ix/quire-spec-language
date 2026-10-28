@@ -529,6 +529,29 @@ pub fn check(
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    check_with_execution_points(
+        parsed,
+        &BTreeMap::new(),
+        models,
+        dependencies,
+        lock,
+        limits,
+        cancel,
+    )
+}
+
+/// S3 and S4 with accepted execution points keyed by exact authored state
+/// clause name (FR-104-AC-15). The map applies only to `parsed`, never to
+/// independently compiled libraries.
+pub fn check_with_execution_points(
+    parsed: &ParsedSource,
+    execution_points: &super::StateClauseExecutionPoints,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    lock: &LockEvidence,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     // The byte length of the unit's own source and of each supplied library.
     let source_len = |identity: &SourceIdentity| {
         if identity == parsed.source().identity() {
@@ -556,7 +579,12 @@ pub fn check(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package = resolution.check_unit(parsed, models.models.clone(), lock)?;
+        let package = resolution.check_unit(
+            parsed,
+            models.models.clone(),
+            lock,
+            execution_points.clone(),
+        )?;
         *work = resolution.work;
         let (library_names, libraries) = resolution
             .compiled
@@ -919,6 +947,9 @@ struct Frame {
     unit: ParsedUnit,
     models: SelectedModels,
     lock: LockEvidence,
+    /// Accepted points supplied for the root unit. Library frames always
+    /// carry an empty map because they compile independently.
+    execution_points: super::StateClauseExecutionPoints,
     /// The index of the import being resolved.
     next: usize,
     admitted: Vec<AdmittedImport>,
@@ -926,13 +957,19 @@ struct Frame {
 }
 
 impl Frame {
-    fn new(parsed: &ParsedSource, models: SelectedModels, lock: LockEvidence) -> Self {
+    fn new(
+        parsed: &ParsedSource,
+        models: SelectedModels,
+        lock: LockEvidence,
+        execution_points: super::StateClauseExecutionPoints,
+    ) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
             models,
             lock,
+            execution_points,
             next: 0,
             admitted: Vec::with_capacity(imports),
             links: Vec::with_capacity(imports),
@@ -1017,7 +1054,12 @@ impl<'a> Resolution<'a> {
         Ok(Library {
             identity,
             source: parsed.source().clone(),
-            frame: Frame::new(&parsed, models, LockEvidence::default()),
+            frame: Frame::new(
+                &parsed,
+                models,
+                LockEvidence::default(),
+                super::StateClauseExecutionPoints::new(),
+            ),
         })
     }
 
@@ -1041,14 +1083,16 @@ impl<'a> Resolution<'a> {
             })
         })?;
         let cancel = self.cancel;
+        let execution_points = frame.execution_points.clone();
         let mut declarations = charged(cancel, &mut self.work.s3, || {
-            PackageDeclarations::assemble_with_cancel(
+            PackageDeclarations::assemble_with_execution_points_and_cancel(
                 raw.clone(),
                 unit,
                 models,
                 admitted,
                 limits.assembly,
                 cancel,
+                execution_points,
             )
         })
         .map_err(|refusal| {
@@ -1097,12 +1141,19 @@ impl<'a> Resolution<'a> {
         })
         .map_err(|refusals| {
             let refusals = pending.report(refusals);
-            Box::new(CompileRefusal::Check {
-                region: refusals
-                    .first()
-                    .and_then(|refusal| regions.refusal_region(refusal)),
-                refusals,
-            })
+            let region = refusals.first().and_then(|refusal| {
+                regions
+                    .refusal_region(refusal)
+                    .or_else(|| match &refusal.cause {
+                        CheckCause::MissingName(name)
+                            if frame.execution_points.contains_key(name) =>
+                        {
+                            SourceRegion::new(frame.raw.clone(), 0, 0).ok()
+                        }
+                        _ => None,
+                    })
+            });
+            Box::new(CompileRefusal::Check { region, refusals })
         })?;
         charged(cancel, &mut self.work.s4, || {
             pkg::CheckedPackage::link_with(graph, links)
@@ -1119,8 +1170,9 @@ impl<'a> Resolution<'a> {
         parsed: &ParsedSource,
         models: SelectedModels,
         lock: &LockEvidence,
+        execution_points: super::StateClauseExecutionPoints,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(parsed, models, lock.clone());
+        let mut root = Frame::new(parsed, models, lock.clone(), execution_points);
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

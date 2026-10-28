@@ -126,6 +126,7 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
             },
             clause: match text("clause")? {
                 "invariant" => StateClauseKind::Invariant,
+                "constraint" => StateClauseKind::Constraint,
                 "precondition" => StateClauseKind::Precondition,
                 "postcondition" => StateClauseKind::Postcondition,
                 other => {
