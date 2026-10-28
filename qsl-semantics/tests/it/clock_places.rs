@@ -2262,6 +2262,12 @@ fn absent_lowers_to_the_none_literal_of_its_option() {
 /// [`rpc_document_with`]`(&["x"])` with the variant type `Mode { Idle,
 /// Armed(Clock) }` held by the `Call` field `state`, which `bump` writes.
 fn union_clock_document() -> Vec<u8> {
+    union_clock_document_with(false)
+}
+
+/// [`union_clock_document`], with the second clock case `Waiting(Clock)`
+/// when `waiting` holds.
+fn union_clock_document_with(waiting: bool) -> Vec<u8> {
     let mut document: Value =
         serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
     let mode = package("Mode");
@@ -2281,6 +2287,12 @@ fn union_clock_document() -> Vec<u8> {
         "mode",
         json!({"variants": [case("Idle", 10, None), case("Armed", 11, Some("ix://quire/native/Clock"))]}),
     );
+    if waiting {
+        variant["variants"]
+            .as_array_mut()
+            .expect("variants")
+            .push(case("Waiting", 12, Some("ix://quire/native/Clock")));
+    }
     variant["displayName"] = json!("Mode");
     document["types"]
         .as_array_mut()
@@ -2379,4 +2391,77 @@ fn a_union_case_clock_is_a_guarded_place() {
             "value(self.state.Armed) >= 1 ms"
         )
     );
+}
+
+/// FR-230 "Records, tuples and unions" (TC-685), part of FR-230-AC-12:
+/// writing a clock-bearing union field. With a second clock case
+/// `Waiting(Clock)`, `self.state = Config::Mode::Armed(0 ms)` resets
+/// `Armed` and drops `Waiting`. A postcondition writes the field at most
+/// once: `Armed(0 ms) and Armed(1 ms)` and `Armed(0 ms) and Idle` refuse
+/// `invalid_timed_model`/`conflicting-clock-write` at the second write. A
+/// write outside the frame refuses `clock-write`, and a whole read of the
+/// field, in a guard or through `pre`, refuses as a clock read outside a
+/// constraint.
+#[trace("TC-685")]
+#[test]
+fn a_union_field_is_written_once_and_never_read_whole() {
+    let document = union_clock_document_with(true);
+    let graph = check(
+        &document,
+        &format!("{UNITS}{DENSE}post Arm using v on Config::Call::bump {{ self.state = Config::Mode::Armed(0 ms) }}\n"),
+    )
+    .expect("the switch checks");
+    let model = timed(&graph);
+    let place = |name: &str| {
+        model
+            .clock_fields()
+            .find(|(_, field)| field.name() == name)
+            .map(|(clock, _)| clock)
+            .unwrap_or_else(|| panic!("{name} is a place"))
+    };
+    let [resets] = model.resets() else {
+        panic!("one postcondition");
+    };
+    let reset: Vec<_> = resets
+        .resets()
+        .iter()
+        .map(|reset| (reset.clock(), reset.value().clone()))
+        .collect();
+    assert_eq!(reset, [(place("state.Armed"), exact(0, 1))]);
+    assert_eq!(resets.drops(), [place("state.Waiting")]);
+
+    for (clause, tag, at) in [
+        (
+            "post Twice using v on Config::Call::bump { self.state = Config::Mode::Armed(0 ms) and self.state = Config::Mode::Armed(1 ms) }",
+            "conflicting-clock-write",
+            "self.state = Config::Mode::Armed(1 ms)",
+        ),
+        (
+            "post Switch using v on Config::Call::bump { self.state = Config::Mode::Armed(0 ms) and self.state = Config::Mode::Idle }",
+            "conflicting-clock-write",
+            "self.state = Config::Mode::Idle",
+        ),
+        (
+            "post Outside using v on Config::Call::reply { self.state = Config::Mode::Armed(0 ms) }",
+            "clock-write",
+            "self.state = Config::Mode::Armed(0 ms)",
+        ),
+        (
+            "pre Whole using v on Config::Call::bump { self.state = Config::Mode::Idle }",
+            "clock-read-outside-constraint",
+            "self.state",
+        ),
+        (
+            "post Kept using v on Config::Call::bump { self.state = pre(self.state) }",
+            "clock-read-outside-constraint",
+            "self.state",
+        ),
+    ] {
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::InvalidTimedModel, tag, at),
+            "{clause}"
+        );
+    }
 }

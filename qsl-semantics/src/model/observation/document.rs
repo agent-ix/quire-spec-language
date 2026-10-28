@@ -1762,6 +1762,10 @@ fn admit_variant(
 /// `case`, an extra payload member, a `type` naming any declaration other
 /// than the slot's variant type (`wrong-value-kind`), and a `case` that is
 /// no case of it without a data payload (`invalid-value`).
+///
+/// No spec text yet gives FR-106's form for a union slot; this reading is
+/// pending the ruling on STD-493 (comment 747158c5), which also covers a
+/// case with a data payload, unadmitted here.
 fn admit_union_case(
     references: &References<'_>,
     variant: super::RawVariant<'_>,

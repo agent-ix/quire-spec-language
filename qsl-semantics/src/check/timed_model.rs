@@ -2013,7 +2013,8 @@ struct ResetCut {
     writes: Vec<CollectionWrite>,
     /// The `Option<Clock>` places the postcondition drops.
     drops: Vec<ClockId>,
-    /// The `Option<Clock>` places written so far, by a reset or a drop.
+    /// The guarded places written so far, by a reset or a drop: an
+    /// `Option<Clock>`, or each clock case of a union field written whole.
     option_writes: BTreeSet<ClockId>,
 }
 
@@ -2089,6 +2090,18 @@ fn resets(
             if !written.contains(write.field) {
                 return Err(TemporalCause::ClockWrite { span });
             }
+            // A second write of the union field, another case or the same
+            // one, gives its clock cases no one presence and value.
+            let places: Vec<ClockId> = write
+                .reset
+                .iter()
+                .map(|(clock, _)| *clock)
+                .chain(write.drops.iter().copied())
+                .collect();
+            if places.iter().any(|clock| cut.option_writes.contains(clock)) {
+                return Err(TemporalCause::ConflictingClockWrite { span });
+            }
+            cut.option_writes.extend(places);
             if let Some(name) = write.nullary {
                 cut.leaves.insert(*right, ExprNode::Name(name));
             }
