@@ -58,3 +58,12 @@ from rows and internal lists, and its mandatoriness is unspecified.
 | --- | --- | --- | --- |
 | FND-001 | medium | Under FR-432's "Nothing defaults" rule and class table, a `step memory drain` row is required for every concrete protocol whose `parallel` selects any model. Yet FR-432-AC-3 and TC-310 test only the flush row, and the drain sentence says only "valid". QSL neither requires nor admits the row (SR-1708001 FND-001). Raise a spec ticket asking the owner to confirm the drain row is mandatory and add an AC/TC row, then implement it with the row support. | QSpec spec/functional/protocol/FR-432-map-every-protocol-step-in-refinements.md (Description, "Nothing defaults", class table, AC-3); FR-375 "Checked class catalog" |
 | FND-002 | low | The ticket's emission and readback ACs, and CC-13/CC-15's refusal half, are not in this slice. QSL-1181 tracks emission, but the PR body does not name it, and QSL-1144 does not record that the reader-side refusals move there. Record both on QSL-1144. | QSL-1144; QSL-1181; TC-310 CC-13, CC-15 |
+
+## Dispositions
+
+Round 1, fix commit e5a023bad. The gates are those in SR-1708001's dispositions.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Drain rows are admitted and optional for now, under the ruling that they become mandatory when titan's QSpec AC lands. That is a one-line switch to `Need::Row`, and the test that checks a refinement with no drain row will flip with it. The open item is the spec AC. |
+| FND-002 | fixed | The PR body now says: "In QSL-1181, not here: V2 wire emission and read-back of the `class_catalog`, the drain entries included, and the refusal halves of TC-310's CC-13 and CC-15." |
