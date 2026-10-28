@@ -2217,6 +2217,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let add_invariant = |name: &str, body: Expression| StateClauseDeclaration {
         kind: StateClauseKind::Invariant,
         name: name.to_owned(),
+        name_span: Span { start: 0, end: 0 },
+        authored_operation: None,
         selection: ProfileSelection {
             alias: "v".to_owned(),
             identity: profile_identity.clone(),
@@ -2226,6 +2228,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         context: a_type,
         operation: None,
         operation_key: None,
+        execution_point: None,
         context_population: None,
         frame_population: None,
         spans: expression_spans(&body),

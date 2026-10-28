@@ -90,7 +90,7 @@ pub(crate) fn checked<'a>(vector: &Vector, models: &'a [NativeModel]) -> Checked
             requirement: ir::RequirementRef::parse("example/package-rules", "Rule", 2).unwrap(),
             clause: ir::ClauseId::new(*clause).unwrap(),
             execution_point: ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
+                name: ir::AnchorName::new("validate").unwrap().into(),
             },
         })
         .collect();

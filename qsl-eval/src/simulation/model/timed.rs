@@ -719,8 +719,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// ([`GuardedStep::carries`]): a step writes a clock collection whole
     /// (FR-230 "Collection-valued writes"), or a clock lies below a set or
     /// bag slot of elements with data, which a step matches by equal data
-    /// wherever they land (FR-120-AC-26). A zone over places maps no carried clock yet
-    /// (QSL-1162), so a zone analysis refuses such a model by name.
+    /// wherever they land (FR-120-AC-26). The refinement zone checker has
+    /// not yet mapped these carried clock places.
     pub fn carries_clocks(&self) -> bool {
         self.model
             .resets()

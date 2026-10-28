@@ -1684,11 +1684,13 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         // declaration nodes with their `ModelOwner`, never a `composite_type`
         // with a source owner.
         DomainPackageRecord::RecordValueType(_) => Some((NodeTag::Model, "record_value_type")),
+        DomainPackageRecord::TupleValueType(_) => Some((NodeTag::Model, "tuple_value_type")),
         DomainPackageRecord::EventType(_) => Some((NodeTag::Model, "event_type")),
         // FR-360 item 12: a variant type is a model declaration node with
         // its `ModelOwner`, never a unit-owned `scalar_type`/`enum`.
         DomainPackageRecord::Enum(_) => Some((NodeTag::Model, "variant_type")),
         DomainPackageRecord::Variant(_)
+        | DomainPackageRecord::TuplePosition(_)
         | DomainPackageRecord::FieldMember(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)

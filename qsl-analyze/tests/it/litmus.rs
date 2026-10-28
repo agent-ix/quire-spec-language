@@ -216,8 +216,8 @@ fn document_digest(document: &[u8]) -> [u8; 32] {
     *package_input([document]).keys().next().expect("one model")
 }
 
-/// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreOne` stores 1,
-/// `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
+/// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreZero` stores 0,
+/// `StoreOne` stores 1, `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
 /// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
 /// `BothOne` stores 1 to `v` and `w`; `LooksY` selects the flag cell `look`
 /// loads and `Looked` loads its `v` into `r1` and returns whether it is 1;
@@ -230,6 +230,7 @@ pub(crate) fn contracts() -> String {
          pre XWZero using v on M::Cell::set { self.id = 0 and self.w = 0 }\n\
          pre XWZeroBoth using v on M::Cell::both { self.id = 0 and self.w = 0 }\n\
          pre IsY using v on M::Cell::set { self.id = 1 }\n\
+         post StoreZero using v on M::Cell::set { self.v = 0 }\n\
          post StoreOne using v on M::Cell::set { self.v = 1 }\n\
          post StoreTwo using v on M::Cell::set { self.v = 2 }\n\
          post StoreThree using v on M::Cell::set { self.v = 3 }\n\

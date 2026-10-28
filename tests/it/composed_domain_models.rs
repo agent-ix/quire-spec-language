@@ -1266,8 +1266,9 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
                     if reading.declaration.key == &key("Reading"))
             };
             for name in ["FillReady", "Filled"] {
-                // The lift orders an operation's parameters by identity.
-                let [(Some(forced), Anchor::InvocationInput, Some(NativeType::Boolean)), (Some(level), Anchor::InvocationInput, level_ty)] =
+                // The lift orders an operation's parameters as authored
+                // (FCD #317): `level` is written before `forced`.
+                let [(Some(level), Anchor::InvocationInput, level_ty), (Some(forced), Anchor::InvocationInput, Some(NativeType::Boolean))] =
                     &binders(name, BinderKind::InvocationParameter)[..]
                 else {
                     panic!("{name}: two invocation parameters")

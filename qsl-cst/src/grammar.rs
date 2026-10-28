@@ -626,7 +626,7 @@ fn source_and_types(g: &mut Grammar) {
         P::StateClause,
         c(vec![
             s(vec![
-                x("invariant"),
+                c(vec![x("invariant"), x("constraint")]),
                 ident(),
                 x("using"),
                 ident(),

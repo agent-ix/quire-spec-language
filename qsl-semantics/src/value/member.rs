@@ -64,10 +64,10 @@ impl AcceptedPoint {
 impl std::hash::Hash for AcceptedPoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match &self.0 {
-            ExecutionPoint::Initialization { name } => (0_u8, name).hash(state),
-            ExecutionPoint::Handler { name } => (1_u8, name).hash(state),
-            ExecutionPoint::Pre { operation } => (2_u8, operation).hash(state),
-            ExecutionPoint::Post { operation } => (3_u8, operation).hash(state),
+            ExecutionPoint::Initialization { name } => (0_u8, name.as_str()).hash(state),
+            ExecutionPoint::Handler { name } => (1_u8, name.as_str()).hash(state),
+            ExecutionPoint::Pre { operation } => (2_u8, operation.as_str()).hash(state),
+            ExecutionPoint::Post { operation } => (3_u8, operation.as_str()).hash(state),
         }
     }
 }
@@ -435,10 +435,11 @@ struct DeclarationWire {
     digest: String,
 }
 
-/// FR-341's own three spellings of a [`StateClauseKind`].
+/// FR-341's spellings of a [`StateClauseKind`].
 fn state_clause_spelling(clause: StateClauseKind) -> &'static str {
     match clause {
         StateClauseKind::Invariant => "invariant",
+        StateClauseKind::Constraint => "constraint",
         StateClauseKind::Precondition => "precondition",
         StateClauseKind::Postcondition => "postcondition",
     }
@@ -604,7 +605,11 @@ mod tests {
     #[test]
     fn state_clause_renders_each_closed_execution_point_variant() {
         use quire_contract_model::AnchorName;
-        let anchor = |text: &str| AnchorName::new(text).expect("test anchor name is valid");
+        let anchor = |text: &str| -> quire_contract_model::ExecutionPointName {
+            AnchorName::new(text)
+                .expect("test anchor name is valid")
+                .into()
+        };
         let cases = [
             (
                 ExecutionPoint::Initialization {

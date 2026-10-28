@@ -2469,7 +2469,7 @@ fn read_clause(
     }
     let mut removed = BTreeSet::new();
     let (leaves, read) = match clause.kind {
-        StateClauseKind::Invariant => {
+        StateClauseKind::Invariant | StateClauseKind::Constraint => {
             // A clock collection written whole anywhere but in a
             // postcondition (FR-230 "Collection-valued writes").
             let written = located.form.expression.iter().find(|node| {

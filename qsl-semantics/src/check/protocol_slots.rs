@@ -224,6 +224,13 @@ pub struct CheckedSlots {
     /// slot `i` of every node body, guard and `terminal when` predicate the
     /// slots hold.
     pub binders: Vec<CheckedSlotBinder>,
+    /// `In(n)` of each control of the `run` tree (QSpec FR-466 "Binder
+    /// scope"): the indices into `binders` readable at its entry. Its size
+    /// is the level of the control's own binder (QSpec FR-464 "Binders").
+    pub entries: BTreeMap<ProtocolNodeId, BTreeSet<usize>>,
+    /// `Out(root)`: the indices into `binders` readable after the root
+    /// control, which `finish` reads.
+    pub root_out: BTreeSet<usize>,
 }
 
 /// One binder a protocol's slots read (FR-218 "Scopes"), at the local slot
@@ -246,7 +253,7 @@ pub struct CheckedSlotBinder {
 /// What [`check`] found.
 pub(crate) enum Slots {
     /// Every slot checked, with the package's running node total.
-    Checked(CheckedSlots, u64),
+    Checked(Box<CheckedSlots>, u64),
     /// Refusals, in source order.
     Refused(Vec<CheckRefusal>),
     /// A binder's declared type did not resolve: `protocol_clause::content`
@@ -390,12 +397,29 @@ impl Checker<'_, '_> {
                 .protocol
                 .declarations
                 .get(node)
-                .filter(|declaration| declaration.kind == ProtocolNodeKind::Finish)
-                .map(|declaration| {
-                    protocol_location(
-                        &self.protocol.name.name,
-                        ProtocolSite::FinishBody(&declaration.name.name),
-                    )
+                .and_then(|declaration| {
+                    if declaration.kind == ProtocolNodeKind::Finish {
+                        return Some(protocol_location(
+                            &self.protocol.name.name,
+                            ProtocolSite::FinishBody(&declaration.name.name),
+                        ));
+                    }
+                    // A control's constraint or condition is lowered into the
+                    // control's own node, so its tree is rooted at that
+                    // control's body site (FR-096).
+                    matches!(slot.kind, SlotKind::Constraint | SlotKind::Condition).then(|| {
+                        let path: Vec<String> = self
+                            .protocol
+                            .scope_names(declaration.scope)
+                            .into_iter()
+                            .map(|scope| scope.name.clone())
+                            .chain(std::iter::once(declaration.name.name.clone()))
+                            .collect();
+                        protocol_location(
+                            &self.protocol.name.name,
+                            ProtocolSite::ControlBody(&path),
+                        )
+                    })
                 }),
             SlotOwner::Role(role) => self.protocol.roles.get(role).map(|role| {
                 protocol_location(
@@ -1487,6 +1511,12 @@ pub(crate) fn check(
             readers: readers.iter().copied().map(ProtocolNodeId).collect(),
         })
         .collect();
+    slots.entries = flow
+        .inputs
+        .into_iter()
+        .map(|(node, entry)| (ProtocolNodeId(node), entry))
+        .collect();
+    slots.root_out = flow.root_out;
     slots.binders = checker
         .binders
         .iter()
@@ -1518,7 +1548,7 @@ pub(crate) fn check(
             },
         })
         .collect();
-    Slots::Checked(slots, checker.nodes)
+    Slots::Checked(Box::new(slots), checker.nodes)
 }
 
 fn nested_repeats(checked: &CheckedProtocol) -> BTreeSet<ProtocolNodeId> {
