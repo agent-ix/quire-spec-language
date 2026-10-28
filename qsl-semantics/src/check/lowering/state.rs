@@ -147,7 +147,7 @@ pub(crate) fn check_execution_point(
     point: &AcceptedPoint,
 ) -> Result<(), ExecutionPointRefusal> {
     use quire_contract_model::ExecutionPoint;
-    let named = |named: &quire_contract_model::AnchorName| match operation {
+    let named = |named: &quire_contract_model::ExecutionPointName| match operation {
         Some(operation) if operation == named.as_str() => Ok(()),
         Some(_) | None => Err(ExecutionPointRefusal::OperationMismatch),
     };
@@ -626,10 +626,12 @@ impl Lowering<'_> {
 #[cfg(test)]
 mod execution_point_tests {
     use super::*;
-    use quire_contract_model::{AnchorName, ExecutionPoint};
+    use quire_contract_model::{AnchorName, ExecutionPoint, ExecutionPointName};
 
-    fn name(text: &str) -> AnchorName {
-        AnchorName::new(text).expect("test anchor name is valid")
+    fn name(text: &str) -> ExecutionPointName {
+        AnchorName::new(text)
+            .expect("test anchor name is valid")
+            .into()
     }
 
     fn init(text: &str) -> AcceptedPoint {

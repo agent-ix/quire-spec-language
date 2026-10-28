@@ -449,7 +449,7 @@ fn pump_inputs(operation: w::ExportRef) -> Inputs {
     inputs.execution(
         "PumpReady",
         ir::ExecutionPoint::Pre {
-            operation: ir::AnchorName::new("run").expect("anchor name"),
+            operation: ir::AnchorName::new("run").expect("anchor name").into(),
         },
         w::Execution::Pre { operation },
     );
@@ -988,7 +988,7 @@ fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
     inputs.execution(
         "FillReady",
         ir::ExecutionPoint::Pre {
-            operation: anchor("fill"),
+            operation: anchor("fill").into(),
         },
         w::Execution::Pre {
             operation: fill.clone(),
@@ -997,7 +997,7 @@ fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
     inputs.execution(
         "Filled",
         ir::ExecutionPoint::Post {
-            operation: anchor("fill"),
+            operation: anchor("fill").into(),
         },
         w::Execution::Post {
             operation: fill.clone(),
@@ -1006,7 +1006,7 @@ fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
     inputs.execution(
         "Swapped",
         ir::ExecutionPoint::Post {
-            operation: anchor("swap"),
+            operation: anchor("swap").into(),
         },
         w::Execution::Post {
             operation: swap.clone(),

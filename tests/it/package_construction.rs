@@ -79,7 +79,7 @@ fn binding() -> ClauseBinding {
         requirement: ir::RequirementRef::parse("example/package-rules", "Rule", 2).unwrap(),
         clause: ir::ClauseId::new("rule").unwrap(),
         execution_point: ir::ExecutionPoint::Handler {
-            name: ir::AnchorName::new("validate").unwrap(),
+            name: ir::AnchorName::new("validate").unwrap().into(),
         },
     }
 }
@@ -215,7 +215,7 @@ fn actual_checked_clause_retains_complete_selected_model_and_dispositions() {
         requirement: ir::RequirementRef::parse("example/package-rules", "Rule", 2).unwrap(),
         clause: ir::ClauseId::new("rule").unwrap(),
         execution_point: ir::ExecutionPoint::Handler {
-            name: ir::AnchorName::new("validate").unwrap(),
+            name: ir::AnchorName::new("validate").unwrap().into(),
         },
     };
     let package = NativePackage::new(

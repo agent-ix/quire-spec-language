@@ -35,19 +35,19 @@ fn rule<'a>(models: &'a [NativeModel], kind: &str, expression: &str) -> NativePa
         "invariant" => (
             "M::Node at current",
             ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
+                name: ir::AnchorName::new("validate").unwrap().into(),
             },
         ),
         "pre" => (
             "M::Node::step",
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         "post" => (
             "M::Node::step",
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         ),
         _ => unreachable!("known test clause kind"),
