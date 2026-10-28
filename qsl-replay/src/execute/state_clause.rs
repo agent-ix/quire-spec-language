@@ -412,7 +412,7 @@ pub fn replay_state_clause(
 /// observation is the pre-call state alone.
 fn expected_form(kind: StateClauseKind) -> ObservationForm {
     match kind {
-        StateClauseKind::Invariant => ObservationForm::Current,
+        StateClauseKind::Invariant | StateClauseKind::Constraint => ObservationForm::Current,
         StateClauseKind::Precondition => ObservationForm::PreCall,
         StateClauseKind::Postcondition => ObservationForm::Invocation,
     }

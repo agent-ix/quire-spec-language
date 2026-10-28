@@ -1033,6 +1033,23 @@ fn an_invariant_builds_one_state_clause_form_with_no_operation() {
     assert_every_span_slice_reparses(&text, spans, spans.root(), form.body.root());
 }
 
+#[trace("TC-456", "FR-102-AC-8")]
+#[test]
+fn a_constraint_builds_a_distinct_current_state_clause_form() {
+    let (_, unit) = build(
+        "constraint Low using v on Config::ConfigVersion at current { self.versionNumber <= 1 }",
+    );
+    let form = state_clause(unit.forms()[0].form());
+    assert_eq!(form.kind, StateClauseKind::Constraint);
+    assert_eq!(form.name.name, "Low");
+    assert_eq!(form.context.name, "Config::ConfigVersion");
+    assert!(form.operation.is_none());
+    assert_eq!(
+        show(form.body.root()),
+        "LessOrEqual(Field[versionNumber](SelfRef), 1)"
+    );
+}
+
 #[trace("TC-456", "FR-102-AC-2")]
 #[test]
 fn pre_and_post_build_their_own_kind_with_the_operation_member() {
