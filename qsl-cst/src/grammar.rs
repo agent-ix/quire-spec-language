@@ -996,6 +996,7 @@ fn expressions(g: &mut Grammar) {
             x("false"),
             x("null"),
             x("none"),
+            x("absent"),
             x("self"),
             x("result"),
             s(vec![x("protocol"), r(P::QualifiedName)]),

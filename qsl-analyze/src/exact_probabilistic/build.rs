@@ -153,7 +153,9 @@ struct Node {
     truths: Vec<bool>,
     /// The state it was first reached from, and the model step that reached
     /// it: none for a resolution, which is no model step.
-    parent: Option<(usize, Option<PathStep>)>,
+    parent: Option<(usize, Option<TraceStep>)>,
+    /// The subject initial state that first discovered this node.
+    initial: u32,
     /// Set at an intermediate state.
     resolution: Option<Resolution>,
 }
@@ -176,7 +178,16 @@ struct Planned {
     probability: Rational,
     rewards: Vec<(Identifier, Value)>,
     /// The model step the edge takes.
-    step: Option<PathStep>,
+    step: Option<TraceStep>,
+}
+
+/// The step retained during exploration. Its complete product target is
+/// filled from the discovered path when an undefined read is reported.
+#[derive(Clone)]
+struct TraceStep {
+    action: Option<ScheduledIdentity>,
+    draw: Option<Vec<Value>>,
+    probability: Rational,
 }
 
 struct Builder<'r, 'c> {
@@ -203,6 +214,7 @@ struct Hit {
     read: UndefinedRead,
     cause: UndefinedCause,
     state_key: DigestRecord,
+    model: Vec<u8>,
 }
 
 impl Builder<'_, '_> {
@@ -224,7 +236,17 @@ impl Builder<'_, '_> {
             for binding in 0..self.bindings.len() {
                 let truths = match self.truths(&state, binding)? {
                     Ok(truths) => truths,
-                    Err(hit) => return Err(self.undefined(None, None, None, hit)),
+                    Err(hit) => {
+                        let (monitor, accumulator) = self.plan.initial_control()?;
+                        let key = ProbKey {
+                            binding: self.bindings[binding].0.clone(),
+                            model: hit.model.clone(),
+                            monitor,
+                            accumulator,
+                            pending: None,
+                        };
+                        return Err(self.undefined(None, None, None, at, key, hit));
+                    }
                 };
                 let (monitor, accumulator) = self.plan.start(&truths)?;
                 let key = self.key_of(&state, binding, monitor, accumulator, None)?;
@@ -234,7 +256,7 @@ impl Builder<'_, '_> {
                     truths,
                     resolution: None,
                 };
-                let id = self.intern(target, None, None)?;
+                let id = self.intern(target, None, None, at)?;
                 starts.push((at, self.bindings[binding].0.clone(), ProbStateId(id)));
             }
         }
@@ -318,6 +340,7 @@ impl Builder<'_, '_> {
                         read: *read,
                         cause,
                         state_key: digest,
+                        model,
                     }));
                 }
                 PredicateReading::Refused(outcome) => {
@@ -356,7 +379,8 @@ impl Builder<'_, '_> {
         &mut self,
         target: Target,
         parent: Option<usize>,
-        step: Option<PathStep>,
+        step: Option<TraceStep>,
+        initial: u32,
     ) -> Step<usize> {
         if let Some(known) = self.index.get(&target.key) {
             return Ok(*known);
@@ -368,6 +392,9 @@ impl Builder<'_, '_> {
             ));
         }
         let id = self.nodes.len();
+        let initial = parent
+            .map(|parent| self.nodes[parent].initial)
+            .unwrap_or(initial);
         let decided = target.key.monitor.is_some_and(MonitorState::is_decided);
         self.index.insert(target.key.clone(), id);
         self.nodes.push(Node {
@@ -375,6 +402,7 @@ impl Builder<'_, '_> {
             model: target.model,
             truths: target.truths,
             parent: parent.map(|parent| (parent, step)),
+            initial,
             resolution: target.resolution,
         });
         if !decided {
@@ -389,25 +417,48 @@ impl Builder<'_, '_> {
     fn undefined(
         &self,
         parent: Option<usize>,
-        step: Option<&PathStep>,
-        resolved: Option<Vec<u8>>,
+        step: Option<&TraceStep>,
+        resolved: Option<ProbKey>,
+        initial: u32,
+        key: ProbKey,
         hit: Hit,
     ) -> Halt {
-        let mut steps: Vec<PathStep> = step.cloned().into_iter().collect();
+        let mut steps: Vec<PathStep> = step
+            .map(|step| PathStep {
+                action: step.action.clone(),
+                draw: step.draw.clone(),
+                probability: step.probability.clone(),
+                target: Box::new(key.clone()),
+                resolved: None,
+            })
+            .into_iter()
+            .collect();
         let mut chosen = resolved;
         let mut cursor = parent;
+        let mut initial = initial;
         while let Some(at) = cursor {
+            initial = self.nodes[at].initial;
             let Some((before, taken)) = &self.nodes[at].parent else {
                 break;
             };
             match taken {
-                Some(taken) => steps.push(PathStep {
-                    resolved: chosen.take(),
-                    ..taken.clone()
-                }),
+                Some(taken) => {
+                    let resolution = chosen.take();
+                    steps.push(PathStep {
+                        action: taken.action.clone(),
+                        draw: taken.draw.clone(),
+                        probability: taken.probability.clone(),
+                        target: Box::new(
+                            resolution
+                                .clone()
+                                .unwrap_or_else(|| self.nodes[at].key.clone()),
+                        ),
+                        resolved: resolution.map(Box::new),
+                    });
+                }
                 // The edge into `at` resolved a draw: `at` is the chosen
                 // post-state.
-                None => chosen = Some(self.nodes[at].key.model.clone()),
+                None => chosen = Some(self.nodes[at].key.clone()),
             }
             cursor = Some(*before);
         }
@@ -418,10 +469,13 @@ impl Builder<'_, '_> {
                 total.mul(&step.probability)
             });
         Halt::Undefined(Box::new(UndefinedPath {
+            initial,
+            binding: key.binding.clone(),
             position: u64::try_from(steps.len()).unwrap_or(u64::MAX),
             steps,
             probability,
             state_key: hit.state_key,
+            key: Box::new(key),
             read: hit.read,
             cause: hit.cause,
         }))
@@ -442,22 +496,29 @@ impl Builder<'_, '_> {
         at: usize,
         post: &ModelSimState,
         rewards: &[(Identifier, Value)],
-        step: Option<&PathStep>,
+        step: Option<&TraceStep>,
     ) -> Step<Target> {
         let binding = self.binding_of(at)?;
         let truths = match self.truths(post, binding)? {
             Ok(truths) => truths,
             Err(hit) => {
-                let resolved = match step {
-                    Some(_) => None,
-                    None => Some(
-                        self.system
-                            .state_key(post)
-                            .map_err(|_| fault("state-key-encodes"))?
-                            .0,
-                    ),
-                };
-                return Err(self.undefined(Some(at), step, resolved, hit));
+                let source = &self.nodes[at].key;
+                let key = self.key_of(
+                    post,
+                    binding,
+                    source.monitor,
+                    source.accumulator.clone(),
+                    None,
+                )?;
+                let resolved = step.is_none().then(|| key.clone());
+                return Err(self.undefined(
+                    Some(at),
+                    step,
+                    resolved,
+                    self.nodes[at].initial,
+                    key,
+                    hit,
+                ));
             }
         };
         let source = &self.nodes[at];
@@ -495,7 +556,7 @@ impl Builder<'_, '_> {
                     self.max_transitions,
                 ));
             }
-            let to = self.intern(edge.target, Some(at), edge.step)?;
+            let to = self.intern(edge.target, Some(at), edge.step, self.nodes[at].initial)?;
             self.edges.push(ProbEdge {
                 from: ProbStateId(at),
                 choice: edge.choice,
@@ -549,11 +610,10 @@ impl Builder<'_, '_> {
                 planned.push(self.terminal(at, model, step.rewards)?);
                 continue;
             };
-            let taken = PathStep {
+            let taken = TraceStep {
                 action: Some(identity.clone()),
                 draw: Some(step.random.clone()),
                 probability: step.probability.clone(),
-                resolved: None,
             };
             let target = self.advance(at, &step.post, &step.rewards, Some(&taken))?;
             planned.push(Planned {
@@ -600,11 +660,10 @@ impl Builder<'_, '_> {
     ) -> Step<()> {
         let first = planned.len();
         for draw in action.draws {
-            let taken = PathStep {
+            let taken = TraceStep {
                 action: Some(action.identity.clone()),
                 draw: Some(draw.random.clone()),
                 probability: draw.probability.clone(),
-                resolved: None,
             };
             let mut successors = draw.successors;
             match successors.len() {
@@ -632,11 +691,10 @@ impl Builder<'_, '_> {
                     }) {
                         merged.probability = merged.probability.add(&draw.probability);
                         merged.draw = None;
-                        merged.step = Some(PathStep {
+                        merged.step = Some(TraceStep {
                             action: taken.action,
                             draw: None,
                             probability: merged.probability.clone(),
-                            resolved: None,
                         });
                         continue;
                     }
@@ -708,11 +766,10 @@ impl Builder<'_, '_> {
         rewards: Vec<(Identifier, Value)>,
     ) -> Step<Planned> {
         let probability = Rational::from_integer(Integer::one());
-        let taken = PathStep {
+        let taken = TraceStep {
             action: None,
             draw: None,
             probability: probability.clone(),
-            resolved: None,
         };
         let target = if self.plan.closes_at_terminal() {
             let Some(MonitorState::Formula(FormulaState::Running(running))) =
