@@ -36,3 +36,24 @@ Gaps:
 ## Verdict
 
 Changes requested together with SR-1763001. All three findings are low.
+
+## Dispositions
+
+Round 1, head 07cfab04e.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_reset_over_option_elements_makes_each_present`: from every initial state, `forall(e in self.q : e = 0 ms)` leaves every element present at 0 ms. The reset-free mutant makes it fail. |
+| FND-002 | fixed | `an_option_element_keeps_its_bit_without_a_write` now asserts that every added element is absent and that `q` still grows. The added-free mutant makes it fail. |
+| FND-003 | fixed | `a_dropped_element_regrows_absent`: `[true] -> [] -> [false]` only. The added-free mutant makes it fail. |
+
+## Round 2 (delta review)
+
+Head 92831e891, which carries QSL-1209.
+- **FR-230-AC-52** (new) is covered by `the_clock_presence_frame_vectors_step_as_published`, traced `#[trace("TC-685", "FR-230-AC-52")]`:
+  - all 14 FP vectors run, with `ran == 14`;
+  - FP-11 and FP-12 give the S3 refusal, checked against the vector's `refused`;
+  - every CK-31 pair outcome is asserted.
+- **TC-685 step 35** matches the test.
+
+No new gaps.
