@@ -1923,3 +1923,108 @@ fn a_clock_parameter_ranges_over_the_places_it_may_write() {
     );
     assert_eq!(cause.tag(), "clock-comparison");
 }
+
+/// [`rpc_document_with`]`(&["x"])` with the optional clock field `v`
+/// (`Option<Clock>`), which `bump` writes.
+fn option_clock_document() -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mut v = field("v", "ix://quire/native/Clock");
+    v["presence"] = json!("optional");
+    let call_type = &mut document["types"][1];
+    call_type["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    for operation in call_type["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "bump" {
+            operation["frame"]["modifies"]
+                .as_array_mut()
+                .expect("frame")
+                .push(json!(call("v")));
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-12 and FR-230-AC-39 (TC-685), S3's part: over `v:
+/// Option<Clock>`, the place `v` holds a presence bit. The guard
+/// `present(self.v) and value(self.v) >= 1 ms` checks to one convex part
+/// `v >= 1` requiring `v` present, with no data predicate; `not
+/// present(self.v)` is a part requiring it absent, never a clock
+/// constraint. `self.v = 0 ms` records a reset of `v`, which makes it
+/// present, and `when present(self.v) { value(self.v) <= 3 ms }` records
+/// the bound with the presence it requires. `value(self.v) >= 1 ms`
+/// without `present(self.v)`, in a guard or a time invariant, refuses
+/// `undefined_expression`/`unproved-presence`.
+#[trace("TC-685")]
+#[test]
+fn an_option_clock_reads_its_presence_bit() {
+    use qsl_semantics::check::{CheckCause, Obligation};
+
+    let document = option_clock_document();
+    let body = format!(
+        "{UNITS}{DENSE}\
+         pre Armed using v on Config::Call::bump {{ present(self.v) and value(self.v) >= 1 ms }}\n\
+         pre Idle using v on Config::Call::reply {{ not present(self.v) }}\n\
+         post Arm using v on Config::Call::bump {{ self.v = 0 ms }}\n\
+         time invariant Bound when {{ present(self.v) }} {{ value(self.v) <= 3 ms }}\n"
+    );
+    let graph = check(&document, &body).expect("an Option<Clock> place checks");
+    let model = timed(&graph);
+    let (v, field) = model
+        .clock_fields()
+        .find(|(_, field)| field.name() == "v")
+        .expect("v is a place");
+    assert!(field.presence_bit());
+    let parts: Vec<_> = model
+        .guards()
+        .iter()
+        .map(|guard| {
+            let [part] = guard.parts() else {
+                panic!("one part: {:?}", guard.parts());
+            };
+            (
+                part.presences().to_vec(),
+                part.clocks()
+                    .iter()
+                    .map(|constraint| (constraint.clock(), constraint.op()))
+                    .collect::<Vec<_>>(),
+                part.data().is_none(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            (vec![(v, true)], vec![(v, ClockOp::GreaterOrEqual)], true),
+            (vec![(v, false)], vec![], true),
+        ]
+    );
+    let resets: Vec<_> = model
+        .resets()
+        .iter()
+        .flat_map(|resets| resets.resets())
+        .map(|reset| (reset.clock(), reset.value().clone()))
+        .collect();
+    assert_eq!(resets, [(v, exact(0, 1))]);
+    let [invariant] = model.invariants() else {
+        panic!("one invariant");
+    };
+    assert_eq!(invariant.presences(), [v]);
+    assert_eq!(invariant.bounds()[0].clock(), v);
+
+    for clause in [
+        "pre Late using v on Config::Call::bump { value(self.v) >= 1 ms }\n",
+        "time invariant Loose when { true } { value(self.v) <= 3 ms }\n",
+    ] {
+        let refusals = check(&document, &format!("{UNITS}{DENSE}{clause}"))
+            .expect_err("an unproved presence refuses");
+        assert!(
+            refusals
+                .iter()
+                .any(|refusal| matches!(refusal.cause, CheckCause::Unproved(Obligation::Presence))),
+            "{clause}: {refusals:?}"
+        );
+    }
+}

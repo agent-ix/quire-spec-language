@@ -637,7 +637,15 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 .rposition(|step| matches!(step, PlaceStep::Slot(_)))
                 .map_or(0, |last| last + 1);
             if through == 0 {
-                live = live.saturating_add(1);
+                // An absent `Option<Clock>` holds no clock.
+                let absent = field.presence_bit()
+                    && !matches!(
+                        stored.fields.get(field.field()),
+                        Some(quire_exact::Value::Boolean(true))
+                    );
+                if !absent {
+                    live = live.saturating_add(1);
+                }
                 continue;
             }
             let Some(PlaceStep::Field(first)) = field.path().first() else {
@@ -772,6 +780,74 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .collect()
     }
 
+    /// Whether the presence bits of `post` are the ones `vector`'s step
+    /// writes (FR-230 "Presence bit"): a reset of an `Option<Clock>` of the
+    /// receiver makes it present, and every other bit of an object `pre`
+    /// holds keeps its value. A frame writing the field enumerates both
+    /// values of the bit; this keeps the written one.
+    fn bits_follow(
+        &self,
+        vector: &super::frames::EnabledVector,
+        pre: &ModelSimState,
+        post: &ModelSimState,
+    ) -> bool {
+        let set: Vec<ClockId> = self
+            .model
+            .resets()
+            .iter()
+            .filter(|resets| {
+                resets.operation().declaring == vector.declaring
+                    && resets.operation().declaration.name() == vector.name
+            })
+            .flat_map(|resets| resets.resets())
+            .filter(|reset| reset.selection().is_none() && reset.parameter().is_none())
+            .map(|reset| reset.clock())
+            .collect();
+        let bit = |state: &ModelSimState, place: &ClockPlace, field: &DeclarationKey| {
+            place.stored(state).map(|stored| {
+                matches!(
+                    stored.fields.get(field),
+                    Some(quire_exact::Value::Boolean(true))
+                )
+            })
+        };
+        self.places.iter().all(|place| {
+            let Some(field) = self
+                .model
+                .clock(place.clock)
+                .filter(|field| field.presence_bit())
+            else {
+                return true;
+            };
+            let (Some(before), Some(after)) = (
+                bit(pre, place, field.field()),
+                bit(post, place, field.field()),
+            ) else {
+                return true;
+            };
+            let written = place.holds(&vector.receiver) && set.contains(&place.clock);
+            after == (written || before)
+        })
+    }
+
+    /// Whether each `Option<Clock>` place of `object` in `presences` is
+    /// present at `state` exactly when its entry says so (FR-230 "Presence
+    /// bit").
+    fn presences_hold(
+        &self,
+        state: &ModelSimState,
+        object: &ObjectReference,
+        presences: impl IntoIterator<Item = (ClockId, bool)>,
+    ) -> bool {
+        presences.into_iter().all(|(clock, present)| {
+            let live = self
+                .place(object, clock)
+                .and_then(|place| self.places.get(place))
+                .is_some_and(|place| self.live(place, state));
+            live == present
+        })
+    }
+
     /// The place of `clock` on `object`, `None` for a clock in a collection,
     /// which has one place for each slot.
     pub fn place(&self, object: &ObjectReference, clock: ClockId) -> Option<usize> {
@@ -802,12 +878,20 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         let Some(stored) = place.stored(state) else {
             return false;
         };
-        if place.slots.is_empty() {
-            return true;
-        }
         let Some(field) = self.model.clock(place.clock) else {
             return false;
         };
+        // An `Option<Clock>` place is live while its presence bit is set
+        // (FR-230 "Presence bit").
+        if field.presence_bit() {
+            return matches!(
+                stored.fields.get(field.field()),
+                Some(quire_exact::Value::Boolean(true))
+            );
+        }
+        if place.slots.is_empty() {
+            return true;
+        }
         let typing = self.system.typing();
         let mut slots = place.slots.iter();
         // The steps through the innermost collection: the clock below it is
@@ -996,7 +1080,14 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 }
             })?;
             for (object, holds) in readings {
-                if holds {
+                let present = || {
+                    self.presences_hold(
+                        state,
+                        &object,
+                        invariant.presences().iter().map(|clock| (*clock, true)),
+                    )
+                };
+                if holds && present() {
                     bounds.extend(self.over(&object, invariant.bounds(), state));
                 }
             }
@@ -1024,6 +1115,11 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             )?;
             for (object, holds) in readings {
                 if holds
+                    && self.presences_hold(
+                        &state.discrete,
+                        &object,
+                        invariant.presences().iter().map(|clock| (*clock, true)),
+                    )
                     && !self
                         .over(&object, invariant.bounds(), &state.discrete)
                         .all(|bound| bound.holds(&state.clocks))
@@ -1139,6 +1235,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                     continue;
                 };
                 self.within_max_clocks(post)?;
+                if !self.bits_follow(&vector, state, post) {
+                    continue;
+                }
                 for instance in &instances {
                     let transition = &self
                         .instance_transition(transition, instance)
@@ -1155,6 +1254,13 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         guards.push(guard.clause().to_owned());
                         let mut clause_parts = Vec::new();
                         for part in guard.parts() {
+                            if !self.presences_hold(
+                                state,
+                                &vector.receiver,
+                                part.presences().iter().copied(),
+                            ) {
+                                continue;
+                            }
                             let data = match (
                                 part.data(),
                                 self.elements(state, &vector.receiver, part.elements()),
@@ -1790,6 +1896,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                         .iter()
                         .map(|binding| at_slot(binding, slot))
                         .collect();
+                    if !self.presences_hold(state, receiver, part.presences().iter().copied()) {
+                        continue;
+                    }
                     let data = match (part.data(), self.elements(state, receiver, &elements)) {
                         (None, _) => true,
                         (Some(_), None) => false,

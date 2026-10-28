@@ -597,6 +597,7 @@ pub struct TimeInvariant {
     name: String,
     context: EffectiveId,
     predicate: CheckedTimedPredicate,
+    presences: Vec<ClockId>,
     bounds: Vec<ClockConstraint>,
 }
 
@@ -611,9 +612,17 @@ impl TimeInvariant {
         self.context
     }
 
-    /// The `when` predicate.
+    /// The `when` predicate, its `present` conjuncts over `Option<Clock>`
+    /// places taken out.
     pub fn predicate(&self) -> &CheckedTimedPredicate {
         &self.predicate
+    }
+
+    /// The `Option<Clock>` places of `self` the `when` predicate requires
+    /// present (FR-230 "Presence bit"), read at the state with
+    /// [`Self::predicate`].
+    pub fn presences(&self) -> &[ClockId] {
+        &self.presences
     }
 
     /// The upper bounds, each `<` or `<=`, in declared order.
@@ -783,6 +792,7 @@ enum UrgencyDraft {
 struct InvariantDraft {
     name: String,
     predicate: PredicateDraft,
+    presences: Vec<ClockId>,
     bounds: Vec<ClockConstraint>,
 }
 
@@ -1953,6 +1963,30 @@ fn resets(
             .resets(path, *right, &mut cut)?;
             continue;
         }
+        // FR-230 "Presence bit": `self.v = c` of an `Option<Clock>` makes
+        // the place present and resets its clock to `c`.
+        if let Some(clock) = located.option(*left) {
+            if located.reads_clock(*right) {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            let value = match located.constant(*right, clocks) {
+                Ok(value) => value,
+                Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                    return Err(TemporalCause::ClockWrite { span })
+                }
+                Err(cause) => return Err(cause),
+            };
+            let in_frame = clocks
+                .fields
+                .get(clock.0)
+                .is_some_and(|field| written.contains(&field.field));
+            if !in_frame {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+            cut.resets.push(ResetDraft::single(clock, value, span));
+            continue;
+        }
         if let Some(parameter) = located.parameter(*left) {
             if located.reads_clock(*right) {
                 return Err(TemporalCause::ClockWrite { span });
@@ -2402,8 +2436,9 @@ fn time_invariant(
     clocks: &Clocks<'_>,
     context: EffectiveId,
     population: Option<PopulationDomain>,
-) -> Result<InvariantDraft, TemporalCause> {
-    let predicate = state_predicate(&form.guard, clocks, context, population)?;
+) -> Result<InvariantDraft, CheckCause> {
+    let (guard, presences) = presence_conjuncts(&form.guard, clocks, context)?;
+    let predicate = state_predicate(&guard, clocks, context, population).map_err(timed)?;
     let bounds =
         form.bounds
             .iter()
@@ -2432,12 +2467,67 @@ fn time_invariant(
                     span: bound.span,
                 })
             })
-            .collect::<Result<_, TemporalCause>>()?;
+            .collect::<Result<Vec<_>, TemporalCause>>()
+            .map_err(timed)?;
+    // FR-230 "Guarded places": `when P { value(p) <= c }` bounds `p` where
+    // `P` establishes `present(p)`.
+    if bounds.iter().any(|bound| {
+        clocks
+            .fields
+            .get(bound.clock.0)
+            .is_some_and(|field| field.bit)
+            && !presences.contains(&bound.clock)
+    }) {
+        return Err(CheckCause::Unproved(
+            crate::check::refusal::Obligation::Presence,
+        ));
+    }
     Ok(InvariantDraft {
         name: form.name.name.clone(),
         predicate,
+        presences,
         bounds,
     })
+}
+
+/// `predicate` with its top-level conjuncts `present(self.v)` of an
+/// `Option<Clock>` place taken out (FR-230 "Presence bit"): the rest, `true`
+/// when nothing is left, and the places whose presence it requires.
+fn presence_conjuncts(
+    predicate: &ExpressionForm,
+    clocks: &Clocks<'_>,
+    context: EffectiveId,
+) -> Result<(ExpressionForm, Vec<ClockId>), CheckCause> {
+    let Some(located) = Located::of(predicate, clocks, context) else {
+        return Ok((predicate.clone(), Vec::new()));
+    };
+    let mut presences = Vec::new();
+    let mut rest = Vec::new();
+    for conjunct in conjuncts(&located) {
+        match located.presence(conjunct) {
+            Some(clock) => presences.push(clock),
+            None => rest.push(conjunct),
+        }
+    }
+    if presences.is_empty() {
+        return Ok((predicate.clone(), presences));
+    }
+    let span = located.span(located.root());
+    let operands = rest
+        .into_iter()
+        .map(|id| located.form.cut(id, &BTreeMap::new()))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| timed(located.outside(located.root())))?;
+    let rest = match ExpressionForm::conjunction(operands) {
+        Some(rest) => rest,
+        None => {
+            let expression = qsl_forms::Expression::boolean(true);
+            let spans = qsl_forms::ExpressionSpans::at_point(&expression, span.start)
+                .map_err(|_| timed(located.outside(located.root())))?;
+            ExpressionForm { expression, spans }
+        }
+    };
+    Ok((rest, presences))
 }
 
 /// The time invariants the package's `max` constraints on clocks state
@@ -2508,6 +2598,8 @@ fn clock_bounds(
                     population,
                     predicate: ExpressionForm { expression, spans },
                 },
+                // A bound reads a guarded place only where it is live.
+                presences: Vec::new(),
                 bounds,
             });
         }
@@ -2804,8 +2896,7 @@ fn prepare_models(
             match form {
                 TimedDeclaration::TimeInvariant(form) => {
                     let (context, population) = state().map_err(timed)?;
-                    invariants
-                        .push(time_invariant(form, &clocks, context, population).map_err(timed)?);
+                    invariants.push(time_invariant(form, &clocks, context, population)?);
                 }
                 TimedDeclaration::Urgent(form) => {
                     urgency_drafts
@@ -3057,6 +3148,7 @@ pub(crate) fn check(
                 name: invariant.name,
                 context: invariant.predicate.context,
                 predicate,
+                presences: invariant.presences,
                 bounds: invariant.bounds,
             });
         }

@@ -4512,3 +4512,125 @@ fn a_permutation_maps_each_slot_clock_to_the_same_slot() {
         assert_ne!(from.object(), to.object());
     }
 }
+
+/// [`rpc_document`] with the optional clock field `v` (`Option<Clock>`),
+/// which `work` writes.
+fn option_clock_document() -> Vec<u8> {
+    let mut document: Json = serde_json::from_slice(&rpc_document(true)).expect("JSON");
+    let mut v = wire_field("v", CLOCK);
+    v["presence"] = json!("optional");
+    let call = &mut document["types"][1];
+    call["fields"].as_array_mut().expect("Call fields").push(v);
+    for operation in call["operations"].as_array_mut().expect("operations") {
+        if operation["name"] == "work" {
+            operation["frame"]["modifies"] = json!([ident("Call/v")]);
+        }
+    }
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-12, AC-41 and AC-42 (TC-685), the timed subject's part: over
+/// `v: Option<Clock>` the place `v` holds a presence bit whose initial
+/// value takes both values, two initial states with different state keys,
+/// each writing `v`'s option shell (`null` absent, a `Clock` shell
+/// present). An absent `v` is no live clock and no invariant bounds it.
+/// `work`, guarded `present(self.v) and value(self.v) >= 1 ms`, is enabled
+/// only from the present state once `v` reads 1 ms, and its `self.v = 0
+/// ms` resets `v` to 0, still present.
+#[trace("TC-685")]
+#[test]
+fn an_option_clock_has_a_presence_bit() {
+    let world = world_over(
+        option_clock_document(),
+        "",
+        &only(
+            &["work"],
+            "pre Armed using v on M::Call::work { present(self.v) and value(self.v) >= 1 ms }\n\
+             post Arm using v on M::Call::work { self.v = 0 ms }\n\
+             time invariant Bound when { present(self.v) } { value(self.v) <= 3 ms }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let [absent, present] = &initial[..] else {
+        panic!("two initial states: {initial:?}");
+    };
+    let key = |state: &TimedState| {
+        String::from_utf8(held.state_key(state.discrete()).expect("a key").0).expect("UTF-8")
+    };
+    let shell = r#"{"type":"option","value":{"components":[],"name":"Clock","type":"tuple"}}"#;
+    assert!(key(absent).contains(r#"{"name":"v","value":{"type":"option","value":null}}"#));
+    assert!(key(present).contains(&format!(r#"{{"name":"v","value":{shell}}}"#)));
+    assert_eq!(timed.live_clocks(absent.discrete()), 1);
+    assert_eq!(timed.live_clocks(present.discrete()), 2);
+    assert!(timed
+        .invariants(absent.discrete())
+        .expect("decided")
+        .is_empty());
+    assert_eq!(
+        timed.invariants(present.discrete()).expect("decided").len(),
+        1
+    );
+
+    let one = exact(1, 1);
+    let at_one = |state: &TimedState| {
+        TimedState::new(state.discrete().clone(), state.clocks().delayed(&one))
+    };
+    // From the absent state `work` is not enabled at any delay.
+    assert!(timed.steps(&at_one(absent)).expect("decided").is_empty());
+    assert!(timed.steps(present).expect("decided").is_empty());
+    let steps = timed.steps(&at_one(present)).expect("decided");
+    let [(step, next)] = &steps[..] else {
+        panic!("one step: {steps:?}");
+    };
+    assert!(step.operation().contains("Call/work"));
+    let v = timed
+        .places()
+        .iter()
+        .position(|place| {
+            timed
+                .model()
+                .clock(place.clock())
+                .is_some_and(|clock| clock.name() == "v")
+        })
+        .expect("v's place");
+    assert!(timed.live(&timed.places()[v], next.discrete()));
+    assert_eq!(next.clocks().get(v), Some(&exact(0, 1)));
+}
+
+/// FR-230-AC-12 (TC-685): `self.v = 0 ms` makes an absent `v` present at
+/// 0: from the absent initial state, `work`'s write gives the one state
+/// with `v` present, never one keeping it absent.
+#[trace("TC-685")]
+#[test]
+fn a_write_makes_an_option_clock_present() {
+    let world = world_over(
+        option_clock_document(),
+        "",
+        &only(
+            &["work"],
+            "post Arm using v on M::Call::work { self.v = 0 ms }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let absent = timed.initial().remove(0);
+    let v = timed
+        .places()
+        .iter()
+        .position(|place| {
+            timed
+                .model()
+                .clock(place.clock())
+                .is_some_and(|clock| clock.name() == "v")
+        })
+        .expect("v's place");
+    assert!(!timed.live(&timed.places()[v], absent.discrete()));
+    let steps = timed.steps(&absent).expect("decided");
+    let [(_, next)] = &steps[..] else {
+        panic!("one step: {steps:?}");
+    };
+    assert!(timed.live(&timed.places()[v], next.discrete()));
+    assert_eq!(next.clocks().get(v), Some(&exact(0, 1)));
+}
