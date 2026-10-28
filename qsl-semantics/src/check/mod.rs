@@ -244,6 +244,25 @@ pub fn builtin_rational_type_key() -> quire_exact::NodeKey {
         .key
 }
 
+/// The structural key of QSpec's built-in Integer scalar type (FR-092): the
+/// symbolic element selector of a `clock_place` slot step (QSpec FR-322
+/// "Timed-model nodes") references it.
+pub fn builtin_integer_type_key() -> quire_exact::NodeKey {
+    let body = BodyTerm::aggregate(Vec::new());
+    let input = node_key::NodeInput {
+        owner: None,
+        node_tag: NodeTag::ScalarType,
+        semantic_form: "integer",
+        semantic_type: None,
+        declaration: None,
+        body: &body,
+        owner_model: None,
+    };
+    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
+        .expect("the built-in Integer scalar has a valid structural key")
+        .key
+}
+
 /// The structural key of QSpec's built-in Text scalar type (FR-092).
 /// Timed source metadata uses this primitive even when no source expression
 /// already caused its scalar node to enter the checked graph.
@@ -399,7 +418,7 @@ pub use state_graph_claim::{
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
 
-pub use lowering::{CollectionShape, PlaceStep};
+pub use lowering::{collection_kind, CollectionShape, PlaceRow, PlaceStep};
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
@@ -4945,7 +4964,7 @@ impl PackageDeclarations {
             unwritten.extend(
                 timed_models
                     .iter()
-                    .filter(|model| model.has_members())
+                    .filter(|model| model.has_unwritten_members())
                     .map(timed_model::not_emitted),
             );
         }

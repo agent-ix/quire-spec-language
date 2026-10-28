@@ -126,26 +126,19 @@ pub enum ClockPathStep {
     Tuple(u64),
     /// A named union case.
     Union(String),
-    /// A collection slot, selected by index or key.
+    /// A collection slot of a template place (QSpec FR-322 "Timed-model
+    /// nodes"): every element's place is one instance of it.
     Slot {
         /// The collection kind.
         collection: String,
-        /// A key node reference or a fixed index.
-        selector: ClockSlotSelector,
+        /// The symbolic element selector: the type node of the selector's
+        /// domain, `Integer` for a position and the key type for a `Map`.
+        selector: CheckedNodeId,
         /// Declared lower bound.
         minimum: u64,
         /// Declared upper bound, or `None` when unbounded.
         maximum: Option<u64>,
     },
-}
-
-/// A clock-place collection slot selector.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ClockSlotSelector {
-    /// A key value node.
-    Key(CheckedNodeId),
-    /// A fixed sequence index.
-    Index(u64),
 }
 
 /// One resolved row for a clock-place path step.
@@ -231,6 +224,70 @@ pub struct CheckedClockConstraint {
     pub unit: CheckedNodeId,
     /// Quantity type, which is the selected unit node.
     pub bound_type: CheckedNodeId,
+}
+
+impl CheckedClockPlace {
+    /// The template `clock_place` of the checked clock `clock` of the timed
+    /// model of `model` (QSpec FR-322 "Timed-model nodes"): its path, with
+    /// each slot step's symbolic selector the Integer type node
+    /// `integer_type`, its `resolved_path` rows, and no guard, since a
+    /// model with a guard is not emitted. The emitter rekeys `id`.
+    pub(crate) fn template(
+        clock: &qsl_semantics::check::ClockField,
+        id: CheckedNodeId,
+        model: &CheckedNodeId,
+        integer_type: &CheckedNodeId,
+    ) -> Self {
+        use qsl_semantics::check::PlaceStep;
+        let path = clock
+            .path()
+            .iter()
+            .map(|step| match step {
+                PlaceStep::Field(name) => ClockPathStep::Field(name.clone()),
+                PlaceStep::Union(case) => ClockPathStep::Union(case.clone()),
+                PlaceStep::Slot(shape) => ClockPathStep::Slot {
+                    collection: qsl_semantics::check::collection_kind(*shape).to_owned(),
+                    selector: integer_type.clone(),
+                    minimum: shape.min,
+                    maximum: shape.max,
+                },
+            })
+            .collect();
+        let resolved_path = clock
+            .resolved_path()
+            .iter()
+            .zip(0_u64..)
+            .map(|(row, path_step)| ResolvedClockPathStep {
+                path_step,
+                declaring_type: row.declaring_type.clone(),
+                member_identity: row.member_identity.clone(),
+                member_type: row.member_type.clone(),
+                collection_kind: row.collection_kind.clone(),
+                minimum: row.minimum.clone(),
+                maximum: row.maximum.clone(),
+            })
+            .collect();
+        Self {
+            metadata: TimedNodeMetadata {
+                node_id: id.clone(),
+                schema_version: "quire.checked-semantic-graph/v2".into(),
+                semantic_type: id,
+                dependencies: Vec::new(),
+                occurrences: vec![CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Expression,
+                    ordinal: 0,
+                }],
+                recursion_group: None,
+                nominal_identity_preimage: None,
+                declaration: None,
+                owner: None,
+            },
+            path,
+            resolved_path,
+            model: model.clone(),
+            guards: Vec::new(),
+        }
+    }
 }
 
 impl CheckedTimedModel {
@@ -498,10 +555,7 @@ fn write_place(
                     minimum,
                     maximum,
                 } => {
-                    let selector = match selector {
-                        ClockSlotSelector::Key(key) => reference_term(key),
-                        ClockSlotSelector::Index(index) => integer_literal(types, *index)?,
-                    };
+                    let selector = reference_term(selector);
                     let maximum = match maximum {
                         Some(value) => integer_literal(types, *value)?,
                         None => text_literal(&types.text, "unbounded"),
@@ -860,12 +914,9 @@ fn project_path_step(value: &CheckedTerm) -> Result<ClockPathStep, &'static str>
             literal_text(binding(value, "case")?)?.to_owned(),
         )),
         "slot" => {
-            let selector = binding(value, "selector")?;
-            let selector = if matches!(selector, CheckedTerm::Reference { .. }) {
-                ClockSlotSelector::Key(reference(selector)?)
-            } else {
-                ClockSlotSelector::Index(literal_u64(selector)?)
-            };
+            // The selector is symbolic; an index literal is no template
+            // step (QSpec FR-322-AC-148).
+            let selector = reference(binding(value, "selector")?)?;
             let maximum_value = binding(value, "maximum")?;
             let maximum = if literal_text(maximum_value).ok() == Some("unbounded") {
                 None
@@ -1187,6 +1238,7 @@ mod intake_proofs {
         let text_type = literal_type(binding(&source.body, "kind").unwrap()).unwrap();
         let text = |value: &str| CheckedTerm::literal_text(text_type.clone(), value);
         let integer = |value| CheckedTerm::literal_integer(text_type.clone(), value);
+        let integer_type = || checked_id(qsl_semantics::check::builtin_integer_type_key());
         let step = |kind: &str, name: &str, value| {
             CheckedTerm::aggregate(vec![
                 CheckedTerm::binding("kind", text(kind)),
@@ -1209,17 +1261,26 @@ mod intake_proofs {
             CheckedTerm::aggregate(vec![
                 CheckedTerm::binding("kind", text("slot")),
                 CheckedTerm::binding("collection", text("sequence")),
-                CheckedTerm::binding("selector", integer(1)),
+                CheckedTerm::binding("selector", CheckedTerm::reference(integer_type())),
                 CheckedTerm::binding("minimum", integer(0)),
                 CheckedTerm::binding("maximum", maximum),
             ])
         };
+        // An index literal is no symbolic selector (QSpec FR-322-AC-148).
+        let indexed = CheckedTerm::aggregate(vec![
+            CheckedTerm::binding("kind", text("slot")),
+            CheckedTerm::binding("collection", text("sequence")),
+            CheckedTerm::binding("selector", integer(1)),
+            CheckedTerm::binding("minimum", integer(0)),
+            CheckedTerm::binding("maximum", integer(3)),
+        ]);
+        assert!(project_path_step(&indexed).is_err());
         for (maximum, expected) in [(integer(3), Some(3)), (text("unbounded"), None)] {
             assert_eq!(
                 project_path_step(&slot(maximum)),
                 Ok(ClockPathStep::Slot {
                     collection: "sequence".into(),
-                    selector: ClockSlotSelector::Index(1),
+                    selector: integer_type(),
                     minimum: 0,
                     maximum: expected,
                 })

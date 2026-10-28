@@ -88,6 +88,8 @@ pub struct ClockField {
     /// Whether reading the place needs its presence: an `Option<Clock>`, or
     /// a union case's payload, present while the value is that case.
     guarded: bool,
+    /// The place's `resolved_path` rows, one for each path step.
+    rows: Vec<super::lowering::PlaceRow>,
 }
 
 impl ClockField {
@@ -112,6 +114,12 @@ impl ClockField {
     /// The path from the object to the clock, the object's field first.
     pub fn path(&self) -> &[PlaceStep] {
         &self.path
+    }
+
+    /// The `resolved_path` rows of the place's `clock_place` template node,
+    /// one for each path step (QSpec FR-322 "Timed-model nodes").
+    pub fn resolved_path(&self) -> &[super::lowering::PlaceRow] {
+        &self.rows
     }
 
     /// The place's path written with `.` between its steps: the field's
@@ -777,10 +785,17 @@ impl TimedModel {
         &self.urgency
     }
 
-    /// Whether the model declares anything past its time source: a clock,
-    /// a time invariant or an urgency declaration.
-    pub fn has_members(&self) -> bool {
-        !self.clocks.is_empty() || !self.invariants.is_empty() || !self.urgency.is_empty()
+    /// Whether the model has a member no S4 emission writes yet: a guard,
+    /// reset, time invariant, urgency or `Clock` parameter. Its clock
+    /// places alone are written as `clock_place` templates (QSpec FR-322
+    /// "Timed-model nodes"); a model with a guard is refused rather than
+    /// written with an empty `guards` aggregate (FR-230-AC-50).
+    pub fn has_unwritten_members(&self) -> bool {
+        !self.guards.is_empty()
+            || !self.resets.is_empty()
+            || !self.invariants.is_empty()
+            || !self.urgency.is_empty()
+            || !self.clock_parameters.is_empty()
     }
 }
 
@@ -1140,6 +1155,7 @@ fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
             aliases: place.aliases.clone(),
             bit: place.bit,
             guarded: place.bit || place.case,
+            rows: place.rows(),
         })
         .collect()
 }
