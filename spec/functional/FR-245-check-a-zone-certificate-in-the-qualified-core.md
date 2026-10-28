@@ -83,12 +83,12 @@ is written `bounds`.
 | In a refinement form, `check_step` fails (`Fails`, `Undefined`, or `Undetermined` that is not meter-only) on an edge whose target is not a `locked` entry node | `StepFails` | `ZoneEdge` of that edge, with the failing verdict as FR-149's locus carries it |
 | In a refinement form, a passing edge's target position or `taken` differs from what `check_step` yields, or an edge leaves the locked region for a positioned node | `PostDiffers` | `ZoneEdge` of that edge |
 | The certificate's LU bounds are below the bounds the checker computes | `Malformed` | `CertificateMember("bounds")` |
-| No node of the initial discrete state covers the initial symbolic state | `InitialMissing` | `ModelState` of the initial discrete state |
+| No node of the initial discrete state covers the initial symbolic state; in a refinement form, `initials[i]` does not cover concrete initial state `i`'s symbolic state, for any `i` | `InitialMissing` | `ModelState` of that initial discrete state |
 | A node has no listed edge for an enabled identity, or a successor is not covered by its edge's named target | `SuccessorMissing` | `ZoneNode` of that node |
-| A node is bad and not marked `locked`, or a `locked` node reaches a quiescent node or a node of a component with a cycle of positive total delay | `BadState` | `ZoneNode` of that node |
+| A node is bad and not marked `locked`, or a `locked` node reaches (itself included) a quiescent node or a node of a component with a cycle of positive total delay | `BadState` | `ZoneNode` of that node |
 | An edge goes to a node of smaller component index | `BackwardEdge` | `ZoneEdge` of that edge |
 | A component's stated reason does not hold | `WitnessFails` | `ZoneComponent` of that component |
-| A node's divergence path is absent or does not end at a divergent target, or the `admitted` path does not start at the initial node, follow certificate edges and end at a quiescent node or a node of a component with a cycle of positive total delay | `WitnessFails` | `ZoneNode` of that node; for `admitted`, its last node |
+| A node's divergence path is absent or does not end at a divergent target, or the `admitted` path does not start at the initial node (in a refinement form, at a positioned `initials[i]`), follow certificate edges and end at a quiescent node or a node of a component with a cycle of positive total delay | `WitnessFails` | `ZoneNode` of that node; for `admitted`, its last node |
 
 ## Behavior
 
@@ -114,7 +114,7 @@ is written `bounds`.
     at a time-locked initial node is the failing step of the empty prefix
     and is accepted as an edge into a `locked` entry node is, and the
     `locked` node's soundness is the `BadState` rule's (no quiescent node and
-    no positive-delay cycle reachable from it), so a failing `check_initial`
+    no positive-delay cycle reachable from it, the node itself included), so a failing `check_initial`
     at a node that is not marked `locked` is rejected, and a `locked` mark on
     an initial node whose forward closure is not time-locked is rejected
     `BadState`. Another initial state's failure never decides this one;
@@ -130,7 +130,9 @@ is written `bounds`.
     only. A node carrying the reserved index `positions.len()` that is not
     in the locked region, or a locked entry node whose `locked` mark is
     absent, is judged by the rules above: the edge entering it is judged
-    by `check_step` and the mark's absence gives `StepFails` at that edge.
+    by `check_step` and the mark's absence gives `StepFails` at that edge;
+    an initial entry node has no entering edge, so its absent mark gives
+    `InitialMismatch` at its `ZoneNode`.
   Every other check below applies unchanged.
 - The checker SHALL recompute every successor of every node by every
   enabled transition identity with DBM code separate from EN-6's.
@@ -141,7 +143,7 @@ is written `bounds`.
   - the certificate's LU bounds are at least the bounds the checker
     computes from the recompiled model and the claim automaton, built by
     `qsl-eval`'s property-automaton translation (ADR-018 LA-5);
-  - the initial symbolic state is covered by the named initial node;
+  - the initial symbolic state is covered by the named initial node; in a refinement form, each concrete initial state `i`'s symbolic state is covered by `initials[i]`;
     - no node is bad unless it is marked `locked`, and from each `locked`
     node no quiescent node and no node of a component with a cycle of
     positive total delay is reachable over certificate edges;
@@ -149,7 +151,7 @@ is written `bounds`.
     stated reason holds;
   - for the time-lock-freedom item, each node's divergence path exists in
     the certificate and ends at a divergent target;
-  - the `admitted` path starts at the initial node, follows certificate
+  - the `admitted` path starts at the initial node (in a refinement form, at any positioned `initials[i]`, so a locked `initials[0]` does not decide it), follows certificate
     edges, and ends at a quiescent node or at a node of a component with a
     cycle of positive total delay (ADR-026 TD-6).
 - The checker SHALL check the `Malformed` members first, then the initial
@@ -181,7 +183,7 @@ is written `bounds`.
 | FR-245-AC-6 | The checker's DBM code is separate from EN-6's: no crate of layers K to 6, SV or R, and no tool crate, names `qsl-analyze` in its normal, dev or build dependencies, so `qsl-replay`'s checker cannot call the engine's DBM (ADR-026 CF-6). | Test (TC-700) |
 | FR-245-AC-7 | Rejection rules and loci for AC-2's tamperings: the node removed rejects `SuccessorMissing` at the `ZoneNode` whose edge named it; the shrunk target, `SuccessorMissing` at the edge's source node; the lowered LU bound, `Malformed` at `CertificateMember("bounds")`; the backward edge, `BackwardEdge` at its `ZoneEdge`; the wrong component reason, `WitnessFails` at its `ZoneComponent`; the bad node, `BadState` at its `ZoneNode`; the cut `admitted` path, `WitnessFails` at its last node. A CF-2 certificate without `components` rejects `Malformed` at `CertificateMember("components")` before any successor is recomputed, and one whose initial node does not cover the initial symbolic state rejects `InitialMissing` at the `ModelState` of the initial discrete state. Each rejection is written with QSpec FR-331's rule spelling at its zone node, zone edge, zone component, State or certificate member form. | Test (TC-1197) |
 | FR-245-AC-8 | FR-244-AC-5's certificates are each `Accepted`. The refinement certificate of FR-430-AC-6 with the `locked` mark removed from the post-state of `undo` is `Rejected` `StepFails` at the `ZoneEdge` of the `undo` edge; the `TReq` certificate with `positions` removed is `Rejected` `Malformed` at `CertificateMember("positions")` before any successor is recomputed; FR-430-AC-7's refinement (abstract initial `sent` true, so the half is `Violated`) with a forged certificate whose initial node lists the abstract state `sent` false (and carries no `locked` mark) is `Rejected` `InitialMismatch` at the initial `ZoneNode`; the `TReq` certificate with one edge's target position replaced, or one `taken` changed to `Stutter`, is `Rejected` `PostDiffers` at that `ZoneEdge`; the `TReq` certificate checked under a request whose evaluation meter limit is 0 returns `Stopped(LimitReached)` naming `evaluation-meter` at the first `check_step` (FR-141-AC-9's `HeavyEnq` shape is the second fixture), never `Rejected`; AC-7's `Undetermined` variants return `Undecided` from the engine and have no certificate to check; checked against a refinement item over another abstract package it refuses `stale_dependency`/`content-mismatch`. | Test (TC-700) |
-| FR-245-AC-9 | Fixture `Init3`: an abstract `Req` (object `r` with `sent: Bool`, initial `sent = false`; operation `send`, postcondition `self.sent = true`) refined by a timed `TInit` (`time dense`; object `r` with `sent: Bool`, `k: Int[0, 2]` and a clock `x`; three concrete initial states by `k`: index 0 is `k = 0, sent = false`, index 1 is `k = 1, sent = true`, index 2 is `k = 2, sent = false`; operation `send` with guard `x >= 1` and precondition `not self.sent and self.k <> 1`, postcondition `self.sent = true`; time invariant `when self.k = 1 { x <= 0 }`; step map `send -> send`; mapping `sent -> sent`). Initial index 1 fails `check_initial` (`InitialNotAbstract{initial: 1}`, the abstract initial `sent` being false) and is time-locked (no operation is enabled at `k = 1` and `x` is pinned at 0); indices 0 and 2 pass and have a time-divergent continuation. EN-6 returns `Holds`; the certificate lists three initial nodes, the one for index 1 a `locked` entry node with the reserved index `positions.len()` and the other two positioned, and the checker returns `Accepted`, so the item settles `Proved{basis: ZoneCertified, certification: Certified}` (the failing `check_initial` at index 1 is not a rejection). The same certificate with the `locked` mark removed from the initial node of index 1 is `Rejected` `InitialMismatch` at that `ZoneNode`; with the `locked` mark added to the initial node of index 0 (which passes) is `Rejected` `InitialMismatch` at that `ZoneNode`. The variant without the time invariant (index 1 now has a time-divergent continuation) returns `Violated` from EN-6 with `InitialNotAbstract{initial: 1}` and an empty prefix, and a forged `Holds` certificate that marks its initial node `locked` is `Rejected` `BadState` at that node. Each rejection is written with QSpec FR-331's rule spelling. | Test (TC-700) |
+| FR-245-AC-9 | Fixture `Init3`: abstract `Req` (`r.sent`, initial `false`; `send` sets it) refined by timed `TInit` (`time dense`; `r` with `sent: Bool`, `k: Int[0, 2]` with no initial value, so the concrete initial states are enumerated in ascending `k` and indices 0, 1, 2 have `k` 0, 1, 2; initial `sent` is `false` for `k` 0 and 2 and `true` for `k` 1; clock `x`; `send` with guard `x >= 1`, precondition `not self.sent and self.k <> 1`; time invariant `when self.k = 1 { x <= 0 }`; step map `send -> send`; mapping `sent -> sent`). Index 1 fails `check_initial` (`InitialNotAbstract{initial: 1}`) and is time-locked; indices 0 and 2 pass and diverge. EN-6 returns `Holds`; the certificate's `initials` has three nodes, index 1 a `locked` entry node with the reserved index, and the checker returns `Accepted` (`Proved`). Rejections, each at the initial `ZoneNode` of the named index: the `locked` mark removed from index 1, or added to index 0, is `InitialMismatch`; `initials[2]` replaced by a node that does not cover index 2's symbolic state is `InitialMissing` at that state's `ModelState`. With the initial states reordered so the locked one is index 0, the certificate is `Accepted` and `admitted` starts at a positioned `initials[i]`. The variant without the time invariant returns `Violated` from EN-6 with `InitialNotAbstract{initial: 1}` and an empty prefix; a forged `Holds` certificate marking its initial node `locked` is `BadState` at that node (a `locked` node reaches itself). Rejections use QSpec FR-331's rule spelling. | Test (TC-700) |
 
 ## Dependencies
 

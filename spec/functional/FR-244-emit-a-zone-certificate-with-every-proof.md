@@ -96,7 +96,8 @@ pub struct RefinementPart {                     // FR-430
   component that does not fail for want of the divergence set.
 - **Admitted part.** Every certificate SHALL carry `admitted`: a path of
   certificate edges from the node that covers the initial symbolic state
-  to a quiescent node or to a node of a component with a cycle of positive
+  (in a refinement form, from any positioned `refinement.initials[i]`, so
+  a time-locked initial state does not decide it) to a quiescent node or to a node of a component with a cycle of positive
   total delay, so the proof is not vacuous (ADR-026 TD-6, CF-1).
 - **Refinement form.** For the safety half of a refinement whose concrete
   model is timed (FR-430), the certificate SHALL be this same
@@ -124,7 +125,8 @@ pub struct RefinementPart {                     // FR-430
     one per state in index order; a safety half with one initial state lists
     one) carries the position `check_initial` yields for that state, or is a
     `locked` entry node when `check_initial` fails and the state is
-    time-locked, and no certificate edge may leave the locked
+    time-locked, each such node's zone covers that state's initial symbolic
+    state (FR-245 `InitialMissing`), and no certificate edge may leave the locked
     region for a positioned node;
   - `refinement`, `concrete_package` and `abstract_package` SHALL be those
     of the item, as FR-149 requires of its certificate;
