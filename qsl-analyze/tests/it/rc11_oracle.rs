@@ -9,9 +9,11 @@ use ix_trace_rs::trace;
 use qsl_eval::simulation::protocol::{MemoryModel, Ra, Sc, Tso};
 use qsl_foundation::MemoryModelName;
 
+use crate::fill::reachable;
 use crate::litmus::sb_unit;
 use crate::rc11_support::{self as rc11, Op, Order};
-use crate::weak_memory::{litmus_run, outcomes, select, steps, Case};
+use crate::weak_memory::{litmus_run, outcomes, register, select, steps, Case};
+use quire_exact::Value;
 
 const X: usize = 0;
 const Y: usize = 1;
@@ -159,7 +161,7 @@ fn sc_fence_edges_match_rc11_for_lt14_and_lt18() {
 }
 
 /// LT-16 carries a predecessor of a collected SC event through an acquire
-/// fence and an SC load, so the forbidden register outcome stays absent.
+/// fence and an SC load, so the later SC store cannot move before X := 1.
 #[trace("TC-668", "FR-223-AC-8")]
 #[test]
 fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
@@ -171,18 +173,41 @@ fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
             Op::load(Y, 2, Order::Relaxed),
         ],
         vec![
-            Op::store(Y, 1, Order::SeqCst),
-            Op::store(Y, 2, Order::Relaxed),
+            Op::store(Y, 2, Order::SeqCst),
+            Op::store(Y, 3, Order::Relaxed),
         ],
-        vec![Op::store(Y, 3, Order::Relaxed)],
+        // The shared fixture's Int[0, 3] domain encodes LT-16's distinct
+        // final relaxed message as value 0; its message position stays new.
+        vec![Op::store(Y, 0, Order::Relaxed)],
         vec![
             Op::load(Y, 3, Order::Relaxed),
             Op::fence(Order::Acquire),
             Op::load(Y, 4, Order::SeqCst),
+            Op::store(X, 2, Order::SeqCst),
         ],
     ];
-    let ra = under(&case_of(&lt16), MemoryModelName::Ra, Ra::default(), true);
-    assert!(!ra.contains(&vec![1, 2, 2, 3]));
+    let case = case_of(&lt16);
+    let selection = [select("SB::Main::Both", MemoryModelName::Ra)];
+    let system = case.system(&selection, Ra::default()).expect("builds");
+    let reached = reachable(&system);
+    let accesses = case.accesses(&selection);
+    let x = accesses
+        .shared()
+        .iter()
+        .filter_map(|location| accesses.cell(location))
+        .find(|cell| cell.key == "x")
+        .expect("the shared X cell");
+    assert!(!reached
+        .iter()
+        .filter(|state| state.steps.is_empty())
+        .any(|state| {
+            let model = state.state.model();
+            ["r1", "r2", "r3", "r4"]
+                .iter()
+                .map(|name| register(model, "core", name))
+                .eq([2, 3, 3, 0])
+                && matches!(model.cell(x), Some(Value::Integer(value)) if value.to_string() == "1")
+        }));
 }
 
 /// LT-12: a release flag between an SC write and an SC read through a third
