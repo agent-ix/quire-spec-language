@@ -173,6 +173,11 @@ pub enum CertificateMember {
     Reasons,
     /// `divergence`.
     Divergence,
+    /// `refinement`, a zone certificate's refinement part (FR-244
+    /// "Refinement form"; spec gap STD-493: FR-331's member list lags it).
+    Refinement,
+    /// `positions`, the refinement part's product positions (FR-244).
+    Positions,
 }
 
 impl CertificateMember {
@@ -192,6 +197,8 @@ impl CertificateMember {
             Self::Edges => "edges",
             Self::Reasons => "reasons",
             Self::Divergence => "divergence",
+            Self::Refinement => "refinement",
+            Self::Positions => "positions",
         }
     }
 }

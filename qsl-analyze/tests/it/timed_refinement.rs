@@ -17,8 +17,10 @@ use qsl_replay::{
     open_systems, replay_timed_refinement_trace, RefinementFailure, RefinementTraceSettlement,
     TemporalCounterexample,
 };
+use qsl_replay::{CertifiedItem, ZoneCertificateRequest};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::reductions::{ObligationReductions, Reductions};
+use qsl_semantics::check::CheckedRefinement;
 use quire_exact::{Cancel, Rational};
 
 use qsl_semantics::model::intake::meaning;
@@ -60,22 +62,70 @@ fn steps(counterexample: &TemporalCounterexample) -> Vec<(String, Rational)> {
         .collect()
 }
 
-/// EN-6's safety half of `world`'s one refinement.
-fn safety(world: &Refining) -> TimedSafetyOutcome {
+/// The subject every refinement obligation of these tests names.
+pub(crate) const SUBJECT: &str = "timed-refinement";
+
+/// `world`'s one refinement.
+pub(crate) fn the_refinement(world: &Refining) -> &CheckedRefinement {
     let [refinement] = world.package.graph().refinements() else {
         panic!("one refinement");
     };
-    check_timed_refinement(
-        TimedRefinementRequest {
-            refinement,
-            concrete: world.concrete_request(),
-            abstract_package: &world.package,
-            abstract_initial: vec![world.abstract_initial.clone()],
-            limits: ZoneCheckLimits::default(),
+    refinement
+}
+
+/// The obligation of `world`'s one refinement item (FR-144). A refinement
+/// with no record (one the v2 writer does not emit) names a fixed
+/// occurrence: only a proof's certificate reads it.
+pub(crate) fn obligation(world: &Refining) -> ItemObligation<&'static str> {
+    let unrecorded = || {
+        qsl_foundation::source::provenance::OccurrenceKey::new(
+            qsl_foundation::digest::WireNodeId::from_digest([0; 32]),
+            quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
+        )
+    };
+    ItemObligation {
+        subject: SUBJECT,
+        kind: ObligationKind::Refinement {
+            occurrence: the_refinement(world)
+                .requirement_occurrence()
+                .cloned()
+                .unwrap_or_else(unrecorded),
+            abstract_initial: std::iter::once(world.abstract_initial.clone()).collect(),
         },
-        &Cancel::new(),
-    )
-    .expect("EN-6 takes the refinement")
+        reductions: ObligationReductions::default(),
+    }
+}
+
+/// EN-6's request for the safety half of `world`'s one refinement.
+pub(crate) fn safety_request(world: &Refining) -> TimedRefinementRequest<'_, &'static str> {
+    TimedRefinementRequest {
+        obligation: obligation(world),
+        refinement: the_refinement(world),
+        concrete: world.concrete_request(),
+        abstract_package: &world.package,
+        abstract_initial: vec![world.abstract_initial.clone()],
+        limits: ZoneCheckLimits::default(),
+    }
+}
+
+/// EN-6's safety half of `world`'s one refinement.
+pub(crate) fn safety(world: &Refining) -> TimedSafetyOutcome<&'static str> {
+    check_timed_refinement(safety_request(world), &Cancel::new())
+        .expect("EN-6 takes the refinement")
+}
+
+/// FR-245's request for checking a certificate of `world`'s one refinement.
+pub(crate) fn certificate_request(world: &Refining) -> ZoneCertificateRequest<'_> {
+    ZoneCertificateRequest {
+        simulation: world.concrete_request(),
+        model: "M",
+        max_clocks: qsl_eval::simulation::model::DEFAULT_MAX_CLOCKS,
+        item: CertifiedItem::Refinement {
+            refinement: the_refinement(world),
+            abstract_package: &world.package,
+            abstract_initial: std::slice::from_ref(&world.abstract_initial),
+        },
+    }
 }
 
 pub(crate) const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
@@ -93,7 +143,7 @@ pub(crate) fn refinement(row: &str) -> String {
     )
 }
 
-fn unit(row: &str) -> Result<Refining, Vec<(String, String, String)>> {
+pub(crate) fn unit(row: &str) -> Result<Refining, Vec<(String, String, String)>> {
     refining(
         &req(),
         &treq(),
@@ -210,7 +260,7 @@ fn a_timed_abstract_model_is_refused_at_its_reference() {
 #[test]
 fn the_safety_half_of_a_timed_refinement_holds_on_the_zone_product() {
     let world = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
-    let TimedSafetyOutcome::Holds { stats } = safety(&world) else {
+    let TimedSafetyOutcome::Holds { stats, .. } = safety(&world) else {
         panic!("the safety half holds");
     };
     assert_eq!((stats.symbolic_states, stats.retained_edges), (2, 2));
@@ -513,7 +563,14 @@ fn a_clock_read_through_a_predicate_or_function_is_refused_at_the_call() {
 /// dead`, guard `x <= 0`) clears `sent` and, with `dead`, sets `dead` under
 /// the time invariant `when self.dead { x <= 0 }`. `trap` and `dead` map
 /// to the abstract `late` and `retried`, which stay false.
-fn dead_undo(dead: bool) -> Refining {
+pub(crate) fn dead_undo(dead: bool) -> Refining {
+    undo_world(dead, dead)
+}
+
+/// FR-430-AC-6's model with `undo` setting `dead` when `retried`, under
+/// the time invariant `when self.dead { x <= 0 }` when `invariant`: with
+/// `retried` and no invariant, `undo`'s post-state is time-divergent.
+pub(crate) fn undo_world(retried: bool, invariant: bool) -> Refining {
     let model = document(
         &["x"],
         &[
@@ -522,13 +579,15 @@ fn dead_undo(dead: bool) -> Refining {
             ("undo", &["inflight", "retried"]),
         ],
     );
-    let (undone, invariant) = if dead {
-        (
-            "not self.inflight and self.retried",
-            "time invariant Dead when { self.retried } { self.x <= 0 ms }\n",
-        )
+    let undone = if retried {
+        "not self.inflight and self.retried"
     } else {
-        ("not self.inflight and not self.retried", "")
+        "not self.inflight and not self.retried"
+    };
+    let invariant = if invariant {
+        "time invariant Dead when { self.retried } { self.x <= 0 ms }\n"
+    } else {
+        ""
     };
     let contracts = format!(
         "post ASend using v on A::Call::send {{ self.inflight }}\n\
@@ -723,13 +782,9 @@ fn analyzed(world: &Refining) -> qsl_analyze::analyze::AnalyzeRecord {
     };
     let concrete = world.concrete_request();
     let item = TimedRefinementItem {
-        request: TimedRefinementRequest {
-            refinement,
-            concrete: concrete.clone(),
-            abstract_package: &world.package,
-            abstract_initial: vec![world.abstract_initial.clone()],
-            limits: ZoneCheckLimits::default(),
-        },
+        request: safety_request(world),
+        certificate: certificate_request(world),
+        certificate_limits: qsl_replay::CertificateCheckLimits::default(),
         replay: Box::new(move |payload| {
             let systems = open_systems(
                 refinement,
@@ -760,15 +815,15 @@ fn analyzed(world: &Refining) -> qsl_analyze::analyze::AnalyzeRecord {
 /// FR-430-AC-1 and FR-144 end to end (TC-1170): the `TReq` refinement with
 /// `send` mapped to `stutter` runs on EN-6 through `analyze` and settles
 /// `refuted` once its counterexample replays. The holding `TReq` settles
-/// `unsupported`/`not-yet-implemented` from EN-6: its zone certificate has
-/// no checker yet (QSL-1005c), and a `Holds` with no accepted certificate
-/// never settles `proved` (FR-430-AC-8).
+/// `Proved{ZoneCertified, Certified}` on EN-6, once FR-245 accepts its
+/// refinement-form certificate (FR-430-AC-8).
 #[trace("TC-1170", "FR-430-AC-1")]
+#[trace("TC-1170", "FR-430-AC-8")]
 #[test]
 fn a_timed_refinement_settles_on_en6_through_analyze() {
-    use qsl_analyze::analyze::{DispositionKind, Settlement};
+    use qsl_analyze::analyze::Settlement;
     use qsl_analyze::zone_check::manifest::BACKEND_ID;
-    use qsl_replay::TerminalValue;
+    use qsl_replay::{Certification, ProofBasis, TerminalValue};
 
     let body = refinement("self.inflight").replace("-> A::Call::send(self)", "-> stutter");
     let violated = refining(&req(), &treq(), &format!("{DENSE}{CONTRACTS}{body}"))
@@ -782,21 +837,19 @@ fn a_timed_refinement_settles_on_en6_through_analyze() {
     );
 
     let holds = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
-    let Settlement::Disposed(disposed) = analyzed(&holds).settlement else {
-        panic!("a holding half without a certificate settles no verdict");
+    let record = analyzed(&holds);
+    let Settlement::Terminal(terminal) = &record.settlement else {
+        panic!("a terminal record: {:?}", record.settlement);
     };
-    assert_eq!(disposed.kind, DispositionKind::Unsupported);
     assert_eq!(
-        disposed
-            .backend
-            .as_ref()
-            .map(qsl_foundation::BackendId::as_str),
-        Some(BACKEND_ID)
+        *terminal.value(),
+        TerminalValue::Proved {
+            basis: ProofBasis::ZoneCertified,
+            certification: Certification::Certified,
+        }
     );
     assert_eq!(
-        disposed
-            .diagnostic
-            .map(|diagnostic| diagnostic.code.to_string()),
-        Some("unsupported_construct/not-yet-implemented".to_owned())
+        terminal.backend().map(qsl_foundation::BackendId::as_str),
+        Some(BACKEND_ID)
     );
 }

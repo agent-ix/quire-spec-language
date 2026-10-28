@@ -170,38 +170,7 @@ pub fn settle_zone_check<S>(
         ZoneItem::Outcome(outcome) => outcome,
     };
     match outcome {
-        ZoneCheckOutcome::Holds { certificate, .. } => match check(certificate) {
-            Ok(ZoneCertificateVerdict::Accepted) => ZoneCheckRecord::row(
-                TerminalValue::Proved {
-                    basis: ProofBasis::ZoneCertified,
-                    certification: Certification::Certified,
-                },
-                ResultLabel::Proved,
-                SettlementBasis::ClosedScope,
-                Execution::Completed,
-                Truth::Satisfied,
-            ),
-            Ok(ZoneCertificateVerdict::Rejected(CertificateRejection { rule, at })) => {
-                ZoneCheckRecord::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
-            }
-            Ok(ZoneCertificateVerdict::Stopped(cause)) => ZoneCheckRecord::incomplete(cause),
-            Err(
-                ZoneCertificateRefusal::ObligationMismatch { .. }
-                | ZoneCertificateRefusal::IdentityMismatch { .. },
-            ) => ZoneCheckRecord::inconclusive(InconclusiveCause::ReplayRefused(
-                qsl_foundation::diagnostic::Code::StaleDependency,
-            )),
-            // A checker that cannot read the certificate's item is a tool
-            // failure (ADR-013 C-09), never a verdict.
-            Err(
-                ZoneCertificateRefusal::Admission(_)
-                | ZoneCertificateRefusal::TimedSubject(_)
-                | ZoneCertificateRefusal::UnsupportedItem
-                | ZoneCertificateRefusal::Unbounded
-                | ZoneCertificateRefusal::Undecided
-                | ZoneCertificateRefusal::Fault(_),
-            ) => ZoneCheckRecord::failed(),
-        },
+        ZoneCheckOutcome::Holds { certificate, .. } => certified(check(certificate)),
         // FR-160 (QSpec FR-430): a symmetry-reduced proof, which no core
         // checker reads. FR-235's map has no reduced row (spec gap
         // STD-493); FR-160's is used.
@@ -335,17 +304,53 @@ fn stopped(cause: ZoneStop, cancel: &Cancel) -> ZoneCheckRecord {
     }
 }
 
-/// A timed refinement's safety half held, and no checker reads a zone
-/// product yet: QSpec FR-430 and FR-244 "Refinement form" give the half a
-/// zone certificate, which is QSL-1005c. A `Holds` with no accepted
-/// certificate never settles `proved` (FR-144, FR-430-AC-8).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("a holding timed refinement has no zone certificate checker yet (QSL-1005c)")]
-pub struct UncertifiedTimedRefinement;
+/// FR-235's rows for a `Holds` by what FR-245's checker returned for its
+/// certificate: `Proved{ZoneCertified, Certified}` only when it accepts.
+fn certified<O>(
+    checked: Result<ZoneCertificateVerdict, ZoneCertificateRefusal<O>>,
+) -> ZoneCheckRecord {
+    match checked {
+        Ok(ZoneCertificateVerdict::Accepted) => ZoneCheckRecord::row(
+            TerminalValue::Proved {
+                basis: ProofBasis::ZoneCertified,
+                certification: Certification::Certified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
+        Ok(ZoneCertificateVerdict::Rejected(CertificateRejection { rule, at })) => {
+            ZoneCheckRecord::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
+        }
+        Ok(ZoneCertificateVerdict::Stopped(cause)) => ZoneCheckRecord::incomplete(cause),
+        Err(
+            ZoneCertificateRefusal::ObligationMismatch { .. }
+            | ZoneCertificateRefusal::IdentityMismatch { .. }
+            | ZoneCertificateRefusal::RefinementMismatch { .. },
+        ) => ZoneCheckRecord::inconclusive(InconclusiveCause::ReplayRefused(
+            qsl_foundation::diagnostic::Code::StaleDependency,
+        )),
+        // A checker that cannot read the certificate's item is a tool
+        // failure (ADR-013 C-09), never a verdict.
+        Err(
+            ZoneCertificateRefusal::Admission(_)
+            | ZoneCertificateRefusal::Package(_)
+            | ZoneCertificateRefusal::TimedSubject(_)
+            | ZoneCertificateRefusal::UnsupportedItem
+            | ZoneCertificateRefusal::Unbounded
+            | ZoneCertificateRefusal::Undecided
+            | ZoneCertificateRefusal::Fault(_),
+        ) => ZoneCheckRecord::failed(),
+    }
+}
 
 /// FR-144 and QSpec FR-430: settle EN-6's safety half of a timed refinement
 /// as one terminal record, by FR-144's rows over EN-6's causes:
 ///
+/// - V-1: `Holds` settles `Proved{ZoneCertified, Certified}` only when
+///   `check` (FR-245 over FR-244's refinement form) accepts its
+///   certificate, by [`settle_zone_check`]'s certificate rows;
 /// - V-4: `Violated` settles `refuted`, `decisive-counterexample`, only
 ///   when `replay` (FR-145 over FR-241's delays) reproduces it; a replay
 ///   that disagrees is `ReplayParity`, one that a budget stops is V-7
@@ -355,17 +360,16 @@ pub struct UncertifiedTimedRefinement;
 /// - V-7: `Stopped` is `incomplete` naming the EN-6 or step budget, or the
 ///   cancellation;
 /// - an evaluator fault is `failed`.
-///
-/// # Errors
-///
-/// [`UncertifiedTimedRefinement`] for `Holds`, which no checker reads yet.
-pub fn settle_timed_refinement(
-    outcome: &TimedSafetyOutcome,
+pub fn settle_timed_refinement<S>(
+    outcome: &TimedSafetyOutcome<S>,
     cancel: &Cancel,
+    check: impl FnOnce(
+        &ZoneCertificate<ItemObligation<S>>,
+    ) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<S>>>,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
-) -> Result<ZoneCheckRecord, UncertifiedTimedRefinement> {
-    Ok(match outcome {
-        TimedSafetyOutcome::Holds { .. } => return Err(UncertifiedTimedRefinement),
+) -> ZoneCheckRecord {
+    match outcome {
+        TimedSafetyOutcome::Holds { certificate, .. } => certified(check(certificate)),
         TimedSafetyOutcome::Violated { counterexample, .. } => match replay(counterexample) {
             Ok(RefinementTraceSettlement::Reproduced { .. }) => ZoneCheckRecord {
                 counterexample: Some(counterexample.as_ref().clone()),
@@ -406,5 +410,5 @@ pub fn settle_timed_refinement(
             }
         },
         TimedSafetyOutcome::Fault { .. } => ZoneCheckRecord::failed(),
-    })
+    }
 }

@@ -18,9 +18,11 @@
 //! time diverging: its post-state, the successor's state and zone, has a
 //! valuation with a time-divergent continuation (ADR-026 TV-1 and TS-4,
 //! FR-240's test). An edge failing only into time-locked valuations is no
-//! behaviour and is dropped. The counterexample is the breadth-first tree
-//! path to the pre-state, then the failing step, concretised with exact
-//! delays (FR-241) to end at such a valuation.
+//! behaviour: its post-state is kept as a `locked` entry node, whose
+//! forward closure (the locked region) is explored on concrete steps only,
+//! for the certificate. The counterexample is the breadth-first tree path
+//! to the pre-state, then the failing step, concretised with exact delays
+//! (FR-241) to end at such a valuation.
 //!
 //! A product state is stored unless a stored one with the same model state
 //! and position covers its zone under the aLU abstraction, as FR-239's
@@ -28,14 +30,17 @@
 //! discrete ends and position only, which the abstraction preserves.
 //!
 //! A failing initial state refutes only when its symbolic state has a
-//! time-divergent point; a time-locked one holds vacuously, and a half
-//! whose initial states admit no time-divergent behaviour settles ADR-026
-//! TD-6's `NoAdmittedBehaviour`.
+//! time-divergent point; a time-locked one holds vacuously, as a `locked`
+//! entry node, and a half whose initial states admit no time-divergent
+//! behaviour settles ADR-026 TD-6's `NoAdmittedBehaviour`.
 //!
-//! A half that holds carries no certificate yet: QSpec FR-430 and FR-244
-//! "Refinement form" give it a zone certificate over this product, which
-//! is remaining work on QSL-1005 (1005c). FR-149's simulation certificate
-//! does not apply, since its explicit successors ignore clock guards.
+//! A half that holds carries FR-244's zone certificate in its refinement
+//! form: the retained product graph, each node's position an index into
+//! the part's `positions` (the locked region's nodes carry
+//! `positions.len()`), and what `check_step` took on each edge. FR-245's
+//! checker verifies it with `check_step` of its own. FR-149's simulation
+//! certificate does not apply, since its explicit successors ignore clock
+//! guards.
 //!
 //! This is the safety half only. Remaining work on QSL-1005: the liveness
 //! half over a timed concrete subject (ADR-026 TS-4). A refinement record
@@ -51,25 +56,30 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::BOUND_POSITIONS;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_initial, check_step, open_systems, ConcreteStep, CounterexampleKind, ReachedLimit,
-    RefinementFailure, RefinementPosition, RefinementSystems, StepVerdict, SubjectRefusal,
-    TemporalCounterexample, UndefinedEvaluation, Undetermined,
+    check_initial, check_step, open_systems, CertifiedPosition, ConcreteStep, CounterexampleKind,
+    ReachedLimit, RefinementFailure, RefinementPart, RefinementPosition, RefinementSystems,
+    StepVerdict, SubjectRefusal, Taken, TemporalCounterexample, UndefinedEvaluation, Undetermined,
+    ZoneCertificate,
 };
+use qsl_route::deadlock::ItemObligation;
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
 
+use super::certificate::Proof;
 use super::concretise::{concretise, Stage, Target};
-use super::divergence::Escape;
+use super::divergence::{Escape, EscapeWitness};
 use super::search::{
-    not_simulated, widen, Arrival, Halt, Judged, Run, Searched, ZoneCheckLimits, ZoneCheckRefusal,
-    ZoneStats, ZoneStop, ZoneUndecided,
+    not_simulated, widen, Arrival, Halt, Inserted, Judged, Run, Searched, ZoneCheckLimits,
+    ZoneCheckRefusal, ZoneStats, ZoneStop, ZoneUndecided,
 };
 use super::Dbm;
 
 /// A request to decide a timed refinement's safety half.
-pub struct TimedRefinementRequest<'a> {
+pub struct TimedRefinementRequest<'a, S> {
+    /// The refinement item's obligation, which a proof's certificate names.
+    pub obligation: ItemObligation<S>,
     /// The checked refinement, whose concrete model is timed.
     pub refinement: &'a CheckedRefinement,
     /// FR-120's request of the concrete subject.
@@ -103,11 +113,12 @@ pub enum TimedRefinementStop {
 
 /// The safety half of a timed refinement (QSpec FR-430, FR-142 Outputs).
 #[derive(Clone, Debug)]
-pub enum TimedSafetyOutcome {
+pub enum TimedSafetyOutcome<S> {
     /// Every reachable product state was examined and every initial state
-    /// and every discrete edge with a time-divergent pre-state passed. No
-    /// core checker reads a zone product, so it carries no certificate.
+    /// and every discrete edge with a time-divergent pre-state passed.
     Holds {
+        /// FR-244's certificate in its refinement form.
+        certificate: Box<ZoneCertificate<ItemObligation<S>>>,
         /// The run's counts.
         stats: ZoneStats,
     },
@@ -171,10 +182,10 @@ impl From<ZoneCheckRefusal> for TimedRefinementRefusal {
 /// [`TimedRefinementRefusal`] when the subjects do not open, the concrete
 /// subject is not timed or has an unbounded root, or the engine breaks an
 /// invariant.
-pub fn check_timed_refinement(
-    request: TimedRefinementRequest<'_>,
+pub fn check_timed_refinement<S>(
+    request: TimedRefinementRequest<'_, S>,
     cancel: &Cancel,
-) -> Result<TimedSafetyOutcome, TimedRefinementRefusal> {
+) -> Result<TimedSafetyOutcome<S>, TimedRefinementRefusal> {
     let refinement = request.refinement;
     let RefinementSystems {
         concrete,
@@ -207,8 +218,37 @@ pub fn check_timed_refinement(
         positions: Vec::new(),
         known: BTreeMap::new(),
         depth: Vec::new(),
+        taken: Vec::new(),
     };
-    match product.search(&mut run) {
+    let ended = product.search(&mut run).and_then(|ended| match ended {
+        Ended::Outcome(outcome) => Ok(outcome),
+        Ended::Holds {
+            initial,
+            root,
+            witness,
+        } => {
+            let certified = product.certificate(&mut run, &initial, root, &witness)?;
+            let package_id = |package: &CheckedPackage| {
+                qsl_package::emit_checked(package)
+                    .map(|emission| emission.package().package_id())
+                    .map_err(|_| Halt::from(ZoneCheckRefusal::Fault("refinement-package-emits")))
+            };
+            let part = RefinementPart {
+                refinement: refinement.name().to_owned(),
+                concrete_package: package_id(request.concrete.package)?,
+                abstract_package: package_id(request.abstract_package)?,
+                positions: certified.positions,
+                taken: certified.taken,
+            };
+            let mut certificate = certified.proof.proving(request.obligation);
+            certificate.refinement = Some(part);
+            Ok(TimedSafetyOutcome::Holds {
+                certificate: Box::new(certificate),
+                stats: run.stats(),
+            })
+        }
+    });
+    match ended {
         Ok(outcome) => Ok(outcome),
         Err(Halt::Refusal(refusal)) => Err(refusal.into()),
         Err(Halt::Outcome(searched)) => Ok(match *searched {
@@ -241,32 +281,70 @@ struct Product<'p, 'a> {
     known: BTreeMap<PositionKey, usize>,
     /// The number of discrete steps from its initial node to each node.
     depth: Vec<usize>,
+    /// What `check_step` took on each retained edge of the run, by the
+    /// run's edge index; `None` for an edge into or inside the locked
+    /// region.
+    taken: Vec<Option<Taken>>,
 }
 
-/// A judged step: the position after it, or its failure.
+/// The position index of a `locked` entry node: the post-state of a step,
+/// or an initial state, that fails only into time-locked valuations.
+const LOCKED_ENTRY: usize = usize::MAX;
+
+/// The position index of a node of the locked region reached from an entry
+/// node. Distinct from [`LOCKED_ENTRY`], so no unmarked node covers an
+/// entry node; both are written as `positions.len()`.
+const LOCKED_INTERIOR: usize = usize::MAX - 1;
+
+/// A judged step: the position after it and what it took, or its failure.
 enum Edge {
-    Passes(usize),
+    Passes(usize, Taken),
     Fails(Box<(RefinementFailure, CounterexampleKind)>),
 }
 
 /// What a verdict decides.
-enum Judgement {
-    /// The step passes, to the position at this index.
-    Passes(usize),
+enum Judgement<S> {
+    /// The step passes, to the position at this index, taking this.
+    Passes(usize, Taken),
     /// The step or initial state fails: the failure and the counterexample
     /// kind.
     Fails(Box<(RefinementFailure, CounterexampleKind)>),
     /// The run ends with this outcome.
-    Ends(TimedSafetyOutcome),
+    Ends(TimedSafetyOutcome<S>),
+}
+
+/// How the search ends.
+enum Ended<S> {
+    /// With this outcome.
+    Outcome(TimedSafetyOutcome<S>),
+    /// The half holds: each initial state's node in index order, and the
+    /// positioned initial node `root` whose behaviour `witness` shows
+    /// time-divergent (ADR-026 TD-6).
+    Holds {
+        initial: Vec<usize>,
+        root: usize,
+        witness: EscapeWitness,
+    },
+}
+
+/// The certificate of a half that holds, before it names its obligation
+/// and packages.
+struct Certified {
+    proof: Proof,
+    positions: Vec<CertifiedPosition>,
+    taken: Vec<Option<Taken>>,
 }
 
 impl Product<'_, '_> {
-    fn search(&mut self, run: &mut Run<'_, '_, '_>) -> Result<TimedSafetyOutcome, Halt> {
+    fn search<S>(&mut self, run: &mut Run<'_, '_, '_>) -> Result<Ended<S>, Halt> {
         let concrete = run.timed.system();
         let initial = run.timed.initial();
         let (scale, lower, upper) = (run.scale.clone(), run.lower.clone(), run.upper.clone());
         let mut queue = VecDeque::new();
+        // The positioned initial nodes, and each initial state's node in
+        // index order (FR-244's `initials`).
         let mut roots = Vec::new();
+        let mut initials = Vec::new();
         // Whether a failing initial state was time-locked (QSpec FR-430 "A
         // failing initial state").
         let mut locked_failure = false;
@@ -284,7 +362,7 @@ impl Product<'_, '_> {
             let mut zone = Dbm::zero(run.dim());
             run.settle(&discrete, &mut zone)?;
             let q = match judged {
-                Judgement::Passes(q) => q,
+                Judgement::Passes(q, _) => q,
                 // The failing step of the empty prefix refutes only when
                 // the initial symbolic state has a point with a
                 // time-divergent continuation; otherwise it holds
@@ -296,64 +374,125 @@ impl Product<'_, '_> {
                             .diverges
                     {
                         let (failure, kind) = *failed;
-                        return Ok(TimedSafetyOutcome::Violated {
+                        return Ok(Ended::Outcome(TimedSafetyOutcome::Violated {
                             counterexample: Box::new(refuted(index, Vec::new(), failure, kind)),
                             stats: run.stats(),
-                        });
+                        }));
                     }
+                    if zone.is_empty() {
+                        continue;
+                    }
+                    // The failing step of the empty prefix, into a
+                    // time-locked state: a `locked` entry node (FR-244).
                     locked_failure = true;
+                    let node = self.store(
+                        run,
+                        discrete,
+                        LOCKED_ENTRY,
+                        zone,
+                        Some(index),
+                        None,
+                        &mut queue,
+                    )?;
+                    initials.push(node);
                     continue;
                 }
-                Judgement::Ends(outcome) => return Ok(outcome),
+                Judgement::Ends(outcome) => return Ok(Ended::Outcome(outcome)),
             };
             if zone.is_empty() {
                 continue;
             }
-            if let Some(node) = run.insert(discrete, q, zone, Some(index), None)? {
-                self.depth.push(0);
+            let node = self.store(run, discrete, q, zone, Some(index), None, &mut queue)?;
+            initials.push(node);
+            if !roots.contains(&node) {
                 roots.push(node);
-                queue.push_back(node);
             }
         }
-        if queue.is_empty() {
+        if roots.is_empty() {
             let cause = if locked_failure {
                 ZoneUndecided::NoAdmittedBehaviour
             } else {
                 ZoneUndecided::NoInitialState
             };
-            return Ok(TimedSafetyOutcome::Undecided {
+            return Ok(Ended::Outcome(TimedSafetyOutcome::Undecided {
                 cause: TimedRefinementUndecided::Zone(cause),
                 stats: run.stats(),
-            });
+            }));
         }
         while let Some(node) = queue.pop_front() {
             run.poll()?;
             if let Some(outcome) = self.expand(run, node, &mut queue)? {
-                return Ok(outcome);
+                return Ok(Ended::Outcome(outcome));
             }
         }
         // ADR-026 TD-6: the half holds only over a subject that admits a
-        // time-divergent behaviour from some initial state.
+        // time-divergent behaviour from some positioned initial state.
         for root in roots {
-            if run.node_escape(root)?.diverges {
-                return Ok(TimedSafetyOutcome::Holds { stats: run.stats() });
+            let escape = run.node_escape(root)?;
+            if escape.diverges {
+                let witness = escape
+                    .witness
+                    .ok_or(ZoneCheckRefusal::Fault("divergence-witness"))?;
+                return Ok(Ended::Holds {
+                    initial: initials,
+                    root,
+                    witness,
+                });
             }
         }
-        Ok(TimedSafetyOutcome::Undecided {
+        Ok(Ended::Outcome(TimedSafetyOutcome::Undecided {
             cause: TimedRefinementUndecided::Zone(ZoneUndecided::NoAdmittedBehaviour),
             stats: run.stats(),
+        }))
+    }
+
+    /// Store `(state, q, zone)` as [`Run::insert_at`] does, entered by
+    /// `arrival` taking `taken`: the node that holds it, a new one queued.
+    /// A new `locked` entry node is marked.
+    #[allow(clippy::too_many_arguments)]
+    fn store(
+        &mut self,
+        run: &mut Run<'_, '_, '_>,
+        state: ModelSimState,
+        q: usize,
+        zone: Dbm,
+        initial: Option<usize>,
+        arrival: Option<(Arrival, Option<Taken>)>,
+        queue: &mut VecDeque<usize>,
+    ) -> Result<usize, Halt> {
+        let (arrival, taken) = match arrival {
+            Some((arrival, taken)) => (Some(arrival), Some(taken)),
+            None => (None, None),
+        };
+        let depth = arrival
+            .as_ref()
+            .map_or(0, |arrival| self.depth[arrival.from].saturating_add(1));
+        let inserted = run.insert_at(state, q, zone, initial, arrival)?;
+        if let Some(taken) = taken {
+            self.taken.push(taken);
+        }
+        Ok(match inserted {
+            Inserted::Covered(node) => node,
+            Inserted::New(node) => {
+                if q == LOCKED_ENTRY {
+                    run.nodes[node].locked = true;
+                }
+                self.depth.push(depth);
+                queue.push_back(node);
+                node
+            }
         })
     }
 
     /// Expand `node`: each symbolic successor by a discrete step, judged by
     /// `check_step` once per step. The outcome when an admitted edge fails
     /// or the run ends.
-    fn expand(
+    fn expand<S>(
         &mut self,
         run: &mut Run<'_, '_, '_>,
         node: usize,
         queue: &mut VecDeque<usize>,
-    ) -> Result<Option<TimedSafetyOutcome>, Halt> {
+    ) -> Result<Option<TimedSafetyOutcome<S>>, Halt> {
         let state = run.nodes[node].state.clone();
         let zone = run.nodes[node].zone.clone();
         let q = run.nodes[node].q;
@@ -361,6 +500,26 @@ impl Product<'_, '_> {
         let steps = run.steps_for(&state)?;
         let scale = run.scale.clone();
         let (lower, upper) = (run.lower.clone(), run.upper.clone());
+        if q == LOCKED_ENTRY || q == LOCKED_INTERIOR {
+            // The locked region, on concrete steps only: no `check_step`.
+            for successor in run.successors(&state, &zone, &scale)? {
+                let arrival = Arrival {
+                    from: node,
+                    step: Some((successor.step, successor.part)),
+                    piece: None,
+                };
+                self.store(
+                    run,
+                    successor.state,
+                    LOCKED_INTERIOR,
+                    successor.zone,
+                    None,
+                    Some((arrival, None)),
+                    queue,
+                )?;
+            }
+            return Ok(None);
+        }
         // Each step's verdict, judged once: the position after it, or its
         // failure.
         let mut judged: BTreeMap<usize, Edge> = BTreeMap::new();
@@ -381,14 +540,19 @@ impl Product<'_, '_> {
                     },
                 );
                 let edge = match self.judge(result.verdict, run)? {
-                    Judgement::Passes(next) => Edge::Passes(next),
+                    Judgement::Passes(next, taken) => Edge::Passes(next, taken),
                     Judgement::Fails(failed) => Edge::Fails(failed),
                     Judgement::Ends(outcome) => return Ok(Some(outcome)),
                 };
                 slot.insert(edge);
             }
-            let next = match judged.get(&successor.step) {
-                Some(Edge::Passes(next)) => *next,
+            let arrival = Arrival {
+                from: node,
+                step: Some((successor.step, successor.part)),
+                piece: None,
+            };
+            let (next, taken) = match judged.get(&successor.step) {
+                Some(Edge::Passes(next, taken)) => (*next, Some(taken.clone())),
                 Some(Edge::Fails(failed)) => {
                     // ADR-026 TV-1 and TS-4: the failing step refutes only
                     // when the behaviour can go on from it, time diverging:
@@ -397,6 +561,17 @@ impl Product<'_, '_> {
                     let escape =
                         run.escape(&successor.state, &successor.zone, &scale, &lower, &upper)?;
                     if !escape.diverges {
+                        // No behaviour: the post-state is a `locked` entry
+                        // node (FR-244), entered with no `taken`.
+                        self.store(
+                            run,
+                            successor.state,
+                            LOCKED_ENTRY,
+                            successor.zone,
+                            None,
+                            Some((arrival, None)),
+                            queue,
+                        )?;
                         continue;
                     }
                     let failed = (**failed).clone();
@@ -409,25 +584,84 @@ impl Product<'_, '_> {
                 }
                 None => return Err(ZoneCheckRefusal::Fault("refinement-verdict").into()),
             };
-            let arrival = Arrival {
-                from: node,
-                step: Some((successor.step, successor.part)),
-                piece: None,
-            };
-            if let Some(created) =
-                run.insert(successor.state, next, successor.zone, None, Some(arrival))?
-            {
-                self.depth.push(depth.saturating_add(1));
-                queue.push_back(created);
-            }
+            self.store(
+                run,
+                successor.state,
+                next,
+                successor.zone,
+                None,
+                Some((arrival, taken)),
+                queue,
+            )?;
         }
         Ok(None)
     }
 
+    /// FR-244's refinement form of the run's certificate: the run's proof
+    /// with each locked-region node's index written `positions.len()`, the
+    /// positions as digests, and each edge's `taken` in certificate order.
+    fn certificate(
+        &self,
+        run: &mut Run<'_, '_, '_>,
+        initial: &[usize],
+        root: usize,
+        witness: &EscapeWitness,
+    ) -> Result<Certified, Halt> {
+        if self.taken.len() != run.edges.len() {
+            return Err(ZoneCheckRefusal::Fault("refinement-taken").into());
+        }
+        let mut proof = run.certificate(initial, root, witness, false)?;
+        let reserved = self.positions.len();
+        for node in &mut proof.nodes {
+            if node.automaton_state == LOCKED_ENTRY || node.automaton_state == LOCKED_INTERIOR {
+                node.automaton_state = reserved;
+            }
+        }
+        let taken = run
+            .edge_order()
+            .into_iter()
+            .map(|edge| self.taken[edge].clone())
+            .collect();
+        let concrete = run.timed.system();
+        let encodes = |_| Halt::from(ZoneCheckRefusal::Fault("position-key"));
+        let mut positions = Vec::with_capacity(reserved);
+        for position in &self.positions {
+            let abstract_states = position
+                .abstract_states
+                .iter()
+                .map(|state| {
+                    self.abstract_system
+                        .state_key_of(state)
+                        .map(|(_, digest)| digest)
+                        .map_err(encodes)
+                })
+                .collect::<Result<_, _>>()?;
+            positions.push(CertifiedPosition {
+                concrete: concrete
+                    .state_key_of(&position.concrete)
+                    .map_err(encodes)?
+                    .1,
+                history: position.history.key(concrete).map_err(encodes)?,
+                abstract_states,
+            });
+        }
+        Ok(Certified {
+            proof,
+            positions,
+            taken,
+        })
+    }
+
     /// What `verdict` decides; a passing one's position interned.
-    fn judge(&mut self, verdict: StepVerdict, run: &Run<'_, '_, '_>) -> Result<Judgement, Halt> {
+    fn judge<S>(
+        &mut self,
+        verdict: StepVerdict,
+        run: &Run<'_, '_, '_>,
+    ) -> Result<Judgement<S>, Halt> {
         Ok(match verdict {
-            StepVerdict::Passes { post, .. } => Judgement::Passes(self.intern(post, run)?),
+            StepVerdict::Passes { post, taken } => {
+                Judgement::Passes(self.intern(post, run)?, taken)
+            }
             StepVerdict::Fails(failure) => {
                 Judgement::Fails(Box::new((failure, CounterexampleKind::Formula)))
             }
