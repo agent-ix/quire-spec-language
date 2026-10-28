@@ -39,8 +39,8 @@ assertion verifies.
 - The two snapshots are equal. The registration accessor yields exactly the
   EN-1 `temporal-satisfaction` descriptor and the EN-4
   `probabilistic-satisfaction` descriptor owned by `Engines::qsl()`. For each
-  descriptor, the snapshot retains its exact `BackendId`, manifest digest,
-  origin and capability set. Candidate queries yield EN-1 only for
+  descriptor, the snapshot retains its exact `BackendId`, origin and
+  capability set. Candidate queries yield EN-1 only for
   `temporal-satisfaction` and EN-4 only for `probabilistic-satisfaction`;
   neither descriptor is replaced or supplemented with an ad hoc candidate.
 - The `ValueValidity` and `OperationContract` candidate outcomes are empty
