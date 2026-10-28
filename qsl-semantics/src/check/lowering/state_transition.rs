@@ -459,8 +459,8 @@ impl Lowering<'_> {
         Ok(key)
     }
 
-    // The operation identity and the field's name are each compared once, to
-    // recognize the subject node's wire spelling in the lowered graph.
+    // The only string compare is the field's name against the member's wire
+    // spelling; the operator and operation are matched by their typed enum.
     #[ix_trace_rs::string_edge]
     /// The subject node `deref(self).field` when the expression rooted at
     /// `node` holds it outside every `quire.op.state.pre` application.
@@ -483,7 +483,7 @@ impl Lowering<'_> {
         if application.operator == Operator::Pre {
             return None;
         }
-        if application.operation.identity() == "quire.op.record.project"
+        if application.operator == Operator::Query
             && matches!(
                 &application.operation.member,
                 Some(Member::Field { declaration, name })
@@ -505,8 +505,6 @@ impl Lowering<'_> {
             })
     }
 
-    // The operation identity is compared once, to recognize `deref`.
-    #[ix_trace_rs::string_edge]
     /// Whether `argument` is the reference to `quire.op.model.deref` of
     /// the `self` parameter node.
     fn is_deref_of(&self, argument: Option<&MemberTerm>, self_parameter: NodeKey) -> bool {
@@ -520,7 +518,7 @@ impl Lowering<'_> {
         else {
             return false;
         };
-        application.operation.identity() == "quire.op.model.deref"
+        application.operator == Operator::Deref
             && matches!(
                 application.arguments.first(),
                 Some(MemberTerm::Leaf(LeafTerm::Reference { target })) if target.0 == self_parameter

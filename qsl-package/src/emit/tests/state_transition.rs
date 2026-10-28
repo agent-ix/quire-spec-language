@@ -34,7 +34,12 @@ fn param(operation: &str, name: &str, type_ref: &str) -> Value {
 
 /// `Switch.name(params)` modifying the named fields of `Switch`.
 fn operation(name: &str, params: &[(&str, &str)], modifies: &[&str]) -> Value {
-    let node = format!("Switch/{name}");
+    operation_of("Switch", name, params, modifies)
+}
+
+/// `owner.name(params)` modifying the named fields of `Switch`.
+fn operation_of(owner: &str, name: &str, params: &[(&str, &str)], modifies: &[&str]) -> Value {
+    let node = format!("{owner}/{name}");
     let modifies: Vec<String> = modifies
         .iter()
         .map(|field| base::id(&format!("Switch/{field}")))
@@ -89,6 +94,13 @@ fn document() -> Value {
                 "supertypes": [base::id("Switch")],
                 "identityFields": [base::id("SubSwitch/subid")],
                 "fields": [base::field("SubSwitch", "subid", NATIVE_INTEGER)],
+                // Declared on the subtype, it modifies the supertype's `on`.
+                "operations": [operation_of(
+                    "SubSwitch",
+                    "subset",
+                    &[("flag", NATIVE_BOOLEAN)],
+                    &["on"],
+                )],
             }),
         ),
     ];
@@ -491,6 +503,11 @@ fn an_ineligible_pair_gets_no_transition_and_no_refusal() {
             true,
         ),
         (
+            "an inherited Boolean field modified by a subtype operation",
+            "post Q using v on M::SubSwitch::subset { self.on }".to_owned(),
+            true,
+        ),
+        (
             "no protocol profile",
             "post Q using v on M::Switch::set { self.on }".to_owned(),
             false,
@@ -502,10 +519,13 @@ fn an_ineligible_pair_gets_no_transition_and_no_refusal() {
         }
         let compiled = compile_with(&clause, protocol);
         assert_eq!(compiled.transitions().len(), 0, "{label}");
-        // IR's reader refuses a `deref` over a subtype receiver
-        // (`OperatorIneligible`) whatever S4 adds, so the subtype variant is
-        // checked at emission only.
-        if label != "a proper subtype" {
+        // IR itself refuses the subtype-anchored state clause (IllTyped /
+        // OperatorIneligible at /semantic_graph/nodes/N/body/arguments/0, the
+        // state_clause parameter aggregate). That is pre-existing on main and
+        // is about neither a deref nor a transition, so the subtype variants
+        // are checked at emission only. FR-105 excludes subtypes (rationale
+        // in FR-120).
+        if !label.contains("subtype") {
             assert!(
                 matches!(compiled.read(), Read::Verified { .. }),
                 "{label} reads back Verified: {:?}",
@@ -526,6 +546,25 @@ fn an_ineligible_pair_gets_no_transition_and_no_refusal() {
         "post QS using v on M::SubSwitch::set { self.on }\n",
     ));
     assert_eq!(with_subtype.transitions().len(), 0);
+}
+
+/// FR-105-AC-17: a transition has one claim occurrence per
+/// contributing postcondition, not only the first.
+#[trace("TC-1271", "FR-105-AC-13", "FR-105-AC-17")]
+#[test]
+fn a_transition_carries_one_claim_occurrence_per_constraining_postcondition() {
+    let compiled = compile(&format!("{BASE_POST}{Q2}"));
+    let transitions = compiled.transitions();
+    let [transition] = transitions[..] else {
+        panic!("one transition");
+    };
+    let claims = transition["occurrences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|occurrence| occurrence["role"] == "claim")
+        .count();
+    assert_eq!(claims, 2, "Q1 and Q2 each claim the transition");
 }
 
 /// FR-105-AC-17: two eligible subjects with the same preconditions share one
