@@ -712,3 +712,39 @@ fn a_time_locked_failing_initial_state_is_a_locked_initial_node() {
         )
     );
 }
+
+/// FR-245 "Refinement form", SR-1700002 (disposition 2c92949f): an edge of
+/// the locked region into a positioned node is `PostDiffers` even with no
+/// `taken`. The `poke` edge from the locked entry redirected to a copy of
+/// the entry at position 0, unmarked, is rejected at that edge.
+#[trace("TC-700", "FR-245-AC-8")]
+#[test]
+fn a_locked_region_edge_into_a_positioned_node_is_post_differs() {
+    let world = poked();
+    let certificate = certificate(&world);
+    let entry = certificate
+        .nodes
+        .iter()
+        .position(|node| node.locked)
+        .expect("a locked node");
+    let (inside, _) = certificate
+        .edges
+        .iter()
+        .enumerate()
+        .find(|(_, edge)| edge.from == entry)
+        .expect("poke leaves the locked entry");
+    let mut forged = certificate.clone();
+    let mut copy = forged.nodes[entry].clone();
+    copy.locked = false;
+    copy.automaton_state = 0;
+    forged.nodes.push(copy);
+    forged.edges[inside].to = forged.nodes.len() - 1;
+    assert_eq!(
+        forged.refinement.as_ref().expect("the part").taken[inside],
+        None
+    );
+    assert_eq!(
+        rejected(check(&world, &forged).expect("the check runs")),
+        (CertificateRule::PostDiffers, edge(inside))
+    );
+}
