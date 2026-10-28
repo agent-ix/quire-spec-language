@@ -1412,7 +1412,7 @@ pub(crate) fn check(
     };
 
     if checker.refusals.is_empty() {
-        let nested = nested_repeats(checked);
+        let nested = nested_repeats(protocol, checked);
         let mut false_feasible = BTreeMap::new();
         for repeat in protocol
             .repeats
@@ -1551,7 +1551,20 @@ pub(crate) fn check(
     Slots::Checked(Box::new(slots), checker.nodes)
 }
 
-fn nested_repeats(checked: &CheckedProtocol) -> BTreeSet<ProtocolNodeId> {
+/// The `repeat`s inside the `body` of another `repeat`, at any depth
+/// through any control (QSpec FR-464 "Nested `repeat` rule"). A `repeat`
+/// reached only through an `exhausted` control is not one.
+fn nested_repeats(
+    protocol: &ProtocolDeclarationForm,
+    checked: &CheckedProtocol,
+) -> BTreeSet<ProtocolNodeId> {
+    let controls: BTreeMap<ProtocolNodeId, &crate::check::protocol_clause::CheckedControl> =
+        checked
+            .controls
+            .controls
+            .iter()
+            .map(|control| (control.node, control))
+            .collect();
     let mut nested = BTreeSet::new();
     let mut stack = vec![(
         checked
@@ -1561,28 +1574,37 @@ fn nested_repeats(checked: &CheckedProtocol) -> BTreeSet<ProtocolNodeId> {
             .map(|control| control.node),
         false,
     )];
-    let mut children: BTreeMap<ProtocolNodeId, Vec<ProtocolNodeId>> = BTreeMap::new();
-    for control in &checked.controls.controls {
-        children.insert(control.node, control.children.clone());
-    }
-    while let Some((Some(node), has_repeat_ancestor)) = stack.pop() {
-        let is_repeat = checked
-            .controls
-            .controls
-            .iter()
-            .find(|control| control.node == node)
-            .is_some_and(|control| control.kind == ProtocolNodeKind::Repeat);
-        if is_repeat && has_repeat_ancestor {
+    while let Some((Some(node), in_body)) = stack.pop() {
+        let Some(control) = controls.get(&node) else {
+            continue;
+        };
+        let is_repeat = control.kind == ProtocolNodeKind::Repeat;
+        if is_repeat && in_body {
             nested.insert(node);
         }
-        if let Some(descendants) = children.get(&node) {
-            stack.extend(
-                descendants
-                    .iter()
-                    .copied()
-                    .map(|child| (Some(child), has_repeat_ancestor || is_repeat)),
-            );
-        }
+        let body = if is_repeat {
+            protocol
+                .repeats
+                .iter()
+                .find(|repeat| repeat.declaration == node.0)
+                .and_then(|form| {
+                    crate::check::protocol_clause::repeat_body(protocol, control, form)
+                })
+        } else {
+            None
+        };
+        stack.extend(control.children.iter().map(|&child| {
+            // A repeat's body is in a body; its `exhausted` control keeps
+            // what holds at the repeat.
+            (
+                Some(child),
+                if is_repeat {
+                    body == Some(child) || in_body
+                } else {
+                    in_body
+                },
+            )
+        }));
     }
     nested
 }

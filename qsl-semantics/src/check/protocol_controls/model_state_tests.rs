@@ -545,3 +545,82 @@ fn an_object_or_reference_read_is_model_state() {
     ));
     assert_eq!(at, "M::Node");
 }
+
+/// An outer `repeat` whose only body is the nested `repeat Inner` with
+/// `max` (written when given), the guard `true`, `body` and, with a
+/// maximum, the `exhausted` control `exhausted`.
+fn nested_repeat_of(max: Option<u64>, body: &str, exhausted: &str) -> String {
+    let (max, exhausted) = match max {
+        Some(max) => (format!("max {max} "), format!(" exhausted {exhausted};")),
+        None => (String::new(), String::new()),
+    };
+    decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             repeat Outer by Service visible () while {{ true }} \
+             sequence OuterBody {{ \
+             repeat Inner by Service visible () {max}while {{ true }} \
+             sequence InnerBody {{ {body} }}{exhausted} \
+             }} }}"
+        ),
+    )
+}
+
+fn refuses_outer(text: &str) {
+    let refusals = check(text).expect_err("the outer repeat has no progress");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::ProtocolAnchor(cause)
+                if matches!(cause.as_ref(), ProtocolAnchorCause::NoProgress { repeat, .. } if repeat == "Outer")
+        )),
+        "{refusals:?}"
+    );
+}
+
+const PROGRESS: &str = "event Progress by Service as (progress: Boolean) { true };";
+const EXHAUSTED_EVENT: &str = "event Spent by Service as (spent: Boolean) { true }";
+
+/// QSpec FR-464 "Nested `repeat` rule" (STD-539, QSpec #481): a nested
+/// `repeat` is counted by its body only. `repeat max 1 while true` whose
+/// body is only a `check` and whose `exhausted` control is an event leaves
+/// the outer `repeat` refused (FR-464-AC-23); with the event in its body it
+/// is admitted.
+#[trace("TC-663", "FR-218-AC-32")]
+#[test]
+fn a_nested_repeat_is_never_counted_through_its_exhausted_control() {
+    refuses_outer(&nested_repeat_of(
+        Some(1),
+        "check Idle using v { true };",
+        EXHAUSTED_EVENT,
+    ));
+    check(&nested_repeat_of(
+        Some(1),
+        PROGRESS,
+        "check Done using v { true }",
+    ))
+    .expect("a nested repeat that steps in its body is a step of the outer one");
+}
+
+/// QSpec FR-464 "Nested `repeat` rule" item 2 (STD-539, FR-464-AC-21): a
+/// nested `repeat max 0 while true` never enters its body, so it gives the
+/// outer `repeat` no progress whatever its guard; with no maximum, or a
+/// maximum of 1, the same nested `repeat` is a step.
+#[trace("TC-663", "FR-218-AC-32")]
+#[test]
+fn a_nested_repeat_with_maximum_zero_gives_no_progress() {
+    refuses_outer(&nested_repeat_of(
+        Some(0),
+        PROGRESS,
+        "check Done using v { true }",
+    ));
+    check(&nested_repeat_of(None, PROGRESS, ""))
+        .expect("an unbounded nested repeat with an infeasible exit steps");
+    check(&nested_repeat_of(
+        Some(1),
+        PROGRESS,
+        "check Done using v { true }",
+    ))
+    .expect("a maximum of 1 enters the body once per entry");
+}

@@ -50,7 +50,7 @@ mod tests;
 
 pub use awaits::Selections;
 pub use coverage::content;
-pub(crate) use graph::dominates;
+pub(crate) use graph::{dominates, repeat_body};
 use types::PendingPredicateJoin;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
