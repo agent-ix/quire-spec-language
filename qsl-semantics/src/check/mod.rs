@@ -2831,6 +2831,18 @@ impl PackageDeclarations {
             std::collections::BTreeSet::new();
         let mut protocol_places: Vec<Option<usize>> = Vec::with_capacity(self.protocols.len());
         let mut protocol_refused: Vec<bool> = Vec::with_capacity(self.protocols.len());
+        // The header's temporal profiles with their aliases, in source order:
+        // an `await` reads its clock role under one of them.
+        let temporal_aliases: Vec<(&str, TemporalProfile)> = self
+            .profile_selections
+            .iter()
+            .filter_map(|selection| {
+                Some((
+                    selection.alias.as_str(),
+                    TemporalProfile::from_identity(&selection.identity)?,
+                ))
+            })
+            .collect();
         for (index, protocol) in self.protocols.iter().enumerate() {
             let refusals_before = refusals.len();
             let attempts = self
@@ -2848,7 +2860,7 @@ impl PackageDeclarations {
                 &state_clause_forms,
                 protocol_clause::Selections {
                     protocol: protocol_profile.as_deref(),
-                    temporal: !self.temporal_selections.is_empty(),
+                    temporal: &temporal_aliases,
                 },
             );
             // FR-381: the protocol's activation, captures and compensation
@@ -2947,7 +2959,7 @@ impl PackageDeclarations {
                         protocol_profile.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
-                            checked.slots = slots;
+                            checked.slots = *slots;
                             nodes_used = used;
                         }
                         protocol_slots::Slots::Refused(slot_refusals) => {
@@ -3663,25 +3675,6 @@ impl PackageDeclarations {
             },
             Err(refusal) => refusals.push(refusal),
         }
-        // FR-135: the clause a refinement's rows select, by its node.
-        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
-            let Some(selected) = selected else {
-                continue;
-            };
-            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
-                Ok(key) => checked.concrete_protocol = Some(key),
-                // Under the test opt-in a protocol with an unwritten
-                // construct has no clause key, and is refused nowhere.
-                Err(refusal)
-                    if self.emit_unwritten_protocols
-                        && matches!(
-                            &refusal.cause,
-                            CheckCause::ProtocolReference(cause)
-                                if cause.construct().is_some()
-                        ) => {}
-                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
-            }
-        }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members
@@ -4146,6 +4139,77 @@ impl PackageDeclarations {
                         Err(refusal) => refusals.push(refusal),
                     }
                 }
+            }
+        }
+        // FR-092: the node of each protocol that holds an `attempt`, now that
+        // the operation anchors and state clauses its attempts name are keyed.
+        let attempt_nodes_written = refusals.is_empty();
+        if attempt_nodes_written {
+            let attempts: Vec<Vec<lowering::AttemptNodes>> = protocol_bindings
+                .iter()
+                .zip(&lowered_attempts)
+                .map(|(bindings, lowered)| {
+                    bindings
+                        .iter()
+                        .zip(lowered)
+                        .filter_map(|(bound, lowered)| {
+                            let contracts = bound
+                                .contracts
+                                .iter()
+                                .map(|&index| {
+                                    lowered_clauses
+                                        .get(index)
+                                        .and_then(Option::as_ref)
+                                        .map(|clause| clause.key)
+                                })
+                                .collect::<Option<Vec<_>>>()?;
+                            Some(lowering::AttemptNodes {
+                                declaration: bound.declaration,
+                                anchor: lowered.as_ref()?.binding.anchor,
+                                contracts,
+                            })
+                        })
+                        .collect()
+                })
+                .collect();
+            match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols)
+            {
+                Ok(inputs) => {
+                    if let Err(refusal) = lowering.protocol_nodes_with_attempts(&inputs, &attempts)
+                    {
+                        refusals.push(refusal);
+                    }
+                }
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-135: the clause a refinement's rows select, by its node.
+        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
+            let Some(selected) = selected else {
+                continue;
+            };
+            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
+                Ok(key) => checked.concrete_protocol = Some(key),
+                // Under the test opt-in a protocol with an unwritten
+                // construct has no clause key, and is refused nowhere.
+                Err(refusal)
+                    if self.emit_unwritten_protocols
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct().is_some()
+                        ) => {}
+                // An attempt-bearing protocol is keyed only when no earlier
+                // refusal skipped its node; the earlier refusal is reported.
+                Err(refusal)
+                    if !attempt_nodes_written
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct()
+                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
+                        ) => {}
+                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
         }
         // FR-337: each emitted temporal clause, after every function its
@@ -6108,6 +6172,17 @@ fn register_protocol_sites(
                 );
             }
             qsl_forms::ProtocolMemberForm::Scheduling(_) => {}
+        }
+    }
+    for body in &protocol.bodies {
+        if let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(body.owner))
+        {
+            site_spans.insert(
+                protocol_site(name, ProtocolSite::ControlBody(&control.path)),
+                body.expression.spans.clone(),
+            );
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {
