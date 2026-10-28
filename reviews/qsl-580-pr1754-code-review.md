@@ -54,3 +54,12 @@ Gates at 732a1c044 (locked-build, jobs 4, `--all-features`, debug info off):
 ## Verdict
 
 Changes requested: FND-001 and FND-002.
+
+## Dispositions
+
+Round 1, head a508a6286.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | withdrawn | Not reproducible: passes 1/1 and 3/3 (`-- clock_places timed`, 98 passed) at 732a1c044 in a fresh worktree and target; the earlier 3 failures came from one worktree whose target also held probe builds, cause not isolated |
+| FND-002 | fixed | A node whose only reads are another object's presences is one data literal of the guard's convex part; `pre`, `pre and clock`, `forall(c in self.peers: present(c.v))`, urgency and a union case check; a postcondition refuses `unsupported_construct`/`not-yet-implemented` at the read |

@@ -37,3 +37,13 @@ Not covered:
 ## Verdict
 
 Low findings only; the verdict follows SR-1754001 (changes requested).
+
+## Dispositions
+
+Round 1, head a508a6286.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Quantified presence `forall(c in self.peers : present(c.v))` is admitted as a data literal and tested (`another_objects_presence_is_a_guard_data_predicate`) |
+| FND-002 | fixed | `present(self.peer.state.Armed)` in a time invariant's `when` is tested |
+| FND-003 | fixed | `urgent Due when { present(self.peer.v) }` is tested at S3 and in eval (`is_urgent` per initial state) |
