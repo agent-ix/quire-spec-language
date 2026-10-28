@@ -10,11 +10,12 @@
 //! ADR-021 RV-6 does. Copy-swap is not selected, so it has no place here: the
 //! compiler applies it when the clause has the symmetry.
 
-use qsl_replay::{HyperReductionCause, ReductionKind};
+use qsl_foundation::ReductionKind;
+use qsl_replay::HyperReductionCause;
 use qsl_semantics::check::{CheckedHyperClause, HyperForm};
 use quire_semantic_value::fairness::FairnessGranularity;
 
-use crate::model_check::Reductions;
+use qsl_route::reductions::Reductions;
 
 /// The forms EN-1 decides here, with the rows of ADR-023 §5 that read their
 /// subjects.

@@ -1513,9 +1513,10 @@ fn live_clocks_beyond_max_clocks_settle_limit_reached() {
                     kind: qsl_route::deadlock::ObligationKind::Authored(
                         qsl_replay::node_occurrence(node),
                     ),
+                    reductions: qsl_route::reductions::ObligationReductions::default(),
                 },
                 limits: ZoneCheckLimits::default(),
-                reductions: &qsl_analyze::model_check::Reductions::default(),
+                reductions: &qsl_route::reductions::Reductions::default(),
             },
             &Cancel::new(),
         )

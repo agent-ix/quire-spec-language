@@ -7,10 +7,11 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{
     AppliedReduction, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
-    ReductionKind, SymmetryBrokenCause,
+    SymmetryBrokenCause,
 };
 use qsl_eval::simulation::protocol::WeakAccessShape;
 use qsl_eval::simulation::SubjectTransition;
+use qsl_foundation::ReductionKind;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
 use quire_semantic_value::model_transition::ModelTransition;

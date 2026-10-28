@@ -1674,8 +1674,9 @@ mod tests {
     /// and generator, and the number of boundary states.
     #[test]
     fn reduction_cause_wire_keeps_its_payload() {
-        use crate::proof_result::{ReductionKind, SymmetryBrokenCause};
+        use crate::proof_result::SymmetryBrokenCause;
         use qsl_eval::simulation::Permutation;
+        use qsl_foundation::ReductionKind;
         use quire_checked::key::DeclarationKey;
         use quire_semantic_value::fairness::PropertyForm;
 
