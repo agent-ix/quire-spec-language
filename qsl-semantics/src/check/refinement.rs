@@ -547,12 +547,13 @@ impl PopulationUse {
 }
 
 impl CheckedRefinement {
-    /// The typed V2 body and key for a row-empty model refinement, with its
-    /// lowered class catalog.
+    /// The typed V2 body and key for a row-empty refinement: its `abstract`
+    /// root, a protocol subject's `protocol` clause and internal list, and
+    /// its lowered class catalog.
     /// Construction remains in the check core; the package writer can
     /// serialize the checked body without depending on JSON or minting a
     /// semantic identity.
-    pub fn v2_empty_model_emission(
+    pub fn v2_row_empty_emission(
         &self,
     ) -> Result<(NodeKey, quire_contract_model::CheckedTerm), RefinementV2EncodingError> {
         let abstract_subject = self
@@ -575,8 +576,17 @@ impl CheckedRefinement {
             histories: Vec::new(),
             assume: Vec::new(),
             ensure: Vec::new(),
-            protocol: None,
-            abstract_internal: None,
+            protocol: self.abstract_protocol.map(|clause| {
+                Box::new(quire_contract_model::RefinementKey::Local(v2_node_id(
+                    clause,
+                )))
+            }),
+            abstract_internal: (!self.abstract_internal.is_empty()).then(|| {
+                self.abstract_internal
+                    .iter()
+                    .map(|class| class.spelling().into())
+                    .collect()
+            }),
             class_catalog: self.class_catalog_keys.as_ref().map(v2_class_catalog),
         };
         let identity = Self::v2_identity(concrete_subject, &body)?;
@@ -639,12 +649,15 @@ impl CheckedRefinement {
     }
 
     /// Whether this declaration is in the current V2 emission slice: a model
-    /// abstract subject whose checked base body has no authored mappings,
-    /// with its class catalog, when it has one, lowered to node keys.
-    /// Later slices admit mapped model and protocol subjects.
-    pub fn v2_empty_model_body(&self) -> bool {
-        self.abstract_side == AbstractSide::Model
-            && self.abstract_internal.is_empty()
+    /// or protocol subject whose checked base body has no authored mappings,
+    /// with its class catalog, when it has one, lowered to node keys, and a
+    /// protocol subject's clause keyed. Later slices admit mapped subjects.
+    pub fn v2_row_empty_body(&self) -> bool {
+        let subject = match &self.abstract_side {
+            AbstractSide::Model => self.abstract_internal.is_empty(),
+            AbstractSide::Protocol { .. } => self.abstract_protocol.is_some(),
+        };
+        subject
             && self.populations.is_empty()
             && self.objects.is_empty()
             && self.steps.is_empty()
@@ -1066,6 +1079,10 @@ pub struct CheckedRefinement {
     /// The clause's node exists once the unit's protocol nodes are minted
     /// (FR-092), so the pipeline fills it after the check.
     pub(crate) concrete_protocol: Option<NodeKey>,
+    /// The abstract protocol clause of a protocol subject, once the unit's
+    /// protocol nodes are minted; absent for a model subject and for a
+    /// clause that has no node.
+    pub(crate) abstract_protocol: Option<NodeKey>,
     /// The selected local state-machine nodes, filled from the checked model
     /// selections after protocol refinement resolution.
     pub(crate) abstract_subject_node: Option<NodeKey>,
@@ -1165,6 +1182,12 @@ impl CheckedRefinement {
     /// have no catalog.
     pub fn class_catalog(&self) -> Option<&RefinementClassCatalog> {
         self.class_catalog.as_ref()
+    }
+
+    /// The abstract protocol clause's node of a protocol subject, once it is
+    /// minted.
+    pub fn abstract_protocol(&self) -> Option<NodeKey> {
+        self.abstract_protocol
     }
 
     /// The class catalog lowered to node keys, when every class node of it
@@ -1815,6 +1838,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         class_catalog,
         class_catalog_keys: None,
         concrete_protocol: None,
+        abstract_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
         declaration_span: form.span,

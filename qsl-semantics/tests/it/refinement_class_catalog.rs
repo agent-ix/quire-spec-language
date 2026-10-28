@@ -280,5 +280,5 @@ fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
     let catalog = refinement.class_catalog().expect("a checked catalog");
     assert!(classes(catalog.concrete()).contains(&"fork Local::par"));
     assert!(refinement.class_catalog_keys().is_none());
-    assert!(!refinement.v2_empty_model_body());
+    assert!(!refinement.v2_row_empty_body());
 }

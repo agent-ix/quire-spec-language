@@ -1199,7 +1199,7 @@ fn inspection_source_map(
 /// body. Mapped refinements are added by later slices; this body is legal in
 /// its own right and its identity is bound to the concrete model's
 /// `model_root` node.
-fn empty_model_refinement_node(
+fn row_empty_refinement_node(
     refinement: &CheckedRefinement,
     region: &SourceRegion,
 ) -> Result<(CheckedSemanticNodeV2, Vec<CheckedSourceMapEntry>), EmitRefusal> {
@@ -1215,7 +1215,7 @@ fn empty_model_refinement_node(
     );
     let (identity, typed_body) =
         refinement
-            .v2_empty_model_emission()
+            .v2_row_empty_emission()
             .map_err(|error| match error {
                 qsl_semantics::check::RefinementV2EncodingError::MissingSubject => {
                     EmitRefusal::RefinementSubjectNotEmitted
@@ -1251,9 +1251,10 @@ fn empty_model_refinement_node(
             regions: vec![source_region.clone()],
         })
         .collect();
-    // QSpec FR-375: every local catalog node and binder type is a
-    // dependency of the refinement.
+    // QSpec FR-375: the `abstract` root, a local `protocol` clause and every
+    // local catalog node and binder type are the refinement's dependencies.
     let mut dependencies: Vec<CheckedNodeId> = std::iter::once(abstract_node)
+        .chain(refinement.abstract_protocol().map(node_id))
         .chain(
             refinement
                 .class_catalog_keys()
@@ -1900,14 +1901,14 @@ fn emit_package_inner(
     let mut emitted_refinements = Vec::new();
     let mut refinement_names: BTreeMap<CheckedNodeId, &str> = BTreeMap::new();
     for refinement in graph.refinements() {
-        if !refinement.v2_empty_model_body() {
+        if !refinement.v2_row_empty_body() {
             return Err(EmitRefusal::RefinementNotEmitted);
         }
         let region = graph
             .refinement_declaration_region(refinement)
             .filter(|region| region.start() < region.end())
             .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
-        let (node, entries) = empty_model_refinement_node(refinement, &region)?;
+        let (node, entries) = row_empty_refinement_node(refinement, &region)?;
         if let Some(first) = refinement_names.insert(node.node_id.clone(), refinement.name()) {
             return Err(EmitRefusal::SameMeaningRefinements {
                 first: first.to_owned(),

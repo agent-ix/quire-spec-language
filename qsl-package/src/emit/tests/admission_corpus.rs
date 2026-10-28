@@ -1453,6 +1453,239 @@ fn a_clause_over_a_third_model_contributes_no_class() {
         .any(|node| node["semantic_form"] == "protocol_clause"));
 }
 
+/// [`catalog_refinement`] with the clause `Local` over the abstract model and
+/// the refinement's abstract side that clause: a protocol subject.
+fn protocol_subject() -> (String, Vec<Vec<u8>>) {
+    let (unit, documents) = catalog_refinement();
+    let unit = unit
+        .replace("over (input: C::Widget)", "over (input: A::Widget)")
+        .replace("role w on C::Widget", "role w on A::Widget")
+        .replace("abstract A concrete C", "abstract A::Local concrete C");
+    (unit, documents)
+}
+
+/// A row-empty model subject `R2` of `A` by `C`, beside a protocol
+/// subject `R` over the same models.
+const MODEL_SUBJECT_R2: &str = "refinement R2 using inf abstract A concrete C {}\n";
+
+/// `unit` over `documents` with the `refinement_internals` value `internals`,
+/// checked and emitted: the package id and every refinement node by name.
+fn emit_with_internals(
+    unit: &str,
+    documents: &[Vec<u8>],
+    internals: Option<Value>,
+) -> (Value, BTreeMap<String, Value>) {
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let mut declarations =
+        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
+    if let Some(value) = internals {
+        declarations = declarations.with_refinement_internals(value);
+    }
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
+    let names: Vec<String> = graph
+        .refinements()
+        .iter()
+        .map(|refinement| refinement.name().to_owned())
+        .collect();
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let refinements: Vec<Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .cloned()
+        .collect();
+    // Each refinement's node is located at its own declaration.
+    let by_name = names
+        .into_iter()
+        .map(|name| {
+            let start = unit
+                .find(&format!("refinement {name} "))
+                .expect("its declaration");
+            let node = refinements
+                .iter()
+                .find(|node| {
+                    wire["source_map"].as_array().is_some_and(|entries| {
+                        entries.iter().any(|entry| {
+                            entry["node_id"] == node["node_id"]
+                                && entry["role"] == "declaration"
+                                && entry["regions"][0]["start"].as_u64()
+                                    == u64::try_from(start).ok()
+                        })
+                    })
+                })
+                .unwrap_or_else(|| panic!("the node of {name}"))
+                .clone();
+            (name, node)
+        })
+        .collect();
+    (wire["package_id"].clone(), by_name)
+}
+
+/// QSpec FR-375-AC-12: the `refinement_internals` value is the only host of
+/// a protocol subject's internal list: `[{"refinement": "R", "internal":
+/// ["A::Local::Done"]}]` writes `abstract_internal` `["Local::Done"]`; the
+/// value absent, `[]` or naming only another refinement writes no member.
+#[trace("FR-375-AC-12", "TC-310")]
+#[test]
+fn the_internal_list_value_hosts_abstract_internal() {
+    let (unit, documents) = protocol_subject();
+    let internal =
+        |name: &str, entries: &[&str]| json!([{"refinement": name, "internal": entries}]);
+    let (_, listed) =
+        emit_with_internals(&unit, &documents, Some(internal("R", &["A::Local::Done"])));
+    assert_eq!(
+        listed["R"]["body"]["abstract_internal"],
+        json!(["Local::Done"])
+    );
+    for value in [None, Some(json!([]))] {
+        let (_, plain) = emit_with_internals(&unit, &documents, value.clone());
+        assert!(
+            plain["R"]["body"].get("abstract_internal").is_none(),
+            "{value:?}"
+        );
+    }
+    // A value naming only another refinement, the model subject `R2`.
+    let two = format!("{unit}{MODEL_SUBJECT_R2}");
+    let (_, nodes) = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
+    assert!(nodes["R"]["body"].get("abstract_internal").is_none());
+    assert!(nodes["R2"]["body"].get("abstract_internal").is_none());
+}
+
+/// QSpec FR-375-AC-13: a list and none give different refinement node ids
+/// and package ids; reordering the value's objects or entries changes
+/// neither, nor does renaming the abstract alias with the value's spellings
+/// renamed to match.
+#[trace("FR-375-AC-13", "TC-310")]
+#[test]
+fn the_internal_list_enters_the_identity_and_its_order_does_not() {
+    let (unit, documents) = protocol_subject();
+    let two = format!("{unit}{MODEL_SUBJECT_R2}");
+    let (none_id, none) = emit_with_internals(&two, &documents, None);
+    let value = |alias: &str, entries: [&str; 2], objects_reversed: bool| {
+        let r = json!({"refinement": "R", "internal": entries.map(|entry| entry.replace("A::", &format!("{alias}::")))});
+        let r2 = json!({"refinement": "R2", "internal": []});
+        if objects_reversed {
+            json!([r2, r])
+        } else {
+            json!([r, r2])
+        }
+    };
+    let entries = ["A::Local::Done", "lose A::Local::ch"];
+    let reversed = ["lose A::Local::ch", "A::Local::Done"];
+    let (listed_id, listed) =
+        emit_with_internals(&two, &documents, Some(value("A", entries, false)));
+    assert_ne!(listed["R"]["node_id"], none["R"]["node_id"]);
+    assert_ne!(listed_id, none_id);
+    assert_eq!(
+        listed["R"]["body"]["abstract_internal"],
+        json!(["Local::Done", "lose Local::ch"])
+    );
+    for (order, objects_reversed) in [(reversed, false), (entries, true), (reversed, true)] {
+        let (id, nodes) =
+            emit_with_internals(&two, &documents, Some(value("A", order, objects_reversed)));
+        assert_eq!(id, listed_id, "{order:?} {objects_reversed}");
+        assert_eq!(nodes["R"]["node_id"], listed["R"]["node_id"]);
+        assert_eq!(nodes["R2"]["node_id"], listed["R2"]["node_id"]);
+    }
+    // The abstract alias renamed, with the value's spellings to match.
+    let renamed = two
+        .replace("model A ", "model S ")
+        .replace("abstract A ", "abstract S ")
+        .replace("A::", "S::");
+    let (renamed_id, renamed_nodes) =
+        emit_with_internals(&renamed, &documents, Some(value("S", entries, false)));
+    assert_eq!(renamed_nodes["R"]["node_id"], listed["R"]["node_id"]);
+    assert_eq!(renamed_id, listed_id);
+}
+
+/// QSpec FR-375 (AC-11, AC-25): a row-empty protocol subject keeps the
+/// abstract model's root as `abstract` and names its clause as `protocol`,
+/// a local dependency. Its catalog lists the clause's classes on the
+/// abstract side, and the protocol is part of the node's meaning: the model
+/// subject over the same models is another node.
+#[trace("FR-375-AC-11", "FR-375-AC-25", "FR-375-AC-23", "TC-310")]
+#[test]
+fn a_row_empty_protocol_subject_names_its_clause() {
+    let (unit, documents) = protocol_subject();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol subject emits");
+    let node = refinement_node(&emission);
+    let wire = wire(&emission);
+    let clause = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "protocol_clause")
+        .expect("the clause node")
+        .clone();
+    let root = nodes(&wire)
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "model_root"
+                && node["owner"]["identity"] == "example/refinement-abstract"
+        })
+        .expect("the abstract root")
+        .clone();
+    assert_eq!(node["body"]["abstract"], root["node_id"]);
+    assert_eq!(node["body"]["protocol"], clause["node_id"]);
+    assert!(node["body"].get("abstract_internal").is_none());
+    let dependencies = node["dependencies"].as_array().expect("dependencies");
+    assert!(dependencies.contains(&clause["node_id"]));
+    assert!(dependencies.contains(&root["node_id"]));
+    let abstract_classes: Vec<&str> = node["body"]["class_catalog"]["abstract"]
+        .as_array()
+        .expect("the abstract side")
+        .iter()
+        .map(|class| class["class"].as_str().expect("a spelling"))
+        .collect();
+    assert_eq!(
+        abstract_classes,
+        ["Local::Done", "duplicate Local::ch", "lose Local::ch"]
+    );
+    for class in node["body"]["class_catalog"]["abstract"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        assert!(dependencies.contains(&class["node"]), "{class}");
+    }
+
+    let (model_unit, _) = catalog_refinement();
+    let model_subject = modelled_with_documents(
+        &model_unit
+            .replace("over (input: C::Widget)", "over (input: A::Widget)")
+            .replace("role w on C::Widget", "role w on A::Widget"),
+        &documents,
+        Vec::new(),
+    );
+    let model_node =
+        refinement_node(&emit_checked(&model_subject).expect("the model subject emits"));
+    assert!(model_node["body"].get("protocol").is_none());
+    assert_ne!(model_node["node_id"], node["node_id"]);
+}
+
+/// QSpec FR-375: the protocol subject reads back through IR. Ignored while
+/// IR-874 is open: IR's rebuild of the abstract clause's classes reads the
+/// member prefix from the second declaration-path segment, which QSL writes
+/// as `[P, finish, Done]` (B3).
+#[trace("FR-375-AC-11", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's protocol class rebuild disagrees with QSL's member naming (B3)"]
+fn a_row_empty_protocol_subject_reads_back() {
+    let (unit, documents) = protocol_subject();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol subject emits");
+    let admitted = read(&Emitted {
+        package,
+        emission,
+        documents,
+    });
+    assert!(
+        admitted.is_ok(),
+        "the protocol subject reads back: {admitted:?}"
+    );
+}
+
 /// QSpec FR-375: the emitted catalog reads back through IR. Ignored while
 /// IR-874 is open: IR rebuilds an empty abstract side for a model subject
 /// where FR-375 lists the abstract model's operation classes (B2), and
