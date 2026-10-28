@@ -104,9 +104,16 @@ pub struct RequestItem {
     domains: Vec<ProofBound>,
     unsupported: Option<UnsupportedItem>,
     reductions: Vec<ReductionKind>,
+    property_form: Option<quire_semantic_value::fairness::PropertyForm>,
 }
 
 impl RequestItem {
+    /// The property form its record carries (FR-144: a refinement's TP-5
+    /// form); `None` for an item whose form is its checked node's.
+    pub fn property_form(&self) -> Option<quire_semantic_value::fairness::PropertyForm> {
+        self.property_form
+    }
+
     /// The reductions its request selects, in the order symmetry,
     /// partial-order, constraint (FR-159 Inputs), which negotiation routes
     /// by ([`crate::Registry::restrict_to_reductions`]); empty for an
@@ -334,6 +341,7 @@ impl RequestWriter {
             domains,
             unsupported: requirements.unsupported().cloned(),
             reductions: self.reductions.selected(),
+            property_form: requirements.property_form(),
         });
         index
     }
