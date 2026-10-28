@@ -3603,17 +3603,20 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(index, (signature, _, _))| body_location(index, &signature.name))
             .collect();
-        let callees: Vec<Vec<usize>> = drafts
+        // What each function's key hashes besides its own body: the
+        // functions it calls and the protocols it refers to.
+        let function_edges: Vec<(Vec<usize>, Vec<usize>)> = drafts
             .iter()
             .map(|(_, body, _)| {
                 let mut callees = body.body.root().callees();
+                let mut protocols = body.body.root().protocol_references();
                 if let Some(measure) = &body.measure {
                     callees.extend(measure.root().callees());
+                    protocols.extend(measure.root().protocol_references());
                 }
-                callees
+                (callees, protocols)
             })
             .collect();
-        let order = lowering::lowering_order(&callees);
         let mut occurrences = family::OccurrenceMap::default();
         // FR-094: the package's units and every compound unit typing formed,
         // kept until lowering has keyed each one's type node.
@@ -3665,16 +3668,38 @@ impl PackageDeclarations {
         if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
             refusals.push(refusal);
         }
-        // FR-092: each checked protocol's node, before any function that
-        // refers to it is lowered.
+        // FR-092/FR-093: the functions and the protocols are lowered in
+        // dependency order, each node's callees and referenced protocols
+        // keyed before it.
         for (protocol, place) in self.protocols.iter().zip(&protocol_places) {
             let Some(checked) = place.and_then(|place| checked_protocols.get(place)) else {
                 continue;
             };
             register_protocol_sites(protocol, checked, &mut type_spans, &mut site_spans);
         }
-        match protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols) {
-            Ok(inputs) => match lowering.protocol_nodes(&inputs) {
+        let protocol_inputs =
+            protocol_reference::inputs(&self.protocols, &protocol_places, &checked_protocols);
+        let protocol_list: &[lowering::ProtocolInput<'_>] = match &protocol_inputs {
+            Ok(inputs) => inputs,
+            Err(refusal) => {
+                refusals.push(refusal.clone());
+                &[]
+            }
+        };
+        lowering.begin_protocols(protocol_list.len());
+        let protocol_edges: Vec<(Vec<usize>, Vec<usize>)> = protocol_list
+            .iter()
+            .map(lowering::ProtocolInput::dependencies)
+            .collect();
+        let order = lowering::dependency_order(&function_edges, &protocol_edges);
+        let lower_protocol = |lowering: &mut lowering::Lowering<'_>,
+                              refusals: &mut Vec<CheckRefusal>,
+                              index: usize,
+                              cyclic: bool| {
+            let Some(protocol) = protocol_list.get(index) else {
+                return;
+            };
+            match lowering.protocol_node_step(index, protocol, cyclic) {
                 // The refusal of a protocol with an unwritten construct is
                 // this check's emission gate, as the refinement's is.
                 Ok(unsupported) => {
@@ -3683,10 +3708,11 @@ impl PackageDeclarations {
                     }
                 }
                 Err(refusal) => refusals.push(refusal),
-            },
-            Err(refusal) => refusals.push(refusal),
-        }
-        for group in &order {
+            }
+        };
+        let lower_functions = |lowering: &mut lowering::Lowering<'_>,
+                               refusals: &mut Vec<CheckRefusal>,
+                               group: &lowering::FunctionGroup| {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members
                 .iter()
@@ -3714,6 +3740,27 @@ impl PackageDeclarations {
                 })
                 .collect();
             refusals.extend(lowering.function_group(group, &inputs));
+        };
+        for step in &order {
+            match step {
+                lowering::LoweringStep::Functions(group) => {
+                    lower_functions(&mut lowering, &mut refusals, group);
+                }
+                lowering::LoweringStep::Protocol(index) => {
+                    lower_protocol(&mut lowering, &mut refusals, *index, false);
+                }
+                lowering::LoweringStep::Cycle {
+                    protocols,
+                    functions,
+                } => {
+                    for index in protocols {
+                        lower_protocol(&mut lowering, &mut refusals, *index, true);
+                    }
+                    for group in functions {
+                        lower_functions(&mut lowering, &mut refusals, group);
+                    }
+                }
+            }
         }
         // FR-104 "Requirements" (SR-736 FND-008): mint every named
         // operation's frame occurrence up front, in ascending (declaring,

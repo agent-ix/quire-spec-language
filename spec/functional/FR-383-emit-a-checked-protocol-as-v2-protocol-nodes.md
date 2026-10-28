@@ -170,9 +170,14 @@ the protocol's qualified name.
   `unsupported_construct`/`not-yet-implemented` at its declaration, once for
   each such construct and naming it, and so does a reference to it: a control
   other than `sequence` (QSL-1126); a requirement or a compensation template
-  (QSL-1127); a `terminal` member (QSL-1121f); a `finish` constraint, a capture
-  initializer or an `each` guard that calls a function, dispatches a call or
-  refers to a protocol (QSL-1121g); a `relationship` member (QSL-1141: a real model package
+  (QSL-1127); a `terminal when` condition that reads `over` under
+  `activation on each` (IR-1069); a function's or protocol's reference to a
+  protocol that holds an `attempt`, whose node is written after the state
+  clauses it lists, which follow the functions (QSL-1121g); a protocol in a cyclic component
+  of function calls and protocol references, whose recursion group is not
+  written yet (QSL-844: a body that calls a function, or refers to a protocol,
+  is keyed after that function or protocol, QSL-1121g, so only a cycle is
+  refused); a `relationship` member (QSL-1141: a real model package
   cannot name a relationship yet, so the `relationships` set is unproved
   against the reader); a channel that carries a bounded scalar or collection
   (QSL-1137: a `bounded_domain` node, which the reader does not admit as
