@@ -81,6 +81,7 @@ pub(super) struct RunInputs<'a> {
 pub(super) struct Run {
     pub(super) root: NodeKey,
     pub(super) readable: Vec<Binder>,
+    /// Every control's node, by its declaration.
     pub(super) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
 }
 

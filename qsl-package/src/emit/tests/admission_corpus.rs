@@ -1263,6 +1263,216 @@ fn a_row_empty_refinement_identity_excludes_its_source_region() {
     );
 }
 
+/// A row-empty refinement of the model `A` by `C`, with the protocol clause
+/// `Local` over `C::Widget`: a static role, an `unknown`-delivery channel
+/// and `finish`.
+fn catalog_refinement() -> (String, Vec<Vec<u8>>) {
+    let abstract_document = state_machine_document("example/refinement-abstract");
+    let concrete_document = state_machine_document("example/refinement-concrete");
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         protocol Local using p over (input: C::Widget) on origin {{\n\
+         role w on C::Widget;\n\
+         channel ch from w to w carries Boolean ordering unordered delivery unknown \
+         capacity 2 overflow block;\n\
+         run sequence Main {{ }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         refinement R using inf abstract A concrete C {{}}\n",
+        document_digest(&abstract_document),
+        document_digest(&concrete_document),
+    );
+    (unit, vec![abstract_document, concrete_document])
+}
+
+/// The refinement relation node of `emission`.
+fn refinement_node(emission: &Emission) -> Value {
+    nodes(&wire(emission))
+        .iter()
+        .find(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node")
+        .clone()
+}
+
+/// QSpec FR-375: a protocol clause over the concrete model gives a
+/// row-empty model refinement its `class_catalog`, in the closed body and
+/// so in the node identity. The concrete side lists the concrete model's
+/// operation classes and the clause's classes, the abstract side the
+/// abstract model's operation classes, each in UTF-8 byte order; every
+/// class node and binder type is a local node of the package and a
+/// dependency of the refinement.
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
+    let (unit, documents) = catalog_refinement();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement with a catalog emits");
+    let node = refinement_node(&emission);
+    let catalog = &node["body"]["class_catalog"];
+    let spelled = |side: &str| -> Vec<&str> {
+        catalog[side]
+            .as_array()
+            .unwrap_or_else(|| panic!("the {side} side: {catalog}"))
+            .iter()
+            .map(|class| class["class"].as_str().expect("a class spelling"))
+            .collect()
+    };
+    assert_eq!(
+        spelled("concrete"),
+        [
+            "Lifecycle::tick",
+            "Local::Done",
+            "duplicate Local::ch",
+            "lose Local::ch",
+        ]
+    );
+    assert_eq!(spelled("abstract"), ["Lifecycle::tick"]);
+
+    let wire = wire(&emission);
+    let by_id = |id: &Value| {
+        nodes(&wire)
+            .iter()
+            .find(|node| &node["node_id"] == id)
+            .unwrap_or_else(|| panic!("{id} is a node of the package"))
+            .clone()
+    };
+    let dependencies = node["dependencies"].as_array().expect("dependencies");
+    for class in catalog["concrete"]
+        .as_array()
+        .into_iter()
+        .chain(catalog["abstract"].as_array())
+        .flatten()
+    {
+        let used = std::iter::once(&class["node"])
+            .chain(class["binder_types"].as_array().into_iter().flatten());
+        for id in used {
+            by_id(id);
+            assert!(dependencies.contains(id), "{id} is a dependency");
+        }
+    }
+    // The operation class names the state machine's model node; its binder
+    // record is the receiver alone, `tick` having no parameter or result.
+    let tick = &catalog["concrete"][0];
+    assert_eq!(by_id(&tick["node"])["semantic_form"], "state_machine");
+    assert_eq!(tick["binder_types"].as_array().map(Vec::len), Some(1));
+    // The finish class names the clause's `obligation` node, typed by its
+    // closing binder; a channel class has no binder.
+    let done = &catalog["concrete"][1];
+    assert_eq!(by_id(&done["node"])["semantic_form"], "obligation");
+    assert_eq!(done["binder_types"].as_array().map(Vec::len), Some(1));
+    assert_eq!(catalog["concrete"][2]["binder_types"], json!([]));
+    assert_eq!(
+        by_id(&catalog["concrete"][2]["node"])["semantic_form"],
+        "channel"
+    );
+    let mut sorted = dependencies.clone();
+    sorted.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    assert_eq!(&sorted, dependencies, "dependencies ascend");
+
+    // With the clause over the abstract model instead, the concrete side
+    // has no protocol class, so the refinement has no catalog and another
+    // node.
+    let without = unit
+        .replace("over (input: C::Widget)", "over (input: A::Widget)")
+        .replace("role w on C::Widget", "role w on A::Widget");
+    let other = modelled_with_documents(&without, &documents, Vec::new());
+    let other = refinement_node(&emit_checked(&other).expect("the refinement emits"));
+    assert!(other["body"].get("class_catalog").is_none(), "{other}");
+    assert_ne!(other["node_id"], node["node_id"]);
+}
+
+/// QSpec FR-375-AC-27: an `on each` clause over the concrete model writes
+/// `activate <P>` naming the clause node, with the trigger's binder record
+/// (one field for a Boolean trigger).
+#[trace("FR-375-AC-27", "TC-310")]
+#[test]
+fn an_each_clause_writes_its_activate_class() {
+    let (unit, documents) = catalog_refinement();
+    let unit = unit.replace("on origin", "on each (t: Boolean)");
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement emits");
+    let node = refinement_node(&emission);
+    let activate = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("the concrete side")
+        .iter()
+        .find(|class| class["class"] == "activate Local")
+        .expect("the activate class")
+        .clone();
+    let wire = wire(&emission);
+    let clause = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "protocol_clause")
+        .expect("the clause node")
+        .clone();
+    assert_eq!(activate["node"], clause["node_id"]);
+    let [binder] = activate["binder_types"]
+        .as_array()
+        .expect("binders")
+        .as_slice()
+    else {
+        panic!("one trigger field: {activate}");
+    };
+    let boolean = nodes(&wire)
+        .iter()
+        .find(|node| &node["node_id"] == binder)
+        .expect("the binder type node")
+        .clone();
+    assert_eq!(boolean["semantic_form"], "boolean", "{boolean}");
+}
+
+/// QSpec FR-375-AC-23: a clause whose `owner_model` is a model of a third
+/// selected declaration is foreign to the refinement: it contributes no
+/// class, so the row-empty model refinement has no catalog.
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+fn a_clause_over_a_third_model_contributes_no_class() {
+    let (unit, mut documents) = catalog_refinement();
+    let third = state_machine_document("example/refinement-third");
+    let unit = unit
+        .replace(
+            "protocol Local",
+            &format!(
+                "model T = \"example/refinement-third\" version \"1.0.0\" \
+                 digest \"sha256-jcs:{}\";\nprotocol Local",
+                document_digest(&third)
+            ),
+        )
+        .replace("over (input: C::Widget)", "over (input: T::Widget)")
+        .replace("role w on C::Widget", "role w on T::Widget");
+    documents.push(third);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement emits");
+    let node = refinement_node(&emission);
+    assert!(node["body"].get("class_catalog").is_none(), "{node}");
+    assert!(nodes(&wire(&emission))
+        .iter()
+        .any(|node| node["semantic_form"] == "protocol_clause"));
+}
+
+/// QSpec FR-375: the emitted catalog reads back through IR. Ignored while
+/// IR-874 is open: IR rebuilds an empty abstract side for a model subject
+/// where FR-375 lists the abstract model's operation classes (B2), and
+/// reads a clause member's class prefix from the second segment of its
+/// declaration path, which QSL writes as `[P, finish, Done]` (B3).
+#[trace("FR-375-AC-23", "TC-310")]
+#[test]
+#[ignore = "IR-874: IR's catalog rebuild disagrees with FR-375 (B2, B3)"]
+fn a_model_refinement_class_catalog_reads_back() {
+    let (unit, documents) = catalog_refinement();
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the refinement with a catalog emits");
+    let admitted = read(&Emitted {
+        package,
+        emission,
+        documents,
+    });
+    assert!(admitted.is_ok(), "the catalog reads back: {admitted:?}");
+}
+
 /// Every node body of every package the admission corpus emits is in QSpec
 /// FR-322's stratified grammar, classified as Leaf, Group, Tuple, Member or
 /// Body by a walk of the emitted JSON (FR-264-AC-2's walk over the families

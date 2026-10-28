@@ -215,13 +215,13 @@ fn document_with(
     .into_bytes()
 }
 
-const SUB: &str = "example/sub-counter";
+pub(crate) const SUB: &str = "example/sub-counter";
 const NARROW: &str = "example/narrow-counter";
 const WIDE: &str = "example/wide-counter";
 
 /// `Counter { value }` with `peek()`, its subtype `SubCounter { extra }` with
 /// `bump()`, and the population `counters` of counters.
-fn sub_counter() -> Vec<u8> {
+pub(crate) fn sub_counter() -> Vec<u8> {
     document(
         SUB,
         vec![
@@ -286,7 +286,7 @@ fn bounded_counter(package: &str, upper: u32) -> Vec<u8> {
 /// `Counter { value }` with `inc()` and the population `counters`, and the
 /// record value type `Try { done }`, the attempt type of a compensation
 /// template (FR-381).
-fn counter_spec() -> Vec<u8> {
+pub(crate) fn counter_spec() -> Vec<u8> {
     let attempt = declaration(
         SPEC,
         "Try",
@@ -536,7 +536,7 @@ pub(crate) fn assemble(
 
 /// A refusal with the text of the unit it is located at.
 #[derive(Debug)]
-struct Refused {
+pub(crate) struct Refused {
     refusal: CheckRefusal,
     at: String,
     unit: String,
@@ -555,7 +555,7 @@ impl Refused {
     }
 }
 
-fn check_with(
+pub(crate) fn check_with(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -2035,11 +2035,11 @@ fn only_the_refinement_beside_a_terminal_is_refused() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
 }
 
-const DIAMOND: &str = "example/diamond-counter";
+pub(crate) const DIAMOND: &str = "example/diamond-counter";
 
 /// `Base1 { value }` and `Base2 { other }`, each with `op()`, and `Child`
 /// specializing both, so `Child::op` names two unrelated declarations.
-fn diamond_counter() -> Vec<u8> {
+pub(crate) fn diamond_counter() -> Vec<u8> {
     document(
         DIAMOND,
         vec![

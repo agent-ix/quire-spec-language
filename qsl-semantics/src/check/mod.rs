@@ -166,13 +166,14 @@ pub mod stratum;
 mod termination;
 pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
-    CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect,
-    ListDefectKind, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
-    ProtocolStepKind, RefinementCatalogClass, RefinementCatalogNode, RefinementCause,
-    RefinementClassCatalog, RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin,
-    RefinementRefusal, RefinementStepSource, RefinementSupport, RefinementThreadTarget,
-    RefinementV2EncodingError, RoleStepKind, RowClass, RowObservation, StepClass, StepLabel,
-    StepRow, StepTarget, UnsupportedFeature,
+    CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, KeyedCatalogClass,
+    KeyedClassCatalog, KeyedMemoryClass, LabelStep, ListDefect, ListDefectKind, MemoryStepKind,
+    ObjectRow, PopulationRow, PopulationUse, PopulationValue, ProtocolStepKind,
+    RefinementCatalogClass, RefinementCatalogNode, RefinementCause, RefinementClassCatalog,
+    RefinementDeclaration, RefinementFairness, RefinementFairnessOrigin, RefinementRefusal,
+    RefinementStepSource, RefinementSupport, RefinementThreadTarget, RefinementV2EncodingError,
+    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
+    UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -898,6 +899,13 @@ fn root(origin: Origin) -> Location {
 /// collide with a QSL declaration name.
 fn time_source_origin(index: usize) -> String {
     format!("time source {index}")
+}
+
+/// Internal declared-span key for a refinement declaration: the region of the
+/// nodes its class catalog mints (FR-375). Spaced, so it names no declared
+/// type.
+fn refinement_origin(name: &str) -> String {
+    format!("refinement {name}")
 }
 
 /// Internal declared-span key for a timed source's qualified operation name.
@@ -1847,6 +1855,12 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let mut type_spans = self.declared_type_spans;
+        for refinement in &self.refinements {
+            type_spans.insert(
+                refinement_origin(&refinement.form.name.name),
+                refinement.form.span,
+            );
+        }
         for (index, source) in self.time_sources.iter().enumerate() {
             type_spans.insert(time_source_origin(index), source.span);
             if let Some(span) = source.tick_operation_span {
@@ -3146,6 +3160,36 @@ impl PackageDeclarations {
                 Err(found) => refusals.extend(found),
             }
         }
+        // FR-375: a model-abstract refinement whose rows select no protocol
+        // was checked before any clause; its catalog takes the clauses over
+        // its concrete model now.
+        {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            for (checked, selected) in refinement_slots.iter_mut().zip(&selected_protocols) {
+                let Some(checked) = checked.as_mut().filter(|_| selected.is_none()) else {
+                    continue;
+                };
+                if let Err(fault) =
+                    checked.catalog_concrete_protocols(&declarations, &protocol_views)
+                {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                }
+            }
+        }
         let (mut refinements, selected_protocols): (Vec<_>, Vec<_>) = refinement_slots
             .into_iter()
             .zip(selected_protocols)
@@ -4430,6 +4474,21 @@ impl PackageDeclarations {
         for enum_binding in scope.enums() {
             if let Err(refusal) = lowering.enum_nodes(enum_binding) {
                 refusals.push(refusal);
+            }
+        }
+        // FR-375: each class catalog, lowered once its protocol clauses'
+        // nodes exist; a node no other declaration located takes its one
+        // `generated` occurrence at the refinement.
+        for checked in &mut refinements {
+            let Some(catalog) = checked.class_catalog.as_ref() else {
+                continue;
+            };
+            let location = root(Origin::TypeDeclaration {
+                name: refinement_origin(checked.name()),
+            });
+            match lowering.class_catalog_keys(catalog, &location) {
+                Ok(keys) => checked.class_catalog_keys = keys,
+                Err(refusal) => refusals.push(refusal),
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());

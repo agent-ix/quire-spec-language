@@ -20,6 +20,7 @@ use quire_exact::ValueType;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 use super::catalog::{RefinementCatalogClass, RefinementCatalogNode};
+use super::protocol::MemoryStepKind;
 use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_slots::CheckedLifetime;
 
@@ -447,7 +448,14 @@ pub(crate) struct ProtocolClasses {
     channels: BTreeMap<String, (bool, bool)>,
     /// Replicated role name to whether its lifetime is `until`.
     roles: BTreeMap<String, bool>,
+    /// Whether the clause activates `on each`, so it has an `activate`
+    /// class.
     activates: bool,
+    /// The binder record of the `on each` trigger: the `activate` class's
+    /// binder types, per FR-432's binder-record table ("`activate`: as
+    /// `event`, over the declared type of the clause's `on each` trigger")
+    /// and FR-375-AC-27. `None` for an `origin` clause.
+    trigger: Option<Vec<ValueType>>,
     memory: BTreeSet<&'static str>,
     /// Every distinct source-default model of the clause's `parallel`
     /// controls; each defines a `memory drain` class (FR-375-AC-23).
@@ -568,7 +576,11 @@ impl ProtocolClasses {
             .memory
             .parallels
             .iter()
-            .flat_map(|parallel| std::iter::once("drain").chain(memory_step(parallel.memory)))
+            .flat_map(|parallel| {
+                MemoryStepKind::of_model(parallel.memory)
+                    .iter()
+                    .map(|kind| kind.label())
+            })
             .collect();
         let memory_models = checked
             .memory
@@ -592,6 +604,14 @@ impl ProtocolClasses {
             channels,
             roles,
             activates: matches!(form.activation, ActivationForm::Each { .. }),
+            trigger: match form.activation {
+                ActivationForm::Each { .. } => checked
+                    .slots
+                    .binders
+                    .get(1)
+                    .map(|trigger| binder_record(types, &trigger.value_type)),
+                ActivationForm::Origin => None,
+            },
             memory,
             memory_models,
         }
@@ -683,23 +703,26 @@ impl ProtocolClasses {
             }
         }
         if self.activates {
+            let Some(trigger) = &self.trigger else {
+                return Err(quire_semantic_value::catalog::InternalFault::new(
+                    "check.refinement-class-catalog",
+                    "checked-each-clause-has-a-trigger-binder",
+                ));
+            };
             let class = format!("activate {}", self.protocol);
             classes.insert(
                 class.clone(),
                 RefinementCatalogClass::declared(
                     class,
                     RefinementCatalogNode::Trigger(self.protocol.clone()),
-                    Vec::new(),
+                    trigger.clone(),
                 ),
             );
         }
         let mut memory = Vec::new();
         for model in &self.memory_models {
-            let drain = RefinementCatalogClass::memory_drain(*model);
-            memory.push(drain);
-            if let Some(kind) = memory_step(*model) {
-                let class = RefinementCatalogClass::memory(format!("memory {kind}"), *model);
-                memory.push(class);
+            for kind in MemoryStepKind::of_model(*model) {
+                memory.push(RefinementCatalogClass::memory(*kind, *model));
             }
         }
         Ok(classes.into_values().chain(memory).collect())
@@ -771,15 +794,6 @@ impl ProtocolClasses {
             }
         }
         (classes, missing)
-    }
-}
-
-/// The memory step kind a `parallel` under `model` adds, if any (ADR-027
-/// SE-4): `tso` adds the store-buffer `flush`.
-fn memory_step(model: MemoryModelName) -> Option<&'static str> {
-    match model {
-        MemoryModelName::Tso => Some("flush"),
-        MemoryModelName::Sc | MemoryModelName::Ra => None,
     }
 }
 

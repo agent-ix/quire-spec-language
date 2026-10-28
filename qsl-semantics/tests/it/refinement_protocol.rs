@@ -1612,6 +1612,14 @@ fn memory_entries(graph: &CheckedGraph) -> Vec<(String, String, Option<&'static 
         .iter()
         .filter(|class| class.class().starts_with("memory "))
         .map(|class| {
+            // A memory class carries its typed step kind, and its spelling
+            // and drain operation follow from it (#1718, SR-1738001).
+            let kind = class.memory_step().expect("a memory class has a step kind");
+            assert_eq!(class.class(), format!("memory {}", kind.label()));
+            assert_eq!(
+                class.drain().is_some(),
+                kind == qsl_semantics::check::MemoryStepKind::Drain
+            );
             (
                 class.class().to_owned(),
                 class

@@ -30,6 +30,7 @@ use qsl_forms::{
     ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
     ProtocolDeclarationForm, ProtocolNodeKind,
 };
+use qsl_foundation::MemoryModelName;
 use quire_exact::{EffectiveId, Identifier, Integer, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -45,13 +46,17 @@ use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
 };
-use crate::check::protocol_clause::CheckedProtocol;
+use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_controls::{CheckedChannel, CheckedOrdering};
 use crate::check::protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedCommit, CheckedCompensation,
 };
 use crate::check::protocol_slots::{
     CheckedLifetime, CheckedScheduling, CheckedSlotBinder, CheckedTerminalMember,
+};
+use crate::check::refinement::{
+    KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, MemoryStepKind, RefinementCatalogClass,
+    RefinementCatalogNode, RefinementClassCatalog,
 };
 use crate::check::refusal::{
     CheckCause, CheckRefusal, KeyFault, ProtocolConstruct, ProtocolReferenceCause,
@@ -728,6 +733,7 @@ impl Lowering<'_> {
             boolean,
             compensation_nodes,
         )?;
+        let named_roles: BTreeMap<String, NodeKey> = roles_by_name.iter().cloned().collect();
         let finish = self.finish_node(protocol, &operation("finish")?, &run.readable, boolean)?;
         let terminal = self.terminal_node(
             protocol,
@@ -736,6 +742,9 @@ impl Lowering<'_> {
             trigger,
             boolean,
         )?;
+        let finish_node = protocol.checked.finish.as_ref().ok_or_else(unchecked)?.0;
+        let mut nodes = run.nodes;
+        nodes.insert(finish_node, finish);
         let run = run.root;
 
         let activation = match &trigger {
@@ -757,7 +766,7 @@ impl Lowering<'_> {
                 )]))
             }
         };
-        self.protocol_member(
+        let clause = self.protocol_member(
             location,
             "protocol_clause",
             boolean,
@@ -797,7 +806,17 @@ impl Lowering<'_> {
                     MemberTerm::bound("finish", LeafTerm::reference(finish)),
                 ],
             ),
-        )
+        )?;
+        self.protocol_members.insert(
+            name.to_owned(),
+            ProtocolMembers {
+                clause,
+                nodes,
+                channels: named_channels.into_iter().collect(),
+                roles: named_roles,
+            },
+        );
+        Ok(clause)
     }
 
     /// The `guard` term of the `activation on each` guard of `protocol`
@@ -1448,8 +1467,9 @@ impl Lowering<'_> {
         Ok(entries)
     }
 
-    /// The `channel` nodes of `protocol` (FR-465 "Channel") and the one
-    /// `queue` node of each (FR-465 "Queue"), each set ascending by digest.
+    /// The `channel` nodes of `protocol` (FR-465 "Channel") by channel
+    /// name, and the one `queue` node of each
+    /// (FR-465 "Queue"), ascending by digest.
     /// A queue is declared by its channel's `capacity` and `overflow`, so it
     /// has no declaration and one `generated` occurrence at the channel's
     /// region.
@@ -1788,6 +1808,154 @@ impl Lowering<'_> {
             )),
         }
     }
+}
+
+impl Lowering<'_> {
+    /// QSpec FR-375's class catalog of a refinement, lowered to node keys:
+    /// an operation class names its owner's model node, a protocol class
+    /// the node of its clause member (the clause for `activate`), and each
+    /// binder type its type node. `None` when a class belongs to a protocol
+    /// clause that has no node (its profile is unselected or it names a
+    /// construct whose node is not written yet), so the refinement is not
+    /// emitted.
+    pub(crate) fn class_catalog_keys(
+        &mut self,
+        catalog: &RefinementClassCatalog,
+        location: &Location,
+    ) -> Result<Option<KeyedClassCatalog>, CheckRefusal> {
+        let mut sides = [Vec::new(), Vec::new()];
+        for (side, classes) in sides
+            .iter_mut()
+            .zip([catalog.concrete(), catalog.abstract_side()])
+        {
+            for class in classes {
+                let Some(keyed) = self.catalog_class_keys(class, location)? else {
+                    return Ok(None);
+                };
+                side.push(keyed);
+            }
+        }
+        let [concrete, abstract_side] = sides;
+        Ok(Some(KeyedClassCatalog {
+            concrete,
+            abstract_side,
+        }))
+    }
+
+    /// Record `key`'s one `generated` occurrence at `location` when no
+    /// declaration has located it: a catalog's class node or binder type
+    /// that nothing else names.
+    fn generated_at(&mut self, key: NodeKey, location: &Location) {
+        if !self.occurrences.has(key) {
+            self.record(key, OccurrenceRole::Generated, location.clone());
+        }
+    }
+
+    fn catalog_class_keys(
+        &mut self,
+        class: &RefinementCatalogClass,
+        location: &Location,
+    ) -> Result<Option<KeyedCatalogClass>, CheckRefusal> {
+        if let Some(model) = class.memory_model() {
+            // A memory class keys on its typed step kind (FR-375-AC-23,
+            // #1718), matched exhaustively: `flush` is a `tso` class only.
+            let memory = match (class.memory_step(), model) {
+                (Some(MemoryStepKind::Drain), model) => KeyedMemoryClass::Drain(model),
+                (Some(MemoryStepKind::Flush), MemoryModelName::Tso) => KeyedMemoryClass::Flush,
+                (Some(MemoryStepKind::Flush), MemoryModelName::Sc | MemoryModelName::Ra)
+                | (None, _) => {
+                    return Err(catalog_fault(
+                        location,
+                        "catalog-memory-class-has-its-step-kind",
+                    ))
+                }
+            };
+            return Ok(Some(KeyedCatalogClass::Memory(memory)));
+        }
+        let node = match class.node() {
+            Some(RefinementCatalogNode::Operation(owner)) => {
+                let key = self.model_node(owner, location)?;
+                self.generated_at(key, location);
+                key
+            }
+            Some(RefinementCatalogNode::ProtocolNode { protocol, node }) => {
+                match self
+                    .protocol_members
+                    .get(protocol)
+                    .and_then(|members| members.nodes.get(node))
+                {
+                    Some(key) => *key,
+                    None => return Ok(None),
+                }
+            }
+            Some(RefinementCatalogNode::Channel { protocol, channel }) => {
+                match self
+                    .protocol_members
+                    .get(protocol)
+                    .and_then(|members| members.channels.get(channel))
+                {
+                    Some(key) => *key,
+                    None => return Ok(None),
+                }
+            }
+            Some(RefinementCatalogNode::Role { protocol, role }) => {
+                match self
+                    .protocol_members
+                    .get(protocol)
+                    .and_then(|members| members.roles.get(role))
+                {
+                    Some(key) => *key,
+                    None => return Ok(None),
+                }
+            }
+            Some(RefinementCatalogNode::Trigger(protocol)) => {
+                match self.protocol_members.get(protocol) {
+                    Some(members) => members.clause,
+                    None => return Ok(None),
+                }
+            }
+            None => return Err(catalog_fault(location, "declared-catalog-class-has-node")),
+        };
+        let binder_types = class
+            .binder_types()
+            .iter()
+            .map(|value_type| {
+                let key = self.type_node(value_type, location)?;
+                self.generated_at(key, location);
+                Ok(key)
+            })
+            .collect::<Result<_, CheckRefusal>>()?;
+        Ok(Some(KeyedCatalogClass::Declared {
+            class: class.class().to_owned(),
+            node,
+            binder_types,
+        }))
+    }
+}
+
+/// A broken invariant of the checked class catalog.
+fn catalog_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+    fault(
+        location,
+        KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
+            "check.refinement-class-catalog",
+            invariant,
+        )),
+    )
+}
+
+/// The keys of one keyed protocol clause's members that own a step class
+/// (FR-432): the clause itself (`activate`), its channels and roles by name,
+/// and its step nodes by declaration index: every control the `run` tree
+/// writes and the `finish` node. A clause holding a control that is not
+/// written yet (`choice`, `parallel`, `repeat`) has no node, so a refinement
+/// over it stays not emitted.
+#[derive(Clone, Debug)]
+pub(crate) struct ProtocolMembers {
+    pub(crate) clause: NodeKey,
+    pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
+    pub(crate) channels: BTreeMap<String, NodeKey>,
+    pub(crate) roles: BTreeMap<String, NodeKey>,
 }
 
 /// What lowering holds for one protocol declaration.

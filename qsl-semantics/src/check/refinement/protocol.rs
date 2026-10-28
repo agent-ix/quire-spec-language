@@ -98,7 +98,7 @@ impl MemoryStepKind {
 
     /// The internal step kinds of `model`: `drain` for every source-default
     /// model, and `flush` for `tso`.
-    fn of_model(model: MemoryModelName) -> &'static [Self] {
+    pub(super) fn of_model(model: MemoryModelName) -> &'static [Self] {
         match model {
             MemoryModelName::Sc | MemoryModelName::Ra => &[Self::Drain],
             MemoryModelName::Tso => &[Self::Drain, Self::Flush],
