@@ -14,12 +14,12 @@ relationships:
 
 ## Summary
 
-FR-196-AC-13 and TC-641 define the same pre-read boundary for initial and
-post-step undefined reads. AC-12 now points to that definition, leaving one
-consistent interpretation of the diagnostic key.
+Within the reviewed FR-196 and TC-641 changes, AC-12 points to AC-13's
+pre-read boundary for initial and post-step undefined reads. This review is
+limited to those amended clauses and test procedure.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-60327 | low | No issues found | FR-196, TC-641 |
+| FND-60327 | low | No integrity issue identified in the changed FR-196/TC-641 text | FR-196, TC-641 |

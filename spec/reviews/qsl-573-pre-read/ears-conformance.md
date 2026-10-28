@@ -12,12 +12,12 @@ relationships:
 
 ## Summary
 
-The added normative statements name the triggering condition, the responsible
-builder behavior, and the pre-read state contents. They use separate, testable
-obligations and no EARS grammar finding was identified.
+For the added FR-196 pre-read statements only, the triggering condition,
+builder behavior, and pre-read state contents are expressed as testable
+obligations. This review did not examine other FRs or ADR-028.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-60328 | low | No issues found | FR-196 |
+| FND-60328 | low | No EARS issue identified in the added FR-196 statements | FR-196 |

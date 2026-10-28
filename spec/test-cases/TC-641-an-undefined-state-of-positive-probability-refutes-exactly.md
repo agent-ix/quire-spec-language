@@ -32,8 +32,9 @@ Fixture: the `Coin` model and claim of FR-196-AC-5 (`drop` deletes the coin when
    `over` key but whose initial state has no object at that key, so the first
    predicate read is undefined at position 0. Inspect the returned key before
    any monitor or accumulator advancement. Then use the Coin case where
-   `drop` with `b = 0` removes the object, making the first undefined read
-   occur at position 1.
+  `drop` with `b = 0` removes the object, making the first undefined read
+  occur at position 1. Also run the initial-state case with the bounded
+  `steps` measure `steps from holds(c.v = 0) until holds(c.v = 1) within 3 <= 3`.
 
 Tag the tests `#[trace("TC-641", "<AC id>")]`.
 
@@ -46,8 +47,19 @@ Tag the tests `#[trace("TC-641", "<AC id>")]`.
   `ReplayParity`.
 - Step 3: `refuted`, `decisive-counterexample`, category violation, cause
   `UndefinedEvaluation`.
-- Step 4: the position-0 path has no steps and a probability of 1; its key
-  names the initial model state and the claim-initialized pre-read control,
-  with no pending draw. The position-1 path's key names the state after the
-  deleting step and carries the control from before that state's undefined
-  read; the read does not advance the control.
+- Step 4: the position-0 formula path has no steps, probability 1, the
+  initial model state, the `over` binding for the missing `ghost` object, a
+  `Formula(Running(q0))` monitor where `q0` is the FR-338 key of the initial
+  state of the compiled `always[0,3] holds(c.v = 0)` monitor, no accumulator,
+  and no pending draw. It is not the successor on the undefined
+  position-zero letter. The
+  position-0 `steps` path has
+  `Measure{remaining: 3, phase: Inactive}` and
+  `Steps{activated: false, amount: 0}`, with no pending draw. The position-1
+  Coin path has one `drop` step with `b = 0`, probability `1/2`; its key names
+  the state after deletion and retains the control reached after the defined
+  position-zero read. It does not include the advance that the undefined
+  position-one read would have caused. Its monitor is the FR-338 key of the
+  state reached after reading the defined position-zero letter
+  `holds(c.v = 0)`; it has no accumulator or pending draw. Under `Even`, the
+  `drop` draw with `b = 0` has probability `1/2`.

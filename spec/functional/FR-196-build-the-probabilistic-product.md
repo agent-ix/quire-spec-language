@@ -237,21 +237,24 @@ be replaced with an initial/default/zero value. This defines the semantic
 representation; FR-331 owns its transport and each certificate field's
 binding to it.
 
-For a read that evaluates `Undefined`, the key in `UndefinedPath` SHALL be
-the complete product key immediately before that read: it names the model
-state and the control already reached when EN-5 attempts to read the
-position's letter. The build SHALL NOT advance the monitor or accumulator
-using an undefined letter. At position zero, the pre-read control SHALL be
-initialized from the checked claim without reading any predicate: a formula
-uses its automaton's initial state; a bounded measure uses its initial
-inactive phase and zero, not-activated accumulator; a fraction uses its
-initial collecting phase and zero sums; an unbounded form has no monitor or
-accumulator. At later positions, the pre-read control is the control reached
-after the preceding defined position and its step. An intermediate
-multi-post-state draw is resolved before this key is formed, so the key names
-the selected post-state, has no pending draw, and retains the unchanged
-control from before the resolution. `position` remains the number of steps
-from the initial state to the model state named by this key.
+When EN-5 attempts a position read and it evaluates `Undefined`, it SHALL
+return before inserting that model state into the product and before advancing
+the monitor or accumulator. `UndefinedPath.key` SHALL be the complete product
+key for that attempted read: it names the model state and the control already
+reached immediately before the read. This diagnostic key may therefore name
+a model state that is not a member of `ProbProduct.states`. At position zero,
+the pre-read control SHALL be initialized from the checked claim without
+reading any predicate: a formula uses its automaton's initial state; a bounded
+measure uses its initial inactive phase and zero, not-activated accumulator;
+a fraction uses its initial collecting phase and zero sums; an unbounded form
+has no monitor or accumulator. At later positions, the pre-read control is the
+control reached after the preceding defined position and its step. An
+intermediate multi-post-state draw is resolved before this key is formed, so
+the key names the selected post-state, has no pending draw, and retains the
+unchanged control from before the resolution. The monitor and accumulator
+advance at that resolution only after the selected post-state's predicates
+have evaluated to defined values. `position` remains the number of steps from
+the initial state to the model state named by this key.
 
 `binding` is the claim's `over` binding: the FR-181 reference triple object
 of the one object the claim's predicates are read for, or null for a claim
@@ -741,21 +744,27 @@ rejection loci, with no model-only shortcut.
 - For a `Reach`, `ExpectedReward` or `LongRunFraction` form, EN-5 SHALL use
   the MDP or DTMC itself as the product, with the predicates as state labels and
   rewards on edges.
-- If an atom, a state predicate, a measure or a reward the claim reads
-  evaluates `Undefined` at a product state the build creates, then
-  EN-5 SHALL stop the build at the first such state in canonical breadth-first
-  order and return `ProbBuild::Undefined`, whose `UndefinedPath` is the
-  refutation's evidence, with `UndefinedEvaluation{where, cause}`
-  (ADR-028 XV-8, ADR-018 UE-1). The state may be an initial state, whose
-  path has no step and position 0. A read that is refused, with no value
-  undefined, is a `ProductRefusal::PredicateRefused`, not a refutation.
+- When EN-5 attempts to read a model state and an atom, state predicate,
+  measure or reward the claim reads evaluates `Undefined`, EN-5 SHALL stop
+  before inserting that state or advancing its control, at the first such
+  attempt in canonical breadth-first order, and return
+  `ProbBuild::Undefined`, whose `UndefinedPath` is the refutation's evidence,
+  with `UndefinedEvaluation{where, cause}` (ADR-028 XV-8, ADR-018 UE-1).
+  The attempted state may be an initial state, whose path has no step and
+  position 0. A read that is refused, with no value undefined, is a
+  `ProductRefusal::PredicateRefused`, not a refutation.
 - Over every scheduler, the `UndefinedPath` SHALL carry `resolved` at each
   step whose draw has several post-states.
 - A resolution edge SHALL carry every reward of the model at 0.
-- The resolution of an intermediate state SHALL advance the monitor and the
-  accumulator once, with the draw's rewards.
-- The initial product states SHALL be each subject initial state, per `over`
-  binding, paired with the monitor's successor on position 0.
+- When the selected post-state's predicates are defined, resolution of an
+  intermediate state SHALL advance the monitor and the accumulator once,
+  with the draw's rewards. If the read is undefined, Behavior's pre-read
+  rule takes effect before this advance.
+- For each subject initial state and `over` binding whose position-zero reads
+  are defined, the initial product state SHALL pair with the monitor's
+  successor on position 0. If a position-zero read is undefined, the state
+  is not inserted; Behavior's pre-read rule supplies the key and
+  claim-initialized control.
 - Exploration SHALL use FR-101's canonical breadth-first order, so the
   product, its state numbering and its edge order are functions of the
   subject, the claim and the limits. Reaching `max_states`,
@@ -778,7 +787,7 @@ rejection loci, with no model-only shortcut.
 | FR-196-AC-10 | Over a population with two live objects, a claim `over` the object type builds a product with two initial states per subject initial state, one per binding; the same model state and the same monitor state under the two bindings are two product states, and their keys differ in `binding`. | Test (TC-631) |
 | FR-196-AC-11 | A `steps from holds(A) until holds(B) within 3` measure whose `A` never holds ends every path at control `Measure{remaining: 0, phase: Unactivated}` with accumulator `Steps{activated: false, amount: 0}`, decided and not expanded. A `steps` measure activated at a terminal model state counts each stutter step up to its horizon. A fraction reads its predicate at the position the step leaves. | Test (TC-631) |
 | FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the complete product key of the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. An `Undefined` path over a claim `over` two objects carries the initial-state index and the binding of the undefined read, and its `key` is the complete pre-read product key at the undefined read (AC-13). A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
-| FR-196-AC-13 | At every undefined read, `UndefinedPath.key` is the complete pre-read product key at that read: it retains the model state reached and the real control before evaluating the position's letter, and does not advance that control on the undefined result. For an undefined read at position 0, the key uses the initial model state and the claim-initialized non-null formula, measure or fraction control (or null control for an unbounded form); for a first undefined read after a step, it uses the reached post-state and the control carried from the preceding defined position. A resolved multi-post-state draw names the selected post-state with no pending draw. | Test |
+| FR-196-AC-13 | At every undefined read, `UndefinedPath.key` is the complete pre-read product key at that read: it retains the model state reached and the real control before evaluating the position's letter, and does not advance that control on the undefined result. For an undefined read at position 0, the key uses the initial model state and the claim-initialized non-null formula, measure or fraction control (or null control for an unbounded form); for a first undefined read after a step, it uses the reached post-state and the control carried from the preceding defined position. A resolved multi-post-state draw names the selected post-state with no pending draw. | Test (TC-641) |
 
 ## Dependencies
 

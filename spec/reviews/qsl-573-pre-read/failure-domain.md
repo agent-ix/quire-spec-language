@@ -14,13 +14,13 @@ relationships:
 
 ## Summary
 
-The new rule distinguishes an undefined read before any control advancement,
-including at position zero and after resolving a multi-post-state draw. The
-path retains both the complete product identity and the undefined-read locus;
-no failure-domain gap was found in the changed text.
+Within FR-196 and TC-641, the new rule distinguishes an undefined read before
+control advancement at position zero and after resolving a multi-post-state
+draw. The reviewed path retains the complete product identity and
+undefined-read locus; this review did not inspect other FRs or ADR-028.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-60326 | low | No issues found | FR-196, TC-641 |
+| FND-60326 | low | No failure-domain issue identified in the changed FR-196/TC-641 text | FR-196, TC-641 |

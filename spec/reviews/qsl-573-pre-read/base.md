@@ -14,13 +14,13 @@ relationships:
 
 ## Summary
 
-The amendment adds FR-196-AC-13 and a TC-641 position-zero case. IDs are
-unique and sequential, and the new criterion has a concrete test procedure.
-No active AssuranceProfile artifacts apply to this review. No base-review
-issues were found in the changed requirements.
+Within the changed FR-196 and TC-641 text, the amendment adds FR-196-AC-13
+and a position-zero case. The criterion identifier is unique and sequential,
+and its test procedure is traceable to TC-641. No active AssuranceProfile
+artifacts apply to this scoped review.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-60325 | low | No issues found | FR-196, TC-641 |
+| FND-60325 | low | No base-review issue identified in the changed FR-196/TC-641 text | FR-196, TC-641 |
