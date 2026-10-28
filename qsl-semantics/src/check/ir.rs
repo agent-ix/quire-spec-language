@@ -228,6 +228,18 @@ impl CheckedBody {
         self.nodes.is_empty()
     }
 
+    /// Whether a node of the body reads a clock place's presence
+    /// (`present(r.f)` of another object, a quantified element presence),
+    /// which no lowering writes yet.
+    pub(crate) fn reads_presence_place(&self) -> bool {
+        self.nodes.iter().any(|node| {
+            matches!(
+                node.kind,
+                NodeKind::PlacePresence { .. } | NodeKind::SlotPresence { .. }
+            )
+        })
+    }
+
     /// Whether a node of the body reads the local slot `slot`: for a slot
     /// below the body's parameter count, whether it reads that parameter.
     pub fn reads_local(&self, slot: Slot) -> bool {

@@ -2497,7 +2497,7 @@ impl PackageDeclarations {
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
         // FR-230: each timed model's guard parts, time invariants and
         // `urgent when` predicates, each typed as a Boolean over the state.
-        let timed_models = {
+        let mut timed_models = {
             let location = Location::root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
                 scope: &scope,
@@ -2541,6 +2541,13 @@ impl PackageDeclarations {
                 }
             }
         };
+        // FR-230: each `urgent when` predicate S3 lowers is located at its own
+        // site, so its nodes' occurrences resolve.
+        for model in &mut timed_models {
+            for (_, _, predicate) in model.urgency_predicates_mut() {
+                site_spans.insert(predicate.site.clone(), predicate.spans.clone());
+            }
+        }
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
         // state-clause bodies over the concrete object. FR-147: the
         // `refinement_internals` value is parsed once. A refinement over a
@@ -4485,6 +4492,28 @@ impl PackageDeclarations {
             }) {
                 Ok(key) => lowered_terminals.push((index, declaration.model.clone(), key)),
                 Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-230, QSpec FR-322 "Timed-model nodes": each `urgent when`
+        // predicate's expression node, which its `urgency` node references.
+        for model in &mut timed_models {
+            for (_, urgency, predicate) in model.urgency_predicates_mut() {
+                let timed_model::Urgency::When {
+                    context,
+                    alternatives,
+                    ..
+                } = urgency
+                else {
+                    continue;
+                };
+                let [alternative] = alternatives.as_slice() else {
+                    continue;
+                };
+                match lowering.urgency_predicate(*context, alternative.predicate(), &predicate.site)
+                {
+                    Ok(key) => predicate.node = Some(key),
+                    Err(refusal) => refusals.push(refusal),
+                }
             }
         }
         for composite in scope.types().composites() {

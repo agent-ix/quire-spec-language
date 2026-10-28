@@ -98,6 +98,7 @@ mod state_graph;
 mod state_transition;
 mod temporal;
 mod terminal;
+mod urgency;
 mod wire;
 
 pub(crate) use abstraction::{object_type_node, population_node, relation_node};

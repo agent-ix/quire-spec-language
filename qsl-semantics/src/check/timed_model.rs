@@ -34,7 +34,7 @@ use qsl_forms::{
 };
 use qsl_foundation::Span;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{EffectiveId, Rational, ValueType};
+use quire_exact::{EffectiveId, NodeKey, Rational, ValueType};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 pub use self::collection_write::{CollectionWrite, Written};
@@ -304,9 +304,21 @@ pub struct CheckedTimedPredicate {
     parameters: Vec<(String, ValueType)>,
     body: CheckedBody,
     slots: usize,
+    /// Each slot's binder name, for the parameter nodes lowering writes.
+    slot_names: Vec<String>,
 }
 
 impl CheckedTimedPredicate {
+    /// The checked body.
+    pub(crate) fn checked_body(&self) -> &CheckedBody {
+        &self.body
+    }
+
+    /// Each slot's binder name.
+    pub(crate) fn slot_names(&self) -> &[String] {
+        &self.slot_names
+    }
+
     /// The slots the body is checked over, in order: `self`, then the
     /// operation's parameters for a guard part.
     pub fn parameters(&self) -> &[(String, ValueType)] {
@@ -769,6 +781,8 @@ pub enum Urgency {
     When {
         /// The declared name.
         name: String,
+        /// The declaration's span.
+        span: Span,
         /// The object type `self` ranges over.
         context: EffectiveId,
         /// The predicate's alternatives ([`TimeInvariant::alternatives`]).
@@ -778,9 +792,44 @@ pub enum Urgency {
     Operation {
         /// The declared name.
         name: String,
+        /// The declaration's span.
+        span: Span,
         /// The operation's declaration key.
         operation: DeclarationKey,
+        /// The operation's declared name, which the `urgency` node writes
+        /// (QSpec FR-322 "Timed-model nodes").
+        operation_name: String,
     },
+}
+
+impl Urgency {
+    /// The declaration's span.
+    pub fn span(&self) -> Span {
+        match self {
+            Self::When { span, .. } | Self::Operation { span, .. } => *span,
+        }
+    }
+}
+
+/// The `urgent when` predicate S3 lowers to a checked expression node
+/// (QSpec FR-322 "Timed-model nodes": an `urgency` of kind `when` references
+/// its data predicate): one alternative that reads no clock presence,
+/// typed at its own site so that its nodes are located.
+#[derive(Debug)]
+pub(crate) struct UrgencyPredicate {
+    /// The site the predicate was typed at ([`urgency_site`]).
+    pub(crate) site: String,
+    /// The predicate's source spans, which locate the site.
+    pub(crate) spans: qsl_forms::ExpressionSpans,
+    /// The predicate's expression node, once lowered.
+    pub(crate) node: Option<NodeKey>,
+}
+
+/// The `Origin::TypeDeclaration` name of the `urgent when` predicate at
+/// `index` among the urgency declarations of the timed model `model`.
+/// Spaced, so it names no declared type.
+pub(crate) fn urgency_site(model: &str, index: usize) -> String {
+    format!("urgency {model} {index}")
 }
 
 /// FR-230's checked `TimedModel`, for one dense time source: the model's
@@ -802,6 +851,9 @@ pub struct TimedModel {
     resets: Vec<ClockResets>,
     invariants: Vec<TimeInvariant>,
     urgency: Vec<Urgency>,
+    /// Beside `urgency`: the lowered predicate of each `urgent when` S3
+    /// writes, `None` for one it does not write yet and for `urgent O`.
+    urgency_predicates: Vec<Option<UrgencyPredicate>>,
 }
 
 impl TimedModel {
@@ -871,16 +923,49 @@ impl TimedModel {
     }
 
     /// Whether the model has a member no S4 emission writes yet: a guard,
-    /// reset, time invariant, urgency or `Clock` parameter. Its clock
-    /// places alone are written as `clock_place` templates (QSpec FR-322
-    /// "Timed-model nodes"); a model with a guard is refused rather than
-    /// written with an empty `guards` aggregate (FR-230-AC-50).
+    /// reset, time invariant, `Clock` parameter, or an `urgent when` whose
+    /// predicate S3 has not lowered (one reading a clock presence). Its
+    /// clock places are written as `clock_place` templates and its urgency
+    /// as `urgency` nodes (QSpec FR-322 "Timed-model nodes"); a model with
+    /// a guard is refused rather than written with an empty `guards`
+    /// aggregate (FR-230-AC-50).
     pub fn has_unwritten_members(&self) -> bool {
         !self.guards.is_empty()
             || !self.resets.is_empty()
             || !self.invariants.is_empty()
-            || !self.urgency.is_empty()
             || !self.clock_parameters.is_empty()
+            || self
+                .urgency
+                .iter()
+                .zip(&self.urgency_predicates)
+                .any(|(urgency, predicate)| {
+                    matches!(urgency, Urgency::When { .. }) && predicate.is_none()
+                })
+    }
+
+    /// The expression node of the urgency at `index`'s `when` predicate,
+    /// once S3 lowered it.
+    pub fn urgency_predicate_node(&self, index: usize) -> Option<NodeKey> {
+        self.urgency_predicates
+            .get(index)
+            .and_then(Option::as_ref)
+            .and_then(|predicate| predicate.node)
+    }
+
+    /// Each `urgent when` predicate S3 writes, with its index among
+    /// [`Self::urgency`].
+    pub(crate) fn urgency_predicates_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (usize, &Urgency, &mut UrgencyPredicate)> {
+        self.urgency
+            .iter()
+            .zip(self.urgency_predicates.iter_mut())
+            .enumerate()
+            .filter_map(|(index, (urgency, predicate))| {
+                predicate
+                    .as_mut()
+                    .map(|predicate| (index, urgency, predicate))
+            })
     }
 }
 
@@ -918,11 +1003,14 @@ struct PredicateDraft {
 enum UrgencyDraft {
     When {
         name: String,
+        span: Span,
         alternatives: Vec<AlternativeDraft>,
     },
     Operation {
         name: String,
+        span: Span,
         operation: DeclarationKey,
+        operation_name: String,
     },
 }
 
@@ -3290,6 +3378,7 @@ fn urgency(
             let (context, population) = state().map_err(timed)?;
             Ok(UrgencyDraft::When {
                 name: form.name.name.clone(),
+                span: form.span,
                 alternatives: state_alternatives(predicate, clocks, context, population, budget)?,
             })
         }
@@ -3310,7 +3399,13 @@ fn urgency(
             }
             Ok(UrgencyDraft::Operation {
                 name: form.name.name.clone(),
+                span: form.span,
                 operation: (*key).clone(),
+                operation_name: operation
+                    .segments
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| operation.name.clone()),
             })
         }
     }
@@ -3685,27 +3780,35 @@ fn typed(
     checking: &Checking<'_, '_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
 ) -> Result<(CheckedTimedPredicate, u64), CheckRefusal> {
-    let typed = check_clause(
-        view,
-        checking.declarations,
-        &mut cx.reborrow(checking.declarations.scope),
-    )
-    .map_err(|refused| {
-        let span = form
-            .spans
-            .at(&refused.location.path())
-            .or_else(|| form.spans.span(form.spans.root()))
-            .unwrap_or(Span { start: 0, end: 0 });
-        refusal(timed(TemporalCause::TimedPredicate {
-            cause: Box::new(refused.cause),
-            span,
-        }))
-    })?;
+    typed_in(view, form, checking.declarations, cx)
+}
+
+/// [`typed`] against `declarations`.
+fn typed_in(
+    view: &ClauseView<'_>,
+    form: &ExpressionForm,
+    declarations: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+) -> Result<(CheckedTimedPredicate, u64), CheckRefusal> {
+    let typed = check_clause(view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
+        |refused| {
+            let span = form
+                .spans
+                .at(&refused.location.path())
+                .or_else(|| form.spans.span(form.spans.root()))
+                .unwrap_or(Span { start: 0, end: 0 });
+            refusal(timed(TemporalCause::TimedPredicate {
+                cause: Box::new(refused.cause),
+                span,
+            }))
+        },
+    )?;
     Ok((
         CheckedTimedPredicate {
             parameters: typed.parameters,
             body: typed.body,
             slots: typed.slots,
+            slot_names: typed.slot_names,
         },
         typed.nodes_used,
     ))
@@ -3718,14 +3821,26 @@ fn typed_alternative(
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
-    let (predicate, used) = typed(
+    typed_alternative_in(alternative, checking, checking.declarations, cx, nodes_used)
+}
+
+/// [`typed_alternative`] against `declarations`, whose location roots the
+/// typed predicate's nodes.
+fn typed_alternative_in(
+    alternative: AlternativeDraft,
+    checking: &Checking<'_, '_>,
+    declarations: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+    nodes_used: &mut u64,
+) -> Result<StateAlternative, CheckRefusal> {
+    let (predicate, used) = typed_in(
         &state_view(
             &alternative.predicate,
             checking.complete_value,
             checking.presence_places,
         ),
         &alternative.predicate.predicate,
-        checking,
+        declarations,
         cx,
     )?;
     *nodes_used = (*nodes_used).max(used);
@@ -3887,31 +4002,97 @@ pub(crate) fn check(
             });
         }
         let mut urgency = Vec::with_capacity(draft.urgency.len());
+        let mut urgency_predicates = Vec::with_capacity(draft.urgency.len());
         for declared in draft.urgency {
-            urgency.push(match declared {
-                UrgencyDraft::When { name, alternatives } => {
+            let index = urgency.len();
+            let (declared, predicate) = match declared {
+                UrgencyDraft::When {
+                    name,
+                    span,
+                    alternatives,
+                } => {
                     let Some(context) = alternatives
                         .first()
                         .map(|alternative| alternative.predicate.context)
                     else {
                         continue;
                     };
-                    let alternatives = alternatives
-                        .into_iter()
-                        .map(|alternative| {
-                            typed_alternative(alternative, checking, cx, &mut nodes_used)
+                    // One alternative with no presence: the predicate whole,
+                    // typed at its own site so S3 lowers it located. A
+                    // predicate with a clock presence is not written yet.
+                    let written = match alternatives.as_slice() {
+                        [only] if only.presences.is_empty() => Some(UrgencyPredicate {
+                            site: urgency_site(&draft.model, index),
+                            spans: only.predicate.predicate.spans.clone(),
+                            node: None,
+                        }),
+                        _ => None,
+                    };
+                    let alternatives = match &written {
+                        Some(predicate) => {
+                            let location = quire_semantic_value::location::Location::root(
+                                quire_semantic_value::location::Origin::TypeDeclaration {
+                                    name: predicate.site.clone(),
+                                },
+                            );
+                            let declarations = ClauseDeclarations {
+                                location: &location,
+                                ..checking.declarations.at()
+                            };
+                            alternatives
+                                .into_iter()
+                                .map(|alternative| {
+                                    typed_alternative_in(
+                                        alternative,
+                                        checking,
+                                        &declarations,
+                                        cx,
+                                        &mut nodes_used,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, CheckRefusal>>()?
+                        }
+                        None => alternatives
+                            .into_iter()
+                            .map(|alternative| {
+                                typed_alternative(alternative, checking, cx, &mut nodes_used)
+                            })
+                            .collect::<Result<Vec<_>, CheckRefusal>>()?,
+                    };
+                    // A predicate reading another object's presence has no
+                    // lowered form yet.
+                    let written = written.filter(|_| {
+                        alternatives.iter().all(|alternative| {
+                            !alternative.predicate.checked_body().reads_presence_place()
                         })
-                        .collect::<Result<Vec<_>, CheckRefusal>>()?;
-                    Urgency::When {
+                    });
+                    (
+                        Urgency::When {
+                            name,
+                            span,
+                            context,
+                            alternatives,
+                        },
+                        written,
+                    )
+                }
+                UrgencyDraft::Operation {
+                    name,
+                    span,
+                    operation,
+                    operation_name,
+                } => (
+                    Urgency::Operation {
                         name,
-                        context,
-                        alternatives,
-                    }
-                }
-                UrgencyDraft::Operation { name, operation } => {
-                    Urgency::Operation { name, operation }
-                }
-            });
+                        span,
+                        operation,
+                        operation_name,
+                    },
+                    None,
+                ),
+            };
+            urgency.push(declared);
+            urgency_predicates.push(predicate);
         }
         let mut resets = Vec::with_capacity(draft.resets.len());
         for written in draft.resets {
@@ -3977,6 +4158,7 @@ pub(crate) fn check(
             resets,
             invariants,
             urgency,
+            urgency_predicates,
         });
     }
     Ok((models, nodes_used))
