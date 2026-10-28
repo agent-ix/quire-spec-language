@@ -2084,9 +2084,9 @@ fn only_step(timed: &TimedSystem<'_, '_>, state: &TimedState, operation: &str) -
 /// and moves slot 1's clocks to slot 0 with their values (`x = 1`, `y =
 /// 4`), slot 1 no longer live. A `send` writing the literal
 /// `sequence[Timer { x: 2 ms, y: 5 ms, n: 3 }]` gives the fresh slot 0 its
-/// literal's constants. The model writes a collection, which
-/// `carries_clocks` reports so that a zone analysis refuses it by name;
-/// a model with only resets by selection does not. Not covered: a fresh
+/// literal's constants. The model reports its whole-collection write;
+/// consumers apply its emitted carry mapping. A model with only resets by
+/// selection has no carries. Not covered: a fresh
 /// insert at the front, which
 /// AC-20 spells with `flatten` over a nested literal that does not type
 /// (STD-493 item 29).
@@ -2116,8 +2116,7 @@ fn a_collection_write_moves_each_clock_with_its_element() {
             .expect("decided")
             .expect("no invariant bounds the delay")
     };
-    // A zone over places maps no carried clock, so zone analyses refuse
-    // the model by name.
+    // The timed subject exposes carries for zone consumers to map.
     assert!(timed.carries_clocks());
     let sent = only_step(&timed, &delayed(initial, 3), "send");
     let at = |name: &str, slot: usize, value: i64| (name.to_owned(), slot, exact(value, 1));
