@@ -19,6 +19,7 @@ use qsl_semantics::check::{
 use crate::automaton::error::AutomatonError;
 use crate::automaton::key_state::{Occurrence, PastOperator, Polarity};
 use crate::automaton::letter::Atom;
+use crate::simulation::model::encode::Enc;
 
 /// One node of the arena, by index. Operands have smaller indexes than their
 /// operators.
@@ -169,6 +170,90 @@ impl Ir {
 
     pub(super) fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// A deterministic context for a reached property-state key. Arena
+    /// indexes are meaningful only inside this context; the state key never
+    /// uses a run-local `StateId`.
+    pub(super) fn key_context(&self) -> Enc {
+        let window = |window: Window| match window {
+            Window::Closed { lower, upper } => Enc::Array(vec![
+                Enc::text("closed"),
+                Enc::text(lower.to_string()),
+                Enc::text(upper.to_string()),
+            ]),
+            Window::From { lower } => {
+                Enc::Array(vec![Enc::text("from"), Enc::text(lower.to_string())])
+            }
+        };
+        let node = |node: Node| match node {
+            Node::Constant(value) => Enc::Array(vec![Enc::text("constant"), Enc::Bool(value)]),
+            Node::Atom(atom) => {
+                Enc::Array(vec![Enc::text("atom"), Enc::text(atom.index().to_string())])
+            }
+            Node::Not(operand) => Enc::Array(vec![
+                Enc::text("not"),
+                Enc::text(operand.index().to_string()),
+            ]),
+            Node::And(left, right) | Node::Or(left, right) => Enc::Array(vec![
+                Enc::text(if matches!(node, Node::And(..)) {
+                    "and"
+                } else {
+                    "or"
+                }),
+                Enc::text(left.index().to_string()),
+                Enc::text(right.index().to_string()),
+            ]),
+            Node::Past {
+                kind,
+                window: offsets,
+                left,
+                right,
+            } => Enc::Array(vec![
+                Enc::text("past"),
+                Enc::text(match kind {
+                    PastKind::Once => "once",
+                    PastKind::Since => "since",
+                }),
+                window(offsets),
+                left.map_or(Enc::Null, |id| Enc::text(id.index().to_string())),
+                Enc::text(right.index().to_string()),
+            ]),
+            Node::Future {
+                kind,
+                window: offsets,
+                left,
+                right,
+            } => Enc::Array(vec![
+                Enc::text("future"),
+                Enc::text(match kind {
+                    FutureKind::Eventually => "eventually",
+                    FutureKind::Always => "always",
+                    FutureKind::Until => "until",
+                    FutureKind::Release => "release",
+                }),
+                window(offsets),
+                left.map_or(Enc::Null, |id| Enc::text(id.index().to_string())),
+                Enc::text(right.index().to_string()),
+            ]),
+        };
+        let nodes = Enc::Array(
+            self.nodes
+                .iter()
+                .enumerate()
+                .map(|(index, current)| {
+                    Enc::Array(vec![Enc::text(index.to_string()), node(*current)])
+                })
+                .collect(),
+        );
+        let has_future = Enc::Array(self.has_future.iter().copied().map(Enc::Bool).collect());
+        let cores = Enc::Array(
+            self.cores
+                .iter()
+                .map(|node| Enc::text(node.index().to_string()))
+                .collect(),
+        );
+        Enc::Array(vec![nodes, has_future, cores])
     }
 
     pub(super) fn node(&self, id: NodeId) -> Result<Node, AutomatonError> {

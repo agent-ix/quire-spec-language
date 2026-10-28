@@ -35,6 +35,7 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
@@ -42,7 +43,8 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{
-    translate_itself, translate_negation, AtomSymmetry, AutomatonError, PropertyAutomaton, StateId,
+    translate_itself, translate_negation, AtomSymmetry, AutomatonError, AutomatonStateKey,
+    PropertyAutomaton, StateId,
 };
 use crate::hyper::copy_swap::{CopySwap, CopySwapInputs};
 use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
@@ -170,18 +172,23 @@ pub struct HyperKey {
 }
 
 enum PropertyKey {
-    After(usize),
+    After(Result<AutomatonStateKey, AutomatonError>),
     Dead,
     Undefined,
     Rejected,
     MatchUndefined,
-    Witnesses(Vec<(Vec<ModelKey>, usize)>),
+    Witnesses(Vec<(Vec<ModelKey>, Result<AutomatonStateKey, AutomatonError>)>),
 }
 
 impl HyperKey {
     /// The key of `state`, whose components are over `systems` in quantifier
     /// order.
-    pub(super) fn of(systems: &[&ModelSystem<'_>], state: &HyperState) -> Self {
+    pub(super) fn of(
+        systems: &[&ModelSystem<'_>],
+        state: &HyperState,
+        automaton: &PropertyAutomaton,
+    ) -> Self {
+        let state_key = |state| automaton.state_key(state, IdentityLimits::default().input_bytes);
         Self {
             components: systems
                 .iter()
@@ -189,7 +196,7 @@ impl HyperKey {
                 .map(|(system, component)| system.key(component))
                 .collect(),
             property: match &state.property {
-                Property::After(at) => PropertyKey::After(at.index()),
+                Property::After(at) => PropertyKey::After(state_key(*at)),
                 Property::Dead => PropertyKey::Dead,
                 Property::Undefined { .. } => PropertyKey::Undefined,
                 Property::Rejected => PropertyKey::Rejected,
@@ -207,7 +214,7 @@ impl HyperKey {
                                     systems.get(offset + index).map(|system| system.key(held))
                                 })
                                 .collect();
-                            (keys, member.automaton().index())
+                            (keys, state_key(member.automaton()))
                         })
                         .collect(),
                 ),
@@ -231,7 +238,7 @@ impl Encode for HyperKey {
         match &self.property {
             PropertyKey::After(index) => {
                 writer.string("after")?;
-                writer.integer(i128::try_from(*index).unwrap_or(i128::MAX))?;
+                encode_property_state_key(index, writer)?;
             }
             PropertyKey::Dead => writer.string("dead")?,
             PropertyKey::Undefined => writer.string("undefined")?,
@@ -244,7 +251,7 @@ impl Encode for HyperKey {
                     for component in components {
                         component.encode_into(writer)?;
                     }
-                    writer.integer(i128::try_from(*automaton).unwrap_or(i128::MAX))?;
+                    encode_property_state_key(automaton, writer)?;
                     writer.end_array()?;
                 }
             }
@@ -252,6 +259,18 @@ impl Encode for HyperKey {
         writer.end_array()?;
         writer.end_array()
     }
+}
+
+fn encode_property_state_key<S: Sink + ?Sized>(
+    key: &Result<AutomatonStateKey, AutomatonError>,
+    writer: &mut Writer<'_, S>,
+) -> Result<(), quire_canonical::Error> {
+    let key = key
+        .as_ref()
+        .map_err(|error| quire_canonical::Error::Serialize(error.to_string()))?;
+    let text = std::str::from_utf8(key.as_bytes())
+        .map_err(|error| quire_canonical::Error::Serialize(error.to_string()))?;
+    writer.string(text)
 }
 
 /// What an expansion found beside its successors.
@@ -542,7 +561,7 @@ impl TransitionSystem for HyperProduct<'_, '_> {
     }
 
     fn key(&self, state: &HyperState) -> HyperKey {
-        HyperKey::of(&self.joint.systems, state)
+        HyperKey::of(&self.joint.systems, state, &self.automaton.borrow())
     }
 
     fn offered_reductions(&self) -> OfferedReductions {
