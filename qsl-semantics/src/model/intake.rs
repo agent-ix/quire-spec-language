@@ -55,7 +55,8 @@ use crate::model::domain_package::{
     OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
     PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
-    ScalarValueDomain, SequenceTypeRecord, ValueBoundRecord, ValueTypeRef, VariantRecord,
+    ScalarValueDomain, SequenceTypeRecord, TuplePositionRecord, TupleValueTypeRecord,
+    ValueBoundRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -4347,6 +4348,142 @@ pub(super) fn read_variant_type(
     Ok(())
 }
 
+/// Reads a `TUPLE_VALUE_TYPE` definition into its type declaration and one
+/// ordinal position record per ordered position (FR-208-AC-19).
+#[ix_trace_rs::string_edge]
+pub(super) fn read_tuple_value_type(
+    package: &str,
+    type_value: &Value,
+    node: &str,
+    at: &str,
+    shape: Option<&str>,
+    type_meanings: &HashMap<&str, &str>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), Refusals> {
+    let ctx = NodeCtx::new(type_value, at);
+    let mut refusals = Vec::new();
+    if shape != Some("tuple") {
+        refusals.push(ctx.malformed_in("kind", "a tuple value type's construct has shape tuple"));
+    }
+    for member in [
+        "fields",
+        "identityFields",
+        "operations",
+        "supertypes",
+        "clauses",
+    ] {
+        if type_value
+            .get(member)
+            .is_some_and(|value| value.as_array().is_none_or(|members| !members.is_empty()))
+        {
+            refusals.push(ctx.malformed_in(
+                member,
+                "a tuple value type is closed and declares no named members or ancestry",
+            ));
+        }
+    }
+    let positions = match ctx.array_field("positions") {
+        Ok(positions) => positions,
+        Err(refusal) => {
+            refusals.push(refusal);
+            &[]
+        }
+    };
+    if positions.is_empty() {
+        refusals.push(ctx.malformed_in("positions", "a tuple has at least one position"));
+    }
+    let owner = declaration_key(package, node);
+    let mut position_records = Vec::with_capacity(positions.len());
+    let mut seen = HashMap::new();
+    for (ordinal, value) in positions.iter().enumerate() {
+        let position_at = format!("{at}.positions[{ordinal}]");
+        let position_ctx = NodeCtx::new(value, &position_at);
+        let identity = match position_ctx.str_field("identity") {
+            Ok(identity) => identity,
+            Err(refusal) => {
+                refusals.push(refusal);
+                continue;
+            }
+        };
+        if let Some(first) = seen.get(identity) {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding {
+                    key: declaration_key(package, identity),
+                    member: Some(
+                        MemberPath::type_definition()
+                            .name("positions")
+                            .index(ordinal),
+                    ),
+                },
+                detail: format!(
+                    "{position_at}: positions[{ordinal}] repeats the identity at positions[{first}]"
+                ),
+            });
+            continue;
+        }
+        seen.insert(identity, ordinal);
+        let expected = format!("{node}/p{ordinal}");
+        if identity != expected {
+            refusals.push(position_ctx.malformed_in(
+                "identity",
+                format!("position {ordinal} has the required ordinal identity {expected:?}"),
+            ));
+            continue;
+        }
+        let type_ref = match position_ctx.str_field("typeRef") {
+            Ok(type_ref) => type_ref,
+            Err(refusal) => {
+                refusals.push(refusal);
+                continue;
+            }
+        };
+        let value_type = match read_value_type_ref(package, &position_ctx, type_ref, true) {
+            Ok(value_type) => value_type,
+            Err(refusal) => {
+                refusals.push(refusal);
+                continue;
+            }
+        };
+        let supported = match &value_type {
+            ValueTypeRef::Clock => false,
+            ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => true,
+            ValueTypeRef::Package(key) => {
+                type_meanings.get(key.node.as_str()).is_none_or(|meaning| {
+                    matches!(
+                        *meaning,
+                        meaning::VALUE_TYPE
+                            | meaning::RECORD_VALUE_TYPE
+                            | meaning::TUPLE_VALUE_TYPE
+                            | meaning::VARIANT_TYPE
+                    )
+                })
+            }
+        };
+        if !supported {
+            refusals.push(
+                position_ctx
+                    .malformed_in("typeRef", "a tuple position names an admitted value type"),
+            );
+            continue;
+        }
+        position_records.push(DomainPackageRecord::TuplePosition(TuplePositionRecord {
+            key: declaration_key(package, identity),
+            owner: owner.clone(),
+            ordinal,
+            value_type,
+        }));
+    }
+    if let Ok(found) = Refusals::try_from(refusals) {
+        return Err(found);
+    }
+    records.push(DomainPackageRecord::TupleValueType(TupleValueTypeRecord {
+        key: owner,
+    }));
+    records.extend(position_records);
+    Ok(())
+}
+
 /// Whether `payload_type` resolves to one of the admitted model or native
 /// value types. Units and Clock are locations/places, and an unresolved or
 /// non-value package meaning is not a union payload type.
@@ -4659,6 +4796,8 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::Enum(_)
         | DomainPackageRecord::Variant(_)
         | DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::TupleValueType(_)
+        | DomainPackageRecord::TuplePosition(_)
         | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Clause(_)
@@ -5619,6 +5758,56 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use sha2::{Digest, Sha256};
+
+    /// QSpec FR-154-AC-33: package intake retains a tuple declaration and
+    /// each ordinal position's value type in authored product order.
+    #[ix_trace_rs::trace("QSpec-FR-154-AC-33")]
+    #[test]
+    fn reads_tuple_value_type_positions_by_ordinal() {
+        let value = serde_json::json!({
+            "positions": [
+                {
+                    "identity": "ix://acme/orders/Pair/p0",
+                    "typeRef": "ix://quire/native/Boolean"
+                },
+                {
+                    "identity": "ix://acme/orders/Pair/p1",
+                    "typeRef": "ix://quire/native/Integer"
+                }
+            ]
+        });
+        let mut records = Vec::new();
+        read_tuple_value_type(
+            "acme/orders",
+            &value,
+            "ix://acme/orders/Pair",
+            "types[0]",
+            Some("tuple"),
+            &HashMap::new(),
+            &mut records,
+        )
+        .expect("the closed, ordered tuple form is admitted");
+        assert_eq!(
+            records,
+            vec![
+                DomainPackageRecord::TupleValueType(TupleValueTypeRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Pair"),
+                }),
+                DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Pair/p0"),
+                    owner: declaration_key("acme/orders", "ix://acme/orders/Pair"),
+                    ordinal: 0,
+                    value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+                }),
+                DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                    key: declaration_key("acme/orders", "ix://acme/orders/Pair/p1"),
+                    owner: declaration_key("acme/orders", "ix://acme/orders/Pair"),
+                    ordinal: 1,
+                    value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                }),
+            ]
+        );
+    }
 
     /// FR-103-AC-2: a `modifies` entry naming a systems connection (a
     /// relationship with no slot in a type's `relationships` array) is not a

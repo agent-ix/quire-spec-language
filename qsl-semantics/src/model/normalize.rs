@@ -1958,6 +1958,22 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::Enum(_) => {}
+        DomainPackageRecord::TupleValueType(_) => {}
+        DomainPackageRecord::TuplePosition(position) => {
+            if !index.is_tuple_value_type(&position.owner) {
+                refusals.push(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: position.key.clone(),
+                        owner: position.owner.clone(),
+                    },
+                    detail: format!(
+                        "tuple position {} names owner {}, which is not a tuple value type",
+                        position.key.node, position.owner.node
+                    ),
+                });
+            }
+        }
         DomainPackageRecord::Variant(case) => {
             if !index.is_variant_type(&case.owner) {
                 refusals.push(ModelRefusal {
@@ -2243,6 +2259,7 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
+                        && !index.is_tuple_value_type(value_type)
                         && !index.is_alias_or_sequence_type(value_type)
                     {
                         refusals.push(signature_type_refusal(
@@ -2260,6 +2277,7 @@ fn check_node<'a>(
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
+                        && !index.is_tuple_value_type(value_type)
                         && !index.is_alias_or_sequence_type(value_type)
                     {
                         refusals.push(signature_type_refusal(

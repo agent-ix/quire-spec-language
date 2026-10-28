@@ -23,7 +23,8 @@ use crate::model::domain_package::{
     ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
     OperationParameterRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
-    StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
+    StateMachineStateRecord, StateMachineTransitionRecord, TuplePositionRecord,
+    TupleValueTypeRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::normalize::{normalize, NormalizeOutcome};
@@ -213,6 +214,60 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
             .collect::<Vec<_>>(),
         ["advance"]
     );
+}
+
+/// QSpec FR-154-AC-33 and FR-120-AC-22: S3 preserves imported tuple
+/// positions as an ordered tuple shape in the checked type environment.
+#[trace("QSpec-FR-154-AC-33", "FR-120-AC-22")]
+#[test]
+fn model_tuple_positions_are_assembled_as_a_tuple_type() {
+    let tuple = DeclarationKey::fixture("ix://test/orders/Pair");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc1270-tuple-assembly"),
+        vec![
+            DomainPackageRecord::TupleValueType(TupleValueTypeRecord { key: tuple.clone() }),
+            DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                key: DeclarationKey::fixture("ix://test/orders/Pair/p0"),
+                owner: tuple.clone(),
+                ordinal: 0,
+                value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+            }),
+            DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                key: DeclarationKey::fixture("ix://test/orders/Pair/p1"),
+                owner: tuple,
+                ordinal: 1,
+                value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the tuple package normalizes")
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let model_types = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+        &BTreeMap::new(),
+    )
+    .expect("the tuple declaration assembles");
+    assert_eq!(model_types.composites.len(), 1);
+    assert!(matches!(
+        model_types.composites[0].shape(),
+        CompositeShape::Tuple(positions)
+            if positions == &[ValueType::Boolean, ValueType::Boolean]
+    ));
 }
 
 /// A model scalar type is a nameable type: `M::Total` carries its
