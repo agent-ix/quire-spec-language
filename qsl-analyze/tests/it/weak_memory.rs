@@ -903,6 +903,29 @@ fn ordering_mismatches_are_accumulated_at_the_first_state() {
     }));
 }
 
+/// FR-220-AC-14: a local ordering mismatch is deferred until the reachable
+/// graph closes, then retained when its touched names never become shared.
+#[trace("TC-665", "FR-220-AC-14")]
+#[test]
+fn a_never_shared_local_ordering_is_refused_after_exhaustive_reachability() {
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {} }} branch right sequence R {{ }} }} \
+         join all [left, right];",
+        attempt("Cp", "c", "Core::copy", "release", "CopyR"),
+    );
+    let case = Case::new(&(contracts() + &protocol("SB", &run)));
+    for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+        let entries = weak_entries(&case, model).expect("settles V-8 after exploration");
+        assert!(
+            entries.iter().any(|entry| {
+                entry["site"] == "Both/left/L/Cp"
+                    && entry["shape"] == mismatch("local", json!("release"))
+            }),
+            "{model:?}: {entries:?}"
+        );
+    }
+}
+
 /// The V-8 failure shapes of `case` under `model`, or none when it explores.
 fn weak_shapes(case: &Case, model: MemoryModelName) -> Option<Vec<Json>> {
     let selection = [select("SB::Both", model)];

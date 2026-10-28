@@ -1008,6 +1008,54 @@ mod tests {
         }
     }
 
+    /// FR-120-AC-22 / TC-1270: a tuple's finite domain is the ordered
+    /// Cartesian product of its positions, with the first position most
+    /// significant.
+    #[trace("TC-1270", "FR-120-AC-22")]
+    #[test]
+    fn a_tuple_value_domain_is_the_ordered_product_of_its_positions() {
+        let tuple = NodeKey::from_digest([12; 32]);
+        let declaration = CompositeDeclaration::new(
+            tuple,
+            "Pair",
+            CompositeShape::Tuple(vec![ValueType::Boolean, int(0, 1)]),
+        );
+        let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        assert!(enumerable_in(&ValueType::Composite(tuple), &types));
+        let values = composite_values::<()>(
+            &ValueType::Composite(tuple),
+            &[],
+            &types,
+            &RecordOrders::new(),
+            || Ok(()),
+        )
+        .expect("no stop")
+        .expect("both positions have finite domains");
+        assert_eq!(values.len(), 4);
+        let rendered = values
+            .iter()
+            .map(|value| {
+                let Value::Composite(tuple_value) = value else {
+                    panic!("the tuple declaration yields tuple values")
+                };
+                let [FieldValue::Present(Value::Boolean(first)), FieldValue::Present(Value::Integer(second))] = tuple_value.slots()
+                else {
+                    panic!("both tuple positions retain their declared order")
+                };
+                (*first, second.to_string())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rendered,
+            [
+                (false, "0".into()),
+                (false, "1".into()),
+                (true, "0".into()),
+                (true, "1".into())
+            ]
+        );
+    }
+
     /// FR-120's record form, written exactly: `type`, the declaration's node
     /// id as `name`, and one `{name, value}` entry per declared field with an
     /// absent optional field `null`.

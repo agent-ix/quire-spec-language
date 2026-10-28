@@ -221,6 +221,12 @@ pub(super) fn concretise(
             resets.within(&mut times, at, before, scale)?;
         }
         if let Some((step, _)) = &stage.step {
+            let before = resets.0.clone();
+            for &(target, source) in step.carries() {
+                if let (Some(slot), Some(value)) = (resets.0.get_mut(target), before.get(source)) {
+                    *slot = value.clone();
+                }
+            }
             for (place, value) in step.resets() {
                 if let Some(slot) = resets.0.get_mut(*place) {
                     *slot = (at, value.clone());
@@ -253,6 +259,7 @@ pub(super) fn concretise(
     let mut stamps = vec![zero.clone()];
     let mut prefix = Vec::with_capacity(stages.len());
     let mut values = vec![zero.clone(); places];
+    let mut reset_values = vec![zero.clone(); places];
     let mut last_reset = vec![0_usize; places];
     // The delays of the silent stages since the last step.
     let mut waited = zero.clone();
@@ -293,9 +300,7 @@ pub(super) fn concretise(
         stamps.push(stamp.clone());
         for (place, value) in values.iter_mut().enumerate() {
             let since = last_reset[place];
-            *value = stamp
-                .sub(&stamps[since])
-                .add(&resets_value(stages, place, since));
+            *value = stamp.sub(&stamps[since]).add(&reset_values[place]);
         }
         for &clock in &stage.position_resets {
             if let Some(slot) = values.get_mut(clock) {
@@ -310,9 +315,25 @@ pub(super) fn concretise(
             continue;
         };
         let delay = std::mem::replace(&mut waited, zero.clone()).add(&delay);
+        let before = values.clone();
+        for &(target, source) in step.carries() {
+            if let (Some(value), Some(source_value)) = (values.get_mut(target), before.get(source))
+            {
+                value.clone_from(source_value);
+                if let Some(slot) = reset_values.get_mut(target) {
+                    slot.clone_from(source_value);
+                }
+                if let Some(slot) = last_reset.get_mut(target) {
+                    *slot = at;
+                }
+            }
+        }
         for (place, reset) in step.resets() {
             if let Some(slot) = values.get_mut(*place) {
                 slot.clone_from(reset);
+                if let Some(reset_value) = reset_values.get_mut(*place) {
+                    reset_value.clone_from(reset);
+                }
                 last_reset[*place] = at;
             }
         }
@@ -336,23 +357,4 @@ pub(super) fn concretise(
         last_clocks: values,
         last_stamp: stamps.last().cloned().unwrap_or(zero),
     })
-}
-
-/// The value place `place` was reset to at step `since`, 0 at step 0.
-fn resets_value(stages: &[Stage], place: usize, since: usize) -> Rational {
-    since
-        .checked_sub(1)
-        .and_then(|index| stages.get(index))
-        .and_then(|stage| {
-            stage
-                .step
-                .as_ref()?
-                .0
-                .resets()
-                .iter()
-                .rev()
-                .find(|(reset, _)| *reset == place)
-                .map(|(_, value)| value.clone())
-        })
-        .unwrap_or_else(|| Rational::from_integer(Integer::zero()))
 }

@@ -306,6 +306,7 @@ const ROWS: &str = "step M::Node::step -> A::Acc::add(self);\n\
     step M::Node::undo -> A::Acc::add(self);\n\
     step fork M::Fill::Both -> stutter;\n\
     step join M::Fill::Both -> stutter;\n\
+    step memory drain -> stutter;\n\
     step M::Fill::Done -> stutter;";
 
 fn unit(protocol: &str, rows: &str) -> String {
@@ -476,6 +477,7 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
                 kind: ProtocolStepKind::Join,
                 node: node("Both"),
             },
+            &StepClass::MemoryStep(MemoryStepKind::Drain),
             &StepClass::ProtocolNode {
                 kind: ProtocolStepKind::Finish,
                 node: node("Done"),
@@ -498,6 +500,7 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
     assert_eq!(
         observed[2..],
         [
+            RowObservation::Internal,
             RowObservation::Internal,
             RowObservation::Internal,
             RowObservation::Internal
@@ -574,6 +577,7 @@ fn a_missing_or_doubled_row_refuses() {
     // subject, so `Done`'s row is what selects the protocol here.
     let rows = "step M::Node::step -> A::Acc::add(self);\n\
                 step M::Node::undo -> A::Acc::add(self);\n\
+                step memory drain -> stutter;\n\
                 step M::Fill::Done -> stutter;";
     let found = refused(&unit(&protocol, rows));
     let names: Vec<&RefinementCause> = found.iter().map(Refused::refinement).collect();
@@ -647,7 +651,7 @@ fn an_attempt_node_row_takes_precedence_over_its_operation_row() {
         .find(|row| matches!(row.class, StepClass::AttemptNode(_)))
         .expect("the node row of A");
     assert_eq!(observation(attempt), RowObservation::Either);
-    assert_eq!(refinement.steps().len(), 6);
+    assert_eq!(refinement.steps().len(), 7);
 
     // With the node row, `step`'s operation row is not needed: `A` is the
     // only attempt of `step`.
@@ -655,14 +659,16 @@ fn an_attempt_node_row_takes_precedence_over_its_operation_row() {
                 step M::Node::undo -> A::Acc::add(self);\n\
                 step fork M::Fill::Both -> stutter;\n\
                 step join M::Fill::Both -> stutter;\n\
+                step memory drain -> stutter;\n\
                 step M::Fill::Done -> stutter;";
     let graph = checks(&unit(&protocol, rows));
-    assert_eq!(only_refinement(&graph).steps().len(), 5);
+    assert_eq!(only_refinement(&graph).steps().len(), 6);
 
     // `B` has neither a node row nor an operation row.
     let rows = "step M::Node::step -> A::Acc::add(self);\n\
                 step fork M::Fill::Both -> stutter;\n\
                 step join M::Fill::Both -> stutter;\n\
+                step memory drain -> stutter;\n\
                 step M::Fill::Done -> stutter;";
     let found = refused(&unit(&protocol, rows));
     assert_eq!(
@@ -791,6 +797,7 @@ fn the_coverage_waits_for_the_clause_and_a_refused_clause_reports_alone() {
     let partial = "step M::Node::step -> A::Acc::add(self);\n\
                    step M::Node::undo -> A::Acc::add(self);\n\
                    step fork M::Fill::Both -> stutter;\n\
+                   step memory drain -> stutter;\n\
                    step M::Fill::Done -> stutter;";
     for text in [
         header(true) + &fill("") + &refinement(partial),
@@ -887,6 +894,7 @@ fn a_row_target_gives_its_observation() {
                 step M::Node::undo -> A::Acc::addBy(self, 1);\n\
                 step fork M::Fill::Both -> stutter;\n\
                 step join M::Fill::Both -> any;\n\
+                step memory drain -> stutter;\n\
                 step M::Fill::Done -> stutter;";
     let graph = checks(&unit(&fill(""), rows));
     let observed: Vec<RowObservation> = only_refinement(&graph)
@@ -908,6 +916,7 @@ fn a_row_target_gives_its_observation() {
             label(Vec::new()),
             RowObservation::Internal,
             RowObservation::Either,
+            RowObservation::Internal,
             RowObservation::Internal,
         ]
     );
@@ -1117,7 +1126,7 @@ fn a_channel_needs_a_row_for_each_step_its_delivery_admits() {
     let lose = "step lose M::Fill::Ch -> stutter;";
     let rows = format!("{ROWS}\n{duplicate}\n{lose}");
     let graph = checks(&unit(&chatter("unknown"), &rows));
-    assert_eq!(only_refinement(&graph).steps().len(), 7);
+    assert_eq!(only_refinement(&graph).steps().len(), 8);
 
     let found = refused(&unit(&chatter("unknown"), &format!("{ROWS}\n{lose}")));
     assert_eq!(
@@ -1257,6 +1266,7 @@ fn a_weak_memory_model_needs_a_row_for_each_internal_step() {
                 step join M::Two::First -> stutter;\n\
                 step fork M::Two::Second -> stutter;\n\
                 step join M::Two::Second -> stutter;\n\
+                step memory drain -> stutter;\n\
                 step M::Two::Done -> stutter;";
     let found = refused(&unit(two, rows));
     assert_eq!(
@@ -1267,51 +1277,110 @@ fn a_weak_memory_model_needs_a_row_for_each_internal_step() {
     let flushes = only_refinement(&graph)
         .steps()
         .iter()
-        .filter(|row| matches!(row.class, StepClass::MemoryStep(_)))
+        .filter(|row| row.class == StepClass::MemoryStep(MemoryStepKind::Flush))
         .count();
     assert_eq!(flushes, 1);
 }
 
-/// SR-1708001 FND-001 (FR-432-AC-3, FR-375-AC-19): `memory drain` is a
-/// memory step of every source-default model, so a `step memory drain` row
-/// resolves under `sc`, `tso` and `ra` (with `tso`'s `memory flush` row
-/// beside it). Whether a drain row is required is not yet decided in
-/// QSpec, so a refinement with none still checks.
-#[trace("TC-541", "FR-136-AC-6")]
+/// FR-432-AC-22 (STD-525): `memory drain` is a memory step of every
+/// source-default model and nothing defaults, so a `parallel` under `sc`,
+/// `ra` or `tso` needs one `step memory drain` row, even under `sc` where the
+/// class is a no-op. With no row the refinement refuses
+/// `missing_declaration`/`missing-name` naming the `drain` kind, with the
+/// code, cause and locus of FR-432-AC-3's missing `flush` row; a second
+/// drain row refuses `invalid_model_binding`/`conflicting-binding` naming
+/// both. A protocol with no `parallel` has no drain class and needs no row.
+#[trace("TC-541", "FR-432-AC-22", "FR-432-AC-3", "FR-136-AC-6")]
 #[test]
-fn a_memory_drain_row_resolves_under_every_source_default_model() {
+fn a_parallel_needs_one_memory_drain_row_under_every_source_default_model() {
     let drain = "step memory drain -> stutter;";
     let flush = "step memory flush -> stutter;";
-    for (memory, rows) in [
-        ("", format!("{ROWS}\n{drain}")),
-        ("memory ra", format!("{ROWS}\n{drain}")),
-        ("memory tso", format!("{ROWS}\n{drain}\n{flush}")),
-    ] {
-        let graph = checks(&unit(&fill(memory), &rows));
-        let kinds: Vec<MemoryStepKind> = only_refinement(&graph)
-            .steps()
-            .iter()
-            .filter_map(|row| match row.class {
-                StepClass::MemoryStep(kind) => Some(kind),
-                _ => None,
-            })
-            .collect();
-        let expected: &[MemoryStepKind] = if memory == "memory tso" {
-            &[MemoryStepKind::Drain, MemoryStepKind::Flush]
-        } else {
-            &[MemoryStepKind::Drain]
-        };
-        assert!(
-            expected.iter().all(|kind| kinds.contains(kind)),
-            "{memory}: {kinds:?}"
-        );
-        let without = if memory == "memory tso" {
+    for memory in ["", "memory sc", "memory ra", "memory tso"] {
+        let protocol = fill(memory);
+        let rows = if memory == "memory tso" {
             format!("{ROWS}\n{flush}")
         } else {
             ROWS.to_owned()
         };
-        checks(&unit(&fill(memory), &without));
+        let graph = checks(&unit(&protocol, &rows));
+        let drains = only_refinement(&graph)
+            .steps()
+            .iter()
+            .filter(|row| row.class == StepClass::MemoryStep(MemoryStepKind::Drain))
+            .count();
+        assert_eq!(drains, 1, "{memory}");
+
+        let found = refused(&unit(&protocol, &without(&rows, drain)));
+        let missing_drain = only(&found);
+        assert_eq!(
+            missing_drain.pair(),
+            (Code::MissingDeclaration, Some("missing-name")),
+            "{memory}"
+        );
+        assert_eq!(
+            missing_drain.refinement(),
+            &missing(RowClass::Memory, "memory drain")
+        );
+        assert_eq!(missing_drain.at, "FillRefinesAcc");
+        if memory == "memory tso" {
+            let found = refused(&unit(&protocol, &without(&rows, flush)));
+            assert_eq!(only(&found).at, missing_drain.at);
+            assert_eq!(only(&found).pair(), missing_drain.pair());
+        }
+
+        let doubled = format!("{rows}\nstep memory drain -> any;");
+        let text = unit(&protocol, &doubled);
+        let found = refused(&text);
+        let twice = only(&found);
+        assert_eq!(
+            twice.pair(),
+            (Code::InvalidModelBinding, Some("conflicting-binding"))
+        );
+        assert_eq!(twice.at, "step memory drain -> any;");
+        let RefinementCause::Conflicting { name, first } = twice.refinement() else {
+            panic!("a conflict: {:?}", twice.refinement());
+        };
+        assert_eq!(name, "memory drain");
+        assert_eq!(text_of(&text, *first), drain);
     }
+    // Under `tso` with neither memory row: two refusals, the drain first.
+    let found = refused(&unit(&fill("memory tso"), &without(ROWS, drain)));
+    assert_eq!(
+        found.iter().map(Refused::refinement).collect::<Vec<_>>(),
+        [
+            &missing(RowClass::Memory, "memory drain"),
+            &missing(RowClass::Memory, "memory flush"),
+        ]
+    );
+
+    // Two outermost `parallel` nodes, one `sc` and one `tso`: one drain row
+    // covers both.
+    let two = fill("memory sc").replace(
+        "} join all [left, right];\n",
+        "} join all [left, right];\n\
+         parallel Again memory tso {\n\
+         branch l2 attempt A2 by w on M::Node::step contracts [] as (a2: M::Flag) { true };\n\
+         branch r2 attempt B2 by w on M::Node::undo contracts [] as (b2: M::Flag) { true };\n\
+         } join all [l2, r2];\n",
+    );
+    let two_rows = format!(
+        "{ROWS}\n{flush}\nstep fork M::Fill::Again -> stutter;\nstep join M::Fill::Again -> stutter;"
+    );
+    let graph = checks(&unit(&two, &two_rows));
+    let drains = only_refinement(&graph)
+        .steps()
+        .iter()
+        .filter(|row| row.class == StepClass::MemoryStep(MemoryStepKind::Drain))
+        .count();
+    assert_eq!(drains, 1);
+    let found = refused(&unit(&two, &without(&two_rows, drain)));
+    assert_eq!(
+        only(&found).refinement(),
+        &missing(RowClass::Memory, "memory drain")
+    );
+
+    // No `parallel`: no drain class, and no row needed.
+    checks(&unit(REFUNDS, REFUND_ROWS));
 }
 
 /// An operation row for an operation no attempt uses is admitted
@@ -1379,6 +1448,7 @@ const MESSAGES: &str = "protocol Msg using v over (k: M::Node) on origin {\n\
 
 const MESSAGE_ROWS: &str = "step fork M::Msg::P -> stutter;\n\
     step join M::Msg::P -> stutter;\n\
+    step memory drain -> stutter;\n\
     step M::Msg::Tx -> stutter;\n\
     step M::Msg::Rx -> stutter;\n\
     step M::Msg::Done -> stutter;";
@@ -1529,6 +1599,7 @@ fn refinements_keep_ordered_s3_refusals_before_protocol_coverage() {
     let no_second_protocol = no_invariant.replace(
         "step M::Other::Done -> stutter;",
         "step join M::Fill::Both -> stutter;\n\
+         step memory drain -> stutter;\n\
          step M::Fill::Done -> stutter;",
     );
     let refusals = refused(&no_second_protocol);
@@ -1619,6 +1690,12 @@ fn coverage_agrees_with_a_direct_statement_of_the_rule_over_every_subset() {
             .flatten()
             .collect()
         };
+        // FR-432-AC-22: the `parallel`'s drain row, required once the rows
+        // select `Fill`, is written whenever they do.
+        let mut rows = rows;
+        if names_protocol {
+            rows.push("step memory drain -> stutter;");
+        }
         let text = unit(&protocol, &rows.join("\n"));
         match check_text(&text) {
             Ok(_) => assert!(missing_rows.is_empty(), "{rows:?} checks"),
@@ -1719,6 +1796,7 @@ fn an_application_on_an_attempt_or_template_row_is_typed_over_its_operation() {
                 step M::Fill::A -> A::Acc::addBy(self, _);\n\
                 step fork M::Fill::Both -> stutter;\n\
                 step join M::Fill::Both -> stutter;\n\
+                step memory drain -> stutter;\n\
                 step M::Fill::Done -> stutter;";
     let graph = checks(&unit(&fill(""), rows));
     let attempt = only_refinement(&graph)
@@ -1817,6 +1895,7 @@ const COMBINED_ROWS: &str = "step M::Fill::A -> node A::Seq::x(self);\n\
     step M::Node::undo -> stutter;\n\
     step fork M::Fill::Both -> stutter;\n\
     step join M::Fill::Both -> stutter;\n\
+    step memory drain -> stutter;\n\
     step M::Fill::Done -> stutter;";
 
 /// A refinement whose rows select the concrete protocol `Fill` and whose
@@ -1952,4 +2031,61 @@ fn a_refused_abstract_clause_reports_alone_over_a_concrete_protocol() {
             "the clause's refusals alone: {found:?}"
         );
     }
+}
+
+/// `check_text` without the test opt-in that tolerates unwritten protocol
+/// constructs, so a protocol's clause key is as production resolves it.
+fn check_written(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
+    PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        vec![concrete_model(), abstract_model()],
+        Vec::new(),
+    )
+    .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
+    .with_unwritten_refinements()
+    .check(CheckingLimits::default())
+}
+
+/// A refinement whose rows select a protocol with an `attempt` adds no
+/// `ReferenceToAttemptProtocol` refusal of its own when a function that refers to
+/// the protocol is already refused (that refusal is the only one): the attempt-bearing node is
+/// written only for a unit with no earlier refusal, and the earlier refusal
+/// alone is reported. Without the earlier refusal the same unit checks.
+#[trace("TC-541", "FR-136-AC-1")]
+#[test]
+fn a_refinement_over_an_attempt_protocol_adds_no_attempt_reference_refusal() {
+    let solo = "protocol Solo using v over (k: M::Node) on origin {\n\
+        role w on M::Node;\n\
+        run sequence Main {\n\
+        attempt A by w on M::Node::step contracts [] as (a: M::Flag) { true };\n\
+        }\n\
+        finish Done as (d: M::Receipt) { true };\n}\n";
+    let rows = "step M::Node::step -> A::Acc::add(self);\n\
+        step M::Solo::Done -> stutter;";
+    let text = unit(solo, rows);
+    check_written(&text).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+
+    // A function that refers to the protocol is refused while the functions
+    // are lowered, before the attempt nodes: that is the one earlier refusal.
+    let text = text + "function refers using v(): Boolean pure { protocol Solo }\n";
+    let refusals = check_written(&text).expect_err("the reference refuses");
+    let attempt_reference = |refusal: &CheckRefusal| {
+        matches!(
+            &refusal.cause,
+            CheckCause::ProtocolReference(cause)
+                if cause.construct()
+                    == Some(crate::check::ProtocolConstruct::ReferenceToAttemptProtocol)
+        )
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert!(attempt_reference(&refusals[0]), "{refusals:?}");
 }

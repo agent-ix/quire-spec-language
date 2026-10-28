@@ -84,6 +84,7 @@ struct Move {
     to: usize,
     part: Vec<PlaceConstraint>,
     resets: Vec<(usize, Rational)>,
+    carries: Vec<(usize, usize)>,
     target: Vec<PlaceConstraint>,
     tick: bool,
 }
@@ -198,6 +199,7 @@ impl<O> Checker<'_, '_, O> {
                         to,
                         part: part.clone(),
                         resets: step.resets().to_vec(),
+                        carries: step.carries().to_vec(),
                         target: target.clone(),
                         tick,
                     });
@@ -240,12 +242,17 @@ impl<O> Checker<'_, '_, O> {
         let pre = |step: &Move, zone: &Zone| -> Step<Zone, O> {
             let mut zone = zone.clone();
             self.constrain(&mut zone, &step.target)?;
-            for (clock, value) in step.resets.iter().rev() {
-                let value = self.scaled(value)?;
-                zone.constrain(clock + 1, 0, &value, false)?;
-                zone.constrain(0, clock + 1, &value.neg(), false)?;
-                zone.free(clock + 1)?;
-            }
+            let carries: Vec<_> = step
+                .carries
+                .iter()
+                .map(|(target, source)| (target + 1, source + 1))
+                .collect();
+            let resets: Vec<_> = step
+                .resets
+                .iter()
+                .map(|(clock, value)| Ok((clock + 1, self.scaled(value)?)))
+                .collect::<Step<_, O>>()?;
+            zone = zone.preimage_clocks(&carries, &resets)?;
             self.constrain(&mut zone, &step.part)?;
             Ok(zone)
         };

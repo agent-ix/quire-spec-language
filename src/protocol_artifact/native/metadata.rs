@@ -633,7 +633,7 @@ fn execution(
     }
 }
 fn execution_operation(
-    operation: &quire_contract_model::AnchorName,
+    operation: &quire_contract_model::ExecutionPointName,
     context: &super::context::Declaration<'_, '_>,
     builder: &ValueBuilder<'_>,
     work: &mut Work,
@@ -642,7 +642,7 @@ fn execution_operation(
         work.visit()?;
         match &occurrence.target {
             ModelTarget::Operation(op) => {
-                if &op.role().anchor == operation {
+                if op.role().anchor.as_str() == operation.as_str() {
                     return builder.export(
                         op.model(),
                         w::ExportKind::Operation,

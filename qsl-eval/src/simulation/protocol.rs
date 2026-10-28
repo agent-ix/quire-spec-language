@@ -1101,6 +1101,26 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         &self.initial_enabled
     }
 
+    /// Whether `state` has an enabled non-atomic access to a shared location
+    /// under EN-1's state-specific classification (FR-220, FR-224).
+    ///
+    /// Potential footprints do not count. The query applies each attempt at
+    /// the model observations of this protocol state and considers only an
+    /// enabled load or store without an ordering whose location is shared.
+    ///
+    /// # Errors
+    ///
+    /// [`ExpansionStop`] when the state-specific application classification
+    /// cannot complete within its evaluation budget.
+    pub fn has_non_atomic_access_at(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<bool, ExpansionStop> {
+        let mut budget = self.model.budget();
+        self.state_accesses(state, &mut budget)
+            .map(|accesses| accesses.has_non_atomic_access())
+    }
+
     /// The live threads of `state`, by instance and path.
     ///
     /// # Errors

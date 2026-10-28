@@ -449,7 +449,7 @@ fn pump_inputs(operation: w::ExportRef) -> Inputs {
     inputs.execution(
         "PumpReady",
         ir::ExecutionPoint::Pre {
-            operation: ir::AnchorName::new("run").expect("anchor name"),
+            operation: ir::AnchorName::new("run").expect("anchor name").into(),
         },
         w::Execution::Pre { operation },
     );
@@ -988,7 +988,7 @@ fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
     inputs.execution(
         "FillReady",
         ir::ExecutionPoint::Pre {
-            operation: anchor("fill"),
+            operation: anchor("fill").into(),
         },
         w::Execution::Pre {
             operation: fill.clone(),
@@ -997,7 +997,7 @@ fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
     inputs.execution(
         "Filled",
         ir::ExecutionPoint::Post {
-            operation: anchor("fill"),
+            operation: anchor("fill").into(),
         },
         w::Execution::Post {
             operation: fill.clone(),
@@ -1006,7 +1006,7 @@ fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
     inputs.execution(
         "Swapped",
         ir::ExecutionPoint::Post {
-            operation: anchor("swap"),
+            operation: anchor("swap").into(),
         },
         w::Execution::Post {
             operation: swap.clone(),
@@ -1123,6 +1123,22 @@ fn domain_operation_parameters_and_result_emit_and_read_back() {
             assert!(ready
                 .iter()
                 .all(|(_, kind, _, _)| *kind != w::BinderKind::Result));
+
+            // Authored `fill(level, forced)`: the parameter binders keep that
+            // order, in the precondition and in the postcondition.
+            let parameter_order = |name: &str| -> Vec<(String, w::Type)> {
+                binder_rows(package, declaration(package, name))
+                    .into_iter()
+                    .filter(|(_, kind, _, _)| *kind == w::BinderKind::InvocationParameter)
+                    .map(|(name, _, _, ty)| (name, ty))
+                    .collect()
+            };
+            let authored = vec![
+                ("level".to_owned(), reading.clone()),
+                ("forced".to_owned(), boolean.clone()),
+            ];
+            assert_eq!(parameter_order("FillReady"), authored);
+            assert_eq!(parameter_order("Filled"), authored);
 
             let filled = binder_rows(package, declaration(package, "Filled"));
             assert!(

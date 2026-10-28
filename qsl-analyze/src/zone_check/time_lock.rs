@@ -106,6 +106,7 @@ struct Move {
     to: usize,
     part: Vec<PlaceConstraint>,
     resets: Vec<(usize, Rational)>,
+    carries: Vec<(usize, usize)>,
     target: Vec<PlaceConstraint>,
 }
 
@@ -209,6 +210,7 @@ impl Run<'_, '_, '_> {
                         to,
                         part: part.clone(),
                         resets: step.resets().to_vec(),
+                        carries: step.carries().to_vec(),
                         target: target.clone(),
                     });
                 }
@@ -266,12 +268,17 @@ impl Run<'_, '_, '_> {
                         for zone in inner[step.to].0.clone() {
                             let mut pre = zone;
                             constrain_at(&mut pre, &step.target, &scale)?;
-                            for (clock, value) in step.resets.iter().rev() {
-                                let value = self.scaled(value);
-                                pre.constrain(clock + 1, 0, Bound::le(value.clone()))?;
-                                pre.constrain(0, clock + 1, Bound::le(-value))?;
-                                pre.free(clock + 1)?;
-                            }
+                            let carries: Vec<_> = step
+                                .carries
+                                .iter()
+                                .map(|(target, source)| (target + 1, source + 1))
+                                .collect();
+                            let resets: Vec<_> = step
+                                .resets
+                                .iter()
+                                .map(|(clock, value)| (clock + 1, self.scaled(value)))
+                                .collect();
+                            pre = pre.preimage_clocks(&carries, &resets)?;
                             constrain_at(&mut pre, &step.part, &scale)?;
                             grew |= self.hold(&mut inner[at], before(place, pre)?)?;
                         }

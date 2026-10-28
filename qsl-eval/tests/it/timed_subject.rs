@@ -2084,9 +2084,9 @@ fn only_step(timed: &TimedSystem<'_, '_>, state: &TimedState, operation: &str) -
 /// and moves slot 1's clocks to slot 0 with their values (`x = 1`, `y =
 /// 4`), slot 1 no longer live. A `send` writing the literal
 /// `sequence[Timer { x: 2 ms, y: 5 ms, n: 3 }]` gives the fresh slot 0 its
-/// literal's constants. The model writes a collection, which
-/// `carries_clocks` reports so that a zone analysis refuses it by name;
-/// a model with only resets by selection does not. Not covered: a fresh
+/// literal's constants. The model reports its whole-collection write;
+/// consumers apply its emitted carry mapping. A model with only resets by
+/// selection has no carries. Not covered: a fresh
 /// insert at the front, which
 /// AC-20 spells with `flatten` over a nested literal that does not type
 /// (STD-493 item 29).
@@ -2116,8 +2116,7 @@ fn a_collection_write_moves_each_clock_with_its_element() {
             .expect("decided")
             .expect("no invariant bounds the delay")
     };
-    // A zone over places maps no carried clock, so zone analyses refuse
-    // the model by name.
+    // The timed subject exposes carries for zone consumers to map.
     assert!(timed.carries_clocks());
     let sent = only_step(&timed, &delayed(initial, 3), "send");
     let at = |name: &str, slot: usize, value: i64| (name.to_owned(), slot, exact(value, 1));
@@ -4714,6 +4713,77 @@ fn a_postcondition_presence_filters_the_successors() {
     }
 }
 
+/// FR-230 "Presence bit" (TC-685), SR-1743001 FND-001 and SR-1743002
+/// FND-001: the successors of `work`, which writes `v`'s frame, from the
+/// absent and the present initial state, as `v`'s presence in each. A
+/// requirement contradicting a write leaves no successor, in either
+/// conjunct order; `not (self.v = absent)` requires `v` present as `self.v
+/// != absent` does; with no postcondition the frame keeps each bit, since
+/// nothing resets or drops `v` implicitly.
+#[trace("TC-685")]
+#[test]
+fn a_presence_requirement_contradicting_a_write_leaves_no_successor() {
+    let none: &[bool] = &[];
+    for (post, from_absent, from_present) in [
+        ("self.v = absent and present(self.v)", none, none),
+        ("present(self.v) and self.v = absent", none, none),
+        ("self.v = 0 ms and not present(self.v)", none, none),
+        ("not present(self.v) and self.v = 0 ms", none, none),
+        ("present(self.v) and not present(self.v)", none, none),
+        (
+            "self.v = 0 ms and present(self.v)",
+            &[true][..],
+            &[true][..],
+        ),
+        (
+            "self.v = absent and not present(self.v)",
+            &[false][..],
+            &[false][..],
+        ),
+        ("not (self.v = absent)", none, &[true][..]),
+        ("not (self.v != absent)", &[false][..], none),
+        ("true", &[false][..], &[true][..]),
+    ] {
+        let world = world_over(
+            option_clock_document(),
+            "",
+            &only(
+                &["work"],
+                &format!("post P using v on M::Call::work {{ {post} }}\n"),
+            ),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let initial = timed.initial();
+        let [absent, present] = &initial[..] else {
+            panic!("two initial states: {initial:?}");
+        };
+        let v = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("v's place");
+        let work = |state: &TimedState| {
+            let mut live: Vec<bool> = timed
+                .steps(state)
+                .expect("decided")
+                .into_iter()
+                .filter(|(step, _)| step.operation().contains("Call/work"))
+                .map(|(_, next)| timed.live(&timed.places()[v], next.discrete()))
+                .collect();
+            live.dedup();
+            live
+        };
+        assert_eq!(work(absent), from_absent, "{post}: from absent");
+        assert_eq!(work(present), from_present, "{post}: from present");
+    }
+}
+
 /// FR-230-AC-12 (TC-685): `self.v = 0 ms` makes an absent `v` present at
 /// 0: from the absent initial state, `work`'s write gives the one state
 /// with `v` present, never one keeping it absent.
@@ -4860,6 +4930,64 @@ fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
             "state": state,
         }),
     )
+}
+
+/// FR-230 "Records, tuples and unions" (TC-685), the planner's ruling of
+/// 2026-10-28 (no implicit reset of a union case, as of an
+/// `Option<Clock>`), SR-1743002 FND-001: from `Idle`, `work`, whose frame
+/// writes `state`, steps into `Armed` only by writing the constructor
+/// `M::Mode::Armed(0 ms)`. `present(self.state.Armed)` alone requires a
+/// case switch no write makes: no successor. With no postcondition the
+/// frame havoc keeps `Idle`, and from `Armed` it keeps `Armed`.
+#[trace("TC-685")]
+#[test]
+fn a_union_case_switch_needs_its_constructor() {
+    let case = |name: &str| json!({"variant": {"type": ident("Mode"), "case": name}});
+    let no_tick = "pre NoTick using v on M::Call::tick { false }\n";
+    let armed_after = |post: &str, start: &str| {
+        let world = union_world_holding(&format!("{post}{no_tick}"), case(start));
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let armed = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "state.Armed")
+            })
+            .expect("the Armed place");
+        let mut live: Vec<bool> = timed
+            .steps(initial)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| timed.live(&timed.places()[armed], next.discrete()))
+            .collect();
+        live.dedup();
+        live
+    };
+    let none: &[bool] = &[];
+    assert_eq!(
+        armed_after(
+            "post P using v on M::Call::work { present(self.state.Armed) }\n",
+            "Idle"
+        ),
+        none
+    );
+    assert_eq!(
+        armed_after(
+            "post W using v on M::Call::work { self.state = M::Mode::Armed(0 ms) }\n",
+            "Idle"
+        ),
+        [true]
+    );
+    assert_eq!(armed_after("", "Idle"), [false]);
+    assert_eq!(armed_after("", "Armed"), [true]);
 }
 
 /// FR-106 over a union whose case holds a clock (FR-230 "Records, tuples

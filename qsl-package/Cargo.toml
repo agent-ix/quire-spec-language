@@ -16,6 +16,7 @@ std = [
     "dep:quire-contract-model",
     "dep:quire-canonical",
     "dep:quire-exact",
+    "dep:serde_json",
     "dep:thiserror",
     "qsl-foundation/std",
     "thiserror/std",
@@ -55,6 +56,9 @@ quire-checked = { workspace = true }
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
 serde = "1.0.228"
+# The hybrid reader reads an application operation through its public
+# `Serialize` form (the typed carrier keeps its raw record internal).
+serde_json = { version = "1.0.151", optional = true }
 thiserror = { version = "2.0.20", default-features = false, optional = true }
 
 [dev-dependencies]

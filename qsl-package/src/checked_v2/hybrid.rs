@@ -397,6 +397,12 @@ fn last_segment(node: &CheckedSemanticNodeV2) -> Result<Identifier, HybridReadEr
     shape(Identifier::new(&**segment).ok())
 }
 
+/// The wire record of an application operation, through its public
+/// `Serialize` form (the typed carrier keeps its raw record internal).
+fn record(operation: &impl serde::Serialize) -> Result<serde_json::Value, HybridReadError> {
+    serde_json::to_value(operation).map_err(|_| HybridReadError::Fault(SHAPE))
+}
+
 /// The application at `node`'s body root.
 fn application(term: &CheckedTerm) -> Result<(&[CheckedTerm], Option<&str>), HybridReadError> {
     match term {
@@ -404,10 +410,7 @@ fn application(term: &CheckedTerm) -> Result<(&[CheckedTerm], Option<&str>), Hyb
             operation,
             arguments,
             ..
-        } => Ok((
-            arguments,
-            operation.get("identity").and_then(|v| v.as_str()),
-        )),
+        } => Ok((arguments, operation.identity())),
         _ => Err(HybridReadError::Fault(SHAPE)),
     }
 }
@@ -801,8 +804,9 @@ impl Reader<'_> {
         let CheckedTerm::Application { operation, .. } = body else {
             return Err(HybridReadError::Fault(SHAPE));
         };
+        let record = record(operation)?;
         let profile = shape(
-            operation
+            record
                 .get("laws")
                 .and_then(|laws| laws.get(0))
                 .and_then(|law| law.get("definition"))
@@ -891,7 +895,8 @@ impl Reader<'_> {
         let CheckedTerm::Application { operation, .. } = self.body(node)? else {
             return Err(HybridReadError::Fault(SHAPE));
         };
-        let member = shape(operation.get("member"))?;
+        let record = record(operation)?;
+        let member = shape(record.get("member"))?;
         let field = |name: &str| shape(member.get(name).and_then(|value| value.as_str()));
         let declaration = shape(
             member
@@ -1037,7 +1042,8 @@ impl Reader<'_> {
         let CheckedTerm::Application { operation, .. } = self.body(node)? else {
             return Err(HybridReadError::Fault(SHAPE));
         };
-        let Some(interval) = operation
+        let record = record(operation)?;
+        let Some(interval) = record
             .get("member")
             .and_then(|member| member.get("interval"))
             .filter(|interval| !interval.is_null())
