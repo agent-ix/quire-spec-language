@@ -108,6 +108,16 @@ pub enum ModelCheckLimit {
     /// `ModelCheckLimits::max_automaton_states`; setting
     /// `exact_prob.max_automaton_states`.
     ExactProbMaxAutomatonStates,
+    /// EN-5's interval-iteration sweep limit.
+    ExactProbMaxIterations,
+    /// EN-5's greatest precision selected for a dyadic interval.
+    ExactProbMaxPrecisionBits,
+    /// EN-5's greatest numerator or denominator bit length for exact values.
+    ExactProbMaxRationalBits,
+    /// EN-5's policy-improvement iteration limit.
+    ExactProbMaxPolicyIterations,
+    /// EN-5's witness path limit.
+    ExactProbMaxWitnessPaths,
     /// The subject's evaluation meter budget.
     EvaluationMeter {
         /// The denied accounting counter.
@@ -175,6 +185,11 @@ impl ModelCheckLimit {
             Self::ExactProbMaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
             Self::ExactProbMaxAutomatonStates => "max_automaton_states",
+            Self::ExactProbMaxIterations => "max_iterations",
+            Self::ExactProbMaxPrecisionBits => "max_precision_bits",
+            Self::ExactProbMaxRationalBits => "max_rational_bits",
+            Self::ExactProbMaxPolicyIterations => "max_policy_iterations",
+            Self::ExactProbMaxWitnessPaths => "max_witness_paths",
             Self::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => "integer_bits",
                 LimitKind::DecimalDigits => "decimal_digits",
@@ -223,6 +238,11 @@ impl ModelCheckLimit {
             Self::ExactProbMaxStates => "exact_prob.max_states",
             Self::ExactProbMaxTransitions => "exact_prob.max_transitions",
             Self::ExactProbMaxAutomatonStates => "exact_prob.max_automaton_states",
+            Self::ExactProbMaxIterations => "exact_prob.max_iterations",
+            Self::ExactProbMaxPrecisionBits => "exact_prob.max_precision_bits",
+            Self::ExactProbMaxRationalBits => "exact_prob.max_rational_bits",
+            Self::ExactProbMaxPolicyIterations => "exact_prob.max_policy_iterations",
+            Self::ExactProbMaxWitnessPaths => "exact_prob.max_witness_paths",
             Self::EvaluationMeter { counter } => {
                 crate::limits::AccountingLimits::setting_of(counter).name()
             }
@@ -352,6 +372,21 @@ mod tests {
             ModelCheckLimit::ExactProbMaxAutomatonStates => {
                 ("max_automaton_states", "exact_prob.max_automaton_states")
             }
+            ModelCheckLimit::ExactProbMaxIterations => {
+                ("max_iterations", "exact_prob.max_iterations")
+            }
+            ModelCheckLimit::ExactProbMaxPrecisionBits => {
+                ("max_precision_bits", "exact_prob.max_precision_bits")
+            }
+            ModelCheckLimit::ExactProbMaxRationalBits => {
+                ("max_rational_bits", "exact_prob.max_rational_bits")
+            }
+            ModelCheckLimit::ExactProbMaxPolicyIterations => {
+                ("max_policy_iterations", "exact_prob.max_policy_iterations")
+            }
+            ModelCheckLimit::ExactProbMaxWitnessPaths => {
+                ("max_witness_paths", "exact_prob.max_witness_paths")
+            }
             ModelCheckLimit::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => ("integer_bits", "accounting.integer_bits"),
                 LimitKind::DecimalDigits => ("decimal_digits", "accounting.decimal_digits"),
@@ -435,6 +470,11 @@ mod tests {
             ModelCheckLimit::ExactProbMaxStates,
             ModelCheckLimit::ExactProbMaxTransitions,
             ModelCheckLimit::ExactProbMaxAutomatonStates,
+            ModelCheckLimit::ExactProbMaxIterations,
+            ModelCheckLimit::ExactProbMaxPrecisionBits,
+            ModelCheckLimit::ExactProbMaxRationalBits,
+            ModelCheckLimit::ExactProbMaxPolicyIterations,
+            ModelCheckLimit::ExactProbMaxWitnessPaths,
             ModelCheckLimit::MaxCandidates,
             ModelCheckLimit::SolverSteps,
             ModelCheckLimit::SmtMaxSolverSteps,

@@ -26,9 +26,19 @@
 //! here.
 
 mod build;
+mod finite;
+pub mod graph;
 pub(crate) mod plan;
+pub mod unbounded;
 
 pub use build::build_product;
+pub use finite::{
+    backward_induction, backward_induction_bounds, finite_solution, terminal_values,
+    DyadicInterval, Extremum, FiniteBounds, FinitePayoff, FiniteSolution, FiniteValues,
+};
+pub use unbounded::{
+    reach_form, reachability, reachability_with_zeroes, ReachabilityFault, ReachabilitySolution,
+};
 
 use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};

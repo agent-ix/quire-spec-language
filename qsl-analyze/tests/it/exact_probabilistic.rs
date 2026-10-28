@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    build_product, Accumulator, Amount, FormulaState, MeasurePhase, MonitorState, MonitorVerdict,
-    PredicateRole, ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction,
-    ProductKind, ProductRefusal, ProductStop, UndefinedRead,
+    backward_induction, build_product, reach_form, terminal_values, Accumulator, Amount, Extremum,
+    FinitePayoff, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
+    ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind,
+    ProductRefusal, ProductStop, UndefinedRead,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -181,6 +182,24 @@ fn the_no_fault_product_is_a_layered_dtmc_with_two_decided_states() {
         .find(|(_, verdict)| *verdict == MonitorVerdict::Accept)
         .expect("an accepting state");
     assert_eq!(depth[&accept.0.index()], 1000);
+}
+
+/// FR-197-AC-3: exact backward induction preserves the full value of a
+/// thousand-position event rather than rounding its large denominator.
+#[trace("TC-632", "FR-197-AC-3")]
+#[test]
+fn a_thousand_position_probability_is_decided_as_an_exact_rational() {
+    let world = World::new(&prob_world::no_fault(NO_FAULT));
+    let product = built(&world, "NoFault");
+    let terminal = terminal_values(&product, &FinitePayoff::Formula)
+        .expect("the formula's decided states have Boolean payoffs");
+    let values = backward_induction(&product, &terminal, Extremum::Minimum)
+        .expect("the bounded product is acyclic");
+    let start = product.initial[0].2;
+    let probability = values.get(start).expect("an initial state");
+    let single_success = ratio(9_999_999, 10_000_000);
+    let expected = (0..1000).fold(ratio(1, 1), |value, _| value.mul(&single_success));
+    assert_eq!(probability, &expected);
 }
 
 const P95: &str = "probabilistic P95 using ev on M over (s: M::Server) under Steady on origin \
@@ -850,6 +869,27 @@ const SPREAD: &str = "probabilistic Merge using inf on M over (n: M::Node) under
      on origin { probability >= 0.5 [ eventually holds(n.healthy) ] }\n\
      probabilistic Plain using inf on M over (n: M::Node) under Steady \
      on origin { probability >= 0.5 [ eventually holds(n.healthy) ] }";
+
+const TERMINATES: &str = "probabilistic Terminates using inf on M over (p: M::Proc) \
+     under every scheduler on origin { probability >= 0.95 [ eventually holds(p.done) ] }";
+
+/// FR-198-AC-1 (TC-633): the process can wait forever, so its minimum
+/// reachability probability is zero, while choosing `flip` gives an
+/// almost-sure path to `done` and maximum one.
+#[trace("TC-633", "FR-198-AC-1")]
+#[test]
+fn unbounded_reachability_finds_the_exact_minimum_and_maximum() {
+    let world = World::new(&prob_world::process(TERMINATES));
+    let product = built(&world, "Terminates");
+    let claim = world.claim("Terminates");
+    let minimum = reach_form(&product, &claim.form, Extremum::Minimum, 100)
+        .expect("minimum policy iteration completes");
+    let maximum = reach_form(&product, &claim.form, Extremum::Maximum, 100)
+        .expect("maximum policy iteration completes");
+    let start = product.initial[0].2;
+    assert_eq!(minimum.value(start), Some(&ratio(0, 1)));
+    assert_eq!(maximum.value(start), Some(&ratio(1, 1)));
+}
 
 const REWARDS: &str = "probabilistic Spread using ev on M over (s: M::Server) \
      under every scheduler on origin { long_run_fraction holds(s.phase = 0) >= 0.5 }";

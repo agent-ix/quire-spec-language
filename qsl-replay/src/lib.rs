@@ -52,6 +52,7 @@ mod call_site;
 mod certificate;
 mod compile;
 mod composite;
+mod exact_probability;
 mod execute;
 mod hybrid;
 mod hybrid_replay;
@@ -133,6 +134,7 @@ pub use composite::{
     NativeParityObservation, Refinement, VerifiedShadow, VerifiedShadowReport,
     VerifiedShadowResult,
 };
+pub use exact_probability::ExactProbLimits;
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
     replay_value_parity, replay_with_cancel, settle_verified_shadow, value_parity_obligation,
