@@ -1671,13 +1671,13 @@ fn a_row_empty_protocol_subject_names_its_clause() {
 }
 
 /// QSpec FR-375: the protocol subject reads back through IR. Ignored: IR's
-/// class_catalog read-back still refuses after IR-874/#647 (ticket pending);
+/// class_catalog read-back still refuses after IR-874/#647 (IR-1093);
 /// IR's rebuild of the abstract clause's classes reads the
 /// member prefix from the second declaration-path segment, which QSL writes
 /// as `[P, finish, Done]` (B3).
 #[trace("FR-375-AC-11", "TC-310")]
 #[test]
-#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
+#[ignore = "IR-1093: IR class_catalog read-back still refused after IR-874/#647"]
 fn a_row_empty_protocol_subject_reads_back() {
     let (unit, documents) = protocol_subject();
     let package = modelled_with_documents(&unit, &documents, Vec::new());
@@ -1740,14 +1740,14 @@ fn a_parallel_clause_writes_fork_join_and_drain_classes() {
 }
 
 /// QSpec FR-375: the emitted catalog reads back through IR. Ignored: IR's
-/// class_catalog read-back still refuses after IR-874/#647 (ticket pending);
+/// class_catalog read-back still refuses after IR-874/#647 (IR-1093);
 /// IR rebuilds an empty abstract side for a model subject
 /// where FR-375 lists the abstract model's operation classes (B2), and
 /// reads a clause member's class prefix from the second segment of its
 /// declaration path, which QSL writes as `[P, finish, Done]` (B3).
 #[trace("FR-375-AC-23", "TC-310")]
 #[test]
-#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
+#[ignore = "IR-1093: IR class_catalog read-back still refused after IR-874/#647"]
 fn a_model_refinement_class_catalog_reads_back() {
     let (unit, documents) = catalog_refinement();
     let package = modelled_with_documents(&unit, &documents, Vec::new());
@@ -2580,10 +2580,10 @@ fn protocol_step_rows_order_by_node_then_class_spelling() {
 }
 
 /// A protocol subject's step rows read back once IR's catalog rebuild
-/// agrees with FR-375: still refused after IR-874/#647 (ticket pending).
+/// agrees with FR-375: still refused after IR-874/#647 (IR-1093).
 #[trace("FR-375-AC-19", "TC-310")]
 #[test]
-#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
+#[ignore = "IR-1093: IR class_catalog read-back still refused after IR-874/#647"]
 fn protocol_step_rows_read_back() {
     let (unit, documents) = protocol_rows(&PROTOCOL_ROWS);
     let package = modelled_with_documents(&unit, &documents, Vec::new());
@@ -2710,10 +2710,10 @@ fn memory_catalog_entries_are_one_drain_per_model_then_flush() {
 }
 
 /// The memory rows and catalog entries read back once IR's catalog rebuild
-/// agrees with FR-375: still refused after IR-874/#647 (ticket pending).
+/// agrees with FR-375: still refused after IR-874/#647 (IR-1093).
 #[trace("FR-375-AC-19", "FR-375-AC-26", "TC-310")]
 #[test]
-#[ignore = "IR class_catalog read-back still refused after IR-874/#647; ticket pending"]
+#[ignore = "IR-1093: IR class_catalog read-back still refused after IR-874/#647"]
 fn memory_rows_read_back() {
     let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
     let admitted = read(&emitted);
