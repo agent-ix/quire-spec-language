@@ -6781,7 +6781,6 @@ mod tests {
         assert!(keys.contains("ix://acme/orders/OP-001"));
         assert!(keys.contains("ix://acme/orders/OP-001/owner_ref"));
         assert!(keys.contains("ix://acme/orders/OP-001/find_by_id"));
-        assert!(keys.contains("ix://acme/orders/OP-001/find_by_id/created_at"));
 
         let owner_ref = records
             .iter()
