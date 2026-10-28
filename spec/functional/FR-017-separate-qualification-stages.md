@@ -65,5 +65,4 @@ introduces no change to reported logical truth or resource outcomes.
 FR-013 owns existing linkage;
 FR-014 owns exact native/IR coordinates; FR-015 owns admitted native models.
 NFR-005 applies to all new qualification execution. Native compiler CI stays
-manual-only; the automatic language-boundary status described in NFR-002 does
-not qualify this stage.
+manual-only.
