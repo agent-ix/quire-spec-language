@@ -2165,9 +2165,12 @@ fn unwritten_presence(
 ) -> Result<(), TemporalCause> {
     for written in resets {
         for (&(clock, present), &span) in written.requires.iter().zip(&written.require_spans) {
-            let writes = written.resets.iter().any(|reset| {
-                reset.clock == clock && reset.selection.is_none() && reset.parameter.is_none()
-            });
+            // A reset of a `Clock` parameter whose range holds the place
+            // writes it for the instance binding the parameter there.
+            let writes = written
+                .resets
+                .iter()
+                .any(|reset| reset.clock == clock && reset.selection.is_none());
             if !present || writes {
                 continue;
             }
