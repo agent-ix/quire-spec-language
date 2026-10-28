@@ -18,57 +18,11 @@ use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::{
     EncodingRefusal, Permutation, SymmetryClass, SymmetryGroup, TransitionSystem,
 };
-use qsl_replay::{
-    ModelCheckItem, ReductionCause, ReductionKind, SymmetryBrokenCause, SymmetryRefusal,
-};
+use qsl_foundation::ReductionKind;
+use qsl_replay::{ModelCheckItem, ReductionCause, SymmetryBrokenCause, SymmetryRefusal};
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
-
-/// One symmetry declaration of a request (FR-151): classes of
-/// interchangeable keys of `population`'s universe. A key in no class, or in
-/// a class of one, is fixed.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SymmetryDeclaration {
-    /// The population.
-    pub population: DeclarationKey,
-    /// The classes, each a list of keys of the population's universe.
-    pub classes: Vec<Vec<String>>,
-}
-
-/// The reductions a request selects (FR-159 Inputs). The default selects
-/// none.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Reductions {
-    /// The symmetry declarations; empty selects no symmetry.
-    pub symmetry: Vec<SymmetryDeclaration>,
-    /// Whether partial-order reduction is selected.
-    pub partial_order: bool,
-    /// The state constraint's clause name, when one is selected.
-    pub constraint: Option<String>,
-}
-
-impl Reductions {
-    /// Whether the request selects no reduction.
-    pub fn is_empty(&self) -> bool {
-        self.symmetry.is_empty() && !self.partial_order && self.constraint.is_none()
-    }
-
-    /// The selected reductions, in the order symmetry, partial-order,
-    /// constraint.
-    pub fn selected(&self) -> Vec<ReductionKind> {
-        let mut selected = Vec::new();
-        if !self.symmetry.is_empty() {
-            selected.push(ReductionKind::Symmetry);
-        }
-        if self.partial_order {
-            selected.push(ReductionKind::PartialOrder);
-        }
-        if self.constraint.is_some() {
-            selected.push(ReductionKind::StateConstraint);
-        }
-        selected
-    }
-}
 
 /// A row of the preservation table (ADR-021 PT-2): an item's form, with
 /// whether its formula has an interval operator.

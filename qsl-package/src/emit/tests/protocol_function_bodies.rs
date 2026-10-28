@@ -93,6 +93,33 @@ fn a_protocol_body_that_calls_a_function_is_keyed_after_the_function() {
     }
 }
 
+/// A control body (here a `check` condition) that calls a function is keyed
+/// after it, like every other body. (IR's reader refuses a `check` condition
+/// that refers to a protocol as a model-state read, `ModelStateRead`
+/// `check.condition`: a reader rule, not an ordering one.)
+#[test]
+fn a_control_body_that_calls_a_function_is_admitted() {
+    let text = format!(
+        "function ok using v(): Boolean pure {{ true }}\n{}",
+        flow("on origin", "", "", "true").replace(
+            "run sequence Main { }",
+            "run sequence Main { check Gate using v { ok() }; }"
+        )
+    );
+    let lowered = admitted(&text);
+    let callee = function(&lowered.wire, "ok");
+    let checks: Vec<&Value> = nodes(&lowered.wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "control")
+        .collect();
+    assert!(
+        checks
+            .iter()
+            .any(|node| reaches(&lowered.wire, node, callee)),
+        "a control node reaches `ok`"
+    );
+}
+
 /// FR-383-AC-14: a call to a function whose key changes changes the
 /// protocol's key and the package's; a reformat and a comment change
 /// neither.

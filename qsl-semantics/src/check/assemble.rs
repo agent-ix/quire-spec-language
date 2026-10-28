@@ -2919,6 +2919,28 @@ impl PackageDeclarations {
         limits: AssemblyLimits,
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
+        Self::assemble_with_execution_points_and_cancel(
+            source,
+            unit,
+            models,
+            imports,
+            limits,
+            cancel,
+            BTreeMap::new(),
+        )
+    }
+
+    /// [`Self::assemble_with_cancel`] with accepted execution points keyed
+    /// by exact authored state-clause name (FR-104-AC-15).
+    pub fn assemble_with_execution_points_and_cancel(
+        source: RawSourceRef,
+        unit: ParsedUnit,
+        models: impl Into<SelectedModels>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        cancel: &Cancel,
+        execution_points: BTreeMap<String, quire_contract_model::ExecutionPoint>,
+    ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -3758,6 +3780,7 @@ impl PackageDeclarations {
             &resolve,
             &admitted,
             (&lock, &predicates),
+            &execution_points,
         );
         let state_graph_claims = state_graph_claims(
             unit.state_graph_claims,
@@ -3851,6 +3874,7 @@ impl PackageDeclarations {
         }
 
         let mut package = PackageDeclarations::new(source, limits.identity);
+        package.execution_point_keys = execution_points.keys().cloned().collect();
         package.types = types;
         package.operations = operations;
         package.operation_clauses = operation_clauses;
@@ -3902,6 +3926,12 @@ impl PackageDeclarations {
         package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
         package.function_selections = function_selections;
+        declared_type_spans.extend(state_clauses.iter().enumerate().map(|(index, clause)| {
+            (
+                super::lowering::state_clause_name_site(index),
+                clause.name_span,
+            )
+        }));
         package.state_clauses = state_clauses;
         package.state_graph_claims = state_graph_claims;
         package.terminals = terminals;
@@ -4172,6 +4202,7 @@ fn state_clauses(
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
     (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+    execution_points: &BTreeMap<String, quire_contract_model::ExecutionPoint>,
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -4299,13 +4330,24 @@ fn state_clauses(
         let Some(selection) = selection else {
             continue;
         };
+        let name = form.name.name;
+        let execution_point = execution_points
+            .get(&name)
+            .cloned()
+            .map(crate::value::member::AcceptedPoint::new);
         clauses.push(StateClauseDeclaration {
             kind: form.kind,
-            name: form.name.name,
+            authored_operation: form
+                .operation
+                .as_ref()
+                .map(|operation| operation.name.clone()),
+            name,
+            name_span: form.name.span,
             selection,
             context,
             operation,
             operation_key,
+            execution_point,
             context_population,
             frame_population,
             body: form.body,

@@ -22,6 +22,7 @@ use qsl_replay::{
     ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
+use qsl_route::reductions::Reductions;
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{FormulaNode, FormulaNodeId};
 use quire_exact::{Cancel, Integer, Meter, Rational, Undefined};
@@ -133,6 +134,16 @@ fn claim_occurrence(world: &World) -> OccurrenceKey {
 
 /// The first clause of `world`, decided by EN-6 under `limits`.
 pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> Outcome {
+    claim_with(world, limits, cancel, &Reductions::default())
+}
+
+/// [`claim`] selecting `reductions`.
+pub(crate) fn claim_with(
+    world: &World,
+    limits: ZoneCheckLimits,
+    cancel: &Cancel,
+    reductions: &Reductions,
+) -> Outcome {
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     let node = &world.package.graph().temporal_clauses()[0];
@@ -147,8 +158,10 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits,
+            reductions,
         },
         cancel,
     )
@@ -156,6 +169,19 @@ pub(crate) fn claim(world: &World, limits: ZoneCheckLimits, cancel: &Cancel) -> 
 }
 
 pub(crate) fn deadlock(world: &World) -> Outcome {
+    deadlock_with(world, &Reductions::default())
+}
+
+/// [`deadlock`] selecting `reductions`.
+pub(crate) fn deadlock_with(world: &World, reductions: &Reductions) -> Outcome {
+    deadlock_result(world, reductions).expect("EN-6 takes the item")
+}
+
+/// [`deadlock_with`], or EN-6's refusal.
+pub(crate) fn deadlock_result(
+    world: &World,
+    reductions: &Reductions,
+) -> Result<Outcome, ZoneCheckRefusal> {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -165,12 +191,13 @@ pub(crate) fn deadlock(world: &World) -> Outcome {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::DeadlockFreedom,
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
+            reductions,
         },
         &Cancel::new(),
     )
-    .expect("EN-6 takes the item")
 }
 
 /// FR-232's time-lock-freedom item over `world`, decided by EN-6.
@@ -180,6 +207,15 @@ pub(crate) fn time_lock_item(world: &World) -> Outcome {
 
 /// [`time_lock_item`] under `limits`.
 fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
+    time_lock_item_with(world, limits, &Reductions::default())
+}
+
+/// [`time_lock_item`] under `limits`, selecting `reductions`.
+pub(crate) fn time_lock_item_with(
+    world: &World,
+    limits: ZoneCheckLimits,
+    reductions: &Reductions,
+) -> Outcome {
     let system: ModelSystem<'_> = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
     check_timed_model(
@@ -189,8 +225,10 @@ fn time_lock_item_under(world: &World, limits: ZoneCheckLimits) -> Outcome {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::TimeLockFreedom,
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits,
+            reductions,
         },
         &Cancel::new(),
     )
@@ -234,6 +272,8 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
                 "echo",
                 "work",
                 "spin",
+                "arm",
+                "disarm",
             ]
             .into_iter()
             .find(|name| operation.contains(&format!("Call/{name}\"")))
@@ -1244,8 +1284,10 @@ fn a_request_obligation_must_be_its_items() {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::DeadlockFreedom,
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     );
@@ -1257,8 +1299,10 @@ fn a_request_obligation_must_be_its_items() {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(&world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     );
@@ -1311,8 +1355,10 @@ pub(crate) fn request(world: &World) -> Result<Outcome, ZoneCheckRefusal> {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     )
@@ -1467,8 +1513,10 @@ pub(crate) fn short_of_data_claim(world: &World) -> Outcome {
             obligation: ItemObligation {
                 subject: SUBJECT,
                 kind: ObligationKind::Authored(claim_occurrence(world)),
+                reductions: qsl_route::reductions::ObligationReductions::default(),
             },
             limits: ZoneCheckLimits::default(),
+            reductions: &Reductions::default(),
         },
         &Cancel::new(),
     )
@@ -1535,8 +1583,8 @@ fn going_late(deadline: u32, body: &str) -> World {
 /// read by the timed claim automaton, one clock per operator. With `go`
 /// forced by 2 ms, `eventually[0 ms, 3 ms] always[0 ms, 1 ms]
 /// holds(c.late)` holds; with it allowed until 4 ms, `go` after 7/2 ms
-/// refutes it, and the counterexample replays. A nested interval that does
-/// not start at a closed 0 is refused.
+/// refutes it, and the counterexample replays. A punctual interval the
+/// negation starts at many positions is refused.
 #[trace("TC-697")]
 #[test]
 fn a_nested_window_is_read_by_the_timed_claim_automaton() {
@@ -1557,6 +1605,77 @@ fn a_nested_window_is_read_by_the_timed_claim_automaton() {
     assert_eq!(
         request(&punctual).unwrap_err(),
         ZoneCheckRefusal::UnsupportedForm
+    );
+}
+
+/// FR-242: a claim needing more automaton clocks than the construction
+/// builds (`[32 ms, 33 ms]` started at many positions takes 130) is no
+/// form EN-6 decides, and the FR-245 checker refuses it alike, as an
+/// unsupported item.
+#[trace("TC-697")]
+#[test]
+fn a_claim_past_the_clock_limit_is_refused_alike() {
+    let wide = going_late(2, "eventually always[32 ms, 33 ms] holds(c.late)");
+    assert_eq!(
+        request(&wide).unwrap_err(),
+        ZoneCheckRefusal::UnsupportedForm
+    );
+    // A certificate of another claim, renamed to the wide claim's
+    // obligation so that the checker rebuilds its automaton.
+    let mut certificate = proved(claim(
+        &going_late(2, "eventually always holds(c.late)"),
+        ZoneCheckLimits::default(),
+        &Cancel::new(),
+    ));
+    certificate.obligation = ItemObligation {
+        subject: SUBJECT,
+        kind: ObligationKind::Authored(claim_occurrence(&wide)),
+        reductions: qsl_route::reductions::ObligationReductions::default(),
+    };
+    let checked = check(&wide, &certificate, CertificateCheckLimits::default());
+    assert!(
+        matches!(checked, Err(ZoneCertificateRefusal::UnsupportedItem)),
+        "{checked:?}"
+    );
+}
+
+/// [`going_late`] with a free `ping` that changes nothing.
+fn going_late_with_pings(deadline: u32, body: &str) -> World {
+    windowed(
+        &["x"],
+        &[("go", &["phase", "late"]), ("ping", &[])],
+        &format!(
+            "pre Go using v on M::Call::go {{ self.phase = 0 and self.x >= 1 ms }}\n\
+             post Gone using v on M::Call::go {{ self.phase = 1 and self.late }}\n\
+             time invariant Hurry when {{ self.phase = 0 }} {{ self.x <= {deadline} ms }}\n"
+        ),
+        body,
+    )
+}
+
+/// FR-242's bounded copies on the zone product: the negation of
+/// `eventually[0 ms, 1 ms] always[1 ms, 2 ms] holds(c.late)` starts
+/// `eventually[1 ms, 2 ms]` at every position in its first millisecond,
+/// read by blocks of two clocks each. With `go` forced by 2 ms and nothing
+/// else, it holds, and the core accepts the certificate, rebuilding the
+/// blocks; with a free `ping` and `go` allowed until 4 ms, a `ping` before
+/// `go` within `[1 ms, 2 ms]` refutes it, and the counterexample replays.
+#[trace("TC-697", "FR-242")]
+#[test]
+fn a_repeated_interval_is_read_by_bounded_copies() {
+    let body = "eventually[0 ms, 1 ms] always[1 ms, 2 ms] holds(c.late)";
+    let early = going_late(2, body);
+    let certificate = proved(claim(&early, ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(
+        check(&early, &certificate, CertificateCheckLimits::default()),
+        Ok(ZoneCertificateVerdict::Accepted)
+    );
+    let pinged = going_late_with_pings(4, body);
+    let counterexample = violated(claim(&pinged, ZoneCheckLimits::default(), &Cancel::new()));
+    let settlement = crate::zone_replay::replay(&pinged, &counterexample).expect("replays");
+    assert!(
+        crate::zone_replay::reproduced(&settlement),
+        "{settlement:?}"
     );
 }
 

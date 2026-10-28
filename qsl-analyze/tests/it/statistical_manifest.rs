@@ -35,6 +35,7 @@ fn exact_backend() -> qsl_route::BackendDescriptor {
             fairness_kinds: None,
             evidence_kinds: Some(&[EvidenceKind::Exact.to_wire()]),
             memory_models: None,
+            reductions: None,
         },
     )
     .expect("a well-formed exact backend")

@@ -415,6 +415,7 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
             node: node(&source, "Wait", ProtocolNodeKind::Await),
             clock: "wall".to_owned(),
             within: CheckedDeadline { lower: 2, upper: 5 },
+            profile: Some(crate::check::TemporalProfile::InfiniteTrace),
         }]
     );
 

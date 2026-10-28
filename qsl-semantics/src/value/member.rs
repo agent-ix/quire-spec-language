@@ -435,10 +435,11 @@ struct DeclarationWire {
     digest: String,
 }
 
-/// FR-341's own three spellings of a [`StateClauseKind`].
+/// FR-341's spellings of a [`StateClauseKind`].
 fn state_clause_spelling(clause: StateClauseKind) -> &'static str {
     match clause {
         StateClauseKind::Invariant => "invariant",
+        StateClauseKind::Constraint => "constraint",
         StateClauseKind::Precondition => "precondition",
         StateClauseKind::Postcondition => "postcondition",
     }

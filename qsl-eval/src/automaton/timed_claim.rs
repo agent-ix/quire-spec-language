@@ -28,26 +28,52 @@
 //! acceptance set (FR-240); an interval's deadline needs none, since a run
 //! of EN-6's product takes infinitely many positions and lets time diverge.
 //!
-//! **One clock per operator.** An operator that starts at one position only
-//! (no future operator above it, activation `on origin`) has one pending
-//! instance at most, whatever its interval. One nested under a future
-//! operator starts at many positions; with an interval whose lower end is a
-//! closed 0, of two pending instances one implies the other, so one clock
-//! suffices: the older `until`'s window ends first and holds the newer's
-//! remaining positions, and the newer `release`'s window covers the older's
-//! remaining positions, both reading the same guard from the newer start
-//! on. The construction keeps the older `until` and the newer `release`.
-//! A nested operator whose interval starts elsewhere has no such bound and
-//! is refused [`AutomatonError::NestedIntervalShape`]: FR-242's MightyL
-//! translation of those intervals is not built yet. Remaining work:
-//! QSL-583 (583e).
+//! **Copies, bounded by variability (MightyL).** A clock per pending
+//! instance would need unboundedly many clocks; the construction keeps a
+//! number bounded by the interval's variability, as MightyL bounds the
+//! copies of each location of its one-clock alternating automaton
+//! (Brihaye, Geeraerts, Ho and Monmege, CAV 2017). The negation starts an
+//! operator at one position, or at many: under the left operand of an
+//! `until` or the right operand of a `release` (each read at many
+//! positions), or under an operator itself started at many. Then:
 //!
-//! **Past operators** are tracked as memory: `since_I` remembers whether a
-//! witness holds with its guard ever since, and the clock since the latest
-//! such witness, which is the one an interval starting at a closed 0 reads.
-//! A past operator nested under a future one with another interval is
-//! refused alike; one read at position 0 only reads its single offset 0.
-//! A past operator over a future operator is refused, as in
+//! - started at one position, an operator has one pending instance at most
+//!   and one clock, whatever its interval, punctual included;
+//! - started at many with no interval, or one from a closed 0, of two
+//!   pending instances one implies the other: the older `until`'s window
+//!   ends first and holds the newer's remaining positions, and the newer
+//!   `release`'s window covers the older's. One clock suffices; the
+//!   construction keeps the older `until` and the newer `release`;
+//! - started at many with a non-punctual interval `I` from `a` to `b`
+//!   otherwise, instances are grouped into *blocks* of consecutive starts,
+//!   each with a clock at its first start `s` and one at its last `e`. A
+//!   `release` block holds its right operand wherever `s` has reached `a`
+//!   and `e` not passed `b`: the union of its starts' windows, exactly,
+//!   since a start joins the newest block only when its window meets that
+//!   block's (`e <= b - a`); blocks then begin at least `d = b - a` apart,
+//!   and all but the oldest pending one within the last `a`, so at most
+//!   `m + 1` are pending, `m` the starts that fit `d` apart in `a`
+//!   (`spread`). An `until` block is
+//!   discharged at one position read by all its starts, `e` at least `a`
+//!   and `s` at most `b`; a start joins the newest block or begins a new
+//!   one, a nondeterministic choice. A run that discharges each block at
+//!   the latest position its first start can use keeps every other block
+//!   `d` apart, all but the oldest within the last `a`: at most `2 m + 1`
+//!   pending, and every accepted word has such a run, so the bound loses
+//!   none.
+//!
+//! A punctual interval started at many positions is refused
+//! [`AutomatonError::RepeatedPunctualInterval`]: no timed automaton reads
+//! such a negation in general (Alur and Dill, 1994), and FR-234 admits
+//! punctual intervals in TT-2 windows only.
+//!
+//! **Past operators** are tracked deterministically as memory. One read at
+//! position 0 only reads its single offset 0. Otherwise `since_I`
+//! remembers, after the last position its guard failed, the witnesses whose
+//! window may still hold: with no interval or one from a closed 0, whether
+//! one holds and the clock since the latest; otherwise blocks of witnesses
+//! whose windows meet, read as a `release` block's are, at most `m + 1`. A punctual interval below a future operator is
+//! refused alike. A past operator over a future operator is refused, as in
 //! [`translate`](crate::automaton::translate).
 //!
 //! EN-6 (`qsl-analyze`) and FR-245's checker (`qsl-replay`) both build this
@@ -61,7 +87,7 @@ use qsl_semantics::check::{
     Activation, BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, ClockOp,
     FormulaNode, FormulaNodeId, TemporalProfile, UnaryTemporal,
 };
-use quire_exact::{Integer, Rational};
+use quire_exact::{Integer, NonZeroInteger, Rational};
 
 use crate::automaton::error::AutomatonError;
 use crate::automaton::letter::{Atom, Letter};
@@ -110,6 +136,16 @@ enum PastExpr {
     Or(Box<PastExpr>, Box<PastExpr>),
 }
 
+/// How an operator's pending instances, or a tracker's witnesses, are kept.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Shape {
+    /// One at most, with one clock when the operator has an interval.
+    Single,
+    /// Up to `capacity` blocks, two clocks each: block `k` reads clock
+    /// `base + 2k` from its first start and `base + 2k + 1` from its last.
+    Blocks(usize),
+}
+
 /// `guard since_I witness`.
 #[derive(Clone, Debug)]
 struct Tracker {
@@ -118,6 +154,8 @@ struct Tracker {
     window: Option<TimedInterval>,
     /// Read at position 0 only.
     origin: bool,
+    shape: Shape,
+    /// Its first clock.
     clock: Option<usize>,
 }
 
@@ -128,8 +166,14 @@ struct Config {
     started: bool,
     /// Per tracker: whether a witness holds with its guard ever since.
     seen: Vec<bool>,
-    /// The `until` and `release` nodes with a pending instance.
+    /// The single-instance `until` and `release` nodes with a pending
+    /// instance.
     pending: BTreeSet<usize>,
+    /// Per block-shaped node with a pending block: its blocks' slots,
+    /// oldest first.
+    blocks: BTreeMap<usize, Vec<usize>>,
+    /// Per block-shaped tracker: its blocks' slots, oldest first.
+    witnesses: Vec<Vec<usize>>,
     /// Per unbounded `until`: whether the last position fulfilled it.
     fulfilled: Vec<bool>,
 }
@@ -153,7 +197,9 @@ pub struct TimedClaim {
     nodes: Vec<Node>,
     root: usize,
     trackers: Vec<Tracker>,
-    /// Each node's clock, by node.
+    /// Each interval or block-shaped node's shape.
+    shapes: BTreeMap<usize, Shape>,
+    /// Each node's first clock, by node.
     clocks: BTreeMap<usize, usize>,
     clock_count: usize,
     /// The unbounded `until` nodes, one acceptance set each.
@@ -173,6 +219,7 @@ struct Lowering<'f> {
     nodes: Vec<Node>,
     index: BTreeMap<Node, usize>,
     trackers: Vec<Tracker>,
+    shapes: BTreeMap<usize, Shape>,
 }
 
 impl Lowering<'_> {
@@ -183,6 +230,15 @@ impl Lowering<'_> {
         let at = self.nodes.len();
         self.index.insert(node.clone(), at);
         self.nodes.push(node);
+        at
+    }
+
+    /// An `until` or `release` occurrence of `shape`: never shared with an
+    /// equal one elsewhere, whose starts it would mix with its own.
+    fn add_temporal(&mut self, node: Node, shape: Shape) -> usize {
+        let at = self.nodes.len();
+        self.nodes.push(node);
+        self.shapes.insert(at, shape);
         at
     }
 
@@ -204,13 +260,15 @@ impl Lowering<'_> {
             })
     }
 
-    /// `id` (negated when `!positive`) in negation normal form; `nested`
-    /// when a future operator lies above it.
+    /// `id` (negated when `!positive`) in negation normal form; `many`
+    /// when the negation starts it at many positions, `deep` when a future
+    /// operator lies above it.
     fn lower(
         &mut self,
         id: FormulaNodeId,
         positive: bool,
-        nested: bool,
+        many: bool,
+        deep: bool,
     ) -> Result<usize, AutomatonError> {
         let form = self.form(id)?.clone();
         Ok(match form {
@@ -224,11 +282,11 @@ impl Lowering<'_> {
                     invariant: "timed-claim-no-aggregate",
                 })
             }
-            FormulaNode::Not(inner) => self.lower(inner, !positive, nested)?,
+            FormulaNode::Not(inner) => self.lower(inner, !positive, many, deep)?,
             FormulaNode::And(left, right) => {
                 let (left, right) = (
-                    self.lower(left, positive, nested)?,
-                    self.lower(right, positive, nested)?,
+                    self.lower(left, positive, many, deep)?,
+                    self.lower(right, positive, many, deep)?,
                 );
                 self.add(if positive {
                     Node::And(left, right)
@@ -238,8 +296,8 @@ impl Lowering<'_> {
             }
             FormulaNode::Or(left, right) => {
                 let (left, right) = (
-                    self.lower(left, positive, nested)?,
-                    self.lower(right, positive, nested)?,
+                    self.lower(left, positive, many, deep)?,
+                    self.lower(right, positive, many, deep)?,
                 );
                 self.add(if positive {
                     Node::Or(left, right)
@@ -249,8 +307,8 @@ impl Lowering<'_> {
             }
             FormulaNode::Implies(left, right) => {
                 let (left, right) = (
-                    self.lower(left, !positive, nested)?,
-                    self.lower(right, positive, nested)?,
+                    self.lower(left, !positive, many, deep)?,
+                    self.lower(right, positive, many, deep)?,
                 );
                 self.add(if positive {
                     Node::Or(left, right)
@@ -266,40 +324,44 @@ impl Lowering<'_> {
                 let window = window(interval.as_ref())?;
                 match operator {
                     UnaryTemporal::Eventually | UnaryTemporal::Always => {
-                        shaped(window.as_ref(), nested)?;
-                        let operand = self.lower(operand, positive, true)?;
                         // `eventually` is `true until`; `always` is
                         // `false release`; negation swaps them.
                         let eventually = (operator == UnaryTemporal::Eventually) == positive;
+                        let shape = future_shape(window.as_ref(), many, eventually)?;
+                        // An `until`'s right operand is read once per
+                        // instance; a `release`'s at many positions.
+                        let operand = self.lower(operand, positive, many || !eventually, true)?;
                         let left = self.add(Node::Const(eventually));
-                        self.add(if eventually {
-                            Node::Until {
-                                left,
-                                right: operand,
-                                window,
-                            }
-                        } else {
-                            Node::Release {
-                                left,
-                                right: operand,
-                                window,
-                            }
-                        })
+                        self.add_temporal(
+                            if eventually {
+                                Node::Until {
+                                    left,
+                                    right: operand,
+                                    window,
+                                }
+                            } else {
+                                Node::Release {
+                                    left,
+                                    right: operand,
+                                    window,
+                                }
+                            },
+                            shape,
+                        )
                     }
                     UnaryTemporal::Once | UnaryTemporal::Historically => {
-                        shaped(window.as_ref(), nested)?;
-                        let witness = self.past(operand, nested)?;
+                        let witness = self.past(operand, deep)?;
                         // `once φ` is `true since φ`; `historically φ` is
                         // `not (true since not φ)`.
                         let tracker = if operator == UnaryTemporal::Once {
-                            self.tracker(PastExpr::Const(true), witness, window, !nested)
+                            self.tracker(PastExpr::Const(true), witness, window, deep)?
                         } else {
                             self.tracker(
                                 PastExpr::Const(true),
                                 PastExpr::Not(Box::new(witness)),
                                 window,
-                                !nested,
-                            )
+                                deep,
+                            )?
                         };
                         let value = (operator == UnaryTemporal::Once) == positive;
                         self.add(Node::Past {
@@ -318,40 +380,43 @@ impl Lowering<'_> {
                 let window = window(interval.as_ref())?;
                 match operator {
                     BinaryTemporal::Until | BinaryTemporal::Release => {
-                        shaped(window.as_ref(), nested)?;
-                        let (left, right) = (
-                            self.lower(left, positive, true)?,
-                            self.lower(right, positive, true)?,
-                        );
                         let until = (operator == BinaryTemporal::Until) == positive;
-                        self.add(if until {
-                            Node::Until {
-                                left,
-                                right,
-                                window,
-                            }
-                        } else {
-                            Node::Release {
-                                left,
-                                right,
-                                window,
-                            }
-                        })
+                        let shape = future_shape(window.as_ref(), many, until)?;
+                        // An `until` reads its left operand at many
+                        // positions, a `release` its right.
+                        let (left, right) = (
+                            self.lower(left, positive, many || until, true)?,
+                            self.lower(right, positive, many || !until, true)?,
+                        );
+                        self.add_temporal(
+                            if until {
+                                Node::Until {
+                                    left,
+                                    right,
+                                    window,
+                                }
+                            } else {
+                                Node::Release {
+                                    left,
+                                    right,
+                                    window,
+                                }
+                            },
+                            shape,
+                        )
                     }
                     BinaryTemporal::Since | BinaryTemporal::Triggered => {
-                        shaped(window.as_ref(), nested)?;
-                        let (guard, witness) =
-                            (self.past(left, nested)?, self.past(right, nested)?);
+                        let (guard, witness) = (self.past(left, deep)?, self.past(right, deep)?);
                         // `triggered` is `not (not left since not right)`.
                         let tracker = if operator == BinaryTemporal::Since {
-                            self.tracker(guard, witness, window, !nested)
+                            self.tracker(guard, witness, window, deep)?
                         } else {
                             self.tracker(
                                 PastExpr::Not(Box::new(guard)),
                                 PastExpr::Not(Box::new(witness)),
                                 window,
-                                !nested,
-                            )
+                                deep,
+                            )?
                         };
                         let value = (operator == BinaryTemporal::Since) == positive;
                         self.add(Node::Past {
@@ -365,8 +430,8 @@ impl Lowering<'_> {
     }
 
     /// A past-only formula, its inner past operators tracked first;
-    /// `nested` when a future operator lies above it.
-    fn past(&mut self, id: FormulaNodeId, nested: bool) -> Result<PastExpr, AutomatonError> {
+    /// `deep` when a future operator lies above it.
+    fn past(&mut self, id: FormulaNodeId, deep: bool) -> Result<PastExpr, AutomatonError> {
         let form = self.form(id)?.clone();
         Ok(match form {
             FormulaNode::Constant(value) => PastExpr::Const(value),
@@ -376,18 +441,18 @@ impl Lowering<'_> {
                     invariant: "timed-claim-no-aggregate",
                 })
             }
-            FormulaNode::Not(inner) => PastExpr::Not(Box::new(self.past(inner, nested)?)),
+            FormulaNode::Not(inner) => PastExpr::Not(Box::new(self.past(inner, deep)?)),
             FormulaNode::And(left, right) => PastExpr::And(
-                Box::new(self.past(left, nested)?),
-                Box::new(self.past(right, nested)?),
+                Box::new(self.past(left, deep)?),
+                Box::new(self.past(right, deep)?),
             ),
             FormulaNode::Or(left, right) => PastExpr::Or(
-                Box::new(self.past(left, nested)?),
-                Box::new(self.past(right, nested)?),
+                Box::new(self.past(left, deep)?),
+                Box::new(self.past(right, deep)?),
             ),
             FormulaNode::Implies(left, right) => PastExpr::Or(
-                Box::new(PastExpr::Not(Box::new(self.past(left, nested)?))),
-                Box::new(self.past(right, nested)?),
+                Box::new(PastExpr::Not(Box::new(self.past(left, deep)?))),
+                Box::new(self.past(right, deep)?),
             ),
             FormulaNode::Unary {
                 operator,
@@ -397,23 +462,21 @@ impl Lowering<'_> {
                 let window = window(interval.as_ref())?;
                 match operator {
                     UnaryTemporal::Once | UnaryTemporal::Historically => {
-                        shaped(window.as_ref(), nested)?;
-                        let witness = self.past(operand, nested)?;
-                        let origin = !nested;
+                        let witness = self.past(operand, deep)?;
                         if operator == UnaryTemporal::Once {
                             PastExpr::Tracker(self.tracker(
                                 PastExpr::Const(true),
                                 witness,
                                 window,
-                                origin,
-                            ))
+                                deep,
+                            )?)
                         } else {
                             PastExpr::Not(Box::new(PastExpr::Tracker(self.tracker(
                                 PastExpr::Const(true),
                                 PastExpr::Not(Box::new(witness)),
                                 window,
-                                origin,
-                            ))))
+                                deep,
+                            )?)))
                         }
                     }
                     UnaryTemporal::Eventually | UnaryTemporal::Always => {
@@ -430,19 +493,16 @@ impl Lowering<'_> {
                 let window = window(interval.as_ref())?;
                 match operator {
                     BinaryTemporal::Since | BinaryTemporal::Triggered => {
-                        shaped(window.as_ref(), nested)?;
-                        let (guard, witness) =
-                            (self.past(left, nested)?, self.past(right, nested)?);
-                        let origin = !nested;
+                        let (guard, witness) = (self.past(left, deep)?, self.past(right, deep)?);
                         if operator == BinaryTemporal::Since {
-                            PastExpr::Tracker(self.tracker(guard, witness, window, origin))
+                            PastExpr::Tracker(self.tracker(guard, witness, window, deep)?)
                         } else {
                             PastExpr::Not(Box::new(PastExpr::Tracker(self.tracker(
                                 PastExpr::Not(Box::new(guard)),
                                 PastExpr::Not(Box::new(witness)),
                                 window,
-                                origin,
-                            ))))
+                                deep,
+                            )?)))
                         }
                     }
                     BinaryTemporal::Until | BinaryTemporal::Release => {
@@ -453,21 +513,33 @@ impl Lowering<'_> {
         })
     }
 
+    /// A tracker of `guard since_I witness`; `deep` when a future operator
+    /// lies above it, so that it is read at positions after 0.
     fn tracker(
         &mut self,
         guard: PastExpr,
         witness: PastExpr,
         window: Option<TimedInterval>,
-        origin: bool,
-    ) -> usize {
+        deep: bool,
+    ) -> Result<usize, AutomatonError> {
+        let shape = match &window {
+            Some(window) if deep && !from_zero(window) => {
+                if window.lower() == window.upper() {
+                    return Err(AutomatonError::RepeatedPunctualInterval);
+                }
+                Shape::Blocks(spread(window)? + 1)
+            }
+            _ => Shape::Single,
+        };
         self.trackers.push(Tracker {
             guard,
             witness,
             window,
-            origin,
+            origin: !deep,
+            shape,
             clock: None,
         });
-        self.trackers.len() - 1
+        Ok(self.trackers.len() - 1)
     }
 }
 
@@ -487,13 +559,157 @@ fn from_zero(window: &TimedInterval) -> bool {
     window.lower() == &zero() && window.lower_closed()
 }
 
-/// A future operator's interval: any for one read once, one starting at a
-/// closed 0 for one nested under a future operator.
-fn shaped(window: Option<&TimedInterval>, nested: bool) -> Result<(), AutomatonError> {
+/// How the pending instances of an `until` (`until`) or `release` with
+/// `window` are kept; `many` when the negation starts it at many positions.
+fn future_shape(
+    window: Option<&TimedInterval>,
+    many: bool,
+    until: bool,
+) -> Result<Shape, AutomatonError> {
     match window {
-        Some(window) if nested && !from_zero(window) => Err(AutomatonError::NestedIntervalShape),
-        _ => Ok(()),
+        Some(window) if many && !from_zero(window) => {
+            if window.lower() == window.upper() {
+                return Err(AutomatonError::RepeatedPunctualInterval);
+            }
+            let spread = spread(window)?;
+            Ok(Shape::Blocks(if until {
+                2 * spread + 1
+            } else {
+                spread + 1
+            }))
+        }
+        _ => Ok(Shape::Single),
     }
+}
+
+/// The most automaton clocks a claim builds: a zone over them has their
+/// square of bounds, so a copy count grown by an interval's variability is
+/// refused past it rather than exhausting memory.
+const MAX_CLOCKS: usize = 64;
+
+/// The most block starts of a non-punctual `window` from `a` to `b` that
+/// lie within the last `a` and at least `d = b - a` apart, more than `d`
+/// apart when either end is closed: `max(1, ceil(a / d))` then, and
+/// `floor(a / d) + 1` with both ends open. Blocks after the oldest pending
+/// one begin within the last `a` (a `release` block, or one parity class
+/// of `until` blocks), so this bounds the copies by the interval's
+/// variability.
+fn spread(window: &TimedInterval) -> Result<usize, AutomatonError> {
+    let width = window.upper().sub(window.lower());
+    let ratio = window
+        .lower()
+        .div(&width)
+        .ok_or(AutomatonError::Invariant {
+            invariant: "timed-claim-non-punctual-width",
+        })?;
+    let denominator =
+        NonZeroInteger::try_from(ratio.denominator()).map_err(|_| AutomatonError::Invariant {
+            invariant: "timed-claim-rational-denominator",
+        })?;
+    let (floor, remainder) = ratio.numerator().div_mod_floor(denominator);
+    // At least `floor` blocks of two clocks each: past the limit, refuse
+    // before counting, naming that lower bound (saturated when `floor`
+    // does not fit a `usize`).
+    let floor = floor
+        .to_u64()
+        .and_then(|floor| usize::try_from(floor).ok())
+        .unwrap_or(usize::MAX);
+    if floor > MAX_CLOCKS {
+        return Err(AutomatonError::ClockLimit {
+            clocks: floor.saturating_mul(2),
+            limit: MAX_CLOCKS,
+        });
+    }
+    let strict = window.lower_closed() || window.upper_closed();
+    Ok(if strict && remainder.is_zero() {
+        floor.max(1)
+    } else {
+        floor + 1
+    })
+}
+
+/// `b - a` of `window`.
+fn width(window: &TimedInterval) -> Rational {
+    window.upper().sub(window.lower())
+}
+
+/// `clock` has reached `window`'s lower end; empty for a closed 0.
+fn lower_ok(window: &TimedInterval, clock: usize) -> Vec<PlaceConstraint> {
+    if from_zero(window) {
+        return Vec::new();
+    }
+    let op = if window.lower_closed() {
+        ClockOp::GreaterOrEqual
+    } else {
+        ClockOp::Greater
+    };
+    vec![PlaceConstraint::new(clock, op, window.lower().clone())]
+}
+
+/// `clock` has not reached `window`'s lower end; `None` for a closed 0.
+fn lower_fail(window: &TimedInterval, clock: usize) -> Option<Vec<PlaceConstraint>> {
+    if from_zero(window) {
+        return None;
+    }
+    let op = if window.lower_closed() {
+        ClockOp::Less
+    } else {
+        ClockOp::LessOrEqual
+    };
+    Some(vec![PlaceConstraint::new(
+        clock,
+        op,
+        window.lower().clone(),
+    )])
+}
+
+/// `clock` has not passed `window`'s upper end.
+fn upper_ok(window: &TimedInterval, clock: usize) -> Vec<PlaceConstraint> {
+    let op = if window.upper_closed() {
+        ClockOp::LessOrEqual
+    } else {
+        ClockOp::Less
+    };
+    vec![PlaceConstraint::new(clock, op, window.upper().clone())]
+}
+
+/// `clock` has passed `window`'s upper end.
+fn upper_fail(window: &TimedInterval, clock: usize) -> Vec<PlaceConstraint> {
+    let op = if window.upper_closed() {
+        ClockOp::Greater
+    } else {
+        ClockOp::GreaterOrEqual
+    };
+    vec![PlaceConstraint::new(clock, op, window.upper().clone())]
+}
+
+/// A block whose first start is `clock` ago can still be discharged at one
+/// position with a start now: some later offset lies in `window` from both.
+fn joins(window: &TimedInterval, clock: usize) -> PlaceConstraint {
+    let op = if window.lower_closed() && window.upper_closed() {
+        ClockOp::LessOrEqual
+    } else {
+        ClockOp::Less
+    };
+    PlaceConstraint::new(clock, op, width(window))
+}
+
+/// A start now has a window that meets, or touches at a covered point, the
+/// window of a start `clock` ago (`meets`), or does not (`!meets`).
+fn meets(window: &TimedInterval, clock: usize, meets: bool) -> PlaceConstraint {
+    let touching = window.lower_closed() || window.upper_closed();
+    let op = match (meets, touching) {
+        (true, true) => ClockOp::LessOrEqual,
+        (true, false) => ClockOp::Less,
+        (false, true) => ClockOp::Greater,
+        (false, false) => ClockOp::GreaterOrEqual,
+    };
+    PlaceConstraint::new(clock, op, width(window))
+}
+
+/// The lowest slot of `capacity` not in `taken`.
+fn free_slot(taken: &[usize], capacity: usize) -> Option<usize> {
+    (0..capacity).find(|slot| !taken.contains(slot))
 }
 
 fn zero() -> Rational {
@@ -561,6 +777,8 @@ struct PastCase {
     guard: Vec<PlaceConstraint>,
     values: Vec<bool>,
     seen: Vec<bool>,
+    /// Per tracker, its witness blocks after the position.
+    witnesses: Vec<Vec<usize>>,
     resets: BTreeSet<usize>,
 }
 
@@ -573,6 +791,10 @@ struct Branch {
     kept: BTreeSet<usize>,
     /// The pending instances after the position.
     pending: BTreeSet<usize>,
+    /// The blocks after the position, by block-shaped node.
+    blocks: BTreeMap<usize, Vec<usize>>,
+    /// The block-shaped nodes started at the position.
+    started: BTreeSet<usize>,
     discharged: BTreeSet<usize>,
     /// The formulas the position must satisfy, still to expand.
     now: Vec<usize>,
@@ -585,8 +807,9 @@ impl TimedClaim {
     /// # Errors
     ///
     /// [`AutomatonError::ProfileNotTranslated`] for a clause not under the
-    /// timed profile; [`AutomatonError::NestedIntervalShape`] for a nested
-    /// operator whose interval does not start at a closed 0;
+    /// timed profile; [`AutomatonError::RepeatedPunctualInterval`] for a
+    /// punctual interval started or read at many positions;
+    /// [`AutomatonError::ClockLimit`] past the clocks it builds;
     /// [`AutomatonError::PastOverFuture`]; [`AutomatonError::AtomOutOfRange`]
     /// when the letter needs more atoms than it holds.
     pub fn new(clause: &CheckedTemporalClause, max_states: u64) -> Result<Self, AutomatonError> {
@@ -609,10 +832,12 @@ impl TimedClaim {
             nodes: Vec::new(),
             index: BTreeMap::new(),
             trackers: Vec::new(),
+            shapes: BTreeMap::new(),
         };
         let each = matches!(clause.activation(), Activation::Each { .. });
-        // Under `on each` every node is read at many positions.
-        let negation = lowering.lower(formula.root(), false, each)?;
+        // Under `on each` the negation is read once, at the activating
+        // position the `until` below chooses, which is not position 0.
+        let negation = lowering.lower(formula.root(), false, false, each)?;
         let when = match clause.activation() {
             Activation::Each { guarded: true } => Some(Atom::new(lowering.atoms.len())?),
             _ => None,
@@ -630,11 +855,14 @@ impl TimedClaim {
                 None => negation,
             };
             let left = lowering.add(Node::Const(true));
-            lowering.add(Node::Until {
-                left,
-                right: violation,
-                window: None,
-            })
+            lowering.add_temporal(
+                Node::Until {
+                    left,
+                    right: violation,
+                    window: None,
+                },
+                Shape::Single,
+            )
         } else {
             negation
         };
@@ -642,9 +870,15 @@ impl TimedClaim {
             nodes,
             mut trackers,
             atoms,
+            shapes,
             ..
         } = lowering;
-        let mut clock_count = 0;
+        // One clock for a single instance with an interval, two per block.
+        let span = |shape: Shape| match shape {
+            Shape::Single => 1,
+            Shape::Blocks(capacity) => 2 * capacity,
+        };
+        let mut clock_count = 0_usize;
         let mut clocks = BTreeMap::new();
         for (at, node) in nodes.iter().enumerate() {
             if let Node::Until {
@@ -655,14 +889,21 @@ impl TimedClaim {
             } = node
             {
                 clocks.insert(at, clock_count);
-                clock_count += 1;
+                clock_count = clock_count
+                    .saturating_add(span(shapes.get(&at).copied().unwrap_or(Shape::Single)));
             }
         }
         for tracker in &mut trackers {
             if tracker.window.is_some() {
                 tracker.clock = Some(clock_count);
-                clock_count += 1;
+                clock_count = clock_count.saturating_add(span(tracker.shape));
             }
+        }
+        if clock_count > MAX_CLOCKS {
+            return Err(AutomatonError::ClockLimit {
+                clocks: clock_count,
+                limit: MAX_CLOCKS,
+            });
         }
         let eventualities = nodes
             .iter()
@@ -678,6 +919,7 @@ impl TimedClaim {
             nodes,
             root,
             trackers,
+            shapes,
             clocks,
             clock_count,
             eventualities,
@@ -713,6 +955,17 @@ impl TimedClaim {
     /// `L` and `U` and the scale (FR-242).
     pub fn constants(&self) -> Vec<Rational> {
         let mut constants = vec![zero(); self.clock_count];
+        let mut set = |first: usize, shape: Shape, window: &TimedInterval| {
+            let count = match shape {
+                Shape::Single => 1,
+                Shape::Blocks(capacity) => 2 * capacity,
+            };
+            for clock in first..first + count {
+                if let Some(constant) = constants.get_mut(clock) {
+                    *constant = window.upper().clone();
+                }
+            }
+        };
         for (&node, &clock) in &self.clocks {
             if let Some(
                 Node::Until {
@@ -725,15 +978,19 @@ impl TimedClaim {
                 },
             ) = self.nodes.get(node)
             {
-                constants[clock] = window.upper().clone();
+                set(clock, self.shape(node), window);
             }
         }
         for tracker in &self.trackers {
             if let (Some(clock), Some(window)) = (tracker.clock, &tracker.window) {
-                constants[clock] = window.upper().clone();
+                set(clock, tracker.shape, window);
             }
         }
         constants
+    }
+
+    fn shape(&self, node: usize) -> Shape {
+        self.shapes.get(&node).copied().unwrap_or(Shape::Single)
     }
 
     /// Every constant the automaton's guards compare a clock with, which
@@ -755,6 +1012,8 @@ impl TimedClaim {
         for window in windows {
             all.push(window.lower().clone());
             all.push(window.upper().clone());
+            // Blocks join and meet by the width.
+            all.push(width(window));
         }
         all.sort();
         all.dedup();
@@ -771,6 +1030,8 @@ impl TimedClaim {
             started: false,
             seen: vec![false; self.trackers.len()],
             pending: BTreeSet::new(),
+            blocks: BTreeMap::new(),
+            witnesses: vec![Vec::new(); self.trackers.len()],
             fulfilled: vec![true; self.eventualities.len()],
         };
         self.intern(config)
@@ -839,24 +1100,53 @@ impl TimedClaim {
                     .iter()
                     .map(|node| !config.pending.contains(node) || branch.discharged.contains(node))
                     .collect();
+                let mut blocks = branch.blocks.clone();
+                blocks.retain(|_, slots| !slots.is_empty());
                 let target = Config {
                     started: true,
                     seen: case.seen.clone(),
                     pending: branch.pending.clone(),
+                    blocks,
+                    witnesses: case.witnesses.clone(),
                     fulfilled,
                 };
-                // Clocks of no pending instance and no remembered witness
-                // read nothing until reset: reset them now, so equal
-                // obligations meet in equal zones.
+                // Clocks of no pending instance, block or remembered
+                // witness read nothing until reset: reset them now, so
+                // equal obligations meet in equal zones.
                 let mut resets = branch.resets.clone();
                 for (&node, &clock) in &self.clocks {
-                    if !target.pending.contains(&node) {
-                        resets.insert(clock);
+                    match self.shape(node) {
+                        Shape::Single => {
+                            if !target.pending.contains(&node) {
+                                resets.insert(clock);
+                            }
+                        }
+                        Shape::Blocks(capacity) => {
+                            let taken = target.blocks.get(&node).map_or(&[][..], Vec::as_slice);
+                            for slot in (0..capacity).filter(|slot| !taken.contains(slot)) {
+                                resets.insert(clock + 2 * slot);
+                                resets.insert(clock + 2 * slot + 1);
+                            }
+                        }
                     }
                 }
-                for (tracker, seen) in self.trackers.iter().zip(&target.seen) {
-                    if let (Some(clock), false) = (tracker.clock, seen) {
-                        resets.insert(clock);
+                for (at, tracker) in self.trackers.iter().enumerate() {
+                    let Some(clock) = tracker.clock else {
+                        continue;
+                    };
+                    match tracker.shape {
+                        Shape::Single => {
+                            if !target.seen.get(at).copied().unwrap_or(false) {
+                                resets.insert(clock);
+                            }
+                        }
+                        Shape::Blocks(capacity) => {
+                            let taken = target.witnesses.get(at).map_or(&[][..], Vec::as_slice);
+                            for slot in (0..capacity).filter(|slot| !taken.contains(slot)) {
+                                resets.insert(clock + 2 * slot);
+                                resets.insert(clock + 2 * slot + 1);
+                            }
+                        }
                     }
                 }
                 let mut guard = branch.guard.clone();
@@ -891,11 +1181,33 @@ impl TimedClaim {
             guard: Vec::new(),
             values: Vec::with_capacity(self.trackers.len()),
             seen: Vec::with_capacity(self.trackers.len()),
+            witnesses: Vec::with_capacity(self.trackers.len()),
             resets: BTreeSet::new(),
         }];
         for (at, tracker) in self.trackers.iter().enumerate() {
             let mut next = Vec::with_capacity(cases.len());
             for case in cases {
+                if let (Shape::Blocks(capacity), Some(window), Some(clock)) =
+                    (tracker.shape, &tracker.window, tracker.clock)
+                {
+                    let witness = past_value(&tracker.witness, letter, &case.values)?;
+                    let guard = past_value(&tracker.guard, letter, &case.values)?;
+                    let previous = match (config.started && guard, config.witnesses.get(at)) {
+                        (true, Some(slots)) => slots.clone(),
+                        _ => Vec::new(),
+                    };
+                    for (mut case, slots, value) in
+                        witness_blocks(window, clock, capacity, &previous, witness, case)
+                    {
+                        case.values.push(value);
+                        case.seen.push(false);
+                        case.witnesses.push(slots);
+                        next.push(case);
+                    }
+                    continue;
+                }
+                let mut case = case;
+                case.witnesses.push(Vec::new());
                 if tracker.origin && config.started {
                     // Read at position 0 only.
                     let mut case = case;
@@ -962,6 +1274,8 @@ impl TimedClaim {
             resets: case.resets.clone(),
             kept: BTreeSet::new(),
             pending: BTreeSet::new(),
+            blocks: BTreeMap::new(),
+            started: BTreeSet::new(),
             discharged: BTreeSet::new(),
             now: if config.started {
                 Vec::new()
@@ -1040,6 +1354,58 @@ impl TimedClaim {
             }
             branches = next;
         }
+        // The pending blocks, oldest first.
+        for (&node, slots) in &config.blocks {
+            let (left, right, window, until, base) = self.blocked(node)?;
+            for &slot in slots {
+                let (first, last) = (base + 2 * slot, base + 2 * slot + 1);
+                let mut next = Vec::new();
+                for branch in branches {
+                    let keep = |mut branch: Branch| {
+                        branch.blocks.entry(node).or_default().push(slot);
+                        branch
+                    };
+                    if until {
+                        // Alive while its first start's window lasts; it
+                        // may be discharged where its last start's window
+                        // has begun.
+                        let mut alive = branch;
+                        alive.guard.extend(upper_ok(window, first));
+                        let mut discharge = alive.clone();
+                        discharge.guard.extend(lower_ok(window, last));
+                        push_now(&mut discharge, right);
+                        next.push(discharge);
+                        push_now(&mut alive, left);
+                        next.push(keep(alive));
+                    } else {
+                        let before = lower_fail(window, first);
+                        let mut inside = lower_ok(window, first);
+                        inside.extend(upper_ok(window, last));
+                        for (guard, holds) in before
+                            .map(|guard| (guard, false))
+                            .into_iter()
+                            .chain([(inside, true)])
+                        {
+                            let mut base = branch.clone();
+                            base.guard.extend(guard);
+                            if holds {
+                                push_now(&mut base, right);
+                            }
+                            let mut escape = base.clone();
+                            push_now(&mut escape, left);
+                            next.push(escape);
+                            next.push(keep(base));
+                        }
+                        // Past every start's window: done.
+                        let mut after = branch;
+                        after.guard.extend(lower_ok(window, first));
+                        after.guard.extend(upper_fail(window, last));
+                        next.push(after);
+                    }
+                }
+                branches = next;
+            }
+        }
         // The formulas the position must satisfy.
         let mut done = Vec::new();
         while let Some(mut branch) = branches.pop() {
@@ -1071,6 +1437,52 @@ impl TimedClaim {
                     other.now.push(*right);
                     branches.push(branch);
                     branches.push(other);
+                }
+                Some(Node::Until { left, .. } | Node::Release { left, .. })
+                    if matches!(self.shape(node), Shape::Blocks(_)) =>
+                {
+                    // A block-shaped start, once per position.
+                    if !branch.started.insert(node) {
+                        branches.push(branch);
+                        continue;
+                    }
+                    let left = *left;
+                    let (_, _, window, until, base) = self.blocked(node)?;
+                    let Shape::Blocks(capacity) = self.shape(node) else {
+                        continue;
+                    };
+                    let slots = branch.blocks.get(&node).cloned().unwrap_or_default();
+                    // A start's window misses 0, so it reads nothing now.
+                    if !until {
+                        let mut escape = branch.clone();
+                        escape.now.push(left);
+                        branches.push(escape);
+                    } else {
+                        branch.now.push(left);
+                    }
+                    let newest = slots
+                        .last()
+                        .map(|slot| (base + 2 * slot, base + 2 * slot + 1));
+                    let mut fresh = branch.clone();
+                    if let Some((first, last)) = newest {
+                        let mut join = branch;
+                        join.guard.push(if until {
+                            joins(window, first)
+                        } else {
+                            meets(window, last, true)
+                        });
+                        join.resets.insert(last);
+                        branches.push(join);
+                        if !until {
+                            fresh.guard.push(meets(window, last, false));
+                        }
+                    }
+                    if let Some(slot) = free_slot(&slots, capacity) {
+                        fresh.blocks.entry(node).or_default().push(slot);
+                        fresh.resets.insert(base + 2 * slot);
+                        fresh.resets.insert(base + 2 * slot + 1);
+                        branches.push(fresh);
+                    }
                 }
                 Some(Node::Until {
                     left,
@@ -1114,6 +1526,101 @@ impl TimedClaim {
         }
         Ok(done)
     }
+}
+
+impl TimedClaim {
+    /// A block-shaped node's operands, interval, kind (`until` or not) and
+    /// first clock.
+    fn blocked(
+        &self,
+        node: usize,
+    ) -> Result<(usize, usize, &TimedInterval, bool, usize), AutomatonError> {
+        let broken = AutomatonError::Invariant {
+            invariant: "timed-claim-block-has-interval-and-clock",
+        };
+        let base = *self.clocks.get(&node).ok_or(broken)?;
+        match self.nodes.get(node) {
+            Some(Node::Until {
+                left,
+                right,
+                window: Some(window),
+            }) => Ok((*left, *right, window, true, base)),
+            Some(Node::Release {
+                left,
+                right,
+                window: Some(window),
+            }) => Ok((*left, *right, window, false, base)),
+            _ => Err(broken),
+        }
+    }
+}
+
+/// Adds `node` to what the position must satisfy, once.
+fn push_now(branch: &mut Branch, node: usize) {
+    if !branch.now.contains(&node) {
+        branch.now.push(node);
+    }
+}
+
+/// A block-shaped tracker's cases at a position: from its blocks
+/// `previous` (none when its guard failed now), each block before its
+/// window (kept), in it (kept, the tracker holds) or past it (dropped);
+/// then a witness now joins the newest block when their windows meet, or
+/// begins a new one. Each case is the past case extended, the blocks after
+/// the position and the tracker's value.
+fn witness_blocks(
+    window: &TimedInterval,
+    base: usize,
+    capacity: usize,
+    previous: &[usize],
+    witness: bool,
+    case: PastCase,
+) -> Vec<(PastCase, Vec<usize>, bool)> {
+    let mut partial = vec![(case, Vec::new(), false)];
+    for &slot in previous {
+        let (first, last) = (base + 2 * slot, base + 2 * slot + 1);
+        let mut next = Vec::new();
+        for (case, slots, value) in partial {
+            if let Some(guard) = lower_fail(window, first) {
+                let mut before = (case.clone(), slots.clone(), value);
+                before.0.guard.extend(guard);
+                before.1.push(slot);
+                next.push(before);
+            }
+            let mut inside = (case.clone(), slots.clone(), true);
+            inside.0.guard.extend(lower_ok(window, first));
+            inside.0.guard.extend(upper_ok(window, last));
+            inside.1.push(slot);
+            next.push(inside);
+            let mut after = (case, slots, value);
+            after.0.guard.extend(lower_ok(window, first));
+            after.0.guard.extend(upper_fail(window, last));
+            next.push(after);
+        }
+        partial = next;
+    }
+    if !witness {
+        return partial;
+    }
+    let mut found = Vec::new();
+    for (case, slots, value) in partial {
+        let mut fresh = (case.clone(), slots.clone(), value);
+        if let Some(&newest) = slots.last() {
+            let last = base + 2 * newest + 1;
+            let mut join = (case, slots, value);
+            join.0.guard.push(meets(window, last, true));
+            join.0.resets.insert(last);
+            found.push(join);
+            fresh.0.guard.push(meets(window, last, false));
+        }
+        if let Some(slot) = free_slot(&fresh.1, capacity) {
+            fresh.1.push(slot);
+            fresh.0.resets.insert(base + 2 * slot);
+            fresh.0.resets.insert(base + 2 * slot + 1);
+            found.push(fresh);
+        }
+    }
+    found
 }
 
 /// Whether a conjunction of single-clock constraints has a solution.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The `ProtocolClause` family's one S2 production (FR-102, ADR-012 §15.2,
-//! §15.3 stage table row S2): `invariant`/`pre`/`post` state clauses.
+//! §15.3 stage table row S2): `invariant`/`constraint`/`pre`/`post` state clauses.
 //!
 //! This module reads the CST of one `StateClause` declaration and builds
 //! its [`StateClauseForm`]. It resolves no name and mints no identity, the
@@ -74,8 +74,9 @@ struct Collector<'a> {
     checks: &'a mut Vec<CheckForm>,
 }
 
-/// `invariant N using p on M::T at current { e }`, `pre N using p on
-/// M::T::op { e }` or `post N using p on M::T::op { e }` (FR-102 "Behavior"):
+/// `invariant N using p on M::T at current { e }`, `constraint N using p on
+/// M::T at current { e }`, `pre N using p on M::T::op { e }` or `post N using
+/// p on M::T::op { e }` (FR-102 "Behavior"):
 /// the kind is read from the leading token alone, and the body is built
 /// exactly as a function body is (`value::expression`).
 pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
@@ -84,6 +85,9 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
     let clause_items = items(cst, node);
     let kind = match clause_items.first() {
         Some(Item::Token(token)) if token.spelling() == b"invariant" => StateClauseKind::Invariant,
+        Some(Item::Token(token)) if token.spelling() == b"constraint" => {
+            StateClauseKind::Constraint
+        }
         Some(Item::Token(token)) if token.spelling() == b"pre" => StateClauseKind::Precondition,
         Some(Item::Token(token)) if token.spelling() == b"post" => StateClauseKind::Postcondition,
         Some(Item::Token(_) | Item::Node(_)) | None => return Err(unexpected(node)),
@@ -93,7 +97,7 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
         return Err(unexpected(node));
     };
     let (context, operation) = match kind {
-        StateClauseKind::Invariant => {
+        StateClauseKind::Invariant | StateClauseKind::Constraint => {
             let type_name = only(&clause_items, Production::TypeName, node)?;
             (name_form(cst, type_name)?, None)
         }

@@ -17,14 +17,15 @@
 //! 14 the criterion halves.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{Reductions, SymmetryDeclaration};
 use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
+use qsl_foundation::ReductionKind;
 use qsl_replay::{
     AppliedReduction, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome,
-    HyperReductionCause, ModelCheckLimits, ModelTraceSettlement, ReductionKind,
+    HyperReductionCause, ModelCheckLimits, ModelTraceSettlement,
 };
+use qsl_route::reductions::{Reductions, SymmetryDeclaration};
 use qsl_semantics::check::{FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, Undefined};
 

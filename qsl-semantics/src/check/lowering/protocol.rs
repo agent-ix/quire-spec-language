@@ -10,20 +10,18 @@
 //! by `quire.application-node/v1` with the declaration's qualified name `P`
 //! and the unit's source owner. Every composite subterm of that body is its
 //! own node, reached by reference (FR-464): the `over` and activation binders
-//! (`value`/`parameter`), the `run` tree's `sequence` controls (declared at
-//! `P`, `run` and the control names from the root down, FR-466) and the
+//! (`value`/`parameter`), the `run` tree's controls (declared at `P`, `run`
+//! and the control names from the root down, FR-466; see `controls`) and the
 //! `finish` obligation (declared at `P`, `finish` and its name, FR-465).
 //!
 //! What this writes is what QSL can prove IR admits. A protocol that names a
-//! construct whose node is not written yet (a role, a channel, a control
-//! other than `sequence`, a `terminal` member, a requirement, a
-//! compensation, a capture or guard that names a function) is refused with that construct named
+//! construct whose node is not written yet (a role, a channel, a `choice`,
+//! `parallel` or `repeat`, a `terminal` member, a requirement, a
+//! compensation, a capture, guard or control body that names a function) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
 //! by `quire.structural-node/v1`.
-
-use std::collections::BTreeMap;
 
 use qsl_forms::{
     ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
@@ -32,6 +30,11 @@ use qsl_forms::{
 use quire_exact::{EffectiveId, Identifier, Integer, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
+mod controls;
+
+pub(crate) use controls::AttemptNodes;
+use controls::RunInputs;
+
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
@@ -39,7 +42,7 @@ use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
 };
-use crate::check::protocol_clause::{CheckedProtocol, ProtocolNodeId};
+use crate::check::protocol_clause::CheckedProtocol;
 use crate::check::protocol_controls::{CheckedChannel, CheckedOrdering};
 use crate::check::protocol_obligation::{CaptureOwner, CheckedActivation};
 use crate::check::protocol_slots::{
@@ -99,6 +102,8 @@ pub(crate) enum ProtocolSite<'a> {
     /// The control at this path from the `run` root, the root's name first:
     /// its `declaration` occurrence.
     Control(&'a [String]),
+    /// The constraint or condition tree of the control at this path.
+    ControlBody(&'a [String]),
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of protocol `protocol`.
@@ -120,6 +125,9 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
             format!("protocol {protocol} capture {name} initializer")
         }
         ProtocolSite::Control(path) => format!("protocol {protocol} run {}", path.join(" ")),
+        ProtocolSite::ControlBody(path) => {
+            format!("protocol {protocol} run {} body", path.join(" "))
+        }
     }
 }
 
@@ -180,11 +188,11 @@ impl ProtocolInput<'_> {
         for control in &self.checked.controls.controls {
             // A `branch` and a `case` are held by the `parallel` and the
             // `choice` that is refused for them.
-            let held = matches!(
+            let refused = matches!(
                 control.kind,
-                ProtocolNodeKind::Sequence | ProtocolNodeKind::Branch | ProtocolNodeKind::Case
+                ProtocolNodeKind::Choice | ProtocolNodeKind::Parallel | ProtocolNodeKind::Repeat
             );
-            if !held && !kinds.contains(&control.kind) {
+            if refused && !kinds.contains(&control.kind) {
                 kinds.push(control.kind);
                 unemitted.push(ProtocolConstruct::Control(control.kind.label()));
             }
@@ -195,6 +203,16 @@ impl ProtocolInput<'_> {
             unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
         }
         unemitted
+    }
+
+    /// Whether the `run` tree holds an `attempt`, whose node names the
+    /// state clauses and operation anchors written after the functions.
+    fn has_attempt(&self) -> bool {
+        self.checked
+            .controls
+            .controls
+            .iter()
+            .any(|control| control.kind == ProtocolNodeKind::Attempt)
     }
 
     /// The checked body of the `finish` constraint.
@@ -277,6 +295,10 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Population(_) => false,
     }
 }
+
+/// A protocol's channel nodes and queue nodes, each set ascending by digest,
+/// and each channel's node by its name.
+type ChannelNodes = (Vec<NodeKey>, Vec<NodeKey>, Vec<(String, NodeKey)>);
 
 /// The operations of a protocol's `channel` and `queue` nodes.
 struct ChannelOperations {
@@ -400,7 +422,11 @@ impl Lowering<'_> {
         let Some(owner) = owner else {
             return Err(fault(&location, KeyFault::UncheckedProtocolFact));
         };
-        match self.protocol_node(protocol, &law, owner, &location) {
+        if protocol.has_attempt() {
+            self.set_protocol_key(index, ProtocolKey::AfterClauses);
+            return Ok(Vec::new());
+        }
+        match self.protocol_node(protocol, &law, owner, &[], &location) {
             Ok(key) => {
                 self.set_protocol_key(index, ProtocolKey::Keyed(key));
                 Ok(Vec::new())
@@ -425,6 +451,33 @@ impl Lowering<'_> {
         if let Some(slot) = self.protocol_keys.get_mut(index) {
             *slot = key;
         }
+    }
+
+    /// The nodes of the protocols that hold an `attempt`, written once the
+    /// state clauses and operation anchors they name are (`attempts[i]` is
+    /// the `i`-th protocol's). Each is refused or keyed as the rest are.
+    pub(crate) fn protocol_nodes_with_attempts(
+        &mut self,
+        protocols: &[ProtocolInput<'_>],
+        attempts: &[Vec<AttemptNodes>],
+    ) -> Result<(), CheckRefusal> {
+        for (index, protocol) in protocols.iter().enumerate() {
+            if !matches!(
+                self.protocol_keys.get(index),
+                Some(ProtocolKey::AfterClauses)
+            ) {
+                continue;
+            }
+            let location = protocol.location();
+            let law = self.law(LawRole::ProtocolProfile, &location)?;
+            let owner = self
+                .owner_model_object(protocol)
+                .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
+            let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
+            let key = self.protocol_node(protocol, &law, owner, nodes, &location)?;
+            self.protocol_keys[index] = ProtocolKey::Keyed(key);
+        }
+        Ok(())
     }
 
     /// The object type `protocol` is declared over, whose model declaration
@@ -572,6 +625,7 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
         owner: EffectiveId,
+        attempts: &[AttemptNodes],
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
@@ -608,7 +662,7 @@ impl Lowering<'_> {
         let captures = self.capture_records(protocol, &mut readable)?;
 
         let roles = self.role_nodes(protocol, &operation("role")?, &readable, boolean)?;
-        let (channels, queues) = self.channel_nodes(
+        let (channels, queues, named_channels) = self.channel_nodes(
             protocol,
             &ChannelOperations {
                 channel: operation("channel")?,
@@ -618,8 +672,19 @@ impl Lowering<'_> {
             &readable,
             boolean,
         )?;
+        let run = self.run_nodes(
+            protocol,
+            &RunInputs {
+                law,
+                roles: &roles,
+                channels: &named_channels,
+                attempts,
+                clause_binders: &readable,
+                boolean,
+            },
+        )?;
         let roles: Vec<NodeKey> = sorted(roles.into_iter().map(|(_, key)| key));
-        let finish = self.finish_node(protocol, &operation("finish")?, &readable, boolean)?;
+        let finish = self.finish_node(protocol, &operation("finish")?, &run.readable, boolean)?;
         let terminal = self.terminal_node(
             protocol,
             &operation("terminal")?,
@@ -627,7 +692,7 @@ impl Lowering<'_> {
             trigger,
             boolean,
         )?;
-        let run = self.run_nodes(protocol, &operation("sequence")?, boolean)?;
+        let run = run.root;
 
         let activation = match &trigger {
             None => GroupTerm::new(vec![member("kind", self.text_literal("origin", location)?)]),
@@ -901,8 +966,9 @@ impl Lowering<'_> {
         roles: &[(String, NodeKey)],
         readable: &[Binder],
         boolean: NodeKey,
-    ) -> Result<(Vec<NodeKey>, Vec<NodeKey>), CheckRefusal> {
+    ) -> Result<ChannelNodes, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
+        let mut named = Vec::with_capacity(protocol.checked.channels.len());
         let mut channels = Vec::with_capacity(protocol.checked.channels.len());
         let mut queues = Vec::with_capacity(protocol.checked.channels.len());
         for channel in &protocol.checked.channels {
@@ -944,9 +1010,10 @@ impl Lowering<'_> {
                 ),
             )?;
             channels.push(key);
+            named.push((channel.name.clone(), key));
             queues.push(self.queue_node(operations, channel, key, boolean, &location)?);
         }
-        Ok((sorted(channels), sorted(queues)))
+        Ok((sorted(channels), sorted(queues), named))
     }
 
     /// The `ordering` Group of `channel`: `unordered`, or `fifo` with the
@@ -1172,58 +1239,6 @@ impl Lowering<'_> {
         .map(Some)
     }
 
-    /// The `sequence` control nodes of `protocol`'s `run` tree (FR-466
-    /// "sequence"), each declared at `P`, `run` and the names from the root
-    /// down, and the root's key. A control is keyed after its children, so
-    /// the tree, which is in tree order, is read backwards.
-    fn run_nodes(
-        &mut self,
-        protocol: &ProtocolInput<'_>,
-        operation: &Operation,
-        boolean: NodeKey,
-    ) -> Result<NodeKey, CheckRefusal> {
-        let name = protocol.form.name.name.as_str();
-        let tree = &protocol.checked.controls;
-        let mut keys: BTreeMap<ProtocolNodeId, NodeKey> = BTreeMap::new();
-        for control in tree.controls.iter().rev() {
-            let location = protocol_location(name, ProtocolSite::Control(&control.path));
-            let unchecked = || fault(&location, KeyFault::UncheckedProtocolFact);
-            if control.kind != ProtocolNodeKind::Sequence {
-                return Err(unchecked());
-            }
-            let children = control
-                .children
-                .iter()
-                .map(|child| keys.get(child).copied().ok_or_else(unchecked))
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut declaration = vec![identifier(name, &location)?, identifier("run", &location)?];
-            for segment in &control.path {
-                declaration.push(identifier(segment, &location)?);
-            }
-            let key = self.protocol_member(
-                &location,
-                "control",
-                boolean,
-                declaration,
-                None,
-                BodyTerm::application(
-                    Operator::ProtocolControl,
-                    operation.clone(),
-                    boolean,
-                    vec![MemberTerm::binding(
-                        "children",
-                        BindingValue::Group(GroupTerm::references(children)),
-                    )],
-                ),
-            )?;
-            keys.insert(control.node, key);
-        }
-        tree.root()
-            .and_then(|root| keys.get(&root.node))
-            .copied()
-            .ok_or_else(|| fault(&protocol.location(), KeyFault::UncheckedProtocolFact))
-    }
-
     /// The carrier of a reference to the `protocol`-th declaration: a
     /// `reference` leaf to its node, typed as that node is, with one
     /// `expression` occurrence at the reference.
@@ -1267,6 +1282,10 @@ impl Lowering<'_> {
                     loci: vec![location.clone()],
                 },
             )),
+            Some(ProtocolKey::AfterClauses) => Err(not_emitted(
+                ProtocolConstruct::ReferenceToAttemptProtocol,
+                location,
+            )),
             Some(ProtocolKey::Unselected) | None => Err(refuse(
                 location,
                 CheckCause::MissingSelection {
@@ -1287,6 +1306,9 @@ pub(super) enum ProtocolKey {
     /// Its node is not keyed yet, or its lowering was refused and the
     /// refusal is reported.
     Unkeyed,
+    /// The protocol holds an `attempt`: its node is written once the state
+    /// clauses it lists are ([`Lowering::protocol_nodes_with_attempts`]).
+    AfterClauses,
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),

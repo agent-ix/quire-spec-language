@@ -3777,6 +3777,7 @@ fn state_clause_kind(node: &qsl_semantics::check::SemanticNode) -> &'static str 
     match operation.member() {
         Some(qsl_semantics::value::Member::StateClause { clause, .. }) => match clause {
             qsl_forms::StateClauseKind::Invariant => "invariant",
+            qsl_forms::StateClauseKind::Constraint => "constraint",
             qsl_forms::StateClauseKind::Precondition => "precondition",
             qsl_forms::StateClauseKind::Postcondition => "postcondition",
         },

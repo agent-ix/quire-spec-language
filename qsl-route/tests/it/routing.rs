@@ -39,6 +39,7 @@ fn admit(
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
 }
@@ -70,6 +71,7 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
     .expect("the manifest labels are valid");
@@ -83,6 +85,7 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
     .expect("the same manifest is valid for a process provider");
@@ -190,6 +193,7 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
     .expect_err("an absent mode is never defaulted");
@@ -359,6 +363,7 @@ fn admit_domains(
             fairness_kinds: None,
             evidence_kinds: None,
             memory_models: None,
+            reductions: None,
         },
     )
 }
