@@ -339,16 +339,16 @@ impl Point {
     fn bind(&self) -> Result<ir::ExecutionPoint, ir::Diagnostic> {
         Ok(match self {
             Self::Initialization { name } => ir::ExecutionPoint::Initialization {
-                name: ir::AnchorName::new(name)?,
+                name: ir::AnchorName::new(name)?.into(),
             },
             Self::Handler { name } => ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new(name)?,
+                name: ir::AnchorName::new(name)?.into(),
             },
             Self::Pre { operation } => ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new(operation)?,
+                operation: ir::AnchorName::new(operation)?.into(),
             },
             Self::Post { operation } => ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new(operation)?,
+                operation: ir::AnchorName::new(operation)?.into(),
             },
         })
     }

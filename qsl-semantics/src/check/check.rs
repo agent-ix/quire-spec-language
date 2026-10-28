@@ -435,6 +435,9 @@ pub struct PackageDeclarations {
     /// name resolved by the FR-091 assembler. Clauses and functions share
     /// one selection namespace (FR-109).
     pub state_clauses: Vec<super::state_clause::StateClauseDeclaration>,
+    /// Exact keys supplied with the accepted execution-point map. S3 checks
+    /// them after the existing shared clause/function ambiguity pass.
+    pub execution_point_keys: std::collections::BTreeSet<String>,
     /// FR-112: the unit's protocol declarations in declaration order, each
     /// carrying its own scoped anchors and declaration collection for
     /// FR-113's checker to resolve.
@@ -655,6 +658,7 @@ impl PackageDeclarations {
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),
             state_clauses: Vec::new(),
+            execution_point_keys: std::collections::BTreeSet::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),

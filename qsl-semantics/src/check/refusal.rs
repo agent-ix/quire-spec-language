@@ -788,18 +788,23 @@ pub enum ProtocolConstruct {
     /// A control of the `run` tree other than a `sequence`, by its keyword
     /// (FR-466): QSL-1126.
     Control(&'static str),
-    /// A protocol `capture` whose initializer calls a function or refers to
-    /// a protocol: the clause is written before the functions are, so the
-    /// initializer cannot name them yet. QSL-1121g.
-    CaptureReadsDeclaration,
-    /// An `activation on each` guard that calls a function or refers to a
-    /// protocol: the clause is written before the functions are, so the
-    /// guard cannot name them yet. QSL-1121g.
-    ActivationGuardReadsDeclaration,
-    /// A `terminal when` condition that calls a function or refers to a
-    /// protocol: the node is written before the functions are, so the
-    /// condition cannot name them yet. QSL-1121g.
-    TerminalReadsDeclaration,
+    /// A protocol that belongs to a cyclic component of function calls and
+    /// protocol references (a body that calls a function that reads the
+    /// protocol back, or a protocol that refers to itself). QSpec FR-383
+    /// "Cyclic reference components" writes such a component with one
+    /// recursion group; that emission is QSL-844.
+    ReferenceCycle,
+    /// A `protocol` reference written directly in a protocol's own body (a
+    /// `check`/`send` constraint, an `each` guard, a `terminal when`
+    /// condition, a capture initializer or a `finish` constraint). QSpec
+    /// FR-464 "Binder scope" finds an expression's reads over its dependency
+    /// closure, which stops at a `function` node but not at a
+    /// `protocol_reference`, so the closure runs through the referenced
+    /// clause to its `finish` binder and IR's reader refuses the body
+    /// (`BinderScope`, `ModelStateRead`). QSL cannot prove the package
+    /// admitted until QSpec says whether the closure stops at the carrier;
+    /// a call to a function that reads the protocol is admitted. QSL-1121g.
+    ProtocolReferenceInBody,
     /// A `terminal when` condition that reads `over` under `activation on
     /// each`. QSpec FR-464 stage `terminal` and vector TC-947 TM11 admit it,
     /// but IR's reader (`protocol_body.rs` `check_finish_terminal`, at
@@ -823,10 +828,10 @@ pub enum ProtocolConstruct {
     /// it but the reader refuses the key (`ill_typed`/`operator-ineligible`):
     /// QSL-1142.
     ChannelKeyNotEqualityStable,
-    /// A `finish` constraint that calls a function or refers to a protocol:
-    /// the node is written before the functions are, so the constraint
-    /// cannot name them yet. QSL-1121g.
-    FinishReadsDeclaration,
+    /// A reference, from a function or a clause, to a protocol that holds an
+    /// `attempt`: that protocol's node is written after the state clauses
+    /// its attempts list, which are written after the functions. QSL-1121g.
+    ReferenceToAttemptProtocol,
     /// A clause whose `over` input is not a reference to an object type of a
     /// selected model: there is no exact local model declaration node to
     /// name as the clause's `owner_model`
@@ -843,10 +848,8 @@ impl ProtocolConstruct {
             Self::TerminalReadsOverUnderEach => "IR-1069",
             Self::Control(_) => "QSL-1126",
             Self::Requirements | Self::Compensations => "QSL-1127",
-            Self::FinishReadsDeclaration
-            | Self::TerminalReadsDeclaration
-            | Self::CaptureReadsDeclaration
-            | Self::ActivationGuardReadsDeclaration => "QSL-1121g",
+            Self::ReferenceCycle => "QSL-844",
+            Self::ReferenceToAttemptProtocol | Self::ProtocolReferenceInBody => "QSL-1121g",
             Self::ChannelCarriesBounded => "QSL-1137",
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
@@ -2429,6 +2432,9 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name` for an unqualified source name.
     MissingName(String),
+    /// An accepted execution point is inapplicable to its authored state
+    /// clause or names a different operation member (FR-104-AC-15).
+    ExecutionPointBinding(ExecutionPointRefusal),
     /// `invalid_timed_model` / `clock-read-outside-constraint`: a call of the
     /// named clock-reading declaration outside an operation precondition, a
     /// time invariant body or another clock-reading declaration (FR-230
@@ -2988,6 +2994,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Code::MissingDeclaration,
+            Self::ExecutionPointBinding(_) => Code::InvalidModelBinding,
             Self::ClockReadingCall(_) => Code::InvalidTimedModel,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
@@ -3063,6 +3070,7 @@ impl CheckCause {
             | Self::MissingQualifiedName(_)
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Some("missing-name"),
+            Self::ExecutionPointBinding(_) => Some("malformed-declaration"),
             Self::ClockReadingCall(_) => Some("clock-read-outside-constraint"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")

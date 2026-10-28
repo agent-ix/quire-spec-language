@@ -148,6 +148,15 @@ pub enum ZoneError {
     /// A reset of the reference clock, which is fixed at 0.
     #[error("the reference clock cannot be reset")]
     ResetReferenceClock,
+    /// A carry or reset assignment to the reference clock.
+    #[error("the reference clock cannot be reassigned")]
+    ReassignReferenceClock,
+    /// A clock is assigned more than once by one simultaneous update.
+    #[error("clock {clock} is assigned more than once")]
+    DuplicateAssignment {
+        /// The clock assigned more than once.
+        clock: usize,
+    },
     /// Two zones of different dimensions were compared.
     #[error("zones of dimension {left} and {right} cannot be compared")]
     DimensionMismatch {
@@ -420,6 +429,149 @@ impl<W: Exact> Zone<W> {
             self.cells[k * dim + clock] = plus(self.cell(k, 0), &from);
         }
         Ok(())
+    }
+
+    /// Apply simultaneous carried-clock copies and constant resets.
+    /// `carries` contains `(target, source)` zone clock indices; `resets`
+    /// contains `(target, value)` pairs. Unassigned clocks retain their
+    /// value. All sources are read from the pre-update zone.
+    pub fn assign_clocks(
+        &mut self,
+        carries: &[(usize, usize)],
+        resets: &[(usize, W)],
+    ) -> Result<(), ZoneError> {
+        #[derive(Clone)]
+        enum Value<W> {
+            Clock(usize),
+            Constant(W),
+        }
+
+        let mut values: Vec<Value<W>> = (0..self.dim).map(Value::Clock).collect();
+        let mut assigned = vec![false; self.dim];
+        for &(target, source) in carries {
+            self.check_clock(target)?;
+            self.check_clock(source)?;
+            if target == 0 {
+                return Err(ZoneError::ReassignReferenceClock);
+            }
+            if assigned[target] {
+                return Err(ZoneError::DuplicateAssignment { clock: target });
+            }
+            assigned[target] = true;
+            values[target] = Value::Clock(source);
+        }
+        for (target, value) in resets {
+            self.check_clock(*target)?;
+            if *target == 0 {
+                return Err(ZoneError::ReassignReferenceClock);
+            }
+            if assigned[*target] {
+                return Err(ZoneError::DuplicateAssignment { clock: *target });
+            }
+            assigned[*target] = true;
+            values[*target] = Value::Constant(value.clone());
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        let before = self.clone();
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                let bound = match (&values[i], &values[j]) {
+                    (Value::Clock(a), Value::Clock(b)) => before.cell(*a, *b).clone(),
+                    (Value::Clock(a), Value::Constant(b)) => {
+                        plus(before.cell(*a, 0), &Some(non_strict(&b.negated())))
+                    }
+                    (Value::Constant(a), Value::Clock(b)) => {
+                        plus(&Some(non_strict(a)), before.cell(0, *b))
+                    }
+                    (Value::Constant(a), Value::Constant(b)) => Some(non_strict(&a.minus(b))),
+                };
+                self.cells[i * self.dim + j] = bound;
+            }
+        }
+        self.close();
+        Ok(())
+    }
+
+    /// The preimage of this zone under simultaneous carried-clock copies and
+    /// constant resets. Assignment sources are read from the pre-state;
+    /// unassigned clocks retain their value.
+    pub fn preimage_clocks(
+        &self,
+        carries: &[(usize, usize)],
+        resets: &[(usize, W)],
+    ) -> Result<Self, ZoneError> {
+        #[derive(Clone)]
+        enum Value<W> {
+            Clock(usize),
+            Constant(W),
+        }
+
+        let mut values: Vec<Value<W>> = (0..self.dim).map(Value::Clock).collect();
+        let mut assigned = vec![false; self.dim];
+        for &(target, source) in carries {
+            self.check_clock(target)?;
+            self.check_clock(source)?;
+            if target == 0 {
+                return Err(ZoneError::ReassignReferenceClock);
+            }
+            if assigned[target] {
+                return Err(ZoneError::DuplicateAssignment { clock: target });
+            }
+            assigned[target] = true;
+            values[target] = Value::Clock(source);
+        }
+        for (target, value) in resets {
+            self.check_clock(*target)?;
+            if *target == 0 {
+                return Err(ZoneError::ReassignReferenceClock);
+            }
+            if assigned[*target] {
+                return Err(ZoneError::DuplicateAssignment { clock: *target });
+            }
+            assigned[*target] = true;
+            values[*target] = Value::Constant(value.clone());
+        }
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+
+        let mut preimage = Self::universe(self.dim);
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                let Some((bound, strict_bound)) = self.bound(i, j)? else {
+                    continue;
+                };
+                match (&values[i], &values[j]) {
+                    (Value::Clock(a), Value::Clock(b)) => {
+                        preimage.constrain(*a, *b, &bound, strict_bound)?;
+                    }
+                    (Value::Clock(a), Value::Constant(b)) => {
+                        let shifted = bound.plus(b);
+                        preimage.constrain(*a, 0, &shifted, strict_bound)?;
+                    }
+                    (Value::Constant(a), Value::Clock(b)) => {
+                        let shifted = bound.minus(a);
+                        preimage.constrain(0, *b, &shifted, strict_bound)?;
+                    }
+                    (Value::Constant(a), Value::Constant(b)) => {
+                        let actual = a.minus(b);
+                        let satisfies = if strict_bound {
+                            actual < bound
+                        } else {
+                            actual <= bound
+                        };
+                        if !satisfies {
+                            preimage.make_empty();
+                            return Ok(preimage);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(preimage)
     }
 
     /// Free `clock` in a canonical zone: every constraint on it is dropped

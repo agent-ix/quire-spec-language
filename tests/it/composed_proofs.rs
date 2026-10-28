@@ -34,7 +34,7 @@ fn owner() -> ir::RequirementRef {
 
 fn handler() -> ir::ExecutionPoint {
     ir::ExecutionPoint::Handler {
-        name: ir::AnchorName::new("validate").unwrap(),
+        name: ir::AnchorName::new("validate").unwrap().into(),
     }
 }
 
@@ -383,7 +383,7 @@ fn invocation_pre_captures_keep_their_read_origin_and_cannot_guard_post_reads() 
             &formal[0],
             &["Captured", "WrongObservation", "Retagged", "Composite"],
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
         )];
         let report = proofs::discharge(types, &bindings, ProofLimits::default());
@@ -432,10 +432,10 @@ fn invocation_pre_captures_keep_their_read_origin_and_cannot_guard_post_reads() 
             .any(|cause| matches!(cause.kind, CauseKind::UpstreamType)));
         for wrong in [
             ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
+                operation: ir::AnchorName::new("step").unwrap().into(),
             },
             ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("other_operation").unwrap(),
+                operation: ir::AnchorName::new("other_operation").unwrap().into(),
             },
         ] {
             let mut offered = bindings.clone();
@@ -493,7 +493,7 @@ fn correspondence_refusals_preserve_types_and_an_independent_source() {
                 4 => offered[0].clauses.push(original[0].clauses[0].clone()),
                 5 => {
                     offered[0].clauses[0].execution_point = ir::ExecutionPoint::Pre {
-                        operation: ir::AnchorName::new("step").unwrap(),
+                        operation: ir::AnchorName::new("step").unwrap().into(),
                     }
                 }
                 6 => {
