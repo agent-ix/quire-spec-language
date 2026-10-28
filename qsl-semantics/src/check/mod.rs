@@ -6073,6 +6073,24 @@ fn register_protocol_sites(
             );
         }
     }
+    for member in &protocol.members {
+        match member {
+            qsl_forms::ProtocolMemberForm::Terminal(qsl_forms::TerminalForm::Any { span }) => {
+                type_spans.insert(protocol_site(name, ProtocolSite::Terminal), *span);
+            }
+            qsl_forms::ProtocolMemberForm::Terminal(qsl_forms::TerminalForm::When {
+                predicate,
+                span,
+            }) => {
+                type_spans.insert(protocol_site(name, ProtocolSite::Terminal), *span);
+                site_spans.insert(
+                    protocol_site(name, ProtocolSite::TerminalBody),
+                    predicate.spans.clone(),
+                );
+            }
+            qsl_forms::ProtocolMemberForm::Scheduling(_) => {}
+        }
+    }
     let Some((finish, finish_name)) = &checked.finish else {
         return;
     };
