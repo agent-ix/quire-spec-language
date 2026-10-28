@@ -543,10 +543,6 @@ pub enum ZoneCertificateRefusal<O> {
     TimedSubject(Box<TimedSubjectRefusal>),
     /// The item is not one this checker reads yet (see the module).
     UnsupportedItem,
-    /// A step of the model writes a clock collection whole (FR-230
-    /// "Collection-valued writes"), and the checker's zones map no carried
-    /// clock between places yet.
-    CarriedClocks,
     /// The clause's instances are not finite.
     Unbounded,
     /// A reading the check needs has no value: a guard, invariant, urgency,
@@ -563,7 +559,7 @@ impl<O> ZoneCertificateRefusal<O> {
             Self::ObligationMismatch { .. } | Self::IdentityMismatch { .. } => {
                 Code::StaleDependency
             }
-            Self::UnsupportedItem | Self::CarriedClocks => Code::UnsupportedConstruct,
+            Self::UnsupportedItem => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
                 Code::InvalidRuntimeInput
@@ -674,9 +670,6 @@ pub fn check_zone_certificate<O: Clone + Eq>(
         .map_err(|failure| ZoneCertificateRefusal::Admission(Box::new(failure)))?;
     let timed = TimedSystem::with_max_clocks(&system, request.model, request.max_clocks)
         .map_err(|refusal| ZoneCertificateRefusal::TimedSubject(Box::new(refusal)))?;
-    if timed.carries_clocks() {
-        return Err(ZoneCertificateRefusal::CarriedClocks);
-    }
     let mut live = None;
     let (claim, window) = match request.item {
         CertifiedItem::Clause { clause, letters } => {
@@ -1119,6 +1112,35 @@ impl<O> Checker<'_, '_, O> {
         }
     }
 
+    fn apply_clock_updates(&self, zone: &mut Zone, step: &GuardedStep) -> Step<(), O> {
+        let carries: Vec<_> = step
+            .carries()
+            .iter()
+            .map(|(target, source)| (target + 1, source + 1))
+            .collect();
+        let resets: Vec<_> = step
+            .resets()
+            .iter()
+            .map(|(place, value)| Ok((place + 1, self.scaled(value)?)))
+            .collect::<Step<_, O>>()?;
+        zone.assign_clocks(&carries, &resets)?;
+        Ok(())
+    }
+
+    fn preimage_clock_updates(&self, zone: &Zone, step: &GuardedStep) -> Step<Zone, O> {
+        let carries: Vec<_> = step
+            .carries()
+            .iter()
+            .map(|(target, source)| (target + 1, source + 1))
+            .collect();
+        let resets: Vec<_> = step
+            .resets()
+            .iter()
+            .map(|(place, value)| Ok((place + 1, self.scaled(value)?)))
+            .collect::<Step<_, O>>()?;
+        Ok(zone.preimage_clocks(&carries, &resets)?)
+    }
+
     fn constrain(&self, zone: &mut Zone, constraints: &[PlaceConstraint]) -> Step<(), O> {
         for constraint in constraints {
             let clock = constraint.place() + 1;
@@ -1410,9 +1432,7 @@ impl<O> Checker<'_, '_, O> {
                     if next.is_empty() {
                         continue;
                     }
-                    for (place, value) in step.resets() {
-                        next.reset(place + 1, &self.scaled(value)?)?;
-                    }
+                    self.apply_clock_updates(&mut next, &step)?;
                     self.constrain(&mut next, &target)?;
                     if next.is_empty() {
                         continue;
@@ -1608,27 +1628,40 @@ impl<O> Checker<'_, '_, O> {
         let mut enabling = Vec::new();
         for step in self.timed.guarded_steps(state).or_else(undecided)? {
             let target = self.invariants(step.post())?;
-            // A reset clock's bound is constant over delays; a false one
-            // disables the step.
-            let reset_breaks = target.iter().any(|bound| {
-                step.resets()
+            // Pull post-state invariants through the simultaneous carries
+            // and resets to the pre-state valuations that enable this step.
+            let mut pulled_back = Vec::with_capacity(target.len());
+            let mut impossible = false;
+            for bound in target {
+                if let Some((_, value)) = step
+                    .resets()
                     .iter()
-                    .rev()
                     .find(|(place, _)| *place == bound.place())
-                    .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
-            });
-            if reset_breaks {
+                {
+                    if !bound.op().holds(value, bound.bound()) {
+                        impossible = true;
+                        break;
+                    }
+                    continue;
+                }
+                let place = step
+                    .carries()
+                    .iter()
+                    .find(|(target, _)| *target == bound.place())
+                    .map_or(bound.place(), |(_, source)| *source);
+                pulled_back.push(PlaceConstraint::new(
+                    place,
+                    bound.op(),
+                    bound.bound().clone(),
+                ));
+            }
+            if impossible {
                 continue;
             }
-            let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
-            let unreset: Vec<PlaceConstraint> = target
-                .into_iter()
-                .filter(|bound| !reset.contains(&bound.place()))
-                .collect();
             for part in step.parts() {
                 let mut zone = Zone::universe(self.dim());
                 self.constrain(&mut zone, part)?;
-                self.constrain(&mut zone, &unreset)?;
+                self.constrain(&mut zone, &pulled_back)?;
                 if !zone.is_empty() {
                     zone.down();
                     enabling.push(zone);
@@ -1766,7 +1799,7 @@ impl<O> Checker<'_, '_, O> {
 
     /// Whether no time diverges inside the strongly connected `members`
     /// with the `edges` among them. Under a dense source: every member is
-    /// urgent, or some clock that none of `edges` resets is bounded above
+    /// urgent, or some clock that none of `edges` assigns is bounded above
     /// by the time invariants of every member's own state, which every
     /// real valuation there satisfies. Under a tick source: none of
     /// `edges` ticks.
@@ -1807,6 +1840,11 @@ impl<O> Checker<'_, '_, O> {
         for &index in edges {
             if let Some(step) = &self.covered(index)?.step {
                 reset.extend(step.resets().iter().map(|(place, _)| *place));
+                reset.extend(
+                    step.carries()
+                        .iter()
+                        .filter_map(|(target, source)| (target != source).then_some(*target)),
+                );
             }
         }
         Ok(bounded.is_some_and(|bounded| bounded.iter().any(|place| !reset.contains(place))))
@@ -1905,9 +1943,7 @@ impl<O> Checker<'_, '_, O> {
                         .and_then(|part| step.parts().get(part))
                         .ok_or(fault(CheckerFault::EdgeWithoutSuccessor))?;
                     self.constrain(&mut next, part)?;
-                    for (place, value) in step.resets() {
-                        next.reset(place + 1, &self.scaled(value)?)?;
-                    }
+                    self.apply_clock_updates(&mut next, step)?;
                     self.constrain(&mut next, &self.invariants(post)?)?;
                 }
                 (None, Some(SilentMove::Wait)) => {
@@ -1936,9 +1972,7 @@ impl<O> Checker<'_, '_, O> {
                     .and_then(|part| step.parts().get(part))
                     .ok_or(fault(CheckerFault::EdgeWithoutSuccessor))?;
                 self.constrain(&mut next, part)?;
-                for (place, value) in step.resets() {
-                    next.reset(place + 1, &self.scaled(value)?)?;
-                }
+                self.apply_clock_updates(&mut next, step)?;
                 self.constrain(&mut next, &self.invariants(step.post())?)?;
                 step.post()
             }
@@ -2000,12 +2034,7 @@ impl<O> Checker<'_, '_, O> {
             zone.free(self.horizon_clock())?;
         }
         if let Some(step) = &successor.step {
-            for (place, value) in step.resets().iter().rev() {
-                let value = self.scaled(value)?;
-                zone.constrain(place + 1, 0, &value, false)?;
-                zone.constrain(0, place + 1, &value.neg(), false)?;
-                zone.free(place + 1)?;
-            }
+            zone = self.preimage_clock_updates(&zone, step)?;
             let part = successor
                 .part
                 .and_then(|part| step.parts().get(part))

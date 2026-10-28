@@ -71,6 +71,34 @@ impl Bound {
     }
 }
 
+/// Shift a finite DBM bound by a constant without changing its strictness.
+fn shift(bound: &Bound, amount: &BigInt) -> Bound {
+    match bound {
+        Bound::Finite { value, strict } => Bound::Finite {
+            value: value + amount,
+            strict: *strict,
+        },
+        Bound::Infinite => Bound::Infinite,
+    }
+}
+
+/// Whether the finite value satisfies a DBM bound.
+fn contains(value: &BigInt, bound: &Bound) -> bool {
+    match bound {
+        Bound::Finite {
+            value: upper,
+            strict,
+        } => {
+            if *strict {
+                value < upper
+            } else {
+                value <= upper
+            }
+        }
+        Bound::Infinite => true,
+    }
+}
+
 impl Ord for Bound {
     /// Tighter is smaller: `(c, <)` before `(c, <=)`, `∞` last.
     fn cmp(&self, other: &Self) -> Ordering {
@@ -119,6 +147,15 @@ pub enum DbmError {
         first: usize,
         /// The higher.
         second: usize,
+    },
+    /// A carry or reset assignment to the reference clock.
+    #[error("the reference clock cannot be reassigned")]
+    ReassignReferenceClock,
+    /// A clock is assigned more than once by one simultaneous update.
+    #[error("clock {clock} is assigned more than once")]
+    DuplicateAssignment {
+        /// The clock assigned more than once.
+        clock: usize,
     },
     /// Two matrices of different dimensions were compared.
     #[error("DBMs of dimension {left} and {right} cannot be compared")]
@@ -299,6 +336,140 @@ impl Dbm {
             self.set(k, clock, self.at(k, 0).sum(&from));
         }
         Ok(())
+    }
+
+    /// Apply simultaneous carried-clock copies and constant resets.
+    /// `carries` contains `(target, source)` DBM clock indices; `resets`
+    /// contains `(target, value)` pairs. Unassigned clocks retain their
+    /// value. All sources are read from the pre-update zone.
+    pub fn assign_clocks(
+        &mut self,
+        carries: &[(usize, usize)],
+        resets: &[(usize, BigInt)],
+    ) -> Result<(), DbmError> {
+        #[derive(Clone)]
+        enum Value {
+            Clock(usize),
+            Constant(BigInt),
+        }
+
+        let mut values: Vec<Value> = (0..self.dim).map(Value::Clock).collect();
+        let mut assigned = vec![false; self.dim];
+        for &(target, source) in carries {
+            self.in_range(target)?;
+            self.in_range(source)?;
+            if target == 0 {
+                return Err(DbmError::ReassignReferenceClock);
+            }
+            if assigned[target] {
+                return Err(DbmError::DuplicateAssignment { clock: target });
+            }
+            assigned[target] = true;
+            values[target] = Value::Clock(source);
+        }
+        for (target, value) in resets {
+            self.in_range(*target)?;
+            if *target == 0 {
+                return Err(DbmError::ReassignReferenceClock);
+            }
+            if assigned[*target] {
+                return Err(DbmError::DuplicateAssignment { clock: *target });
+            }
+            assigned[*target] = true;
+            values[*target] = Value::Constant(value.clone());
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        let before = self.clone();
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                let bound = match (&values[i], &values[j]) {
+                    (Value::Clock(a), Value::Clock(b)) => before.at(*a, *b).clone(),
+                    (Value::Clock(a), Value::Constant(b)) => before.at(*a, 0).sum(&Bound::le(-b)),
+                    (Value::Constant(a), Value::Clock(b)) => {
+                        Bound::le(a.clone()).sum(before.at(0, *b))
+                    }
+                    (Value::Constant(a), Value::Constant(b)) => Bound::le(a - b),
+                };
+                self.set(i, j, bound);
+            }
+        }
+        self.close();
+        Ok(())
+    }
+
+    /// The preimage of this zone under simultaneous carried-clock copies and
+    /// constant resets. Assignment sources are read from the pre-state;
+    /// unassigned clocks retain their value.
+    pub fn preimage_clocks(
+        &self,
+        carries: &[(usize, usize)],
+        resets: &[(usize, BigInt)],
+    ) -> Result<Self, DbmError> {
+        #[derive(Clone)]
+        enum Value {
+            Clock(usize),
+            Constant(BigInt),
+        }
+
+        let mut values: Vec<Value> = (0..self.dim).map(Value::Clock).collect();
+        let mut assigned = vec![false; self.dim];
+        for &(target, source) in carries {
+            self.in_range(target)?;
+            self.in_range(source)?;
+            if target == 0 {
+                return Err(DbmError::ReassignReferenceClock);
+            }
+            if assigned[target] {
+                return Err(DbmError::DuplicateAssignment { clock: target });
+            }
+            assigned[target] = true;
+            values[target] = Value::Clock(source);
+        }
+        for (target, value) in resets {
+            self.in_range(*target)?;
+            if *target == 0 {
+                return Err(DbmError::ReassignReferenceClock);
+            }
+            if assigned[*target] {
+                return Err(DbmError::DuplicateAssignment { clock: *target });
+            }
+            assigned[*target] = true;
+            values[*target] = Value::Constant(value.clone());
+        }
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+
+        let mut preimage = Self::universe(self.dim);
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                let bound = self.at(i, j);
+                if matches!(bound, Bound::Infinite) {
+                    continue;
+                }
+                match (&values[i], &values[j]) {
+                    (Value::Clock(a), Value::Clock(b)) => {
+                        preimage.constrain(*a, *b, bound.clone())?;
+                    }
+                    (Value::Clock(a), Value::Constant(b)) => {
+                        preimage.constrain(*a, 0, shift(bound, b))?;
+                    }
+                    (Value::Constant(a), Value::Clock(b)) => {
+                        preimage.constrain(0, *b, shift(bound, &-a))?;
+                    }
+                    (Value::Constant(a), Value::Constant(b)) => {
+                        if !contains(&(a - b), bound) {
+                            preimage.set_empty();
+                            return Ok(preimage);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(preimage)
     }
 
     /// Let time elapse: every clock's upper bound against the reference

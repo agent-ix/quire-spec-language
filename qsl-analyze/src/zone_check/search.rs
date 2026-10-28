@@ -357,10 +357,9 @@ pub enum ZoneCheckRefusal {
     /// The clause's negation automaton could not be built (FR-240).
     #[error("the clause's automaton could not be built: {0}")]
     Automaton(AutomatonError),
-    /// A step of the model writes a clock collection whole, so a clock may
-    /// move between slots (FR-230 "Collection-valued writes"), and EN-6's
-    /// zones map no carried clock between places yet.
-    #[error("the model writes a clock collection whole, whose carried clocks EN-6 does not map")]
+    /// The refinement checker has not mapped clock places moved by a
+    /// collection-valued write yet.
+    #[error("the refinement checker does not map carried clock places")]
     CarriedClocks,
     /// A symmetry declaration does not admit (FR-151).
     #[error(transparent)]
@@ -445,9 +444,6 @@ pub fn check_timed_model<S: Clone>(
     };
     if !matches {
         return Err(ZoneCheckRefusal::ObligationMismatch);
-    }
-    if request.subject.carries_clocks() {
-        return Err(ZoneCheckRefusal::CarriedClocks);
     }
     // QSpec FR-430: EN-6 applies symmetry and no other reduction, so a
     // request selecting partial-order reduction or a state constraint
@@ -1035,9 +1031,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 if next.is_empty() {
                     continue;
                 }
-                for (place, value) in step.resets() {
-                    next.reset(place + 1, &scaled(value, factor))?;
-                }
+                apply_step_clocks(&mut next, step, factor)?;
                 constrain_at(&mut next, &target, factor)?;
                 if next.is_empty() {
                     continue;
@@ -1728,25 +1722,33 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
         step: &GuardedStep,
     ) -> Result<Vec<Vec<PlaceConstraint>>, Halt> {
         let target = self.timed(self.timed.invariants(step.post()))?;
-        let reset_breaks = target.iter().any(|bound| {
-            step.resets()
+        let mut pulled_back = Vec::with_capacity(target.len());
+        for bound in target {
+            if let Some((_, value)) = step
+                .resets()
                 .iter()
-                .rev()
                 .find(|(place, _)| *place == bound.place())
-                .is_some_and(|(_, value)| !bound.op().holds(value, bound.bound()))
-        });
-        if reset_breaks {
-            return Ok(Vec::new());
+            {
+                if !bound.op().holds(value, bound.bound()) {
+                    return Ok(Vec::new());
+                }
+                continue;
+            }
+            let place = step
+                .carries()
+                .iter()
+                .find(|(target, _)| *target == bound.place())
+                .map_or(bound.place(), |(_, source)| *source);
+            pulled_back.push(PlaceConstraint::new(
+                place,
+                bound.op(),
+                bound.bound().clone(),
+            ));
         }
-        let reset: Vec<usize> = step.resets().iter().map(|(place, _)| *place).collect();
-        let unreset: Vec<PlaceConstraint> = target
-            .into_iter()
-            .filter(|bound| !reset.contains(&bound.place()))
-            .collect();
         Ok(step
             .parts()
             .iter()
-            .map(|part| part.iter().chain(&unreset).cloned().collect())
+            .map(|part| part.iter().chain(&pulled_back).cloned().collect())
             .collect())
     }
 
@@ -1782,9 +1784,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                         .get(part)
                         .ok_or(ZoneCheckRefusal::Fault("edge-part"))?,
                 )?;
-                for (place, value) in step.resets() {
-                    zone.reset(place + 1, &self.scaled(value))?;
-                }
+                apply_step_clocks(&mut zone, step, &self.scale)?;
                 zone
             }
             Some(_) => return Err(ZoneCheckRefusal::Fault("entry-parent").into()),
@@ -1810,12 +1810,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 .ok_or(ZoneCheckRefusal::Fault("path-part"))?;
             let target = self.timed(self.timed.invariants(step.post()))?;
             self.constrain(&mut region, &target)?;
-            for (place, value) in step.resets().iter().rev() {
-                let value = self.scaled(value);
-                region.constrain(place + 1, 0, Bound::le(value.clone()))?;
-                region.constrain(0, place + 1, Bound::le(-value))?;
-                region.free(place + 1)?;
-            }
+            region = preimage_step_clocks(&region, step, &self.scale)?;
             self.constrain(&mut region, part)?;
             let invariants = self.timed(self.timed.invariants(source))?;
             self.constrain(&mut region, &invariants)?;
@@ -2169,6 +2164,44 @@ pub(super) struct Successor {
     pub zone: Dbm,
     /// Whether the step is a tick source's tick operation.
     pub tick: bool,
+}
+
+/// Apply one timed model step's simultaneous clock carries and resets.
+pub(super) fn apply_step_clocks(
+    zone: &mut Dbm,
+    step: &GuardedStep,
+    factor: &BigInt,
+) -> Result<(), DbmError> {
+    let carries: Vec<_> = step
+        .carries()
+        .iter()
+        .map(|(target, source)| (target + 1, source + 1))
+        .collect();
+    let resets: Vec<_> = step
+        .resets()
+        .iter()
+        .map(|(place, value)| (place + 1, scaled(value, factor)))
+        .collect();
+    zone.assign_clocks(&carries, &resets)
+}
+
+/// The exact predecessor zone through one timed model step's clock update.
+pub(super) fn preimage_step_clocks(
+    zone: &Dbm,
+    step: &GuardedStep,
+    factor: &BigInt,
+) -> Result<Dbm, DbmError> {
+    let carries: Vec<_> = step
+        .carries()
+        .iter()
+        .map(|(target, source)| (target + 1, source + 1))
+        .collect();
+    let resets: Vec<_> = step
+        .resets()
+        .iter()
+        .map(|(place, value)| (place + 1, scaled(value, factor)))
+        .collect();
+    zone.preimage_clocks(&carries, &resets)
 }
 
 /// Intersect `zone` with `constraints`, bounds in units of `1 / factor`.
