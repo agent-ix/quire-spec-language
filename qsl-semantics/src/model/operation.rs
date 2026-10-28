@@ -28,6 +28,13 @@ pub struct OperationDeclaration {
     parameters: Vec<(String, ValueType)>,
     result: Option<ValueType>,
     effect: OperationEffect,
+    /// The `Clock` parameters (FR-230 "Operation parameters"): each a
+    /// place, not a data value, by its position among every declared
+    /// parameter and its name. They are not in `parameters`.
+    clock_parameters: Vec<(usize, String)>,
+    /// Whether the result is a `Clock` (FR-230 "Results"): a place, so no
+    /// data `result`.
+    clock_result: bool,
 }
 
 impl OperationDeclaration {
@@ -44,7 +51,34 @@ impl OperationDeclaration {
             parameters,
             result,
             effect,
+            clock_parameters: Vec::new(),
+            clock_result: false,
         }
+    }
+
+    /// This operation with the `Clock` parameters `clock_parameters`, each
+    /// by its position among every declared parameter and its name, and a
+    /// `Clock` result when `clock_result`.
+    #[must_use]
+    pub fn with_clocks(
+        mut self,
+        clock_parameters: Vec<(usize, String)>,
+        clock_result: bool,
+    ) -> Self {
+        self.clock_parameters = clock_parameters;
+        self.clock_result = clock_result;
+        self
+    }
+
+    /// The `Clock` parameters, each by its position among every declared
+    /// parameter and its name, in declaration order.
+    pub fn clock_parameters(&self) -> &[(usize, String)] {
+        &self.clock_parameters
+    }
+
+    /// Whether the result is a `Clock`.
+    pub fn clock_result(&self) -> bool {
+        self.clock_result
     }
 
     /// The declared name.

@@ -1196,7 +1196,9 @@ fn model_object_types(
     for record in &package.records {
         if matches!(
             record,
-            DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+            DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::TupleValueType(_)
+                | DomainPackageRecord::EventType(_)
         ) || matches!(record, DomainPackageRecord::Enum(variant_type)
             if package.records.iter().any(|record| matches!(record,
                 DomainPackageRecord::Variant(case)
@@ -1227,7 +1229,9 @@ fn model_object_types(
                 if matches!(
                     records.get(&field.owner),
                     Some(
-                        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                        DomainPackageRecord::RecordValueType(_)
+                            | DomainPackageRecord::TupleValueType(_)
+                            | DomainPackageRecord::EventType(_)
                     )
                 ) {
                     continue;
@@ -1334,6 +1338,8 @@ fn model_object_types(
             DomainPackageRecord::Enum(_)
             | DomainPackageRecord::Variant(_)
             | DomainPackageRecord::RecordValueType(_)
+            | DomainPackageRecord::TupleValueType(_)
+            | DomainPackageRecord::TuplePosition(_)
             | DomainPackageRecord::EventType(_)
             | DomainPackageRecord::ObjectType(_)
             | DomainPackageRecord::StateMachine(_)
@@ -1528,6 +1534,79 @@ fn model_object_types(
             )
             .with_supertypes(composite_supertypes),
         );
+    }
+    for record in &package.records {
+        let DomainPackageRecord::TupleValueType(tuple) = record else {
+            continue;
+        };
+        let Some(handle) = meaning_handles.get(&tuple.key).copied() else {
+            errors.push(broken(&tuple.key.node));
+            continue;
+        };
+        let Some(artifact) = type_identity_segment(&tuple.key.package, &tuple.key.node) else {
+            errors.push(broken(&tuple.key.node));
+            continue;
+        };
+        let mut positions: Vec<_> = package
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::TuplePosition(position) if position.owner == tuple.key => {
+                    Some(position)
+                }
+                _ => None,
+            })
+            .collect();
+        positions.sort_by_key(|position| position.ordinal);
+        let mut elements = Vec::with_capacity(positions.len());
+        for position in positions {
+            match model_value_type(
+                &position.value_type,
+                Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                &records,
+                identities,
+                &meaning_handles,
+                &variant_shapes,
+                units,
+            ) {
+                Ok(value_type) => elements.push(value_type),
+                Err(Unmapped::Unsupported | Unmapped::InDefinition) => {
+                    errors.push(unsupported(&position.key.node))
+                }
+                Err(Unmapped::Broken) => errors.push(broken(&position.key.node)),
+                Err(Unmapped::Float(width)) => errors.push(error(AssemblyCause::FloatingType {
+                    width,
+                    rounding: RoundingMode::Exact,
+                    profile: None,
+                })),
+                Err(Unmapped::QuantityType {
+                    name,
+                    member_identity,
+                    member_path,
+                }) => errors.push(AssemblyError {
+                    cause: AssemblyCause::UnresolvedModelQuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    },
+                    span,
+                }),
+                Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
+                    cause: AssemblyCause::UnresolvedQuantityName { name },
+                    span,
+                }),
+            }
+        }
+        composites.push(CompositeDeclaration::new(
+            handle,
+            format!("{alias}::{artifact}"),
+            CompositeShape::Tuple(elements),
+        ));
     }
     for record in &package.records {
         let DomainPackageRecord::Enum(variant_type) = record else {
@@ -1910,9 +1989,11 @@ fn model_value_type(
             Some(DomainPackageRecord::ObjectType(_)) => {
                 ValueType::Reference(*identities.get(key).ok_or(Unmapped::Broken)?)
             }
-            Some(DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)) => {
-                ValueType::Composite(*meaning_handles.get(key).ok_or(Unmapped::Broken)?)
-            }
+            Some(
+                DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::TupleValueType(_)
+                | DomainPackageRecord::EventType(_),
+            ) => ValueType::Composite(*meaning_handles.get(key).ok_or(Unmapped::Broken)?),
             Some(DomainPackageRecord::ScalarType(scalar)) => match &scalar.domain {
                 ScalarValueDomain::Integer { lower, upper } => ValueType::Int(
                     IntegerInterval::new(Integer::from(*lower), Integer::from(*upper))
@@ -2042,10 +2123,26 @@ fn model_operation(
 ) -> Result<OperationDeclaration, Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
+    // A single `Clock`, directly or through aliases, is a place.
+    let clock = |value_type: &ValueTypeRef, multiplicity: Multiplicity| {
+        multiplicity.upper == Some(1)
+            && multiplicity.lower == 1
+            && matches!(
+                crate::model::domain_package::unaliased(value_type, |key| records
+                    .get(key)
+                    .copied()),
+                Some((ValueTypeRef::Clock, 0))
+            )
+    };
     let mut parameters = Vec::with_capacity(operation.parameters.len());
+    let mut clock_parameters = Vec::new();
     for (index, parameter) in operation.parameters.iter().enumerate() {
         let parameter_name = member_identity_name(&operation.key.node, &parameter.key.node)
             .ok_or(Unmapped::Broken)?;
+        if clock(&parameter.value_type, parameter.multiplicity) {
+            clock_parameters.push((index, parameter_name.to_owned()));
+            continue;
+        }
         let value_type = model_value_type(
             &parameter.value_type,
             parameter.multiplicity,
@@ -2070,9 +2167,14 @@ fn model_operation(
         })?;
         parameters.push((parameter_name.to_owned(), value_type));
     }
+    let clock_result = operation
+        .result
+        .as_ref()
+        .is_some_and(|result| clock(&result.value_type, result.multiplicity));
     let result = operation
         .result
         .as_ref()
+        .filter(|_| !clock_result)
         .map(|result| {
             model_value_type(
                 &result.value_type,
@@ -2098,12 +2200,10 @@ fn model_operation(
             })
         })
         .transpose()?;
-    Ok(OperationDeclaration::new(
-        name,
-        parameters,
-        result,
-        operation.effect.clone(),
-    ))
+    Ok(
+        OperationDeclaration::new(name, parameters, result, operation.effect.clone())
+            .with_clocks(clock_parameters, clock_result),
+    )
 }
 
 /// FR-103: each kept `requires`/`ensures` clause the driver parsed for

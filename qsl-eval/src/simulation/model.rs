@@ -460,10 +460,19 @@ pub struct ModelSystem<'a> {
     /// Each record's slots in declaration order, for its enumerated domain
     /// (FR-120, FR-215).
     pub(crate) record_orders: domain::RecordOrders,
+    /// The element-count members of the pure-clock collections (FR-230
+    /// "Initial element count"): each object type holding one, the member,
+    /// and the collection's `min` and `max` (`None` with no declared
+    /// maximum).
+    pub(crate) clock_counts: Vec<ClockCount>,
     /// Whether FR-120's bound check admits the system ([`Self::bounded`]),
     /// found once.
     bounded: std::sync::OnceLock<bool>,
 }
+
+/// One element-count member of a pure-clock collection: the object type
+/// holding it, the member, and the count's `min` and `max`.
+pub(crate) type ClockCount = (DeclarationKey, StateField, u64, Option<u64>);
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
     AdmissionFailure::Refused(record(code, cause, fields))
@@ -487,6 +496,24 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// Every field some operation's frame grants: the fields it writes and
+    /// every field of a type it creates.
+    fn granted(&self) -> BTreeSet<DeclarationKey> {
+        let mut granted = BTreeSet::new();
+        for declaration in self.types.object_types() {
+            for operation in self.operations.declared_by(declaration.key()) {
+                let effect = operation.effect();
+                granted.extend(effect.written_fields().cloned());
+                for created in self.creatable_types(effect) {
+                    if let Some(type_fields) = self.fields.get(&created) {
+                        granted.extend(type_fields.iter().map(|field| field.key.clone()));
+                    }
+                }
+            }
+        }
+        granted
+    }
+
     /// Whether FR-120's requires-bound check ([`check_model_bounds`])
     /// admits this system: every root of [`Self::domains`] is bounded.
     /// Every expansion entry point runs that check before expanding.
@@ -498,7 +525,38 @@ impl<'a> ModelSystem<'a> {
 
     /// The declarations every value of this system is encoded under: the
     /// package's record, tuple, union and variant types (FR-181).
-    pub(crate) fn typing(&self) -> encode::Typing<'a> {
+    /// The values a candidate gives `field` of an object of `type_key`
+    /// over the objects `references`: its FR-120 domain, except that the
+    /// element count of a pure-clock `Set` or `OrderedSet` whose `min`
+    /// exceeds 1 has no value (FR-230 "Initial element count": a set holds
+    /// at most one bare clock), so no object of the type is created.
+    pub(in crate::simulation::model) fn field_domain(
+        &self,
+        type_key: &DeclarationKey,
+        field: &StateField,
+        references: &[ObjectReference],
+    ) -> Option<domain::Domain> {
+        let infeasible = self.clock_counts.iter().any(|(key, count, min, max)| {
+            key == type_key && count.key == field.key && max.is_some_and(|max| max < *min)
+        });
+        if infeasible {
+            return Some(domain::Domain::Listed(Vec::new()));
+        }
+        domain::Domain::of(
+            &field.value_type,
+            references,
+            self.types,
+            &self.record_orders,
+        )
+    }
+
+    pub(crate) fn typing(&self) -> encode::Typing<'_> {
+        self.value_typing().with_clock_counts(&self.clock_counts)
+    }
+
+    /// [`Self::typing`] for values alone, which hold no element-count
+    /// member: it lives as long as the package.
+    pub(crate) fn value_typing(&self) -> encode::Typing<'a> {
         encode::Typing::with_variants(self.types, self.package.graph().scope().variant_types())
     }
 
@@ -659,6 +717,70 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
+        // FR-120-AC-26, FR-230 "Initial element count": a collection of bare
+        // clocks holds no data, so its element count is an eval-side member
+        // of each object's state, `[min, max]` (a `Set` or `OrderedSet` at
+        // most 1), rooted, enumerated and read by the slot places like a
+        // field. It is in no written or admitted document. An initial state
+        // ranges over every count; with no declared maximum, the timed
+        // subject ranges it up to `max_clocks` (`TimedSystem::initial`).
+        let mut counts: Vec<ClockCount> = Vec::new();
+        for timed in graph.timed_models() {
+            for clock in timed.clocks() {
+                let [qsl_semantics::check::PlaceStep::Field(name), qsl_semantics::check::PlaceStep::Slot(shape)] =
+                    clock.path()
+                else {
+                    continue;
+                };
+                // A set's elements differ in their data part, which a bare
+                // clock lacks (FR-120's `p` = 1).
+                let max = if shape.unique {
+                    Some(shape.max.unwrap_or(1).min(1))
+                } else {
+                    shape.max
+                };
+                let value_type = match max {
+                    Some(max) => quire_exact::IntegerInterval::new(
+                        quire_exact::Integer::from(shape.min.min(max)),
+                        quire_exact::Integer::from(max),
+                    )
+                    .map(ValueType::Int)
+                    .unwrap_or(ValueType::Integer),
+                    None => ValueType::Integer,
+                };
+                // The owner and every object type below it holds the count.
+                for (type_key, declared) in &fields {
+                    let below = model
+                        .type_identity(type_key)
+                        .is_some_and(|identity| types.conforms(identity, clock.owner()));
+                    let held = declared.iter().any(|field| field.key == *clock.field())
+                        || counts.iter().any(|(key, field, _, _)| {
+                            key == type_key && field.key == *clock.field()
+                        });
+                    if !below || held {
+                        continue;
+                    }
+                    counts.push((
+                        type_key.clone(),
+                        StateField {
+                            key: clock.field().clone(),
+                            name: name.clone(),
+                            value_type: value_type.clone(),
+                            optional: false,
+                        },
+                        shape.min,
+                        max,
+                    ));
+                }
+            }
+        }
+        for (type_key, field, _, _) in &counts {
+            if let Some(declared) = fields.get_mut(type_key) {
+                declared.push(field.clone());
+            }
+        }
+        let initial = with_clock_counts(initial, &counts);
+
         let record_orders = domain::record_orders(types, &model.record_orders());
         let mut member_bounds = model.member_bounds();
         member_bounds.sort_by(|left, right| left.constraint.cmp(&right.constraint));
@@ -694,6 +816,7 @@ impl<'a> ModelSystem<'a> {
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
             record_orders,
+            clock_counts: counts,
             bounded: std::sync::OnceLock::new(),
         };
         system.check_rewards()?;
@@ -903,7 +1026,6 @@ impl<'a> ModelSystem<'a> {
             };
             roots.push((WireNodeId::from_digest(*digest.as_bytes()), bounded));
         };
-        let mut granted: BTreeSet<DeclarationKey> = BTreeSet::new();
         for declaration in self.types.object_types() {
             for operation in self.operations.declared_by(declaration.key()) {
                 let Some(owner) = self.model.type_key(declaration.key()) else {
@@ -941,15 +1063,9 @@ impl<'a> ModelSystem<'a> {
                         result,
                     );
                 }
-                let effect = operation.effect();
-                granted.extend(effect.written_fields().cloned());
-                for created in self.creatable_types(effect) {
-                    if let Some(type_fields) = self.fields.get(&created) {
-                        granted.extend(type_fields.iter().map(|field| field.key.clone()));
-                    }
-                }
             }
         }
+        let granted = self.granted();
         let field_types: BTreeMap<&DeclarationKey, ValueType> = self
             .fields
             .values()
@@ -966,6 +1082,10 @@ impl<'a> ModelSystem<'a> {
                 )
             })
             .collect();
+        // A pure-clock collection's count is a root only where a frame
+        // grants it: with no declared maximum it is then unbounded. An
+        // ungranted one ranges its initial count up to `max_clocks` (FR-230
+        // "Initial element count").
         for key in &granted {
             if let Some(value_type) = field_types.get(key) {
                 root(declaration_enc(key), value_type);
@@ -1459,6 +1579,56 @@ fn state_document(digest: &DigestRecord) -> DocumentRef {
         revision: digest.hex(),
         digest: *digest.as_bytes(),
     }
+}
+
+/// Each of `initial` with every combination of the clock-collection counts
+/// `counts` on each object of the count's type: every count from `min` to
+/// `max`, none when `min` exceeds `max`, or `min` alone with no maximum
+/// (the timed subject ranges it further).
+fn with_clock_counts(initial: Vec<ModelSimState>, counts: &[ClockCount]) -> Vec<ModelSimState> {
+    let mut states = initial;
+    for (type_key, field, min, max) in counts {
+        let range = *min..=max.unwrap_or(*min);
+        let mut next = Vec::new();
+        for state in states {
+            let holders: Vec<(DeclarationKey, String)> = state
+                .state
+                .populations
+                .iter()
+                .flat_map(|(population, objects)| {
+                    objects
+                        .iter()
+                        .filter(|(_, object)| object.type_identity == *type_key)
+                        .map(move |(key, _)| (population.clone(), key.clone()))
+                })
+                .collect();
+            let mut partial = vec![state];
+            for (population, key) in &holders {
+                let mut grown = Vec::new();
+                for state in partial {
+                    for count in range.clone() {
+                        let mut held = state.clone();
+                        if let Some(object) = held
+                            .state
+                            .populations
+                            .get_mut(population)
+                            .and_then(|objects| objects.get_mut(key))
+                        {
+                            object.fields.insert(
+                                field.key.clone(),
+                                quire_exact::Value::Integer(quire_exact::Integer::from(count)),
+                            );
+                        }
+                        grown.push(held);
+                    }
+                }
+                partial = grown;
+            }
+            next.extend(partial);
+        }
+        states = next;
+    }
+    states
 }
 
 #[cfg(test)]

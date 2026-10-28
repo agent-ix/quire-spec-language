@@ -225,9 +225,20 @@ pub struct ClockConstraint {
     op: ClockOp,
     bound: Rational,
     span: Span,
+    /// The position of the operation's `Clock` parameter the constraint
+    /// reads (FR-230 "Operation parameters"): it constrains the place an
+    /// instance binds that parameter to, when that place is of `clock`.
+    parameter: Option<usize>,
 }
 
 impl ClockConstraint {
+    /// The position of the operation's `Clock` parameter this constrains,
+    /// when it reads one: the place an instance binds the parameter to,
+    /// when that place is a place of [`Self::clock`].
+    pub fn parameter(&self) -> Option<usize> {
+        self.parameter
+    }
+
     /// The constrained clock of the object holding it.
     pub fn clock(&self) -> ClockId {
         self.clock
@@ -429,6 +440,9 @@ pub struct ClockReset {
     value: Rational,
     span: Span,
     selection: Option<SlotSelection>,
+    /// The position of the operation's `Clock` parameter the reset writes,
+    /// when it writes one (FR-230 "Operation parameters").
+    parameter: Option<usize>,
 }
 
 /// The slots a reset `forall(e in self.f: P(e) implies e.x = c)` writes:
@@ -462,6 +476,13 @@ impl SlotSelection {
 }
 
 impl ClockReset {
+    /// The position of the operation's `Clock` parameter this resets, when
+    /// it resets one: the place an instance binds the parameter to, when
+    /// that place is a place of [`Self::clock`].
+    pub fn parameter(&self) -> Option<usize> {
+        self.parameter
+    }
+
     /// The slots the reset writes; `None` for a reset of one clock.
     pub fn selection(&self) -> Option<&SlotSelection> {
         self.selection.as_ref()
@@ -480,6 +501,41 @@ impl ClockReset {
     /// The span of the reset conjunct.
     pub fn span(&self) -> Span {
         self.span
+    }
+}
+
+/// One `Clock` parameter of an operation and its range (FR-230 "Operation
+/// parameters"): the clock fields whose places an instance of the operation
+/// binds it to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClockParameterRange {
+    operation: ClauseOperation,
+    position: usize,
+    range: Vec<ClockId>,
+    receiver: Vec<ClockId>,
+}
+
+impl ClockParameterRange {
+    /// The operation.
+    pub fn operation(&self) -> &ClauseOperation {
+        &self.operation
+    }
+
+    /// The parameter's position among the operation's declared parameters.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// The clock fields an instance binds the parameter to a place of.
+    pub fn range(&self) -> &[ClockId] {
+        &self.range
+    }
+
+    /// The fields of [`Self::range`] the frame names for the receiver only
+    /// (`modifies self.f`, FR-103): an instance binds the parameter to
+    /// their places on the operation's receiver, never another object's.
+    pub fn receiver_only(&self) -> &[ClockId] {
+        &self.receiver
     }
 }
 
@@ -579,6 +635,9 @@ pub struct TimedModel {
     model: String,
     span: Span,
     clocks: Vec<ClockField>,
+    /// The `Clock` parameters of the operations whose clauses the model
+    /// reads, each with its range.
+    clock_parameters: Vec<ClockParameterRange>,
     /// Each object type of the model with the static clock dimension of
     /// one of its objects ([`Self::dimension`]).
     dimensions: Vec<(EffectiveId, Option<u64>)>,
@@ -597,6 +656,13 @@ impl TimedModel {
     /// The clock fields, in ascending declaration-key order.
     pub fn clocks(&self) -> &[ClockField] {
         &self.clocks
+    }
+
+    /// The `Clock` parameters of the operations the model's clauses
+    /// constrain, each with its range; an operation's parameter listed
+    /// nowhere ranges over every clock field.
+    pub fn clock_parameters(&self) -> &[ClockParameterRange] {
+        &self.clock_parameters
     }
 
     /// Each clock field with its id, in order.
@@ -703,6 +769,7 @@ struct ModelDraft {
     model: String,
     span: Span,
     clocks: Vec<ClockField>,
+    clock_parameters: Vec<ClockParameterRange>,
     dimensions: Vec<(EffectiveId, Option<u64>)>,
     /// Each guarded precondition, by its index among the unit's state
     /// clauses.
@@ -720,6 +787,8 @@ struct ResetDraft {
     /// The collection field, the element's parameter name and the data
     /// predicate over it, of a reset by selection.
     selection: Option<(Vec<String>, String, Option<ExpressionForm>)>,
+    /// The `Clock` parameter's position, of a reset of one.
+    parameter: Option<usize>,
 }
 
 impl ResetDraft {
@@ -730,8 +799,22 @@ impl ResetDraft {
             value,
             span,
             selection: None,
+            parameter: None,
         }
     }
+}
+
+/// One `Clock` parameter of a clause's operation (FR-230 "Operation
+/// parameters"): its position among the operation's declared parameters,
+/// its name and its range, the clock fields whose places an instance binds
+/// it to.
+#[derive(Clone, Debug)]
+struct ClockParameter {
+    position: usize,
+    name: String,
+    range: Vec<ClockId>,
+    /// The fields of `range` the frame names for the receiver only.
+    receiver: Vec<ClockId>,
 }
 
 /// The resets of one postcondition before they are typed.
@@ -1101,6 +1184,10 @@ struct Located<'f> {
     spans: Vec<Span>,
     /// The clock a node reads directly, `self.x`.
     clock: Vec<Option<ClockId>>,
+    /// The `Clock` parameter a node names, by its index in `parameters`.
+    parameter: Vec<Option<usize>>,
+    /// The clause's operation's `Clock` parameters.
+    parameters: Vec<ClockParameter>,
     /// The span of the first clock read under each node.
     first: Vec<Option<Span>>,
 }
@@ -1109,8 +1196,20 @@ impl<'f> Located<'f> {
     /// `form`'s clock reads, for a clause about `context`; `None` when its
     /// spans do not fit it.
     fn of(form: &'f ExpressionForm, clocks: &Clocks<'_>, context: EffectiveId) -> Option<Self> {
+        Self::with_parameters(form, clocks, context, Vec::new())
+    }
+
+    /// [`Self::of`] for a clause of an operation with the `Clock`
+    /// parameters `parameters`, each a place the clause reads by its name.
+    fn with_parameters(
+        form: &'f ExpressionForm,
+        clocks: &Clocks<'_>,
+        context: EffectiveId,
+        parameters: Vec<ClockParameter>,
+    ) -> Option<Self> {
         let spans = form.spans.of_nodes(&form.expression)?;
         let mut clock = vec![None; form.expression.len()];
+        let mut parameter = vec![None; form.expression.len()];
         let mut first: Vec<Option<Span>> = vec![None; form.expression.len()];
         let mut parents: Vec<Option<ExprId>> = vec![None; form.expression.len()];
         for node in form.expression.iter() {
@@ -1134,6 +1233,18 @@ impl<'f> Located<'f> {
                 clock[id.index()] = Some(read);
                 first[id.index()] = spans.get(id.index()).copied();
                 continue;
+            }
+            if let ExprNode::Name(name) = node.node() {
+                if let (1, Some(at)) = (
+                    name.segments.len(),
+                    parameters
+                        .iter()
+                        .position(|declared| declared.name == name.name),
+                ) {
+                    parameter[id.index()] = Some(at);
+                    first[id.index()] = spans.get(id.index()).copied();
+                    continue;
+                }
             }
             // A part of an element of a clock collection, read through a
             // traversal's binder (`e.n`, `e.x`): a clock or a clock-bearing
@@ -1194,8 +1305,16 @@ impl<'f> Located<'f> {
             form,
             spans,
             clock,
+            parameter,
+            parameters,
             first,
         })
+    }
+
+    /// The `Clock` parameter node `id` names.
+    fn parameter(&self, id: ExprId) -> Option<&ClockParameter> {
+        let at = self.parameter.get(id.index()).copied().flatten()?;
+        self.parameters.get(at)
     }
 
     fn node(&self, id: ExprId) -> Option<&'f ExprNode> {
@@ -1721,6 +1840,30 @@ fn resets(
             .resets(path, *right, &mut cut)?;
             continue;
         }
+        if let Some(parameter) = located.parameter(*left) {
+            if located.reads_clock(*right) {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            let value = match located.constant(*right, clocks) {
+                Ok(value) => value,
+                Err(TemporalCause::ClockBoundNotConstant { .. }) => {
+                    return Err(TemporalCause::ClockWrite { span })
+                }
+                Err(cause) => return Err(cause),
+            };
+            // FR-230 "Operation parameters": a reset of the parameter
+            // writes the places of the clock fields the frame names.
+            if parameter.range.is_empty() {
+                return Err(TemporalCause::ClockWrite { span });
+            }
+            cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+            for clock in &parameter.range {
+                let mut reset = ResetDraft::single(*clock, value.clone(), span);
+                reset.parameter = Some(parameter.position);
+                cut.resets.push(reset);
+            }
+            continue;
+        }
         let Some(clock) = located.clock(*left) else {
             if !located.reads_clock(*left) && located.reads_clock(*right) {
                 return Err(located.outside(*right));
@@ -1927,19 +2070,103 @@ fn stray_literal(
         .min_by_key(|span| span.start)
 }
 
+/// The names a postcondition's top-level conjuncts `name = c` write: the
+/// `Clock` parameters it may reset.
+fn reset_names(clause: &StateClauseDeclaration) -> Vec<String> {
+    let body = &clause.body;
+    let mut pending = vec![body.root_id()];
+    let mut names = Vec::new();
+    while let Some(id) = pending.pop() {
+        match body.get(id).map(|node| node.node()) {
+            Some(ExprNode::Binary {
+                operator: BinaryOperator::And,
+                left,
+                right,
+            }) => pending.extend([*left, *right]),
+            Some(ExprNode::Binary {
+                operator: BinaryOperator::Equal,
+                left,
+                ..
+            }) => {
+                if let Some(ExprNode::Name(name)) = body.get(*left).map(|node| node.node()) {
+                    if name.segments.len() == 1 {
+                        names.push(name.name.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+/// The `Clock` parameters of `clause`'s operation (FR-230 "Operation
+/// parameters"), each with its range: the clock fields the operation's
+/// frame names when a postcondition of it resets the parameter (in
+/// `resets`), every clock field of the model otherwise. A field the frame
+/// names only by a receiver-scoped entry (`modifies self.f`, FR-103) is
+/// written on the receiver alone, so its places bind on the receiver.
+fn clock_parameters(
+    clause: &StateClauseDeclaration,
+    clocks: &Clocks<'_>,
+    resets: &BTreeSet<(DeclarationKey, String)>,
+) -> Vec<ClockParameter> {
+    let (Some(operation), Some(key)) = (&clause.operation, &clause.operation_key) else {
+        return Vec::new();
+    };
+    let effect = operation.declaration.effect();
+    let written: BTreeSet<&DeclarationKey> = effect.written_fields().collect();
+    operation
+        .declaration
+        .clock_parameters()
+        .iter()
+        .map(|(position, name)| {
+            let reset = resets.contains(&(key.clone(), name.clone()));
+            let range: Vec<ClockId> = clocks
+                .fields
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| !reset || written.contains(&field.field))
+                .map(|(index, _)| ClockId(index))
+                .collect();
+            let receiver = if reset {
+                range
+                    .iter()
+                    .copied()
+                    .filter(|clock| {
+                        clocks
+                            .fields
+                            .get(clock.0)
+                            .is_some_and(|field| !effect.modifies.contains(&field.field))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            ClockParameter {
+                position: *position,
+                name: name.clone(),
+                range,
+                receiver,
+            }
+        })
+        .collect()
+}
+
 /// One state clause, its clocks read out: a precondition's guard parts or a
 /// postcondition's resets, and the clause body with each clock constraint
 /// and reset replaced by the Boolean it contributes to the data reading.
 fn read_clause(
     clause: &mut StateClauseDeclaration,
     clocks: &Clocks<'_>,
+    parameters: Vec<ClockParameter>,
     budget: &mut PartBudget,
 ) -> Result<ClauseClocks, CheckCause> {
     let form = ExpressionForm {
         expression: clause.body.clone(),
         spans: clause.spans.body.clone(),
     };
-    let Some(located) = Located::of(&form, clocks, clause.context) else {
+    let Some(located) = Located::with_parameters(&form, clocks, clause.context, parameters) else {
         return Ok(ClauseClocks::None);
     };
     let root = located.root();
@@ -2079,6 +2306,7 @@ fn time_invariant(
                     },
                 )?;
                 Ok(ClockConstraint {
+                    parameter: None,
                     clock,
                     via: Vec::new(),
                     slots: Vec::new(),
@@ -2141,6 +2369,7 @@ fn clock_bounds(
                 .entry(field.owner)
                 .or_default()
                 .push(ClockConstraint {
+                    parameter: None,
                     clock: ClockId(index),
                     via: Vec::new(),
                     slots,
@@ -2380,8 +2609,21 @@ fn prepare_models(
             continue;
         };
         let clocks = clocks_of(model);
+        // The `Clock` parameters some postcondition of their operation
+        // resets, by the operation's key and the parameter's name.
+        let operation_resets: BTreeSet<(DeclarationKey, String)> = state_clauses
+            .iter()
+            .filter(|clause| clause.kind == StateClauseKind::Postcondition)
+            .filter_map(|clause| Some((clause.operation_key.clone()?, clause)))
+            .flat_map(|(key, clause)| {
+                reset_names(clause)
+                    .into_iter()
+                    .map(move |name| (key.clone(), name))
+            })
+            .collect();
         let mut guards = Vec::new();
         let mut resets = Vec::new();
+        let mut parameter_ranges = Vec::new();
         // The clock each guarded operation's guard reads first, for
         // `urgent O`.
         let mut guarded = BTreeMap::new();
@@ -2389,7 +2631,25 @@ fn prepare_models(
             if model.type_key(clause.context).is_none() {
                 continue;
             }
-            match read_clause(clause, &clocks, &mut budget)? {
+            let parameters = clock_parameters(clause, &clocks, &operation_resets);
+            if let Some(operation) = &clause.operation {
+                for parameter in &parameters {
+                    let listed = parameter_ranges.iter().any(|listed: &ClockParameterRange| {
+                        listed.position == parameter.position
+                            && listed.operation.declaring == operation.declaring
+                            && listed.operation.declaration.name() == operation.declaration.name()
+                    });
+                    if !listed {
+                        parameter_ranges.push(ClockParameterRange {
+                            operation: operation.clone(),
+                            position: parameter.position,
+                            range: parameter.range.clone(),
+                            receiver: parameter.receiver.clone(),
+                        });
+                    }
+                }
+            }
+            match read_clause(clause, &clocks, parameters, &mut budget)? {
                 ClauseClocks::None => {}
                 ClauseClocks::Guard(parts) => {
                     let first = parts
@@ -2458,6 +2718,7 @@ fn prepare_models(
             model: source.model.clone(),
             span: source.span,
             clocks: clocks.fields,
+            clock_parameters: parameter_ranges,
             dimensions,
             guards,
             resets,
@@ -2748,6 +3009,7 @@ pub(crate) fn check(
                     value: reset.value,
                     span: reset.span,
                     selection,
+                    parameter: reset.parameter,
                 });
             }
             resets.push(ClockResets {
@@ -2761,6 +3023,7 @@ pub(crate) fn check(
             model: draft.model,
             span: draft.span,
             clocks: draft.clocks,
+            clock_parameters: draft.clock_parameters,
             dimensions: draft.dimensions,
             guards,
             resets,

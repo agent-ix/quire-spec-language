@@ -152,6 +152,22 @@ pub(crate) fn parse_reference(text: &str) -> Option<ObjectReference> {
     ))
 }
 
+/// A timed transition's `clock_place` argument split at the object it
+/// names: the text before the object's reference, the reference, and the
+/// text after it. `None` for any other text.
+/// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
+#[ix_trace_rs::string_edge]
+pub(super) fn split_clock_place(text: &str) -> Option<(&str, ObjectReference, &str)> {
+    if !text.ends_with(r#","type":"clock_place"}"#) {
+        return None;
+    }
+    let marker = r#","object":"#;
+    let start = text.find(marker)? + marker.len();
+    let length = text[start..].find(r#""}"#)? + 2;
+    let reference = parse_reference(&text[start..start + length])?;
+    Some((&text[..start], reference, &text[start + length..]))
+}
+
 /// The reference a parameter's canonical text names: the text of a reference,
 /// or of an option holding one. `Some(None)` is an absent option.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
@@ -194,6 +210,9 @@ pub(crate) struct Typing<'t> {
     /// [`values_equal`].
     types: Option<&'t TypeEnvironment>,
     variants: &'t [VariantTypeDeclaration],
+    /// The element-count members of the pure-clock collections, which a
+    /// record writes after its declared fields.
+    clock_counts: &'t [super::ClockCount],
 }
 
 impl<'t> Typing<'t> {
@@ -202,6 +221,7 @@ impl<'t> Typing<'t> {
         Self {
             types: None,
             variants: &[],
+            clock_counts: &[],
         }
     }
 
@@ -214,6 +234,15 @@ impl<'t> Typing<'t> {
         Self {
             types: Some(types),
             variants,
+            clock_counts: &[],
+        }
+    }
+
+    /// These declarations with the element-count members `clock_counts`.
+    pub(crate) fn with_clock_counts(self, clock_counts: &'t [super::ClockCount]) -> Self {
+        Self {
+            clock_counts,
+            ..self
         }
     }
 
@@ -596,7 +625,7 @@ pub(super) fn object_enc(
     let Ok(Some(fields)) = model.fields(&object.type_identity) else {
         return Enc::Unencodable("an object of an undeclared type");
     };
-    let fields = fields
+    let mut fields: Vec<Enc> = fields
         .iter()
         .map(|field| {
             // QSpec FR-181: a field declared `Option<T>` holds an option
@@ -612,11 +641,44 @@ pub(super) fn object_enc(
             ])
         })
         .collect();
+    // A collection of bare clocks holds one `Clock` tuple per element, the
+    // shell FR-230 gives a present clock place, so two states that differ
+    // in its element count have different keys.
+    for (type_key, field, _, _) in typing.clock_counts {
+        if *type_key != object.type_identity {
+            continue;
+        }
+        let Some(Value::Integer(count)) = object.fields.get(&field.key) else {
+            continue;
+        };
+        let elements = (0..count.to_u64().unwrap_or(0))
+            .map(|_| clock_shell_enc())
+            .collect();
+        fields.push(Enc::Object(vec![
+            ("name", Enc::text(field.name.clone())),
+            (
+                "value",
+                Enc::tagged("sequence", vec![("elements", Enc::Array(elements))]),
+            ),
+        ]));
+    }
     Enc::tagged(
         "record",
         vec![
             ("name", declaration_enc_text(&object.type_identity)),
             ("fields", Enc::Array(fields)),
+        ],
+    )
+}
+
+/// A present clock place's shell, FR-230's
+/// `{"type":"tuple","name":"Clock","components":[]}`.
+pub(crate) fn clock_shell_enc() -> Enc {
+    Enc::tagged(
+        "tuple",
+        vec![
+            ("name", Enc::text("Clock")),
+            ("components", Enc::Array(Vec::new())),
         ],
     )
 }
