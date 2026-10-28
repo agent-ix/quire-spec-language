@@ -52,3 +52,11 @@ Gates at 385603d47 (locked-build, jobs 4, `--all-features`, debug info off):
 ## Verdict
 
 Mergeable. FND-001 is low.
+
+## Dispositions
+
+Round 1, head addc801df (s-side fixes 2e62b358d, cfe75861c).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The `a_template_slot_place_reads_back` ignore reason now cites IR-1083 (validate symbolic timed slots, SL-01..05) |

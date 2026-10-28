@@ -4528,6 +4528,7 @@ impl PackageDeclarations {
         // row expression located at its own site. A refinement whose
         // catalog names a node not written yet, or a row a form with no
         // node, is not emitted, so its rows are not keyed.
+        let mut refinement_booleans = std::collections::BTreeMap::new();
         for checked in &mut refinements {
             if (checked.class_catalog.is_some() && checked.class_catalog_keys.is_none())
                 || !checked.rows_have_nodes()
@@ -4542,6 +4543,13 @@ impl PackageDeclarations {
             });
             match lowering.refinement_rows(checked, &location) {
                 Ok(rows) => checked.row_keys = Some(rows),
+                Err(refusal) => refusals.push(refusal),
+            }
+            // FR-144: the `Boolean` result bound of the refinement's record.
+            match lowering.refinement_result_type(&location) {
+                Ok(boolean) => {
+                    refinement_booleans.insert(checked.name().to_owned(), boolean);
+                }
                 Err(refusal) => refusals.push(refusal),
             }
         }
@@ -4963,8 +4971,14 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
+                    // FR-243: a clause over a `time dense` subject is EN-6's
+                    // item.
                     let record = claims::RequirementRecord::unguarded(
-                        extent,
+                        if checked.dense_time() {
+                            extent.over_dense_time()
+                        } else {
+                            extent
+                        },
                         ValueType::Boolean,
                         claims::wire(lowered.boolean),
                         references::ModelReferences::new(objects.clone(), [], None),
@@ -5056,6 +5070,63 @@ impl PackageDeclarations {
                 }
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
+        }
+        // FR-144 "Requirement record and request": one `temporal-satisfaction`
+        // record per refinement the package emits, keyed by the `declaration`
+        // occurrence of its V2 node (QSpec FR-375), with the TP-5 form. A
+        // refinement the V2 slice does not emit is refused below unless a
+        // test asked for its package unwritten, and then has no node to key.
+        for checked in &mut refinements {
+            if !checked.v2_emittable() {
+                continue;
+            }
+            let location = root(Origin::TypeDeclaration {
+                name: refinement_origin(checked.name()),
+            });
+            let unkeyable = || {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            };
+            let node = checked
+                .v2_emission()
+                .map(|emission| claims::wire(emission.identity))
+                .map_err(|_| unkeyable())?;
+            let boolean = refinement_booleans
+                .get(checked.name())
+                .copied()
+                .ok_or_else(unkeyable)?;
+            let occurrence = OccurrenceKey::new(
+                node,
+                quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
+            );
+            // FR-430: a refinement whose concrete model is `time dense` is
+            // EN-6's item.
+            let dense = self.time_sources.iter().any(|source| {
+                source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
+            });
+            let wanted = checked.requirements(node);
+            let record = claims::RequirementRecord::unguarded(
+                if dense {
+                    wanted.over_dense_time()
+                } else {
+                    wanted
+                },
+                ValueType::Boolean,
+                claims::wire(boolean),
+                references::ModelReferences::new(Default::default(), [], None),
+            );
+            // Two refinements of one meaning share one node and so one
+            // record; S4 refuses the pair naming both (FR-375).
+            match requirements.entry(occurrence.clone()) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(record);
+                }
+                std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {}
+                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+            }
+            checked.requirement = Some(occurrence);
         }
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
