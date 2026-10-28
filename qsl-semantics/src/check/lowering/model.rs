@@ -148,7 +148,9 @@ fn collection_type(shape: CollectionShape, inner: &str) -> String {
 
 /// The element type of the rendered collection type `rendered`, read
 /// through an `Option<..>` around it (QSL FR-230-AC-19's `o:
-/// Option<Sequence<Clock>[0, 2]>`).
+/// Option<Sequence<Clock>[0, 2]>`). A string edge: `rendered` is the
+/// `resolved_path` row text this module renders.
+#[ix_trace_rs::string_edge]
 fn element_type(rendered: &str) -> &str {
     let rendered = rendered
         .strip_prefix("Option<")
