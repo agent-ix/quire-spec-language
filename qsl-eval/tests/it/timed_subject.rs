@@ -4794,7 +4794,8 @@ fn absent_drops_an_option_clock() {
 
 /// [`cells_document`] with `Mode { Idle, Armed(Clock) }` held by the `Call`
 /// field `state`, which `work` writes.
-fn union_clock_document() -> Vec<u8> {
+/// With `waiting`, also the second clock case `Waiting(Clock)`.
+fn union_clock_document_with(waiting: bool) -> Vec<u8> {
     let case = |name: &str, line: u64, payload: Option<&str>| {
         let mut case = json!({"identity": ident(&format!("variant/Mode-{name}")), "name": name,
             "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
@@ -4809,6 +4810,12 @@ fn union_clock_document() -> Vec<u8> {
         "mode",
         json!({"variants": [case("Idle", 20, None), case("Armed", 21, Some(CLOCK))]}),
     );
+    if waiting {
+        mode["variants"]
+            .as_array_mut()
+            .expect("variants")
+            .push(case("Waiting", 22, Some(CLOCK)));
+    }
     mode["displayName"] = json!("Mode");
     cells_document(
         vec![mode],
@@ -4818,7 +4825,7 @@ fn union_clock_document() -> Vec<u8> {
     )
 }
 
-/// A world over [`union_clock_document`], `work` and `tick` both writing
+/// A world over [`union_clock_document_with`], `work` and `tick` both writing
 /// `state` under `body`, with `c` starting `Idle`.
 fn union_world(body: &str) -> World {
     union_world_holding(
@@ -4829,7 +4836,13 @@ fn union_world(body: &str) -> World {
 
 /// [`union_world`] with `c`'s `state` holding `state`.
 fn union_world_holding(body: &str, state: Json) -> World {
-    let mut document: Json = serde_json::from_slice(&union_clock_document()).expect("JSON");
+    union_world_over(false, body, state)
+}
+
+/// [`union_world_holding`] over [`union_clock_document_with`]`(waiting)`.
+fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
+    let mut document: Json =
+        serde_json::from_slice(&union_clock_document_with(waiting)).expect("JSON");
     for operation in document["types"][1]["operations"]
         .as_array_mut()
         .expect("operations")
@@ -4964,4 +4977,89 @@ fn a_union_case_clock_is_live_while_its_case_holds() {
     };
     assert!(!live(dropped));
     assert_eq!(key(dropped), key(idle));
+}
+
+/// FR-230 "Records, tuples and unions" (TC-685), the timed subject's part
+/// of writing a union field, over `Mode { Idle, Armed(Clock),
+/// Waiting(Clock) }`. From `Waiting` at 1 ms, `self.state =
+/// M::Mode::Armed(0 ms)` resets `Armed` to 0 and drops `Waiting`. From
+/// `Armed` at 1 ms, `Armed(2 ms)` resets the same case to 2. `time
+/// invariant B when { present(self.state.Armed) } { value(self.state.Armed)
+/// <= 3 ms }` bounds the armed state only.
+#[trace("TC-685")]
+#[test]
+fn a_union_write_resets_its_case_and_drops_the_others() {
+    let case = |name: &str| json!({"variant": {"type": ident("Mode"), "case": name}});
+    let no_tick = "pre NoTick using v on M::Call::tick { false }\n";
+    let after = |world: &World, write: &str| {
+        let held = system(world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let name = |place: &qsl_eval::simulation::model::ClockPlace| {
+            timed
+                .model()
+                .clock(place.clock())
+                .expect("a clock")
+                .name()
+                .to_owned()
+        };
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        let later = TimedState::new(
+            initial.discrete().clone(),
+            initial.clocks().delayed(&exact(1, 1)),
+        );
+        let steps = timed.steps(&later).expect("decided");
+        let [(_, next)] = &steps[..] else {
+            panic!("{write}: one step: {steps:?}");
+        };
+        timed
+            .places()
+            .iter()
+            .enumerate()
+            .filter(|(_, place)| name(place).starts_with("state."))
+            .map(|(at, place)| {
+                (
+                    name(place),
+                    timed.live(place, next.discrete()),
+                    next.clocks().get(at).cloned(),
+                )
+            })
+            .filter(|(_, live, _)| *live)
+            .map(|(name, _, value)| (name, value))
+            .collect::<Vec<_>>()
+    };
+    let switch = "post W using v on M::Call::work { self.state = M::Mode::Armed(0 ms) }\n";
+    assert_eq!(
+        after(
+            &union_world_over(true, &format!("{switch}{no_tick}"), case("Waiting")),
+            switch
+        ),
+        [("state.Armed".to_owned(), Some(exact(0, 1)))]
+    );
+    let rewrite = "post W using v on M::Call::work { self.state = M::Mode::Armed(2 ms) }\n";
+    assert_eq!(
+        after(
+            &union_world_over(false, &format!("{rewrite}{no_tick}"), case("Armed")),
+            rewrite
+        ),
+        [("state.Armed".to_owned(), Some(exact(2, 1)))]
+    );
+
+    let bounded = |start: &str| {
+        let world = union_world_over(
+            false,
+            "time invariant B when { present(self.state.Armed) } { value(self.state.Armed) <= 3 ms }\n\
+             pre NoWork using v on M::Call::work { false }\n\
+             pre NoTick using v on M::Call::tick { false }\n",
+            case(start),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let [initial] = &timed.initial()[..] else {
+            panic!("one initial state");
+        };
+        timed.invariants(initial.discrete()).expect("decided").len()
+    };
+    assert_eq!((bounded("Armed"), bounded("Idle")), (1, 0));
 }
