@@ -381,12 +381,14 @@ fn a_resolving_payload_is_retained_on_its_case() {
     assert_eq!(cases[1].payload_type, None);
 }
 
-/// TC-995: a non-value payload still refuses at the typed payload member.
+/// TC-995: a non-value payload (a unit) still refuses at the typed payload
+/// member. A `Clock` payload is admitted (FR-230 "Records, tuples and
+/// unions").
 #[trace("TC-995", "FR-056-AC-25")]
 #[test]
 fn a_non_value_payload_type_refuses_at_its_member() {
     let mut document = payload_tiers();
-    document["types"][0]["variants"][1]["payloadType"] = json!("ix://quire/native/Clock");
+    document["types"][0]["variants"][1]["payloadType"] = json!("ix://quire/unit/ms");
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::UnsupportedConstruct);
