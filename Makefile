@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
+.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning refinement-layering qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -61,6 +61,15 @@ checked-input:
 # reports anything but success (exit 0).
 refinement-versioning:
 	cargo run --package xtask -- refinement versioning tests/fixtures/refinement/versioning/
+
+# FR-345-AC-9: the CLI intentionally returns unsupported/21 when it has no
+# negotiation function. The Rust wrapper accepts only that report with six
+# admitted, non-empty candidate sets. Override LAYERING_CLI only to exercise
+# the wrapper with a test CLI; no provider is supplied by this target.
+LAYERING_CORPUS ?= tests/fixtures/refinement/layering/
+LAYERING_CLI ?= -
+refinement-layering:
+	$(if $(XTASK_BIN),"$(XTASK_BIN)",cargo run --package xtask --) refinement layering-check "$(LAYERING_CORPUS)" "$(LAYERING_CLI)"
 
 # FR-353: run complete-V1 conformance qualification against the published corpus.
 qualify:
@@ -311,7 +320,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
+CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning refinement-layering cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.

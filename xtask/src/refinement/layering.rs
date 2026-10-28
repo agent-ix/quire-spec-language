@@ -860,6 +860,12 @@ pub fn compare(
     Report::new(results)
 }
 
+/// Run the FR-345 gate with QSL's compile composition and caller-owned provider
+/// snapshot, without witness negotiation.
+pub fn run(corpus: &Path, registry: &RegistrySnapshot) -> Report {
+    compare(corpus, compile_unit, registry, None)
+}
+
 fn tool_failure(entry: String, defect: String) -> EntryResult {
     EntryResult::ToolFailure {
         entry,

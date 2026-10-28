@@ -341,6 +341,12 @@ pub enum Error {
         #[source]
         source: serde_json::Error,
     },
+    /// FR-345-AC-9: the layering CLI did not produce its expected unresolved report.
+    #[error("refinement-layering: {reason}")]
+    LayeringExpectedReport {
+        /// Why the child CLI result did not match the expected report.
+        reason: String,
+    },
     /// FR-353: corpus preflight or invocation refused before any vector ran.
     #[error("qualify: {0}")]
     QualificationRefusal(String),
@@ -389,6 +395,7 @@ impl Error {
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
             Self::RefinementReport { .. } => Code::Refinement,
+            Self::LayeringExpectedReport { .. } => Code::Refinement,
             Self::QualificationRefusal(_) => Code::Qualification,
         }
     }

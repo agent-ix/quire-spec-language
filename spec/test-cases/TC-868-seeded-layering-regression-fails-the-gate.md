@@ -69,12 +69,10 @@ quire-contract-codegen's `negotiate_*`.
 7. Run step 1's corpus without the E6 `distinguishing` entry and without the temporal `witness` entry.
 8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`.
    Capture the child CLI exit code, JSON report and Make target exit. Then run
-   the target over a copy of the corpus with one `witness` entry removed. Call
-   the target's `#[cfg(test)]` CLI-execution seam with a compiled stub CLI that
-   returns exit codes 0, 1 and 10, and with a stub returning 21 plus a report
-   missing one layer result. The seam receives the stub executable directly as
-   a test argument; it reads no environment override and adds no production
-   provider.
+   the target over a copy of the corpus with one `witness` entry removed.
+   Invoke the Make target with `LAYERING_CLI` set to a compiled Rust stub CLI
+   and `LAYERING_CORPUS` set to the relevant corpus. Run the stub with exit
+   codes 0, 1 and 10, and with exit 21 plus a report missing one layer result.
 9. From a root-package test, call `compare` over `REAL_CORPUS` with the
    FR-278 composition, QSL's registry snapshot and a test negotiation
    function that settles every request `supported`; then call it without a
@@ -129,9 +127,8 @@ Each expected result is a literal in the test. Tag the test
   results is `unresolved (unsupported)` with reason `not-negotiated` and its
   candidate backend identities, and the Make target exits 0. With one
   required witness absent, the CLI exits 30 with a tool-failure result and
-  the Make target fails. The stub CLI exits 0, 1 and 10 each make the test
-  seam fail; a stub that exits 21 but omits a layer result also makes the seam
-  fail.
+  the Make target fails. Each stub invocation (exit 0, 1, 10, or 21 with a
+  report missing a layer) makes the Make target exit non-zero.
 - Step 9: the negotiated call gives verdict success, matches the case, layer
   and edge results of the no-negotiation CLI report, and requests each layer's
   witness once per candidate. The call without a negotiation function makes
