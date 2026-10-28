@@ -1,6 +1,6 @@
 ---
 id: FR-362
-title: "Produce the checked graph and the type report from one source and bind them by digest"
+title: "Produce the checked graph and the type report from one source"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-002
@@ -16,16 +16,17 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-110
     type: depends_on
 ---
-# FR-362: Produce the checked graph and the type report from one source and bind them by digest
+# FR-362: Produce the checked graph and the type report from one source
 
 Status: Proposed. It becomes Accepted on merge. It states ADR-033 Option A+D.
 
 ## Description
 
 QSL SHALL read each source text once, with one grammar, and from that single
-parse produce both the `CheckedGraph` and the `TypeReport`. A checked unit SHALL
-bind a graph, a type report and a selected formal source only when the
-`quire.source.bytes/v1` digest of each is the same digest.
+parse produce both the `CheckedGraph` and the `TypeReport`. The producer SHALL
+return one `CheckedUnit` carrying the `Source`'s single `RawSourceRef`; its graph
+and type report are outputs of that same parse, not independent inputs bound by
+comparing copied source digests.
 
 ## Target design
 
@@ -36,27 +37,33 @@ bind a graph, a type report and a selected formal source only when the
    checkers (ADR-011) over the S2 forms of the same parse; the composed linker
    and checker are not re-read over those forms.
 2. **One reading.** The producer takes one `Source` (its authority, identity,
-   revision and the digest of its exact bytes) and one parse of it. The
-   graph's `RawSourceRef` and the type report unit's `Source::reference()` are
-   the `Source`'s own reference.
+   revision and the digest of its exact bytes) and one parse of it. The graph
+   and type report are both derived from this parse; their source locations
+   resolve through the checked unit's single source reference.
 3. **One producer, one `CheckedUnit`.** The producer is the spine front end
    (parse, build, assemble, check over one `Source`) extended by the type
    phase. It takes the source, the selected formal identity, the spine's
    `LockEvidence` and the stage limits, and returns the checked unit or
    the typed refusal of the first stage that refused. Exactly one public
    `CheckedUnit` type exists: the spine's, which carries the graph's
-   requirement records, the type report, the formal identity and the source
-   references. The type report covers one unit by construction. The type the
+   requirement records, the type report, the formal identity and the source's
+   one `RawSourceRef`. The type report covers one unit by construction. The type the
    source inventory used to define is deleted, and `qsl_inventory` lives in
    `qsl_replay` and reads `spine::CheckedUnit`.
-4. **Digest-bound unit.** The checked unit is built only by that producer or by
-   a constructor that takes a formal source, a graph and a type report and
-   compares their source references as whole references: authority, identity
-   and digest. Equal labels with a different digest are a refusal.
-5. **Typed refusal.** The refusal names the side that differs (the graph or the
-   type report), the selected reference and the differing one.
-6. **No label-only match.** No type, function or flag compares only the
-   authority and identity of a graph, a type report or a formal source.
+4. **One source reference.** `CheckedUnit` carries the single `RawSourceRef`
+   minted for the `Source` read by the producer. Its graph and type report come
+   from the same parse; the producer does not accept separately supplied graph,
+   report and source references, and no constructor compares copied references
+   to re-establish that association. The graph and report do not carry separate
+   unit-level source digest fields; source locations use the checked unit's
+   reference.
+5. **No mismatch outcome.** A graph/report/source mismatch is not a producer
+   refusal case: the single producer constructs all three from one `Source` and
+   one parse, so no public mismatch constructor or typed refusal exists.
+6. **No duplicate binding guard.** No type, function or flag copies the
+   `CheckedUnit` source reference to compare it against graph or type-report
+   digests. Source intake still verifies the bytes against the `Source`'s own
+   reference.
 7. **Profile selection.** A source selects a profile by identity alone
    (FR-110). The one grammar refuses a profile line that carries a `version`
    or a `digest` after the identity. Profiles resolve through `DefinitionLock::pinned`
@@ -102,24 +109,23 @@ bind a graph, a type report and a selected formal source only when the
    the encoding of a row's identity belongs to the FR that owns the inventory
    rows.
 11. **Several source units.** A package of several source units (FR-480) has
-    one checked unit per source unit. Each binds its own `Source`, the type
-    report of its own parse and its own formal source by the one digest this
-    requirement compares. The shared graph lists every unit's `RawSourceRef`
-    in `lock.sources`, and each checked unit's graph reference is its own
-    entry there. Each type report covers one unit by construction.
+    one checked unit per source unit. Each carries its own source reference and
+    the type report of its own parse. The shared graph lists every unit's
+    `RawSourceRef` in `lock.sources`; each type report covers one unit by
+    construction.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-362-AC-1 | For a source the grammar admits, the producer returns a graph and a type report from one parse. The graph's source reference, the type report unit's source reference and the formal source's reference are equal, and their digest is the `quire.source.bytes/v1` digest of the input bytes. | Test (TC-1026) |
-| FR-362-AC-2 | For a source whose profile line carries `version` or `digest` after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test (TC-1026) |
-| FR-362-AC-3 | Given a graph from one text and a type report from a second text that differs by one byte and has the same authority and identity, the checked-unit constructor refuses with a cause naming the type report side, the selected reference and the differing one. The same holds with the graph from the other bytes. | Test (TC-1026) |
-| FR-362-AC-4 | A checked unit built from a graph and a type report of the same bytes yields the inventory rows of the producer's own unit. | Test (TC-1026) |
-| FR-362-AC-5 | No type or function compares only the authority and identity of a graph, a type report or a formal source: the label-only types and the label-only constructor do not exist. | Inspection (TC-1027) |
-| FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection (TC-1027) |
-| FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause over model operations whose body checks yields both a graph and a type report, the graph holding the clause's `claim`/`step_relation` node (FR-180). A unit that holds a `hyper` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `hyper` clause yields both. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test (TC-1026) |
-| FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test (TC-1026) |
+| FR-362-AC-1 | For a source the grammar admits, the producer returns one `CheckedUnit` containing the graph, type report and the source's single `RawSourceRef`; the graph and type report come from that source's one parse. The carried reference's digest is the `quire.source.bytes/v1` digest of the input bytes. | Test |
+| FR-362-AC-2 | For a source whose profile line carries `version` or `digest` after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test |
+| FR-362-AC-3 | The producer does not accept separately supplied graph, type report and formal source inputs, and exposes no graph/report/source mismatch constructor or typed refusal. Its sole `CheckedUnit` is created from the one source parse. | Inspection |
+| FR-362-AC-4 | A producer-created checked unit yields the inventory rows derived from its own graph and type report. | Test |
+| FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report digests; source intake verifies the bytes against the source's own reference. | Inspection |
+| FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection |
+| FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause over model operations whose body checks yields both a graph and a type report, the graph holding the clause's `claim`/`step_relation` node (FR-180). A unit that holds a `hyper` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `hyper` clause yields both. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test |
+| FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test |
 
 ## Dependencies
 

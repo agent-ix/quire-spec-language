@@ -1042,12 +1042,13 @@ pub(crate) enum VariantTypeFault {
     Handle(super::node_key::NodeKeyRefusal),
 }
 
-/// Each variant type of `view`'s package, declared by its effective identity
-/// and its checked node key together, with the effective identity of every
-/// case (FR-056 "Effective identity of a variant type", FR-360 item 11), each
-/// with the declaration key it was read from. The one builder of the type
-/// environment and of replay admission, so both agree on every key and rank.
-/// `alias` names the type `alias::<artifact id>`.
+/// Each payload-free variant type of `view`'s package, declared by its
+/// effective identity and checked node key together, with the effective
+/// identity of every case (FR-056 "Effective identity of a variant type",
+/// FR-360 item 11), each with the declaration key it was read from. Payload
+/// variants are instead assembled as union composites. The one builder of
+/// the type environment and replay admission, so both agree on every key and
+/// rank. `alias` names the type `alias::<artifact id>`.
 pub(crate) fn variant_type_declarations(
     view: &crate::model::normalize::EffectiveView,
     alias: &str,
@@ -1065,6 +1066,14 @@ pub(crate) fn variant_type_declarations(
         let DomainPackageRecord::Enum(variant_type) = record else {
             continue;
         };
+        if package.records.iter().any(|record| {
+            matches!(record, DomainPackageRecord::Variant(case)
+                if case.owner == variant_type.key && case.payload_type.is_some())
+        }) {
+            // A payload-bearing model variant is a union composite, not an
+            // enum. Its type is added to `composites` below.
+            continue;
+        }
         let broken = |node: &str| VariantTypeFault::Broken(node.to_owned());
         let identity = identities
             .get(&variant_type.key)
@@ -1188,7 +1197,11 @@ fn model_object_types(
         if matches!(
             record,
             DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
-        ) {
+        ) || matches!(record, DomainPackageRecord::Enum(variant_type)
+            if package.records.iter().any(|record| matches!(record,
+                DomainPackageRecord::Variant(case)
+                    if case.owner == variant_type.key && case.payload_type.is_some())))
+        {
             let key = record.key();
             if type_identity_segment(&key.package, &key.node).is_none() {
                 errors.push(broken(&key.node));
@@ -1412,6 +1425,12 @@ fn model_object_types(
     }
     let mut composites = Vec::new();
     for record in &package.records {
+        if !matches!(
+            record,
+            DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+        ) {
+            continue;
+        }
         let key = record.key();
         let Some(handle) = meaning_handles.get(key) else {
             continue;
@@ -1509,6 +1528,90 @@ fn model_object_types(
             )
             .with_supertypes(composite_supertypes),
         );
+    }
+    for record in &package.records {
+        let DomainPackageRecord::Enum(variant_type) = record else {
+            continue;
+        };
+        let mut cases: Vec<_> = package
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::Variant(case) if case.owner == variant_type.key => Some(case),
+                _ => None,
+            })
+            .collect();
+        cases.sort_by(|left, right| left.case.as_bytes().cmp(right.case.as_bytes()));
+        if !cases.iter().any(|case| case.payload_type.is_some()) {
+            continue;
+        }
+        let Some(handle) = meaning_handles.get(&variant_type.key).copied() else {
+            errors.push(broken(&variant_type.key.node));
+            continue;
+        };
+        let mut members = Vec::with_capacity(cases.len());
+        for case in cases {
+            let mut payload = Vec::new();
+            if let Some(payload_type) = &case.payload_type {
+                match model_value_type(
+                    payload_type,
+                    Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    &records,
+                    identities,
+                    &meaning_handles,
+                    &variant_shapes,
+                    units,
+                ) {
+                    Ok(value_type) => payload.push(value_type),
+                    Err(Unmapped::Unsupported) => errors.push(unsupported(&case.key.node)),
+                    Err(Unmapped::Broken) => errors.push(broken(&case.key.node)),
+                    Err(Unmapped::Float(width)) => {
+                        errors.push(error(AssemblyCause::FloatingType {
+                            width,
+                            rounding: RoundingMode::Exact,
+                            profile: None,
+                        }))
+                    }
+                    Err(Unmapped::QuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    }) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedModelQuantityType {
+                            name,
+                            member_identity,
+                            member_path,
+                        },
+                        span,
+                    }),
+                    Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedQuantityName { name },
+                        span,
+                    }),
+                    Err(Unmapped::InDefinition) => {}
+                }
+            }
+            match Identifier::new(case.case.clone()) {
+                Ok(identifier) => {
+                    members.push(UnionMemberDeclaration::resolved(identifier, payload))
+                }
+                Err(_) => errors.push(error(AssemblyCause::handle(
+                    NodeKeyRefusal::InvalidQualifiedNameSegment {
+                        segment: case.case.clone(),
+                    },
+                ))),
+            }
+        }
+        composites.push(CompositeDeclaration::new(
+            handle,
+            format!("{alias}::{}", variant_type.name),
+            CompositeShape::Union(members),
+        ));
     }
     let mut model_records = record_renames(model, &records, &meaning_handles);
     for (key, handle) in &meaning_handles {
@@ -1820,15 +1923,15 @@ fn model_value_type(
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
             },
-            // FR-360 item 3: a variant type is its enum type, never a
-            // `Reference`. One whose cases the runtime enumeration cannot
-            // hold has no shape and no type.
-            Some(DomainPackageRecord::Enum(_)) => ValueType::Enum(
-                variant_shapes
-                    .get(key)
-                    .ok_or(Unmapped::Unsupported)?
-                    .clone(),
-            ),
+            // FR-360 item 3: a payload-free variant type is its enum type,
+            // never a `Reference`. Payload-bearing variants use their union
+            // composite handle instead.
+            Some(DomainPackageRecord::Enum(_)) => match variant_shapes.get(key) {
+                Some(shape) => ValueType::Enum(shape.clone()),
+                None => {
+                    ValueType::Composite(*meaning_handles.get(key).ok_or(Unmapped::Unsupported)?)
+                }
+            },
             Some(_) => return Err(Unmapped::Unsupported),
             None => return Err(Unmapped::Broken),
         },

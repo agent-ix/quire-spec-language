@@ -3870,6 +3870,76 @@ fn a_granted_record_keeps_its_clocks_unless_reset() {
         .all(|(_, clocks)| clocks.iter().all(|(_, value)| *value == exact(5, 1))));
 }
 
+/// FR-120-AC-25 (TC-1270), the model-variant union: a granted `choice:
+/// Choice`, whose variant type has the nullary case `Empty` and `Enabled`
+/// with payload type `Boolean`, is finite with three values in order,
+/// `Empty`, `Enabled(false)`, `Enabled(true)`, and adds no unbounded root; a
+/// case with payload type `Integer` makes its union an unbounded root. The
+/// field is presence-optional and absent initially, as a snapshot has no
+/// union value form, so its domain is absent then those three.
+#[trace("TC-1270")]
+#[test]
+fn a_model_variant_union_is_finite_by_its_payloads() {
+    let mode = |name: &str, payload: &str| {
+        let identity = ident(name);
+        let case = |case: &str, line: u64, payload: Option<&str>| {
+            let mut variant = json!({"identity": ident(&format!("variant/{name}-{case}")),
+                "name": case,
+                "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+                    "startLine": line, "startColumn": 3}}});
+            if let Some(payload) = payload {
+                variant["payloadType"] = json!(payload);
+            }
+            variant
+        };
+        wire_type(
+            &identity,
+            "mode",
+            json!({"variants": [case("Empty", 20, None), case("Enabled", 21, Some(payload))]}),
+        )
+    };
+    let world = |name: &str, payload: &str| {
+        world_holding(
+            cells_document(
+                vec![mode(name, payload)],
+                vec![("choice", ident(name), Some(json!("optional")))],
+                &["choice"],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            json!({"t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
+                "choice": {"absent": {}}}),
+        )
+    };
+    let finite = world("Choice", "ix://quire/native/Boolean");
+    check_model_bounds(&system(&finite), BOUND_POSITIONS).expect("choice is bounded");
+    // Absent first, then the union's three values.
+    let values = granted_values(&finite, "work", "choice");
+    assert_eq!(values.len(), 4, "{values:#?}");
+    assert!(values[0].contains("absent"), "{values:#?}");
+    assert!(
+        values[1].contains("Empty") && !values[1].contains("Boolean"),
+        "{values:#?}"
+    );
+    assert!(
+        values[2].contains("Enabled") && values[2].contains("Boolean(false)"),
+        "{values:#?}"
+    );
+    assert!(
+        values[3].contains("Enabled") && values[3].contains("Boolean(true)"),
+        "{values:#?}"
+    );
+
+    let unbounded = world("Big", "ix://quire/native/Integer");
+    let Err(NotSimulated::RequiresBound(bound)) =
+        check_model_bounds(&system(&unbounded), BOUND_POSITIONS)
+    else {
+        panic!("an Integer payload is unbounded");
+    };
+    assert_eq!(format!("{:?}", bound.domains).matches("Node {").count(), 1);
+}
+
 /// FR-120-AC-26 (TC-1270) with the STD-508 ruling on collections of bare
 /// clocks: `sk: Sequence<Clock>[0, 3]` has 4 values and `st: Set<Clock>`
 /// with no declared maximum 2, one for each element count, each a root no

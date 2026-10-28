@@ -494,6 +494,8 @@ fn reachable_composites(
         match &value_type {
             ValueType::Option(payload) => pending.push((**payload).clone()),
             ValueType::Collection(collection) => pending.push(collection.element().clone()),
+            // A map is type-only (it admits no value) but its value type can
+            // still name a composite declaration, so the walk follows it.
             ValueType::Map(map) => pending.push(map.values().clone()),
             ValueType::Composite(key) => {
                 if !reachable.insert(*key) {
@@ -549,6 +551,7 @@ fn reachable_composites(
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
+            // A bounded quantity is a quantity leaf and names no composite.
             | ValueType::BoundedQuantity(_)
             | ValueType::Text(_)
             | ValueType::String
@@ -2137,6 +2140,44 @@ mod tests {
             NestedCallSiteRefusal::UnknownCall
         );
         assert_eq!(foreign_or_unknown(&[]), NestedCallSiteRefusal::UnknownCall);
+    }
+
+    #[test]
+    fn reachable_composites_follows_map_values_and_treats_bounded_quantity_as_a_leaf() {
+        let source = format!(
+            "{HEADER}tuple Pair(Boolean, Integer);\nfunction consume using v(x: Pair): Boolean pure {{ true }}\n"
+        );
+        let acquired = acquire(&source, &DependencyInput::default());
+        let handle = acquired.handle();
+        let graph = handle.package.graph();
+        let pair = graph
+            .checked_type_nodes()
+            .find_map(|type_node| match type_node {
+                qsl_semantics::check::CheckedTypeNode::Composite { declaration, .. } => {
+                    Some(*declaration)
+                }
+                _ => None,
+            })
+            .expect("the Pair composite declaration");
+        let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            ValueType::Composite(pair),
+            None,
+        )));
+        let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+            quire_exact::BoundedQuantityType::new(
+                quire_exact::UnitId::compound([5; 32]),
+                None,
+                None,
+            )
+            .expect("an unbounded quantity in the unit"),
+        ));
+        let through_map =
+            reachable_composites(graph, &Signature::new(vec![map], ValueType::Boolean))
+                .expect("a map of a checked composite is consistent");
+        assert_eq!(through_map, BTreeSet::from([pair]));
+        let leaf = reachable_composites(graph, &Signature::new(vec![bounded], ValueType::Boolean))
+            .expect("a bounded quantity is a leaf");
+        assert!(leaf.is_empty());
     }
 
     #[trace("TC-1263", "FR-485-AC-13", "FR-485-AC-14")]

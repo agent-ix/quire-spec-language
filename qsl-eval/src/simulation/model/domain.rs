@@ -130,8 +130,17 @@ impl Space {
                     }
                     CompositeShape::Union(declared) => {
                         visiting.push(*declaration);
+                        // FR-120: cases in ascending UTF-8 bytes of their
+                        // names.
+                        let mut declared: Vec<_> = declared.iter().collect();
+                        declared.sort_by(|left, right| {
+                            left.identifier()
+                                .as_str()
+                                .as_bytes()
+                                .cmp(right.identifier().as_str().as_bytes())
+                        });
                         let spaces = declared
-                            .iter()
+                            .into_iter()
                             .map(|member| {
                                 let verified = member.member()?.clone();
                                 let positions = member
@@ -244,37 +253,6 @@ impl Space {
             }
         }
     }
-}
-
-/// Whether `value_type` is, or holds at any depth, a union.
-fn holds_union(value_type: &ValueType, types: &TypeEnvironment) -> bool {
-    let mut pending = vec![value_type];
-    let mut visited: Vec<NodeKey> = Vec::new();
-    while let Some(value_type) = pending.pop() {
-        match value_type {
-            ValueType::Option(payload) => pending.push(payload),
-            ValueType::Collection(collection) => pending.push(collection.element()),
-            ValueType::Composite(declaration) => {
-                if visited.contains(declaration) {
-                    continue;
-                }
-                visited.push(*declaration);
-                match types
-                    .composite(*declaration)
-                    .map(CompositeDeclaration::shape)
-                {
-                    Some(CompositeShape::Union(_)) => return true,
-                    Some(CompositeShape::Record(fields)) => {
-                        pending.extend(fields.iter().map(|field| field.value_type()));
-                    }
-                    Some(CompositeShape::Tuple(positions)) => pending.extend(positions.iter()),
-                    None => {}
-                }
-            }
-            _ => {}
-        }
-    }
-    false
 }
 
 /// Whether `value_type` has a finite FR-120 value domain ([`Domain::of`]).
@@ -447,11 +425,12 @@ impl Domain {
                 payload_type: (**payload).clone(),
                 inner: Box::new(Self::of(payload, objects, types, orders)?),
             }),
-            // FR-120 "Applications" (STD-508): an enum, and a record or
-            // tuple whose components all have a finite domain, the first
-            // declared most significant; a clock component is a place, not a
-            // component of the checked value. A union stays unbounded.
-            ValueType::Enum(_) | ValueType::Composite(_) if !holds_union(value_type, types) => {
+            // FR-120 "Applications" (STD-508): an enum, a record or tuple
+            // whose components all have a finite domain, the first declared
+            // most significant, and a model-variant union whose payload
+            // positions all have one; a clock component is a place, not a
+            // component of the checked value.
+            ValueType::Enum(_) | ValueType::Composite(_) => {
                 Space::of(value_type, objects, types, orders, &mut Vec::new())
                     .map(|space| Self::Space(Box::new(space)))
             }
@@ -908,6 +887,7 @@ mod tests {
             ]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        assert!(enumerable_in(&ValueType::Composite(union), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(union),
             &[],
@@ -930,6 +910,102 @@ mod tests {
                 "05".repeat(32)
             )
         );
+    }
+
+    /// FR-120 "Applications": a model-variant union's cases are ordered by
+    /// ascending UTF-8 bytes of their names, whatever their declared order:
+    /// `Zed` declared before `Alpha` still lists `Alpha` first.
+    #[trace("TC-1270")]
+    #[test]
+    fn a_variant_union_orders_its_cases_by_name() {
+        use quire_exact::{Identifier, UnionMember};
+        use quire_semantic_value::declaration::UnionMemberDeclaration;
+        let union = NodeKey::from_digest([12; 32]);
+        let case = |byte: u8, name: &str| {
+            UnionMember::from_admitted(
+                union,
+                NodeKey::from_digest([byte; 32]),
+                Identifier::new(name).expect("an identifier"),
+            )
+        };
+        let (zed, alpha) = (case(13, "Zed"), case(14, "Alpha"));
+        let declaration = CompositeDeclaration::new(
+            union,
+            "Ordered",
+            CompositeShape::Union(vec![
+                UnionMemberDeclaration::from_verified(zed.clone(), vec![]),
+                UnionMemberDeclaration::from_verified(alpha.clone(), vec![]),
+            ]),
+        );
+        let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        let domain = Domain::of(
+            &ValueType::Composite(union),
+            &[],
+            &types,
+            &RecordOrders::new(),
+        )
+        .expect("a finite domain");
+        let names: Vec<String> = (0..domain.len())
+            .map(|index| match domain.nth(index) {
+                Some(Value::Union(value)) => value.member().identifier().as_str().to_owned(),
+                other => panic!("a union value: {other:?}"),
+            })
+            .collect();
+        assert_eq!(names, ["Alpha", "Zed"]);
+    }
+
+    /// FR-120-AC-25 / TC-1270: an admitted model variant union adds the
+    /// nullary case's one value to each value of a finite Boolean payload.
+    #[trace("TC-1270", "FR-120-AC-25")]
+    #[test]
+    fn a_variant_union_adds_nullary_and_payload_case_domains() {
+        use quire_exact::{Identifier, UnionMember};
+        use quire_semantic_value::declaration::UnionMemberDeclaration;
+        let union = NodeKey::from_digest([9; 32]);
+        let empty = UnionMember::from_admitted(
+            union,
+            NodeKey::from_digest([10; 32]),
+            Identifier::new("Empty").expect("an identifier"),
+        );
+        let enabled = UnionMember::from_admitted(
+            union,
+            NodeKey::from_digest([11; 32]),
+            Identifier::new("Enabled").expect("an identifier"),
+        );
+        let declaration = CompositeDeclaration::new(
+            union,
+            "Choice",
+            CompositeShape::Union(vec![
+                UnionMemberDeclaration::from_verified(empty.clone(), vec![]),
+                UnionMemberDeclaration::from_verified(enabled.clone(), vec![ValueType::Boolean]),
+            ]),
+        );
+        let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
+        assert!(enumerable_in(&ValueType::Composite(union), &types));
+        let values = composite_values::<()>(
+            &ValueType::Composite(union),
+            &[],
+            &types,
+            &RecordOrders::new(),
+            || Ok(()),
+        )
+        .expect("no stop")
+        .expect("the union has a finite domain");
+        assert_eq!(values.len(), 3);
+        let Value::Union(empty_value) = &values[0] else {
+            panic!("the nullary case is first")
+        };
+        assert_eq!(empty_value.member().variant(), empty.variant());
+        assert!(empty_value.payload().is_empty());
+        for (index, expected) in [(1, false), (2, true)] {
+            let Value::Union(enabled_value) = &values[index] else {
+                panic!("the payload case follows the nullary case")
+            };
+            assert_eq!(enabled_value.member().variant(), enabled.variant());
+            assert!(
+                matches!(enabled_value.payload(), [Value::Boolean(value)] if *value == expected)
+            );
+        }
     }
 
     /// FR-120's record form, written exactly: `type`, the declaration's node
