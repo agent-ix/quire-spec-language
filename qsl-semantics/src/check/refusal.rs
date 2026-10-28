@@ -794,6 +794,17 @@ pub enum ProtocolConstruct {
     /// "Cyclic reference components" writes such a component with one
     /// recursion group; that emission is QSL-844.
     ReferenceCycle,
+    /// A `protocol` reference written directly in a protocol's own body (a
+    /// `check`/`send` constraint, an `each` guard, a `terminal when`
+    /// condition, a capture initializer or a `finish` constraint). QSpec
+    /// FR-464 "Binder scope" finds an expression's reads over its dependency
+    /// closure, which stops at a `function` node but not at a
+    /// `protocol_reference`, so the closure runs through the referenced
+    /// clause to its `finish` binder and IR's reader refuses the body
+    /// (`BinderScope`, `ModelStateRead`). QSL cannot prove the package
+    /// admitted until QSpec says whether the closure stops at the carrier;
+    /// a call to a function that reads the protocol is admitted. QSL-1121g.
+    ProtocolReferenceInBody,
     /// A `terminal when` condition that reads `over` under `activation on
     /// each`. QSpec FR-464 stage `terminal` and vector TC-947 TM11 admit it,
     /// but IR's reader (`protocol_body.rs` `check_finish_terminal`, at
@@ -838,7 +849,7 @@ impl ProtocolConstruct {
             Self::Control(_) => "QSL-1126",
             Self::Requirements | Self::Compensations => "QSL-1127",
             Self::ReferenceCycle => "QSL-844",
-            Self::ReferenceToAttemptProtocol => "QSL-1121g",
+            Self::ReferenceToAttemptProtocol | Self::ProtocolReferenceInBody => "QSL-1121g",
             Self::ChannelCarriesBounded => "QSL-1137",
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",

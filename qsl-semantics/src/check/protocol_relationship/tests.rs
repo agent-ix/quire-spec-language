@@ -407,11 +407,18 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
             "",
         ),
         (bare("on origin", "", "ok()"), vec![], ""),
-        // QSL-844: a protocol that reaches itself is a cyclic component.
+        // QSL-1121g, QSL-844: a protocol that refers to itself in its own
+        // body names a reference the reader refuses, and is a cyclic
+        // component; the function `back` that reads it is refused at that
+        // reference, naming the protocol's first construct.
         (
             bare("on origin", "", "protocol Bare"),
-            vec![C::ReferenceCycle],
-            "QSL-844",
+            vec![
+                C::ProtocolReferenceInBody,
+                C::ReferenceCycle,
+                C::ProtocolReferenceInBody,
+            ],
+            "QSL-1121g",
         ),
         (
             bare("on origin", "", "back()"),
@@ -440,8 +447,15 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
         let mut found = unwritten(&text);
         found.dedup();
         assert_eq!(found, expected, "{text}");
+        // The cycle, when named, is QSL-844; every other construct is the
+        // case's ticket.
         for construct in expected {
-            assert_eq!(construct.tracking(), ticket, "{construct:?}");
+            let tracked = if construct == C::ReferenceCycle {
+                "QSL-844"
+            } else {
+                ticket
+            };
+            assert_eq!(construct.tracking(), tracked, "{construct:?}");
         }
     }
 }

@@ -147,20 +147,21 @@ fn the_clause_key_follows_the_called_function_and_ignores_layout() {
     assert_ne!(base.0, identity(&admitted(&other)).0);
 }
 
-/// FR-464 "Reader order": a protocol that refers to another is keyed after
-/// it, and a function that refers to a protocol whose body calls a function
-/// is keyed between the two.
+/// FR-464 "Reader order": a function that refers to a protocol whose body
+/// calls a function is keyed after that protocol, and a protocol that calls
+/// the function after both. The two `finish` binders are named differently,
+/// so the reader proves no binder is shared.
 #[test]
 fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
     let parts = [
         "function leaf using v(): Boolean pure { true }\n",
         "protocol Inner using v over (input: M::Order) on origin {\n\
          role Buyer on M::Order;\nrun sequence Main { }\n\
-         finish End as (outcome: Boolean) { leaf() };\n}\n",
+         finish End as (inner: Boolean) { leaf() };\n}\n",
         "function mid using v(): Boolean pure { protocol Inner }\n",
         "protocol Outer using v over (input: M::Order) on origin {\n\
          role Buyer on M::Order;\nrun sequence Main { }\n\
-         finish End as (outcome: Boolean) { mid() and protocol Inner };\n}\n",
+         finish End as (outer: Boolean) { mid() };\n}\n",
     ];
     let text = parts.concat();
     let text = text.as_str();
@@ -196,8 +197,10 @@ fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
 /// QSL-844: a component of function calls and protocol references that
 /// closes a cycle is a recursion group (FR-383 "Cyclic reference
 /// components"), which is not written yet: the protocol refuses naming
-/// `ReferenceCycle`, whether it reaches itself or through a function, and
-/// no clause node is written.
+/// `ReferenceCycle` through a function that reads it back, whichever body
+/// holds the call (a capture, a guard, a `terminal when`, a control or the
+/// `finish`), and no clause node is written. The declaration and the
+/// function's reference to it are refused, once each.
 #[test]
 fn a_protocol_in_a_cycle_refuses_naming_the_recursion_group_ticket() {
     let reach = ProtocolConstruct::ReferenceCycle;
@@ -205,31 +208,109 @@ fn a_protocol_in_a_cycle_refuses_naming_the_recursion_group_ticket() {
     let cycle = CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted {
         construct: reach,
     }));
-    let own = flow("on origin", "", "", "protocol Flow");
-    let through = format!(
-        "function back using v(): Boolean pure {{ protocol Flow }}\n{}",
-        flow("on origin", "", "", "back()")
-    );
-    let terminal = format!(
-        "function back using v(): Boolean pure {{ protocol Flow }}\n{}",
-        flow("on origin", "", "terminal when { back() };", "true")
-    );
-    for text in [own, through, terminal] {
+    let back = "function back using v(): Boolean pure { protocol Flow }\n";
+    let sites = [
+        flow("on origin", "capture c: Boolean = back();", "", "true"),
+        flow("on each (t: Tick) when (back())", "", "", "true"),
+        flow("on origin", "", "terminal when { back() };", "true"),
+        flow("on origin", "", "", "back()"),
+        flow("on origin", "", "", "true").replace(
+            "run sequence Main { }",
+            "run sequence Main { check Gate using v { back() }; }",
+        ),
+    ];
+    for site in sites {
+        let text = format!("{back}{site}");
         let refusals = checked(&text, false).expect_err(&text);
-        // The declaration, and each reference to it, refuse alike.
-        assert!(!refusals.is_empty(), "{text}");
+        assert_eq!(refusals.len(), 2, "{text}: {refusals:?}");
         assert!(refusals.iter().all(|r| r.cause == cycle), "{refusals:?}");
+        // The declaration order does not matter.
+        let swapped = format!("{site}{back}");
+        let again = checked(&swapped, false).expect_err(&swapped);
+        assert_eq!(again.len(), 2, "{swapped}: {again:?}");
+        assert!(again.iter().all(|r| r.cause == cycle), "{again:?}");
     }
     // A function that only reads a protocol, and a protocol that only calls
     // a function, are not a cycle.
-    let acyclic = format!(
-        "function back using v(): Boolean pure {{ protocol Flow }}\n{}",
-        flow("on origin", "", "", "true")
-    );
+    let acyclic = format!("{back}{}", flow("on origin", "", "", "true"));
     let lowered = admitted(&acyclic);
     assert!(target(
         &lowered.wire,
         &clause(&lowered.wire)["body"]["arguments"][0]["value"]
     )
     .is_object());
+}
+
+/// A second protocol, `Other`, whose `finish` binder is named `done` (not
+/// `outcome`, the name of `Flow`'s), so that no binder is shared.
+const OTHER: &str = "protocol Other using v over (input: M::Order) on origin {\n\
+     role Buyer on M::Order;\nrun sequence Main { }\n\
+     finish End as (done: Boolean) { true };\n}\n";
+
+/// The five protocol slots that hold an expression, each filled with `body`.
+fn slots(body: &str) -> [String; 5] {
+    [
+        flow(
+            "on origin",
+            &format!("capture c: Boolean = {body};"),
+            "",
+            "true",
+        ),
+        flow(&format!("on each (t: Tick) when ({body})"), "", "", "true"),
+        flow(
+            "on origin",
+            "",
+            &format!("terminal when {{ {body} }};"),
+            "true",
+        ),
+        flow("on origin", "", "", body),
+        flow("on origin", "", "", "true").replace(
+            "run sequence Main { }",
+            &format!("run sequence Main {{ check Gate using v {{ {body} }}; }}"),
+        ),
+    ]
+}
+
+/// QSL-1121g, QSpec FR-464 "Binder scope": a protocol reference written
+/// directly in a capture, a guard, a `terminal when`, a `finish` or a control
+/// body is refused typed, whatever the other protocol's `finish` binder is
+/// called: IR's reader follows the dependency closure through the referenced
+/// clause to its binder and refuses the body (`BinderScope`, `ModelStateRead`),
+/// so QSL writes no such package. Opening the gate writes only `Other`.
+#[test]
+fn a_protocol_reference_written_in_a_protocol_body_refuses_typed() {
+    let construct = ProtocolConstruct::ProtocolReferenceInBody;
+    assert_eq!(construct.tracking(), "QSL-1121g");
+    let refused =
+        CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted { construct }));
+    for site in slots("protocol Other") {
+        let text = format!("{OTHER}{site}");
+        let refusals = checked(&text, false).expect_err(&text);
+        assert_eq!(refusals.len(), 1, "{text}: {refusals:?}");
+        assert_eq!(refusals[0].cause, refused, "{text}");
+        let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+        let written = open
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.semantic_form() == "protocol_clause")
+            .count();
+        assert_eq!(written, 1, "only Other is written: {text}");
+    }
+}
+
+/// The same five slots, reading `Other` through a function, are admitted by
+/// IR's reader (its closure stops at a `function` node) with `Other`'s
+/// `finish` binder named differently from `Flow`'s.
+#[test]
+fn a_protocol_read_through_a_function_in_a_protocol_body_is_admitted() {
+    let rd = "function rd using v(): Boolean pure { protocol Other }\n";
+    for site in slots("rd()") {
+        let text = format!("{OTHER}{rd}{site}");
+        let lowered = admitted(&text);
+        let clauses = nodes(&lowered.wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == "protocol_clause")
+            .count();
+        assert_eq!(clauses, 2, "{text}");
+    }
 }

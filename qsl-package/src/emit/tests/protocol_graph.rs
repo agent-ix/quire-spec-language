@@ -688,16 +688,22 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         (
             C::WholeModelRole,
             "IR-874",
+            vec![C::WholeModelRole],
+            false,
             plain("on origin", "role W on M;", main, "true"),
         ),
         (
-            C::ReferenceCycle,
-            "QSL-844",
+            C::ProtocolReferenceInBody,
+            "QSL-1121g",
+            vec![C::ProtocolReferenceInBody, C::ReferenceCycle],
+            false,
             plain("on origin", "", main, "protocol Flow"),
         ),
         (
             C::ReferenceCycle,
             "QSL-844",
+            vec![C::ReferenceCycle; 2],
+            true,
             format!(
                 "function back using v(): Boolean pure {{ protocol Flow }}\n{}",
                 plain("on origin", "", main, "back()")
@@ -706,11 +712,15 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         (
             C::ChannelCarriesBounded,
             "QSL-1137",
+            vec![C::ChannelCarriesBounded],
+            false,
             plain("on origin", &carrying("Int[0, 5]"), main, "true"),
         ),
         (
             C::ChannelCarriesBounded,
             "QSL-1137",
+            vec![C::ChannelCarriesBounded],
+            false,
             plain(
                 "on origin",
                 &carrying("Sequence<Boolean>[0, 3]"),
@@ -721,6 +731,8 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         (
             C::Control("choice"),
             "QSL-1126",
+            vec![C::Control("choice")],
+            false,
             plain(
                 "on origin",
                 "",
@@ -741,23 +753,33 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
     let written = checked(&plain("on origin", "", main, "true"), false)
         .unwrap_or_else(|refusals| panic!("{refusals:?}"));
     assert_eq!(clauses(&written), 1);
-    for (construct, ticket, text) in cases {
+    for (construct, ticket, expected, read_back, text) in cases {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
         let refusals = checked(&text, false).expect_err(&text);
-        // The protocol's declaration, and each reference to it, refuse.
-        assert!(!refusals.is_empty(), "{text}");
-        assert!(
+        // The protocol's declaration is refused once per construct it names,
+        // and a function that reads the protocol back is refused at its
+        // reference.
+        assert_eq!(
             refusals
                 .iter()
-                .all(|refusal| refusal.cause == not_emitted(construct)),
-            "{text}: {refusals:?}"
+                .map(|refusal| refusal.cause.clone())
+                .collect::<Vec<_>>(),
+            expected.iter().map(|c| not_emitted(*c)).collect::<Vec<_>>(),
+            "{text}"
         );
-        if text.contains("function back") {
-            // A function that reads the unwritten protocol is refused at
-            // its reference whatever the opt-in.
+        let open = checked(&text, true);
+        if read_back {
+            // The function's reference to the unwritten protocol is refused
+            // whatever the opt-in; only the function's refusal remains.
+            let open = open.expect_err(&text);
+            assert_eq!(
+                open.iter().map(|r| r.cause.clone()).collect::<Vec<_>>(),
+                [not_emitted(construct)],
+                "{text}"
+            );
             continue;
         }
-        let open = checked(&text, true).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+        let open = open.unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
         // Only the second protocol the case declares, if any, is written.
         let others = text.matches("protocol Other using").count();
         assert_eq!(

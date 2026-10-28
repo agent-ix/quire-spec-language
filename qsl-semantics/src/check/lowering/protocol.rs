@@ -17,7 +17,8 @@
 //! What this writes is what QSL can prove IR admits. A protocol that names a
 //! construct whose node is not written yet (a role, a channel, a `choice`,
 //! `parallel` or `repeat`, a `terminal` member, a requirement, a
-//! compensation, a capture, guard or control body that names a function) is refused with that construct named
+//! compensation, a protocol reference written directly in a capture, guard,
+//! terminal, control or `finish` body) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
@@ -197,6 +198,13 @@ impl ProtocolInput<'_> {
                 unemitted.push(ProtocolConstruct::Control(control.kind.label()));
             }
         }
+        if self
+            .body_roots()
+            .iter()
+            .any(|root| !root.protocol_references().is_empty())
+        {
+            unemitted.push(ProtocolConstruct::ProtocolReferenceInBody);
+        }
         if matches!(form.activation, ActivationForm::Each { .. })
             && matches!(&slots.terminal, CheckedTerminalMember::When(body) if body.reads_local(0))
         {
@@ -226,11 +234,10 @@ impl ProtocolInput<'_> {
             .map(|body| &body.body)
     }
 
-    /// The functions this protocol's bodies call and the protocols they
-    /// refer to, each by declaration index, ascending and once. Each is a
-    /// node the protocol's own key hashes, so it is keyed before this
-    /// protocol is (FR-093 `Call` row, FR-464 `protocol_reference`).
-    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>) {
+    /// The root of every expression tree the protocol's slots hold: its
+    /// capture initializers, its `each` guard, its `terminal when`
+    /// condition, and each control and `finish` body.
+    fn body_roots(&self) -> Vec<CheckedNode<'_>> {
         let obligations = &self.checked.obligations;
         let mut roots: Vec<CheckedNode<'_>> = obligations
             .captures
@@ -254,6 +261,15 @@ impl ProtocolInput<'_> {
                 .iter()
                 .map(|body| body.body.root()),
         );
+        roots
+    }
+
+    /// The functions this protocol's bodies call and the protocols they
+    /// refer to, each by declaration index, ascending and once. Each is a
+    /// node the protocol's own key hashes, so it is keyed before this
+    /// protocol is (FR-093 `Call` row, FR-464 `protocol_reference`).
+    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>) {
+        let roots = self.body_roots();
         let mut functions = Vec::new();
         let mut protocols = Vec::new();
         for root in roots {
