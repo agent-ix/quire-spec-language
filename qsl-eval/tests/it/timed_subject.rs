@@ -5029,7 +5029,7 @@ fn the_clock_presence_frame_vectors_step_as_published() {
             start.discrete().clone(),
             start.clocks().delayed(&exact(3, 1)),
         );
-        let observed: std::collections::BTreeSet<(bool, Option<Rational>)> = timed
+        let mut observed: Vec<(bool, Option<Rational>)> = timed
             .steps(&start)
             .expect("decided")
             .into_iter()
@@ -5039,12 +5039,16 @@ fn the_clock_presence_frame_vectors_step_as_published() {
                 (live, live.then(|| next.clocks().get(at).cloned()).flatten())
             })
             .collect();
-        let expected: std::collections::BTreeSet<(bool, Option<Rational>)> = vector["expected"]
+        let mut expected: Vec<(bool, Option<Rational>)> = vector["expected"]
             .as_array()
             .expect("successors")
             .iter()
             .map(|successor| (successor["present"] == true, millis(&successor["clock"])))
             .collect();
+        for successors in [&mut observed, &mut expected] {
+            successors.sort();
+            successors.dedup();
+        }
         assert_eq!(observed, expected, "{id}: {post}");
         ran += 1;
     }
