@@ -304,6 +304,7 @@ fn slot(
             }
             let bound = located.constant(constant, clocks).map_err(timed)?;
             let constraint = |op: ClockOp| ClockConstraint {
+                parameter: None,
                 clock,
                 via: Vec::new(),
                 slots: vec![binding.slot],
@@ -486,6 +487,7 @@ pub(super) fn reset(
         .map(|premise| renamed(located, premise, quantifier.binder, &name))
         .transpose()?;
     Ok(Some(ResetDraft {
+        parameter: None,
         clock,
         value,
         span,

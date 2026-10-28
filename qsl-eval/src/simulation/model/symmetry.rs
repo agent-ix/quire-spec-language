@@ -289,6 +289,18 @@ impl ModelSystem<'_> {
         let limits = Limits::new(identity_limits().input_bytes);
         let text = |enc: Enc| enc.canonical_text(limits).map_err(|_| stop(BROKEN));
         let rename = |argument: &str| -> Result<String, ExpansionStop> {
+            // A `Clock` parameter's place (FR-230 "Operation parameters"):
+            // the place of the same clock at the same slots on the image
+            // of its object.
+            if let Some((before, reference, after)) = encode::split_clock_place(argument) {
+                return match renaming.reference(&reference) {
+                    Some(renamed) => Ok(format!(
+                        "{before}{}{after}",
+                        text(encode::reference_enc(&renamed))?
+                    )),
+                    None => Ok(argument.to_owned()),
+                };
+            }
             if let Some(reference) = encode::parse_reference(argument) {
                 return match renaming.reference(&reference) {
                     Some(renamed) => text(encode::reference_enc(&renamed)),

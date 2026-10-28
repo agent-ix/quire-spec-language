@@ -2123,10 +2123,26 @@ fn model_operation(
 ) -> Result<OperationDeclaration, Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
+    // A single `Clock`, directly or through aliases, is a place.
+    let clock = |value_type: &ValueTypeRef, multiplicity: Multiplicity| {
+        multiplicity.upper == Some(1)
+            && multiplicity.lower == 1
+            && matches!(
+                crate::model::domain_package::unaliased(value_type, |key| records
+                    .get(key)
+                    .copied()),
+                Some((ValueTypeRef::Clock, 0))
+            )
+    };
     let mut parameters = Vec::with_capacity(operation.parameters.len());
+    let mut clock_parameters = Vec::new();
     for (index, parameter) in operation.parameters.iter().enumerate() {
         let parameter_name = member_identity_name(&operation.key.node, &parameter.key.node)
             .ok_or(Unmapped::Broken)?;
+        if clock(&parameter.value_type, parameter.multiplicity) {
+            clock_parameters.push((index, parameter_name.to_owned()));
+            continue;
+        }
         let value_type = model_value_type(
             &parameter.value_type,
             parameter.multiplicity,
@@ -2151,9 +2167,14 @@ fn model_operation(
         })?;
         parameters.push((parameter_name.to_owned(), value_type));
     }
+    let clock_result = operation
+        .result
+        .as_ref()
+        .is_some_and(|result| clock(&result.value_type, result.multiplicity));
     let result = operation
         .result
         .as_ref()
+        .filter(|_| !clock_result)
         .map(|result| {
             model_value_type(
                 &result.value_type,
@@ -2179,12 +2200,10 @@ fn model_operation(
             })
         })
         .transpose()?;
-    Ok(OperationDeclaration::new(
-        name,
-        parameters,
-        result,
-        operation.effect.clone(),
-    ))
+    Ok(
+        OperationDeclaration::new(name, parameters, result, operation.effect.clone())
+            .with_clocks(clock_parameters, clock_result),
+    )
 }
 
 /// FR-103: each kept `requires`/`ensures` clause the driver parsed for

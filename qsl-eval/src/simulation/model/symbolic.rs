@@ -439,7 +439,7 @@ impl<'a> ModelSystem<'a> {
                 receiver_modifies: effect.receiver_modifies.iter().cloned().collect(),
                 preconditions: applicable(&self.clauses.preconditions)?,
                 postconditions: applicable(&self.clauses.postconditions)?,
-                typing: self.typing(),
+                typing: self.value_typing(),
             });
         }
         Ok(operations)
