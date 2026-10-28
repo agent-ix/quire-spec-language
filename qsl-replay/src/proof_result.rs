@@ -1272,6 +1272,26 @@ impl TerminalRecord {
         Self::failed(request_index, backend).with_diagnostic(Some(diagnostic))
     }
 
+    /// The record of `value`, a model-check settlement map's (FR-127's,
+    /// FR-235's or FR-144's), produced by `backend`: a `refuted` value only
+    /// with the counterexample `reproduced`, which its replay reproduced.
+    ///
+    /// # Errors
+    ///
+    /// [`TerminalRecordRefusal::RefutedWithoutCounterexample`] for a
+    /// `refuted` value with no reproduced counterexample.
+    pub fn of_model_settlement<T: qsl_eval::simulation::SubjectTransition>(
+        request_index: RequestIndex,
+        backend: BackendId,
+        value: TerminalValue,
+        reproduced: Option<&crate::model_check::counterexample::TemporalCounterexample<T>>,
+    ) -> Result<Self, TerminalRecordRefusal> {
+        if matches!(value, TerminalValue::Refuted) && reproduced.is_none() {
+            return Err(TerminalRecordRefusal::RefutedWithoutCounterexample);
+        }
+        Ok(Self::with_backend(request_index, backend, value))
+    }
+
     pub(crate) fn with_backend(
         request_index: RequestIndex,
         backend: BackendId,

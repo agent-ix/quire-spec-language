@@ -712,3 +712,90 @@ fn an_undetermined_step_is_undecided_whatever_its_post_state() {
         );
     }
 }
+
+/// The record `analyze` settles for `world`'s one refinement on EN-6,
+/// through `timed_refinement_item` and FR-145's replay over FR-241's delays.
+fn analyzed(world: &Refining) -> qsl_analyze::analyze::AnalyzeRecord {
+    use qsl_analyze::analyze::{analyze, timed_refinement_item, Engines, TimedRefinementItem};
+    let [refinement] = world.package.graph().refinements() else {
+        panic!("one refinement");
+    };
+    let concrete = world.concrete_request();
+    let item = TimedRefinementItem {
+        request: TimedRefinementRequest {
+            refinement,
+            concrete: concrete.clone(),
+            abstract_package: &world.package,
+            abstract_initial: vec![world.abstract_initial.clone()],
+            limits: ZoneCheckLimits::default(),
+        },
+        replay: Box::new(move |payload| {
+            let systems = open_systems(
+                refinement,
+                &concrete,
+                &world.package,
+                vec![world.abstract_initial.clone()],
+            )
+            .map_err(|_| {
+                qsl_replay::ReplayRefusal::ModelTrace(Box::new(
+                    qsl_replay::ModelTraceRefusal::NoRefinementFailure,
+                ))
+            })?;
+            replay_timed_refinement_trace(refinement, &systems, payload, &Limits::default())
+        }),
+    };
+    let mut records = analyze(
+        &Engines::qsl().expect("the layer-A manifests register"),
+        vec![timed_refinement_item(
+            qsl_foundation::RequestIndex::new(0),
+            item,
+        )],
+        &Cancel::new(),
+    );
+    assert_eq!(records.len(), 1);
+    records.remove(0)
+}
+
+/// FR-430-AC-1 and FR-144 end to end (TC-1170): the `TReq` refinement with
+/// `send` mapped to `stutter` runs on EN-6 through `analyze` and settles
+/// `refuted` once its counterexample replays. The holding `TReq` settles
+/// `unsupported`/`not-yet-implemented` from EN-6: its zone certificate has
+/// no checker yet (QSL-1005c), and a `Holds` with no accepted certificate
+/// never settles `proved` (FR-430-AC-8).
+#[trace("TC-1170", "FR-430-AC-1")]
+#[test]
+fn a_timed_refinement_settles_on_en6_through_analyze() {
+    use qsl_analyze::analyze::{DispositionKind, Settlement};
+    use qsl_analyze::zone_check::manifest::BACKEND_ID;
+    use qsl_replay::TerminalValue;
+
+    let body = refinement("self.inflight").replace("-> A::Call::send(self)", "-> stutter");
+    let violated = refining(&req(), &treq(), &format!("{DENSE}{CONTRACTS}{body}"))
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let record = analyzed(&violated);
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(*terminal.value(), TerminalValue::Refuted);
+    assert_eq!(
+        terminal.backend().map(qsl_foundation::BackendId::as_str),
+        Some(BACKEND_ID)
+    );
+
+    let holds = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let Settlement::Disposed(disposed) = analyzed(&holds).settlement else {
+        panic!("a holding half without a certificate settles no verdict");
+    };
+    assert_eq!(disposed.kind, DispositionKind::Unsupported);
+    assert_eq!(
+        disposed
+            .backend
+            .as_ref()
+            .map(qsl_foundation::BackendId::as_str),
+        Some(BACKEND_ID)
+    );
+    assert_eq!(
+        disposed
+            .diagnostic
+            .map(|diagnostic| diagnostic.code.to_string()),
+        Some("unsupported_construct/not-yet-implemented".to_owned())
+    );
+}

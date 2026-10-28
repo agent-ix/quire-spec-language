@@ -9,8 +9,10 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::RequestIndex;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::{
-    settle_hyper_form, CertificateRequest, DeclineCode, ModelTraceReplayResult, ProofRefusalCause,
-    ReplayRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
+    check_zone_certificate, settle_hyper_form, CertificateCheckLimits, CertificateRequest,
+    DeclineCode, ModelTraceReplayResult, ProofRefusalCause, RefinementTraceSettlement,
+    ReplayRefusal, SubjectRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
+    ZoneCertificateRequest,
 };
 use qsl_route::request::RequirementItem;
 use qsl_route::Mode;
@@ -25,6 +27,11 @@ use crate::model_check::{
     ModelCheckRequest,
 };
 use crate::statistical::{check_statistical, manifest as en4, StatisticalRequest};
+use crate::zone_check::{
+    certificate_item, check_timed_model, check_timed_refinement, manifest as en6,
+    settle_timed_refinement, settle_zone_check, TimedRefinementRefusal, TimedRefinementRequest,
+    ZoneCheckRefusal, ZoneCheckRequest, ZoneItem,
+};
 
 /// The FR-396/FR-399 negotiation seam for a routed hyper item. HP-4 calls
 /// [`settle_hyper_form`] before an engine adapter is built, then becomes the
@@ -133,6 +140,147 @@ pub fn statistical_item<'a>(
             }
         },
     )
+}
+
+/// An EN-6 item over a timed subject (FR-243): the zone search, the
+/// checker's request that re-admits the subject for FR-245's certificate
+/// check, the `package_id` the run checked, and the replay of a
+/// counterexample (FR-237), which in production is
+/// `replay_timed_counterexample` over the same source.
+pub struct TimedItem<'a, S> {
+    /// The EN-6 run.
+    pub request: ZoneCheckRequest<'a, 'a, 'a, S>,
+    /// The checker's request over the same subject and item.
+    pub certificate: ZoneCertificateRequest<'a>,
+    /// The checker's budgets.
+    pub certificate_limits: CertificateCheckLimits,
+    /// The `package_id` of the package the run checked.
+    pub package_id: DigestRecord,
+    /// Replays the run's counterexample.
+    pub replay: Box<CounterexampleReplayFn<'a>>,
+}
+
+/// The `temporal-satisfaction` item that runs `item` on EN-6 and settles it
+/// by `settle_zone_check` (FR-235), its certificate checked by FR-245's
+/// `check_zone_certificate`. It is `Supported(EN-6)` until the caller's
+/// negotiation says otherwise ([`AnalyzeItem::disposed`]).
+pub fn zone_item<'a, S: Clone + Eq + 'a>(
+    index: RequestIndex,
+    item: TimedItem<'a, S>,
+) -> AnalyzeItem<'a> {
+    AnalyzeItem::new(
+        index,
+        Capability::TemporalSatisfaction,
+        Mode::Bounded,
+        en6::BACKEND_ID,
+        move |cancel| {
+            let TimedItem {
+                request,
+                certificate,
+                certificate_limits,
+                package_id,
+                replay,
+            } = item;
+            let obligation = request.obligation.clone();
+            match check_timed_model(request, cancel) {
+                Ok(outcome) => EngineReport::Zone(Box::new(settle_zone_check(
+                    ZoneItem::Outcome(&outcome),
+                    &package_id,
+                    cancel,
+                    |proof| {
+                        check_zone_certificate(
+                            certificate,
+                            &obligation,
+                            certificate_item,
+                            proof,
+                            certificate_limits,
+                            cancel,
+                        )
+                    },
+                    replay,
+                ))),
+                Err(refusal) => EngineReport::Refused(zone_refusal(&refusal)),
+            }
+        },
+    )
+}
+
+/// An EN-6 timed refinement item (QSpec FR-430, FR-144): the safety half's
+/// run and the replay of its counterexample (FR-145 over FR-241's delays),
+/// which in production is `replay_timed_refinement_trace` over the same
+/// subjects.
+pub struct TimedRefinementItem<'a> {
+    /// The EN-6 run.
+    pub request: TimedRefinementRequest<'a>,
+    /// Replays the run's counterexample.
+    pub replay: Box<RefinementReplayFn<'a>>,
+}
+
+/// The replay of a timed refinement counterexample (FR-145).
+pub type RefinementReplayFn<'a> =
+    dyn FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal> + 'a;
+
+/// The `temporal-satisfaction` refinement item over a `time dense`
+/// concrete subject, run on EN-6 and settled by `settle_timed_refinement`.
+/// A half that holds settles `unsupported`/`not-yet-implemented`: no checker
+/// reads its zone certificate yet (QSL-1005c), and a `Holds` with no
+/// accepted certificate never settles `proved` (FR-144, FR-430-AC-8).
+pub fn timed_refinement_item<'a>(
+    index: RequestIndex,
+    item: TimedRefinementItem<'a>,
+) -> AnalyzeItem<'a> {
+    AnalyzeItem::new(
+        index,
+        Capability::TemporalSatisfaction,
+        Mode::Bounded,
+        en6::BACKEND_ID,
+        move |cancel| {
+            let TimedRefinementItem { request, replay } = item;
+            match check_timed_refinement(request, cancel) {
+                Ok(outcome) => match settle_timed_refinement(&outcome, cancel, replay) {
+                    Ok(record) => EngineReport::Zone(Box::new(record)),
+                    Err(_) => EngineReport::Refused(Refusal::Unsupported(NOT_YET)),
+                },
+                Err(refusal) => EngineReport::Refused(timed_refinement_refusal(&refusal)),
+            }
+        },
+    )
+}
+
+/// The FR-281 "Engine refusals" row of an EN-6 refusal.
+pub(super) fn zone_refusal(refusal: &ZoneCheckRefusal) -> Refusal {
+    match refusal {
+        ZoneCheckRefusal::RequiresBound(_) => Refusal::RequiresBound,
+        ZoneCheckRefusal::Symmetry(_) => symmetry(),
+        // The forms EN-6 does not decide yet.
+        ZoneCheckRefusal::UnsupportedForm | ZoneCheckRefusal::CarriedClocks => {
+            Refusal::Unsupported(NOT_YET)
+        }
+        // A request defect: an obligation that is not the item's.
+        ZoneCheckRefusal::ObligationMismatch => Refusal::Failed(INVALID_VALUE),
+        // Engine defects, and refusals whose types name no catalog code:
+        // `failed` with the broken-invariant diagnostic.
+        ZoneCheckRefusal::Extent(_)
+        | ZoneCheckRefusal::Atom(_)
+        | ZoneCheckRefusal::Automaton(_)
+        | ZoneCheckRefusal::Fault(_) => Refusal::Failed(BROKEN),
+    }
+}
+
+/// The FR-281 "Engine refusals" row of an EN-6 timed refinement refusal.
+fn timed_refinement_refusal(refusal: &TimedRefinementRefusal) -> Refusal {
+    match refusal {
+        TimedRefinementRefusal::Zone(zone) => zone_refusal(zone),
+        TimedRefinementRefusal::Subject(SubjectRefusal::Admission(failure)) => admission(failure),
+        // The subjects EN-6 does not refine yet.
+        TimedRefinementRefusal::Subject(
+            SubjectRefusal::ProtocolSubject | SubjectRefusal::ProtocolAbstractSide,
+        ) => Refusal::Unsupported(NOT_YET),
+        // A request defect: a refinement with no model, a universe the
+        // request does not give, or a concrete subject that is not timed.
+        TimedRefinementRefusal::Subject(SubjectRefusal::NoModels | SubjectRefusal::NoUniverse)
+        | TimedRefinementRefusal::Timed(_) => Refusal::Failed(INVALID_VALUE),
+    }
 }
 
 fn admission(failure: &AdmissionFailure) -> Refusal {

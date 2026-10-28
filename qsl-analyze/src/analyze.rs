@@ -45,9 +45,13 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
-pub use items::{hyper_form_item, model_item, statistical_item, ModelItem};
+pub use items::{
+    hyper_form_item, model_item, statistical_item, timed_refinement_item, zone_item, ModelItem,
+    RefinementReplayFn, TimedItem, TimedRefinementItem,
+};
 
-use crate::{model_check, statistical};
+use crate::zone_check::ZoneCheckRecord;
+use crate::{model_check, statistical, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
@@ -70,6 +74,16 @@ impl Engine {
     /// Only if the registry's admission rules refuse EN-1's own manifest.
     pub fn model_check() -> Result<Self, RegistrationRefusal> {
         model_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+    }
+
+    /// EN-6, the zone engine, which decides items over a `time dense`
+    /// subject (FR-243).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse EN-6's own manifest.
+    pub fn zone_check() -> Result<Self, RegistrationRefusal> {
+        zone_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
     }
 
     /// EN-4, the statistical engine.
@@ -125,7 +139,8 @@ pub struct Engines {
 }
 
 impl Engines {
-    /// The layer-A engines `analyze` has an item adapter for: EN-1 and EN-4.
+    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4 and
+    /// EN-6.
     ///
     /// # Errors
     ///
@@ -133,7 +148,11 @@ impl Engines {
     /// manifest.
     pub fn qsl() -> Result<Self, RegistrationRefusal> {
         Ok(Self {
-            engines: vec![Engine::model_check()?, Engine::statistical()?],
+            engines: vec![
+                Engine::model_check()?,
+                Engine::statistical()?,
+                Engine::zone_check()?,
+            ],
         })
     }
 
@@ -239,6 +258,9 @@ pub(crate) enum EngineReport {
     Model(Box<ModelCheckRecord>),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
+    /// EN-6's record, settled by FR-235's map, or a timed refinement's by
+    /// FR-144's rows over EN-6's causes.
+    Zone(Box<ZoneCheckRecord>),
     /// The engine refused the item, and its settlement map gives the refusal
     /// no terminal record.
     Refused(Refusal),
@@ -521,6 +543,20 @@ fn settle(
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
+        EngineReport::Zone(zone) => record(
+            // A refuted value without its reproduced counterexample is an
+            // engine fault, never a verdict.
+            terminal(
+                TerminalRecord::of_model_settlement(
+                    index,
+                    backend.clone(),
+                    zone.value.clone(),
+                    zone.counterexample.as_ref(),
+                )
+                .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
+            ),
+            None,
+        ),
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
                 index, backend, cause, code, diagnostic,
