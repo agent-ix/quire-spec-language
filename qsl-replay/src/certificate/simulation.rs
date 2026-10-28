@@ -143,7 +143,7 @@ pub enum EvaluationOutcome {
 impl EvaluationOutcome {
     /// The outcome of `cause`: a mapping read's evaluation, or a successor
     /// set that could not be decided.
-    fn of_undetermined(cause: &Undetermined) -> Self {
+    pub(crate) fn of_undetermined(cause: &Undetermined) -> Self {
         match cause {
             Undetermined::Mapping(mapping) => Self::of_mapping(&mapping.cause),
             Undetermined::UndecidedSuccessor => Self::Refused,

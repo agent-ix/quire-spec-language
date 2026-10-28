@@ -32,10 +32,17 @@
 //! whose initial states admit no time-divergent behaviour settles ADR-026
 //! TD-6's `NoAdmittedBehaviour`.
 //!
-//! A half that holds carries no certificate yet: QSpec FR-430 and FR-244
-//! "Refinement form" give it a zone certificate over this product, which
-//! is remaining work on QSL-1005 (1005c). FR-149's simulation certificate
-//! does not apply, since its explicit successors ignore clock guards.
+//! A failing step whose post-state is time-locked is kept: its post-state
+//! is the `locked` entry of a locked region, whose nodes carry no position
+//! and whose concrete steps no `check_step` judges.
+//!
+//! A half that holds carries FR-244's refinement-form zone certificate:
+//! the search's reachability part, each node's `q` an index into the
+//! product's positions (FR-149's `CertifiedPosition`) or the locked
+//! region's reserved index, and each edge's `Taken`. FR-245 checks it, and
+//! the item settles `proved` only once it accepts. FR-149's simulation
+//! certificate does not apply, since its explicit successors ignore clock
+//! guards.
 //!
 //! This is the safety half only. Remaining work on QSL-1005: the liveness
 //! half over a timed concrete subject (ADR-026 TS-4), and the route of a
@@ -51,15 +58,17 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::BOUND_POSITIONS;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_initial, check_step, open_systems, ConcreteStep, CounterexampleKind, ReachedLimit,
-    RefinementFailure, RefinementPosition, RefinementSystems, StepVerdict, SubjectRefusal,
-    TemporalCounterexample, UndefinedEvaluation, Undetermined,
+    check_initial, check_step, open_systems, CertifiedPosition, ConcreteStep, CounterexampleKind,
+    ReachedLimit, RefinementFailure, RefinementPart, RefinementPosition, RefinementSystems,
+    StepVerdict, SubjectRefusal, Taken, TemporalCounterexample, UndefinedEvaluation, Undetermined,
+    ZoneCertificate,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
 
+use super::certificate::Proof;
 use super::concretise::{concretise, Stage, Target};
 use super::divergence::Escape;
 use super::search::{
@@ -69,9 +78,12 @@ use super::search::{
 use super::Dbm;
 
 /// A request to decide a timed refinement's safety half.
-pub struct TimedRefinementRequest<'a> {
+pub struct TimedRefinementRequest<'a, O> {
     /// The checked refinement, whose concrete model is timed.
     pub refinement: &'a CheckedRefinement,
+    /// The refinement item's obligation identity, which its certificate
+    /// names (FR-244).
+    pub obligation: O,
     /// FR-120's request of the concrete subject.
     pub concrete: ModelSimulationRequest<'a>,
     /// The package holding the abstract model.
@@ -103,11 +115,15 @@ pub enum TimedRefinementStop {
 
 /// The safety half of a timed refinement (QSpec FR-430, FR-142 Outputs).
 #[derive(Clone, Debug)]
-pub enum TimedSafetyOutcome {
-    /// Every reachable product state was examined and every initial state
-    /// and every discrete edge with a time-divergent pre-state passed. No
-    /// core checker reads a zone product, so it carries no certificate.
+pub enum TimedSafetyOutcome<O> {
+    /// Every reachable product state was examined, every initial state and
+    /// every discrete edge into a time-divergent post-state passed, and the
+    /// subject admits a time-divergent behaviour. It carries FR-244's
+    /// refinement-form certificate, which settles `proved` only once FR-245
+    /// accepts it.
     Holds {
+        /// The certificate.
+        certificate: Box<ZoneCertificate<O>>,
         /// The run's counts.
         stats: ZoneStats,
     },
@@ -144,6 +160,30 @@ pub enum TimedSafetyOutcome {
     },
 }
 
+/// The safety half before its certificate names the obligation: a `Holds`
+/// names the initial node whose behaviour diverges.
+enum Decided {
+    Holds {
+        root: usize,
+    },
+    Violated {
+        counterexample: Box<TemporalCounterexample>,
+        stats: ZoneStats,
+    },
+    Undecided {
+        cause: TimedRefinementUndecided,
+        stats: ZoneStats,
+    },
+    Stopped {
+        cause: TimedRefinementStop,
+        stats: ZoneStats,
+    },
+    Fault {
+        fault: InternalFault,
+        stats: ZoneStats,
+    },
+}
+
 /// Why EN-6 does not take a timed refinement.
 #[derive(Debug, thiserror::Error)]
 pub enum TimedRefinementRefusal {
@@ -171,10 +211,10 @@ impl From<ZoneCheckRefusal> for TimedRefinementRefusal {
 /// [`TimedRefinementRefusal`] when the subjects do not open, the concrete
 /// subject is not timed or has an unbounded root, or the engine breaks an
 /// invariant.
-pub fn check_timed_refinement(
-    request: TimedRefinementRequest<'_>,
+pub fn check_timed_refinement<O>(
+    request: TimedRefinementRequest<'_, O>,
     cancel: &Cancel,
-) -> Result<TimedSafetyOutcome, TimedRefinementRefusal> {
+) -> Result<TimedSafetyOutcome<O>, TimedRefinementRefusal> {
     let refinement = request.refinement;
     let RefinementSystems {
         concrete,
@@ -207,11 +247,47 @@ pub fn check_timed_refinement(
         positions: Vec::new(),
         known: BTreeMap::new(),
         depth: Vec::new(),
+        taken: BTreeMap::new(),
     };
-    match product.search(&mut run) {
-        Ok(outcome) => Ok(outcome),
-        Err(Halt::Refusal(refusal)) => Err(refusal.into()),
-        Err(Halt::Outcome(searched)) => Ok(match *searched {
+    let decided = match product.search(&mut run) {
+        Ok(decided) => decided,
+        Err(halt) => return halted(halt),
+    };
+    Ok(match decided {
+        Decided::Holds { root } => match product.certificate(&mut run, root) {
+            Ok(proof) => TimedSafetyOutcome::Holds {
+                certificate: Box::new(ZoneCertificate {
+                    refinement: Some(RefinementPart {
+                        refinement: refinement.name().to_owned(),
+                        concrete_package: refinement.concrete_model_selection().clone(),
+                        abstract_package: refinement.abstract_model_selection().clone(),
+                        positions: proof.positions,
+                        taken: proof.taken,
+                    }),
+                    ..proof.proof.proving(request.obligation)
+                }),
+                stats: run.stats(),
+            },
+            Err(halt) => return halted(halt),
+        },
+        Decided::Violated {
+            counterexample,
+            stats,
+        } => TimedSafetyOutcome::Violated {
+            counterexample,
+            stats,
+        },
+        Decided::Undecided { cause, stats } => TimedSafetyOutcome::Undecided { cause, stats },
+        Decided::Stopped { cause, stats } => TimedSafetyOutcome::Stopped { cause, stats },
+        Decided::Fault { fault, stats } => TimedSafetyOutcome::Fault { fault, stats },
+    })
+}
+
+/// The outcome or refusal a halt of the run is.
+fn halted<O>(halt: Halt) -> Result<TimedSafetyOutcome<O>, TimedRefinementRefusal> {
+    match halt {
+        Halt::Refusal(refusal) => Err(refusal.into()),
+        Halt::Outcome(searched) => Ok(match *searched {
             Searched::Stopped { cause, stats } => TimedSafetyOutcome::Stopped {
                 cause: TimedRefinementStop::Zone(cause),
                 stats,
@@ -225,6 +301,19 @@ pub fn check_timed_refinement(
             }
         }),
     }
+}
+
+/// The `q` of a node in the locked region a failing step enters, whose
+/// behaviour is time-locked: it names no position (FR-244 "Refinement
+/// form").
+const LOCKED: usize = usize::MAX;
+
+/// A proof's reachability part with the refinement part's positions and
+/// `taken`.
+struct RefinementProof {
+    proof: Proof,
+    positions: Vec<CertifiedPosition>,
+    taken: Vec<Option<Taken>>,
 }
 
 /// The key of a refinement position: the concrete state's key, the history
@@ -241,6 +330,9 @@ struct Product<'p, 'a> {
     known: BTreeMap<PositionKey, usize>,
     /// The number of discrete steps from its initial node to each node.
     depth: Vec<usize>,
+    /// The `Taken` of each passing step, by its source node and step
+    /// index.
+    taken: BTreeMap<(usize, usize), Taken>,
 }
 
 /// A judged step: the position after it, or its failure.
@@ -251,17 +343,18 @@ enum Edge {
 
 /// What a verdict decides.
 enum Judgement {
-    /// The step passes, to the position at this index.
-    Passes(usize),
+    /// The step passes, to the position at this index, taking these
+    /// abstract steps.
+    Passes(usize, Taken),
     /// The step or initial state fails: the failure and the counterexample
     /// kind.
     Fails(Box<(RefinementFailure, CounterexampleKind)>),
     /// The run ends with this outcome.
-    Ends(TimedSafetyOutcome),
+    Ends(Decided),
 }
 
 impl Product<'_, '_> {
-    fn search(&mut self, run: &mut Run<'_, '_, '_>) -> Result<TimedSafetyOutcome, Halt> {
+    fn search(&mut self, run: &mut Run<'_, '_, '_>) -> Result<Decided, Halt> {
         let concrete = run.timed.system();
         let initial = run.timed.initial();
         let (scale, lower, upper) = (run.scale.clone(), run.lower.clone(), run.upper.clone());
@@ -284,7 +377,7 @@ impl Product<'_, '_> {
             let mut zone = Dbm::zero(run.dim());
             run.settle(&discrete, &mut zone)?;
             let q = match judged {
-                Judgement::Passes(q) => q,
+                Judgement::Passes(q, _) => q,
                 // The failing step of the empty prefix refutes only when
                 // the initial symbolic state has a point with a
                 // time-divergent continuation; otherwise it holds
@@ -296,7 +389,7 @@ impl Product<'_, '_> {
                             .diverges
                     {
                         let (failure, kind) = *failed;
-                        return Ok(TimedSafetyOutcome::Violated {
+                        return Ok(Decided::Violated {
                             counterexample: Box::new(refuted(index, Vec::new(), failure, kind)),
                             stats: run.stats(),
                         });
@@ -321,7 +414,7 @@ impl Product<'_, '_> {
             } else {
                 ZoneUndecided::NoInitialState
             };
-            return Ok(TimedSafetyOutcome::Undecided {
+            return Ok(Decided::Undecided {
                 cause: TimedRefinementUndecided::Zone(cause),
                 stats: run.stats(),
             });
@@ -336,10 +429,10 @@ impl Product<'_, '_> {
         // time-divergent behaviour from some initial state.
         for root in roots {
             if run.node_escape(root)?.diverges {
-                return Ok(TimedSafetyOutcome::Holds { stats: run.stats() });
+                return Ok(Decided::Holds { root });
             }
         }
-        Ok(TimedSafetyOutcome::Undecided {
+        Ok(Decided::Undecided {
             cause: TimedRefinementUndecided::Zone(ZoneUndecided::NoAdmittedBehaviour),
             stats: run.stats(),
         })
@@ -353,7 +446,7 @@ impl Product<'_, '_> {
         run: &mut Run<'_, '_, '_>,
         node: usize,
         queue: &mut VecDeque<usize>,
-    ) -> Result<Option<TimedSafetyOutcome>, Halt> {
+    ) -> Result<Option<Decided>, Halt> {
         let state = run.nodes[node].state.clone();
         let zone = run.nodes[node].zone.clone();
         let q = run.nodes[node].q;
@@ -368,6 +461,22 @@ impl Product<'_, '_> {
             let step = steps
                 .get(successor.step)
                 .ok_or(ZoneCheckRefusal::Fault("refinement-step"))?;
+            let arrival = Arrival {
+                from: node,
+                step: Some((successor.step, successor.part)),
+                piece: None,
+            };
+            if q == LOCKED {
+                // The locked region: concrete steps, judged by no
+                // `check_step`, kept for the certificate (FR-244).
+                if let Some(created) =
+                    run.insert(successor.state, LOCKED, successor.zone, None, Some(arrival))?
+                {
+                    self.depth.push(depth.saturating_add(1));
+                    queue.push_back(created);
+                }
+                continue;
+            }
             if let std::collections::btree_map::Entry::Vacant(slot) = judged.entry(successor.step) {
                 let result = check_step(
                     self.refinement,
@@ -381,7 +490,10 @@ impl Product<'_, '_> {
                     },
                 );
                 let edge = match self.judge(result.verdict, run)? {
-                    Judgement::Passes(next) => Edge::Passes(next),
+                    Judgement::Passes(next, taken) => {
+                        self.taken.insert((node, successor.step), taken);
+                        Edge::Passes(next)
+                    }
                     Judgement::Fails(failed) => Edge::Fails(failed),
                     Judgement::Ends(outcome) => return Ok(Some(outcome)),
                 };
@@ -397,22 +509,20 @@ impl Product<'_, '_> {
                     let escape =
                         run.escape(&successor.state, &successor.zone, &scale, &lower, &upper)?;
                     if !escape.diverges {
+                        // No behaviour takes it: its post-state is kept as
+                        // the `locked` entry of the locked region (FR-430).
+                        self.lock(run, successor.state, successor.zone, arrival, depth, queue)?;
                         continue;
                     }
                     let failed = (**failed).clone();
                     let counterexample =
                         self.counterexample(run, node, (step, successor.part), failed, &escape)?;
-                    return Ok(Some(TimedSafetyOutcome::Violated {
+                    return Ok(Some(Decided::Violated {
                         counterexample: Box::new(counterexample),
                         stats: run.stats(),
                     }));
                 }
                 None => return Err(ZoneCheckRefusal::Fault("refinement-verdict").into()),
-            };
-            let arrival = Arrival {
-                from: node,
-                step: Some((successor.step, successor.part)),
-                piece: None,
             };
             if let Some(created) =
                 run.insert(successor.state, next, successor.zone, None, Some(arrival))?
@@ -424,10 +534,100 @@ impl Product<'_, '_> {
         Ok(None)
     }
 
+    /// Keep the post-state `(state, zone)` of a failing step from `arrival`
+    /// as the `locked` entry of the locked region, or mark the node of the
+    /// region that covers it (FR-244 "Refinement form").
+    fn lock(
+        &mut self,
+        run: &mut Run<'_, '_, '_>,
+        state: ModelSimState,
+        zone: Dbm,
+        arrival: Arrival,
+        depth: usize,
+        queue: &mut VecDeque<usize>,
+    ) -> Result<(), Halt> {
+        let entry = match run.insert(state, LOCKED, zone, None, Some(arrival))? {
+            Some(created) => {
+                self.depth.push(depth.saturating_add(1));
+                queue.push_back(created);
+                created
+            }
+            None => run
+                .edges
+                .last()
+                .map(|edge| edge.ends().1)
+                .ok_or(ZoneCheckRefusal::Fault("locked-cover"))?,
+        };
+        run.nodes[entry].locked = true;
+        Ok(())
+    }
+
+    /// FR-244's refinement-form certificate of a completed run that holds,
+    /// its `admitted` part from initial node `root`: the reachability part
+    /// with each node's position, the locked region's nodes at the reserved
+    /// index, and each edge's `Taken`.
+    fn certificate(&self, run: &mut Run<'_, '_, '_>, root: usize) -> Result<RefinementProof, Halt> {
+        let escape = run.node_escape(root)?;
+        let witness = escape
+            .witness
+            .filter(|_| escape.diverges)
+            .ok_or(ZoneCheckRefusal::Fault("refinement-divergence-witness"))?;
+        let roots: Vec<usize> = (0..run.nodes.len())
+            .filter(|&node| run.nodes[node].initial.is_some())
+            .collect();
+        let mut proof = run.certificate(&roots, root, &witness, false)?;
+        let reserved = self.positions.len();
+        for node in &mut proof.nodes {
+            if node.automaton_state == LOCKED {
+                node.automaton_state = reserved;
+            }
+        }
+        let concrete = run.timed.system();
+        let encodes = |_| Halt::from(ZoneCheckRefusal::Fault("position-key"));
+        let mut positions = Vec::with_capacity(self.positions.len());
+        for position in &self.positions {
+            let (_, digest) = concrete.state_key_of(&position.concrete).map_err(encodes)?;
+            let mut abstract_states = Vec::with_capacity(position.abstract_states.len());
+            for state in &position.abstract_states {
+                abstract_states.push(self.abstract_system.state_key_of(state).map_err(encodes)?.1);
+            }
+            positions.push(CertifiedPosition {
+                concrete: digest,
+                history: position.history.key(concrete).map_err(encodes)?,
+                abstract_states,
+            });
+        }
+        // The certificate's edges are the run's, by source in discovery
+        // order (`Run::certificate`).
+        let mut order: Vec<usize> = (0..run.edges.len()).collect();
+        order.sort_by_key(|&edge| run.edges[edge].from);
+        let mut taken = Vec::with_capacity(order.len());
+        for edge in order {
+            let edge = &run.edges[edge];
+            let into_region = run.nodes[edge.to].q == LOCKED;
+            taken.push(match edge.step {
+                Some((step, _)) if !into_region => Some(
+                    self.taken
+                        .get(&(edge.from, step))
+                        .cloned()
+                        .ok_or(ZoneCheckRefusal::Fault("edge-taken"))?,
+                ),
+                _ => None,
+            });
+        }
+        Ok(RefinementProof {
+            proof,
+            positions,
+            taken,
+        })
+    }
+
     /// What `verdict` decides; a passing one's position interned.
     fn judge(&mut self, verdict: StepVerdict, run: &Run<'_, '_, '_>) -> Result<Judgement, Halt> {
         Ok(match verdict {
-            StepVerdict::Passes { post, .. } => Judgement::Passes(self.intern(post, run)?),
+            StepVerdict::Passes { post, taken } => {
+                Judgement::Passes(self.intern(post, run)?, taken)
+            }
             StepVerdict::Fails(failure) => {
                 Judgement::Fails(Box::new((failure, CounterexampleKind::Formula)))
             }
@@ -449,17 +649,15 @@ impl Product<'_, '_> {
                     }),
                 )))
             }
-            StepVerdict::Undetermined(undetermined) => {
-                Judgement::Ends(TimedSafetyOutcome::Undecided {
-                    cause: TimedRefinementUndecided::Undetermined(undetermined),
-                    stats: run.stats(),
-                })
-            }
-            StepVerdict::Stopped(reached) => Judgement::Ends(TimedSafetyOutcome::Stopped {
+            StepVerdict::Undetermined(undetermined) => Judgement::Ends(Decided::Undecided {
+                cause: TimedRefinementUndecided::Undetermined(undetermined),
+                stats: run.stats(),
+            }),
+            StepVerdict::Stopped(reached) => Judgement::Ends(Decided::Stopped {
                 cause: TimedRefinementStop::Step(reached),
                 stats: run.stats(),
             }),
-            StepVerdict::Fault(fault) => Judgement::Ends(TimedSafetyOutcome::Fault {
+            StepVerdict::Fault(fault) => Judgement::Ends(Decided::Fault {
                 fault,
                 stats: run.stats(),
             }),

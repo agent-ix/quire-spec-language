@@ -38,4 +38,6 @@ pub use search::{
     ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneReduction, ZoneStats, ZoneStop,
     ZoneUndecided,
 };
-pub use settle::{settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED};
+pub use settle::{
+    settle_timed_safety, settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED,
+};

@@ -11,15 +11,16 @@
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     CertificateRejection, CounterexampleKind, IncompleteCause, InconclusiveCause, ModelCheckLimit,
-    ModelTraceReplayResult, ModelTraceSettlement, ProofBasis, ReachedLimit, ReplayRefusal,
-    ResultLabel, SettlementBasis, TemporalCounterexample, TerminalValue, Truth,
-    UnavailabilityCause, ZoneCertificate, ZoneCertificateVerdict,
+    ModelTraceReplayResult, ModelTraceSettlement, ProofBasis, ReachedLimit,
+    RefinementTraceSettlement, ReplayRefusal, ResultLabel, SettlementBasis, TemporalCounterexample,
+    TerminalValue, Truth, UnavailabilityCause, ZoneCertificate, ZoneCertificateVerdict,
 };
 use qsl_replay::{Certification, Execution};
 use qsl_route::deadlock::ItemObligation;
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::Cancel;
 
+use super::refine::{TimedRefinementStop, TimedRefinementUndecided, TimedSafetyOutcome};
 use super::search::{ZoneCheckLimit, ZoneCheckOutcome, ZoneReduction, ZoneStop, ZoneUndecided};
 
 /// The settlement method of an EN-6 record (FR-235).
@@ -163,22 +164,7 @@ pub fn settle_zone_check<S>(
         ZoneItem::Outcome(outcome) => outcome,
     };
     match outcome {
-        ZoneCheckOutcome::Holds { certificate, .. } => match check(certificate) {
-            ZoneCertificateVerdict::Accepted => ZoneCheckRecord::row(
-                TerminalValue::Proved {
-                    basis: ProofBasis::ZoneCertified,
-                    certification: Certification::Certified,
-                },
-                ResultLabel::Proved,
-                SettlementBasis::ClosedScope,
-                Execution::Completed,
-                Truth::Satisfied,
-            ),
-            ZoneCertificateVerdict::Rejected(CertificateRejection { rule, at }) => {
-                ZoneCheckRecord::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
-            }
-            ZoneCertificateVerdict::Stopped(cause) => ZoneCheckRecord::incomplete(cause),
-        },
+        ZoneCheckOutcome::Holds { certificate, .. } => certified(check(certificate)),
         // FR-160 (QSpec FR-430): a symmetry-reduced proof, which no core
         // checker reads. FR-235's map has no reduced row (spec gap
         // STD-493); FR-160's is used.
@@ -213,44 +199,10 @@ pub fn settle_zone_check<S>(
                 })
             }
         },
-        ZoneCheckOutcome::Undecided { cause, .. } => ZoneCheckRecord::inconclusive(match cause {
-            // FR-127's V-6 rows, which FR-235 extends.
-            ZoneUndecided::NoInitialState => InconclusiveCause::NoInitialState,
-            ZoneUndecided::UndecidedSuccessor(_) => InconclusiveCause::UndecidedSuccessor,
-            // FR-235's V-6 rows.
-            ZoneUndecided::NoAdmittedBehaviour => InconclusiveCause::NoAdmittedBehaviour,
-            ZoneUndecided::LassoNotConcretized => InconclusiveCause::LassoNotConcretized,
-            // Spec gap STD-493: a violation found with no counterexample
-            // form, as FR-241's lasso that does not concretise.
-            ZoneUndecided::DeadlockAfterDelay => InconclusiveCause::LassoNotConcretized,
-            // Spec gap STD-493: a reading with no value (ADR-024 WA-4), as
-            // FR-127's undecided successor reading.
-            ZoneUndecided::InsufficientData(_) => InconclusiveCause::UndecidedSuccessor,
-        }),
-        ZoneCheckOutcome::Stopped { cause, .. } => match cause {
-            ZoneStop::LimitReached(limit) => {
-                let (limit, value) = match *limit {
-                    ZoneCheckLimit::MaxSymbolicStates(value) => {
-                        (ModelCheckLimit::ZoneMaxSymbolicStates, value)
-                    }
-                    ZoneCheckLimit::MaxSymbolicTransitions(value) => {
-                        (ModelCheckLimit::ZoneMaxSymbolicTransitions, value)
-                    }
-                    ZoneCheckLimit::MaxAutomatonStates(value) => {
-                        (ModelCheckLimit::ZoneMaxAutomatonStates, value)
-                    }
-                    ZoneCheckLimit::MaxZoneBytes(value) => {
-                        (ModelCheckLimit::ZoneMaxZoneBytes, value)
-                    }
-                    ZoneCheckLimit::MaxClocks(value) => (ModelCheckLimit::MaxClocks, value),
-                };
-                ZoneCheckRecord::incomplete(IncompleteCause::LimitReached { limit, value })
-            }
-            ZoneStop::Cancelled => match cancel.cause() {
-                Some(source) => ZoneCheckRecord::incomplete(IncompleteCause::Cancelled { source }),
-                None => ZoneCheckRecord::failed(),
-            },
-        },
+        ZoneCheckOutcome::Undecided { cause, .. } => {
+            ZoneCheckRecord::inconclusive(undecided_cause(cause))
+        }
+        ZoneCheckOutcome::Stopped { cause, .. } => stopped(cause, cancel),
         ZoneCheckOutcome::Violated { counterexample, .. } => match replay(counterexample) {
             Ok(ModelTraceReplayResult {
                 package_id: replayed,
@@ -299,5 +251,126 @@ pub fn settle_zone_check<S>(
                 _ => ZoneCheckRecord::failed(),
             },
         },
+    }
+}
+
+/// FR-235's V-6 cause of an EN-6 run that decided nothing.
+fn undecided_cause(cause: &ZoneUndecided) -> InconclusiveCause {
+    match cause {
+        // FR-127's V-6 rows, which FR-235 extends.
+        ZoneUndecided::NoInitialState => InconclusiveCause::NoInitialState,
+        ZoneUndecided::UndecidedSuccessor(_) => InconclusiveCause::UndecidedSuccessor,
+        // FR-235's V-6 rows.
+        ZoneUndecided::NoAdmittedBehaviour => InconclusiveCause::NoAdmittedBehaviour,
+        ZoneUndecided::LassoNotConcretized => InconclusiveCause::LassoNotConcretized,
+        // Spec gap STD-493: a violation found with no counterexample
+        // form, as FR-241's lasso that does not concretise.
+        ZoneUndecided::DeadlockAfterDelay => InconclusiveCause::LassoNotConcretized,
+        // Spec gap STD-493: a reading with no value (ADR-024 WA-4), as
+        // FR-127's undecided successor reading.
+        ZoneUndecided::InsufficientData(_) => InconclusiveCause::UndecidedSuccessor,
+    }
+}
+
+/// FR-235's V-7 record of an EN-6 run that stopped.
+fn stopped(cause: &ZoneStop, cancel: &Cancel) -> ZoneCheckRecord {
+    match cause {
+        ZoneStop::LimitReached(limit) => {
+            let (limit, value) = match *limit {
+                ZoneCheckLimit::MaxSymbolicStates(value) => {
+                    (ModelCheckLimit::ZoneMaxSymbolicStates, value)
+                }
+                ZoneCheckLimit::MaxSymbolicTransitions(value) => {
+                    (ModelCheckLimit::ZoneMaxSymbolicTransitions, value)
+                }
+                ZoneCheckLimit::MaxAutomatonStates(value) => {
+                    (ModelCheckLimit::ZoneMaxAutomatonStates, value)
+                }
+                ZoneCheckLimit::MaxZoneBytes(value) => (ModelCheckLimit::ZoneMaxZoneBytes, value),
+                ZoneCheckLimit::MaxClocks(value) => (ModelCheckLimit::MaxClocks, value),
+            };
+            ZoneCheckRecord::incomplete(IncompleteCause::LimitReached { limit, value })
+        }
+        ZoneStop::Cancelled => match cancel.cause() {
+            Some(source) => ZoneCheckRecord::incomplete(IncompleteCause::Cancelled { source }),
+            None => ZoneCheckRecord::failed(),
+        },
+    }
+}
+
+/// The record of a holding run whose certificate `check` judged: V-1 only
+/// when FR-245 accepts it (ADR-026 CF-4).
+fn certified(verdict: ZoneCertificateVerdict) -> ZoneCheckRecord {
+    match verdict {
+        ZoneCertificateVerdict::Accepted => ZoneCheckRecord::row(
+            TerminalValue::Proved {
+                basis: ProofBasis::ZoneCertified,
+                certification: Certification::Certified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
+        ZoneCertificateVerdict::Rejected(CertificateRejection { rule, at }) => {
+            ZoneCheckRecord::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
+        }
+        ZoneCertificateVerdict::Stopped(cause) => ZoneCheckRecord::incomplete(cause),
+    }
+}
+
+/// QSpec FR-430 over FR-235: settle a timed refinement's safety half. A
+/// `Holds` settles `Proved{ZoneCertified, Certified}` only once `check`,
+/// FR-245's checker of its refinement-form certificate, accepts it; a
+/// `Violated` settles `refuted` only once `replay`, FR-145's timed replay,
+/// reproduces it. Every other outcome settles as FR-235's map settles
+/// EN-6's, and a `check_step` budget as V-7 naming it.
+pub fn settle_timed_safety<O>(
+    outcome: &TimedSafetyOutcome<O>,
+    cancel: &Cancel,
+    check: impl FnOnce(&ZoneCertificate<O>) -> ZoneCertificateVerdict,
+    replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+) -> ZoneCheckRecord {
+    match outcome {
+        TimedSafetyOutcome::Holds { certificate, .. } => certified(check(certificate)),
+        TimedSafetyOutcome::Violated { counterexample, .. } => match replay(counterexample) {
+            Ok(RefinementTraceSettlement::Reproduced { .. }) => ZoneCheckRecord {
+                counterexample: Some(counterexample.as_ref().clone()),
+                ..ZoneCheckRecord::row(
+                    TerminalValue::Refuted,
+                    ResultLabel::Refuted,
+                    SettlementBasis::DecisiveCounterexample,
+                    Execution::Completed,
+                    Truth::Violated,
+                )
+            },
+            Ok(RefinementTraceSettlement::Inconclusive(cause)) => {
+                ZoneCheckRecord::inconclusive(InconclusiveCause::ReplayParity(cause))
+            }
+            Ok(RefinementTraceSettlement::Stopped(reached)) => {
+                ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
+                    limit: reached.limit,
+                    value: reached.value,
+                })
+            }
+            Err(refusal) => match TerminalValue::from_replay_refusal(&refusal) {
+                TerminalValue::Inconclusive(cause) => ZoneCheckRecord::inconclusive(cause),
+                _ => ZoneCheckRecord::failed(),
+            },
+        },
+        TimedSafetyOutcome::Undecided { cause, .. } => ZoneCheckRecord::inconclusive(match cause {
+            TimedRefinementUndecided::Zone(cause) => undecided_cause(cause),
+            TimedRefinementUndecided::Undetermined(undetermined) => undetermined.cause(),
+        }),
+        TimedSafetyOutcome::Stopped { cause, .. } => match cause {
+            TimedRefinementStop::Zone(cause) => stopped(cause, cancel),
+            TimedRefinementStop::Step(reached) => {
+                ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
+                    limit: reached.limit,
+                    value: reached.value,
+                })
+            }
+        },
+        TimedSafetyOutcome::Fault { .. } => ZoneCheckRecord::failed(),
     }
 }

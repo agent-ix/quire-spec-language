@@ -31,13 +31,13 @@ use crate::timed_world::{
 
 /// FR-430-AC-1's untimed `Req`: the object `c` (here `Call`) with `sent`
 /// (here `inflight`), and `send` setting it.
-fn req() -> Vec<u8> {
+pub(crate) fn req() -> Vec<u8> {
     renamed_package(&document(&[], &[("send", &["inflight"])]), "test/req")
 }
 
 /// FR-430-AC-1's timed `TReq`: `Req` with the clock `x`, `send` guarded
 /// `x >= 1`.
-fn treq() -> Vec<u8> {
+pub(crate) fn treq() -> Vec<u8> {
     document(&["x"], &[("send", &["inflight"])])
 }
 
@@ -61,13 +61,14 @@ fn steps(counterexample: &TemporalCounterexample) -> Vec<(String, Rational)> {
 }
 
 /// EN-6's safety half of `world`'s one refinement.
-fn safety(world: &Refining) -> TimedSafetyOutcome {
+pub(crate) fn safety(world: &Refining) -> TimedSafetyOutcome<String> {
     let [refinement] = world.package.graph().refinements() else {
         panic!("one refinement");
     };
     check_timed_refinement(
         TimedRefinementRequest {
             refinement,
+            obligation: refinement.name().to_owned(),
             concrete: world.concrete_request(),
             abstract_package: &world.package,
             abstract_initial: vec![world.abstract_initial.clone()],
@@ -78,12 +79,12 @@ fn safety(world: &Refining) -> TimedSafetyOutcome {
     .expect("EN-6 takes the refinement")
 }
 
-const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
+pub(crate) const CONTRACTS: &str = "post ASend using v on A::Call::send { self.inflight }\n\
      pre MSend using v on M::Call::send { self.x >= 1 ms }\n\
      post MSent using v on M::Call::send { self.inflight }\n";
 
 /// The refinement of `A` by `M` with the field row `inflight = {row}`.
-fn refinement(row: &str) -> String {
+pub(crate) fn refinement(row: &str) -> String {
     format!(
         "refinement Timed using inf abstract A concrete M {{\n\
          population A::calls from M::calls;\n\
@@ -93,7 +94,7 @@ fn refinement(row: &str) -> String {
     )
 }
 
-fn unit(row: &str) -> Result<Refining, Vec<(String, String, String)>> {
+pub(crate) fn unit(row: &str) -> Result<Refining, Vec<(String, String, String)>> {
     refining(
         &req(),
         &treq(),
@@ -160,7 +161,7 @@ fn a_timed_abstract_model_is_refused_at_its_reference() {
 #[test]
 fn the_safety_half_of_a_timed_refinement_holds_on_the_zone_product() {
     let world = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
-    let TimedSafetyOutcome::Holds { stats } = safety(&world) else {
+    let TimedSafetyOutcome::Holds { stats, .. } = safety(&world) else {
         panic!("the safety half holds");
     };
     assert_eq!((stats.symbolic_states, stats.retained_edges), (2, 2));
@@ -231,7 +232,10 @@ fn trap_undo(trapped: bool) -> Refining {
 
 /// FR-145 over time (QSpec FR-430): `world`'s refinement counterexample
 /// `payload` replayed through FR-241's exact delays.
-fn replay(world: &Refining, payload: &TemporalCounterexample) -> RefinementTraceSettlement {
+pub(crate) fn replay(
+    world: &Refining,
+    payload: &TemporalCounterexample,
+) -> RefinementTraceSettlement {
     let [refinement] = world.package.graph().refinements() else {
         panic!("one refinement");
     };
@@ -463,7 +467,7 @@ fn a_clock_read_through_a_predicate_or_function_is_refused_at_the_call() {
 /// dead`, guard `x <= 0`) clears `sent` and, with `dead`, sets `dead` under
 /// the time invariant `when self.dead { x <= 0 }`. `trap` and `dead` map
 /// to the abstract `late` and `retried`, which stay false.
-fn dead_undo(dead: bool) -> Refining {
+pub(crate) fn dead_undo(dead: bool) -> Refining {
     let model = document(
         &["x"],
         &[

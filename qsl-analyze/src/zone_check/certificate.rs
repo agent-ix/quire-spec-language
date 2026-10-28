@@ -53,10 +53,7 @@ pub(super) struct Proof {
 
 impl Proof {
     /// The certificate of `obligation`.
-    pub(super) fn proving<S>(
-        self,
-        obligation: ItemObligation<S>,
-    ) -> ZoneCertificate<ItemObligation<S>> {
+    pub(super) fn proving<O>(self, obligation: O) -> ZoneCertificate<O> {
         ZoneCertificate {
             obligation,
             scale: self.scale,
@@ -67,6 +64,7 @@ impl Proof {
             components: self.components,
             divergence: self.divergence,
             admitted: self.admitted,
+            refinement: None,
         }
     }
 }
