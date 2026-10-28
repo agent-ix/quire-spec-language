@@ -1,5 +1,5 @@
 ---
-id: SR-492
+id: SR-61003
 title: "Failure-domain review of the production linked-provider registry"
 type: SpecReview
 analysis: failure-domain

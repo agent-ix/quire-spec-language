@@ -21,23 +21,33 @@ the currently absent refinement-witness providers as absent.
 2. Query each snapshot for the capabilities exposed by EN-1 and EN-4, then for
    the `ValueValidity` and `OperationContract` capabilities used by FR-345's
    witness rows.
-3. Exercise the production factory's descriptor-construction or registration
-   error seam with a descriptor failure and with a refused registration.
-4. Inspect the CLI error path for each factory error and run the no-provider
-   witness case through the FR-345 report path.
+3. Construct a test-only factory with an injected descriptor source that
+   returns a typed construction error; assert it returns that error and no
+   snapshot. Construct another test-only factory with an injected registry
+   registration operation that refuses EN-4 after EN-1 is accepted; assert it
+   returns the typed refusal and no partial snapshot.
+4. Pass each injected-factory error through the CLI error mapper. Assert that
+   each produces FR-344 verdict `tool failure`, exit 30, and neither exit 21
+   nor a partial production report. Then run the real production snapshot's
+   no-provider witness case through the FR-345 report path.
 
 Tag the tests `#[trace("TC-1272", "FR-489-AC-n")]` for the criteria each
 assertion verifies.
 
 ## Expected Results
 
-- The two snapshots are equal and contain exactly EN-1 and EN-4 from
-  `qsl_analyze::Engines::qsl()`; their candidate outcomes match their
-  descriptors. Neither snapshot contains an ad hoc candidate.
+- The two snapshots are equal. The registration accessor yields exactly the
+  EN-1 `temporal-satisfaction` descriptor and the EN-4
+  `probabilistic-satisfaction` descriptor owned by `Engines::qsl()`. For each
+  descriptor, the snapshot retains its exact `BackendId`, manifest digest,
+  origin and capability set. Candidate queries yield EN-1 only for
+  `temporal-satisfaction` and EN-4 only for `probabilistic-satisfaction`;
+  neither descriptor is replaced or supplemented with an ad hoc candidate.
 - The `ValueValidity` and `OperationContract` candidate outcomes are empty
   while their provider tickets are incomplete. The no-provider witness result
   remains the FR-345 empty-candidate regression, never `unresolved
   (unsupported)`.
-- A descriptor construction or registration error is returned as the typed
-  production registry error. The CLI emits a tool-failure report and does not
-  return an expected unsupported exit.
+- The injected descriptor-source error and registration refusal are each
+  returned as their typed production registry error. The CLI emits FR-344
+  tool failure, exit 30, for each and does not return an expected unsupported
+  exit or a partial snapshot.
