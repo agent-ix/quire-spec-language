@@ -2196,17 +2196,16 @@ fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
         .collect();
     assert_eq!(urgent, [vec![(v, true)]]);
 
-    for (clause, read) in [(
-        "post Either using v on Config::Call::bump { present(self.v) or self.late }\n",
-        "present(self.v)",
-    )] {
-        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}"));
-        assert_eq!(
-            (cause.code(), cause.tag(), text.as_str()),
-            (Code::UnsupportedConstruct, "not-yet-implemented", read),
-            "{clause}"
-        );
-    }
+    let either = "post Either using v on Config::Call::bump { present(self.v) or self.late }\n";
+    let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{either}"));
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::UnsupportedConstruct,
+            "not-yet-implemented",
+            "present(self.v)"
+        )
+    );
 }
 
 /// The STD-493 `absent` ruling (TC-685), lowering: `absent` lowers to QSpec
