@@ -942,8 +942,6 @@ pub struct CheckedRefinement {
     /// selections after protocol refinement resolution.
     pub(crate) abstract_subject_node: Option<NodeKey>,
     pub(crate) concrete_subject_node: Option<NodeKey>,
-    pub(crate) abstract_subject_declaration: Option<DeclarationKey>,
-    pub(crate) concrete_subject_declaration: Option<DeclarationKey>,
     /// The full authored declaration region used by the V2 relation-node
     /// occurrence and source map.
     pub(crate) declaration_span: Span,
@@ -1019,24 +1017,14 @@ impl CheckedRefinement {
         self.concrete_protocol
     }
 
-    /// The model node that keys this refinement's abstract state machine.
+    /// The abstract model's `model_root` node (QSpec FR-375).
     pub fn abstract_subject_node(&self) -> Option<NodeKey> {
         self.abstract_subject_node
     }
 
-    /// The model node that keys this refinement's concrete state machine.
+    /// The concrete model's `model_root` node (QSpec FR-375).
     pub fn concrete_subject_node(&self) -> Option<NodeKey> {
         self.concrete_subject_node
-    }
-
-    /// The abstract state-machine's declaring package and record key.
-    pub fn abstract_subject_declaration(&self) -> Option<&DeclarationKey> {
-        self.abstract_subject_declaration.as_ref()
-    }
-
-    /// The concrete state-machine's declaring package and record key.
-    pub fn concrete_subject_declaration(&self) -> Option<&DeclarationKey> {
-        self.concrete_subject_declaration.as_ref()
     }
 
     /// The authored refinement declaration span.
@@ -1682,8 +1670,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_protocol: None,
         abstract_subject_node: None,
         concrete_subject_node: None,
-        abstract_subject_declaration: None,
-        concrete_subject_declaration: None,
         declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported

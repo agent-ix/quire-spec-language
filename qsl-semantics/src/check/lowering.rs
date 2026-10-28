@@ -109,7 +109,8 @@ pub(crate) use model::{
     QuantityKind, RecordKeyError,
 };
 pub use model::{
-    AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause, PlaceStep,
+    model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause,
+    ModelRootKeyError, PlaceStep,
 };
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, ProtocolInput,
