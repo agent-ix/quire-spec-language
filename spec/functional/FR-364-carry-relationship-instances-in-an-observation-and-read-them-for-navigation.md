@@ -229,7 +229,7 @@ manifest is closed. The rules read no population member list and no field.
 The producer issues one bundle of the manifest, the observation's object
 closure and the type environment, all bound to one key: the checked unit's
 source reference as a whole (authority and identity,
-[FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md)) the
+[FR-362](FR-362-produce-the-checked-graph-and-the-type-report-from-one-source.md)) the
 selection (the selected clause and, for a snapshot-built observation, the
 `identity` of each selected document), and the observation's identity: its role
 (`current`, `pre` or `post`) and, snapshot-built, its own document `identity`,
@@ -387,7 +387,7 @@ FR-363; a navigation site reaches the evaluator already resolved.
   `quire.op.model.navigate` lowering are FR-363's.
 - [FR-365](FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md)
   reads the same extents and `resolve` for `reaches` over a relationship end.
-- [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md) supplies the
+- [FR-362](FR-362-produce-the-checked-graph-and-the-type-report-from-one-source.md) supplies the
   source reference the bundle key compares as a whole. quire-semantic-value
   [FR-119](ix://agent-ix/quire-semantic-value/FR-119) is the store this
   requirement's reads and manifest are built in.

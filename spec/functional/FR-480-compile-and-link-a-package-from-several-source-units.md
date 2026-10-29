@@ -240,7 +240,7 @@ the package means the same whichever order the two files are listed in.
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-278](FR-278-parse-select-check-and-package-as-library-operations.md),
   [FR-302](FR-302-link-dispatch-during-unit-compile.md),
-  [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md), ADR-033.
+  [FR-362](FR-362-produce-the-checked-graph-and-the-type-report-from-one-source.md), ADR-033.
 
 ## References
 
