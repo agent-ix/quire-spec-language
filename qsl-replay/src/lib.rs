@@ -235,8 +235,8 @@ pub use model_check::step_safety::{
     StepRecordsSettlement,
 };
 pub use model_check::step_settle::{
-    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
-    STEP_INDUCTION_DEPTH,
+    settle_step_simulation, BackendCertificate, OtherBackendResult, StepBackendOutcome,
+    StepSimulationSettlement, STEP_INDUCTION_DEPTH,
 };
 pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
 pub use monitor_plan::{

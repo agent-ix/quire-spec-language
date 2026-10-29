@@ -14,10 +14,10 @@ use qsl_eval::smt::{
 use qsl_replay::{
     certify_step_records, check_refinement_smt_proof, settle_step_records, CertificateCheckLimits,
     CertificateLocus, CertificateRejection, CertificateRule, Certification, IncompleteCause,
-    InconclusiveCause, ItemLabel, ModelCheckLimit, ProofBasis, ProofFormat, QueryPart,
-    RefinementFailure, RefinementSmtCertificate, RefinementTraceSettlement, RefutedQuery,
-    SettlementBasis, SmtProofCheck, StepCertification, StepRecordVerdict, StepRecordsSettlement,
-    TerminalValue, UnavailabilityCause,
+    InconclusiveCause, ItemLabel, ModelCheckLimit, OtherBackendResult, ProofBasis, ProofFormat,
+    QueryPart, RefinementFailure, RefinementSmtCertificate, RefinementTraceSettlement,
+    RefutedQuery, SettlementBasis, SmtProofCheck, StepCertification, StepRecordVerdict,
+    StepRecordsSettlement, TerminalValue, UnavailabilityCause,
 };
 use quire_exact::Cancel;
 
@@ -807,7 +807,7 @@ fn values(settled: &StepRecordsSettlement) -> Vec<TerminalValue> {
 #[trace("TC-551")]
 #[test]
 fn step_records_are_certified_only_by_a_verified_certificate() {
-    let holds = [StepRecordVerdict::Holds; 8];
+    let holds = vec![StepRecordVerdict::Holds; 8];
     let world = World::new(&cas_refines_counter());
     with_request(&world, |request| {
         let valid = certificate(request, 7);
@@ -841,7 +841,8 @@ fn step_records_are_certified_only_by_a_verified_certificate() {
             &CertificateCheckLimits::default(),
             &Cancel::new(),
         );
-        let settled = settle_step_records(&[StepRecordVerdict::Holds; 9], &checked, &[], no_replay);
+        let settled =
+            settle_step_records(&vec![StepRecordVerdict::Holds; 9], &checked, &[], no_replay);
         assert_eq!(
             values(&settled),
             vec![proved(Certification::Uncertified); 9]
@@ -858,7 +859,7 @@ fn step_records_are_certified_only_by_a_verified_certificate() {
 #[trace("TC-551", "FR-146-AC-7")]
 #[test]
 fn a_rejected_part_rejects_only_its_record() {
-    let holds = [StepRecordVerdict::Holds; 8];
+    let holds = vec![StepRecordVerdict::Holds; 8];
     let uncertified = proved(Certification::Uncertified);
     for (part, record) in [(QueryPart::Base, 0), (step_part(2), 3)] {
         let at = CertificateLocus::ProofStep { part, index: 3 };
@@ -931,12 +932,12 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
         })),
         7,
     );
-    let holds = [StepRecordVerdict::Holds; 8];
-    let mut step_failed = holds;
+    let holds = vec![StepRecordVerdict::Holds; 8];
+    let mut step_failed = holds.clone();
     step_failed[5] = StepRecordVerdict::Counterexample;
-    let mut initial_failed = holds;
+    let mut initial_failed = holds.clone();
     initial_failed[0] = StepRecordVerdict::Counterexample;
-    let mut absent = holds;
+    let mut absent = holds.clone();
     absent[2] = StepRecordVerdict::NoCandidate;
     let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
     let not_established =
@@ -993,4 +994,56 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
     );
     // The `Initial` record itself never settles `refuted`.
     assert_eq!(reproduced.records[0].value, induction);
+}
+
+/// TC-551, QSpec FR-468 "Other backend results": a backend result that
+/// neither holds nor fails settles its record as FR-331 records it, and the
+/// safety half takes the first such record's result in record order, after
+/// every rule before it.
+#[trace("TC-551")]
+#[test]
+fn other_backend_results_settle_the_record_and_the_half() {
+    let solver = TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+        trace: None,
+        replay: None,
+    });
+    let timeout = TerminalValue::Incomplete(IncompleteCause::TimedOut);
+    let mut verdicts = vec![StepRecordVerdict::Holds; 8];
+    verdicts[2] = StepRecordVerdict::of_backend(&timeout).expect("an other result");
+    verdicts[5] = StepRecordVerdict::of_backend(&solver).expect("an other result");
+    verdicts[6] = StepRecordVerdict::NoCandidate;
+    let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
+    let settled = settle_step_records(&verdicts, &verified, &[], no_replay);
+    assert_eq!(settled.records[2].value, timeout);
+    assert_eq!(settled.records[2].basis, SettlementBasis::Unavailable);
+    assert_eq!(settled.records[5].value, solver);
+    assert_eq!(settled.records[5].basis, SettlementBasis::Unsettled);
+    assert_eq!(
+        settled.records[6].value,
+        TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+    );
+    assert_eq!(settled.safety.value, timeout);
+
+    // A step counterexample comes before any other result.
+    verdicts[7] = StepRecordVerdict::Counterexample;
+    assert_eq!(
+        settle_step_records(&verdicts, &verified, &[], no_replay)
+            .safety
+            .value,
+        TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 })
+    );
+
+    assert_eq!(
+        StepRecordVerdict::of_backend(&proved(Certification::Uncertified)),
+        Some(StepRecordVerdict::Holds)
+    );
+    assert_eq!(
+        StepRecordVerdict::of_backend(&TerminalValue::Refuted),
+        Some(StepRecordVerdict::Counterexample)
+    );
+    assert_eq!(
+        StepRecordVerdict::of_backend(&TerminalValue::Failed),
+        Some(StepRecordVerdict::Other(OtherBackendResult::Failed))
+    );
+    assert_eq!(StepRecordVerdict::of_backend(&TerminalValue::Tested), None);
 }

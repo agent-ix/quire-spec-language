@@ -12,7 +12,7 @@
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::settle::Truth;
 use crate::proof_result::{
-    Certification, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
     UnavailabilityCause,
 };
 
@@ -51,6 +51,24 @@ pub enum StepBackendOutcome {
     /// The backend found a counterexample: a pre-state the invariants may
     /// not reach.
     Counterexample,
+    /// The backend settled the obligation neither way (QSpec FR-468 "Other
+    /// backend results").
+    Other(OtherBackendResult),
+}
+
+/// A backend result for a per-step simulation record that neither holds nor
+/// fails: QSpec FR-468 "Other backend results". The record takes the result
+/// FR-331 records for it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OtherBackendResult {
+    /// `inconclusive`, such as a solver `unknown` (`solver-inconclusive`).
+    Inconclusive(InconclusiveCause),
+    /// `incomplete`: a timeout, a limit or a cancellation.
+    Incomplete(IncompleteCause),
+    /// `unsupported`: a missing solver or tool.
+    Unsupported(UnavailabilityCause),
+    /// `failed`: a backend fault.
+    Failed,
 }
 
 /// One per-step simulation record, settled.
@@ -105,6 +123,27 @@ pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSett
             basis: SettlementBasis::Unavailable,
             truth: Truth::Unavailable,
         },
+        StepBackendOutcome::Other(other) => match other {
+            OtherBackendResult::Inconclusive(cause) => StepSimulationSettlement {
+                value: TerminalValue::Inconclusive(cause),
+                basis: SettlementBasis::Unsettled,
+                truth: Truth::Pending,
+            },
+            OtherBackendResult::Incomplete(cause) => unavailable(TerminalValue::Incomplete(cause)),
+            OtherBackendResult::Unsupported(cause) => {
+                unavailable(TerminalValue::Unsupported(cause))
+            }
+            OtherBackendResult::Failed => unavailable(TerminalValue::Failed),
+        },
+    }
+}
+
+/// `value`, which settles no truth.
+fn unavailable(value: TerminalValue) -> StepSimulationSettlement {
+    StepSimulationSettlement {
+        value,
+        basis: SettlementBasis::Unavailable,
+        truth: Truth::Unavailable,
     }
 }
 

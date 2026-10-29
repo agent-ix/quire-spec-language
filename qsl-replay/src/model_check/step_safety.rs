@@ -24,19 +24,18 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::refinement_replay::RefinementTraceSettlement;
 use crate::model_check::settle::Row;
 use crate::model_check::step_settle::{
-    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
-    STEP_INDUCTION_DEPTH,
+    settle_step_simulation, BackendCertificate, OtherBackendResult, StepBackendOutcome,
+    StepSimulationSettlement, STEP_INDUCTION_DEPTH,
 };
 use crate::outcome::ItemLabel;
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
-    UnavailabilityCause,
 };
 use qsl_eval::smt::RefinementCertificateRequest;
 
 /// What the SMT backend returned for one per-step simulation record, before
 /// the refinement's certificate is checked.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepRecordVerdict {
     /// No candidate backend settled the record (V-8).
     NoCandidate,
@@ -44,6 +43,35 @@ pub enum StepRecordVerdict {
     Holds,
     /// The backend found a counterexample.
     Counterexample,
+    /// The backend settled the obligation neither way (QSpec FR-468 "Other
+    /// backend results").
+    Other(OtherBackendResult),
+}
+
+impl StepRecordVerdict {
+    /// The verdict of the FR-331 result `value` a backend returned for a
+    /// per-step simulation record: `proved` holds, `refuted` is a
+    /// counterexample, and `inconclusive`, `incomplete`, `unsupported` and
+    /// `failed` are other results. `None` for `tested`, `measured` and
+    /// `declined`, which a backend never returns for an
+    /// `operation-contract` obligation.
+    pub fn of_backend(value: &TerminalValue) -> Option<Self> {
+        Some(match value {
+            TerminalValue::Proved { .. } => Self::Holds,
+            TerminalValue::Refuted => Self::Counterexample,
+            TerminalValue::Inconclusive(cause) => {
+                Self::Other(OtherBackendResult::Inconclusive(cause.clone()))
+            }
+            TerminalValue::Incomplete(cause) => Self::Other(OtherBackendResult::Incomplete(*cause)),
+            TerminalValue::Unsupported(cause) => {
+                Self::Other(OtherBackendResult::Unsupported(cause.clone()))
+            }
+            TerminalValue::Failed => Self::Other(OtherBackendResult::Failed),
+            TerminalValue::Tested | TerminalValue::Measured(_) | TerminalValue::Declined { .. } => {
+                return None
+            }
+        })
+    }
 }
 
 /// What FR-314 made of a refinement's SMT certificate, for its records.
@@ -161,16 +189,17 @@ pub fn settle_step_records(
                     certificate: certification.certificate(index),
                 },
                 StepRecordVerdict::Counterexample => StepBackendOutcome::Counterexample,
+                StepRecordVerdict::Other(other) => StepBackendOutcome::Other(other.clone()),
             })
         })
         .collect();
-    let safety = settled(safety_row(
+    let safety = safety_of(
         verdicts,
         &records,
         certification,
         hypotheses,
         replay_initial,
-    ));
+    );
     StepRecordsSettlement { records, safety }
 }
 
@@ -185,16 +214,39 @@ fn settled(row: Row) -> StepSimulationSettlement {
 
 /// QSpec FR-468's rules, the first that applies: an initial counterexample,
 /// a hypothesis item not `proved`, a step counterexample, a certificate shown
-/// wrong, another backend result, then the proof.
-fn safety_row(
+/// wrong, then another backend result (no candidate included), the first
+/// record's in record order taking the half, then the proof.
+fn safety_of(
     verdicts: &[StepRecordVerdict],
     records: &[StepSimulationSettlement],
     certification: &StepCertification,
     hypotheses: &[(NodeKey, TerminalValue)],
     replay_initial: impl FnOnce() -> Result<RefinementTraceSettlement, ReplayRefusal>,
-) -> Row {
+) -> StepSimulationSettlement {
+    if let Some(row) = decisive_row(verdicts, certification, hypotheses, replay_initial) {
+        return settled(row);
+    }
+    let other = verdicts.iter().zip(records).find(|(verdict, _)| {
+        matches!(
+            verdict,
+            StepRecordVerdict::NoCandidate | StepRecordVerdict::Other(_)
+        )
+    });
+    match other {
+        Some((_, record)) => record.clone(),
+        None => settled(proof_row(records, hypotheses)),
+    }
+}
+
+/// The first of FR-468's rules before "Other backend results" that applies.
+fn decisive_row(
+    verdicts: &[StepRecordVerdict],
+    certification: &StepCertification,
+    hypotheses: &[(NodeKey, TerminalValue)],
+    replay_initial: impl FnOnce() -> Result<RefinementTraceSettlement, ReplayRefusal>,
+) -> Option<Row> {
     if verdicts.first() == Some(&StepRecordVerdict::Counterexample) {
-        return match replay_initial() {
+        return Some(match replay_initial() {
             Ok(RefinementTraceSettlement::Reproduced { .. }) => {
                 Row::refuted(SettlementBasis::DecisiveCounterexample)
             }
@@ -205,32 +257,36 @@ fn safety_row(
                 Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached))
             }
             Err(refusal) => Row::refused(&refusal),
-        };
+        });
     }
     if let Some((hypothesis, result)) = hypotheses
         .iter()
         .map(|(hypothesis, value)| (hypothesis, ItemLabel::of(value)))
         .find(|(_, result)| *result != ItemLabel::Proved)
     {
-        return Row::inconclusive(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: *hypothesis,
-            result,
-        });
+        return Some(Row::inconclusive(
+            InconclusiveCause::HypothesesNotEstablished {
+                hypothesis: *hypothesis,
+                result,
+            },
+        ));
     }
     if verdicts.contains(&StepRecordVerdict::Counterexample) {
-        return Row::inconclusive(InconclusiveCause::InductionNotClosed {
+        return Some(Row::inconclusive(InconclusiveCause::InductionNotClosed {
             depth: STEP_INDUCTION_DEPTH,
-        });
+        }));
     }
     if let Some((rejection, _)) = &certification.rejected {
-        return Row::inconclusive(InconclusiveCause::CertificateRejected {
+        return Some(Row::inconclusive(InconclusiveCause::CertificateRejected {
             rule: rejection.rule,
             at: rejection.at.clone(),
-        });
+        }));
     }
-    if verdicts.contains(&StepRecordVerdict::NoCandidate) {
-        return Row::unsupported(UnavailabilityCause::BackendAbsent);
-    }
+    None
+}
+
+/// The proof: `Certified` only when every record and hypothesis item is.
+fn proof_row(records: &[StepSimulationSettlement], hypotheses: &[(NodeKey, TerminalValue)]) -> Row {
     let certified = records
         .iter()
         .map(|record| &record.value)
