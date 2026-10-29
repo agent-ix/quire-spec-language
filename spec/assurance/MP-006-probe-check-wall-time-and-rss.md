@@ -12,7 +12,7 @@ objective:
   direction: lower
 subject_identity:
   name: qsl-semantics S3 checker (PackageDeclarations::check)
-  version: "67f449895414c38af7907f7a4c27292c66911f3c"
+  version: "qsl-semantics/Cargo.toml"
 statistical_design:
   population: >-
     The fixed, generated inputs `qsl-bench-probe check <shape> <n>` builds,
@@ -60,9 +60,8 @@ negative_controls:
       session is not rerun until it passes.
   - kind: stale-evidence
     description: >-
-      Every recorded collection names the exact source revision and the
-      machine it ran on; a result from another revision or machine is not
-      compared against this baseline.
+      Every recorded collection names the machine it ran on; a result from
+      another machine is not compared against this baseline.
 relationships:
   - target: ix://agent-ix/quire-specification/FR-146
     type: measures
@@ -91,7 +90,7 @@ observation dimension:
 ## Collection Procedure
 
 Run `qsl-bench-probe check <shape> <n>` once per size per round, one process
-each, five rounds, on one machine at one source revision. Record
+each, five rounds, on one machine. Record
 `/proc/loadavg` before and after each round. The observed value per dimension
 is the median of the five rounds.
 

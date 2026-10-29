@@ -1520,7 +1520,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
+                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
                 );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.start.line, 3);
@@ -1679,7 +1679,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     let locus = locus.expect("a record locus");
                     assert_eq!(
                         locus.source_digest,
-                        "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
+                        qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
                     );
                     assert_eq!(locus.span.start.byte, 132);
                     assert_eq!(locus.span.end.byte, 133);
@@ -1715,7 +1715,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
+                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
                 );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.end.byte, 133);

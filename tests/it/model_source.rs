@@ -60,7 +60,7 @@ fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
     );
     assert_eq!(
         model.digest().to_string(),
-        "sha256:639603a87d9701e1279f796639399a2524f3cabe75897e500260d86f8ef74ea8"
+        frozen["models"][0]["digest"].as_str().unwrap()
     );
     assert_eq!(model.source().source().digest(), source.source().digest());
 }

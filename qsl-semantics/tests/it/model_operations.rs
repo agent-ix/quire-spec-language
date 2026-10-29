@@ -2037,7 +2037,7 @@ fn native_float_model_fields_refuse_as_unsupported_features() {
 /// the package refuses `missing_declaration`/`missing-name` at that entry,
 /// and no declaration is admitted.
 ///
-/// The pinned FCD schema validator (`agent-ix-semantic-ir`, rev `033e228`)
+/// The FCD schema validator (`agent-ix-semantic-ir`, the version Cargo.lock resolves)
 /// has its own, coarser frame-path resolution rule
 /// (`UNRESOLVED_FRAME_PATH`), which would otherwise preempt this reader's
 /// own, strictly finer classification (`resolve_pending_frames`) for every

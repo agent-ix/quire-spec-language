@@ -50,7 +50,7 @@ units:
    `i128::MIN`. No checked package is returned.
 4. It checks. The right operand is one `Integer` literal `i128::MIN` with no
    `Negate` node; its literal node keys to FR-092 vector L7
-   (`c3aa30b239d70dea497badfb4fd426fb7b57e441aeb22d2eb450a19ad6617c5b`), and
+   (its key), and
    the lowered package holds it as one literal.
 5. It checks, with the right operand a `Negate` of the literal
    170141183460469231731687303715884105727, its form unchanged.

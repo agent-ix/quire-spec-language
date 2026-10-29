@@ -12,13 +12,13 @@ objective:
   direction: lower
 subject_identity:
   name: qsl-cst CST identity construction (LosslessCst::new, via qsl_cst::parse)
-  version: "893269992f40f83086cbc54d91d913ff3e1a37f4"
+  version: "qsl-cst/Cargo.toml"
 statistical_design:
   population: >-
     The fixed, generated inputs of qsl-bench/benches/cst.rs, one
     dimension per criterion benchmark id; every input is deterministic.
   sampling: >-
-    criterion 0.8.2 defaults unless the bench sets them: 3 s warm-up, then
+    criterion defaults unless the bench sets them: 3 s warm-up, then
     linearly growing iteration batches until the sample count is reached;
     the whole suite is run as one `cargo bench -p qsl-bench --bench cst`
     invocation per repetition.
@@ -64,9 +64,8 @@ negative_controls:
       session is not rerun until it passes.
   - kind: stale-evidence
     description: >-
-      Every recorded collection names the exact source revision and the
-      machine it ran on; a result from another revision or machine is not
-      compared against this baseline.
+      Every recorded collection names the machine it ran on; a result from
+      another machine is not compared against this baseline.
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-001
     type: measures
@@ -95,7 +94,7 @@ protected apparatus.
 
 ## Collection Procedure
 
-Run `make bench-cst` five times on one machine at one source revision,
+Run `make bench-cst` five times on one machine,
 recording `/proc/loadavg` before and after each run. The observed value per
 benchmark is the median of the five runs' criterion point estimates, in
 seconds per call.

@@ -11,8 +11,10 @@ relationships:
 ## Description
 
 Verify that a resolving admitted payload type is retained as one typed union
-position, a payload-free case remains nullary, and a non-value payload type
-refuses as an unsupported declaration form. Scope: FR-056-AC-25.
+position, a payload-free case remains nullary, and a Clock payload refused by
+the FCD reader surfaces at QSL intake as `unsupported_construct`/`declaration-form`
+at `Variant.payloadType` according to QSpec FR-154-AC-25. Scope:
+FR-056-AC-25.
 
 ## Test Procedure
 
@@ -30,6 +32,6 @@ refuses as an unsupported declaration form. Scope: FR-056-AC-25.
   one member per case.
 - Step 2 admits as TC-994 step 1, with both cases nullary.
 - Step 3 refuses `unsupported_construct`/`declaration-form` at node
-  `ix://<package identity>/variant/Tier-Gold`, path `Variant.payloadType`,
-  never `invalid_model_binding`, and admits no declaration of the package.
+  `ix://<package identity>/variant/Tier-Gold`, path `Variant.payloadType`, per
+  QSpec FR-154-AC-25 and FR-208-AC-15; it admits no declaration of the package.
 - Assertions compare typed code, cause, node identity and path.

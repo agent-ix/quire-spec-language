@@ -22,8 +22,8 @@ Scope: FR-484-AC-1 to FR-484-AC-13.
 ## Fixture
 
 - The synthetic preimage `V2`: `node` 64 `2` hex digits; arguments
-  (`ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda`, 0,
-  `652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477`),
+  (`<FR-092 P4 digest>`, 0,
+  `<FR-092 T4 digest>`),
   QSpec FR-322's P4 parameter `x: Int[0, 9]` with its T4 type, and
   (64 `3` digits, 1, 64 `4` digits).
 - The unit `U`: `function inc using v(x: Int[0, 9]): Integer pure { x + 1 }`,
@@ -59,8 +59,8 @@ Scope: FR-484-AC-1 to FR-484-AC-13.
 
 | Vector | Input | Expected result | Criteria |
 | --- | --- | --- | --- |
-| VP-01 | `value_parity_obligation(V2)`; the canonical text of `V2`'s first argument alone | The 516-byte text of FR-484-AC-1 and digest `793909279b4897ab8f03f3c14547fc08861d353d979e471aa423c2bce9d8b92c`; the argument text with digest `34f0d98f1306d5e3720eec3469a6181c73f809ac51c6fe608e97129e7f94270f` | FR-484-AC-1 |
-| VP-02 | `V2` with no arguments; with its first argument only; with its two parameters declared in the other order | `908362fdf1c3d0bb20aadf2249e285964ad024f5fd994d6c01e88024839166b7`; `3333f20dd244bd7043f410893713ed40ffc067b45cae410050898de89834cbc0`; `f052b4583fc320a5a470209188b911e75fe02d55a28d079a5e614ac0f44e76fd` | FR-484-AC-2 |
+| VP-01 | `value_parity_obligation(V2)`; the canonical text of `V2`'s first argument alone | The 516-byte text of FR-484-AC-1 and its SHA-256; the argument text and its SHA-256 | FR-484-AC-1 |
+| VP-02 | `V2` with no arguments; with its first argument only; with its two parameters declared in the other order | the SHA-256 of the empty-argument text; of the first-argument text; of the swapped-order text, the three all different | FR-484-AC-2 |
 | VP-03 | `V2` with each of `node`, one `parameter`, one `position`, one `type` changed, an argument added and one removed; `V2` with its second argument at `position` 3; an operator-parity preimage with `V2`'s `node` | Each a different digest; `PositionOrder` naming index 1 and position 3; a digest unequal to `V2`'s | FR-484-AC-3 |
 | VP-04 | `call_site` over `U` selecting `inc`, `add` and `small`; the canonical text of each returned preimage written out from the compiled package's node ids | `inc` and `add`: `value_parity` whose node, arguments and types are the package's and whose identity equals the independent text's digest; `small`: `None` | FR-484-AC-4 |
 | VP-05 | A request for `inc` built from VP-04's `CallSite` and `FunctionSite` only, `x` = 3, replayed with `generated` 4 and 5 | `Agrees`; `Diverged`; each `claim()` equal to the retained inputs | FR-484-AC-5 |

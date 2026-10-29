@@ -61,13 +61,13 @@ whitespace drops under RFC 8785):
 
 | Member | Source text | Preimage bytes (UTF-8) | Digest |
 | --- | --- | --- | --- |
-| document | `{ "version": 1, "name": "orders" }` | `{"name":"orders","version":1}` | `sha256-jcs:17bb26d31aa70e4655fc93485f8ffd9facabf1f09becf1db75c9ebcfe470dfe5` |
-| model | `{"objects": ["Order", "Line"], "id": "orders-model"}` | `{"id":"orders-model","objects":["Order","Line"]}` | `sha256-jcs:0f987e2b9547cc4ed5e157315e4a8be8f85fc76681fe458b1caacc60b3518c87` |
-| profile | `{"limits": {"depth": 8}, "profile": "strict"}` | `{"limits":{"depth":8},"profile":"strict"}` | `sha256-jcs:aba201d44fbf1cfd79c04cf9c813ffd60db7bb5433493fa5665e180b137f338e` |
-| configuration | `{"enabled": true, "mode": "batch"}` | `{"enabled":true,"mode":"batch"}` | `sha256-jcs:07039deac03f89e3778cf7cd496733e99664000cc534995317b725f04e31de0f` |
+| document | `{ "version": 1, "name": "orders" }` | `{"name":"orders","version":1}` | `sha256-jcs:<SHA-256 of the canonical text>` |
+| model | `{"objects": ["Order", "Line"], "id": "orders-model"}` | `{"id":"orders-model","objects":["Order","Line"]}` | `sha256-jcs:<SHA-256 of the canonical text>` |
+| profile | `{"limits": {"depth": 8}, "profile": "strict"}` | `{"limits":{"depth":8},"profile":"strict"}` | `sha256-jcs:<SHA-256 of the canonical text>` |
+| configuration | `{"enabled": true, "mode": "batch"}` | `{"enabled":true,"mode":"batch"}` | `sha256-jcs:<SHA-256 of the canonical text>` |
 
 The document source text's raw bytes hash to
-`5cc151d5d5c229b536b0e36f1c2fc47ef5f5f26f36f038f129777d4c53c90200`; that
+their own SHA-256; that
 raw-byte digest is not the document's `sha256-jcs` digest.
 
 A digest in any other domain is refused before any value executes, with the

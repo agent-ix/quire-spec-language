@@ -1408,7 +1408,7 @@ fn tc_907_an_operand_that_is_not_the_nodes_child_refuses() {
 /// arm: the argument the arm builds for a record parameter with a `Sequence`
 /// field (the example's shape: cardinality 3 at its field and the element's
 /// range below it) digests as the canonical text the ADR shows, written here
-/// with this package's node ids. The ADR's own digest (4c36290f...659f) is the
+/// with this package's node ids. The ADR's own digest is the
 /// same text over node id 11...11, which `parity_identity`'s test reproduces;
 /// a package's node ids cannot be 11...11.
 #[trace("TC-907", "FR-358-AC-3")]

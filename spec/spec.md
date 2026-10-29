@@ -902,7 +902,7 @@ Use private owning issues and isolated worktrees. Under the approved initial spe
 
 ## 16. References
 
-The full task is tmp/formalization-agent-a-language-core.md in the workspace. The current authoring pack selected agent-ix from the Git remote. Authoring used Quoin 0.23.1, Quire 0.31.0 and the installed spec-artifacts-iso catalog shapes.
+The full task is tmp/formalization-agent-a-language-core.md in the workspace. The current authoring pack selected agent-ix from the Git remote. Authoring used the installed Quoin, Quire and spec-artifacts-iso catalog shapes.
 
 ## Requirements
 
