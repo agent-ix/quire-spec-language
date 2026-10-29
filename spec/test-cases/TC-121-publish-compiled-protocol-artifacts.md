@@ -16,8 +16,9 @@ boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
 reader behavior. The first fourteen groups below correspond to the first fourteen
-acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer; step 16 covers
-FR-042-AC-16 and FR-042-AC-17's absence of any committed `/1` handoff.
+acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer; step 16 requires the
+`/1` handoff the other steps read to be one `write_v1` wrote. FR-042-AC-16 and
+FR-042-AC-17 are withdrawn.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
 payment attempts A1/A2 and effect E1, refund registration and distinct refund
@@ -234,9 +235,8 @@ observations belong only to the later consumer fixture.
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001) through the public
     Rust interfaces, preserving exact selectors and finite graph/source links.
     In B's Rust integration harness, independently select the supplied original
-    sources, admitted domain packages, registry/contract and compiler source
-    identity (a digest on `Producer.binary` over the producer's own source
-    text, not a dependency's retained bytes) to construct the reader's
+    sources, admitted domain packages, registry/contract and producer
+    implementation name and revision to construct the reader's
     accepted inventory. Compare the offered package against that inventory;
     neither the payload nor the fixture's `expected.json` authorizes its own
     selections.
@@ -338,12 +338,8 @@ observations belong only to the later consumer fixture.
     its dev-dependency closure. That `cargo check` line is what actually
     resolves `write_v1`'s dependency graph with no dev-dependency in it.
 
-16. In a git checkout (CI only; not in a crate tarball or git dependency),
-    run `git ls-files artifacts/compiled-protocol-v1` and require empty output
-    (FR-042-AC-16). Require the public handoff module to export no
-    `PUBLISHED_V1_HANDOFF` (FR-042-AC-17), and require every `/1` handoff file
-    the other steps read to be one `write_v1` wrote into a temporary directory
-    in the same test.
+16. Require every `/1` handoff file the other steps read to be one `write_v1`
+    wrote into a temporary directory in the same test.
 
 ## Expected Results
 

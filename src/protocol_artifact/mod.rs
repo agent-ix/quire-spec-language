@@ -201,7 +201,7 @@ pub struct Expected<'a> {
     pub contract: &'a wire::ArtifactRef,
     /// Accepted semantic baseline artifact.
     pub baseline: &'a wire::ArtifactRef,
-    /// Accepted producer implementation, revision and exact binary artifact.
+    /// Accepted producer implementation and revision.
     pub producer: &'a wire::Producer,
     /// Accepted native language edition, separate from definition revision.
     pub language: &'a wire::Language,

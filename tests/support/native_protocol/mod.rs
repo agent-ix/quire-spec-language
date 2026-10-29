@@ -353,18 +353,9 @@ impl Inputs {
             "1",
             baseline_bytes,
         );
-        let binary_bytes = b"test-only selected producer implementation";
-        let binary = reference(
-            w::ArtifactKind::GeneratedArtifact,
-            "fixture-producer",
-            "test:binary",
-            "1",
-            binary_bytes,
-        );
         let producer = w::Producer {
             implementation: "test:native-emission-producer".into(),
             revision: revision("test:producer-revision", "1"),
-            binary: binary.clone(),
         };
         let model_reference = reference(
             w::ArtifactKind::ModelPackage,
@@ -376,7 +367,6 @@ impl Inputs {
         dependencies.extend([
             (contract.clone(), contract_bytes.to_vec()),
             (baseline.clone(), baseline_bytes.to_vec()),
-            (binary, binary_bytes.to_vec()),
             (model_reference.clone(), model.artifact_bytes().to_vec()),
         ]);
         if let Some(domain) = &domain {
