@@ -28,6 +28,7 @@
 
 use std::collections::BTreeSet;
 
+use qsl_forms::StateClauseKind;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{NodeKey, Origin};
 use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
@@ -113,7 +114,7 @@ pub fn step_simulation_records(
     let hypotheses: Vec<NodeKey> = clauses
         .iter()
         .filter(|clause| {
-            clause.is_invariant()
+            clause.kind() == StateClauseKind::Invariant
                 && refinement
                     .concrete_object_types()
                     .contains(&clause.context())

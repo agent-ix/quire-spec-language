@@ -452,17 +452,29 @@ impl<'s, 'a> Application<'s, 'a> {
         &self.arguments
     }
 
-    /// The application's step disjunct between `from` and `to`: its
+    /// The application's step disjunct between `from` and `to`, as one
+    /// conjunction of [`Self::conjuncts`].
+    pub(crate) fn disjunct(
+        &self,
+        subject: &SymbolicSubject<'_>,
+        layout: &StateLayout,
+        copies: (&StateCopy, &StateCopy),
+        views: (&Views, &Views),
+    ) -> Result<Term, SmtEncodingRefusal> {
+        Ok(Term::all(self.conjuncts(subject, layout, copies, views)?))
+    }
+
+    /// The conjuncts of the application's step disjunct between `from` and `to`: its
     /// precondition clauses on `from` (read through `before`), its
     /// postcondition relating the two copies (read through `across`), and
     /// its frame, each clause its definedness conjoined with its value.
-    pub(crate) fn disjunct(
+    pub(crate) fn conjuncts(
         &self,
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
         (from, to): (&StateCopy, &StateCopy),
         (before, across): (&Views, &Views),
-    ) -> Result<Term, SmtEncodingRefusal> {
+    ) -> Result<Vec<Term>, SmtEncodingRefusal> {
         let mut conjuncts = Vec::new();
         for clause in &self.operation.preconditions {
             let (value, defined) = self.read(subject, layout, clause, before, None)?;
@@ -487,7 +499,7 @@ impl<'s, 'a> Application<'s, 'a> {
             conjuncts.push(Term::any(alternatives));
         }
         conjuncts.extend(self.frame(subject, layout, from, to));
-        Ok(Term::all(conjuncts))
+        Ok(conjuncts)
     }
 }
 

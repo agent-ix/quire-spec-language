@@ -80,8 +80,14 @@ fn assertions(query: &str) -> Vec<&str> {
 
 const RANGE: &str = "(and (<= 0 s0.c.value) (<= s0.c.value 2))";
 
+/// The steps that refute the `(not true)` of a refuted `(or (not D) (not
+/// R))` whose `D` is `true`: `tautology` over `not_not`'s clause, whose two
+/// literals are complementary.
+const TRUE: &str = "(step u0 (cl (not (not (not true))) true) :rule not_not)\n\
+     (step u1 (cl true) :rule tautology :premises (u0))\n";
+
 /// A refutation of the `Initial` query: its initial predicate fixes
-/// `s0.c.value` at 0, which the negation denies.
+/// `s0.c.value` at 0, which `(or (not true) (not (= s0.c.value 0)))` denies.
 fn initial_proof(query: &str) -> String {
     let asserted = assertions(query);
     let [.., initial, negation] = asserted.as_slice() else {
@@ -91,26 +97,24 @@ fn initial_proof(query: &str) -> String {
         "(assume a0 {initial})\n\
          (assume a1 {negation})\n\
          (step t0 (cl (= s0.c.value 0)) :rule and :premises (a0))\n\
-         (step t1 (cl) :rule resolution :premises (t0 a1))\n"
+         (step t1 (cl (not true) (not (= s0.c.value 0))) :rule or :premises (a1))\n\
+         {TRUE}\
+         (step t2 (cl) :rule resolution :premises (t1 u1 t0))\n"
     )
 }
 
 const UNCHANGED: &str = "(= s1.c.value s0.c.value)";
 
-/// A refutation of a `stutter` row's query `(and X (not Q))`, `Q` the frame
-/// equality of `value`, a conjunct of `X`.
+/// A refutation of a `stutter` row's query `(and ... Q ... (or (not true)
+/// (not Q)))`, `Q` the frame equality of `value`.
 fn stutter_proof(assertion: &str) -> String {
-    let negated = format!(" (not {UNCHANGED}))");
-    let step = assertion
-        .strip_prefix("(and ")
-        .and_then(|rest| rest.strip_suffix(&negated))
-        .expect("a stutter query asserts (and X (not Q))");
     format!(
         "(assume a0 {assertion})\n\
-         (step t0 (cl {step}) :rule and :premises (a0))\n\
-         (step t1 (cl (not {UNCHANGED})) :rule and :premises (a0))\n\
-         (step t2 (cl {UNCHANGED}) :rule and :premises (t0))\n\
-         (step t3 (cl) :rule resolution :premises (t2 t1))\n"
+         (step t0 (cl {UNCHANGED}) :rule and :premises (a0))\n\
+         (step t1 (cl (or (not true) (not {UNCHANGED}))) :rule and :premises (a0))\n\
+         (step t2 (cl (not true) (not {UNCHANGED})) :rule or :premises (t1))\n\
+         {TRUE}\
+         (step t3 (cl) :rule resolution :premises (t2 u1 t0))\n"
     )
 }
 
@@ -123,11 +127,6 @@ fn commit_proof(assertion: &str, w: char) -> String {
     let implication = format!("(=> (< s0.c.value 2) {rng})");
     let m = format!("(and {implication} {k})");
     let n = format!("(and (< s0.c.value 2) {m})");
-    let negated = format!(" (not {n}))");
-    let c = assertion
-        .strip_prefix("(and ")
-        .and_then(|rest| rest.strip_suffix(&negated))
-        .expect("a commit query asserts (and C (not N))");
     let tmp = format!("s0.c.tmp{w}");
     let busy = format!("s0.c.busy{w}");
     let pre = format!("(and (and {busy} (= {tmp} s0.c.value)) (< s0.c.value 2))");
@@ -139,10 +138,10 @@ fn commit_proof(assertion: &str, w: char) -> String {
     [
         format!("(assume a0 {assertion})"),
         format!("(assume r {RANGE})"),
-        format!("(step c0 (cl {c}) :rule and :premises (a0))"),
-        format!("(step c1 (cl (not {n})) :rule and :premises (a0))"),
-        format!("(step c2 (cl {pre}) :rule and :premises (c0))"),
-        format!("(step c3 (cl {post}) :rule and :premises (c0))"),
+        format!("(step c0 (cl (or (not true) (not {n}))) :rule and :premises (a0))"),
+        format!("(step c1 (cl (not true) (not {n})) :rule or :premises (c0))"),
+        format!("(step c2 (cl {pre}) :rule and :premises (a0))"),
+        format!("(step c3 (cl {post}) :rule and :premises (a0))"),
         format!("(step c4 (cl (< {v} 2)) :rule and :premises (c2))"),
         format!("(step c5 (cl (and {busy} (= {tmp} {v}))) :rule and :premises (c2))"),
         format!("(step c6 (cl (= {tmp} {v})) :rule and :premises (c5))"),
@@ -176,7 +175,8 @@ fn commit_proof(assertion: &str, w: char) -> String {
         format!("(step c26 (cl {m}) :rule resolution :premises (c25 c22 c24))"),
         format!("(step c27 (cl {n} (not (< {v} 2)) (not {m})) :rule and_neg)"),
         format!("(step c28 (cl {n}) :rule resolution :premises (c27 c4 c26))"),
-        "(step c29 (cl) :rule resolution :premises (c28 c1))".to_owned(),
+        TRUE.trim_end().to_owned(),
+        "(step c29 (cl) :rule resolution :premises (c28 c1 u1))".to_owned(),
     ]
     .join("\n")
 }
@@ -278,7 +278,7 @@ fn refinement_queries_encode_the_initial_and_step_obligations() {
              (assert (and (<= 0 s0.c.tmpB) (<= s0.c.tmpB 2)))\n\
              (assert (and (<= 0 s0.c.value) (<= s0.c.value 2)))\n\
              (assert (and (= s0.c.busyA false) (= s0.c.busyB false) (= s0.c.tmpA 0) (= s0.c.tmpB 0) (= s0.c.value 0)))\n\
-             (assert (not (= s0.c.value 0)))\n\
+             (assert (or (not true) (not (= s0.c.value 0))))\n\
              (check-sat)\n"
         );
         assert_eq!(
@@ -291,9 +291,9 @@ fn refinement_queries_encode_the_initial_and_step_obligations() {
         assert_eq!(
             assertions(&stutter).last().copied(),
             Some(
-                "(and (and (= s1.c.busyA s0.c.busyA) (= s1.c.busyB s0.c.busyB) \
-                 (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) (= s1.c.value s0.c.value)) \
-                 (not (= s1.c.value s0.c.value)))"
+                "(and (= s1.c.busyA s0.c.busyA) (= s1.c.busyB s0.c.busyB) \
+                 (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) (= s1.c.value s0.c.value) \
+                 (or (not true) (not (= s1.c.value s0.c.value))))"
             )
         );
         assert_eq!(
@@ -306,13 +306,13 @@ fn refinement_queries_encode_the_initial_and_step_obligations() {
         assert_eq!(
             assertions(&operation).last().copied(),
             Some(
-                "(and (and (and (and s0.c.busyA (= s0.c.tmpA s0.c.value)) (< s0.c.value 2)) \
+                "(and (and (and s0.c.busyA (= s0.c.tmpA s0.c.value)) (< s0.c.value 2)) \
                  (and (=> (< s0.c.tmpA 2) (and (<= 0 (+ s0.c.tmpA 1)) (<= (+ s0.c.tmpA 1) 2))) \
                  (and (and (< s0.c.tmpA 2) (= s1.c.value (+ s0.c.tmpA 1))) (not s1.c.busyA))) \
-                 (= s1.c.busyB s0.c.busyB) (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB)) \
-                 (not (and (< s0.c.value 2) (and (=> (< s0.c.value 2) \
+                 (= s1.c.busyB s0.c.busyB) (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) \
+                 (or (not true) (not (and (< s0.c.value 2) (and (=> (< s0.c.value 2) \
                  (and (<= 0 (+ s0.c.value 1)) (<= (+ s0.c.value 1) 2))) \
-                 (and (< s0.c.value 2) (= s1.c.value (+ s0.c.value 1)))))))"
+                 (and (< s0.c.value 2) (= s1.c.value (+ s0.c.value 1))))))))"
             )
         );
     });
@@ -428,7 +428,11 @@ fn refinement_certificates_check_part_by_part() {
         );
 
         let mut hole = valid.clone();
-        hole.base.proof = with_command(&valid.base.proof, 3, "(step t1 (cl) :rule hole)");
+        hole.base.proof = with_command(
+            &valid.base.proof,
+            3,
+            "(step t1 (cl (not true) (not (= s0.c.value 0))) :rule hole)",
+        );
         assert_eq!(
             check(request, &hole),
             Ok(SmtProofCheck::Unverifiable {
@@ -489,5 +493,242 @@ fn a_refinement_check_stops_at_its_byte_budget() {
                 source: quire_exact::CancelCause::Requested
             }))
         );
+    });
+}
+
+const AA_INV: &str = "invariant AaInv using inf on Impl::Counter at current { self.tmpA <= 2 }\n";
+const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
+     self.busyA or self.tmpA <= self.value }\n";
+const ABS_INV: &str =
+    "invariant AbsInv using inf on Spec::Counter at current { self.value <= 2 }\n";
+
+/// TC-900's `CasRefinesCounter2`: two counters `c0` < `c1`, with `clauses`
+/// after the refinement.
+fn counter2(clauses: &str) -> World {
+    World::with_keys(
+        Variant::CAS,
+        &format!("{}\n{clauses}", cas_refines_counter()),
+        &["c0", "c1"],
+    )
+}
+
+/// The top-level operands of the S-expression `(head a b ...)`.
+fn operands(term: &str) -> Vec<&str> {
+    let inner = &term[1..term.len() - 1];
+    let mut operands = Vec::new();
+    let (mut depth, mut start) = (0_usize, None);
+    for (at, character) in inner.char_indices() {
+        match character {
+            '(' => {
+                if depth == 0 && start.is_none() {
+                    start = Some(at);
+                }
+                depth += 1;
+            }
+            ')' => depth -= 1,
+            ' ' if depth == 0 => {
+                if let Some(from) = start.take() {
+                    operands.push(&inner[from..at]);
+                }
+            }
+            _ => {
+                if start.is_none() {
+                    start = Some(at);
+                }
+            }
+        }
+    }
+    if let Some(from) = start {
+        operands.push(&inner[from..]);
+    }
+    operands
+}
+
+/// The command heads of `script`, in order.
+fn heads(script: &str) -> Vec<&str> {
+    script
+        .lines()
+        .map(|line| line[1..].split([' ', ')']).next().unwrap_or_default())
+        .collect()
+}
+
+/// FR-315-AC-53 (TC-900): the refinement queries' normative layout over
+/// `CasRefinesCounter2`, and each layout mutation rejected `QueryMismatch`.
+#[trace("TC-900", "FR-315-AC-53")]
+#[test]
+fn refinement_queries_print_in_the_normative_order() {
+    let world = counter2(&format!("{AA_INV}{CAS_INV}{ABS_INV}"));
+    let commit = row_of(&world, "commitA");
+    let (initial, step) = with_request(&world, |request| {
+        (
+            encode(request, RefinementQueryKind::Initial).expect("encodes"),
+            encode(request, RefinementQueryKind::Step { row: commit }).expect("encodes"),
+        )
+    });
+    let declarations = 10;
+    let ranges = 6;
+    let mut expected = vec!["set-logic"];
+    expected.extend(std::iter::repeat_n("declare-const", declarations));
+    expected.extend(std::iter::repeat_n("assert", ranges + 1 + 4 + 1));
+    expected.push("check-sat");
+    assert_eq!(heads(&initial), expected);
+    let declared: Vec<&str> = initial
+        .lines()
+        .filter_map(|line| line.strip_prefix("(declare-const "))
+        .map(|rest| rest.split(' ').next().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        declared,
+        [
+            "s0.c0.busyA",
+            "s0.c0.busyB",
+            "s0.c0.tmpA",
+            "s0.c0.tmpB",
+            "s0.c0.value",
+            "s0.c1.busyA",
+            "s0.c1.busyB",
+            "s0.c1.tmpA",
+            "s0.c1.tmpB",
+            "s0.c1.value",
+        ]
+    );
+    let hypotheses = [
+        "(<= s0.c0.tmpA 2)",
+        "(<= s0.c1.tmpA 2)",
+        "(or s0.c0.busyA (<= s0.c0.tmpA s0.c0.value))",
+        "(or s0.c1.busyA (<= s0.c1.tmpA s0.c1.value))",
+    ];
+    let asserted = assertions(&initial);
+    assert_eq!(asserted[ranges + 1..ranges + 5], hypotheses);
+    assert!(asserted[ranges + 5].starts_with("(or (not true) (not "));
+
+    let step_asserted = assertions(&step);
+    assert_eq!(step_asserted.len(), 2 * ranges + 4 + 1);
+    assert_eq!(step_asserted[2 * ranges..2 * ranges + 4], hypotheses);
+    assert!(
+        !step.contains("(= s0.c0.busyA false)"),
+        "no initial predicate"
+    );
+    let row = step_asserted[2 * ranges + 4];
+    let applications = operands(row);
+    assert_eq!(applications.len(), 3, "(or <c0> <c1>)");
+    assert_eq!(applications[0], "or");
+    assert!(applications[1].contains("s0.c0.busyA") && !applications[1].contains("s0.c1.busyA"));
+    assert!(applications[2].contains("s0.c1.busyA"));
+    for application in &applications[1..] {
+        let conjuncts = operands(application);
+        assert!(conjuncts
+            .last()
+            .is_some_and(|last| last.starts_with("(or (not true) (not ")));
+    }
+    with_request(&world, |request| {
+        assert_eq!(
+            encode(request, RefinementQueryKind::Initial).expect("encodes"),
+            initial
+        );
+        assert_eq!(
+            encode(request, RefinementQueryKind::Step { row: commit }).expect("encodes"),
+            step
+        );
+    });
+
+    // No digest-derived order: renaming moves the clause, source order
+    // changes nothing.
+    let renamed = counter2(&format!("{}{CAS_INV}", AA_INV.replace("AaInv", "ZzInv")));
+    let renamed_initial = with_request(&renamed, |request| {
+        encode(request, RefinementQueryKind::Initial)
+    })
+    .expect("encodes");
+    assert_eq!(
+        assertions(&renamed_initial)[ranges + 1..ranges + 5],
+        [hypotheses[2], hypotheses[3], hypotheses[0], hypotheses[1]]
+    );
+    let reversed = counter2(&format!("{ABS_INV}{CAS_INV}{AA_INV}"));
+    assert_eq!(
+        with_request(&reversed, |request| encode(
+            request,
+            RefinementQueryKind::Initial
+        ))
+        .expect("encodes"),
+        initial
+    );
+
+    // Each mutation is rejected `QueryMismatch` at the row's part.
+    let replace = |from: &str, to: &str| step.replacen(from, to, 1);
+    let line = |term: &str| format!("(assert {term})\n");
+    let initial_predicate = assertions(&initial)[ranges];
+    let mutations = [
+        replace(
+            row,
+            &format!("(or {} {})", applications[2], applications[1]),
+        ),
+        replace(
+            &format!("{}{}", line(hypotheses[1]), line(hypotheses[2])),
+            &format!("{}{}", line(hypotheses[2]), line(hypotheses[1])),
+        )
+        .replacen(&line(hypotheses[0]), &line(hypotheses[2]), 1)
+        .replacen(&line(hypotheses[3]), &line(hypotheses[1]), 1),
+        replace(&line(hypotheses[0]), &line("(<= s1.c0.tmpA 2)")),
+        replace(
+            &line(hypotheses[0]),
+            &format!("{}{}", line(initial_predicate), line(hypotheses[0])),
+        ),
+        replace(
+            &line(row),
+            &format!("{}{}", line(applications[1]), line(applications[2])),
+        ),
+        replace(
+            &line(row),
+            &format!(
+                "{}{}",
+                line(
+                    &format!("(or {} {})", applications[1], applications[2])
+                        .replace("(or (not true) (not ", "(and true (")
+                ),
+                line("(not (or R_c0 R_c1))")
+            ),
+        ),
+    ];
+    with_request(&world, |request| {
+        let rows = u64::try_from(
+            world
+                .refinement()
+                .v2_emission()
+                .expect("emits")
+                .step_sources
+                .len(),
+        )
+        .expect("small");
+        let honest = |row: u64| {
+            part(
+                encode(request, RefinementQueryKind::Step { row }).expect("encodes"),
+                String::new(),
+            )
+        };
+        for mutated in mutations {
+            assert_ne!(mutated, step);
+            let certificate = RefinementSmtCertificate {
+                format: ProofFormat::Alethe,
+                base: part(initial.clone(), String::new()),
+                steps: (0..rows)
+                    .map(|row| {
+                        if row == commit {
+                            part(mutated.clone(), String::new())
+                        } else {
+                            honest(row)
+                        }
+                    })
+                    .collect(),
+            };
+            assert_eq!(
+                check(request, &certificate),
+                rejected(
+                    CertificateRule::QueryMismatch,
+                    CertificateLocus::Query {
+                        part: step_part(commit)
+                    }
+                )
+            );
+        }
     });
 }

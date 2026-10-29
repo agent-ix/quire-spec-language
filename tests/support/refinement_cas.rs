@@ -515,14 +515,18 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
         .map_err(|refusals| format!("{refusals:?}"))
 }
 
-/// An initialization snapshot of the one counter `c` of `package`, whose
-/// fields are `fields`.
+/// An initialization snapshot of the counters `keys` of `package`, whose
+/// fields are each `fields`.
 fn snapshot(
     package: &str,
     document: &[u8],
-    fields: Json,
+    (fields, keys): (Json, &[String]),
     snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
 ) -> DocumentRef {
+    let objects: Vec<Json> = keys
+        .iter()
+        .map(|key| json!({"key": key, "type": ident(package, "Counter"), "fields": fields}))
+        .collect();
     let model_digest = *package_input([document])
         .keys()
         .next()
@@ -537,7 +541,7 @@ fn snapshot(
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident(package, "counters"), "complete": true,
-            "objects": [{"key": "c", "type": ident(package, "Counter"), "fields": fields}]}],
+            "objects": objects}],
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -556,6 +560,7 @@ fn snapshot(
 
 /// The unit's package, the models' documents and their initial states.
 pub struct World {
+    keys: Vec<String>,
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
@@ -573,6 +578,14 @@ impl World {
 
     /// The world of the unit of `variant` with `refinement`.
     pub fn with(variant: Variant, refinement: &str) -> Self {
+        Self::with_keys(variant, refinement, &["c"])
+    }
+
+    /// The world of the unit of `variant` with `refinement`, whose
+    /// populations hold one counter per key of `keys` (TC-900's
+    /// `CasRefinesCounter2` holds `c0` and `c1`).
+    pub fn with_keys(variant: Variant, refinement: &str, keys: &[&str]) -> Self {
+        let keys: Vec<String> = keys.iter().map(|key| (*key).to_owned()).collect();
         let graph = check(variant, refinement).unwrap_or_else(|refusals| {
             panic!("{refinement}: the unit checks: {refusals}");
         });
@@ -580,32 +593,36 @@ impl World {
         let spec_initial = snapshot(
             SPEC,
             &spec_document(SPEC, variant.add),
-            json!({"value": {"integer": "0"}}),
+            (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let spec_one = snapshot(
             SPEC,
             &spec_document(SPEC, variant.add),
-            json!({"value": {"integer": "1"}}),
+            (json!({"value": {"integer": "1"}}), &keys),
             &mut snapshots,
         );
         let third_initial = snapshot(
             THIRD,
             &spec_document(THIRD, false),
-            json!({"value": {"integer": "0"}}),
+            (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let cas_initial = snapshot(
             CAS,
             &cas_document(variant),
-            json!({
-                "value": {"integer": variant.concrete_value.to_string()},
-                "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
-                "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
-            }),
+            (
+                json!({
+                    "value": {"integer": variant.concrete_value.to_string()},
+                    "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
+                    "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
+                }),
+                &keys,
+            ),
             &mut snapshots,
         );
         Self {
+            keys,
             package: CheckedPackage::link(graph),
             packages: packages(variant),
             snapshots,
@@ -647,7 +664,7 @@ impl World {
             initial,
             universes: vec![PopulationUniverse {
                 population: key(model, "counters"),
-                keys: vec!["c".to_owned()],
+                keys: self.keys.clone(),
             }],
             observation: ObservationLimits::default(),
             expansion: ExpansionLimits {

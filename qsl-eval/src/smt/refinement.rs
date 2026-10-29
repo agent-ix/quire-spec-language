@@ -10,28 +10,25 @@
 //! each of its fields is its mapping row read over the concrete copy with
 //! `self` bound to that object, together with the row's definedness.
 //!
-//! The script is, in order: `(set-logic QF_LIA)`; the `declare-const`
-//! commands of `s0`, then of `s1`; the range assertions of `s0`, then of
-//! `s1`; for `Initial` the concrete initial-state predicate on `s0`; one
-//! assertion per hypothesis instance on `s0` (the hypotheses in ascending
-//! node-key order, each over the objects of its context type in layout
-//! order); then one assertion:
+//! The script is FR-315's normative order, which FR-314 compares byte for
+//! byte: `(set-logic QF_LIA)`; the `declare-const` commands of `s0`, then of
+//! `s1`; the range assertions of `s0`, then of `s1`; for `Initial` the
+//! concrete initial-state predicate on `s0`; the hypothesis list `H` on `s0`
+//! (the concrete model's invariant clauses in ascending name order, each over
+//! the objects whose type conforms to its context in reference-key order);
+//! then one assertion and `(check-sat)`. For `Initial` the assertion is
+//! `(or (not D) (not R))`, `R` the disjunction over the abstract initial
+//! states of `map(s0)`'s field equalities with each. For `Step { row }` it
+//! is the row disjunction: over the row's applications, the operation
+//! disjunct's conjuncts followed by `(or (not D_a) (not R_a))`, a disjunct
+//! equal to an earlier one printed once. `D` conjoins the definedness of the
+//! receiver, the arguments, the mapping rows over `s0`, then over `s1`.
 //!
-//! - `Initial`: `(or (not D) (not (or E1 ... Em)))`, `D` the definedness of
-//!   every mapping row read and `Ej` the mapped state agreeing, field by
-//!   field, with the abstract initial state `j` in list order;
-//! - `Step { row }`: the disjunction, over the row's concrete operation's
-//!   applications in step-disjunct order, of the application's step
-//!   disjunct conjoined with the negation of the row's rule for it;
-//!
-//! and `(check-sat)`. FR-315 states no assertion order for these queries;
-//! this one is the encoding's own (spec gap STD-556).
-//!
-//! The encoding reads no encoding limit (FR-314 "Encoding limits"). A
-//! refinement with a hidden field or a history field, a row of a protocol
-//! subject and a row that binds the abstract result to the concrete one have
-//! no form here and refuse `out-of-fragment`, naming the refinement or the
-//! row; FR-146 writes no per-step record for the first two.
+//! The encoding reads no encoding limit (FR-314 "Encoding limits"). It
+//! checks FR-315's refinement refusals first, in order: a hidden or history
+//! field, an `any` row, a protocol step class, a row that binds the result,
+//! a `_` argument; then the subject refusals; then `out-of-fragment` over the
+//! terms of the query.
 
 use std::ops::Not;
 use std::rc::Rc;
@@ -143,12 +140,39 @@ pub fn encode_refinement_query(
             Some((row, source))
         }
     };
-    if let Some((position, row)) = row {
-        match &row.target {
-            StepTarget::Any => {
+    // Refusal 1: a hidden or history field.
+    if let Some(hidden) = refinement
+        .objects()
+        .iter()
+        .find_map(|object| object.hidden.first())
+    {
+        return Err(out_of_fragment(&hidden.node, "a hidden field"));
+    }
+    if let Some(history) = refinement.history().first() {
+        return Err(out_of_fragment(&history.field, "a history field"));
+    }
+    // Refusals 2 to 5, for the row of a step query.
+    let operation = match row {
+        None => None,
+        Some((position, row)) => {
+            if matches!(row.target, StepTarget::Any) {
                 return Err(Refusal::RefinementAnyRow { row: position }.into());
             }
-            StepTarget::Abstract { arguments, .. } => {
+            let StepClass::Operation(operation) = &row.class else {
+                return Err(out_of_fragment(row.spelling(), "a protocol step class"));
+            };
+            if let StepTarget::Abstract {
+                binds_result,
+                arguments,
+                ..
+            } = &row.target
+            {
+                if *binds_result {
+                    return Err(out_of_fragment(
+                        row.spelling(),
+                        "a step row that binds the abstract result",
+                    ));
+                }
                 if let Some(open) = arguments.iter().position(Option::is_none) {
                     return Err(Refusal::RefinementOpenArgument {
                         row: position,
@@ -157,20 +181,9 @@ pub fn encode_refinement_query(
                     .into());
                 }
             }
-            _ => {}
+            Some(operation)
         }
-    }
-    let name = refinement.name();
-    if refinement
-        .objects()
-        .iter()
-        .any(|object| !object.hidden.is_empty())
-    {
-        return Err(out_of_fragment(name, "a refinement with a hidden field"));
-    }
-    if !refinement.history().is_empty() {
-        return Err(out_of_fragment(name, "a refinement with a history field"));
-    }
+    };
 
     let concrete_system =
         ModelSystem::new(request.concrete.simulation.clone()).map_err(Refusal::SubjectAdmission)?;
@@ -208,37 +221,35 @@ pub fn encode_refinement_query(
     for hypothesis in sides.hypotheses(request.package, &first)? {
         script.assert(&hypothesis);
     }
-    let negated = match row {
-        None => sides.initial_negation(&first)?,
-        Some((position, row)) => {
-            let StepClass::Operation(operation) = &row.class else {
-                return Err(out_of_fragment(
-                    row.spelling(),
-                    "a step row of a protocol subject",
-                ));
-            };
+    let negated = match (row, operation) {
+        (Some((_, row)), Some(operation)) => {
             check_domains(&concrete)?;
             let built = applications(&concrete, u64::MAX)?;
-            let mut disjuncts = Vec::new();
+            let before = Views::of(StateRef::Copy(first.clone()));
+            let across = Views {
+                pre: StateRef::Copy(first.clone()),
+                post: StateRef::Copy(second.clone()),
+                current: StateRef::Copy(second.clone()),
+            };
+            let mut disjuncts: Vec<Term> = Vec::new();
+            let mut printed = std::collections::HashSet::new();
             for application in built.iter().filter(|found| found.operation().is(operation)) {
-                let step = application.disjunct(
+                let mut conjuncts = application.conjuncts(
                     &concrete,
                     &concrete_layout,
                     (&first, &second),
-                    (
-                        &Views::of(StateRef::Copy(first.clone())),
-                        &Views {
-                            pre: StateRef::Copy(first.clone()),
-                            post: StateRef::Copy(second.clone()),
-                            current: StateRef::Copy(second.clone()),
-                        },
-                    ),
+                    (&before, &across),
                 )?;
-                let rule = sides.rule(position, row, application, (&first, &second))?;
-                disjuncts.push(Term::all([step, rule.not()]));
+                let (defined, rule) = sides.rule(row, application, (&first, &second))?;
+                conjuncts.push(refuted(defined, rule));
+                let disjunct = Term::all(conjuncts);
+                if printed.insert(disjunct.text()) {
+                    disjuncts.push(disjunct);
+                }
             }
             Term::any(disjuncts)
         }
+        _ => sides.initial_negation(&first)?,
     };
     script.assert(&negated);
     if script.closing_command_exceeded() {
@@ -295,7 +306,9 @@ fn preimages(
 /// definedness of every row read.
 struct Mapped {
     fields: Vec<((usize, usize), FieldTerms)>,
-    defined: Term,
+    /// Each mapping row's definedness, in (abstract object key, field name)
+    /// order.
+    defined: Vec<Term>,
 }
 
 impl Mapped {
@@ -314,6 +327,23 @@ impl Mapped {
             written: Rc::new(self.fields.clone()),
         }
     }
+}
+
+/// `D` as FR-315 prints it: the conjunction of `parts`, and the literal
+/// `true` when the query reads nothing that can be undefined.
+fn definedness(parts: impl IntoIterator<Item = Term>) -> Term {
+    match Term::all(parts) {
+        none if none.is_truth(true) => Term::literal(true),
+        defined => defined,
+    }
+}
+
+/// `(or (not D) (not R))`.
+fn refuted(defined: Term, rule: Term) -> Term {
+    Term::Or(vec![
+        Term::Not(Box::new(defined)),
+        Term::Not(Box::new(rule)),
+    ])
 }
 
 /// Field equality of two mapped fields (FR-315 "Field equality").
@@ -418,16 +448,14 @@ impl Sides<'_, '_> {
                 fields.push(((index, field), terms));
             }
         }
-        Ok(Mapped {
-            fields,
-            defined: Term::all(defined),
-        })
+        Ok(Mapped { fields, defined })
     }
 
-    /// One assertion per hypothesis instance on `copy`: the invariant
-    /// clauses whose context is an object type of the concrete model, in
-    /// ascending node-key order, each over the concrete objects of its
-    /// context type in layout order.
+    /// The hypothesis list `H` on `copy`: one assertion per (invariant
+    /// clause, object) pair, the invariant clauses whose context is an
+    /// object type of the concrete model in ascending name order (FR-120's
+    /// "Invariants" order), each over the concrete objects whose type
+    /// conforms to its context in ascending reference-key order.
     fn hypotheses(
         &self,
         package: &CheckedPackage,
@@ -446,8 +474,8 @@ impl Sides<'_, '_> {
                         .contains(&clause.context())
             })
             .collect();
-        clauses.sort_by(|left, right| left.identity().as_bytes().cmp(right.identity().as_bytes()));
-        clauses.dedup_by(|later, earlier| later.identity() == earlier.identity());
+        // Stable, so two clauses of one name keep their package order.
+        clauses.sort_by(|left, right| left.name().cmp(right.name()));
         let views = Views::of(StateRef::Copy(copy.clone()));
         let mut hypotheses = Vec::new();
         for clause in clauses {
@@ -498,45 +526,40 @@ impl Sides<'_, '_> {
             }
             states.push(Term::all(conjuncts));
         }
-        Ok(Term::any([mapped.defined.not(), Term::any(states).not()]))
+        Ok(refuted(definedness(mapped.defined), Term::any(states)))
     }
 
-    /// The row's rule for `application` over (`map(from)`, `map(to)`):
-    /// `stutter` leaves the mapped state unchanged; an abstract operation's
-    /// transition holds with its receiver and arguments read at `from`.
+    /// `D_a` and `R_a` of the row for `application` over (`map(from)`,
+    /// `map(to)`): `stutter` leaves the mapped state unchanged; an abstract
+    /// operation's transition holds with its receiver and arguments read at
+    /// `from`. `D_a` conjoins the receiver's, the arguments' and the mapping
+    /// rows' definedness, over `from` then `to`.
     fn rule(
         &self,
-        position: u64,
         row: &qsl_semantics::check::StepRow,
         application: &Application<'_, '_>,
         (from, to): (&StateCopy, &StateCopy),
-    ) -> Result<Term, SmtEncodingRefusal> {
+    ) -> Result<(Term, Term), SmtEncodingRefusal> {
         let before = self.map(from)?;
         let after = self.map(to)?;
-        let defined = Term::all([before.defined.clone(), after.defined.clone()]);
+        let mapped = || before.defined.iter().chain(&after.defined).cloned();
         match &row.target {
             StepTarget::Stutter => {
-                let mut conjuncts = vec![defined];
+                let mut conjuncts = Vec::new();
                 for (at, later) in &after.fields {
                     let earlier = before
                         .terms(*at)
                         .ok_or_else(|| fault("both mapped states hold every abstract field"))?;
                     conjuncts.push(agree(later, earlier));
                 }
-                Ok(Term::all(conjuncts))
+                Ok((definedness(mapped()), Term::all(conjuncts)))
             }
             StepTarget::Abstract {
                 operation,
                 receiver,
                 arguments,
-                binds_result,
+                ..
             } => {
-                if *binds_result {
-                    return Err(out_of_fragment(
-                        row.spelling(),
-                        "a step row that binds the abstract result",
-                    ));
-                }
                 let (concrete, _) = self.concrete;
                 let mut bindings = vec![Some(Sym::Object(application.receiver()))];
                 bindings.extend(
@@ -555,32 +578,18 @@ impl Sides<'_, '_> {
                     .iter()
                     .position(|preimage| *preimage == receiver)
                     .ok_or_else(|| out_of_fragment(&site, "a receiver with no abstract image"))?;
-                let mut conjuncts = vec![defined, target.defined];
+                let mut defined = vec![target.defined];
                 let mut supplied = Vec::new();
-                for argument in arguments {
-                    let Some(argument) = argument else {
-                        return Err(Refusal::RefinementOpenArgument {
-                            row: position,
-                            argument: u64::try_from(supplied.len()).unwrap_or(u64::MAX),
-                        }
-                        .into());
-                    };
+                for argument in arguments.iter().flatten() {
                     let encoded = self.read_row(argument, &site, from, bindings.clone())?;
-                    conjuncts.push(encoded.defined);
+                    defined.push(encoded.defined);
                     supplied.push(Some(encoded.sym));
                 }
-                conjuncts.push(self.transition(
-                    operation,
-                    receiver,
-                    &supplied,
-                    (&before, &after),
-                )?);
-                Ok(Term::all(conjuncts))
+                defined.extend(mapped());
+                let rule = self.transition(operation, receiver, &supplied, (&before, &after))?;
+                Ok((definedness(defined), rule))
             }
-            _ => Err(out_of_fragment(
-                row.spelling(),
-                "a step row of a protocol subject",
-            )),
+            _ => Err(out_of_fragment(row.spelling(), "a protocol step class")),
         }
     }
 
@@ -621,7 +630,8 @@ impl Sides<'_, '_> {
             conjuncts.push(Term::all([defined, value]));
         }
         let mut alternatives = Vec::new();
-        for result in result_values(declared) {
+        let results = result_values(declared);
+        for result in results.iter().cloned() {
             let result =
                 match result {
                     Some(value) => Some(symbol_of(subject, &value).ok_or_else(|| {
@@ -642,9 +652,18 @@ impl Sides<'_, '_> {
                 )?;
                 clauses.push(Term::all([defined, value]));
             }
-            alternatives.push(Term::all(clauses));
+            alternatives.push(clauses);
         }
-        conjuncts.push(Term::any(alternatives));
+        // The postcondition part as Step relation prints it: the clauses
+        // themselves for an operation with no result, else the disjunction
+        // over its result values.
+        match (results.as_slice(), alternatives.pop()) {
+            ([None], Some(clauses)) => conjuncts.extend(clauses),
+            (_, last) => {
+                alternatives.extend(last);
+                conjuncts.push(Term::any(alternatives.into_iter().map(Term::all)));
+            }
+        }
         for (at, later) in &after.fields {
             if !writes(subject, declared, receiver, *at) {
                 let earlier = before
