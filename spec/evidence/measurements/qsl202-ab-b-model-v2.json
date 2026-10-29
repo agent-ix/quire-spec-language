@@ -1,6 +1,5 @@
 {
   "collectionId": "qsl202-ab-b-model-v2",
-  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
   "environment": {
     "loads": [
       {
@@ -56,7 +55,7 @@
     ],
     "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
     "role": "candidate (B, QSL-202)",
-    "session": "qsl202-ab: A = 5c93a3a1, B = 9d5ccdfd, rounds A1 B1 A2 B2 ... A5 B5",
+    "session": "qsl202-ab: A = baseline, B = candidate, rounds A1 B1 A2 B2 ... A5 B5",
     "sharedLoad": "QSL-202 interleaved A/B session, A and B alternating per round; other agents' QSL builds and benches ran on the same machine; loadavg recorded per round"
   },
   "observations": [
@@ -1786,35 +1785,13 @@
     "benchmarks": 35,
     "repetitions": 5
   },
-  "sourceRevision": "9d5ccdfd961ba713dba8f2fa1d7b1439ef366688",
   "subject": "quire-spec-language qsl-bench model benchmarks",
   "timestamp": "2026-09-24T10:47:30.000Z",
   "toolIdentity": "criterion via cargo bench -p qsl-bench",
-  "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
   "verificationStack": {
-    "artifacts": {
-      "Cargo.lock": "sha256:4c5be68cdc28ba1f553dd87bcfbbb42ef9bf802c368d796fc1227372d91a1503",
-      "qsl-bench/benches/model.rs": "sha256:cd4187e2c9e1c9056340a723fa0c00c0649dc9538a954a5c89d5f9d9af9f6202",
-      "qsl-bench/src/model.rs": "sha256:3220bf5a09174151c96833f74d0bbefbffb581d3897b6b4ccedf4f77570654a3"
-    },
     "buildProfile": "release",
     "capabilities": [
       "criterion.wall-time"
-    ],
-    "executableDigest": "sha256:03e67f4a25b172f304cc9a36fb5a069ca8bd0706906d8cd6c8443a6c087ba7d5",
-    "lockDigest": "sha256:4c5be68cdc28ba1f553dd87bcfbbb42ef9bf802c368d796fc1227372d91a1503",
-    "schemaVersion": "verification-stack-attestation-v1",
-    "sources": {
-      "quire-spec-language": {
-        "remote": "https://github.com/agent-ix/quire-spec-language",
-        "revision": "9d5ccdfd961ba713dba8f2fa1d7b1439ef366688",
-        "sourceState": "clean"
-      }
-    },
-    "toolchains": {
-      "node": null,
-      "python": null,
-      "rust": "rustc 1.98.1 (48a229cea 2026-09-01)"
-    }
+    ]
   }
 }

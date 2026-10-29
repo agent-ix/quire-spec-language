@@ -30,7 +30,7 @@ fn inputs() -> Vec<(String, String)> {
 fn cst_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("cst");
     for (label, text) in inputs() {
-        let parsed = parse(&text).expect("every CST bench input parses at 89326999");
+        let parsed = parse(&text).expect("every CST bench input parses");
         assert!(parsed.is_admissible(), "{label} is admissible");
         group.throughput(Throughput::Bytes(
             u64::try_from(text.len()).expect("source bytes fit in u64"),

@@ -907,50 +907,34 @@ mod tests {
     // `#[trace("TC-258", ...)]` test), the O-11 type this ADR-013 note
     // itself names as canonical.
 
-    /// PR #300 review finding 5: a golden digest vector for
-    /// `mint_variant_id`, the pinned-digest convention the node-key tests
-    /// (`check::node_key`) follow -- this catches a reordered field or a renamed tag an
-    /// equality-only test (comparing two identities minted in the same
-    /// process) cannot, since both sides would move together and stay
-    /// green. Regenerate the constant only when the preimage grammar change
-    /// is the one actually intended, and say so in the commit (this
-    /// repository's own digest-freshness rule, `CLAUDE.md`), never to make a
-    /// red test green.
-    ///
-    /// **This digest moved under OQ-F (ADR-013 §8, ruled 2026-09-22).**
-    /// `mint_variant_id` no longer computes the private, QSpec-unowned
-    /// `"sum-variant-member"` preimage this test used to pin
-    /// (`sha256("sum-variant-member" || sum-node-bytes || "Active")`); it
-    /// now computes QSpec FR-141's own enum-member node key,
-    /// `quire.checked-semantic-node/v1` over `{version: "quire.enum-
-    /// member-node/v1", declaration_node_id: {domain: "quire.checked-
-    /// semantic-node/v1", digest: sum}, case: "Active"}` -- the same
-    /// preimage `value::enumeration::EnumMemberPreimage::digest` recomputes
-    /// at admission, verified against QSpec's own
-    /// `proposals/checked-package-v2/node-identity-vectors.json` fixture.
-    /// Every occurrence of the old digest was this one test (grep found no
-    /// other golden or vector pinned to it); no other test or fixture moved.
-    ///
-    /// PR #300 review round 2, L9: retagged `TC-252`/`FR-088-AC-10` (this
-    /// function's own owning pair) -- the prior `TC-259`/`FR-088-AC-10`
-    /// pairing named a combination TC-259 does not verify (TC-259 verifies
-    /// AC-7; AC-10 is TC-252).
-    ///
-    /// Also TC-409 step 2 (FR-088-AC-11): the pinned digest is the same
-    /// independently computed FR-141 member node key TC-409's own procedure
-    /// asks for.
+    /// `mint_variant_id` is QSpec FR-141's enum-member node key:
+    /// `quire.checked-semantic-node/v1` over `{version: "quire.enum-member-
+    /// node/v1", declaration_node_id: {domain: "quire.checked-semantic-
+    /// node/v1", digest: sum}, case: "Active"}`. The preimage text is
+    /// written out by hand (sorted keys, no whitespace) and the expected
+    /// identity is its SHA-256, computed here with `sha2` independently of
+    /// the minter, so a reordered field or a renamed tag fails this test
+    /// while an equality-only comparison of two minted identities would
+    /// not. This is also TC-409 step 2's independently computed FR-141
+    /// member node key.
     #[trace("TC-252", "FR-088-AC-10")]
     #[trace("TC-409", "FR-088-AC-11")]
     #[test]
-    fn mint_variant_id_matches_a_checked_in_digest() {
+    fn mint_variant_id_is_the_hash_of_its_hand_written_preimage() {
+        use sha2::{Digest, Sha256};
         let sum = node_key(7);
         let variant_id = mint_variant_id(sum, "Active");
-        assert_eq!(
-            variant_id.to_string(),
-            "e72a0028859b92eaefee0e78eb414a49a58ede1b610cc4233dd2724b3dfc5bdc",
-            "the preimage byte grammar changed -- see this test's own doc \
-             before regenerating this constant"
+        let text = format!(
+            r#"{{"case":"Active","declaration_node_id":{{"digest":"{sum}","domain":"quire.checked-semantic-node/v1"}},"version":"quire.enum-member-node/v1"}}"#
         );
+        let expected: String = Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(variant_id.to_string(), expected);
+        // A different case or declaration is a different identity.
+        assert_ne!(variant_id, mint_variant_id(sum, "Closed"));
+        assert_ne!(variant_id, mint_variant_id(node_key(8), "Active"));
     }
 
     /// TC-252 (FR-088-AC-9): every non-sum checked type-node form converts

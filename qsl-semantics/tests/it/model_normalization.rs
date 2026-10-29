@@ -1108,25 +1108,43 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
 
 /// ADR-013 §8 OQ-E identity proof: F1 (`A`, `B -> A`, one connected
 /// component) and F2 (`A`, `B -> A`, `C -> A`, `D -> B`/`D -> C`, still one
-/// connected component) each hash to exactly the digest the object universe
-/// produced before OQ-E's per-connected-component partition existed --
-/// computed on this branch's own pre-fix commit
-/// (`git worktree add --detach <tmp> HEAD`, then a throwaway test printing
-/// `object_universe(&fixture_f1()).identity()` /
-/// `object_universe(&fixture_f2()).identity()`). A model with a single
+/// connected component) each hash to exactly the digest QSpec publishes (the
+/// digest the object universe produced before OQ-E's per-connected-component
+/// partition existed). A model with a single
 /// connected component has exactly one root-type set either way (every
 /// declared type belongs to the one component), so this is not a
 /// coincidence: it is the one case OQ-E's fix is required not to change.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
+    // The published n01-universe and n02-universe vectors, read from the
+    // QSpec checkout `QSPEC_DIR` names (skipped when it is unset; `make
+    // conformance` requires it).
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/model-effective-declaration-vectors.json");
+    let document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("vectors read"))
+            .expect("vectors parse");
+    let published = |name: &str| -> String {
+        document["vectors"]
+            .as_array()
+            .and_then(|vectors| vectors.iter().find(|vector| vector["name"] == name))
+            .and_then(|vector| vector["sha256"].as_str())
+            .unwrap_or_else(|| panic!("QSpec publishes vector {name}"))
+            .to_owned()
+    };
+
     let f1_universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
     assert_eq!(
         f1_universe.identity().to_string(),
-        "af5934e115b452c5b949f3af5d6b510b0d5cf20f0378e2a7b114b86d22113f5b",
-        "F1's one-component digest, the published n01-universe vector"
+        published("n01-universe"),
+        "F1's one-component digest"
     );
 
     let f2_universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
@@ -1134,8 +1152,8 @@ fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
         .clone();
     assert_eq!(
         f2_universe.identity().to_string(),
-        "6763207ec3a77e9d6221b9157c063d6d9e3c2ad28ecff8ed2e9e595e155ac77b",
-        "F2's one-component digest, the published n02-universe vector"
+        published("n02-universe"),
+        "F2's one-component digest"
     );
 }
 
