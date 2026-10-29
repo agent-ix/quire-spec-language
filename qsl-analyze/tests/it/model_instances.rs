@@ -337,6 +337,7 @@ impl World {
             StateGraphRequest {
                 subject: self.subject(&package, universes),
                 items: vec![StateGraphItem { claim }],
+                reductions: Default::default(),
                 deadlock_freedom: false,
                 max_depth: None,
                 limits: ModelCheckLimits::default(),
