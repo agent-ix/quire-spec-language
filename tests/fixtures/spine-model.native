@@ -5,7 +5,7 @@
 // The profile is the `root` row of the DefinitionLock catalog (FR-110).
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
-model M = "acme/orders" version "1.0.0" digest "sha256-jcs:{model_digest}";
+model M = "acme/orders";
 function keep using v(g: M::Gadget): M::Gadget pure { g }
 function held using v(w: Reference<M::Widget>): Boolean pure { true }
 function code using v(g: M::Gadget): Integer pure { deref(g).code }

@@ -1368,7 +1368,6 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
     let model_selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: PACKAGE_IDENTITY.to_owned(),
         version: "1.0.0".to_owned(),
-        digest: document_digest(&document),
     };
 
     // Admit and normalize the same package directly -- independent of

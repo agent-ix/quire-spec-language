@@ -80,7 +80,7 @@ fn model_fixture(body: &str) -> Fixture {
     let hex = qsl_semantics::model::key::hex(&digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{MODEL_PROFILE}\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n{body}"
+         model M = \"acme/orders\";\n{body}"
     );
     let packages = package_input([document.as_slice()]);
     let compiled = spine(&source, &packages);

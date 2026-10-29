@@ -15,11 +15,11 @@ use std::process::Command;
 
 const DEPTH: usize = 100_000;
 
-const HISTORICAL_HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\n";
+const HISTORICAL_HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\n";
 
 const COMPOSED_HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
-model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+model M = "test:orders-and-refunds";
 "#;
 
 fn identity() -> SourceIdentity {

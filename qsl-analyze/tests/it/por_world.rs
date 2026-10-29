@@ -302,7 +302,7 @@ impl Fixture {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              profile t = \"quire.temporal.infinite-trace/v1\";\n\
-             model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model M = \"{PACKAGE}\";\n\
              function Noop using v(): Boolean pure {{ true }}\n{}\n{declared}",
             hex(&digest),
             contracts.join("\n"),

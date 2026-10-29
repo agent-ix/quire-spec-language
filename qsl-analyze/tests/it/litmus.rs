@@ -272,7 +272,7 @@ pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t0 = \"quire.temporal.infinite-trace/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+         model M = \"{PACKAGE}\";\n{body}",
         hex(&document_digest(&document()))
     )
 }

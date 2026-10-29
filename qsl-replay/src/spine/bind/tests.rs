@@ -927,8 +927,8 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
         )
     };
     let source = format!(
-        "{HEADER}model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model N = \"acme/billing\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+        "{HEADER}model M = \"acme/orders\";\n\
+         model N = \"acme/billing\";\n\
          function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure {{ a + 1 }}\n",
         digest(&first),
         digest(&second)

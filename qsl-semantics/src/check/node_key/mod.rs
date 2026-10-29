@@ -178,7 +178,7 @@ impl SourceOwner {
 /// content-only `ModelOwner{kind: "model", identity, node}`. `identity` is
 /// the declaring domain package's `DomainPackageRef` identity; `node` is the
 /// declaration's IR node identity. The owner carries no version, and the
-/// lock's `model_selections` selects the package by identity and digest, so
+/// source `model` selects the package by identity alone, so
 /// a change of the domain package that leaves a node's content unchanged keys
 /// the same node.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
@@ -239,11 +239,10 @@ impl ModelOwner {
 }
 
 /// The owner of a selected model package's `model_root` node (QSpec FR-322
-/// `ModelRootOwner`): the selected package's identity and `sha256-jcs` digest
-/// as lowercase hex, never a declaration or an alias.
+/// `ModelRootOwner`): the selected package's identity, never a declaration
+/// or an alias.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct ModelRootOwner {
-    digest: String,
     identity: String,
     kind: ModelRootOwnerKind,
 }
@@ -255,21 +254,13 @@ enum ModelRootOwnerKind {
 }
 
 impl ModelRootOwner {
-    /// The root owner `{kind: "model_root", identity, digest}`.
-    pub fn new(
-        identity: impl Into<String>,
-        digest: impl Into<String>,
-    ) -> Result<Self, InvalidModelOwner> {
+    /// The root owner `{kind: "model_root", identity}`.
+    pub fn new(identity: impl Into<String>) -> Result<Self, InvalidModelOwner> {
         let identity = identity.into();
-        let digest = digest.into();
         if identity.is_empty() {
             return Err(InvalidModelOwner::EmptyIdentity);
         }
-        if digest.is_empty() {
-            return Err(InvalidModelOwner::EmptyNode);
-        }
         Ok(Self {
-            digest,
             identity,
             kind: ModelRootOwnerKind::ModelRoot,
         })
@@ -278,11 +269,6 @@ impl ModelRootOwner {
     /// The selected package's identity.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// The selected package's digest, lowercase hex.
-    pub fn digest(&self) -> &str {
-        &self.digest
     }
 }
 

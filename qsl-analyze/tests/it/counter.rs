@@ -191,7 +191,7 @@ pub(crate) fn unit_text_in(identity: &str, document: &[u8], body: &str) -> Strin
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{identity}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{body}",
         hex(&document_digest(document))
     )

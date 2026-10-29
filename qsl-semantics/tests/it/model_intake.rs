@@ -255,7 +255,6 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     let offered = DomainPackageRef {
         identity: identity.clone(),
         version: version.clone(),
-        digest: actual_digest,
     };
     let (admitted, admitted_document) = admit(
         &offered,
@@ -776,7 +775,6 @@ fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
         DomainPackageRef {
             identity: package_identity.into(),
             version: "1.0.0".into(),
-            digest: parsed.jcs_digest(),
         },
         &parsed,
     )
@@ -1373,7 +1371,6 @@ fn charges_normalize_record_once_per_intake_declaration() {
         DomainPackageRef {
             identity: package_identity.to_owned(),
             version: "1".to_owned(),
-            digest: [0u8; 32],
         },
         records,
     );
@@ -1973,7 +1970,6 @@ fn a_bare_string_kind_refuses_at_the_kind_member_through_the_package_read() {
     let selection = DomainPackageRef {
         identity: package_identity.into(),
         version: "1.0.0".into(),
-        digest: parsed.jcs_digest(),
     };
     let refusals = match read_domain_package(selection, &parsed) {
         Ok(package) => match qsl_semantics::model::normalize::normalize(

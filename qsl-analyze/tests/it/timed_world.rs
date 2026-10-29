@@ -284,7 +284,7 @@ pub(crate) fn world_built(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+         model M = \"{PACKAGE}\";\n{body}",
         hex(&digest)
     );
     let parsed = qsl_cst::parse(
@@ -460,8 +460,8 @@ pub(crate) fn refining_from(
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"{abstract_package}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+         model A = \"{abstract_package}\";\n\
+         model M = \"{PACKAGE}\";\n{body}",
         digest_of(abstract_document),
         digest_of(concrete_document),
     );

@@ -249,7 +249,7 @@ fn parse_of_a_recognized_but_unsupported_construct_exits_21() {
         &path,
         "language \"ix:native\" edition \"0-draft\";\n\
          profile \"state-finite/0-draft\";\n\
-         model M = \"test/model\" version \"1\" digest \"unresolved\";\n\
+         model M = \"test/model\";\n\
          invariant Test on M::Thing at current { 1 / 2 }\n",
     )
     .unwrap();
@@ -286,7 +286,7 @@ fn parse_of_genuinely_malformed_syntax_exits_20_not_21() {
         &path,
         "language \"ix:native\" edition \"0-draft\";\n\
          profile \"state-finite/0-draft\";\n\
-         model M = \"test/model\" version \"1\" digest \"unresolved\";\n\
+         model M = \"test/model\";\n\
          invariant Test on M::Thing at current { }\n",
     )
     .unwrap();

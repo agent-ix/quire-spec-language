@@ -166,7 +166,6 @@ pub fn obligation_model_with(extra: Vec<DomainPackageRecord>) -> SelectedModel {
         DomainPackageRef {
             identity: "example/protocol-obligations".to_owned(),
             version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );

@@ -215,7 +215,7 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{}\n",
         hex(&digest),
         clauses.join("\n"),

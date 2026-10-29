@@ -17,6 +17,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::RelationshipExtent;
 
 use crate::model::accounting::ModelNormalizationLimits;
+use crate::model::intake::PackageInput;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
 use crate::model::normalize::EffectiveView;
@@ -334,7 +335,7 @@ impl StateModel {
     pub fn new(
         model_selections: &[DomainPackageRef],
         types: &TypeEnvironment,
-        packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &PackageInput,
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure> {
         Ok(Self {

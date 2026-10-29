@@ -181,7 +181,6 @@ fn acme(version: &str) -> DomainPackage {
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
             version: version.to_owned(),
-            digest: Sha256::digest(format!("acme/orders@{version}").as_bytes()).into(),
         },
         vec![
             object("Order", &[]),
@@ -1417,7 +1416,6 @@ fn state_machine_declaration_keys_as_a_state_machine_model_node() {
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
             version: "1.0.0".to_owned(),
-            digest: Sha256::digest(b"acme/orders@machine").into(),
         },
         vec![
             DomainPackageRecord::StateMachine(StateMachineRecord {
@@ -1499,7 +1497,6 @@ fn keyed_form(records: Vec<DomainPackageRecord>, name: &str) -> (NodeTag, String
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
             version: "1.0.0".to_owned(),
-            digest: Sha256::digest(b"acme/orders@forms").into(),
         },
         records,
     );

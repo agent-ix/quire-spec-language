@@ -44,7 +44,6 @@ pub fn m_actor_model() -> SelectedModel {
         DomainPackageRef {
             identity: "example/protocol-fixture".to_owned(),
             version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         vec![
             DomainPackageRecord::ObjectType(ObjectTypeRecord {

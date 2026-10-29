@@ -534,7 +534,7 @@ fn the_corpus_is_generated_from_the_model_file_alone() {
 
     let digest = digest_of(&original);
     let statement = |version: &str, digest: &str| {
-        format!("model M = \"example/config-version\" version \"{version}\" digest \"sha256-jcs:{digest}\";")
+        format!("model M = \"example/config-version\";")
     };
     assert_eq!(
         generated("the original model"),

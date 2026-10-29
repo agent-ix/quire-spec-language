@@ -95,7 +95,7 @@ pub(crate) fn request_source<'a>(
         })
         .collect();
     let text = format!(
-        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{additional_imports}{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n",
+        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{additional_imports}{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n",
         models[0].digest()
     );
     let text = rewrite(text);

@@ -302,8 +302,8 @@ fn three_time_dimensions_give_three_package_identities() {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n\
              profile t = \"quire.temporal.complete/v1\";\n\
-             model R = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-             model F = \"example/flow\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model R = \"example/config-version\";\n\
+             model F = \"example/flow\";\n\
              dimension Time;\nunit s : Time = rational(1, 1);\n\
              function noop using v(): Boolean pure {{ true }}\n\
              time R dense unit {unit};\n",

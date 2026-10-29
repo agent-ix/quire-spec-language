@@ -708,7 +708,7 @@ fn document_source() -> String {
 }
 
 fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\" version \"1\" digest \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str(), model.digest());
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str(), model.digest());
     parse(
         SourceIdentity {
             authority: "test".into(),
@@ -823,7 +823,7 @@ fn parameter(namespace: &SyntaxNamespace, index: usize) -> (UnitId, &QualifiedNa
 fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
     let record = r#"{"name":"Measure","fields":[{"name":"amount","type":{"kind":"scalar","name":"Ratio"}}]}"#;
     let admitted = model(&document(RATIONAL, record, AMOUNT));
-    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\" version \"1\" digest \"{}\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean {{ true }}", admitted.digest());
+    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean {{ true }}", admitted.digest());
     let inputs = [ModelInput::Native(&admitted)];
     with_namespace(&program, |namespace| {
         let mut work = Work::new(BindingLimits::default());
@@ -1007,7 +1007,7 @@ fn equal_rational_representations_preserve_distinct_names_and_owners() {
     .admit(ModelLimits::default())
     .unwrap();
     let program = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\" version \"1\" digest \"{}\";\nmodel N = \"test/second\" version \"1\" digest \"{}\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}", first.digest(), second.digest()
+        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}", first.digest(), second.digest()
     );
     let inputs = [ModelInput::Native(&first), ModelInput::Native(&second)];
     with_namespace(&program, |namespace| {

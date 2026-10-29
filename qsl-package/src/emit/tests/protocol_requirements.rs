@@ -432,7 +432,7 @@ fn refusals_of(profiles: &str, clauses: &str) -> Vec<qsl_semantics::check::Check
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{profiles}\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model M = \"acme/orders\";\n\
          {clauses}\n"
     );
     match assemble_with_models(unit.as_bytes(), &packages)

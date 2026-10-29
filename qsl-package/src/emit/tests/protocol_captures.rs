@@ -438,7 +438,7 @@ fn the_capture_types_without_an_initializer_refuse_where_written() {
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n{PROFILES}\
-             model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{decimal}",
+             model M = \"acme/orders\";\n{decimal}",
             "0".repeat(64)
         )
         .as_bytes(),

@@ -31,7 +31,7 @@ fn reaches() -> CheckedGraph {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Config = \"example/config-version\";\n\
          temporal Reaches using t over (c: Config::ConfigVersion) clock \"model-steps\" \
          on origin {{ eventually holds(c.versionNumber = 2) }}\n",
         qsl_semantics::model::key::hex(digest)

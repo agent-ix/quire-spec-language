@@ -369,7 +369,7 @@ fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &st
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model V = \"{PACKAGE}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n\
          post Step using v on V::Vault::step {{ {} }}\n{}\n{body}",
         hex(&digest),

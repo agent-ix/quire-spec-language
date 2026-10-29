@@ -694,7 +694,7 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
         ));
     }
     text.push_str(&format!(
-        "model M = \"{}\" version \"{}\" digest \"{}\";\n",
+        "model M = \"{}\";\n",
         model.environment().owner().package().as_str(),
         model.environment().owner().revision().get(),
         model.digest()

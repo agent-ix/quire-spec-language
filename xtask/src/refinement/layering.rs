@@ -1335,7 +1335,7 @@ mod tests {
         let temp = crate::test_support::tempdir();
         let root = temp.path().join("state-core-witness");
         fs::create_dir_all(&root).unwrap();
-        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:@DIGEST@\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
+        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
         let package = fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()

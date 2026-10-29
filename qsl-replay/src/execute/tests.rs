@@ -673,7 +673,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     let hex: String = jcs.iter().map(|byte| format!("{byte:02x}")).collect();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n\
+         model M = \"acme/orders\";\n\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
     );
     let compiled = spine(&source, &package_input([document.as_slice()]));

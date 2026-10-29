@@ -12,7 +12,7 @@ fn ordered_import_occurrence_and_observation_claims_cannot_be_permuted() {
     let text = bindings.source.source().text().replacen(
         "post Rule",
         &format!(
-            "model Extra = \"example/rule-tests\" version \"1\" digest \"{}\";\npost Rule",
+            "model Extra = \"example/rule-tests\";\npost Rule",
             models[0].digest()
         ),
         1,

@@ -120,7 +120,7 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model M = \"acme/orders\";\n\
          {FUNCTIONS}"
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)

@@ -156,7 +156,6 @@ fn selection() -> DomainPackageRef {
     DomainPackageRef {
         identity: "test/orders".to_owned(),
         version: "1".to_owned(),
-        digest: [0x11; 32],
     }
 }
 

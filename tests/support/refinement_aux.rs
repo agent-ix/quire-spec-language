@@ -514,8 +514,8 @@ impl Unit {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-             model Spec = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-             model Impl = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+             model Spec = \"{}\";\n\
+             model Impl = \"{}\";\n\
              {}{body}\n",
             self.abstract_package,
             digest(self.abstract_package),

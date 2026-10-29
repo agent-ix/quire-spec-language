@@ -17,7 +17,7 @@ fn a_package_without_a_refinement_writes_no_step_row_member() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Config = \"example/config-version\";\n\
          function noop using v(): Boolean pure {{ true }}\n",
         qsl_semantics::model::key::hex(digest)
     );

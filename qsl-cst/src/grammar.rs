@@ -67,13 +67,11 @@ pub(super) enum SelectionPart {
     Exact(&'static str),
     Alias,
     Identity,
-    Version,
-    Digest,
     OptionalAlias,
 }
 
 pub(super) fn selection_schema(production: P) -> Option<&'static [SelectionPart]> {
-    use SelectionPart::{Alias, Digest, Exact, Identity, OptionalAlias, Version};
+    use SelectionPart::{Alias, Exact, Identity, OptionalAlias};
     match production {
         P::Profile => Some(&[Exact("profile"), Alias, Exact("="), Identity, Exact(";")]),
         P::ImportDeclaration => Some(&[Exact("import"), Identity, OptionalAlias, Exact(";")]),
@@ -82,10 +80,6 @@ pub(super) fn selection_schema(production: P) -> Option<&'static [SelectionPart]
             Alias,
             Exact("="),
             Identity,
-            Exact("version"),
-            Version,
-            Exact("digest"),
-            Digest,
             Exact(";"),
         ]),
         _ => None,
@@ -99,7 +93,7 @@ fn selection_rule(production: P) -> Rule {
         .map(|part| match part {
             SelectionPart::Exact(value) => x(value),
             SelectionPart::Alias => ident(),
-            SelectionPart::Identity | SelectionPart::Version | SelectionPart::Digest => text(),
+            SelectionPart::Identity => text(),
             SelectionPart::OptionalAlias => opt(s(vec![x("as"), ident()])),
         })
         .collect();

@@ -135,7 +135,6 @@ fn abstract_model() -> SelectedModel {
         DomainPackageRef {
             identity: ABSTRACT.to_owned(),
             version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );

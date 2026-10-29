@@ -339,7 +339,7 @@ impl World {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
              profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
              profile inf = \"quire.temporal.infinite-trace/v1\";\n{}\
-             model M = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{}\n",
+             model M = \"{}\";\n{}\n",
             if value_profile {
                 "profile vc = \"quire.value.complete/v1\";\n"
             } else {

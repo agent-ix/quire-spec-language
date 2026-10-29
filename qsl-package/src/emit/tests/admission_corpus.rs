@@ -180,7 +180,7 @@ const UNION_NODES: &str =
 /// `temporal`/`temporal_clause`, `temporal`/`formula` and
 /// `temporal`/`fairness` families FR-337 emits.
 const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     model Config = \"example/config-version\";\n\
      temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {\n\
      fair weak each Config::ConfigVersion::attemptUpdate;\n\
      always eventually holds(c.versionNumber = 2)\n\
@@ -190,7 +190,7 @@ const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";
 /// `match` conjunct and a `holds` atom, emitting the `claim`/`hyperproperty`
 /// family and its `temporal`/`temporal_clause` body wrapper.
 const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     model Config = \"example/config-version\";\n\
      hyper Same using t over behaviours (c: Config::ConfigVersion) \
      forall trace a of Config fair weak each Config::ConfigVersion::attemptUpdate; \
      forall trace b of Config \
@@ -201,7 +201,7 @@ const HYPER_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
 /// package, a claim with no `over`, and an `always possible` claim written
 /// with and without `from`, emitting the `claim`/`state_graph` family.
 const STATE_GRAPH_CLAIMS: &str =
-    "model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+    "model Config = \"example/config-version\";\n\
      possible ReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n\
      always possible CanStillWin using v over (c: Config::ConfigVersion) \
      from (c.versionNumber != 0) { c.versionNumber = 2 }\n\
@@ -213,7 +213,7 @@ const STATE_GRAPH_CLAIMS: &str =
 /// A model `terminal when` declaration over the ConfigVersion domain
 /// package, emitting the `temporal`/`terminal` family.
 const TERMINAL_DECLARATION: &str =
-    "model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+    "model Config = \"example/config-version\";\n\
      terminal Done using v on Config when { self.versionNumber = 3 };\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
@@ -271,12 +271,12 @@ const HYBRID_UNIT: &str = "profile p = \"quire.temporal.infinite-trace/v1\";\n\
 
 /// The relationship model source after [`COMPLETE_V1_HEADER`].
 const RELATIONSHIP_MODEL_UNIT: &str =
-    "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+    "model M = \"acme/orders\";\n\
      function keep using v(g: M::Widget): M::Widget pure { g }\n";
 
 /// The systems-interface model source after [`COMPLETE_V1_HEADER`].
 const SYSTEMS_INTERFACE_UNIT: &str =
-    "model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+    "model S = \"acme/systems\";\n\
      function keep using v(s: S::Sensor): S::Sensor pure { s }\n";
 
 /// One package of a fixture, checked, linked and emitted, with the domain
@@ -366,8 +366,8 @@ impl Fixture {
                 let concrete_digest = document_digest(&concrete_document);
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-                     model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{abstract_digest}\";\n\
-                     model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
+                     model A = \"example/refinement-abstract\";\n\
+                     model C = \"example/refinement-concrete\";\n\
                      refinement R using inf abstract A concrete C {{}}\n"
                 );
                 let documents = vec![abstract_document, concrete_document];
@@ -1040,8 +1040,8 @@ fn two_refinements_of_one_meaning_refuse_naming_both() {
     let concrete_document = state_machine_document("example/refinement-concrete");
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n\
          refinement R2 using inf abstract A concrete C {{}}\n",
         document_digest(&abstract_document),
@@ -1072,8 +1072,8 @@ fn two_refinements_of_different_meanings_both_emit() {
     let concrete_document = state_machine_document("example/refinement-concrete");
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n\
          refinement R2 using inf abstract C concrete A {{}}\n",
         document_digest(&abstract_document),
@@ -1100,8 +1100,8 @@ fn row_empty_refinement() -> (String, Vec<Vec<u8>>) {
     let concrete_digest = document_digest(&concrete_document);
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{abstract_digest}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{concrete_digest}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n"
     );
     (unit, vec![abstract_document, concrete_document])
@@ -1286,8 +1286,8 @@ fn catalog_refinement() -> (String, Vec<Vec<u8>>) {
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model A = \"example/refinement-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/refinement-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
          protocol Local using p over (input: C::Widget) on origin {{\n\
          role w on C::Widget;\n\
          channel ch from w to w carries Boolean ordering unordered delivery unknown \
@@ -2174,8 +2174,8 @@ fn rows_refinement_with(
         with_state_machine(&base, "example/config-version", "example/rows-concrete");
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model A = \"example/rows-abstract\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model C = \"example/rows-concrete\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model A = \"example/rows-abstract\";\n\
+         model C = \"example/rows-concrete\";\n\
          refinement R using inf abstract A concrete C {{\n{rows}\n}}\n",
         document_digest(&abstract_document),
         document_digest(&concrete_document),

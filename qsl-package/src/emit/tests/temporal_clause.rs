@@ -40,7 +40,7 @@ fn unit(profile: &str, declarations: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"{profile}\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Config = \"example/config-version\";\n\
          {declarations}\n",
         document_digest()
     )

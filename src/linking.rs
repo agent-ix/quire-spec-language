@@ -1061,7 +1061,7 @@ mod profile_tests {
         )
         .unwrap();
         let text = format!(
-            "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\" version \"1\" digest \"{}\"; invariant Rule on M::Node at current {{ true }}",
+            "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\"; invariant Rule on M::Node at current {{ true }}",
             model.digest()
         );
         let unit = parse(

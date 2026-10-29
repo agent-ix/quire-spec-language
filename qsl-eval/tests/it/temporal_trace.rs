@@ -90,7 +90,7 @@ fn modelled_with(operations: Vec<serde_json::Value>, body: &str) -> Fixture {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
          profile t0 = \"{INFINITE}\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          temporal C using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {body} }}\n",
         hex(&digest)
     );

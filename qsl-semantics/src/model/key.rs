@@ -2,7 +2,7 @@
 //! FR-150 producer keys and QSL-derived `quire.model.*` identity domains.
 //!
 //! An original declaration identity is the producer key the correspondence
-//! supplies: `{package, node, digest_domain: "sha256-jcs"}`, the domain
+//! supplies: `{package, node}`, the domain
 //! package identity and the IR node identity (`model-complete.md`, "Identity
 //! domains"). Every QSL-derived identity is SHA-256 over the RFC 8785 JCS
 //! bytes of a schema-valid preimage. Each preimage is a typed, borrowed
@@ -65,10 +65,6 @@ pub fn effective_id_from_digest(digest: [u8; 32]) -> EffectiveId {
     EffectiveId::from_digest(digest)
 }
 
-/// The fixed digest domain of a declaration key and a domain package
-/// selection (`model-complete.md`, "Identity domains").
-pub const SHA256_JCS_DIGEST_DOMAIN: &str = "sha256-jcs";
-
 /// Digest domain of one effective declaration (`quire.model.effective-declaration/v2`).
 pub const EFFECTIVE_DECLARATION_DOMAIN: &str = "quire.model.effective-declaration/v2";
 
@@ -107,7 +103,6 @@ pub(super) fn declaration_key_wire(key: &DeclarationKey) -> DeclarationKeyWire<'
     DeclarationKeyWire {
         package: &key.package,
         node: &key.node,
-        digest_domain: SHA256_JCS_DIGEST_DOMAIN,
     }
 }
 
@@ -119,12 +114,11 @@ pub fn declaration_identity_text(key: &DeclarationKey) -> String {
     String::from_utf8(bytes).unwrap_or_else(|error| panic!("RFC 8785 text is UTF-8: {error}"))
 }
 
-/// A [`DeclarationKey`]'s preimage form: `{package, node, digest_domain}`.
+/// A [`DeclarationKey`]'s preimage form: `{package, node}`.
 #[derive(Serialize, FixedShape)]
 pub(super) struct DeclarationKeyWire<'a> {
     package: &'a str,
     node: &'a str,
-    digest_domain: &'static str,
 }
 
 /// A rule reference: `{identity}`.
@@ -418,10 +412,10 @@ pub(super) fn canonical_len(preimage: &impl Encode) -> u64 {
     .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"))
 }
 
-/// The SHA-256 of `bytes` exactly as given, with no canonicalization: intake's
-/// check-3 digest of package bytes that did not parse, which have no RFC 8785
-/// form. Kept here, beside the canonical digests, so intake -- which reads
-/// JSON -- names no hasher itself (arch-lint `canonical-encoder`).
+/// The SHA-256 of `bytes` exactly as given, with no canonicalization: the
+/// observation-document digest of bytes that did not parse, which have no
+/// RFC 8785 form. Kept here, beside the canonical digests, so observation
+/// names no hasher itself (arch-lint `canonical-encoder`).
 pub(super) fn raw_bytes_digest(bytes: &[u8]) -> [u8; 32] {
     ByteDigest::of(bytes).as_bytes()
 }

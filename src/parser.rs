@@ -392,7 +392,7 @@ mod tests {
                 let limits = Limits::default();
                 let depth = 30_000;
                 let historical = format!(
-                    "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",
+                    "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",
                     "(".repeat(depth),
                     ")".repeat(depth)
                 );
@@ -403,7 +403,7 @@ mod tests {
                 assert_eq!(unit.expressions.len(), depth + 1);
 
                 let composed = format!(
-                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"t\" digest \"u\";\nmodel M = \"m\" version \"1\" digest \"u\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
+                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"t\" digest \"u\";\nmodel M = \"m\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
                     "(".repeat(depth / 2),
                     "(".repeat(depth / 4),
                     ")".repeat(depth / 4),

@@ -4,27 +4,23 @@
 //! into domain package records and normalized into the effective view E3
 //! resolves the unit's model type names against.
 //!
-//! A declaration selecting a domain package spells its digest
-//! `sha256-jcs:<hex>`. A `sha256:<hex>` digest selects a compiled-model
-//! artifact, which has no admitted form on this path (FR-056-CON-4), so it
-//! refuses at its declaration.
-
-use std::collections::BTreeMap;
+//! A declaration selects a domain package by its identity alone.
 
 use qsl_foundation::diagnostic::BudgetDenial;
-use qsl_foundation::selection::{ModelDigest, ModelSelection};
-use qsl_foundation::{Code, IntakeLimits, Span};
+use qsl_foundation::selection::ModelSelection;
+use std::collections::BTreeMap;
+
+use qsl_foundation::{Code, Span};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
-use super::{admit_located, read_domain_package, PackageDocument};
+use super::{admit_located, read_domain_package, PackageInput};
 use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
 #[cfg(any(test, feature = "test-support"))]
 use crate::model::domain_package::DomainPackage;
 use crate::model::domain_package::{
-    DomainPackageRecord, DomainPackageRef, ParsedOperationClause, ParsedTypeInvariant,
+    DomainPackageRecord, ParsedOperationClause, ParsedTypeInvariant,
 };
-use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_on, EffectiveView, NormalizeOutcome, Refusals};
 use crate::model::refusal::{MemberPath, MemberRoot};
 use crate::model::type_invariant::ClauseRole;
@@ -297,9 +293,6 @@ impl SelectedModel {
 /// Why I1 admitted no domain package for one `model` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UnitIntakeCause {
-    /// The declaration selects a compiled-model artifact by its raw-byte
-    /// `sha256:` digest, not a domain package by its `sha256-jcs:` one.
-    ArtifactDigest,
     /// FR-154 admission, the record reader or normalization refused, with
     /// every refusal the refusing step reports.
     Refused(Refusals),
@@ -323,7 +316,7 @@ impl UnitIntakeCause {
                 "resource_exhausted",
                 "insufficient-next-charge",
             )),
-            Self::ArtifactDigest | Self::Invariant => None,
+            Self::Invariant => None,
         }
     }
 
@@ -331,7 +324,6 @@ impl UnitIntakeCause {
     /// cause has one.
     pub fn code(&self) -> Code {
         match self {
-            Self::ArtifactDigest => Code::InvalidModelBinding,
             Self::Invariant => Code::RuntimeInvariant,
             Self::Refused(_) | Self::Limit(_) => self
                 .catalog_code()
@@ -352,7 +344,7 @@ impl UnitIntakeCause {
         match self {
             Self::Refused(refusals) => refusals[0].cause.denial(),
             Self::Limit(incomplete) => Some(incomplete.denial()),
-            Self::ArtifactDigest | Self::Invariant => None,
+            Self::Invariant => None,
         }
     }
 }
@@ -368,39 +360,13 @@ pub struct UnitIntakeRefusal {
     pub cause: UnitIntakeCause,
 }
 
-/// No byte limit: how [`package_input`] reads a document to key it.
-const UNBOUNDED: IntakeLimits = IntakeLimits {
-    input_bytes: u64::MAX,
-};
-
-/// The package input FR-056 names: each supplied domain package document
-/// keyed by its `sha256-jcs` digest. A document that does not parse is keyed
-/// by the SHA-256 of its raw bytes, the digest FR-154 check 3 takes of such
-/// bytes, so a selection of it refuses at admission rather than as a
-/// missing package. Each document is parsed here to key it, under no byte
-/// limit, and again when a selection admits it under the caller's
-/// `intake.input_bytes`, so a document over that limit refuses naming it
-/// and is never mistaken for a missing package.
-pub fn package_input<'a>(
-    documents: impl IntoIterator<Item = &'a [u8]>,
-) -> BTreeMap<[u8; 32], Vec<u8>> {
-    documents
-        .into_iter()
-        .map(|bytes| {
-            let digest = PackageDocument::parse(bytes, UNBOUNDED)
-                .map_or_else(|_| raw_bytes_digest(bytes), |document| document.jcs_digest);
-            (digest, bytes.to_vec())
-        })
-        .collect()
-}
-
 /// Admit each of a unit's `model` declarations, in source order, against
 /// `packages` (see [`package_input`]): FR-154 admission (one version of
 /// each identity), [`crate::model::intake::read_records`], then normalization under `limits`. It
 /// stops at the first declaration that does not admit.
 pub fn admit_unit(
     selections: &[ModelSelection],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     limits: ModelNormalizationLimits,
 ) -> Result<SelectedModels, UnitIntakeRefusal> {
     admit_unit_with_cancel(selections, packages, limits, &Cancel::new())
@@ -410,7 +376,7 @@ pub fn admit_unit(
 /// normalization charge (FR-276).
 pub fn admit_unit_with_cancel(
     selections: &[ModelSelection],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<SelectedModels, UnitIntakeRefusal> {
@@ -419,36 +385,17 @@ pub fn admit_unit_with_cancel(
         span: selection.span,
         cause,
     };
-    let mut offered = Vec::with_capacity(selections.len());
-    for selection in selections {
-        let ModelDigest::DomainPackage(digest) = selection.model.digest() else {
-            return Err(refuse(selection, UnitIntakeCause::ArtifactDigest));
-        };
-        offered.push((
-            selection,
-            DomainPackageRef {
-                identity: selection.model.identity().to_owned(),
-                version: selection.model.version().to_owned(),
-                digest: digest.as_bytes(),
-            },
-        ));
-    }
-    // Selections are admitted and normalized in the selection's canonical
-    // order (identity bytes, then digest), never in source or alias order.
-    offered.sort_by(|(_, left), (_, right)| {
-        left.identity
-            .as_bytes()
-            .cmp(right.identity.as_bytes())
-            .then_with(|| left.digest.cmp(&right.digest))
-    });
+    // Selections are admitted and normalized in canonical order (identity
+    // bytes), never in source or alias order.
+    let mut offered: Vec<&ModelSelection> = selections.iter().collect();
+    offered.sort_by(|left, right| left.identity.as_bytes().cmp(right.identity.as_bytes()));
     let admitted = admit_located(
         &offered,
-        |(_, offered_ref)| offered_ref,
-        SHA256_JCS_DIGEST_DOMAIN,
+        |selection| selection.identity.as_str(),
         packages,
         limits.intake,
     )
-    .map_err(|((selection, _), refusal)| {
+    .map_err(|(selection, refusal)| {
         refuse(
             selection,
             UnitIntakeCause::Refused(Refusals::new(refusal, Vec::new())),
@@ -456,7 +403,7 @@ pub fn admit_unit_with_cancel(
     })?;
     let mut meter = Meter::new(limits).with_cancel(cancel.clone());
     let mut entries = Vec::with_capacity(admitted.len());
-    for ((selection, _), package_ref, document) in admitted {
+    for (selection, package_ref, document) in admitted {
         let package = read_domain_package(package_ref, &document).map_err(|refusals| {
             let cause = Refusals::try_from(refusals)
                 .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);

@@ -38,8 +38,8 @@ use quire_semantic_value::catalog::{CatalogCoded, InternalFault};
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
-use crate::model::intake::{admit_selections, read_records, DigestMismatch};
-use crate::model::key::{hex, SHA256_JCS_DIGEST_DOMAIN};
+use crate::model::intake::{admit_selections, read_records, PackageInput};
+use crate::model::key::hex;
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
@@ -1442,15 +1442,14 @@ impl ModelView {
 /// doc's design note.
 pub(crate) fn model_views(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<ModelView>, AdmissionFailure> {
-    let admitted = admit_selections(
-        model_selections,
-        SHA256_JCS_DIGEST_DOMAIN,
-        packages,
-        limits.intake,
-    )
+    let identities: Vec<String> = model_selections
+        .iter()
+        .map(|selection| selection.identity.clone())
+        .collect();
+    let admitted = admit_selections(&identities, packages, limits.intake)
     .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
@@ -1500,6 +1499,73 @@ pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&Mo
 // ---------------------------------------------------------------------------
 // sha256-jcs digest (FR-056)
 // ---------------------------------------------------------------------------
+
+/// FR-106 check 1.3 for an observation document: its canonical digest
+/// equals the digest its reference names, else
+/// `stale_dependency`/`content-mismatch`; bytes that did not parse compare
+/// their raw digest and refuse `stale_dependency`/`byte-digest-mismatch`.
+/// This is the observation-document digest family (QSpec #513), not a model
+/// selection.
+///
+/// When the bytes parsed, the digest is taken over this crate's own RFC 8785
+/// JCS canonicalisation of the parsed tree, not the raw bytes verbatim, so
+/// two byte-different-but-JCS-equivalent encodings of the same document
+/// (a whitespace variant, say) digest identically. Bytes that did not parse
+/// have no JCS form; the digest is then taken over the raw bytes, which a
+/// producer that actually selected this digest could never have done for
+/// unparseable bytes either, so this still reports the real mismatch rather
+/// than fabricating a match.
+///
+/// The parsed document's digest is the one [`PackageDocument::parse`] took
+/// through `quire-canonical` (ADR-013 §2, ADR-013:113).
+///
+/// Generalized to serve a second caller, `model::observation`'s
+/// own FR-106 admission: `parsed_digest` is the caller's own already-taken
+/// `sha256-jcs` digest (through `quire-canonical` directly) when its bytes
+/// parsed, or `None` when they did not -- this function never parses
+/// `bytes` itself and never names `serde_json`, so it stays the one place
+/// `raw_bytes_digest`'s non-parsing fallback is called for either caller
+/// (ADR-013 §2's one-encoder rule, which exempts this
+/// function): `Err`'s digest is the mismatch to report, `Ok(())` a match.
+/// A caller constructs its own refusal from `Err`'s digest, since intake's
+/// [`ModelRefusal`] and FR-106's `AdmissionFailure` are different types.
+fn check_package_digest(
+    expected: [u8; 32],
+    bytes: &[u8],
+    parsed_digest: Option<[u8; 32]>,
+) -> Result<(), DigestMismatch> {
+    let (actual_digest, mismatch): (_, fn([u8; 32]) -> DigestMismatch) = match parsed_digest {
+        Some(digest) => (digest, |recomputed| DigestMismatch::Content { recomputed }),
+        None => (crate::model::key::raw_bytes_digest(bytes), |digest| DigestMismatch::RawBytes {
+            digest,
+        }),
+    };
+    if actual_digest == expected {
+        Ok(())
+    } else {
+        Err(mismatch(actual_digest))
+    }
+}
+
+/// Why [`check_package_digest`] refused, naming the digest to report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DigestMismatch {
+    /// The supplied document parsed and its canonical `sha256-jcs` digest
+    /// differs from the selected one (`content-mismatch`).
+    Content {
+        /// The digest recomputed from the supplied document.
+        recomputed: [u8; 32],
+    },
+    /// The supplied bytes did not parse, so their raw digest was compared
+    /// and differs from the selected one (`byte-digest-mismatch`).
+    RawBytes {
+        /// The raw bytes' own digest.
+        digest: [u8; 32],
+    },
+}
+
+/// ADR-013 O-01: admits every selection in `offered`, in order, through
+/// [`admit`], and additionally refuses a second selection naming a
 
 /// FR-106's digest-first rule, checked against `expected` over `read`, the
 /// one read of `bytes` through `quire-canonical`'s shared reader: bytes the
@@ -1562,7 +1628,7 @@ fn check_document_digest(
             None => None,
         },
     };
-    crate::model::intake::check_package_digest(expected, bytes, parsed_digest).map_err(|mismatch| {
+    check_package_digest(expected, bytes, parsed_digest).map_err(|mismatch| {
         match mismatch {
             DigestMismatch::Content { recomputed } => refuse(
                 AdmissionRecord::new(Code::StaleDependency, "content-mismatch")
@@ -1923,7 +1989,7 @@ pub struct Provisions<'a> {
 pub fn admit_current_snapshot(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
     selected: &DocumentRef,
@@ -1952,7 +2018,7 @@ pub fn admit_current_snapshot(
 pub fn admit_trace_snapshot(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
     selected: &DocumentRef,
@@ -1978,7 +2044,7 @@ pub fn admit_trace_snapshot(
 pub fn admit_object_environment(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
     selected: &DocumentRef,
@@ -2000,7 +2066,7 @@ pub fn admit_object_environment(
 fn admit_current_environment(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
-    (packages, model_limits): (&BTreeMap<[u8; 32], Vec<u8>>, ModelNormalizationLimits),
+    (packages, model_limits): (&PackageInput, ModelNormalizationLimits),
     (provision, selected, limits): (
         &BTreeMap<[u8; 32], Vec<u8>>,
         &DocumentRef,
@@ -2054,7 +2120,7 @@ pub fn snapshot_document_digest(bytes: &[u8]) -> Result<[u8; 32], AdmissionFailu
 /// would assign that object.
 pub fn population_universe_for(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     type_identity: EffectiveId,
 ) -> Result<UniverseId, AdmissionFailure> {
@@ -2068,7 +2134,7 @@ pub fn population_universe_for(
 /// selected model declares `declaration`.
 pub fn declared_type_universe_for(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     declaration: &DeclarationKey,
 ) -> Result<Option<(EffectiveId, UniverseId)>, AdmissionFailure> {
@@ -2098,7 +2164,7 @@ pub fn admit_observations(
     model_selections: &[DomainPackageRef],
     types: &TypeEnvironment,
     clause: &ClauseFacts,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selection: &ClauseSelection,
@@ -2473,7 +2539,7 @@ fn check_model(
     let selection = &context_view.view.model_selection();
     let matches = selection.identity == model.identity
         && selection.version == model.version
-        && hex(&selection.digest) == model.digest;
+        ;
     if matches {
         Ok(())
     } else {
@@ -2497,7 +2563,6 @@ fn check_model_any(
         let selection = &view.view.model_selection();
         selection.identity == model.identity
             && selection.version == model.version
-            && hex(&selection.digest) == model.digest
     });
     if matches {
         Ok(())
@@ -3546,7 +3611,7 @@ pub fn admit_frame_invocation<'t>(
     model_selections: &[DomainPackageRef],
     types: &'t TypeEnvironment,
     frame: &FrameFacts,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,

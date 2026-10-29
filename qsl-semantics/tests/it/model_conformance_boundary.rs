@@ -681,7 +681,7 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
                 hex(&first_digest)
             ),
             format!(
-                "model Decoy = \"example/other\" version \"1.0.0\" digest \"sha256-jcs:{}\";",
+                "model Decoy = \"example/other\";",
                 hex(&other_digest)
             ),
         ];
@@ -1304,7 +1304,7 @@ fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
             hex(&first_digest)
         ),
         format!(
-            "model A = \"example/other\" version \"1.0.0\" digest \"sha256-jcs:{}\";",
+            "model A = \"example/other\";",
             hex(&second_digest)
         ),
     ];

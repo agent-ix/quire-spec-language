@@ -51,7 +51,6 @@ pub(super) enum DocumentKind {
 pub(super) struct ModelHeader {
     pub(super) identity: String,
     pub(super) version: String,
-    pub(super) digest: String,
 }
 
 #[derive(Clone, Debug)]
@@ -512,19 +511,11 @@ pub(super) fn read_document(
 }
 
 /// Reads the document's own `model` member into a [`ModelHeader`]: a
-/// wire-reading edge (ADR-012 §9), converting `identity`/`version`/`digest`
+/// wire-reading edge (ADR-012 §9), converting `identity`/`version`
 /// once, here, into the typed header [`check_model`] compares against the
-/// package's own model selection. A missing `identity`/`version`/`digest`
+/// package's own model selection. A missing `identity`/`version`
 /// member refuses `invalid_runtime_input`/`missing-member` at that member
-/// (check 1.5's own cause, generalized to a nested member); `digest` not
-/// spelled with the exact `sha256-jcs:` prefix refuses
-/// `invalid_runtime_input`/`wrong-value-kind` at `digest` -- `strip_prefix`,
-/// not `trim_start_matches`, so a wrong prefix refuses rather than silently
-/// keeping the whole unstripped string. Before this fix, a missing or
-/// malformed member silently became `""` (`unwrap_or_default`), which
-/// [`check_model`] would then merely fail to match against any package's
-/// model selection, misreporting `wrong-model-selection` for what is
-/// actually a missing- or malformed-member document defect.
+/// (check 1.5's own cause, generalized to a nested member).
 #[ix_trace_rs::string_edge]
 fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
@@ -545,24 +536,7 @@ fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
         .and_then(|value| value.as_str())
         .ok_or_else(|| missing_member("version"))?
         .to_owned();
-    let digest_raw = model
-        .member("digest")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| missing_member("digest"))?;
-    let digest = digest_raw
-        .strip_prefix("sha256-jcs:")
-        .ok_or_else(|| {
-            refuse(
-                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
-                    .with("field", "digest"),
-            )
-        })?
-        .to_owned();
-    Ok(ModelHeader {
-        identity,
-        version,
-        digest,
-    })
+    Ok(ModelHeader { identity, version })
 }
 
 fn wrong_kind(field: impl Into<String>) -> AdmissionFailure {

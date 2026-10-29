@@ -257,7 +257,7 @@ impl Inputs {
                 .map(|byte| format!("{byte:02x}"))
                 .collect();
             format!(
-                "model D = \"{}\" version \"{}\" digest \"sha256-jcs:{digest}\";\n",
+                "model D = \"{}\";\n",
                 selection.identity, selection.version
             )
         });

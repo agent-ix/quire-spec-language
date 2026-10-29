@@ -257,7 +257,7 @@ fn try_world_of(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{unit_body}",
+         model M = \"{PACKAGE}\";\n{unit_body}",
         hex(&digest)
     );
     let parsed = qsl_cst::parse(

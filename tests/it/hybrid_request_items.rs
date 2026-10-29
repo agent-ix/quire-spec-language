@@ -22,7 +22,7 @@ use quire_semantic_value::checking::CheckingLimits;
 /// a model that is not hybrid. `{}` is the model's digest.
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile p = \"quire.temporal.infinite-trace/v1\";\n\
-     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     model Config = \"example/config-version\";\n\
      hybrid Braking using p {\n\
        mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }\n\
          flow { v' = -a; a' = 0; t' = 1; }\n\

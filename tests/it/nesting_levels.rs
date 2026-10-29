@@ -17,13 +17,13 @@ fn identity(id: &str) -> SourceIdentity {
     }
 }
 
-const HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\n";
+const HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\n";
 
 const COMPOSED_HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
 profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
 profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
-model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+model M = "test:orders-and-refunds";
 "#;
 
 /// Everything before a historical invariant's expression. Its `{` is one

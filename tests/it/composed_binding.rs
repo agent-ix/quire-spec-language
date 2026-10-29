@@ -59,7 +59,7 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
         ));
     }
     text.push_str(&format!(
-        "model M = \"{}\" version \"{}\" digest \"{}\";\n",
+        "model M = \"{}\";\n",
         model.environment().owner().package().as_str(),
         model.environment().owner().revision().get(),
         model.digest()

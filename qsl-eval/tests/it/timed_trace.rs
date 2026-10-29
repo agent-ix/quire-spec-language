@@ -54,7 +54,7 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
          profile t0 = \"{TIMED}\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          dimension Time;\n\
          unit s : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1000) * s;\n\

@@ -560,7 +560,7 @@ fn calls_in_activation_capture_compensation_and_control_bodies_keep_their_owner(
         r#"
 profile T = "test:temporal-definition" version "1" digest "not-admitted";
 profile P = "test:protocol-definition" version "1" digest "not-admitted";
-model M = "test:model" version "1" digest "not-admitted";
+model M = "test:model";
 predicate Leaf using S (): Boolean { true }
 pre Allowed using S on M::Job::run { Leaf() }
 temporal Future using T over (sample: M::Sample) clock "clock"

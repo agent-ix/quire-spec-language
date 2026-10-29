@@ -107,7 +107,6 @@ fn view_over(wobble: bool) -> EffectiveView {
     let selection = DomainPackageRef {
         identity: "test/orders".to_owned(),
         version: "1.0.0".to_owned(),
-        digest: document.jcs_digest(),
     };
     let mut records = qsl_semantics::model::intake::read_records(&selection.identity, &document)
         .expect("the actual model document is admitted");

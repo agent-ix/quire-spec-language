@@ -318,8 +318,8 @@ fn unit_text(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model Q = \"{QUEUE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         model R = \"{RING}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Q = \"{QUEUE}\";\n\
+         model R = \"{RING}\";\n\
          {}{refinement}\n",
         digest(QUEUE),
         digest(RING),

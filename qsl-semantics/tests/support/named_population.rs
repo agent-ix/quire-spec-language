@@ -202,7 +202,7 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          profile m = \"quire.model.complete/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          {declarations}\n",
         hex(&digest),
     );

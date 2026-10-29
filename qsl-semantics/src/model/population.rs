@@ -145,7 +145,7 @@ use crate::model::domain_package::{
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::{
-    declaration_key_wire, hex, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
+    declaration_key_wire, hex, DeclarationKeyWire, EffectiveId,
 };
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
@@ -896,7 +896,7 @@ fn population_id_preimage<'a>(
     });
     Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
-        // The full `DomainPackageRef` header (identity, version, digest), not
+        // The full `DomainPackageRef` header (identity, version), not
         // only `identity`: this module's own `admit_binding` doc already
         // establishes that comparing bare `identity` alone misses a
         // version-only or digest-only divergence between two otherwise
@@ -907,8 +907,6 @@ fn population_id_preimage<'a>(
         domain_package_selection: PopulationDomainPackageRefWire {
             identity: &domain_package.model_selection.identity,
             version: &domain_package.model_selection.version,
-            digest_domain: SHA256_JCS_DIGEST_DOMAIN,
-            digest: hex(&domain_package.model_selection.digest),
         },
         population_key: declaration_key_wire(population_key),
         admission_role: role.as_str(),
@@ -952,8 +950,6 @@ struct PopulationMemberWire<'a> {
 struct PopulationDomainPackageRefWire<'a> {
     identity: &'a str,
     version: &'a str,
-    digest_domain: &'static str,
-    digest: String,
 }
 
 /// A population member's effective type identity encoded as its wire hex
@@ -2941,7 +2937,6 @@ mod tests {
             DomainPackageRef {
                 identity: "test/orders".to_owned(),
                 version: "1".to_owned(),
-                digest: [0x11; 32],
             },
             Vec::new(),
         );

@@ -327,7 +327,7 @@ fn program(identity: &str, version: &str, digest: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-         model M = \"{identity}\" version \"{version}\" digest \"{digest}\";\n\
+         model M = \"{identity}\";\n\
          {DECLARATIONS}\
          predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n"
     )
@@ -536,7 +536,7 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
          predicate MissingType using S (port: M::drain_out): Boolean {{ true }}\n\
          predicate MissingField using S (): Boolean {{ M::Pump::speed = M::Pump::speed }}\n\
          predicate MemberAsType using S (): Boolean {{ M::pump_out::direction = M::pump_out::direction }}\n\
@@ -670,7 +670,7 @@ fn changed_digest_refuses_dependents_in_the_package_report() {
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile S = \"{}\" version \"{}\" digest \"{}\";\n\
-             model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+             model M = \"{}\";\n\
              predicate FieldRule using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
              predicate PumpRule using S (pump: M::Pump): Boolean {{ true }}\n\
              predicate Caller using S (): Boolean {{ FieldRule() }}\n\
@@ -726,7 +726,7 @@ fn native_model_selected_in_the_jcs_domain_refuses() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{:x}\";\n\
+         model M = \"{}\";\n\
          predicate Rule using S (item: M::Node): Boolean {{ true }}\n",
         owner.package().as_str(),
         owner.revision().get(),
@@ -765,8 +765,8 @@ fn two_same_shaped_packages_keep_keys_under_their_selection() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
-         model N = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
+         model N = \"{}\";\n\
          predicate FromM using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
          predicate FromN using S (): Boolean {{ N::Pump::id = N::Pump::id }}\n",
         a.identity,
@@ -821,7 +821,7 @@ fn domain_typed_declarations_type_check() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"{}\" version \"{}\" digest \"{}\";\n\
-         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
          predicate PumpUp using S (pump: M::Pump): Boolean {{ pump.id }}\n\
          predicate Flowing using S (flow: M::Flow, tally: M::Count): Boolean {{ true }}\n\
          predicate CountValue using S (tally: M::Count): Boolean {{ tally.value = tally.value }}\n\
@@ -989,7 +989,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"{}\" version \"{}\" digest \"{}\";\n\
-         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
          predicate Maybe using S (g: M::Gauge): Boolean {{ present(g.maybe) }}\n\
          predicate Few using S (g: M::Gauge): Boolean {{ let few = g.few in true }}\n\
          predicate Many using S (g: M::Gauge): Boolean {{ let many = g.many in true }}\n\
@@ -1182,7 +1182,7 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"{}\" version \"{}\" digest \"{}\";\n\
-         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
          pre FillReady using S on M::Pump::fill {{ forced }}\n\
          post Filled using S on M::Pump::fill {{ result and level.ok and forced }}\n\
          pre LevelFirst using S on M::Pump::fill {{ level.ok }}\n\

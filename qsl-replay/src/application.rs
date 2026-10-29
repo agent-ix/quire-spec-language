@@ -1679,7 +1679,7 @@ mod tests {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.model.complete/v1\";\n\
-            model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n\
+            model M = \"acme/orders\";\n\
             function h using v(p: Population<M::Widget>[3]): Boolean pure {{ true }}\n"
         );
         let acquired = acquire_checked_closure(

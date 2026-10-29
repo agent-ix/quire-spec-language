@@ -57,7 +57,7 @@ fn structural_schema_accepts_fixed_and_real_producer_manifests() {
         ),
     ] {
         let source = format!(
-            "{HEADER}model M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clause}\n",
+            "{HEADER}model M = \"example/rule-tests\";\n{clause}\n",
             models[0].digest()
         );
         let package = NativePackage::new(

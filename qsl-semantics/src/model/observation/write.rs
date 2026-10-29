@@ -49,16 +49,13 @@ pub struct EnvironmentPopulation {
     pub objects: Vec<EnvironmentObject>,
 }
 
-/// The selected model the document names: its identity and version, and the
-/// `sha256-jcs` digest of its domain package.
+/// The selected model the document names: its identity and version.
 #[derive(Clone, Debug)]
 pub struct EnvironmentModel {
     /// The domain package identity.
     pub identity: String,
     /// The domain package version.
     pub version: String,
-    /// The domain package's `sha256-jcs` digest.
-    pub digest: [u8; 32],
 }
 
 /// The canonical bytes of a current snapshot of `populations`, labelled
@@ -110,7 +107,6 @@ pub fn write_environment_document(
         "model": {
             "identity": model.identity,
             "version": model.version,
-            "digest": format!("sha256-jcs:{}", crate::model::key::hex(&model.digest)),
         },
         "populations": populations,
     });

@@ -202,7 +202,7 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
     };
     let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
     let text = format!(
-        "{HEADER}model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n\
+        "{HEADER}model M = \"acme/orders\";\n\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
     );
     let (bytes, package_id) = spine_run(&text, &packages).expect("the spine compiles the unit");

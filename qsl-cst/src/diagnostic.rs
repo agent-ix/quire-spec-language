@@ -76,11 +76,6 @@ pub enum HostCause {
     /// `invalid_identifier`: a definition or model identity is empty or
     /// exceeds its bound.
     SelectionIdentity,
-    /// `invalid_identifier`: a definition or model version is empty or exceeds
-    /// its bound.
-    SelectionVersion,
-    /// `invalid_digest`: a selection digest is not canonical SHA-256.
-    SelectionDigest,
     /// `invalid_source_identity`, cause `blank-label`: a source label is
     /// empty or only Unicode `White_Space`; `label` is the first such label
     /// in FR-001's order.
@@ -198,8 +193,6 @@ impl HostCause {
             Self::BlankLabel { .. } => BLANK_LABEL_TAG,
             Self::EmptyPath => EMPTY_PATH_TAG,
             Self::SelectionIdentity
-            | Self::SelectionVersion
-            | Self::SelectionDigest
             | Self::EditPredecessor
             | Self::ForeignNode
             | Self::RequestRevision
@@ -211,8 +204,7 @@ impl HostCause {
     /// The retained code this cause refines.
     pub fn code(self) -> CompleteCode {
         match self {
-            Self::SelectionIdentity | Self::SelectionVersion => CompleteCode::InvalidIdentifier,
-            Self::SelectionDigest => CompleteCode::InvalidDigest,
+            Self::SelectionIdentity => CompleteCode::InvalidIdentifier,
             Self::BlankLabel { .. } | Self::EmptyPath => CompleteCode::InvalidSourceIdentity,
             Self::EditPredecessor
             | Self::ForeignNode

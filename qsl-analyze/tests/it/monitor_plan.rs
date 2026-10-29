@@ -32,7 +32,7 @@ fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.timed/v1\";\n\
-         model M = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{}\";\n\
          {TIME_UNITS}\
          temporal C using t over (c: M::ConfigVersion) clock \"model-time\" on origin {{ {formula} }}\n",
         domain.package,

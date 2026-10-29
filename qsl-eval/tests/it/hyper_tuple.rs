@@ -52,7 +52,7 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"{INFINITE}\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{PACKAGE}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n\
          hyper H using inf over behaviours (c: M::Counter) \
          forall trace a of M forall trace b of M {alignment} {{ {body} }}\n",

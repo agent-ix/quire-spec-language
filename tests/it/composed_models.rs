@@ -124,7 +124,7 @@ fn program(model: &NativeModel, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-        model M = \"{}\" version \"{}\" digest \"{}\";\n{declarations}",
+        model M = \"{}\";\n{declarations}",
         model.environment().owner().package().as_str(),
         model.environment().owner().revision().get(),
         model.digest()

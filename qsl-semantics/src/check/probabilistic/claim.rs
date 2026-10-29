@@ -1584,7 +1584,6 @@ impl Pass<'_, '_> {
                 text(&claim.subject.alias),
                 text(&subject.identity),
                 text(&subject.version),
-                subject.digest.to_vec(),
             ],
         );
         let profile = node_bytes(

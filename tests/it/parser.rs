@@ -6,7 +6,7 @@ use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
 use quire_spec_language::{parse, Limits, ParsedUnit};
 
 fn document(expression: &str) -> String {
-    format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant Test on M::Thing at current {{ {expression} }}\n")
+    format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\ninvariant Test on M::Thing at current {{ {expression} }}\n")
 }
 fn read(bytes: &[u8], limits: Limits) -> Result<ParsedUnit, Box<qsl_foundation::Diagnostic>> {
     parse(

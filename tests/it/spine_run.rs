@@ -966,7 +966,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
     let program = format!(
         "{HEADER}\
          import \"test/geometry\" as g;\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"{model_digest}\";\n\
+         model M = \"acme/orders\";\n\
          function seven using v(): Integer pure {{ 7 }}\n"
     )
     .into_bytes();

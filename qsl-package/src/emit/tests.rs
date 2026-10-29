@@ -3283,7 +3283,6 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         DomainPackageRef {
             identity: "example/config-version".to_owned(),
             version: "1".to_owned(),
-            digest: [0_u8; 32],
         },
         records,
     );

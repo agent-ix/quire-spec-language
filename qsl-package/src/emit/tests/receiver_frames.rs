@@ -557,7 +557,6 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
     let selection = DomainPackageRef {
         identity: fixture::PACKAGE.to_owned(),
         version: "1".to_owned(),
-        digest: *digest,
     };
     let (selection, document) = admit(
         &selection,

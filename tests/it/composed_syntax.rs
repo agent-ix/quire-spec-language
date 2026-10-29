@@ -14,7 +14,7 @@ const HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
 profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
 profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
-model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+model M = "test:orders-and-refunds";
 "#;
 const PREDICATE: &str =
     "predicate RefundMatches using S (v: M::OrderView): Boolean { v.refund = v.paid }";
@@ -349,7 +349,7 @@ fn keyword_classification_is_edition_and_position_specific() {
             .value,
         "retrying"
     );
-    let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\" version \"1\" digest \"unresolved\"; invariant Test on M::Thing at current { let retry = true in retry }";
+    let historical = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"test:model\"; invariant Test on M::Thing at current { let retry = true in retry }";
     let NativeUnit::Historical(selected) = read(historical, Limits::default()).unwrap() else {
         panic!("historical edition");
     };

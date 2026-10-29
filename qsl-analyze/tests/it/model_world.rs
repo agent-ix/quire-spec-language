@@ -238,7 +238,7 @@ impl World {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              profile t = \"{profile}\";\n\
-             model M = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+             model M = \"{}\";\n{body}",
             domain.package,
             hex(&digest)
         );
