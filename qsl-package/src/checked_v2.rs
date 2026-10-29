@@ -115,9 +115,10 @@ pub use terminal::{
     ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
 };
 pub use timed_model::{
-    CheckedClockConstraint, CheckedClockPlace, CheckedClockReset, CheckedTimeSource,
-    CheckedTimeSourceKind, CheckedTimedModel, CheckedTimedPredicate, CheckedUrgency, ClockPathStep,
-    ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
+    CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
+    CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
+    CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClockComparison,
+    ClockPathStep, ResolvedClockPathStep, TimedLiteralTypes, TimedNodeMetadata,
 };
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's

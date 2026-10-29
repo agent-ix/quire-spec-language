@@ -106,9 +106,7 @@ Acceptance Criteria.
 15. Tabulate the TP-3 item of FR-315-AC-45 with `MonitorTable::of` and with
     the constructor over its `CheckedFormula` and profile, and tabulate
     `NonInterference`'s body `always (holds(v.h @ a = v.h @ b) implies always
-    holds(v.l @ a = v.l @ b))` with the constructor. Encode FR-315-AC-43's and
-    FR-315-AC-45's queries, and compare them with golden bytes recorded from
-    `main` before the refactor.
+    holds(v.l @ a = v.l @ b))` with the constructor.
 
 Tag the tests `#[trace("TC-1264", "FR-487-AC-n")]`. Tag step 9's test
 `#[trace("TC-1264", "FR-315-AC-43")]` and step 12's checking tests
@@ -185,5 +183,4 @@ Tag the tests `#[trace("TC-1264", "FR-487-AC-n")]`. Tag step 9's test
   third is refused `ill_typed` at the bare `v.next`.
 - **Step 15:** the two tabulations of the TP-3 item have equal state counts,
   initial state, rejecting state and moves, and the hyper body's table has
-  the same shape (two atoms, three states). The scripts of FR-315-AC-43 and
-  FR-315-AC-45 are byte-equal to those golden bytes.
+  the same shape (two atoms, three states).

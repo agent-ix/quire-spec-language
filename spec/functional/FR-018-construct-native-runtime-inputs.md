@@ -19,8 +19,7 @@ QSL-381 drops `revision_namespace` and `revision` (QSpec STD-150).
 
 SnapshotDraft or InvocationDraft, SourceIdentity labels and ArtifactLimits.
 The labels are the two of [FR-001](FR-001-read-exact-source.md): the caller
-names the artifact by authority and identity, and its key is that identity
-plus the artifact's content digest (QSpec FR-004, STD-150). A runtime artifact is
+names the artifact by authority and identity, and the artifact is addressed by those labels (authority, identity). A runtime artifact is
 not a source read under FR-001; it only shares the label set.
 The complete variant inventory, fields and native-state-input/1 encoding are
 defined in [the input contract](../../docs/native-runtime-inputs.md). Flat arena
@@ -30,7 +29,7 @@ identity. This requirement owns construction; the separate
 
 ## Outputs
 
-Immutable Snapshot or Invocation with exact emitted bytes, SHA-256 ByteDigest
+Immutable Snapshot or Invocation with exact emitted bytes
 and role-specific reference, or InputError with a structured draft location,
 stable code and actual usage. No fabricated authored span or partial artifact
 is returned. Construction does not establish runtime validity or completeness.
@@ -42,7 +41,7 @@ bounded structural inspection, including unused nodes. Primitive nominal types
 are determined later by their model sites; record/enum nodes name exact owners.
 Field/object duplicate vectors remain available for model-aware diagnosis.
 Labels and all content enter deterministic complete bytes; expected references
-can select an exact digest. Limits and accounting follow
+select an artifact by its labels. Limits and accounting follow
 [NFR-006](../non-functional/NFR-006-bound-native-runtime.md).
 
 ## Acceptance Criteria
@@ -51,15 +50,15 @@ can select an exact digest. Limits and accounting follow
 | --- | --- | --- |
 | FR-018-AC-1 | Valid flat drafts construct immutable artifacts preserving all roots, nodes, duplicate entries and vector order. | Test (TC-055) |
 | FR-018-AC-2 | Forward, self and out-of-range child/root indices refuse with invalid_runtime_input and no artifact; ValueIds have artifact-local meaning. | Test (TC-055) |
-| FR-018-AC-3 | Identical labels/content reproduce exact bytes/digests; changed labels or content produce the independently expected byte artifact. | Test (TC-056, TC-077) |
-| FR-018-AC-4 | Snapshot and invocation references retain distinct roles and exact labels/digests; an empty authority or identity label refuses. | Test (TC-056) |
+| FR-018-AC-3 | Identical labels/content reproduce exact bytes; changed labels or content produce the independently expected byte artifact. | Test (TC-056, TC-077) |
+| FR-018-AC-4 | Snapshot and invocation references retain distinct roles and exact labels; an empty authority or identity label refuses. | Test (TC-056) |
 | FR-018-AC-5 | Structural checks include unused nodes and preserve invalid model-dependent shapes for validation rather than manufacturing a successful runtime judgment. | Test (TC-055) |
 | FR-018-AC-6 | Byte, node and entry limits admit exact work and refuse before the next unit, including zero/lowered limits, and raised limits above the defaults that admit larger input; a value nested 100,000 containers deep constructs within node and entry limits sized for it, on a thread with a 512 KiB stack. | Test (TC-057) |
 | FR-018-AC-7 | Construction failures identify the actual draft path/labels and leave caller-retained input unchanged without a fabricated native source span. | Test (TC-055, TC-056) |
-| FR-018-AC-8 | A snapshot constructed under (`agent-ix`, `s`) emits native-state-input/1 bytes naming both labels and no other identity member, and its reference retains them; constructing it with an empty authority refuses with `invalid_source_identity`/`blank-label` and field `label` `authority`, and with a whitespace-only identity (authority non-blank) with `invalid_source_identity`/`blank-label` and `label` `identity`, checking the labels in FR-001's order (FR-018-AC-4). Two snapshots that differ only in content have different bytes and digests. | Test (TC-431) |
+| FR-018-AC-8 | A snapshot constructed under (`agent-ix`, `s`) emits native-state-input/1 bytes naming both labels and no other identity member, and its reference retains them; constructing it with an empty authority refuses with `invalid_source_identity`/`blank-label` and field `label` `authority`, and with a whitespace-only identity (authority non-blank) with `invalid_source_identity`/`blank-label` and `label` `identity`, checking the labels in FR-001's order (FR-018-AC-4). Two snapshots that differ only in content have different bytes. | Test (TC-431) |
 
 ## Dependencies
 
 - [US-003](../usecase/US-003-evaluate-bounded-state.md) supplies the operator need.
 - [FR-007](FR-007-validate-runtime-inputs.md) consumes artifacts without trusting construction as model validation.
-- Existing SourceIdentity, ByteDigest, IR RequirementRef/SymbolName and serde_json/sha2 dependencies are reused.
+- Existing SourceIdentity, IR RequirementRef/SymbolName and serde_json dependencies are reused.

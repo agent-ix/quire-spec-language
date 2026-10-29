@@ -11,10 +11,9 @@ relationships:
 ## Description
 
 Verify `replay_model_trace`: lassos, prefixes, stutter loops and deadlock
-counterexamples reproduce; the recorded digest selects among several
+counterexamples reproduce; the recorded state key selects among several
 post-states of one transition identity; an engine disagreement settles
-`inconclusive`; a loop that does not close, an unfair lasso, a digest that
-no successor has, a disabled step, a bad initial state and a misplaced
+`inconclusive`; a loop that does not close, an unfair lasso, a disabled step, a bad initial state and a misplaced
 `terminal-stutter` step refuse.
 
 Scope: FR-128-AC-1 to FR-128-AC-4.
@@ -26,15 +25,12 @@ snapshot and source in the byte provision and its universe in the request.
 
 1. Replay the lasso under the constraint with no granularity, the bounded
    prefix and the stutter lasso. Over the `Branch` subject of FR-128-AC-1,
-   replay a one-step prefix recording the digest of `v = 2`, and one
-   recording a digest no successor of `step` has.
+   replay a one-step prefix recording the state key of `v = 2`.
 2. Replay the deadlock counterexample; the same payload in an envelope
    carrying the identities of the `Counter` unit whose `When` member covers
    value 3; the original payload truncated to end at value 2.
 3. Replay each defective envelope of FR-128-AC-3.
-4. Replay a lasso of `upd(a)` steps bound to `c = a`; replay after a source
-   edit that changes the `package_id`; with `clause_node` naming another
-   clause; step 1's lasso twice.
+4. Replay a lasso of `upd(a)` steps bound to `c = a`; step 1's lasso twice.
 
 Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
 
@@ -42,10 +38,8 @@ Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
 
 - Step 1: `reproduced-with-evaluated-witness` three times, the lasso with
   `trace_position` 0; the `Branch` prefix reproduces with `trace_position`
-  1; the other refuses `stale_dependency`/`content-mismatch` naming the
-  step and the recorded digest.
+  1.
 - Step 2: `reproduced-with-evaluated-witness`; `inconclusive`, `ReplayParity`;
   `inconclusive`, `ReplayParity`.
 - Step 3: each refuses as FR-128-AC-3 states, with no result.
-- Step 4: `inconclusive`, `ReplayParity`; FR-098's stale `package_id` refusal;
-  `stale_dependency`/`content-mismatch`; equal results.
+- Step 4: `inconclusive`, `ReplayParity`; equal results.

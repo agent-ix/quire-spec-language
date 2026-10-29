@@ -50,7 +50,7 @@ which mapping expression has the wrong type, before any model check runs.
   resolved profile selection (FR-110), and, when the abstract alias names a
   dependency's model, that dependency's checked package from the S4
   closure (ADR-015). For both aliases, the checker also retains the selected
-  model package's canonical identity and digest from the existing model
+  model package's canonical identity and version from the existing model
   selection; aliases are source-level names and are not emitted identities.
 
 ## Outputs
@@ -104,10 +104,10 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
   package when the abstract alias is local, and from the dependency's
   checked package otherwise.
 - Each selected model package SHALL have one whole-model root identity,
-  formed from that existing selection's canonical identity and digest. This
+  formed from that existing selection's canonical identity and version. This
   root names the model as a whole regardless of its number of object types or
   `state_machine` declarations. S3 SHALL retain the selected identity and
-  digest for each side in the checked refinement binding. It SHALL NOT choose
+  version for each side in the checked refinement binding. It SHALL NOT choose
   an object type or state machine as a representative and SHALL NOT require a
   new FCD declaration or model-selection field.
 - The header's abstract side is QSpec FR-375's `abstract-subject` production,
@@ -292,7 +292,7 @@ standing.
 | FR-135-AC-9 | A refinement given a non-empty resolved internal list refuses `unsupported_construct`/`not-yet-implemented` naming `refinement-internal-list` at the first token of the name after `abstract`, once for the refinement, with no `subject` member, no `CheckedRefinement` and the classification `unsupported` (FR-341-AC-5); a list with a resolution defect reports the defect and not this pair (FR-147-AC-7, AC-11). | Test (TC-540) |
 | FR-135-AC-10 | The header `abstract Spec::Twice concrete Impl` is read as QSpec FR-375's `abstract-subject` (model alias `Spec`, protocol `Twice`), and `abstract Spec concrete Impl` as a model subject; the concrete side never names a protocol, and a refinement whose step rows name one protocol clause of `Impl` records it as `concrete_protocol`, one whose rows name none records `None` (FR-136-AC-6). | Test (TC-540) |
 | FR-135-AC-11 | A mapped `state_machine` declaration has one `object` row whose target and source are both state-machine declarations; its declared fields check through that row without a population row. Omitting the row refuses `missing_declaration`/`missing-name`; duplicating it refuses `invalid_model_binding`/`conflicting-binding`; pairing it with an object type refuses `invalid_model_binding`/`malformed-declaration`. `CasRefinesCounter` over the object-type-only `Spec` and `Impl` models checks with its existing population and object rows, with no `state_machine` declaration or synthetic subject. | Test (TC-540) |
-| FR-135-AC-12 | For each selected abstract and concrete model package, the checked refinement binding retains that selection's canonical identity and digest; it does not use the source alias or a declaration as a representative. A model-only header binds to the whole-model identity; protocol refinement retains the same abstract model identity plus its exact protocol-clause key. Zero, one and multiple object types or state machines are all valid cardinalities for the same binding rule. The binding is derived from existing model selection state and adds no FCD field. | Test (TC-540) |
+| FR-135-AC-12 | For each selected abstract and concrete model package, the checked refinement binding retains that selection's canonical identity and version; it does not use the source alias or a declaration as a representative. A model-only header binds to the whole-model identity; protocol refinement retains the same abstract model identity plus its exact protocol-clause key. Zero, one and multiple object types or state machines are all valid cardinalities for the same binding rule. The binding is derived from existing model selection state and adds no FCD field. | Test (TC-540) |
 
 ## Dependencies
 

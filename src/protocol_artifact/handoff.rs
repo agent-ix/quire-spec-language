@@ -111,7 +111,7 @@ pub struct Selection {
     pub contract: w::ArtifactRef,
     /// Exact accepted semantic baseline dependency.
     pub baseline: w::ArtifactRef,
-    /// Explicit implementation, revision and immutable binary selection.
+    /// Explicit implementation and revision selection.
     pub producer: w::Producer,
     /// Accepted native language edition.
     pub language: w::Language,
@@ -302,28 +302,14 @@ pub enum MutationInput {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        path::{Component, Path},
-    };
-
     use ix_trace_rs::trace;
     use serde_json::json;
 
     use super::{
-        MutationInput, MutationManifest, SelectedArtifactLimits, Selection,
-        MUTATION_MANIFEST_FORMAT, PUBLISHED_ARTIFACT_REFERENCE_FILE,
-        PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
-        PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, PUBLISHED_V1_OFFER_FILE,
-        PUBLISHED_V1_SELECTION_FILE,
+        MutationInput, MutationManifest, SelectedArtifactLimits, MUTATION_MANIFEST_FORMAT,
+        PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
     };
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
-
-    fn normalized_handoff_path(relative: &Path) -> bool {
-        relative
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-    }
 
     #[test]
     #[trace("TC-121", "FR-042-AC-9")]
@@ -368,5 +354,103 @@ mod tests {
             "unknown": false
         }))
         .is_err());
+    }
+
+    #[cfg(feature = "handoff-writer")]
+    mod written {
+        use std::{
+            fs,
+            path::{Component, Path},
+        };
+
+        use ix_trace_rs::trace;
+
+        use super::super::{
+            MutationManifest, Selection, MUTATION_MANIFEST_FORMAT,
+            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
+            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+            PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
+        };
+
+        fn normalized_handoff_path(relative: &Path) -> bool {
+            relative
+                .components()
+                .all(|component| matches!(component, Component::Normal(_)))
+        }
+
+        fn written(
+            write: fn(&Path) -> Result<(), super::super::writer::Error>,
+        ) -> (tempfile::TempDir, std::path::PathBuf) {
+            let directory = tempfile::tempdir().expect("temporary directory");
+            let root = directory.path().join("handoff");
+            write(&root).expect("the writer emits a complete handoff");
+            (directory, root)
+        }
+
+        #[test]
+        #[trace("TC-121", "FR-042-AC-10")]
+        fn written_v1_handoff_addresses_are_complete() {
+            let (_directory, root) = written(super::super::write_v1);
+            for relative in [
+                PUBLISHED_V1_OFFER_FILE,
+                PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+                PUBLISHED_V1_SELECTION_FILE,
+            ] {
+                assert!(
+                    root.join(relative).is_file(),
+                    "written v1 member {relative}"
+                );
+            }
+            let selection: Selection = serde_json::from_slice(
+                &fs::read(root.join(PUBLISHED_V1_SELECTION_FILE)).expect("written v1 selection"),
+            )
+            .expect("decode written v1 selection");
+            for relative in selection
+                .sources
+                .iter()
+                .map(|source| source.file.as_str())
+                .chain(
+                    selection
+                        .dependencies
+                        .iter()
+                        .map(|dependency| dependency.file.as_str()),
+                )
+                .chain(std::iter::once(selection.model.source_file.as_str()))
+            {
+                let relative = Path::new(relative);
+                assert!(
+                    normalized_handoff_path(relative),
+                    "selected path remains normalized: {relative:?}"
+                );
+                assert!(
+                    root.join(relative).is_file(),
+                    "selected path is a written file: {relative:?}"
+                );
+            }
+        }
+
+        #[test]
+        #[trace("TC-138", "FR-050-AC-7")]
+        fn written_handoff_addresses_resolve_the_owned_inventory() {
+            let (_directory, root) = written(super::super::write_v2);
+            for relative in [
+                PUBLISHED_OFFER_FILE,
+                PUBLISHED_ARTIFACT_REFERENCE_FILE,
+                PUBLISHED_SELECTION_FILE,
+                PUBLISHED_MUTATION_MANIFEST_FILE,
+            ] {
+                assert!(root.join(relative).is_file(), "written member {relative}");
+            }
+
+            let manifest: MutationManifest = serde_json::from_slice(
+                &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE))
+                    .expect("written mutation manifest"),
+            )
+            .expect("decode written mutation manifest");
+            assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
+            assert_eq!(manifest.base_offer, PUBLISHED_OFFER_FILE);
+            assert_eq!(manifest.base_artifact, PUBLISHED_ARTIFACT_REFERENCE_FILE);
+            assert_eq!(manifest.independent_selection, PUBLISHED_SELECTION_FILE);
+        }
     }
 }

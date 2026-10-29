@@ -318,14 +318,12 @@ record! { /// A declaration-owned table index; its expected table follows the fi
         index: u32
     }
 }
-record! { /// Selected implementation and binary artifact, not an authenticity claim.
+record! { /// Selected implementation, not an authenticity claim.
     Producer {
         /// The producer implementation's identity.
         implementation: String,
         /// The producer implementation's selected revision.
-        revision: Revision,
-        /// The producer's binary artifact.
-        binary: ArtifactRef
+        revision: Revision
     }
 }
 record! { /// One immutable dependency and its own dependency-table prerequisites.

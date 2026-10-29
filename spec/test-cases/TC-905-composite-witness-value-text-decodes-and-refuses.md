@@ -50,7 +50,7 @@ otherwise.
    - the decimal with coefficient `1050` and scale `2`;
    - a `float32` with bits `7fc00001`, and a `float64` with bits
      `8000000000000000`;
-   - a decimal quantity with coefficient `15`, scale `1` and a unit digest;
+   - a decimal quantity with coefficient `15`, scale `1` and a unit identity;
    - a reference.
 
    Then decode a sequence of the texts `x;y` and `p>q`.

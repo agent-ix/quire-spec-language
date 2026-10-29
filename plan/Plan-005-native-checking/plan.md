@@ -31,7 +31,7 @@ integration remain required downstream work.
 
 ## Dependency Graph
 
-Existing FR-013/014 and the pinned IR API enable model admission; admitted native
+Existing FR-013/014 and the existing IR API enable model admission; admitted native
 models enable clause checking. Qualification/handoff follows both. The graph in
 SR-069 is acyclic; the task frontmatter owns its execution edges. NFR-005 governs
 all production and qualification. No external reader/#54 gate exists.

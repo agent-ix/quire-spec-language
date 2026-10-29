@@ -108,7 +108,7 @@ passed to FR-344's report.
 - For each case, the gate SHALL call `qsl_replay::spine::run_clause` twice,
   once with the `prior` source and once with the `superseding` source, each
   time with the pair's packages and dependency input, the case's selection
-  and provisions, and no expected `package_id`.
+  and provisions.
 - Each call SHALL use the case's stated limit sets and, for each set the
   case does not state, that set's published default. A case's limits are
   caller-configurable resource limits; the gate imposes none of its own.
@@ -120,14 +120,14 @@ passed to FR-344's report.
 
 - The make target `refinement-versioning`, which `make ci` runs, SHALL
   generate the real corpus into a temporary directory, taking the model's
-  package identity, package version and digest from the model file
+  package identity and package version from the model file
   (`examples/config-version/model.semantic-ir.json`) at that run. It SHALL
   run `cargo run --package xtask -- refinement versioning` over the
   generated directory, remove the directory when it ends, and fail when the
   gate's exit code is not 0 (FR-344 "Invocation and exit").
-- Neither the make target nor the gate SHALL read a committed model digest.
-  FR-056 selects a model by digest, so a digest committed in a corpus would
-  change with every edit to the model.
+- Neither the make target nor the gate SHALL read a committed model version.
+  FR-056 selects a model by identity alone, so nothing committed in a corpus
+  restates the model file.
 
 ## Constraints
 
@@ -139,15 +139,15 @@ passed to FR-344's report.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-340-AC-1 | A corpus holding one well-formed ConfigVersion pair with two `Clause` cases runs each case against both revisions with no expected `package_id`, and FR-344's report holds exactly two case results, each naming the pair's prior and superseding `RawSourceRef`s and its selection. | Test (TC-860) |
+| FR-340-AC-1 | A corpus holding one well-formed ConfigVersion pair with two `Clause` cases runs each case against both revisions, and FR-344's report holds exactly two case results, each naming the pair's prior and superseding `RawSourceRef`s and its selection. | Test (TC-860) |
 | FR-340-AC-2 | In a corpus of one well-formed pair and eight malformed ones (a `pair.json` that is not JSON; one missing `superseding`; one with an extra member `expected`; one naming `../outside.qsl`; one naming an absolute path; one whose two sources differ in `identity`; one naming `repo:../outside`; one naming `repo:/etc/hostname`), each malformed pair yields exactly one tool-failure result naming its `pair.json` path and its defect, none of its cases runs, and the well-formed pair's cases still run. A corpus directory with no pair subdirectory yields one tool-failure result naming the corpus path; verdict tool failure, exit 30. A case naming a file that does not exist yields one tool-failure case result naming the case and the defect, and the pair's other case still runs. | Test (TC-860) |
 | FR-340-AC-3 | A pair whose `prior` unit admits a case and whose `superseding` unit refuses it is compared in that direction: the case is a regression; the same two units named the other way round give `not applicable`. | Test (TC-860) |
 | FR-340-AC-4 | A case stating no limit sets runs with each set's published default; the same case stating `accounting` with a work budget of one unit runs both revisions with that budget: both classes are `incomplete` and the case is `unresolved (incomplete)`. | Test (TC-860) |
 | FR-340-AC-5 | Copying a corpus to another directory and running the gate there gives a report byte-equal to the original's. | Test (TC-860) |
 | FR-340-AC-6 | `make refinement-versioning` generates the corpus into a temporary directory from the model file, runs the gate over it, and passes. | Test (TC-864) |
 | FR-340-AC-7 | Adding the seeded-regression pair of TC-864 to a copy of the generated corpus makes the gate fail. | Test (TC-864) |
-| FR-340-AC-8 | After the model file's package version is edited, generating the corpus again gives a unit, a superseding unit and both snapshots that carry the edited version and the new digest and no other digest, and the gate passes. | Test (TC-864) |
-| FR-340-AC-9 | Given a repository root holding only the model file, generating the corpus and running the gate over it passes: neither reads a committed digest. | Test (TC-864) |
+| FR-340-AC-8 | After the model file's package version is edited, generating the corpus again gives a unit, a superseding unit and both snapshots that carry the edited version, and the gate passes. | Test (TC-864) |
+| FR-340-AC-9 | Given a repository root holding only the model file, generating the corpus and running the gate over it passes: neither reads a committed model version. | Test (TC-864) |
 
 ## Dependencies
 

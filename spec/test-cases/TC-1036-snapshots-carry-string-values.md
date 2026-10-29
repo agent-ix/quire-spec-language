@@ -29,16 +29,14 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
 - TC-1029's base snapshot, with `child` also holding `tags`
   `{"sequence":[]}`, `label` `{"kind":"string","text":"ready"}` and `note`
   `{"absent":{}}`, and `root` holding `tags` `{"sequence":[]}`, `label`
-  `{"kind":"string","text":"root"}` and `note` `{"absent":{}}`. Digests are
-  recomputed for every mutated document, except where a step says the
-  selected digest stays the base snapshot's.
+  `{"kind":"string","text":"root"}` and `note` `{"absent":{}}`.
 
 ## Test Procedure
 
 1. Admit the base snapshot for `ParentOrder` with `Current` selection
    (anchor `handler validate`, `self` `child`). Reorder the members of the
    `label` object and the whitespace of the document, and admit again.
-2. Admit one mutation per row of `label` texts, each with its own digest:
+2. Admit one mutation per row of `label` texts, each as its own document:
    the empty text `""`; `"  ready  "`; `"READY"`; S1 `"\u00e9"` (U+00E9);
    S2 `"e\u0301"` (U+0065 U+0301); `"00112233-4455-6677-8899-aabbccddeeff"`;
    `"\u0000"`; `"a\u001fb"`; `"\ufffe"`; `"a;b>>>c"`; a text of 65,536
@@ -74,8 +72,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
 8. Mutate `note` to `{"present":{"kind":"string","text":"n"}}` and admit the
    document with `observation.values` set to its exact value count, then to
    one less.
-9. Select each of these documents under the base snapshot's digest (the
-   selected digest stays the base's): a `label` text holding the escape
+9. Select each of these documents under the base snapshot's identity: a `label` text holding the escape
    `\ud800`; one holding the escape `\udc00`; one holding the raw byte `0xC0`;
    the first of them with a wrong-kind `token` (a Timestamp object) as well.
    Then admit a document whose `label` text has 1,048,576 `a`, so that the
@@ -85,11 +82,11 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
 
 - Step 1 admits one observation in which `child.label` is a String value of
   the scalar sequence `ready`; the reordered document gives the same typed
-  observation and digest.
+  observation.
 - Step 2 admits every row with its scalar sequence unchanged, nothing trimmed,
   folded, normalized or escaped. The S1 and S2 observations hold two unequal
-  `label` values with different digests. The paired escape and the literal
-  U+1F600 give one value and one digest. `note` is present and `tags` holds
+  `label` values. The paired escape and the literal
+  U+1F600 give one value. `note` is present and `tags` holds
   `a` and the empty String, in order.
 - Step 3 admits `name` and `result` as String values in both selections, with
   the `PreCall` selection reading no result.
@@ -120,8 +117,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
   `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`,
   the bound and the count the String object inside `note` would have reached.
 - Step 9 refuses each of the four documents
-  `stale_dependency`/`byte-digest-mismatch` carrying the selected digest and
-  the raw bytes' own digest (check 1.3), with no `wrong-value-kind` from
+  `invalid_runtime_input` at document decode, with no `wrong-value-kind` from
   `token`; the oversize document refuses `stage_limit_exceeded`/
   `input-bytes-exceeded` naming `observation.input_bytes` (check 1.2).
 - Assertions compare typed code, cause, input path, member and bound, never

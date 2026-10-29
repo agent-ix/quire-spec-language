@@ -28,7 +28,7 @@ confidence parameters (ADR-024 §2, PM-8), and record a
 `CheckedProbabilisticClaim` whose normal form is the content the claim
 asserts: its subject, profile, scheduler, fairness set, form, `over` type and
 the confidence parameters it states. The normal form is not an obligation identity (ADR-013
-R-04): the obligation identity (O-09) is CG's digest over the claim's S4 node
+R-04): the obligation identity (O-09) is CG's structural identity (the preimage value, compared by equality) over the claim's S4 node
 and its occurrence key. A checked claim is a claim of the QSpec FR-290 kind
 `probabilistic-satisfaction`, which the claim type implies, so the record
 carries no kind member. QSpec owns the grammar and the meaning of each form;
@@ -250,7 +250,7 @@ FR-185 states (setting pending, QSL-883).
   threshold is recorded in the reward's unit, so `0.005 s` and `5 ms` give one
   normal form.
 - The normal form is not an identity (ADR-013 R-04). The obligation identity
-  stays CG's digest over the claim's S4 node and its occurrence key (O-09),
+  stays CG's structural identity over the claim's S4 node and its occurrence key (O-09),
   so two declarations with equal content have equal normal forms and are two
   obligations.
 - S4 SHALL refuse a package that holds a checked claim, by the feature name

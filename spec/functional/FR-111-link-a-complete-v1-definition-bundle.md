@@ -51,7 +51,7 @@ no stage of the S1 to S4 spine calls it.
 - `library::bundle::link_bundle(roots, catalog, limits)
   -> Result<LinkedBundle, BundleRefusal>`.
 - `LinkedBundle`: the closed definitions by `DefinitionRef`, the
-  `CompleteBundle` (facets, capabilities and its `SemanticDigest` identity)
+  `CompleteBundle` (facets, capabilities and its structural identity)
   and the `PackageLimits` it was checked against.
 - `BundleRefusal`: the `Code`, the `ResolutionCause`, the typed
   `PackageError` and the index of the root whose closure refused.
@@ -96,10 +96,9 @@ the facets, the identity) carries no root index: `BundleRefusal::root` is
   missing, then `link_bundle` SHALL refuse
   `unknown_required_feature`/`unsupported-feature`; a capability outside
   the inventory SHALL refuse `unknown_required_feature`/`unknown-feature`.
-- The bundle's identity SHALL be the `quire.complete.resolved-graph/2`
-  `SemanticDigest` of the preimage `{capabilities, definitions, models}`:
-  the capabilities, the closed definitions (each definition's
-  `{authority, identity}`, the SHA-256 of its bytes, its role, its
+- The bundle's identity SHALL be the preimage `{capabilities, definitions,
+  models}` itself, compared by equality: the capabilities, the closed
+  definitions (each definition's `{authority, identity}`, its role, its
   dependencies as `{authority, identity}` pairs and its capabilities) and
   `models`, which is always the empty array, because model selections
   resolve only through I1 (FR-056). No backend, installed runtime or support
@@ -134,7 +133,7 @@ names the field, its bound, the count reached and its setting
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-111-CON-1 | `library::bundle` depends only on layers F (including `qsl_foundation::IdentityLimits`, the caller's canonical-encoding byte limit its identity digest takes) and K, and on `library`'s own items, and on the external `quire-canonical` and `serde` crates it encodes the identity through, as ADR-011 §6.1's layer-3 order permits. It names no `check`, `package`, `model`, emitter or backend type, and returns no checked or emitted package. | Design | Inspection |
+| FR-111-CON-1 | `library::bundle` depends only on layers F and K and on `library`'s own items, as ADR-011 §6.1's layer-3 order permits. It names no `check`, `package`, `model`, emitter or backend type, and returns no checked or emitted package. | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -144,7 +143,7 @@ names the field, its bound, the count reached and its setting
 | FR-111-AC-2 | A root whose identity the catalog lacks, or holds only under another authority, refuses `unknown_profile`/`unsupported-selection`; a root whose identity the catalog holds resolves whatever revision label or bytes the catalog's definition carries; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each refusal names the root's index. | Test (TC-491) |
 | FR-111-AC-3 | Two roots, or a root and a reached definition, selecting one identity under two authorities refuse `ambiguous_declaration`/`conflicting-authority` naming both; a dependency cycle refuses `invalid_package`/`definition-cycle` naming the cycle in path order. | Test (TC-491) |
 | FR-111-AC-4 | Removing the definitions of one facet refuses `invalid_package`/`feature-set-mismatch` naming that facet; removing one capability refuses `unknown_required_feature`/`unsupported-feature`. | Test (TC-491) |
-| FR-111-AC-5 | The bundle identity matches the `quire.complete.resolved-graph/2` golden vector (preimage `{"capabilities":[…],"definitions":[],"models":[]}`), and changing one definition's role, dependencies, capabilities or bytes changes it. | Test (TC-491) |
+| FR-111-AC-5 | The bundle identity of an empty definition set equals the preimage `{"capabilities":[…],"definitions":[],"models":[]}` by structural equality, and changing one definition's role, dependencies or capabilities changes it. | Test (TC-491) |
 | FR-111-AC-6 | Each `PackageLimits` field admits at its bound and refuses one past it, at catalog construction and at link, with the table's code and cause; a caller-raised `definitions` ceiling admits a catalog the default refuses, and the link records the limits it ran under. | Test (TC-491) |
 | FR-111-AC-7 | Every refusal's (code, cause) pair is one `quire.native.diagnostics/v1` lists. | Test (TC-491) |
 

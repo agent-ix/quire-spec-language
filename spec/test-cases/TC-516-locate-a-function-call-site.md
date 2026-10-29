@@ -77,8 +77,8 @@ Scope: FR-121-AC-1 to FR-121-AC-24, FR-121-AC-28 and FR-121-AC-29.
     from a source with the unit's own authority and identity.
 11. Compile the step 4 unit through `call_site` with `test/units` supplied
     from source bytes that do not parse.
-12. Compile the step 2 unit through `call_site`; digest the RFC 8785 bytes
-    of the returned `package`'s `identity_preimage` member.
+12. Compile the step 2 unit through `call_site`; read the returned
+    `package` bytes.
 13. Over the step 1 unit, from outside the crate, build a `DeclaredDomain`
     for `[0, 9]` on `x`'s node using only `qsl_replay` root paths, and an
     inverted range through `FiniteBound::integer_range` and
@@ -175,8 +175,7 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   `test/units`, and the unit's authority and identity.
 - Step 11: `call_site` refuses `CallSiteRefusal::Dependency` whose `path`
   is exactly `test/units`.
-- Step 12: `package` equals the emitter's bytes, and the digest under
-  `quire.package.semantic/v2` equals `package_id`.
+- Step 12: `package` equals the emitter's bytes.
 - Step 13: the domain names `x`'s node and the range, of kind
   `FiniteBoundKind::IntegerRange`; the inverted range refuses
   `EmptyFiniteBound::InvertedIntegerRange` and `EmptyInterval`.

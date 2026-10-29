@@ -351,8 +351,8 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   domain identically. `ordinal` names the population: its ordinal among the package's population declarations in ascending
   `DeclarationKey` order (its own `Ord`: `package`, then `node`, each as
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
-  within one domain-package digest only, and domain keys SHALL NOT be
-  compared across digests. A population record has no node of its own
+  within one domain-package identity and version only, and domain keys SHALL NOT be
+  compared across domain packages. A population record has no node of its own
   (FR-094; the one node FR-380 emits for a bounded population a `reaches`
   walks is a `Population<T>[N]` type node, not the record), so its domain is
   named by the object type plus the population, as a model member is

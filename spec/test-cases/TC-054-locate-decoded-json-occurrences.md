@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Integration/property, priority P1. Verifies FR-017-AC-1 using the actual pinned
+Integration/property, priority P1. Verifies FR-017-AC-1 using the actual
 serde_json decoder and FormalSource, with independent expected byte positions.
 
 ## Test Procedure

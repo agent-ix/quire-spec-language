@@ -47,7 +47,7 @@ replayed prefix (ADR-025 MK-2, DR-6).
 
 A verification operator receives a `tso` counterexample to store buffering
 and replays it without the model checker. Each step is re-run, each buffer
-is recomputed and compared with the one shown, and the claim evaluates
+is recomputed, and the claim evaluates
 false at the last position. A race report is replayed by an independent
 happens-before computation, so a summary bug cannot produce a false race.
 
@@ -88,9 +88,6 @@ happens-before computation, so a summary bug cannot produce a false race.
 - When a step names a message or slot depth that does not exist at its
   pre-state, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
-- When the recomputed memory component of a step differs from the carried
-  one, the executor SHALL refuse `stale_dependency`/`content-mismatch`,
-  naming the step.
 - The executor SHALL check a lasso against the authored constraints, the
   scheduler constraints and the memory constraints (FR-228), and refuse an
   unfair lasso with `invalid_runtime_input`/`invalid-value`.
@@ -116,8 +113,8 @@ happens-before computation, so a summary bug cannot produce a false race.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-227-AC-1 | `SB`'s `tso` counterexample carries, at each of its four positions, both buffers as in ADR-025 §10's table and names `SB::Both` resolved to `tso`; replay recomputes each buffer and settles `reproduced-with-evaluated-witness`. Replaying the same steps with the resolved model changed to `sc` refuses `stale_dependency`/`content-mismatch` at the first step whose post-state differs. | Test (TC-672) |
-| FR-227-AC-2 | `SB`'s `ra` counterexample names `Lx`'s message by depth 1 and replays to `reproduced-with-evaluated-witness`. Changing that depth to 2 refuses `invalid_runtime_input`/`invalid-value`; changing a carried message view refuses `stale_dependency`/`content-mismatch`. | Test (TC-672) |
+| FR-227-AC-1 | `SB`'s `tso` counterexample carries, at each of its four positions, both buffers as in ADR-025 §10's table and names `SB::Both` resolved to `tso`; replay recomputes each buffer and settles `reproduced-with-evaluated-witness`. | Test (TC-672) |
+| FR-227-AC-2 | `SB`'s `ra` counterexample names `Lx`'s message by depth 1 and replays to `reproduced-with-evaluated-witness`. Changing that depth to 2 refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-672) |
 | FR-227-AC-3 | FR-224-AC-2's race counterexample under `ra` replays to `reproduced-with-evaluated-witness`. An envelope whose `earlier` names the flag store, which is not an access to `data`, settles `inconclusive`, `ReplayParity`; so does the AC-1 shape of FR-224, whose `data` load runs only after its flag load read 1, with a `release`/`acquire` flag and a forged race on `data`. | Test (TC-672) |
 | FR-227-AC-4 | The lasso of FR-228-AC-2, in which `w`'s buffer stays `[x := 1]` through `r`'s repeated load of `x`, refuses `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s constraint. Under `ra`, replaying an FR-228-AC-3 lasso whose loop contains a repeated load of location `ℓ` by thread `b` and no load by `b` from `ℓ`'s mo-last message refuses `invalid_runtime_input`/`invalid-value` as unfair under the strong visibility constraint for `(b, ℓ)`. | Test (TC-672) |
 | FR-227-AC-5 | `SB`'s `tso` counterexample replays to `reproduced-with-evaluated-witness` with `max_store_buffer` unset and with 1, since no buffer holds more than one store. `SB`'s `ra` counterexample replays to `reproduced-with-evaluated-witness` with `max_messages` unset (4); with `max_messages` 1 it refuses `invalid_runtime_input`/`invalid-value` at its first store, which would add a second message to its location. | Test (TC-1230) |

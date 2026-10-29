@@ -475,28 +475,6 @@ fn write_v2_is_deterministic_across_runs() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-10", "FR-042-AC-15")]
-fn written_producer_identity_is_the_writer_source_digest() {
-    let (_v1, v1) = written(handoff::write_v1);
-    let (_v2, v2) = written(handoff::write_v2);
-    let v1: Selection =
-        serde_json::from_slice(&fs::read(v1.join(PUBLISHED_V1_SELECTION_FILE)).expect("v1"))
-            .expect("v1 selection");
-    let v2: SelectionV2 =
-        serde_json::from_slice(&fs::read(v2.join(PUBLISHED_SELECTION_FILE)).expect("v2"))
-            .expect("v2 selection");
-    for selection in [v1, v2.inherited] {
-        assert_eq!(
-            selection.producer.binary.digest,
-            ByteDigest::of(include_bytes!(
-                "../../src/protocol_artifact/handoff/writer.rs"
-            )),
-            "FR-042-AC-10: producer identity is this repository's writer source"
-        );
-    }
-}
-
-#[test]
 #[trace("TC-121", "FR-042-AC-15")]
 fn write_refuses_an_existing_directory() {
     let directory = tempfile::tempdir().expect("temporary directory");

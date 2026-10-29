@@ -113,7 +113,7 @@ order gives the same answer.
 - `activate(T)`: `W` `pinst` and the new instance's `ctl`. `spawn` and
   `retire`: `role(r)` in both, and for `retire` the locations `p` reads. The
   locations a `retire` predicate or an activation guard `p` reads SHALL be
-  the binders `p` names (a protocol capture is a frozen value and names no
+  the binders `p` names (a protocol capture is an immutable value and names no
   location); for each model-state field read `x.f` in `p`, the location
   (`o`, `f`) of every object `o` in the subject's universe whose type
   declares `f` (a field read of a record binder reads no model location, and

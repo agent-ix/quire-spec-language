@@ -4598,6 +4598,77 @@ fn a_dropped_element_regrows_absent() {
     assert_eq!(regrown, [[false]]);
 }
 
+/// QSpec FR-322 `SD-02` (FR-230-AC-54, TC-685): over `q:
+/// Sequence<Option<Clock>>[0, 2]`, `forall(e in self.q: present(e) implies
+/// e = 0 ms)` resets each element present in the post-state and writes no
+/// absent one. From `[false, true]` after 3 ms, `work` keeps `[false,
+/// true]` with the absent element absent and the present one reset to 0;
+/// from `[false, false]` it keeps both absent. Every present element of
+/// every successor is at 0 ms.
+#[trace("TC-685", "FR-230-AC-54")]
+#[test]
+fn a_presence_selection_reset_leaves_an_absent_element_absent() {
+    let world = option_sequence_world(
+        &["q"],
+        "post R using v on M::Call::work { forall(e in self.q: present(e) implies e = 0 ms) }\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let from = |bits: &[bool]| {
+        let state = initial
+            .iter()
+            .find(|state| option_bits(state) == bits)
+            .unwrap_or_else(|| panic!("an initial state {bits:?}"));
+        timed
+            .delay(state, &exact(3, 1))
+            .expect("decided")
+            .expect("no invariant bounds the delay")
+    };
+    let successors = |state: &TimedState| {
+        timed
+            .steps(state)
+            .expect("the state steps")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, post)| post)
+            .collect::<Vec<_>>()
+    };
+    let q_clocks = |state: &TimedState| -> Vec<(usize, Rational)> {
+        timed
+            .places()
+            .iter()
+            .zip(state.clocks().values())
+            .filter(|(place, _)| {
+                timed.live(place, state.discrete())
+                    && timed
+                        .model()
+                        .clock(place.clock())
+                        .is_some_and(|clock| clock.name().starts_with("q"))
+            })
+            .map(|(place, value)| (place.slots()[0], value.clone()))
+            .collect()
+    };
+    for start in [&[false, true][..], &[false, false][..]] {
+        let posts = successors(&from(start));
+        assert!(!posts.is_empty(), "{start:?} steps");
+        assert!(
+            posts.iter().any(|post| option_bits(post) == start),
+            "an absent element can stay absent from {start:?}"
+        );
+        for post in &posts {
+            for (slot, value) in q_clocks(post) {
+                assert_eq!(value, exact(0, 1), "{start:?} -> slot {slot} is reset");
+            }
+        }
+    }
+    let kept = successors(&from(&[false, true]))
+        .into_iter()
+        .find(|post| option_bits(post) == [false, true])
+        .expect("[false, true] is kept");
+    assert_eq!(q_clocks(&kept), [(1, exact(0, 1))]);
+}
+
 /// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), the timed
 /// subject's part: over `q: Sequence<Option<Clock>>[0, 2]`, `forall(e in
 /// self.q : present(e))` holds exactly where every element `q` holds is

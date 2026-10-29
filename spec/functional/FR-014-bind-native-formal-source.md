@@ -34,13 +34,11 @@ Box<FormalSourceError> (ADR-011 §6.1: `diagnostic` does not import
 with its own `upstream` sibling field) with invalid_source_map and
 source_map phase, located at byte zero of the bound native source. The
 binding exposes both identities and the original immutable Source, including
-its exact byte digest.
+its bytes.
 
 ## Behavior
 
 The source bridge shall retain the supplied native and formal identities without deriving either identity or revision from the other.
-
-If a forward request differs in either of the native source's two labels ([FR-001](FR-001-read-exact-source.md): authority and identity), display path or byte digest, then the source bridge shall reject the request.
 
 When a valid forward span is mapped, the source bridge shall derive both formal endpoints from the original UTF-8 bytes using one-based lines and Unicode scalar columns.
 
@@ -58,16 +56,15 @@ upstream. FormalSourceError has no related declarations field at all.
 
 Binding assigns correspondence at the caller's authority; it does not establish
 global identity uniqueness, an authored requirement owner, semantic typing or
-source authenticity. Source::read_verified remains the existing pinned-byte
-intake. Extracted-to-original mapping remains the separate SourceMap API.
+source authenticity. The existing byte intake remains unchanged. Extracted-to-original mapping remains the separate SourceMap API.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-014-AC-1 | An opaque native revision such as draft:alpha and a separately supplied formal revision 91 remain distinct and inspectable with the exact original Source and digest. | Test (TC-035) |
+| FR-014-AC-1 | An opaque native revision such as draft:alpha and a separately supplied formal revision 91 remain distinct and inspectable with the exact original Source. | Test (TC-035) |
 | FR-014-AC-2 | Forward mapping reports independently expected byte, line and scalar-column endpoints for ASCII, CRLF, multibyte scalars, empty source, empty spans, EOF and the existing 1 MiB source boundary. | Test (TC-036) |
-| FR-014-AC-3 | Changing only one of a request's four native source labels, its display path or its bytes refuses with invalid_source_map; a subsequent exact-source request still succeeds. | Test (TC-037) |
+| FR-014-AC-3 | **RETIRED (source-binding refusal removed).** The bridge no longer compares a request's native source labels, display path or bytes against a bound source; formal positions derive from the bound Source's own bytes, so a separately supplied source cannot misplace a position. | Test (TC-037), retired |
 | FR-014-AC-4 | Reverse mapping rejects a foreign formal document/revision, inconsistent line/column, split scalar, out-of-range offset or 2^53 offset (the largest IR admits) without manufacturing a native locus. | Test (TC-038) |
 | FR-014-AC-5 | For every generated source in TC-039's finite family, valid spans agree with an independent coordinate oracle and round-trip; invalid spans refuse and request order does not change results. | Test (TC-039) |
 

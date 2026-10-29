@@ -8,7 +8,7 @@ relationships:
 ---
 ## Description
 
-Integration, P1: exercise request, file and digest failures, the intake
+Integration, P1: exercise request and file failures, the intake
 limits and path resolution through `command` in process with `1-draft`
 requests, without substituting compiler or execution logic.
 
@@ -16,9 +16,8 @@ Scope: FR-026-AC-3 to FR-026-AC-5.
 
 ## Test Procedure
 
-1. Call `command` with a `1-draft` native-run/1 request with a stale program
-   source digest, a malformed request, an unknown format and a missing
-   program file. Validate each command-error envelope against the native
+1. Call `command` with a `1-draft` native-run/1 request that is malformed, one with an unknown format and one
+   naming a missing program file. Validate each command-error envelope against the native
    result schema and resolve its code through the native catalog.
 2. Call it with a request one byte over `request_bytes`, then one whose
    dependent files total one byte over `dependent_bytes`. Repeat each with

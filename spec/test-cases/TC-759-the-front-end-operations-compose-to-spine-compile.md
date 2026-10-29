@@ -26,4 +26,4 @@ Tag the tests `#[trace("TC-759", "<AC id>")]`.
 
 - Step 1: each byte string is equal and reads back Verified.
 - Step 2: `parse` refuses `invalid_syntax`, `select` refuses at the `model` declaration and `check` refuses `ill_typed`; each stage and cause code equals the `compile` command's.
-- Step 3: the provision's digests name every source, and `replay` recompiles to the same `package_id`.
+- Step 3: the provision's identities name every source, and `replay` recompiles to an equal package (identity, version, selections and source labels).

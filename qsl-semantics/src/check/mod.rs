@@ -415,12 +415,13 @@ pub use qsl_forms::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, ExecutionPointRefusal, IdentityForm, IdentityNode, IdentityObserving,
-    InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
-    NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
-    ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
-    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember,
-    TemporalCause, TimeUnitCause, TimedConstruct,
+    DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
+    IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
+    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, ProvedInterval,
+    QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
+    StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
+    TimedOmission, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -439,9 +440,10 @@ pub use temporal_clause::{
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
-    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConvexPart, ElementBinding,
-    QuantifiedFamily, SlotRef, SlotSelection, StateAlternative, TimeInvariant, TimedModel, Urgency,
-    Written,
+    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConstraintNodes,
+    ConstraintTargetNodes, ConvexPart, ElementBinding, GuardNodes, InvariantNodes, PartNodes,
+    QuantifiedFamily, ResetNodes, ResetTargetNodes, SlotRef, SlotSelection, StateAlternative,
+    TimeInvariant, TimedClauseNodes, TimedModel, Urgency, Written,
 };
 
 /// A checked function.
@@ -2559,8 +2561,15 @@ impl PackageDeclarations {
         // FR-230: each `urgent when` predicate S3 lowers is located at its own
         // site, so its nodes' occurrences resolve.
         for model in &mut timed_models {
-            for (_, _, predicate) in model.urgency_predicates_mut() {
-                site_spans.insert(predicate.site.clone(), predicate.spans.clone());
+            for (_, _, predicate) in model.urgency_predicates() {
+                for (site, spans) in &predicate.sites {
+                    site_spans.insert(site.clone(), spans.clone());
+                }
+            }
+            // FR-230, QSpec FR-322 "Clause nodes": so is each guard part's
+            // and time invariant's predicate.
+            for (site, spans) in model.predicate_sites() {
+                site_spans.insert(site.clone(), spans.clone());
             }
         }
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
@@ -4684,10 +4693,31 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // QSpec FR-322 "Timed-model nodes": the `clock_place` template of
+        // each clock of each dense model, located at its time declaration,
+        // which a `presence_read` and a clause name.
+        for model in &mut timed_models {
+            let Some((index, source)) = self
+                .time_sources
+                .iter()
+                .enumerate()
+                .find(|(_, source)| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(index),
+            });
+            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+                Ok(places) => model.set_place_nodes(places),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         // FR-230, QSpec FR-322 "Timed-model nodes": each `urgent when`
         // predicate's expression node, which its `urgency` node references.
         for model in &mut timed_models {
-            for (_, urgency, predicate) in model.urgency_predicates_mut() {
+            let mut lowered = Vec::new();
+            for (index, urgency, predicate) in model.urgency_predicates() {
                 let timed_model::Urgency::When {
                     context,
                     alternatives,
@@ -4696,14 +4726,55 @@ impl PackageDeclarations {
                 else {
                     continue;
                 };
-                let [alternative] = alternatives.as_slice() else {
-                    continue;
-                };
-                match lowering.urgency_predicate(*context, alternative.predicate(), &predicate.site)
-                {
-                    Ok(key) => predicate.node = Some(key),
+                let sites: Vec<_> = predicate
+                    .sites
+                    .iter()
+                    .map(|(site, _)| timed_model::site_location(site))
+                    .collect();
+                match lowering.timed_state(model.clocks(), *context, alternatives, &sites) {
+                    Ok(key) => lowered.push((index, key)),
                     Err(refusal) => refusals.push(refusal),
                 }
+            }
+            model.set_urgency_predicate_nodes(lowered);
+        }
+        // FR-230, QSpec FR-322 "Clause nodes": the terms of the guards,
+        // resets and time invariants of each model S4 writes whole.
+        for model in &mut timed_models {
+            if model.unwritten().is_some() {
+                continue;
+            }
+            let Some(source) = self
+                .time_sources
+                .iter()
+                .position(|source| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(source),
+            });
+            let name = model.model().to_owned();
+            let part_site = |guard: usize, part: usize| {
+                timed_model::site_location(&timed_model::guard_part_site(&name, guard, part))
+            };
+            let invariant_site = |invariant: usize, alternative: usize| {
+                timed_model::site_location(&timed_model::invariant_site(
+                    &name,
+                    invariant,
+                    alternative,
+                ))
+            };
+            let input = lowering::TimedClauseInput {
+                model,
+                clause_locations: &clause_locations,
+                declaration: &declaration,
+                part_site: &part_site,
+                invariant_site: &invariant_site,
+            };
+            match lowering.timed_clauses(&input) {
+                Ok(nodes) => model.set_clause_nodes(nodes),
+                Err(refusal) => refusals.push(refusal),
             }
         }
         for composite in scope.types().composites() {
@@ -5616,12 +5687,7 @@ impl PackageDeclarations {
             }));
         }
         if !self.emit_unwritten_timed_members {
-            unwritten.extend(
-                timed_models
-                    .iter()
-                    .filter(|model| model.has_unwritten_members())
-                    .map(timed_model::not_emitted),
-            );
+            unwritten.extend(timed_models.iter().filter_map(timed_model::not_emitted));
         }
         if !unwritten.is_empty() {
             return Err(unwritten);

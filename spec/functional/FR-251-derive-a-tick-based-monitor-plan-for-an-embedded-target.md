@@ -138,7 +138,7 @@ premise or capacity requires a newly admitted plan and a fresh monitor;
 live state SHALL NOT be rebound. [FR-252](FR-252-hand-timing-obligations-to-code-generation.md)'s
 `PlanId` identifies this complete immutable plan in the driver's ownership
 scope, including its executable program and target premises, never just its
-buffer table. No new content digest or persistent identity scheme is introduced.
+buffer table. No new persistent identity scheme is introduced.
 
 ### Fault boundary
 

@@ -39,7 +39,7 @@ Tag the tests `#[trace("TC-1195", "FR-120-AC-16")]`,
 ## Expected Results
 
 - Step 1: the FR-181-AC-19 bytes for each family, with QSL's node-id `name`
-  and unit digest, the `rational` quantity form, and the decimal argument
+  and unit identity, the `rational` quantity form, and the decimal argument
   and effect bytes; no refusal.
 - Step 2: the normalized `prices` element, the retained `price`, the
   byte-ordered `times` set, and equal state keys for the two `members`

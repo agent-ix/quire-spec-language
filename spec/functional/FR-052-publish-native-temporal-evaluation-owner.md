@@ -60,7 +60,7 @@ surrounding-execution progress/closure references and states. Completeness is a
 fifth independent reference/state/fact population.
 
 Each external reference is opaque owner evidence containing contract, schema
-digest, canonical identity/digest, authority identity/revision/digest, scope and
+identity, canonical identity, authority identity/revision, scope and
 population as applicable. This library validates its structural use and exact
 binding but does not claim to authenticate Quire Observation bytes. Contract IR
 performs that cross-owner comparison before accepting a correspondence.
@@ -89,24 +89,23 @@ the exact validated request under the exact relation and requires byte equality;
 it never trusts serialized output fields.
 
 A correction creates a new positive revision and retains relation, exact direct
-predecessor identity/digest and corrected request identity. It rejects a
+predecessor identity and corrected request identity. It rejects a
 self-edge, unchanged request, wrong subject/instance/correspondence, non-direct
 predecessor, revision regression and a predecessor whose immutable bytes do not
-match its digest. Prior bytes remain unchanged.
+equal the bytes its identity names. Prior bytes remain unchanged.
 
 ## Canonicalization and resources
 
-Both identities, and each position identity, are the lowercase hex SHA-256
-over the contract label's byte length as a big-endian `u64`, the label, and
-the RFC 8785 encoding (ADR-013 §2, `quire-canonical`) of the document or
+Both identities, and each position identity, are the contract label followed
+by the RFC 8785 encoding (ADR-013 §2, `quire-canonical`) of the document or
 position with its identity field omitted and every integer written as its
-decimal string, so full-range `i64`/`u64` coordinates, order keys,
+decimal string, compared as byte strings, so full-range `i64`/`u64` coordinates, order keys,
 watermarks and revisions keep exact identities. Request, result, source,
 position, observation, correspondence and predecessor identities cannot
 substitute for one another. Readers reject unknown, duplicate, missing or
 out-of-order fields, trailing data, noncanonical JSON, invalid tagged shapes,
 unknown labels/contracts, unsorted or duplicate populations, graph/reference
-errors and every identity/digest mismatch.
+errors and every identity mismatch.
 
 Limits independently bound bytes, strings, formula nodes,
 positions, valuations, captures, support, history span, evaluation steps,

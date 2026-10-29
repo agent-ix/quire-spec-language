@@ -47,13 +47,13 @@ negative_controls:
       five rounds each, on one machine: its median must be below the
       baseline revision's same-session median by more than the larger of
       either side's MAD/median in that session. A smaller change is
-      recorded as no change (qsl-bench/BASELINE.md, "How to claim an
-      improvement").
+      recorded as no change, using the live session-noise rule in
+      qsl-bench/BENCHMARKING.md.
   - kind: apparatus-edit
     description: >-
       The probe, its input generator and its RSS reader are protected
-      apparatus; a change that edits what they build or read re-baselines
-      rather than claiming an improvement.
+      apparatus; a change that edits what they build or read requires a fresh
+      current-main/candidate comparison using the changed apparatus.
   - kind: selective-reporting
     description: >-
       Every round of an interleaved session is recorded, both sides; a
@@ -61,7 +61,7 @@ negative_controls:
   - kind: stale-evidence
     description: >-
       Every recorded collection names the machine it ran on; a result from
-      another machine is not compared against this baseline.
+      another machine is not compared with this paired session.
 relationships:
   - target: ix://agent-ix/quire-specification/FR-146
     type: measures
@@ -97,6 +97,6 @@ is the median of the five rounds.
 ## Interpretation
 
 The wall-time figures are wall time on a shared, loaded machine. The decision
-rule's `prior-collection` is the baseline revision's collection from the same
+rule's `prior-collection` is the current-main collection from the same
 interleaved session. Peak RSS is process-wide and monotone, which is why each
 process measures a single input.

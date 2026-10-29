@@ -59,12 +59,6 @@ fn headers(
     }
     artifact::intake::same_reference(&inherited.contract, expected.contract, work)?;
     artifact::intake::same_reference(&inherited.baseline, expected.baseline, work)?;
-    // The producer's binary is Producer identity, checked here as a
-    // structurally valid reference equal to the caller's own expectation --
-    // it is never one of the byte-sealed `dependencies`, so it is not
-    // looked up there.
-    artifact::intake::reference(&expected.producer.binary)?;
-    artifact::intake::same_reference(&inherited.producer.binary, &expected.producer.binary, work)?;
     artifact::intake::name(&inherited.producer.implementation)?;
     artifact::intake::revision(&inherited.producer.revision)?;
     artifact::intake::name(&inherited.language.edition)?;

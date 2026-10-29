@@ -44,7 +44,7 @@ runtime mutation attempt succeeded in reaching the record.
    reference and the predicate valuation environment it was read from. Re-read the
    instance's captures and require the originally captured expression handle,
    type, value, source binding and anchor byte-identical to the activation-time
-   record. Pair this with a compile-fail doctest that pins its expected
+   record. Pair this with a compile-fail doctest that asserts its expected
    diagnostic — the borrow checker's immutable-borrow error naming the retained
    capture accessor — so the control cannot pass on an unrelated compile error.
 4. Independently supply a missing capture input, a null-valued input, a

@@ -56,7 +56,7 @@ evaluators.
 | ID | Decision |
 | --- | --- |
 | TS-1 | A Timestamp is written in every wire form as the single signed 128-bit nanosecond count of QSL FR-056, as a decimal string: `{"kind":"timestamp","nanoseconds":"<decimal>"}` in QSL documents and `{"type":"timestamp","nanoseconds":"<decimal>"}` in QSpec FR-181's typed canonical form. No form splits an instant into seconds and nanoseconds, or carries a zone, a calendar text or a precision selector. |
-| TS-2 | Each instant has exactly one spelling: `0`, or an optional `-` followed by a nonzero digit and more digits. A reader refuses any other spelling and never normalizes it, so equal instants have equal bytes everywhere: in a state key, in a set element and in a document digest. |
+| TS-2 | Each instant has exactly one spelling: `0`, or an optional `-` followed by a nonzero digit and more digits. A reader refuses any other spelling and never normalizes it, so equal instants have equal bytes everywhere: in a state key, in a set element and in a document. |
 | CS-1 | In QSL FR-106 documents, a sequence, set, bag or ordered set is written in FR-106's native single-tag spelling: `{"sequence": [...]}`, `{"set": [...]}`, `{"bag": [...]}` and `{"ordered-set": [...]}`. Each element is a value of FR-106's grammar. An FR-106 document never contains a QSpec FR-181 typed form, an object whose `type` member is an FR-181 tag such as `{"type": "set", "elements": [...]}`; such an object is not a value of FR-106's grammar. FR-106's record payload `{"record": {"type": "<declaration identity>", "fields": ...}}` is FR-106's own form, and its `type` names a declaration, not an FR-181 tag. |
 | CS-2 | FR-106's collection spelling corresponds one to one with QSpec FR-181's `sequence`, `set`, `bag` and `ordered-set` forms: the kinds are the same, each element maps to its FR-181 typed form, and a bag is written as repeated elements in both. Admission applies QSpec FR-144's "Supplied collection values" rules unchanged: the bound is checked before any element is read; in a set or ordered set a duplicate is refused and never removed, while a bag groups equal elements into one member whose multiplicity is their count; array order is ignored for a set or bag and kept for an ordered set; and an element type with no FR-181 form is refused. |
 | CS-3 | QSpec FR-181's typed canonical form is the wire for QSpec's state keys and for a QSpec runtime input (FR-144). FR-144's "no second grammar" applies inside that form: an FR-181 collection's elements are FR-181 typed forms. A QSL document is a separate QSL wire with its own complete grammar, and QSL admission maps each of its values onto the FR-181 value it denotes. |
@@ -67,7 +67,7 @@ evaluators.
 
 - A Timestamp's state-key bytes, set-element bytes and K2 payload are all
   built from one count, so FR-149 equality, the FR-181 encoding and the
-  FR-106 digest agree without any conversion. A reader needs no carry rule
+  FR-106 document equality agree without any conversion. A reader needs no carry rule
   for a remainder of 10^9 or more, and no sign rule for an instant before the
   epoch with a nonzero remainder.
 - QSL documents keep one grammar for every value. A collection element is read
@@ -95,7 +95,7 @@ evaluators.
   and FR-106 would need a second reader for collection values and their
   elements.
 - **Both spellings in QSL documents.** Rejected. Two spellings of one value
-  give two digests for one typed observation, and each would need its own
+  give two documents for one typed observation, and each would need its own
   refusal rules.
 - **Demote the std evaluator to a differential test oracle.** Rejected. It
   keeps two implementations of one semantics in the workspace indefinitely,

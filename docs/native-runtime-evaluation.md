@@ -94,7 +94,7 @@ pipeline, not admitted expressions passed to the evaluator.
 Each native implication preserves its ExprId and original operand spans. Events
 are AntecedentEntered, AntecedentCompleted(Boolean) and ConsequentEntered.
 The result's retained context supplies the exact authored RequirementRef,
-ClauseId, source identity/revision/digest and model/input bindings. Each event
+ClauseId, source identity/revision and model/input bindings. Each event
 holds the implication ExprId, operand ExprId and original native Span; no source
 identity string is cloned into every event. The report exposes their exact
 formal source mapping through the retained CheckedPackage.

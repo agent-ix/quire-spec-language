@@ -137,25 +137,18 @@ fn expected_cases() -> Vec<(String, CaseResult)> {
 
 const ALL_EDGES: [&str; 6] = ["E1", "E2", "E3", "E4", "E5", "E6"];
 
-/// The five layers whose witness units the running build admits. The
-/// temporal witness's reset, guard and time invariant are not yet written by
-/// S4 (FR-230), so its unit compiles `unsupported` and is checked by no
-/// assertion here.
-const UNTIMED_LAYERS: [HeaderLayer; 5] = [
-    HeaderLayer::StateCore,
-    HeaderLayer::StateQueries,
-    HeaderLayer::StateGraph,
-    HeaderLayer::ValueComplete,
-    HeaderLayer::ModelComplete,
-];
+/// The six layers, each of whose witness units the running build admits:
+/// the temporal witness's reset, guard and time invariant are written by S4
+/// (FR-230), and its request is `operation-contract`/`bounded`
+/// (FR-345-AC-6).
+const LAYERS: [HeaderLayer; 6] = HeaderLayer::ALL;
 
 /// FR-345-AC-4 and AC-7 over the real corpus, with no negotiation function:
 /// on each of E1 to E6 the both-refuse case holds reporting both sides'
 /// typed refusals, the distinguishing-form case is not applicable, and the
 /// edge holds with the parent prohibiting the form by
-/// `unsupported_construct` and the child admitting it. Each untimed
-/// layer's witness unit compiles `admitted` and holds one `invariant`
-/// clause.
+/// `unsupported_construct` and the child admitting it. Each layer's
+/// witness unit compiles `admitted`.
 #[trace("TC-868", "FR-345-AC-4", "FR-345-AC-7")]
 #[test]
 fn the_generated_corpus_compares_every_edge() {
@@ -199,17 +192,17 @@ fn the_generated_corpus_compares_every_edge() {
             assert_eq!(comparison.child.class, "admitted");
         }
     }
-    for untimed in UNTIMED_LAYERS {
+    for each in LAYERS {
         let EntryResult::Layer {
             witnesses, result, ..
-        } = layer(&report.results, untimed.identity())
+        } = layer(&report.results, each.identity())
         else {
             unreachable!("layer() finds layer results");
         };
         let [witness] = &witnesses[..] else {
-            panic!("one witness for {}", untimed.identity());
+            panic!("one witness for {}", each.identity());
         };
-        assert_eq!(witness.class, "admitted", "{}", untimed.identity());
+        assert_eq!(witness.class, "admitted", "{}", each.identity());
         assert_eq!(witness.reason.as_deref(), Some("not-negotiated"));
         assert_eq!(*result, CaseResult::UnresolvedUnsupported);
     }
@@ -300,7 +293,7 @@ fn a_parent_admitting_its_distinguishing_unit_is_a_regression_naming_the_edge() 
 /// One request the test negotiation function received.
 type Request = (WitnessKind, String);
 
-/// FR-345-AC-6 for the five untimed layers: with a test negotiation
+/// FR-345-AC-6 for the six layers: with a test negotiation
 /// function, each layer's witness item is requested once per candidate by
 /// backend name with the layer's `witness_request` kind; with one candidate
 /// supporting and one not, the layer holds; with both refusing, the layer is
@@ -331,10 +324,10 @@ fn negotiated_witnesses_settle_per_candidate() {
         );
         (report, requests)
     };
-    let result_of = |results: &[EntryResult], untimed: HeaderLayer| {
+    let result_of = |results: &[EntryResult], each: HeaderLayer| {
         let EntryResult::Layer {
             witnesses, result, ..
-        } = layer(results, untimed.identity())
+        } = layer(results, each.identity())
         else {
             unreachable!("layer() finds layer results");
         };
@@ -348,9 +341,9 @@ fn negotiated_witnesses_settle_per_candidate() {
 
     let two = [backend("backend-a", BOTH), backend("backend-b", BOTH)];
     let (report, requests) = run(&two, &["backend-a"]);
-    for untimed in UNTIMED_LAYERS {
+    for each in LAYERS {
         assert_eq!(
-            result_of(&report.results, untimed),
+            result_of(&report.results, each),
             (
                 CaseResult::Holds,
                 vec![
@@ -359,13 +352,13 @@ fn negotiated_witnesses_settle_per_candidate() {
                 ]
             ),
             "{}",
-            untimed.identity()
+            each.identity()
         );
     }
-    let mut expected: Vec<Request> = UNTIMED_LAYERS
+    let mut expected: Vec<Request> = LAYERS
         .iter()
-        .flat_map(|untimed| {
-            let kind = if *untimed == HeaderLayer::ValueComplete {
+        .flat_map(|each| {
+            let kind = if *each == HeaderLayer::ValueComplete {
                 WitnessKind::ValueValidity
             } else {
                 WitnessKind::OperationContract
@@ -376,12 +369,12 @@ fn negotiated_witnesses_settle_per_candidate() {
     expected.sort_by(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
     let mut requests = requests;
     requests.sort_by(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
-    assert_eq!(requests, expected, "once per candidate per untimed layer");
+    assert_eq!(requests, expected, "once per candidate per layer");
 
     let (report, _) = run(&two, &[]);
-    for untimed in UNTIMED_LAYERS {
+    for each in LAYERS {
         assert_eq!(
-            result_of(&report.results, untimed),
+            result_of(&report.results, each),
             (
                 CaseResult::Regression,
                 vec![
@@ -395,17 +388,17 @@ fn negotiated_witnesses_settle_per_candidate() {
 
     let value_only = [backend("backend-v", &[Capability::ValueValidity])];
     let (report, _) = run(&value_only, &["backend-v"]);
-    for untimed in UNTIMED_LAYERS {
+    for each in LAYERS {
         let EntryResult::Layer {
             witnesses, result, ..
-        } = layer(&report.results, untimed.identity())
+        } = layer(&report.results, each.identity())
         else {
             unreachable!("layer() finds layer results");
         };
-        if untimed == HeaderLayer::ValueComplete {
+        if each == HeaderLayer::ValueComplete {
             assert_eq!(*result, CaseResult::Holds);
         } else {
-            assert_eq!(*result, CaseResult::Regression, "{}", untimed.identity());
+            assert_eq!(*result, CaseResult::Regression, "{}", each.identity());
             assert_eq!(witnesses[0].reason.as_deref(), Some("empty candidate set"));
         }
     }

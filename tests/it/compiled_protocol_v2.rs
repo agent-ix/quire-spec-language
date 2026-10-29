@@ -3,16 +3,15 @@
 
 use crate::support::native_protocol as setup;
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
-    self as artifact,
-    native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid, Limits, NumberComponent,
-    NumberError, NumberWire, Unsupported,
+    self as artifact, native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid,
+    Limits, NumberComponent, NumberError, NumberWire, Unsupported,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};

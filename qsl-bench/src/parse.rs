@@ -68,7 +68,7 @@ pub fn parse_with(
     )
 }
 
-/// What one parse returned, reduced to what the baseline records.
+/// What one parse returned, reduced to benchmark outcome metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseOutcome {
     /// Parsed with no diagnostic and no recovery.

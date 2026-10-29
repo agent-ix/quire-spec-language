@@ -29,7 +29,7 @@ that it maps to violation with cause `UndefinedEvaluation`; that a bounded
 undefined value at its position.
 
 Scope: FR-327-AC-5, FR-327-AC-7, FR-328-AC-5, FR-329-AC-6, FR-330-AC-5,
-FR-330-AC-8, FR-331-AC-4, FR-331-AC-5, FR-331-AC-7, FR-331-AC-8,
+FR-330-AC-8, FR-331-AC-4, FR-331-AC-5, FR-331-AC-8,
 FR-331-AC-9, FR-071-AC-8,
 FR-072-AC-6, FR-098-AC-28.
 
@@ -52,7 +52,7 @@ refusal.
 5. Construct, encode and decode both FR-331-AC-4 requests, assert the decoded
    state-clause target and envelope node/occurrence identify the same clause,
    then replay the two undefined-evaluation packets through
-   `qsl_replay::replay`; submit an altered clause-node packet and replay an
+   `qsl_replay::replay`; replay an
    observed-lasso packet for `ReachesFair` whose fairness set matches the
    clause under FR-331-AC-5. Submit a packet with `ReplaySource::Input` and
    one whose `WitnessEnvelope` position differs from its payload position.
@@ -61,7 +61,7 @@ refusal.
    formula packet over FR-327-AC-7's one-position trace that yields
    `InsufficientData`, then replay the false packet with the temporal Work
    budget set to zero so evaluation returns `Incomplete`. Submit an observed
-   arm with a missing document digest, model payload, and a function target;
+   arm with a missing document identity, model payload, and a function target;
    for the undefined packet, submit same-position payloads with only the
    source locus and only the cause changed.
 6. Evaluate each clause of FR-327-AC-7, in its order, over the closed trace, and the two
@@ -85,9 +85,7 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   locus and cause settles `reproduced-with-evaluated-witness` and carries
   decoded position 2 and the typed undefined value; the packet with position
   1 retains that packet position separately from the evaluator's undefined
-  value at position 2 and settles `inconclusive`, `ReplayParity`. The altered
-  clause-node packet refuses `stale_dependency`/`content-mismatch` naming
-  `clause_node` before admission. `ReachesFair` refuses
+  value at position 2 and settles `inconclusive`, `ReplayParity`. `ReachesFair` refuses
   with `ReplayRefusal::MissingFairnessPremise`, naming `fair weak whole inc`,
   catalog code `unsupported_projection`/`missing-fairness-premise`, O-16
   unsupported, before formula evaluation and with no result. The
@@ -96,7 +94,7 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   `invalid_runtime_input`/`invalid-value` at
   `/replay/observed_counterexample/trace_position`; both refuse before
   document admission. The missing-document packet refuses
-  `missing_import`/`missing-selection` naming its digest record; the model
+  `missing_import`/`missing-selection` naming its document identity; the model
   payload refuses `invalid_runtime_input`/`invalid-value` at
   `/replay/observed_counterexample/trace`; the function target refuses
   `invalid_runtime_input`/`unknown-member` at
