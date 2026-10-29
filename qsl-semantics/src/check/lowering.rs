@@ -105,7 +105,9 @@ pub(crate) use abstraction::{object_type_node, population_node, relation_node};
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
-pub(crate) use hyper::HyperClauseInput;
+pub(crate) use hyper::{
+    finish_step_relation, HyperClauseInput, LoweredStepRelation, StepRelationInput,
+};
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{
     bound_origin, quantity_origin, record_node_key, strictly_below, variant_type_node_key,
@@ -369,6 +371,19 @@ impl SemanticGraph {
     /// Every node, ascending by key.
     pub fn nodes(&self) -> impl Iterator<Item = &SemanticNode> {
         self.nodes.values()
+    }
+
+    /// Add a node finalized after the main lowering pass, provided a node
+    /// with the same content-addressed identity is absent or identical.
+    pub(crate) fn insert_finalized(&mut self, node: SemanticNode) -> Result<(), ()> {
+        match self.nodes.entry(node.key) {
+            btree_map::Entry::Vacant(slot) => {
+                slot.insert(node);
+                Ok(())
+            }
+            btree_map::Entry::Occupied(slot) if slot.get().content == node.content => Ok(()),
+            btree_map::Entry::Occupied(_) => Err(()),
+        }
     }
 
     /// ADR-013 O-04, R-10: the key of the node a wire node id names, by

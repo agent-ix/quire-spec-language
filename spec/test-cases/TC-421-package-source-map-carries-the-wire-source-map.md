@@ -10,12 +10,11 @@ relationships:
 
 ## Description
 
-Verify ADR-013 O-12 and C-14: the I2 reader's verified outcome carries the
-wire's `source_map` as the package source map, keyed by the O-07
-occurrence key, and a kernel location tag resolves through it or refuses
-with a typed cause. This catches a dropped or truncated region list, a
-misspelled role, a relabelled source and a lookup that reports the wrong
-cause.
+Verify that QSL's I2 reader conforms to the `source_map` contract in QSpec
+FR-322: its verified outcome carries the wire mapping, and a kernel location
+tag resolves through it or refuses with a typed cause. This QSL integration
+test catches a dropped or truncated region list, a misspelled role, a
+relabelled source and a lookup that reports the wrong cause.
 
 Scope: FR-095-AC-3, FR-095-AC-4.
 
@@ -28,11 +27,10 @@ Scope: FR-095-AC-3, FR-095-AC-4.
    id digest is uppercase hex; read each defect's refusal code. Map each of
    IR's six occurrence roles to its spelling and compare it with IR's own
    serialized spelling.
-4. Read QSpec's published positive fixtures from
-   `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json` through
-   QSL's whole I2 read, with each fixture's required features as supported,
-   and look up every `source_map` entry in the verified read's package source
-   map.
+4. Read the QSpec checkout's published positive fixtures at
+   `proposals/checked-package-v2/fixtures/positive-*.json` through QSL's whole
+   I2 read, with each fixture's required features as supported, and look up
+   every `source_map` entry in the verified read's package source map.
 5. Resolve location tags for a mapped occurrence, a node the map does not
    hold and a mapped node at an unmapped ordinal.
 6. Read a wire whose `source_map` entry names a node absent from its graph.

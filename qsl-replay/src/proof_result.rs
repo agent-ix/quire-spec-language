@@ -606,6 +606,15 @@ pub enum InconclusiveCause {
         /// Attempted induction depth.
         depth: u64,
     },
+    /// QSpec FR-468: a hypothesis item of a refinement's per-step
+    /// simulation obligations is not `proved`, so no step query's refutation
+    /// can settle the safety half `proved`.
+    HypothesesNotEstablished {
+        /// The invariant clause's node, as its wire id.
+        hypothesis: qsl_foundation::digest::WireNodeId,
+        /// The result its item settled.
+        result: crate::outcome::ItemLabel,
+    },
     /// A successor's contract conjunction could not be decided.
     UndecidedSuccessor,
     /// The subject supplies no initial state.
@@ -828,6 +837,7 @@ impl InconclusiveCause {
         match self {
             Self::BoundReached { .. } => "bound-reached",
             Self::InductionNotClosed { .. } => "induction-not-closed",
+            Self::HypothesesNotEstablished { .. } => "hypotheses-not-established",
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
             Self::RefutedIgnoringConstraints => "refuted-ignoring-constraints",
@@ -862,6 +872,7 @@ impl InconclusiveCause {
         match self {
             Self::BoundReached { .. }
             | Self::InductionNotClosed { .. }
+            | Self::HypothesesNotEstablished { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
             | Self::RefutedIgnoringConstraints
@@ -1847,7 +1858,11 @@ mod tests {
             CertificateRule::ProofStepInvalid,
             CertificateRule::NotRefutation,
         ] {
-            for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
+            for part in [
+                QueryPart::Unrolling,
+                QueryPart::Base,
+                QueryPart::Step { row: None },
+            ] {
                 for at in [
                     CertificateLocus::Query { part },
                     CertificateLocus::ProofStep { part, index: 0 },

@@ -176,6 +176,9 @@ pub struct CheckedProtocol {
     pub parallels: Vec<CheckedParallel>,
     /// Predicate joins awaiting function-node identities from S4.
     pub(crate) pending_predicate_joins: Vec<PendingPredicateJoin>,
+    /// The clause's own node, filled in after S4; `None` for a clause the
+    /// package writes no node for.
+    pub(crate) node: Option<quire_exact::NodeKey>,
     /// The `finish` node and its name (ADR-027 ST-9); `None` only for a
     /// form that declares none, which the grammar does not admit.
     pub finish: Option<(ProtocolNodeId, String)>,
@@ -188,6 +191,17 @@ pub struct CheckedProtocol {
     /// `repeat` it decides (ADR-027 RR-2, RR-4; FR-218 "Scopes"), filled in
     /// by `check::mod`'s own pipeline once the channels are checked.
     pub owners: Vec<CheckedOwner>,
+}
+
+impl CheckedProtocol {
+    /// The clause's own node: the anchor of its protocol subject's derived
+    /// items (QSpec FR-368 "Claim and anchor of a derived or refinement
+    /// item"). `None` for a checked clause of a unit that selects no
+    /// protocol profile, which writes no node for it (QSpec FR-322
+    /// "Properties", FR-368-AC-24).
+    pub fn node(&self) -> Option<quire_exact::NodeKey> {
+        self.node
+    }
 }
 
 /// Predicate join data held privately until the named function has a node key.

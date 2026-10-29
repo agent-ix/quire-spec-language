@@ -489,7 +489,8 @@ fn actual_model_operation_inputs_result_and_pre_self_seed_the_state_scope() {
         baseline.roles().operations[0].name,
         native_rule_model::symbol("step")
     );
-    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["values"].as_array_mut().unwrap().push(serde_json::json!({"name":"delta", "kind":"input", "type":{"kind":"scalar", "name":"Version"}}));
     document["operations"][0]["parameters"] = serde_json::json!(["delta"]);
     let model = native_rule_model::from_text(

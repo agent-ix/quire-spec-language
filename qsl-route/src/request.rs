@@ -50,6 +50,8 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
+use qsl_semantics::library::PackageId;
+use qsl_semantics::model::observation::DocumentRef;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 use crate::reductions::Reductions;
@@ -89,11 +91,203 @@ impl ExtentClassification {
     }
 }
 
+/// QSpec FR-368 "Item kinds": the `item_kind` of a `temporal-satisfaction`
+/// item over a model subject. These five are the only kinds: a transfer
+/// item (QSpec FR-380) is evaluated by the verification planner and is no
+/// request item, so it has none.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ItemKind {
+    /// An authored temporal clause.
+    Formula,
+    /// The derived deadlock-freedom item (FR-124).
+    DeadlockFreedom,
+    /// The derived time-lock-freedom item (FR-232).
+    TimeLockFreedom,
+    /// The derived race-freedom item (FR-224).
+    RaceFreedom,
+    /// A refinement item, one per checked refinement declaration (FR-144).
+    Refinement,
+}
+
+impl ItemKind {
+    /// Every kind, in FR-368's table order.
+    pub const ALL: [Self; 5] = [
+        Self::Formula,
+        Self::DeadlockFreedom,
+        Self::TimeLockFreedom,
+        Self::RaceFreedom,
+        Self::Refinement,
+    ];
+
+    /// The FR-368 `item_kind` spelling.
+    pub const fn to_wire(self) -> &'static str {
+        match self {
+            Self::Formula => "formula",
+            Self::DeadlockFreedom => "deadlock-freedom",
+            Self::TimeLockFreedom => "time-lock-freedom",
+            Self::RaceFreedom => "race-freedom",
+            Self::Refinement => "refinement",
+        }
+    }
+}
+
+/// QSpec FR-368 `abstract_subject`, present exactly on a `refinement` item
+/// (QSpec FR-377 "Inputs"): the abstract subject's package, a package of the
+/// request's `dependencies`, and its ordered initial-state snapshots. Its
+/// universes are fixed by FR-377 and it has no proof bounds, so it carries
+/// neither.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AbstractSubject {
+    /// The abstract subject's package id.
+    pub package_id: PackageId,
+    /// The abstract subject's initial-state snapshots, in order.
+    pub initial_states: Vec<DocumentRef>,
+}
+
+/// A limit a derived item may carry a caller's setting of (QSpec FR-368
+/// "Negotiation of a derived or refinement item"): a limit that bounds an
+/// exhaustive check. A derived item has no formula, no witness sampling and
+/// no hyperproperty, so `max_automaton_states`, `max_walk_steps`,
+/// `max_witness_set` and `max_relation_tuples` are not among them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DerivedLimit {
+    /// `max_states`, the explored graph's states.
+    MaxStates,
+    /// `max_transitions`, the explored graph's transitions.
+    MaxTransitions,
+    /// `max_clocks`, the live clocks of a timed state (FR-415).
+    MaxClocks,
+    /// `max_store_buffer`, a weak `parallel`'s store buffer (FR-439).
+    MaxStoreBuffer,
+    /// `max_messages`, a weak `parallel`'s messages (FR-439).
+    MaxMessages,
+    /// `max_live_instances`, an `on each` subject's instances (FR-428).
+    MaxLiveInstances,
+    /// `max_solver_steps`, an SMT query's step budget.
+    MaxSolverSteps,
+    /// `max_solver_time`, an SMT query's time budget in seconds.
+    MaxSolverTime,
+}
+
+impl DerivedLimit {
+    /// Every limit a derived item may carry.
+    pub const ALL: [Self; 8] = [
+        Self::MaxStates,
+        Self::MaxTransitions,
+        Self::MaxClocks,
+        Self::MaxStoreBuffer,
+        Self::MaxMessages,
+        Self::MaxLiveInstances,
+        Self::MaxSolverSteps,
+        Self::MaxSolverTime,
+    ];
+
+    /// The limit's member name in a derived item's `limits`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::MaxStates => "max_states",
+            Self::MaxTransitions => "max_transitions",
+            Self::MaxClocks => "max_clocks",
+            Self::MaxStoreBuffer => "max_store_buffer",
+            Self::MaxMessages => "max_messages",
+            Self::MaxLiveInstances => "max_live_instances",
+            Self::MaxSolverSteps => "max_solver_steps",
+            Self::MaxSolverTime => "max_solver_time",
+        }
+    }
+}
+
+/// A name that is no member of a derived item's `limits` (QSpec
+/// FR-368-AC-20): `invalid_runtime_input`/`unknown-member`.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("a derived item's limits have no member `{name}`")]
+pub struct UnknownDerivedLimit {
+    /// The name as the caller wrote it.
+    pub name: String,
+}
+
+impl std::str::FromStr for DerivedLimit {
+    type Err = UnknownDerivedLimit;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|limit| limit.name() == name)
+            .ok_or_else(|| UnknownDerivedLimit {
+                name: name.to_owned(),
+            })
+    }
+}
+
+impl CatalogCoded for UnknownDerivedLimit {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("invalid_runtime_input", "unknown-member")
+    }
+
+    /// FR-096's key table has no row for `unknown-member`.
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        None
+    }
+}
+
+/// The caller's settings a derived item carries in its `limits` (QSpec
+/// FR-368 "Negotiation of a derived or refinement item"): only a limit the
+/// caller set, and only a [`DerivedLimit`]. A limit the caller did not set
+/// is absent, and the routed provider's published default applies. The
+/// request has no request-level `limits`, so nothing is inherited from
+/// another item.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DerivedLimits {
+    set: BTreeMap<DerivedLimit, u64>,
+}
+
+impl DerivedLimits {
+    /// The caller's settings `settings`, by member name.
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownDerivedLimit`] for the first name that is no
+    /// [`DerivedLimit`].
+    pub fn from_settings<'n>(
+        settings: impl IntoIterator<Item = (&'n str, u64)>,
+    ) -> Result<Self, UnknownDerivedLimit> {
+        let mut set = BTreeMap::new();
+        for (name, value) in settings {
+            set.insert(name.parse()?, value);
+        }
+        Ok(Self { set })
+    }
+
+    /// The caller's setting of `limit`; `None` when the provider's default
+    /// applies.
+    pub fn get(&self, limit: DerivedLimit) -> Option<u64> {
+        self.set.get(&limit).copied()
+    }
+
+    /// Each setting, in [`DerivedLimit`] order.
+    pub fn iter(&self) -> impl Iterator<Item = (DerivedLimit, u64)> + '_ {
+        self.set.iter().map(|(limit, value)| (*limit, *value))
+    }
+}
+
+/// What a derived item carries that an item written from a record does
+/// not: its candidates, computed by the writer since it has no record
+/// (FR-243), and the caller's [`DerivedLimits`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DerivedPart {
+    candidates: CandidateOutcome,
+    limits: DerivedLimits,
+}
+
 /// One requested item (ADR-013 O-20): the occurrence it requests a claim
 /// at, the checked node, its capability kind, its extent classification
 /// and the proof bounds it was requested over. Two items are equal only
 /// when every member is, so an item with proof bounds is never equal to
 /// the unbounded item it answers.
+///
+/// A derived item (QSpec FR-368 "Claim and anchor") has no requirement
+/// record and no authored claim: its occurrence is its subject's anchor,
+/// and the writer gives it its candidates and its caller's limits.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestItem {
     index: RequestIndex,
@@ -105,9 +299,37 @@ pub struct RequestItem {
     unsupported: Option<UnsupportedItem>,
     reductions: Vec<ReductionKind>,
     property_form: Option<quire_semantic_value::fairness::PropertyForm>,
+    item_kind: Option<ItemKind>,
+    abstract_subject: Option<AbstractSubject>,
+    derived: Option<DerivedPart>,
 }
 
 impl RequestItem {
+    /// The FR-368 `item_kind` of a temporal item over a model subject;
+    /// `None` for an item written with no model subject.
+    pub fn item_kind(&self) -> Option<ItemKind> {
+        self.item_kind
+    }
+
+    /// The abstract subject of a `refinement` item; `None` for every other
+    /// item (QSpec FR-368-AC-19).
+    pub fn abstract_subject(&self) -> Option<&AbstractSubject> {
+        self.abstract_subject.as_ref()
+    }
+
+    /// A derived item's candidates, computed by the writer (FR-243: a timed
+    /// subject's to the backends deciding timed items); `None` for an
+    /// item whose candidates come from its record.
+    pub fn candidates(&self) -> Option<&CandidateOutcome> {
+        self.derived.as_ref().map(|derived| &derived.candidates)
+    }
+
+    /// A derived item's caller-set limits; `None` for an item that is not
+    /// derived.
+    pub fn derived_limits(&self) -> Option<&DerivedLimits> {
+        self.derived.as_ref().map(|derived| &derived.limits)
+    }
+
     /// The property form its record carries (FR-144: a refinement's TP-5
     /// form); `None` for an item whose form is its checked node's.
     pub fn property_form(&self) -> Option<quire_semantic_value::fairness::PropertyForm> {
@@ -278,7 +500,7 @@ impl RequestWriter {
     /// the checked extent alone.
     pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        self.push(occurrence, requirements, extent, Vec::new())
+        self.push(Written::plain(occurrence, extent, Vec::new()), requirements)
     }
 
     /// Write the bounded item for the claim at `occurrence` with
@@ -307,10 +529,8 @@ impl RequestWriter {
             .collect();
         let domains = substitute(&unbounded, &bounds)?;
         Ok(self.push(
-            occurrence,
+            Written::plain(occurrence, ExtentClassification::Bounded, domains),
             requirements,
-            ExtentClassification::Bounded,
-            domains,
         ))
     }
 
@@ -324,26 +544,105 @@ impl RequestWriter {
         self.items
     }
 
-    fn push(
+    /// Write the item of a temporal claim or refinement over a model
+    /// subject (FR-336, FR-144): [`Self::item`]'s item, with its FR-368
+    /// `item_kind` and, for a refinement, its abstract subject.
+    pub(crate) fn model_item(
         &mut self,
         occurrence: OccurrenceKey,
         requirements: &Requirements,
-        extent: ExtentClassification,
-        domains: Vec<ProofBound>,
+        item_kind: ItemKind,
+        abstract_subject: Option<AbstractSubject>,
+    ) -> RequestIndex {
+        let extent = ExtentClassification::of(requirements.extent());
+        self.push(
+            Written {
+                occurrence,
+                extent,
+                domains: Vec::new(),
+                item_kind: Some(item_kind),
+                abstract_subject,
+            },
+            requirements,
+        )
+    }
+
+    /// Write a derived item (QSpec FR-368 "Claim and anchor", "Extent",
+    /// "Negotiation"): a `temporal-satisfaction` item at its subject's
+    /// anchor `claim`, unbounded with no finite bound available, with no
+    /// `hybrid` and no `requirements`, its `candidates` computed by the
+    /// caller and its caller-set `limits`.
+    pub(crate) fn derived_item(
+        &mut self,
+        claim: OccurrenceKey,
+        item_kind: ItemKind,
+        property_form: Option<quire_semantic_value::fairness::PropertyForm>,
+        candidates: CandidateOutcome,
+        limits: DerivedLimits,
     ) -> RequestIndex {
         let index = RequestIndex::new(self.items.len());
         self.items.push(RequestItem {
             index,
-            occurrence,
+            occurrence: claim,
+            kind: Capability::TemporalSatisfaction,
+            hybrid_dynamics: false,
+            extent: ExtentClassification::Unbounded {
+                finite_bound_available: false,
+            },
+            domains: Vec::new(),
+            unsupported: None,
+            reductions: self.reductions.selected(),
+            property_form,
+            item_kind: Some(item_kind),
+            abstract_subject: None,
+            derived: Some(DerivedPart { candidates, limits }),
+        });
+        index
+    }
+
+    fn push(&mut self, written: Written, requirements: &Requirements) -> RequestIndex {
+        let index = RequestIndex::new(self.items.len());
+        self.items.push(RequestItem {
+            index,
+            occurrence: written.occurrence,
             kind: requirements.kind(),
             hybrid_dynamics: requirements.hybrid_dynamics(),
-            extent,
-            domains,
+            extent: written.extent,
+            domains: written.domains,
             unsupported: requirements.unsupported().cloned(),
             reductions: self.reductions.selected(),
             property_form: requirements.property_form(),
+            item_kind: written.item_kind,
+            abstract_subject: written.abstract_subject,
+            derived: None,
         });
         index
+    }
+}
+
+/// The members of an item written from a record beside the record's own.
+struct Written {
+    occurrence: OccurrenceKey,
+    extent: ExtentClassification,
+    domains: Vec<ProofBound>,
+    item_kind: Option<ItemKind>,
+    abstract_subject: Option<AbstractSubject>,
+}
+
+impl Written {
+    /// An item with no model subject.
+    fn plain(
+        occurrence: OccurrenceKey,
+        extent: ExtentClassification,
+        domains: Vec<ProofBound>,
+    ) -> Self {
+        Self {
+            occurrence,
+            extent,
+            domains,
+            item_kind: None,
+            abstract_subject: None,
+        }
     }
 }
 
@@ -775,9 +1074,10 @@ fn reduced_candidates(
 
 /// The candidate outcome of one item's `requirements`: backends of its
 /// capability kind that advertise every fairness kind it uses (FR-134) and,
-/// for an item over a `time dense` subject, decide one (FR-243); a
-/// refinement record over any other subject goes to the explicit-state
-/// engines alone (FR-144). An item the writer disposes `Unsupported` has no
+/// for a timed item ([`Requirements::timed`]), decide timed items (FR-243);
+/// a refinement record that is not marked timed goes to the engines that do
+/// not decide timed items, EN-1 and SMT unrolling (FR-144, FR-146, FR-430,
+/// ADR-020 RE-3). An item the writer disposes `Unsupported` has no
 /// candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
@@ -801,10 +1101,10 @@ fn candidates_of(
         requirements.property_form(),
         Some(quire_semantic_value::fairness::PropertyForm::Refinement { .. })
     );
-    let outcome = if refinement && !requirements.dense_time() {
+    let outcome = if refinement && !requirements.timed() {
         registry.restrict_to_untimed_refinement(outcome)
     } else {
-        registry.restrict_to_dense_time(outcome, requirements.dense_time())
+        registry.restrict_to_timed(outcome, requirements.timed())
     };
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
@@ -1385,5 +1685,77 @@ mod tests {
             candidates.candidates(),
             [Candidate::new(BackendId::new("en1"))]
         );
+    }
+
+    /// QSpec FR-368-AC-21, and the producer half of AC-13 (the five
+    /// spellings QSL writes; refusing another spelling is the reader's): a
+    /// temporal item over a model subject has one of exactly five kinds, `formula`, `deadlock-freedom`,
+    /// `time-lock-freedom`, `race-freedom` and `refinement`; `transfer` is
+    /// none of them.
+    #[trace("QSpec-TC-431", "QSpec-FR-368-AC-21")]
+    #[test]
+    fn a_model_items_kind_is_one_of_five_spellings() {
+        let spelled: Vec<_> = ItemKind::ALL.into_iter().map(ItemKind::to_wire).collect();
+        assert_eq!(
+            spelled,
+            [
+                "formula",
+                "deadlock-freedom",
+                "time-lock-freedom",
+                "race-freedom",
+                "refinement"
+            ]
+        );
+        assert!(!spelled.contains(&"transfer"));
+    }
+
+    /// The limit-name half of QSpec FR-368-AC-20 (refusing a derived item
+    /// that carries `max_depth` is the reader's): a derived item's `limits`
+    /// hold a caller's
+    /// setting of `max_states`, `max_transitions`, `max_clocks`,
+    /// `max_store_buffer`, `max_messages`, `max_live_instances`,
+    /// `max_solver_steps` and `max_solver_time` only; `max_automaton_states`,
+    /// `max_walk_steps`, `max_witness_set` and `max_relation_tuples` are each
+    /// refused `invalid_runtime_input`/`unknown-member`, and a limit the
+    /// caller does not set is absent, so the provider's default applies.
+    #[trace("QSpec-TC-431")]
+    #[test]
+    fn a_derived_items_limits_hold_only_exhaustive_check_limits() {
+        let names = [
+            "max_states",
+            "max_transitions",
+            "max_clocks",
+            "max_store_buffer",
+            "max_messages",
+            "max_live_instances",
+            "max_solver_steps",
+            "max_solver_time",
+        ];
+        let all = DerivedLimits::from_settings(names.iter().zip(1..).map(|(n, v)| (*n, v)))
+            .expect("every exhaustive-check limit is a member");
+        assert_eq!(
+            all.iter()
+                .map(|(limit, value)| (limit.name(), value))
+                .collect::<Vec<_>>(),
+            names.iter().copied().zip(1..).collect::<Vec<_>>()
+        );
+        for refused in [
+            "max_automaton_states",
+            "max_walk_steps",
+            "max_witness_set",
+            "max_relation_tuples",
+        ] {
+            let refusal =
+                DerivedLimits::from_settings([("max_states", 5), (refused, 1)]).expect_err(refused);
+            assert_eq!(refusal.name, refused);
+            assert_eq!(
+                refusal.catalog_code(),
+                CatalogCode::new("invalid_runtime_input", "unknown-member")
+            );
+        }
+        let one = DerivedLimits::from_settings([("max_clocks", 4)]).expect("a member");
+        assert_eq!(one.get(DerivedLimit::MaxClocks), Some(4));
+        assert_eq!(one.get(DerivedLimit::MaxStates), None);
+        assert_eq!(DerivedLimits::default().iter().count(), 0);
     }
 }

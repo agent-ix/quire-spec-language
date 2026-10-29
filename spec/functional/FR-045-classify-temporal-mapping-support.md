@@ -172,7 +172,7 @@ encode. Naming them is not discharging them.
 - QSpec FR-095 owns the correspondence support meaning; QSpec FR-092 defines
   the complete bounded-past operator set and history semantics.
 - QSL FR-050 supplies the strict `/2` package and authenticated temporal
-  binding; QSL FR-043 supplies the native `evaluate_v2` report consumed by the
+  binding; QSL FR-043 supplies the native `temporal::evaluate_v2` report consumed by the
   bridge.
 - Contract IR FR-350 consumes this classification and owns the TL projection,
   owner-reader validation, correspondence record and result join.

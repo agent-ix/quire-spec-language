@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
+.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning refinement-layering qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -69,6 +69,18 @@ refinement-versioning:
 	cargo run --package xtask -- refinement generate-versioning "$$corpus" && \
 	cargo run --package xtask -- refinement versioning "$$corpus"
 
+# FR-345: generate the real layering corpus into a temporary directory, with
+# each model digest computed then, and run the layering CLI over it with no
+# negotiation function. The target passes only the CLI's expected run: exit 21,
+# every layer `unresolved (unsupported)` for reason `not-negotiated` over a
+# non-empty candidate set, and every case and edge holding or not applicable
+# (FR-345-AC-9).
+refinement-layering:
+	@corpus=$$(mktemp -d "$${TMPDIR:-/tmp}/refinement-layering.XXXXXX") && \
+	trap 'rm -rf "$$corpus"' EXIT && \
+	cargo run --package xtask -- refinement generate-layering "$$corpus" && \
+	cargo run --package xtask -- refinement layering-check "$$corpus"
+
 # FR-353: run complete-V1 conformance qualification against the published corpus.
 qualify:
 	@test -n "$(CORPUS)" || { echo "usage: make qualify CORPUS=<dir>" >&2; exit 2; }
@@ -130,14 +142,6 @@ cargo-deny-bans:
 # =============================================================================
 
 SIBLINGS ?= $(shell cd "$$(git rev-parse --path-format=absolute --git-common-dir)/../.." && pwd -P)
-ifeq ($(origin QSPEC_DIR),undefined)
-QSPEC_DIR := $(SIBLINGS)/quire-specification
-endif
-# Freeze the raw caller value before Make can expand literal '$' path bytes.
-# `override` and `export` stay separate statements: GNU Make 3.81 (macOS) turns a
-# combined `override export V :=` into a recursive variable that expands the `$`.
-override QSPEC_DIR := $(value QSPEC_DIR)
-export QSPEC_DIR
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
 	ix-trace-rs:ix-trace-rs:.
@@ -321,7 +325,7 @@ fuzz-deep-input:
 CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
-# canonicalizes QSPEC_DIR for every child lane.
+# validates the caller-provided QSPEC_DIR for every child lane.
 # Incremental compilation metadata is a multi-gigabyte part of this workspace's
 # local CI target tree, while the gate runs complete, fingerprinted checks
 # rather than edit/compile cycles. Disable that metadata and dev/test debug
@@ -336,7 +340,7 @@ ci: export CARGO_PROFILE_TEST_DEBUG_ASSERTIONS := true
 ci: check-spec-validation
 	@$(CONFORMANCE_XTASK) ci
 
-# The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
+# The internal graph is used by xtask after it has validated QSPEC_DIR.
 # Scope the input prerequisite to this graph, so standalone targets such as
 # ci-clean-build retain their own process oracle.
 .PHONY: ci-internal
@@ -345,9 +349,9 @@ ifneq ($(filter ci-internal,$(MAKECMDGOALS)),)
 $(CI_TARGETS): check-conformance-input
 endif
 
-# Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
-# reaches the recipe shell as data; Rust canonicalizes it before child Cargo runs.
-CONFORMANCE_XTASK = QSPEC_DIR="$$QSPEC_DIR" cargo run --locked --package xtask --
+# Require the caller-provided QSPEC_DIR. xtask prints an explicit error when it
+# is unset or does not name an available QSpec checkout.
+CONFORMANCE_XTASK = cargo run --locked --package xtask --
 .PHONY: check-conformance-input
 check-conformance-input:
 	@$(CONFORMANCE_XTASK) conformance-input

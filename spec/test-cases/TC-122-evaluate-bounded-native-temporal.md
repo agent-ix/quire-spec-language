@@ -124,7 +124,7 @@ profiles compiles one declaration per profile from identical clause text.
     `unit` `ms`), one event-position (`sequence_authority` `seq`) and one
     timestamped-event (`timestamp_unit` `ns`) declaration through FR-050's
     producer, read it with the strict `/2` reader, and evaluate each declaration
-    through `evaluate_v2` with its exact trace; require the report's
+    through `temporal::evaluate_v2` with its exact trace; require the report's
     authenticated binding to hold the package digest, declaration, definition
     identity and revision, clock name and parameter map. Then apply each single
     change of FR-043-AC-14 and require `Refusal::Binding` with that AC's

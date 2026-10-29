@@ -181,33 +181,12 @@ impl StepRelation {
         };
         let mut operations = Vec::new();
         for application in applications {
-            let mut conjuncts = Vec::new();
-            for clause in &application.operation.preconditions {
-                let (value, defined) = application.read(subject, layout, clause, &before, None)?;
-                conjuncts.push(Term::all([defined, value]));
-            }
-            let results = application.results();
-            if matches!(application.operation.result, ResultValues::None) {
-                for clause in &application.operation.postconditions {
-                    let (value, defined) =
-                        application.read(subject, layout, clause, &across, None)?;
-                    conjuncts.push(Term::all([defined, value]));
-                }
-            } else {
-                let mut alternatives = Vec::new();
-                for result in &results {
-                    let mut clauses = Vec::new();
-                    for clause in &application.operation.postconditions {
-                        let (value, defined) =
-                            application.read(subject, layout, clause, &across, result.as_ref())?;
-                        clauses.push(Term::all([defined, value]));
-                    }
-                    alternatives.push(Term::all(clauses));
-                }
-                conjuncts.push(Term::any(alternatives));
-            }
-            conjuncts.extend(application.frame(subject, layout, from, to));
-            operations.push(Term::all(conjuncts));
+            operations.push(application.disjunct(
+                subject,
+                layout,
+                (from, to),
+                (&before, &across),
+            )?);
         }
         let stutter = stutter.then(|| Term::all(layout.agreements(to, from)));
         Ok(Self {
@@ -457,16 +436,146 @@ impl Application<'_, '_> {
     }
 }
 
+impl<'s, 'a> Application<'s, 'a> {
+    /// The receiver's index among the subject's objects.
+    pub(crate) const fn receiver(&self) -> usize {
+        self.receiver
+    }
+
+    /// The operation applied.
+    pub(crate) const fn operation(&self) -> &'s SymbolicOperation<'a> {
+        self.operation
+    }
+
+    /// The argument values, one per declared parameter.
+    pub(crate) fn arguments(&self) -> &[Value] {
+        &self.arguments
+    }
+
+    /// The application's step disjunct between `from` and `to`, as one
+    /// conjunction of [`Self::conjuncts`].
+    pub(crate) fn disjunct(
+        &self,
+        subject: &SymbolicSubject<'_>,
+        layout: &StateLayout,
+        copies: (&StateCopy, &StateCopy),
+        views: (&Views, &Views),
+    ) -> Result<Term, SmtEncodingRefusal> {
+        Ok(Term::all(self.conjuncts(subject, layout, copies, views)?))
+    }
+
+    /// The conjuncts of the application's step disjunct between `from` and `to`: its
+    /// precondition clauses on `from` (read through `before`), its
+    /// postcondition relating the two copies (read through `across`), and
+    /// its frame, each clause its definedness conjoined with its value.
+    pub(crate) fn conjuncts(
+        &self,
+        subject: &SymbolicSubject<'_>,
+        layout: &StateLayout,
+        (from, to): (&StateCopy, &StateCopy),
+        (before, across): (&Views, &Views),
+    ) -> Result<Vec<Term>, SmtEncodingRefusal> {
+        let mut conjuncts = Vec::new();
+        for clause in &self.operation.preconditions {
+            let (value, defined) = self.read(subject, layout, clause, before, None)?;
+            conjuncts.push(Term::all([defined, value]));
+        }
+        if matches!(self.operation.result, ResultValues::None) {
+            for clause in &self.operation.postconditions {
+                let (value, defined) = self.read(subject, layout, clause, across, None)?;
+                conjuncts.push(Term::all([defined, value]));
+            }
+        } else {
+            let mut alternatives = Vec::new();
+            for result in &self.results() {
+                let mut clauses = Vec::new();
+                for clause in &self.operation.postconditions {
+                    let (value, defined) =
+                        self.read(subject, layout, clause, across, result.as_ref())?;
+                    clauses.push(Term::all([defined, value]));
+                }
+                alternatives.push(Term::all(clauses));
+            }
+            conjuncts.push(Term::any(alternatives));
+        }
+        conjuncts.extend(self.frame(subject, layout, from, to));
+        Ok(conjuncts)
+    }
+}
+
+/// The clause `clause` of an operation applied to the object `receiver`,
+/// with `arguments` (one per declared parameter of `operation`) and
+/// `result` bound as symbols, read over `views`: its Boolean and its
+/// definedness. The refinement encoding binds terms evaluated over another
+/// subject's copy, where a step relation binds literals.
+pub(crate) fn read_bound(
+    (subject, layout): (&SymbolicSubject<'_>, &StateLayout),
+    clause: &CheckedStateClause,
+    views: &Views,
+    (receiver, operation, arguments, result): (
+        usize,
+        &SymbolicOperation<'_>,
+        &[Option<Sym>],
+        Option<Sym>,
+    ),
+) -> Result<(Term, Term), SmtEncodingRefusal> {
+    let mut slots = vec![Some(Sym::Object(receiver))];
+    let mut declared = clause.parameters().iter().skip(1);
+    if clause.binds_result() {
+        declared.next();
+        slots.push(result);
+    }
+    for (name, _) in declared {
+        let value = operation
+            .parameters
+            .iter()
+            .position(|(parameter, _)| parameter == name)
+            .and_then(|position| arguments.get(position))
+            .cloned()
+            .flatten();
+        slots.push(value);
+    }
+    let reads = clause.reads().collect();
+    Reader::new(
+        layout,
+        subject,
+        clause.name(),
+        clause.observation(),
+        reads,
+        views,
+        slots,
+    )
+    .boolean(clause.body())
+}
+
+/// Whether `operation` applied to `receiver` may write `field` of `object`.
+pub(crate) fn writes(
+    subject: &SymbolicSubject<'_>,
+    operation: &SymbolicOperation<'_>,
+    receiver: usize,
+    (object, field): (usize, usize),
+) -> bool {
+    let field = &subject.objects[object].fields[field];
+    operation.modifies.contains(&field.key)
+        || (object == receiver && operation.receiver_modifies.contains(&field.key))
+}
+
+/// The values an operation's result takes, in FR-120's result order; one
+/// absent value for an operation with no result.
+pub(crate) fn result_values(operation: &SymbolicOperation<'_>) -> Vec<Option<Value>> {
+    match &operation.result {
+        ResultValues::Declared(ParameterValues::Values(values)) => {
+            values.iter().cloned().map(Some).collect()
+        }
+        _ => vec![None],
+    }
+}
+
 impl<'a> Application<'_, 'a> {
     /// The values the operation's result takes, in FR-120's result order;
     /// one absent value for an operation with no result.
     fn results(&self) -> Vec<Option<Value>> {
-        match &self.operation.result {
-            ResultValues::Declared(ParameterValues::Values(values)) => {
-                values.iter().cloned().map(Some).collect()
-            }
-            _ => vec![None],
-        }
+        result_values(self.operation)
     }
 
     /// The clause's body as a Boolean and its definedness, with `self`, the
@@ -479,40 +588,28 @@ impl<'a> Application<'_, 'a> {
         views: &Views,
         result: Option<&Value>,
     ) -> Result<(Term, Term), SmtEncodingRefusal> {
-        let mut slots = vec![Some(Sym::Object(self.receiver))];
-        let mut declared = clause.parameters().iter().skip(1);
-        if clause.binds_result() {
-            declared.next();
-            slots.push(result.and_then(|value| symbol_of(subject, value)));
-        }
-        for (name, _) in declared {
-            let value = self
-                .operation
-                .parameters
-                .iter()
-                .position(|(parameter, _)| parameter == name)
-                .and_then(|position| self.arguments.get(position))
-                .and_then(|value| symbol_of(subject, value));
-            slots.push(value);
-        }
-        let reads = clause.reads().collect();
-        Reader::new(
-            layout,
-            subject,
-            clause.name(),
-            clause.observation(),
-            reads,
+        // An argument of no SMT sort binds no symbol, and a read of it
+        // refuses.
+        let arguments: Vec<Option<Sym>> = self
+            .arguments
+            .iter()
+            .map(|value| symbol_of(subject, value))
+            .collect();
+        read_bound(
+            (subject, layout),
+            clause,
             views,
-            slots,
+            (
+                self.receiver,
+                self.operation,
+                &arguments,
+                result.and_then(|value| symbol_of(subject, value)),
+            ),
         )
-        .boolean(clause.body())
     }
-
     /// Whether the frame lets the operation write `field` of `object`.
     fn writes(&self, subject: &SymbolicSubject<'_>, object: usize, field: usize) -> bool {
-        let field = &subject.objects[object].fields[field];
-        self.operation.modifies.contains(&field.key)
-            || (object == self.receiver && self.operation.receiver_modifies.contains(&field.key))
+        writes(subject, self.operation, self.receiver, (object, field))
     }
 
     /// Every field the frame does not let the operation write is unchanged,
@@ -640,7 +737,7 @@ impl<'a> Application<'_, 'a> {
     }
 }
 
-fn symbol_of(subject: &SymbolicSubject<'_>, value: &Value) -> Option<Sym> {
+pub(crate) fn symbol_of(subject: &SymbolicSubject<'_>, value: &Value) -> Option<Sym> {
     match value {
         Value::Boolean(value) => Some(Sym::Bool(Term::literal(*value))),
         Value::Integer(value) => Some(Sym::Int(Term::Int(value.clone()))),

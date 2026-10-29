@@ -374,7 +374,7 @@ fn one_binding_path_resolves_three_families_and_preserves_owned_anchors() {
         quire_spec_language::linking::composed::models::ModelTarget::Type(ty)
         if ty.location().identity.key == quire_spec_language::linking::DeclarationKey::Scalar(native_rule_model::symbol("Version")))));
     assert!(std::ptr::eq(report.namespace(), namespace));
-    assert_eq!(model.source().source().text(), native_rule_model::FIXTURE);
+    assert_eq!(model.source().source().text(), native_rule_model::fixture());
 }
 
 #[test]

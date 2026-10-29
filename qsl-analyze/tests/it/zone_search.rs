@@ -1009,7 +1009,7 @@ fn a_safety_proof_carries_a_reachability_certificate() {
         certificate.obligation.kind,
         ObligationKind::Authored(claim_occurrence(&four))
     );
-    assert_eq!(certificate.initial, [0]);
+    assert_eq!(certificate.initials, [0]);
     assert_eq!(certificate.lu_bounds.lower.len(), 1);
     assert!(certificate.nodes.len() > 1);
     // Edges by source in discovery order.

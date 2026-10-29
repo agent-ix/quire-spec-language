@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-195 N01, N02, N06, N07, N09 and N12 (FR-150): the chain-link
-//! identity vectors. Every effective identity below is written as the first
-//! eight hex digits of the digest quire-specification publishes for that
-//! fixture node; the encoder must reproduce them. Each fixture uses TC-195's
+//! identity vectors. Expected published keys are read from QSpec's vectors
+//! in the QSpec checkout. Each fixture uses TC-195's
 //! own node names (`ix://test/orders/X`) and placeholder selections.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{
@@ -188,8 +188,105 @@ fn expect(facts: &[(&'static str, &[&str], Option<&str>)]) -> Vec<Shape> {
         .collect()
 }
 
+fn published_shape(name: &str) -> Vec<Shape> {
+    let vector = published_vector(name);
+    vector["preimage"]["derivation"]
+        .as_array()
+        .expect("published derivation")
+        .iter()
+        .map(|fact| {
+            let identity = fact["rule"]["identity"]
+                .as_str()
+                .expect("published rule identity");
+            let rule = identity
+                .strip_prefix("quire.model.normalize.")
+                .and_then(|rule| rule.split('/').next())
+                .expect("published normalization rule");
+            let rule = match rule {
+                "qualify" => "qualify",
+                "inherit" => "inherit",
+                "subset" => "subset",
+                "redefine" => "redefine",
+                other => panic!("published unknown rule {other}"),
+            };
+            let inputs = fact["inputs"]
+                .as_array()
+                .expect("published inputs")
+                .iter()
+                .map(|input| {
+                    input["node"]
+                        .as_str()
+                        .expect("published node")
+                        .trim_start_matches(PREFIX)
+                        .to_owned()
+                })
+                .collect();
+            let parent = fact["parent"].as_object().map(|parent| {
+                parent["digest"].as_str().expect("published parent digest")[..8].to_owned()
+            });
+            (rule, inputs, parent)
+        })
+        .collect()
+}
+
 fn universe_short(view: &EffectiveView) -> String {
     view.object_universe().identity().to_string()[..8].to_owned()
+}
+
+fn published_vector(name: &str) -> serde_json::Value {
+    let path = PathBuf::from(
+        std::env::var_os("QSPEC_DIR")
+            .filter(|path| !path.is_empty())
+            .unwrap_or_else(|| {
+                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
+            }),
+    )
+    .join("proposals/checked-package-v2/model-effective-declaration-vectors.json");
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let document: serde_json::Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    document["vectors"]
+        .as_array()
+        .expect("QSpec vector list")
+        .iter()
+        .find(|vector| vector["name"] == name)
+        .unwrap_or_else(|| panic!("QSpec publishes no model identity vector {name}"))
+        .clone()
+}
+
+fn published_digest(name: &str) -> String {
+    published_vector(name)["sha256"]
+        .as_str()
+        .expect("published vector digest")
+        .to_owned()
+}
+
+fn published_short(name: &str) -> String {
+    published_digest(name)[..8].to_owned()
+}
+
+fn digest_hex(id: &EffectiveId) -> String {
+    id.as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn assert_published_digest(actual: &EffectiveId, name: &str) {
+    assert_eq!(
+        digest_hex(actual),
+        published_digest(name),
+        "{name}: published identity"
+    );
+}
+
+fn assert_published_prefix(actual: &str, name: &str) {
+    assert_eq!(
+        actual,
+        published_short(name),
+        "{name}: published identity prefix"
+    );
 }
 
 fn charge_points(meter: &Meter) -> Vec<ChargePoint> {
@@ -220,30 +317,24 @@ fn n01_identities_facts_and_counters() {
     let b = type_entry(&view, "B");
     let ax = member_entry(&view, "A", "A/x");
     let bx = member_entry(&view, "B", "A/x");
-    assert_eq!(short(a), "4531dd9e");
-    assert_eq!(short(b), "c5264509");
-    assert_eq!(short(ax), "86ed7ba6");
-    assert_eq!(short(bx), "21125d3a");
-    assert_eq!(view.identity().short_hex(), "76d04f1e");
-    assert_eq!(universe_short(&view), "af5934e1");
+    assert_published_digest(&a.effective_id, "n01-type-A");
+    assert_published_digest(&b.effective_id, "n01-type-B");
+    assert_published_digest(&ax.effective_id, "n01-member-A-x");
+    assert_published_digest(&bx.effective_id, "n01-member-B-x");
+    assert_published_digest(&view.identity(), "n01-view");
+    assert_published_prefix(&universe_short(&view), "n01-universe");
     assert_eq!(
         view.object_universe().root_types,
         vec![a.effective_id],
         "the universe's root types"
     );
 
-    assert_eq!(shape(a), expect(&[("qualify", &["A"], None)]));
-    assert_eq!(
-        shape(b),
-        expect(&[
-            ("qualify", &["B"], None),
-            ("inherit", &["A"], Some("4531dd9e")),
-        ])
-    );
-    assert_eq!(shape(ax), expect(&[("qualify", &["A/x"], None)]));
+    assert_eq!(shape(a), published_shape("n01-type-A"));
+    assert_eq!(shape(b), published_shape("n01-type-B"));
+    assert_eq!(shape(ax), published_shape("n01-member-A-x"));
     assert_eq!(
         shape(bx),
-        expect(&[("inherit", &["A", "A/x"], Some("86ed7ba6"))]),
+        published_shape("n01-member-B-x"),
         "an inherited member has inherit facts only"
     );
 
@@ -362,31 +453,25 @@ fn n02_the_diamond_stores_one_link_per_direct_edge() {
         panic!("N02 completes");
     };
     assert_eq!(view.declarations().len(), 8);
-    assert_eq!(short(type_entry(&view, "A")), "4531dd9e");
-    assert_eq!(short(type_entry(&view, "B")), "c5264509");
-    assert_eq!(short(type_entry(&view, "C")), "aa1ab053");
-    assert_eq!(short(type_entry(&view, "D")), "9425c80d");
-    assert_eq!(short(member_entry(&view, "A", "A/x")), "86ed7ba6");
-    assert_eq!(short(member_entry(&view, "B", "A/x")), "21125d3a");
-    assert_eq!(short(member_entry(&view, "C", "A/x")), "d4ce6547");
-    assert_eq!(short(member_entry(&view, "D", "A/x")), "2fc1afee");
-    assert_eq!(view.identity().short_hex(), "ecdf3d6d");
-    assert_eq!(universe_short(&view), "6763207e");
+    for (entry, vector) in [
+        (type_entry(&view, "A"), "n02-type-A"),
+        (type_entry(&view, "B"), "n02-type-B"),
+        (type_entry(&view, "C"), "n02-type-C"),
+        (type_entry(&view, "D"), "n02-type-D"),
+        (member_entry(&view, "A", "A/x"), "n02-member-A-x"),
+        (member_entry(&view, "B", "A/x"), "n02-member-B-x"),
+        (member_entry(&view, "C", "A/x"), "n02-member-C-x"),
+        (member_entry(&view, "D", "A/x"), "n02-member-D-x"),
+    ] {
+        assert_published_digest(&entry.effective_id, vector);
+    }
+    assert_published_digest(&view.identity(), "n02-view");
+    assert_published_prefix(&universe_short(&view), "n02-universe");
 
-    assert_eq!(
-        shape(type_entry(&view, "D")),
-        expect(&[
-            ("qualify", &["D"], None),
-            ("inherit", &["B"], Some("c5264509")),
-            ("inherit", &["C"], Some("aa1ab053")),
-        ])
-    );
+    assert_eq!(shape(type_entry(&view, "D")), published_shape("n02-type-D"));
     assert_eq!(
         shape(member_entry(&view, "D", "A/x")),
-        expect(&[
-            ("inherit", &["B", "A/x"], Some("21125d3a")),
-            ("inherit", &["C", "A/x"], Some("d4ce6547")),
-        ])
+        published_shape("n02-member-D-x")
     );
 
     let facts: usize = view
@@ -512,7 +597,7 @@ fn n07_reversed_nodes_give_the_same_identities_and_view() {
     let mut reversed = f2();
     reversed.records.reverse();
     let reversed = completed(&reversed);
-    assert_eq!(reversed.identity().short_hex(), "ecdf3d6d");
+    assert_published_digest(&reversed.identity(), "n02-view");
     assert_eq!(forward.identity(), reversed.identity());
     let ids = |view: &EffectiveView| -> BTreeMap<String, String> {
         view.declarations()
@@ -537,10 +622,10 @@ fn n09_a_second_selection_changes_only_the_view_and_the_universe() {
             .collect()
     };
     assert_eq!(ids(&first), ids(&second));
-    assert_eq!(first.identity().short_hex(), "76d04f1e");
-    assert_eq!(second.identity().short_hex(), "f81504ef");
-    assert_eq!(universe_short(&first), "af5934e1");
-    assert_eq!(universe_short(&second), "1164b658");
+    assert_published_digest(&first.identity(), "n01-view");
+    assert_published_digest(&second.identity(), "n01v2-view");
+    assert_published_prefix(&universe_short(&first), "n01-universe");
+    assert_published_prefix(&universe_short(&second), "n01v2-universe");
 }
 
 /// N12: the counters of the admitted fixture and the identities that move
