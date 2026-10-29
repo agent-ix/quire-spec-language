@@ -23,7 +23,7 @@
 //! positions after it are neither read nor charged. A filter that rejects a
 //! position keeps that position's value from being read.
 //!
-//! **Work and memory.** One work unit is charged for each window position
+//! **Work and memory.** One work unit is charged at `temporal.visit` for each window position
 //! visited, whether or not its filter admits it, so a filtered scan pays
 //! for every position it reads. The values a window gathers are kept, and a
 //! window that would hold more than the run's `max_window_values` stops the
@@ -509,7 +509,7 @@ impl AggregateAtom {
         let mut gathered = Gathered::new(&self.term.kind);
         let mut count = 0_u64;
         for index in window {
-            meter.charge(Charge::new(ChargePoint::CollectionVisit))?;
+            meter.charge(Charge::new(ChargePoint::TemporalVisit))?;
             let at = TemporalPosition::new(index);
             match source.admits(at, meter)? {
                 WindowRead::Defined(true) => {}

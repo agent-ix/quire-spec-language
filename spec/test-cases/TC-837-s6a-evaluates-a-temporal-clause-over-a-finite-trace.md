@@ -37,5 +37,5 @@ Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
   refusals; position 3 refuses the same way; `12`.
 - Step 4: 4 visits (the `eventually` node at position 0 and the `holds`
   atom at positions 0, 1 and 2); with 3 units, `Incomplete` at the
-  `WorkUnits` charge point and no truth value; with 4 units,
+  `temporal.visit` charge point (`WorkUnits`) and no truth value; with 4 units,
   `Completed(true)` charging 4.

@@ -150,8 +150,8 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   When the same window also holds an undefined position, the undefined
   position's cause wins, because it is the first fault found and the count is
   incomplete.
-- Evaluation SHALL charge one unit of ADR-014 TR-5 work per window position
-  visited, whether or not the filter admits the position, and under a stop
+- Evaluation SHALL charge one unit of ADR-014 TR-5 work at `temporal.visit`
+  (`quire.value.accounting/v1`) per window position visited, whether or not the filter admits the position, and under a stop
   at an undefined position, the positions visited up to and including it.
   These visit units are separate from the units that evaluating a filter,
   value or predicate charges itself.

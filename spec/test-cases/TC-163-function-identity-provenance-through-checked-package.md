@@ -35,8 +35,8 @@ FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
    occurrence has one byte corrupted, and resolve the occurrence against it.
 6. Under source owner (`a`, `u`), check `both` and `nb` as FR-065-AC-8 gives
    them, and read the identity of `both` and of the call `both(a, true)`.
-   Run the application-node key builder over every `operation_vectors`
-   preimage of QSpec's `node-identity-vectors.json`, read at run time.
+   Run the application-node key builder over every operation-node vector
+   published in QSpec FR-322.
 
 ## Expected Results
 
@@ -51,5 +51,5 @@ FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
   showing the assertion reads the actual region rather than a fixed
   constant.
 - Step 6: `both`'s identity is FR-092 vector F2 and the call's is E2, in
-  domain `quire.checked-semantic-node/v1`; each QSpec operation vector's
-  recomputed key equals its recorded `sha256`.
+  domain `quire.checked-semantic-node/v1`; every QSpec FR-322 operation
+  vector's recomputed key equals its published expected key.
