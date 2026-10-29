@@ -454,8 +454,9 @@ For each enum form, the assembler:
      by case name (byte order) otherwise.
 3. Mints the declaration key with `check::node_key::nominal_key(&impl
    NodeIdentityPreimage) -> Result<NodeKey, InvalidSemanticGraph>`, the one function that mints a nominal
-   node's key: the SHA-256 of the preimage's RFC 8785 bytes, the digest
-   `value::enumeration` computes. It is separate from
+   node's key: the structural key, the preimage value itself (its RFC 8785
+   byte string), compared by equality and used directly as a map key; there
+   is no hash. It is separate from
    `check::node_key::node_key`, which keys structural and application
    nodes and never a nominal preimage.
 4. Admits the declaration with `EnumDeclaration::admit(preimage, key,
@@ -619,7 +620,7 @@ With no error, the assembler builds each preimage, owner and
    `quire.dimension-equivalence-node/v1` preimage `{version, owner,
    dimension_node_ids, root_scale}`, `owner` the unit's `SourceOwner`,
    `dimension_node_ids` the keys of the two related dimension nodes, distinct
-   and in ascending digest order, and `root_scale` the reduced root ratio of step 6 as
+   and in ascending key order (byte order of the RFC 8785 key strings), and `root_scale` the reduced root ratio of step 6 as
    `{numerator, denominator}` decimal strings, stated for the node listed first (the
    reciprocal when the declaration names the dimensions in descending order), so a pair
    written in either order, with either unit spelling of one ratio, has one key. An equivalence rewrites no dimension: every `terms` list and every
@@ -654,26 +655,25 @@ to lowering, which builds the `quire.dimension-node/v1` and
 **Dimension and unit key vectors.** Owner
 `{kind: "source", authority: "a", identity: "u"}`, each
 `qualified_declaration` the declared name. `dimension_node_id` and
-`target_unit_node_id` are `{domain: "quire.checked-semantic-node/v1",
-digest}`, and a rational is `{numerator, denominator}` in decimal strings.
+`target_unit_node_id` are the structural keys of the nodes they name, and a rational is `{numerator, denominator}` in decimal strings.
 The method reproduces QSpec's `dimension-velocity` and
 `unit-degree-celsius` vectors.
 
 | Vector | Source | Preimage content | Key |
 |---|---|---|---|
-| Q1 | `dimension Length;` | `terms: []` | the SHA-256 of its preimage |
-| Q2 | `dimension Time;` | `terms: []` | the SHA-256 of its preimage |
-| Q3 | `dimension Speed = Length / Time;` | `terms: [{Q2, "-1"}, {Q1, "1"}]` | the SHA-256 of its preimage |
-| Q4 | `dimension Accel = Speed / Time;` | `terms: [{Q2, "-2"}, {Q1, "1"}]` | the SHA-256 of its preimage |
-| Q5 | `dimension Temperature;` | `terms: []` | the SHA-256 of its preimage |
-| Q6 | `unit m : Length = rational(1, 1);` | dimension Q1, target `null`, scale 1/1, offset 0/1 | the SHA-256 of its preimage |
-| Q7 | `unit km : Length = rational(2000, 2) * m;` | dimension Q1, target Q6, scale 1000/1, offset 0/1 | the SHA-256 of its preimage |
-| Q8 | `unit cm : Length = decimal(1, 2) * m;` | dimension Q1, target Q6, scale 1/100, offset 0/1 | the SHA-256 of its preimage |
-| Q9 | `unit K : Temperature = rational(1, 1);` | dimension Q5, target `null`, scale 1/1, offset 0/1 | the SHA-256 of its preimage |
-| Q10 | `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` | dimension Q5, target Q9, scale 1/1, offset 5463/20 | the SHA-256 of its preimage |
-| Q11 | `dimension Distance;` | `terms: []` | the SHA-256 of its preimage |
-| Q12 | `unit dist : Distance = rational(1, 1);` and `dimension Distance ~ Length by 1 dist = 1 km;` | `dimension_node_ids: [Q11, Q1]` (ascending digest), `root_scale` 1000/1 (`km` is 1000 roots of `Length`, `dist` 1 root of `Distance`) | the SHA-256 of its preimage |
-| Q13 | `dimension Length ~ Distance by 1 cm = 2 dist;` | `dimension_node_ids: [Q11, Q1]`, `root_scale` 1/200 (`cm` is 1/100 of a root of `Length`, so one root of `Length` is 200 roots of `Distance` and one root of `Distance`, listed first, is 1/200 root of `Length`) | the SHA-256 of its preimage |
+| Q1 | `dimension Length;` | `terms: []` | the preimage value itself |
+| Q2 | `dimension Time;` | `terms: []` | the preimage value itself |
+| Q3 | `dimension Speed = Length / Time;` | `terms: [{Q2, "-1"}, {Q1, "1"}]` | the preimage value itself |
+| Q4 | `dimension Accel = Speed / Time;` | `terms: [{Q2, "-2"}, {Q1, "1"}]` | the preimage value itself |
+| Q5 | `dimension Temperature;` | `terms: []` | the preimage value itself |
+| Q6 | `unit m : Length = rational(1, 1);` | dimension Q1, target `null`, scale 1/1, offset 0/1 | the preimage value itself |
+| Q7 | `unit km : Length = rational(2000, 2) * m;` | dimension Q1, target Q6, scale 1000/1, offset 0/1 | the preimage value itself |
+| Q8 | `unit cm : Length = decimal(1, 2) * m;` | dimension Q1, target Q6, scale 1/100, offset 0/1 | the preimage value itself |
+| Q9 | `unit K : Temperature = rational(1, 1);` | dimension Q5, target `null`, scale 1/1, offset 0/1 | the preimage value itself |
+| Q10 | `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` | dimension Q5, target Q9, scale 1/1, offset 5463/20 | the preimage value itself |
+| Q11 | `dimension Distance;` | `terms: []` | the preimage value itself |
+| Q12 | `unit dist : Distance = rational(1, 1);` and `dimension Distance ~ Length by 1 dist = 1 km;` | `dimension_node_ids: [Q11, Q1]` (ascending key order), `root_scale` 1000/1 (`km` is 1000 roots of `Length`, `dist` 1 root of `Distance`) | the preimage value itself |
+| Q13 | `dimension Length ~ Distance by 1 cm = 2 dist;` | `dimension_node_ids: [Q11, Q1]`, `root_scale` 1/200 (`cm` is 1/100 of a root of `Length`, so one root of `Length` is 200 roots of `Distance` and one root of `Distance`, listed first, is 1/200 root of `Length`) | the preimage value itself |
 
 Q12's preimage is `{version: "quire.dimension-equivalence-node/v1", owner,
 dimension_node_ids, root_scale}` with `owner` the source owner above. The same method
@@ -715,8 +715,8 @@ step outside this requirement; the `ieee_profile` selection and its build are
 
 **Node key owner.** `check` mints the node keys of record, tuple and
 function declarations over the unit's `SourceOwner{authority, identity}`
-(ADR-013 O-04). The source revision and digest are package lock evidence
-and are not part of the preimage, so an unchanged declaration keeps its key
+(ADR-013 O-04). The source revision is package lock evidence
+and is not part of the preimage, so an unchanged declaration keeps its key
 across revisions of its source. The owner is a required E3 input, and
 `check` has no constant package identity:
 `DEFAULT_PACKAGE_IDENTITY` does not exist. The record, tuple and function
@@ -728,17 +728,16 @@ members by `quire.enum-member-node/v1` over the declaration key. QSpec
 publishes owner scope for nominal enum, dimension and unit nodes; the
 structural-node preimage is a QSL proposal to QSpec (Dependencies).
 
-**Enum key vectors.** Each key is the SHA-256 of the RFC 8785 bytes of the
-preimage shown, owner `{kind: "source", authority: "a", identity: "u"}`
-unless stated. The method reproduces QSpec's `enum-status` vector in
-`node-identity-vectors.json`.
+**Enum key vectors.** Each key is the RFC 8785 byte string of the
+preimage shown, compared by equality, owner `{kind: "source", authority: "a", identity: "u"}`
+unless stated.
 
 | Vector | Source | Preimage (other members as above) | Key |
 |---|---|---|---|
-| N1 | `ordered enum Status { READY, DONE }` | `qualified_declaration: ["Status"]`, `ordered: true`, `members: ["READY", "DONE"]` | the SHA-256 of its preimage |
-| N2 | member `READY` of N1 | `{version: "quire.enum-member-node/v1", declaration_node_id: {domain: "quire.checked-semantic-node/v1", digest: N1}, case: "READY"}` | the SHA-256 of its preimage |
-| N3 | `enum Color { RED, BLUE = "Blue" }` | `qualified_declaration: ["Color"]`, `ordered: false`, `members: ["BLUE", "RED"]` | the SHA-256 of its preimage |
-| N4 | N1's source under owner identity `w` | N1's, with `identity: "w"` | the SHA-256 of its preimage |
+| N1 | `ordered enum Status { READY, DONE }` | `qualified_declaration: ["Status"]`, `ordered: true`, `members: ["READY", "DONE"]` | the preimage value itself |
+| N2 | member `READY` of N1 | `{version: "quire.enum-member-node/v1", declaration_node_id: N1, case: "READY"}` | the preimage value itself |
+| N3 | `enum Color { RED, BLUE = "Blue" }` | `qualified_declaration: ["Color"]`, `ordered: false`, `members: ["BLUE", "RED"]` | the preimage value itself |
+| N4 | N1's source under owner identity `w` | N1's, with `identity: "w"` | the preimage value itself |
 
 Type resolution is the E3 name-binding phase (ADR-011 §1; ADR-013 O-11).
 The resolution `match` has one explicit arm per type-form head:
@@ -1152,7 +1151,7 @@ every checker of the language.
 | FR-091-AC-58 | `decimal(1)`, `decimal(1, 2, 3)`, `decimal 5`, `decimal(1 2)`, `decimal(1, x)` and `decimal(1, 2` refuse `invalid_syntax`/`unexpected-token` (a missing or extra argument, comma or parenthesis, or a non-numeric argument); `decimal(+1, 2)`, `decimal(01, 2)`, `decimal(-0, 2)`, `decimal(1.5, 2)`, `decimal(1, 02)`, `decimal(1, -2)` and `decimal(1, 2.0)` refuse `invalid_syntax`/`invalid-token` (a numeric token whose spelling is not `signed-int` for the coefficient or `uint` for the scale), each at the constructor before S2. `function decimal using v(): Boolean pure { true }` refuses `invalid_syntax` at the declaration name, because `decimal` is reserved. | Test (TC-1232) |
 | FR-091-AC-59 | S2 builds, for `dimension Distance ~ Length by 1 dist = 1 km;`, one dimension-equivalence form with the dimension names `Distance` and `Length` in that order, each with its span, two ratio terms (the integer `1` with the unit name `dist`, the integer `1` with the unit name `km`) each with its spans, and the declaration's span, and no dimension form; for `dimension R::Time ~ F::Time by 1 R::s = rational(1, 1000) F::ms;` a form whose names are the qualified names `R::Time` and `F::Time` and whose unit names are `R::s` and `F::ms` as written, each with the span of both segments, the second number a `rational` with parts `1` and `1000`; for `decimal(5, 1)` in a ratio term a `decimal` number with coefficient `5` and scale `1`; and for `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` followed by `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` two forms in source order. `dimension Length;` and `dimension Accel = Length * Time^-2 / Mass;` still build dimension forms. `dimension R::Time;`, `dimension A ~ B ~ C;`, `dimension A ~;`, `dimension A ~ B = C;`, `dimension A ~ B;` (no `by` clause), `dimension A ~ B by 1 u;`, `dimension A ~ B by u = 1 v;`, `dimension A ~ B by 1 u = 1;` and `dimension A ~ B by 1 u = 1 v w;` each refuse `invalid_syntax` at the offending token and build no form. | Test (TC-482) |
 | FR-091-AC-60 | Dimension equivalence decisions (QSpec FR-142-AC-22). With `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` with root unit `s`, and a unit declaring `dimension Time; unit s : Time = rational(1, 1);`, the assembler admits `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `dimension R::Time ~ Time by 1 R::s = 1 s;`, and, with `dimension Dur = R::Time; unit dsec : Dur = rational(1, 1);` after `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `dimension Dur ~ F::Time by 1 dsec = 1 F::s;`; `dimension A ~ B by 1 ua = 1 ub;`, `dimension B ~ C by 1 ub = 1000 uc;` and `dimension C ~ A by 1000 uc = 1 ua;` over three source base dimensions with root units `ua`, `ub`, `uc` are admitted together. It refuses each of these with exactly one error at the equivalence form: `dimension R::Time ~ Z::Time by 1 R::s = 1 Z::s;` with no model alias `Z`, `dimension R::Time ~ R::Speed by 1 R::s = 1 R::mps;` where `acme/rpc` declares no `Speed`, `dimension R::Time ~ Nothing by 1 R::s = 1 s;` and `dimension R::Time ~ F::Time by 1 R::s = 1 F::second;` where `acme/flow` declares no `second`, `missing_declaration`/`missing-name` at the unresolved name; `dimension R::Time ~ R::Time by 1 R::s = 1 R::s;` and `dimension Time ~ Time by 1 s = 1 s;`, `invalid_package`/`definition-cycle` retaining the edge `node -> node`; `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` and `dimension F::Time ~ R::Time by 1 F::s = 2 R::s;` after `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `invalid_package`/`conflicting-definition` at the later form retaining both; and, with `acme/rpc` declaring `Area = Length ^ 2` and its root `m2`, `dimension R::Time ~ R::Area by 1 R::s = 1 R::m2;`, and `dimension Dur ~ F::Time by 1 dsec = 1 F::s;` with no `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `invalid_package`/`incompatible-definition` retaining both nodes. `dimension R::Speed ~ F::Speed by 1 R::mps = 1 F::mps;` over speeds that are `Length / Time` of their package, each `mps` the root of its speed, is admitted after `dimension R::Length ~ F::Length by 1 R::m = 1 F::m;` and `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` and refused `incompatible-definition` without them. A source declaring `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1);` and `dimension L ~ L by 1 r = 1 r;` refuses `definition-cycle` for the equivalence and not row 1 at `z`, because base pairs are decided before the first turn; the same source with `dimension Dur = L; unit rd : Dur = rational(1, 1); dimension L2; unit r2 : L2 = rational(1, 1); dimension Dur ~ L2 by 1 rd = 1 r2;` in place of `dimension L ~ L …;` refuses row 1 at `z` and not the equivalence's `incompatible-definition`, because every other pair is decided after the last turn. The decisions are the same in any source order of the equivalence forms within a phase. | Test (TC-483) |
-| FR-091-AC-61 | The assembler mints keys for Q11, Q12 and Q13's sources under source owner (`a`, `u`) as the vector table gives: Q12 (`root_scale` 1000/1) and Q13 (1/200, the reciprocal of the ratio written for the descending order); `dimension Length ~ Distance by 1 km = 1 dist;` and `dimension Distance ~ Length by 1 dist = 1 km;` give Q12's one key, the `dimension_node_ids` in ascending digest order and the ratio stated for the node listed first, and `by 1 dist = 1000 m` gives it too (one ratio, two unit spellings); Q1's and Q11's keys are the same with and without the equivalence; a dimension `Speed = Length / Time` keeps its `terms` and key (Q3's) beside `dimension Length ~ Distance by 1 km = 1 dist;`. Over the package dimensions of QSpec's `model-dimension-acme-rpc-time`, `model-dimension-acme-flow-time` and `model-dimension-acme-clock-time` and owner `{kind: "source", authority: "agent-ix", identity: "example"}`, `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;` (flow's `ms` is `1/1000` of its root `s`) mints the key of its QSpec vector, `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` (clock's root is `ms`) mints the key of its QSpec vector and `dimension F::Time ~ G::Time by 1 F::s = 1000 G::ms;` mints the key of its QSpec vector, all in QSpec's `node-identity-vectors.json`. `nominal_spans` holds the declaration span of each equivalence under its key. | Test (TC-483) |
+| FR-091-AC-61 | The assembler mints keys for Q11, Q12 and Q13's sources under source owner (`a`, `u`) as the vector table gives: Q12 (`root_scale` 1000/1) and Q13 (1/200, the reciprocal of the ratio written for the descending order); `dimension Length ~ Distance by 1 km = 1 dist;` and `dimension Distance ~ Length by 1 dist = 1 km;` give Q12's one key, the `dimension_node_ids` in ascending key order and the ratio stated for the node listed first, and `by 1 dist = 1000 m` gives it too (one ratio, two unit spellings); Q1's and Q11's keys are the same with and without the equivalence; a dimension `Speed = Length / Time` keeps its `terms` and key (Q3's) beside `dimension Length ~ Distance by 1 km = 1 dist;`. Over the package dimensions of QSpec's `model-dimension-acme-rpc-time`, `model-dimension-acme-flow-time` and `model-dimension-acme-clock-time` and owner `{kind: "source", authority: "agent-ix", identity: "example"}`, `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;` (flow's `ms` is `1/1000` of its root `s`) mints the key whose `dimension_node_ids` are the two package dimension keys in ascending key order, `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` (clock's root is `ms`) mints the key of its own preimage in the same way, and `dimension F::Time ~ G::Time by 1 F::s = 1000 G::ms;` does likewise, each `root_scale` stated for the node listed first and each key equal to its preimage value. `nominal_spans` holds the declaration span of each equivalence under its key. | Test (TC-483) |
 | FR-091-AC-62 | Effect on the admitted graph and the base-dimension rule (QSpec FR-142-AC-24). With `acme/rpc` declaring base dimension `Mass` with root unit `kg` and `acme/flow` declaring base dimension `Mass` with no unit, `dimension R::Mass ~ F::Mass by 1 R::kg = 1 F::kg;` refuses `missing_declaration`/`missing-name` at `F::kg`, and `dimension Force = F::Mass; unit n : Force = rational(1, 1);` refuses `missing_declaration`/`missing-name` by the base-dimension rule at `F::Mass`'s turn, naming `ix://acme/flow/dimension/Mass` and `n`, with or without any equivalence. The admitted `UnitGraph` over `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` holds the equivalence node beside the three `Time` nodes, derives one class of `R::Time` and `F::Time` whose class root is the canonical root of the member holding the least dimension node key, and derives one class of `Distance` and `Length` for Q12; a graph with no equivalence derives no class. | Test (TC-483) |
 | FR-091-AC-63 | Ratio checks (QSpec FR-142-AC-22 steps 4, 5, 6 and 7). With the packages of FR-091-AC-60 and `acme/rpc` declaring `unit m : Length = rational(1, 1)`, the assembler refuses `invalid_package`/`incompatible-definition` at the form, retaining the unit and the dimension node it was named for, for `dimension R::Time ~ F::Time by 1 R::m = 1 F::s;` and `dimension R::Time ~ F::Time by 1 F::s = 1 R::s;` (each unit named for the other dimension); `invalid_package`/`invalid-value`, retaining the unit and its composed offset `5` or the number, for `dimension R::Time ~ F::Time by 1 R::s = 1 F::local;` where `acme/flow` declares `unit local : Time = rational(1, 1) * s + rational(5, 1);`, for `by 0 R::s = 1 F::s` and for `by rational(-1, 1) R::s = 1 F::s`; `invalid_package`/`incompatible-definition` retaining both nodes for the speeds of FR-091-AC-60 declared `by 1 R::mps = 2 F::mps` after the base pairs (the base roots fix the ratio 1), and the same speeds `by 1 R::mps = 1 F::mps` admitted; and, over three source base dimensions with roots `ua`, `ub`, `uc`, `invalid_package`/`conflicting-definition` at the third form, retaining all three in source order, for `A ~ B by 1 ua = 1 ub;`, `B ~ C by 1 ub = 1000 uc;`, `C ~ A by 1 uc = 1 ua;`. A ratio written through a larger unit is the same ratio: `by 1 R::s = 1 F::s` and `by 1 R::s = 1000 F::ms` (flow's `ms` is `1/1000` of its root) are both admitted and mint one key, and a source unit `unit tenth : A = rational(1, 10) * ua;` gives `dimension A ~ B by 1 tenth = 1 ub` the ratio 10 (one root of `A` is ten roots of `B`). | Test (TC-483) |
 | FR-091-AC-65 | For a source name represented by a `NameForm`, S2 preserves its exact spelling, its whole-name span, and its ordered identifier segments as separately available values: `T` has `["T"]`, `M::T` has `["M", "T"]`, and `A::M::T` has `["A", "M", "T"]`. One segment denotes an unqualified name; two or more denote a qualified name. Expression-name forms and other source references represented by `NameForm` expose the same segment structure. Every S3 branch that depends on whether one of these source names is qualified reads that structure; it does not inspect the spelling for `::`. Existing name-resolution and refusal outcomes remain unchanged. | Inspection |
@@ -1189,7 +1188,7 @@ every checker of the language.
   publishes an owner-bearing preimage for nominal enum, dimension and unit
   nodes only; the structural-node preimage is proposed to
   `ix://agent-ix/quire-specification` under ADR-013 QC-18 and QC-24.
-- The enum entries rely on `value::enumeration` computing preimage digests
+- The enum entries rely on `value::enumeration` computing preimages
   and never minting a key (ADR-011 FB-13), and on lowering
   building an admitted `EnumBinding`'s declaration and member nodes from
   its preimage (FR-092 rule 1, QSL-238's enum half).

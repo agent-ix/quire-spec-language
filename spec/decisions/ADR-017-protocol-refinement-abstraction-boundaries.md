@@ -166,8 +166,8 @@ relation: authored, never inferred; a model object maps to one
 implementation state representation, a population to one collection
 representation, an operation frame to one implementation function's
 parameters, result and framed state; keys are the QSpec AD-006
-effective-declaration key (domain package identity, IR node identity,
-`sha256-jcs`) and, for a frame, its QSpec FR-013 frame identity and QSpec
+effective-declaration key (domain package identity, IR node identity)
+and, for a frame, its QSpec FR-013 frame identity and QSpec
 FR-012 pre/post/result anchor identities; duplicate or conflicting bindings
 refuse `invalid_model_binding`/`conflicting-binding`; emission referencing an
 unbound element refuses before generation with `missing_declaration`/
@@ -324,7 +324,7 @@ FR-088-AC-2). TK-3 fixes it (§6).
 | --- | --- | --- | --- |
 | Domain package (frames) | `DomainPackageRef` identity and version (O-01) | document `model` header equality (`invalid_model_binding`/`wrong-model-selection`) | A content change changes the model-owned node ids (O-04) and so the `package_id`; an old packet refuses by FR-098's `package_id` rule |
 | Checked package | `quire.checked-package/v2`, `package_id` (O-02, O-22) | `WitnessEnvelope::reconstruct` reads the contract; `replay_frame` checks `package_id` | A meaning edit changes `package_id`; replay refuses by FR-098 |
-| Snapshots and invocation | `sha256-jcs` digest (FR-106) | byte check at admission | `stale_dependency`/`content-mismatch` |
+| Snapshots and invocation | Document `identity` label (FR-106) | byte provision keyed by that identity, checked at admission | `stale_dependency`/`content-mismatch` |
 | Frame payload | none | identity equality only | Staleness is detected through content-addressed identities (O-02, O-04) |
 
 #### PF-7 No protocol-internal redesign

@@ -71,7 +71,7 @@ The checker uses FR-338's `CertificateRejection{rule, at}` with FR-338's
 `ZoneNode { node: u64 }`, `ZoneEdge { edge: u64 }` and
 `ZoneComponent { component: u64 }`, positions in `nodes` and `edges` and a
 component index; the checker also uses FR-169's `ModelState` for the
-initial discrete state's state-key digest record and FR-163's
+initial discrete state's state key and FR-163's
 `CertificateMember`. QSpec FR-331 writes them as its zone node, zone edge,
 zone component, State and certificate member forms; the member `lu_bounds`
 is written `bounds`.

@@ -193,7 +193,7 @@ receiver-scoped. A relationship `modifies` entry has no scope and is held in
   "p"}`. `deletes_scoped` is always present and is the empty array when the
   frame has no scoped delete, and it is sorted with the `receiver` entry
   first and then the `parameter` entries by name as UTF-8 bytes. `modifies`
-  keeps FR-105's order, (declaring node digest, field name, scope with
+  keeps FR-105's order, (declaring node reference, field name, scope with
   `every-object` first), as QSpec FR-340 states; intake admits no two
   entries for one field, so the scope never decides the position of an
   emitted entry. A `deletes_scoped` entry names no node, so it

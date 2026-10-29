@@ -437,7 +437,7 @@ none of its operands.
   a `visible` entry or a FIFO key that reads it refuses `ill_typed`/
   `operator-ineligible` at the read, naming the guard; this rule has
   precedence over the table, which classifies record binders only. A protocol
-  capture is a frozen value that every role holds: a guard or a `visible`
+  capture is an immutable value that every role holds: a guard or a `visible`
   entry may read one, and it needs no listing.
 
 - Each `visible` entry and each guard (a `case when`, a `repeat while`) SHALL

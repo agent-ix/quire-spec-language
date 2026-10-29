@@ -1,6 +1,6 @@
 ---
 id: MP-003
-title: CST identity-hashing cost
+title: CST construction cost
 type: MeasurementPlan
 status: active
 owner: peter
@@ -11,7 +11,7 @@ ground_truth_kind: mechanical
 objective:
   direction: lower
 subject_identity:
-  name: qsl-cst CST identity construction (LosslessCst::new, via qsl_cst::parse)
+  name: qsl-cst CST construction (LosslessCst::new, via qsl_cst::parse)
   version: "qsl-cst/Cargo.toml"
 statistical_design:
   population: >-
@@ -71,7 +71,7 @@ relationships:
     type: measures
 ---
 
-# CST identity-hashing cost
+# CST construction cost
 
 ## Decision Use
 
@@ -86,8 +86,7 @@ no release and gates no merge.
 ## Population
 
 Every criterion benchmark in `qsl-bench/benches/cst.rs`: one `qsl_cst::parse`
-call (`cst/parse/<input>`) and SHA-256 alone over the same input's modelled
-identity-preimage byte count (`cst/sha256/<input>`), for the nesting sources at
+call (`cst/parse/<input>`), for the nesting sources at
 depth 0..=4 and 1,000 one-line functions. Each benchmark id is one observation
 dimension. Inputs are generated, not sampled, so the population is fixed by the
 protected apparatus.

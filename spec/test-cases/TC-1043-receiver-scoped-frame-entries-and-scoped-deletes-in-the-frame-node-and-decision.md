@@ -32,8 +32,7 @@ named by its own postcondition clause (`DoneBump`, `DoneMerge`, `DoneNoop`,
 package holds its frame node. Node identity strings are written with the prefix
 `ix://test/counters/` as `Counter/value`, `Counter/step`, `Gauge/d`, `Flow/x`, `Counter`,
 `Gauge` and `Supersedes`. In the wire vectors `<Counter>` stands for the NodeRef
-object `{"digest":"<digest of Counter>","domain":"quire.checked-semantic-node/v1"}`
-of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
+(QSpec FR-322 node id) of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
 `#[trace("TC-1043", "FR-154-AC-n")]`, `#[trace("TC-1043", "FR-105-AC-7")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 

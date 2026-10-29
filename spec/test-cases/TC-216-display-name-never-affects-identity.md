@@ -11,13 +11,12 @@ relationships:
 ## Description
 
 Verify that the model binder never reads a `title`/`displayName` field when
-computing an identity, a key, a digest or an ordering. Scope: FR-081-AC-4.
+computing an identity, a key or an ordering. Scope: FR-081-AC-4.
 This is the test the "no display-name identity" exit condition names
 directly: it must fail against an implementation that keys on display names.
 
 Catches an implementation that, anywhere in the binder — ordering a sort key,
-disambiguating two same-shaped declarations, or forming part of a digest
-preimage — reads the declaration's title instead of, or in addition to, its
+disambiguating two same-shaped declarations, or forming part of a key — reads the declaration's title instead of, or in addition to, its
 artifact-id-based declaration key. Any such read is invisible to a test that
 only checks correctness against one fixed set of titles; it only surfaces
 when the same structural package is run twice with different titles and the
@@ -38,6 +37,6 @@ outputs are compared byte-for-byte.
 ## Expected Results
 
 Every compared value in step 4 is byte-identical between the two runs. A
-mutant that folds `displayName` into any digest preimage, sort key or
+mutant that folds `displayName` into any key, sort key or
 disambiguation rule produces at least one differing byte between the P1 and
 P2 results, failing the comparison.

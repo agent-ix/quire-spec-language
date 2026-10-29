@@ -29,11 +29,11 @@ add, omit and rename a parameter-map key independently.
 
 Remove, duplicate, reorder and append one binding; cross its declaration and
 definition indices; substitute each definition identity, revision, artifact
-reference, raw byte digest and raw bytes; cross every pair of clock alternatives;
+reference and raw bytes; cross every pair of clock alternatives;
 and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
 component-overflow periods plus a changed epoch or unit. Re-seal each mutated
 candidate so the test reaches the owning validation rather than passing on an
-earlier digest mismatch.
+earlier structural mismatch.
 
 Exercise `mapping_support_v2` without a trace and require its admitted
 definition/profile binding before formula classification. For progress, attempt
@@ -45,7 +45,7 @@ reader `ExpectedTemporal`; substitute its source, declaration span, definition
 or one clock field without changing the compiled source.
 
 Run the `/1` emitter and strict reader over the pre-extension fixture and
-compare its bytes to the frozen expected artifact. Offer `/1` to the `/2` reader
+compare its bytes to the expected `/1` artifact. Offer `/1` to the `/2` reader
 and `/2` to the `/1` reader. For every added work dimension, take the successful `/2` run's measured
 amount (its byte work is at least the emitted bytes) and retry with exact,
 one-short and raised-above-default limits.
@@ -62,7 +62,7 @@ Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
 that public function -- exactly as a downstream crate would. Confirm the two
 written trees are byte-identical, that each written clock
-input's bytes match its selection entry's digest, and that the strict `/2`
+input is the one its selection entry names, and that the strict `/2`
 reader admits the written offer against the written selection with no other
 input. Decode the written mutation manifest, confirm every case's referenced
 file(s) exist, and replay one case's exact bytes through the strict `/2`
@@ -100,7 +100,7 @@ position is visited.
 Every one-axis structural, identity, numeric, profile and byte substitution
 returns its typed cause without an admitted partial package. Exact work succeeds,
 one-short work exhausts before the next operation and a sufficient retry
-reproduces the original bytes with fresh usage. The `/1` bytes remain frozen;
+reproduces the original bytes with fresh usage. The `/1` bytes remain unchanged;
 cross-version reads refuse, and neither path inserts, removes or infers a clock
 selection.
 

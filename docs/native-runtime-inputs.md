@@ -69,9 +69,9 @@ reference cannot select its own foreign snapshot.
 
 Snapshot::new and Invocation::new consume flat draft input plus caller-selected
 SourceIdentity labels and ArtifactLimits. They return immutable native artifacts
-with exact deterministic bytes, ByteDigest and a role-specific SnapshotRef or
-InvocationRef. Reference constructors permit an explicitly expected digest;
-resolution compares that digest to the supplied artifact. Identical labels and
+with exact deterministic bytes and a role-specific SnapshotRef or
+InvocationRef. Reference constructors take the SourceIdentity labels;
+resolution selects the supplied artifact by those labels. Identical labels and
 content reproduce identical bytes. No timestamp, random ID, path or environment
 lookup participates.
 
@@ -88,12 +88,12 @@ selected-byte reader. Neither operation is a shared-reference decoder or a
 substitute for model-aware runtime validation.
 
 `Snapshot::read_verified` and `Invocation::read_verified` bound bytes, verify
-the selected digest, decode the closed envelope and select its version/kind
+the selected labels, decode the closed envelope and select its version/kind
 before decoding the body. Serde handles JSON; native records require objects,
 all fields are required, and unknown/duplicate fields refuse. Existing IR
 constructors validate declaration identifiers. Existing structural constructors
 check every decoded artifact before admission. Whitespace and field order are
-accepted and retained exactly; `bytes()` and `digest()` describe those external
+accepted and retained exactly; `bytes()` describes those external
 bytes, while `usage()` describes the actual constructor pass. InputReadError
 retains the expected reference, failed stage and original JSON/structural cause.
 No reader opens files or starts runtime evaluation.
@@ -102,15 +102,14 @@ Each public draft, record, reference and value-node type owns these Serde shape
 checks for direct and nested decoding. No caller-supplied object adapter is
 needed. Direct decoding still produces a draft: it does not establish artifact
 limits or model validity. An invocation `result` must be present, with `null`
-representing no result; digest fields require bare lowercase 64-digit hex.
+representing no result.
 
 Encoding uses serde_json's exact integer/string encoding and declared struct
 field order, with no extra whitespace or terminal newline. Sequences, flat arena
 node order and all explicit input vectors retain their order in these byte
 artifacts. Native semantic equality does not follow from artifact ordering or
-digest inequality. A bounded writer charges each output byte before extending
-its buffer. The digest is SHA-256 of those complete emitted bytes, not a new
-semantic canonicalization domain. SourceIdentity labels are native-local
+byte inequality. A bounded writer charges each output byte before extending
+its buffer. SourceIdentity labels are native-local
 provenance and do not automatically establish a shared ArtifactRef authority.
 
 The encoding's object fields appear in this order. Names are exact snake_case;
@@ -122,10 +121,10 @@ ValueId; this envelope null does not add a native Null value.
 | Envelope | version, kind, identity, body |
 | SourceIdentity | authority, identity, revision_namespace, revision (all exact, non-empty strings; FR-001, FR-018) |
 | RequirementRef | package, requirement, revision (existing IR serialization) |
-| Model binding | model (RequirementRef), digest (lowercase SHA-256 hex) |
+| Model binding | model (RequirementRef) |
 | Qualified name | model (RequirementRef), name (SymbolName string) |
 | ObjectIdentity | model, record, universe, key |
-| SnapshotRef/InvocationRef | identity (SourceIdentity), digest (lowercase SHA-256 hex) |
+| SnapshotRef/InvocationRef | identity (SourceIdentity) |
 | Snapshot body | observation, models, populations, values, arena |
 | Population | model, record, universe, complete, objects |
 | Object entry | key, fields |
@@ -162,12 +161,12 @@ receive structural bounds/child-index checks; only required and supplied roots
 receive model-dependent validation.
 
 A snapshot body contains observation, model bindings, populations, state values
-and its arena. A model binding is the existing exact IR RequirementRef paired
-with the NativeModel artifact ByteDigest. A population names the model owner,
+and its arena. A model binding is the existing exact IR RequirementRef naming
+the NativeModel artifact. A population names the model owner,
 object record and universe, explicitly declares complete, and contains object
 entries with text keys and field/root ValueIds. Every snapshot model binding
-must select exactly one imported native model; duplicates, foreign owners or
-stale digests refuse. Each supplied population/type and state declaration must
+must select exactly one imported native model; duplicates or foreign owners
+refuse. Each supplied population/type and state declaration must
 belong to those bindings. Model bindings needed by selected roots cannot be
 inferred from a coincident type spelling.
 
@@ -187,7 +186,7 @@ at pre and result at post. A result absent from the model requires no result
 root; a declared result requires one. A parameter/result value cannot be supplied
 as a snapshot State declaration or addressed through a result-name bypass.
 
-SnapshotRef/InvocationRef contain exact SourceIdentity labels and ByteDigest;
+SnapshotRef/InvocationRef contain exact SourceIdentity labels;
 their Rust types prevent swapping roles. No path grants authority. Within the
 supplied inventory, one four-label identity may not name conflicting bytes or
 artifact kinds. Exact duplicate entries are ambiguous and refuse; they are not
@@ -214,9 +213,7 @@ validated context. No predicate is evaluated during validation.
 The inventory is bounded before indexing. Known identity conflicts are checked
 across the whole inventory. Model/value validation applies to selected snapshots
 and invocation; unselected artifacts remain offered inventory, not validated
-populations. An unavailable selected artifact/observation is incomplete. A
-present artifact under the selected labels with a different digest is stale
-and refuses. Missing static model/operation authority refuses instead of becoming
+populations. An unavailable selected artifact/observation is incomplete. Missing static model/operation authority refuses instead of becoming
 a runtime incomplete observation.
 
 For invariant validation, self exists in current under its exact object role.
@@ -305,7 +302,6 @@ The separate per-diagnostic classification is retained when defects coexist.
 | Empty construction/ref identity labels | invalid_source_identity |
 | Bad child/root index, duplicate inventory identity, duplicate object/field, wrong value shape/bound/type/universe | invalid_runtime_input |
 | Foreign or missing static model/clause authority | invalid_model_binding |
-| Present selected artifact/model labels with a different digest | stale_dependency |
 | Supplied operation anchor/context or snapshot observation role mismatch | wrong_snapshot |
 | Missing required artifact, observation or State root | unavailable_observation |
 | Required population missing or declared incomplete | incomplete_population |
@@ -319,7 +315,7 @@ The separate per-diagnostic classification is retained when defects coexist.
 Runtime paths use ordered typed components for an artifact reference,
 observation, model/population, object key, qualified State/parameter/result,
 field name and sequence index as applicable. A draft-only error instead uses
-arena/entry indices and supplied labels, without claiming an artifact digest.
+arena/entry indices and supplied labels.
 Missing data is located at the expected reference/path. Model-dependent failures
 also relate to the exact original model declaration. Symbol/string components
 sort lexicographically and numeric indices numerically; absent optional
@@ -347,7 +343,7 @@ is inserted in the detail vector.
 Before an artifact or authored selection exists, InputError carries the stable
 Code, supplied identity labels, structured draft path and construction usage.
 It implements the standard Rust error interface without inventing source bytes,
-spans or an artifact digest. Validation adds real native clause/declaration loci;
+or spans. Validation adds real native clause/declaration loci;
 a foreign clause selection is located at the parsed unit with its requested
 authored identity retained, rather than assigned another clause's span.
 

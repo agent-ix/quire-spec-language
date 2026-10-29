@@ -56,14 +56,13 @@ upstream. FormalSourceError has no related declarations field at all.
 
 Binding assigns correspondence at the caller's authority; it does not establish
 global identity uniqueness, an authored requirement owner, semantic typing or
-source authenticity. Source::read_verified remains the existing pinned-byte
-intake. Extracted-to-original mapping remains the separate SourceMap API.
+source authenticity. The existing byte intake remains unchanged. Extracted-to-original mapping remains the separate SourceMap API.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-014-AC-1 | An opaque native revision such as draft:alpha and a separately supplied formal revision 91 remain distinct and inspectable with the exact original Source and digest. | Test (TC-035) |
+| FR-014-AC-1 | An opaque native revision such as draft:alpha and a separately supplied formal revision 91 remain distinct and inspectable with the exact original Source. | Test (TC-035) |
 | FR-014-AC-2 | Forward mapping reports independently expected byte, line and scalar-column endpoints for ASCII, CRLF, multibyte scalars, empty source, empty spans, EOF and the existing 1 MiB source boundary. | Test (TC-036) |
 | FR-014-AC-3 | **RETIRED (source-binding refusal removed).** The bridge no longer compares a request's native source labels, display path or bytes against a bound source; formal positions derive from the bound Source's own bytes, so a separately supplied source cannot misplace a position. | Test (TC-037), retired |
 | FR-014-AC-4 | Reverse mapping rejects a foreign formal document/revision, inconsistent line/column, split scalar, out-of-range offset or 2^53 offset (the largest IR admits) without manufacturing a native locus. | Test (TC-038) |

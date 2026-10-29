@@ -83,7 +83,7 @@ sources:
 - the CLI's `1-draft` native-compile/1 request carries it in a `libraries`
   member, one `{identity, source}` object per library, where
   `source` is the same source selection a model or the program uses
-  (file, `sha256:` source digest and the two labels) (FR-027);
+  (file and the two labels) (FR-027);
 - `replay` builds it from the request's package reference (D-4).
 
 A compile also takes the optional **refinement internals** input, a JSON
@@ -115,7 +115,7 @@ these steps to each import in this order:
    most the number of supplied libraries.
 5. **View.** The library's `package_id` is recomputed by emitting its
    checked package and is the library's selection in the lock. The emitted
-   v2 bytes are read through the I2 reader, with a pinned request holding
+   v2 bytes are read through the I2 reader, with a selection request holding
    that one selection (identity, recomputed `package_id`), into a
    `VerifiedPackage` and then its `ImportView` (ADR-011 §4 verified
    binding).
@@ -145,14 +145,12 @@ causes above; it no longer refuses every import.
 
 ### D-2 An import names its library by identity alone
 
-The complete-V1 import is `import "L" [as a];`. A `version` or `digest`
-token after the identity string is a syntax error at S1. The library is
-selected by identity, and its content is bound by the `package_id` the
-compile recomputes from the library's checked package (ADR-013 O-02,
-`PackageId::of_preimage`): that recomputed `PackageId` is the lock's
-selection, and every `PackageId` in a selection, a closure or a
-`PackageNodeKey` is a recomputed one. `ImportDeclaration` and E4's `Import`
-hold the identity and no recorded digest.
+The complete-V1 import is `import "L" [as a];`. Any token after the identity
+string other than `as` is a syntax error at S1. The library is selected by
+identity, and the lock's selection is the library's checked package, named
+by its identity, version and lock rows (ADR-013 O-02); no hash of the
+package is computed or compared. `ImportDeclaration` and E4's `Import`
+hold the identity only.
 
 ### D-3 A library identity is a non-empty string
 
@@ -161,7 +159,7 @@ non-empty string with no segment structure, equal to another only when
 their UTF-8 bytes are equal and ordered by UTF-8 bytes (QSpec FR-307,
 FR-322). `library::LibraryName` wraps that string. Its constructor refuses
 only the empty string, and it has no segment accessor. `verify_binding`,
-`PinnedRequest`, `ImportDeclaration`, the E4 closure and the dependency
+`SelectionRequest`, `ImportDeclaration`, the E4 closure and the dependency
 input key libraries by it. The S1 parser's identity bound (at most 512
 bytes) is a source limit, not part of the identity.
 
@@ -217,8 +215,8 @@ run before the recompile:
 7. Every entry's `package_id` equals the closure's selection of its
    identity, else `ReplayRefusal::DependencyIdentityMismatch { identity,
    requested, recompiled }` (`stale_dependency`/`content-mismatch`),
-   where `requested` is the entry's `DigestRecord` and `recompiled` the
-   `PackageId`, named as `PackageIdMismatch` names its fields.
+   where `requested` is the entry's package identity and `recompiled` the
+   closure's selection, named as `PackageIdMismatch` names its fields.
 
 The entry, not the recompile, says which source was meant to be which
 dependency, so a stale dependency is named by its identity even though

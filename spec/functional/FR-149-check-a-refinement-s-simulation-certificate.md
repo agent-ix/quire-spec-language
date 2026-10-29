@@ -97,7 +97,7 @@ When the certificate refinement differs from the requested refinement, the
 check returns the named `Stale` refusal. FR-127 settles it as
 `StaleDependency` with `requested` the certificate's refinement name and
 `recompiled` the request's refinement name. Both remain refinement identities;
-neither is represented as a package ID or digest.
+neither is represented as a package ID.
 
 The checker uses FR-338's `CertificateRejection{rule, at}`. It uses FR-338's
 `BadState` and FR-163's `Malformed`, and FR-338's `CertificateRule` gains

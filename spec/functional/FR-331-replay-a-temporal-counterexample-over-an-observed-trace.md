@@ -55,7 +55,7 @@ formula is false on it.
 ## Inputs
 
 - FR-098's decoded request and already-recompiled checked package, including
-  its byte provision holding each observed document by `sha256-jcs` digest,
+  its byte provision holding each observed document by its document `identity`,
   limits, and `over`, the object reference
   `{"reference":{"population":P,"key":K}}` that binds the recompiled
   clause's `over` parameter in the first observed document.
@@ -63,8 +63,8 @@ formula is false on it.
   QSpec FR-364's counterexample on its observed arm, read by FR-364's
   member names: `trace: "observed"`, `kind` (formula or the
   undefined-evaluation envelope), `initial_state: null`, `prefix` and
-  `loop` (steps `{document}`, each an observed document's `sha256-jcs`
-  digest), `over_binding: null`, `fairness`, `interval` (`{lower, upper}`,
+  `loop` (steps `{document}`, each an observed document's
+  `identity`), `over_binding: null`, `fairness`, `interval` (`{lower, upper}`,
   `{lower, upper: null}` or `null`) and `trace_position` (ADR-014 TR-2).
   The envelope names the clause by its clause node and occurrence key.
 - `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5); its

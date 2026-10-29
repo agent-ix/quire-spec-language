@@ -77,7 +77,7 @@ dependency) pair.
   such as an atomic token counter, is not a global registry.
 - No QSL core crate shall write to stdout or stderr, or end the process.
 - Each QSL core crate shall read the bytes it needs from its request, by
-  digest where a digest names them (ADR-013 O-26).
+  identity where an identity names them (ADR-013 O-26).
 - Two temporary exemptions cover filament-core-data code that QSL cannot
   change:
   - The direction check shall not follow the edge from
@@ -110,7 +110,7 @@ dependency) pair.
 
 - ADR-029 CB-2, CB-3: the core and separability.
 - ADR-011 T-12: the dependency-direction tooling.
-- ADR-013 O-26: bytes by digest.
+- ADR-013 O-26: bytes by identity.
 - [FR-059](FR-059-check-backend-dependency-direction.md), [FR-060](FR-060-check-qsl-api-surface-boundary.md): the existing direction and API-surface checks this one extends.
 - [FR-282](FR-282-check-analyze-certificates-in-the-qualified-core.md): the certificate checkers.
 

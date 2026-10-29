@@ -228,14 +228,14 @@ manifest is closed. The rules read no population member list and no field.
 
 The producer issues one bundle of the manifest, the observation's object
 closure and the type environment, all bound to one key: the checked unit's
-source reference as a whole (authority, identity and the `quire.source.bytes/v1`
-digest, [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md)) the
+source reference as a whole (authority and identity,
+[FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md)) the
 selection (the selected clause and, for a snapshot-built observation, the
-digest of each selected document), and the observation's identity: its role
-(`current`, `pre` or `post`) and, snapshot-built, its own document digest,
+`identity` of each selected document), and the observation's identity: its role
+(`current`, `pre` or `post`) and, snapshot-built, its own document `identity`,
 or, model-layer, the label the producer issued for that observation. A `pre`
 manifest never pairs with a `post` closure. Keys are equal only when every component is
-equal: equal labels with a different digest are different keys. `resolve` is
+equal: equal labels with a different document identity are different keys. `resolve` is
 read only through the bundle. A constructor that takes the selected key and
 the three parts separately SHALL refuse the first part, in the order
 `manifest`, `closure`, `types`, whose key differs from the selected key with
@@ -367,7 +367,7 @@ FR-363; a navigation site reaches the evaluator already resolved.
 | FR-364-AC-11 | `resolve` of a missing reference gives `dangling` only from a closed manifest in which every row covering its type is complete and at least one row covers it. It gives `undecidable` when a covering row is incomplete (even beside a complete covering row), when no row covers the type (a type no declared population names, and a parent type whose declared children are covered), and under a partial manifest. A held object is `present` under any manifest. | Test (TC-1041) |
 | FR-364-AC-12 | Navigation over a model-layer extent whose target is missing and undecidable gives `incomplete_population`/`incomplete-scope` after `model.navigate` and the `collection.visit` of the targets before it, and no cardinality refusal even when the count is above `upper`; the first selected target that is not present decides between `dangling` and `undecidable`. | Test (TC-1041) |
 | FR-364-AC-13 | Condition 3 checks the type of every end of a model-layer extent whether the object is held or not: a missing `Tank` at the `Pump` end refuses `wrong-value-kind` naming the end, `Tank` and `Pump`; a missing `Pump` at that end admits and is decided by `resolve`; a reference whose type is no object type of the model refuses `wrong-value-kind`. A snapshot document end naming an unlisted key skips condition 3 and is decided by the closure rule. | Test (TC-1041) |
-| FR-364-AC-14 | A bundle is refused `invalid_runtime_input`/`conflicting-identity`, naming the first part (`manifest`, `closure`, `types`) whose key differs from the selected key, the selected key and the differing one, when that part carries another source digest under the same authority and identity, another selected clause, another selected document digest, or another observation (a `pre` manifest with a `post` closure of one source and clause); a bundle whose parts all carry the selected key resolves a missing reference by its manifest. | Test (TC-1041) |
+| FR-364-AC-14 | A bundle is refused `invalid_runtime_input`/`conflicting-identity`, naming the first part (`manifest`, `closure`, `types`) whose key differs from the selected key, the selected key and the differing one, when that part carries another source identity under the same authority, another selected clause, another selected document identity, or another observation (a `pre` manifest with a `post` closure of one source and clause); a bundle whose parts all carry the selected key resolves a missing reference by its manifest. | Test (TC-1041) |
 
 ## Dependencies
 

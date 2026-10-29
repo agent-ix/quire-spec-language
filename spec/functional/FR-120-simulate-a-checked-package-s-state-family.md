@@ -38,7 +38,7 @@ relationships:
 
 QSpec FR-181 is the normative source for finite simulation, and QSpec FR-013
 for operation frames. FR-101 is QSL's engine for FR-181: canonical order,
-the state key, the pinned sampler, replay, findings and the stopped
+the state key, the fixed-algorithm sampler, replay, findings and the stopped
 outcomes, over any `TransitionSystem` (FR-101's trait, including its
 `Expansion`, `ExpansionStop` and `Outcome::Stopped`). This requirement
 supplies `ModelSystem`, the `TransitionSystem` for a checked package's state
@@ -79,8 +79,7 @@ set is incomplete, never exhaustive.
 A `ModelSimulationRequest` (`qsl_eval::simulation::model`):
 
 - `package: &CheckedPackage`, the S4 package;
-- `packages`, FR-056's package input (domain package bytes by `sha256-jcs`
-  digest), and the `ModelNormalizationLimits` FR-106 admission takes;
+- `packages`, FR-056's package input (domain packages by identity and version), and the `ModelNormalizationLimits` FR-106 admission takes;
 - `snapshots`, an FR-106 snapshot provision, and `initial:
   Vec<DocumentRef>`, the initial states;
 - `universes: Vec<PopulationUniverse>`: for each simulated population, its
@@ -136,7 +135,7 @@ pub struct ModelTrace {
   `domains()` and the package's `TypeEnvironment`. `sample_model` is FR-101's
   `sample_request` over the same inputs, followed by `replay` of the sampled
   trace against the system, which yields one `StepEffect` per step.
-  `ModelTrace.trace` holds FR-181's transition identities, state-key digests
+  `ModelTrace.trace` holds FR-181's transition identities, state keys
   and findings; `ModelTrace.effects` holds the effects that replay derives.
   `sample_model` returns FR-101's `NotSimulated` as
   `ModelSampleError::NotSimulated`, and a trace that does not replay against
@@ -149,7 +148,7 @@ pub struct ModelTrace {
 The **declaration identity text** of a `DeclarationKey` is the RFC 8785 JCS
 text of its existing `$defs.DeclarationKey` preimage (`qsl-semantics/src/
 model/key.rs:84-124`, QSpec `model-complete.md` "Identity domains"):
-`{"digest_domain":"sha256-jcs","node":"<node>","package":"<package>"}`. It
+`{"node":"<node>","package":"<package>"}`. It
 names the package, so two domain packages with equal node identities give
 different texts. It is the text form for every declaration below: the
 `semantic` map's population keys, a record's `name`, a transition's
@@ -235,8 +234,8 @@ declared type:
   an empty array for a nullary member.
 
 In these forms `name` is the enum, record, tuple or union declaration's
-checked node id and `unit` is the digest of the declared quantity type's
-`UnitId` (FR-088), each as 64 lowercase hex digits, and `member` and a
+declaration identity text (above) and `unit` is the declared quantity type's
+`UnitId` text (FR-088), and `member` and a
 field's `name` are the declared identifiers: the spellings FR-070 gives the
 same values in a counterexample witness, so a value has one FR-181 text in
 QSL wherever it appears. An object's `record` name stays the declaration
@@ -363,8 +362,9 @@ by asking it about a state that changes that one field.
   object with every field value, built by FR-106's builder; `populations`
   maps each population to `true` (complete).
 - A synthesized state's `DocumentRef` has labels `authority` `quire`,
-  `identity` `quire.simulation.state/<state-key digest, 64 lowercase hex>`,
-  and its digest is the state-key digest (QSpec STD-150).
+  `identity` `quire.simulation.state/<n>`, `n` the decimal position of the
+  state in the order the exploration first reached it; the state is addressed by that
+  identity alone.
 - `ModelSystem` builds each clause evaluation's `AdmittedObservations`
   directly, since its fields are public (`qsl-semantics/src/model/
   observation.rs:309-335`): `usage` is `AdmissionUsage::default()`; `clause`
@@ -405,7 +405,7 @@ or result, whose most-specific type conforms to `T`; a sequence with a
 declared maximum `N`, every sequence of length 0 to `N` over its element
 domain. The rules below add the enum, model-variant union, record, tuple,
 set, bag and sequence of a finite or clock element to that list;
-FR-120-AC-22 to FR-120-AC-26 pin them.
+FR-120-AC-22 to FR-120-AC-26 specify them.
 
 - An enum SHALL be a finite domain, each member in declaration order, as a
   bare operation parameter, result or granted field and as a component.
@@ -554,7 +554,7 @@ clause in ascending name order (UTF-8 bytes):
   `Refused`, the conjunction is undecided, and the expanded state gains one
   `ModelFinding::ContractUndetermined { transition, candidate, clause,
   evaluation }` per such clause, in name order; `candidate` is the
-  candidate's state-key digest. The result depends only on the set of clause
+  candidate's state key. The result depends only on the set of clause
   outcomes.
 
 For the effective precondition the conjunction over one member's own
@@ -662,8 +662,7 @@ per:
   with `n` its universe's length (FR-104's `Cardinality` bound), or
   `Population(None)` when it has no universe.
 
-Each root's `WireNodeId` is `WireNodeId::from_digest` of the SHA-256 of the
-JCS bytes of a naming object: for a population or a field, its
+Each root's `WireNodeId` is the JCS text of a naming object, with no hashing: for a population or a field, its
 `$defs.DeclarationKey` preimage; for a parameter,
 `{"operation":<the operation's preimage>,"parameter":"<name>"}`; for a
 result, `{"operation":<the operation's preimage>,"result":"result"}`. This
@@ -719,22 +718,22 @@ identity text of operation `op`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity, as JCS bytes, `{"arguments":[],"operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1's reference>,"type":"transition"}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
+| FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity, as JCS bytes, `{"arguments":[],"operation":"{\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1's reference>,"type":"transition"}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
 | FR-120-AC-2 | With `setTo(n: Int[0, 2])` (frame `modifies value`, post `self.value = n`), `s0` has one successor per `n`, with `receiver` `<c1>` and arguments `[{"type":"integer","value":"0"}]` to `[{"type":"integer","value":"2"}]`. With `c2` added to `s0`, each receiver gives its own identity. With `pre A { self.value >= 1 }` and `pre B { self.value <= 1 }` on `setTo`, both must hold: it is enabled at `v1` and not at `v0` or `v2`. | Test (TC-471) |
 | FR-120-AC-3 | With `spawn()` (frame `creates Counter`) and no clause, `s0` has 1 + 18 successors: `s0` itself, and `c2` created with each (`value`, `label`, `next`) in 3 × 2 × 3 (absent, `c1`, `c2`). With `remove()` (frame `deletes Counter`) over `c1` and `c2`, where `c1.next` names `c2`, each receiver's successors are the deletion sets {}, {`c1`} and {`c1`, `c2`}; deleting `c2` alone leaves `c1.next` dangling and is not a candidate. Each successor's delta is the one the frame decision returns. | Test (TC-471) |
-| FR-120-AC-4 | `s0`'s state key has `semantic` equal to `{"type":"map","entries":[{"key":{"type":"text","value":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"},"value":{"type":"map","entries":[{"key":{"type":"reference","universe":"<U>","object_type":"<E>","identity":"6331"},"value":{"type":"record","name":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter\",\"package\":\"test/counters\"}","fields":[{"name":"value","value":{"type":"integer","value":"0"}},{"name":"label","value":{"type":"integer","value":"0"}},{"name":"next","value":null}]}}]}}]}`, where `<U>` and `<E>` are the universe and effective type of the `ObjectReference` that FR-106 admission gives `c1` in `s0`'s admitted `Observation` (`StateModel::admit_initial`, independent of the simulator's key encoding), each as 64 lowercase hex digits; `control`, `queues`, `roles`, `observations`, `bounds` and `memory` are `{"type":"map","entries":[]}`. `s0` with `c1.label` 1 has a different key. | Test (TC-471) |
-| FR-120-AC-5 | With `increment`, `CanInc`, `Inc` and `invariant Small … at current { self.value < 2 }`, exploration is `Exhaustive` with 3 states, 2 transitions and depth 2, and `findings` holds exactly one entry: `v2`'s digest, depth 2, `InvariantViolated { Small, c1, {handler, <increment>} }`. Adding `reset()` (frame `modifies value`, post `self.value = 0`) makes the run `Exhaustive` with 3 states and 5 transitions, including `v2 → v0`: the violating state is expanded. `s0`'s findings, when any, carry anchor `{initialization, start}`. | Test (TC-472) |
+| FR-120-AC-4 | `s0`'s state key has `semantic` equal to `{"type":"map","entries":[{"key":{"type":"text","value":"{\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"},"value":{"type":"map","entries":[{"key":{"type":"reference","universe":"<U>","object_type":"<E>","identity":"6331"},"value":{"type":"record","name":"{\"node\":\"test/counters/Counter\",\"package\":\"test/counters\"}","fields":[{"name":"value","value":{"type":"integer","value":"0"}},{"name":"label","value":{"type":"integer","value":"0"}},{"name":"next","value":null}]}}]}}]}`, where `<U>` and `<E>` are the universe and effective type of the `ObjectReference` that FR-106 admission gives `c1` in `s0`'s admitted `Observation` (`StateModel::admit_initial`, independent of the simulator's key encoding), each as 64 lowercase hex digits; `control`, `queues`, `roles`, `observations`, `bounds` and `memory` are `{"type":"map","entries":[]}`. `s0` with `c1.label` 1 has a different key. | Test (TC-471) |
+| FR-120-AC-5 | With `increment`, `CanInc`, `Inc` and `invariant Small … at current { self.value < 2 }`, exploration is `Exhaustive` with 3 states, 2 transitions and depth 2, and `findings` holds exactly one entry: `v2`'s state key, depth 2, `InvariantViolated { Small, c1, {handler, <increment>} }`. Adding `reset()` (frame `modifies value`, post `self.value = 0`) makes the run `Exhaustive` with 3 states and 5 transitions, including `v2 → v0`: the violating state is expanded. `s0`'s findings, when any, carry anchor `{initialization, start}`. | Test (TC-472) |
 | FR-120-AC-6 | With `increment`, `Small`, no `pre` or `post` clause and a meter budget of zero, exploration is `Exhaustive` with 3 states, and each state has `InvariantUndetermined` for `Small` and `c1`, its evaluation `Incomplete` with `resource_exhausted`/`insufficient-next-charge`. With budget zero and `CanInc`, the run is `Outcome::Stopped` with cause `resource_exhausted`/`insufficient-next-charge`, frontier `[<s0>]`, category incomplete. With `max_candidates` 2 and `increment` with no clause, the run is `Stopped` with the same cause. | Test (TC-472) |
 | FR-120-AC-7 | `ModelSystem::new` refuses an initial snapshot with `observation` `pre` (`wrong_snapshot`/`wrong-observation`), one anchored `{handler, validate}` (`wrong_snapshot`/`wrong-anchor`), one whose anchor kind is `other` (`invalid_runtime_input`/`wrong-value-kind` with field `anchor`, refused by FR-106's document reader, `qsl-semantics/src/model/observation/document.rs:525-528`, before check 3), and one holding `c3` (`invalid_runtime_input`/`invalid-value`); a universe listing `c1` twice refuses `invalid_runtime_input`/`conflicting-identity`; a universe for a population the package does not declare refuses `invalid_runtime_input`/`wrong-role-mapping`; a universe population absent from the snapshot returns `Incomplete` with `incomplete_population`/`incomplete-scope`. With no universe for `counters`, or with an operation parameter typed `Integer`, `explore_model` returns `NotSimulated::RequiresBound`, and `sample_model` `ModelSampleError::NotSimulated(RequiresBound)`, naming that root's `WireNodeId` and expand no state. | Test (TC-472) |
 | FR-120-AC-8 | A `sample_model` trace (seed `424242`, trace `0`, `max_steps` 4) over the AC-5 package ends `NoSuccessors` at `v2`, records `Small`'s finding at step 2, and replays; the same trace with that finding removed refuses `ReplayError::FindingMismatch` at step 2. With budget zero and `CanInc`, the trace ends `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 0 and replays; replayed against the same package with the default budget it refuses `ReplayError::Stopped { step: 0, recorded: Some(…), replayed: None }`. Two runs with equal inputs give equal `Exploration`s and equal `ModelTrace`s. | Test (TC-472) |
-| FR-120-AC-9 | Over the `test/orders` dispatch fixture (object type `A`, population `pop`, a query operation `ready(): Boolean` of `A` whose effective precondition is `false`, `guard` false): from `t1`, `pre Low { self.ready() }` on `ready` makes `ready` not enabled and records `ContractUndetermined { <ready identity>, none, Low, the family result Undefined with reason precondition-false }`; adding `pre Aaa { false }`, which sorts before `Low`, records no finding; `post LowPost { self.ready() }` on `ready` records the finding with `candidate` = `t1`'s state-key digest and gives no successor. Not covered: the `test/tallies` package with `Tally`, its `Sequence<Int[0, 2]>[1, 1]` field and an empty-frame `touch()` (the `touch` operation and the post-`LowPost` case on it). | Test (TC-472) |
+| FR-120-AC-9 | Over the `test/orders` dispatch fixture (object type `A`, population `pop`, a query operation `ready(): Boolean` of `A` whose effective precondition is `false`, `guard` false): from `t1`, `pre Low { self.ready() }` on `ready` makes `ready` not enabled and records `ContractUndetermined { <ready identity>, none, Low, the family result Undefined with reason precondition-false }`; adding `pre Aaa { false }`, which sorts before `Low`, records no finding; `post LowPost { self.ready() }` on `ready` records the finding with `candidate` = `t1`'s state key and gives no successor. Not covered: the `test/tallies` package with `Tally`, its `Sequence<Int[0, 2]>[1, 1]` field and an empty-frame `touch()` (the `touch` operation and the post-`LowPost` case on it). | Test (TC-472) |
 | FR-120-AC-10 | With `isZero(): Boolean` (empty frame, `post Z { result = (self.value = 0) }`), `v0` has one `isZero` successor, `v0`, whose step effect has result `{"type":"boolean","value":true}`, and `v1` has one, `v1`, with result `false`; the `isZero` result root is in `domains()`. | Test (TC-473) |
 | FR-120-AC-11 | For `increment` (post `Inc`), `spawn` and `remove` over `s0` and state `w` = {`c1` (`value` 0), `c2` (`value` 0)}: the step `increment` from `v0` has effect `created: []`, `deleted: []`, `changed: [{object: c1, field: value, pre: {"type":"integer","value":"0"}, post: {"type":"integer","value":"1"}}]`, result none; `spawn` from `s0` to `s0` plus `c2` (`value` 1, `label` 0, `next` absent) has `created: [<c2>]` and `changed: []`; `remove` with receiver `c1` from `w` to {`c2`} has `deleted: [<c1>]`. Exploring the AC-5 package twice, the second time in a child process started in an empty temporary directory, gives equal `Exploration`s, and `s0`'s key bytes are equal before and after exploring. | Test (TC-473) |
 | FR-120-AC-12 | A unit whose function body reads `self`, whose invariant reads `result`, whose invariant reads `pre(self.value)`, or whose function calls `reaches`, refuses at S3 with `missing_declaration`/`missing-name`, `wrong_snapshot`/`wrong-anchor`, `wrong_snapshot`/`forbidden-pre-read` or `ill_typed`/`operator-ineligible`, each at the source span of that form, and yields no `CheckedPackage` to simulate. | Test (TC-473) |
 | FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
 | FR-120-AC-14 | `ModelSystem::over_model` over a model identity that the refinement unit does not select (`example/not-selected`) refuses `invalid_runtime_input`/`wrong-role-mapping`; over each of the unit's two selected models it returns a system that reports that model. | Test (TC-1086) |
 | FR-120-AC-15 | Over the `test/orders` fixture of AC-9 with two `pre` clauses on `ready`, one `false` and one undefined (`self.ready()`), the clauses are conjoined in ascending name under short-circuit whatever their source order: with the undefined clause sorting first (`Aaa` undefined, `Zzz` false, in either source order) the application is not enabled and exactly one `ContractUndetermined` is recorded for `Aaa`, the false clause not being reached; with the false clause sorting first (`Aaa` false, `Zzz` undefined) none is recorded. On the dispatch path (`view_clauses`), over `ConfigVersion::size` with the same two clauses, a call of `size` gives the result of the clause that sorts first (undefined for `other`'s precondition when the undefined clause sorts first, undefined for `size`'s own precondition when the false clause does), with equal outcome and charges in both source orders. | Test (TC-472) |
-| FR-120-AC-16 | Over a model whose object type `Item` (population `items`, universe `{i1}`) declares the fields `id: UUID`, `at: Timestamp`, `price: Decimal[0, 1000; 0, 2]`, `length: Quantity<metre>`, `color: Color` (enum `red`, `blue`), `tag: Tag` (record `Tag { sku: Integer, note?: Text[0, 8] }`), `pair: Pair` (tuple `Pair(Boolean, Integer)`) and `shape: Shape` (union with nullary member `none`), an initial state whose `i1` holds `00112233-4455-6677-8899-aabbccddeeff`, Timestamp `-1`, `1.50`, `1.50` metre, `red`, `Tag { sku: 7 }`, `Pair(true, -3)` and `none` is admitted, and its state key writes each field as the QSpec FR-181-AC-19 bytes of that family: `{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}`, `{"nanoseconds":"-1","type":"timestamp"}`, `{"coefficient":"150","scale":"2","type":"decimal"}`, and for `color`, `tag`, `pair` and `shape` FR-181-AC-19's enum, record, tuple and nullary-union bytes with each `name` the declaration's checked node id in 64 lowercase hex; `length` writes `{"denominator":"2","numerator":"3","type":"rational","unit":"<u>"}`, `<u>` the 64-hex digest of `metre`'s `UnitId`. Exploration of an operation `setPrice(p: Decimal[0, 1000; 0, 2])` from that state gives the transition argument for `1.50` as `{"coefficient":"150","scale":"2","type":"decimal"}` and a step effect whose `price` post value has the same bytes. No refusal is returned. | Test (TC-1195) |
+| FR-120-AC-16 | Over a model whose object type `Item` (population `items`, universe `{i1}`) declares the fields `id: UUID`, `at: Timestamp`, `price: Decimal[0, 1000; 0, 2]`, `length: Quantity<metre>`, `color: Color` (enum `red`, `blue`), `tag: Tag` (record `Tag { sku: Integer, note?: Text[0, 8] }`), `pair: Pair` (tuple `Pair(Boolean, Integer)`) and `shape: Shape` (union with nullary member `none`), an initial state whose `i1` holds `00112233-4455-6677-8899-aabbccddeeff`, Timestamp `-1`, `1.50`, `1.50` metre, `red`, `Tag { sku: 7 }`, `Pair(true, -3)` and `none` is admitted, and its state key writes each field as the QSpec FR-181-AC-19 bytes of that family: `{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}`, `{"nanoseconds":"-1","type":"timestamp"}`, `{"coefficient":"150","scale":"2","type":"decimal"}`, and for `color`, `tag`, `pair` and `shape` FR-181-AC-19's enum, record, tuple and nullary-union bytes with each `name` the declaration's identity text; `length` writes `{"denominator":"2","numerator":"3","type":"rational","unit":"<u>"}`, `<u>` the `UnitId` text of `metre`. Exploration of an operation `setPrice(p: Decimal[0, 1000; 0, 2])` from that state gives the transition argument for `1.50` as `{"coefficient":"150","scale":"2","type":"decimal"}` and a step effect whose `price` post value has the same bytes. No refusal is returned. | Test (TC-1195) |
 | FR-120-AC-17 | Over AC-16's model with the universe `{i1, i2}` and the fields `prices: Set<Decimal[0, 1000; 0, 2]>` and `times: Set<Timestamp>` added, a state holding `prices = {1.50}` and `times = {2, 10}` writes `prices` as `{"elements":[{"coefficient":"15","scale":"1","type":"decimal"}],"type":"set"}` while `price` keeps coefficient `150`, scale `2`, and writes `times` as `{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}` (QSpec FR-181-AC-20). A field `members: Set<Reference<Item>>` holding the objects `i1` and `i2`, built in the order `i1, i2` and in the order `i2, i1`, gives two states with equal state keys, the set's reference triples ordered by their JCS bytes (QSpec FR-181-AC-21). | Test (TC-1195) |
 | FR-120-AC-18 | A state key, transition identity or step effect that would hold a value of a population type refuses `EncodingRefusal` naming the population-typed field, receiver, argument or result: `explore_model` returns `NotSimulated::KeyEncoding`, and `replay` of a trace through it returns `ReplayError::KeyEncoding`, each with `invalid_runtime_input`/`invalid-value`, and neither panics nor records a state for that value. | Test (TC-1195) |
 | FR-120-AC-19 | QSpec TC-196 D10's `B/size` clauses split across two linked source units (FR-480-AC-1), in both link orders and with either clause in either unit, give D10's one-unit results, with equal outcome and charges: `view_clauses` and the expansion read the member's own clauses from both units in ascending clause name. | Test (TC-472) |

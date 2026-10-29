@@ -37,7 +37,7 @@ the identities their step names.
    `import A` in `B`; then with a dependency input supplying a library whose
    source has `A`'s (authority, identity).
 3. Compile FR-480-AC-3's two-alias units with distinct bodies; with `B`'s
-   body on `A`'s operation; with the two selections under different digests.
+   body on `A`'s operation; with the two selections under different versions.
 4. Through the FR-278 composition, compile FR-480-AC-4's profile-order and
    profile-set mismatches between two `1-draft` units, its `v`/`w` alias
    pair, the empty list and the duplicate source identity.

@@ -14,10 +14,10 @@ Verify that two admitted declarations with identical declared shape but
 distinct original declaration keys always yield distinct effective
 declaration identities. Scope: FR-081-AC-2.
 
-Catches an implementation that computes the effective-identity digest over
+Catches an implementation that computes the effective identity from
 only the declared shape (field names, types, multiplicities) and omits the
-original declaration key from the preimage — an easy mistake, since the
-shape-only digest still "looks" content-addressed and would pass any test
+original declaration key from it — an easy mistake, since the
+shape-only identity still looks well formed and would pass any test
 that only checks determinism within one declaration. Two distinct
 declarations with the same shape would then silently collapse into one
 effective declaration, which is exactly the identity-equivalence collapse

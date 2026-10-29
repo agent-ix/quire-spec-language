@@ -126,7 +126,7 @@ reached through the registry.
 | Author | Write and format source; see syntax errors as they type | QSL library: S1 `cst` and layer-1 `format`, tool layer `complete::editor` | `parse`, `format` | `parse`, `format` |
 | Check | Admit models and libraries, check the unit, link the checked closure | QSL library: I1, I2, S2 to S4 | `select`, `check`, `check_fences` | `check` |
 | Compile | Produce the in-process `CheckedPackage` | QSL library: S1 to S4 (`qsl_replay::spine`) | `check` | `check` |
-| Package | Emit `quire.checked-package/v2` bytes with the digest-addressed source provision another party needs to import (I2) or replay (E9) | QSL library: S4 `package` (E4) | `package` | `compile` |
+| Package | Emit `quire.checked-package/v2` bytes with the identity-keyed source provision another party needs to import (I2) or replay (E9) | QSL library: S4 `package` (E4) | `package` | `compile` |
 | Execute | Call a checked function or evaluate a checked clause | QSL library: layer 5, through the execution-backend seam (§7) | `execute` | `run` |
 | Analyze | Decide a claim over every behaviour of a model with an in-process engine | QSL library: the engines in layer A (CB-3), outside the qualified core; their certificate checkers in layer 6, inside it (CB-2) | `analyze` | `analyze` |
 | Monitor | Check a supplied trace against temporal clauses | QSL library: layer A over the layer-5 trace evaluator (ADR-014 A-4) | `monitor` | `monitor` |
@@ -215,7 +215,7 @@ their dependency closure:
    variable, configuration file, search path, clock or global registry. It
    writes nothing to stdout or stderr, never calls `std::process::exit`, and
    returns a typed outcome with no panic across its public boundary. The
-   bytes it reads arrive in its request, by digest where a digest names them
+   bytes it reads arrive in its request, keyed by identity where an identity names them
    (ADR-013 O-26). The prove path runs a backend tool only at the path the
    request names (ADR-012 §7.4).
 3. **Non-core crates sit above the core.** The crates this record adds sit
@@ -314,7 +314,7 @@ below takes its request, its limits and `&Cancel`.
 |---|---|---|---|---|
 | `parse` | Read source into syntax | QSL S1, S2 | source bytes, `SourceIdentity`, S1 and S2 limits | `Staged<ParsedSource>`; tooling reads S1's `LosslessCst` directly |
 | `format` | Format admissible source (FR-003) | QSL layer 1, `qsl_cst::format` | an admissible `ParsedSource`, format limits | `Staged<FormattedSource>`: the formatted bytes |
-| `select` | Admit the domain packages a unit's `model` declarations select | QSL I1 `model::intake` | domain package documents by digest, the unit's model selections | `Staged<AdmittedModels>` |
+| `select` | Admit the domain packages a unit's `model` declarations select | QSL I1 `model::intake` | domain package documents by identity, the unit's model selections | `Staged<AdmittedModels>` |
 | `check` | Check and link | QSL S3, S4 | `ParsedSource`, `AdmittedModels`, the dependency input (ADR-015 D-1), lock evidence (ADR-011 §2.4) | `Staged<CheckedPackage>` |
 | `check_fences` | Check every `quire` fence of a spec artifact inventory as a state invariant of the object its artifact declares (FR-355) | QSL I1 `model::intake`, S1 to S3 | the artifact inventory, the module manifests that type it | `Staged<FenceReport>` |
 | `package` | Emit the checked package | QSL S4 `package` (E4) | `&CheckedPackage` | `Staged<EmittedPackage>` with its source provision |
@@ -419,7 +419,7 @@ The descriptor carries a typed origin, `ProviderOrigin::Linked` or
 `Linked` for a compile-time provider, `Process` for a plugin `hello`. Two
 descriptors of one `BackendId` that differ in origin differ in a member, so
 they conflict under the registration rule: both are withdrawn, `duplicate-backend`
-is recorded for each conflicting manifest digest, and the identity stays
+is recorded for each conflicting manifest identity, and the identity stays
 unregistered for the run (FR-288). The origin is a driver-supplied fact held in
 the registry. A manifest never states it, so a plugin cannot claim to be
 linked. A byte-identical registration stays idempotent, and the outcome does
@@ -561,7 +561,7 @@ either limit fails the plugin (PL-7).
 
 - `protocol` is the wire's identity. A reader accepts exactly one identity
   and refuses any other before reading the body (ADR-013 O-22). The wire
-  carries no version range, executable digest or crate digest.
+  carries no version range, executable identity or crate identity.
 - `id` is a request id the host assigns. Every reply names the id it
   answers.
 - `kind` is one of `hello`, `request`, `result`, `cancel`, `shutdown` and
@@ -714,31 +714,32 @@ function of their key: `prove` terminal records, `analyze` terminal records
 and `generate` artifacts. Parsing, checking, packaging, execution and
 monitoring are cheap and deterministic and run every time.
 
-**CA-2 Key.** The key is one canonical content identity: a digest in a
-QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of QSpec
-FR-306's closed object `{operation, package_id, request, backend, manifest,
-target}`, and no other member:
+**CA-2 Key.** The key is one structural value: QSpec FR-306's closed object
+`{operation, package_id, request, backend, manifest, target}`, and no other
+member, compared by equality and ordered by its canonical (RFC 8785) byte
+string:
 
 - `operation`: `prove`, `analyze` or `generate`;
-- `package_id`: the subject's identity. Its FR-322 preimage binds the source digests,
-  profiles, model selections and each dependency's `package_id`;
+- `package_id`: the subject's package identity and version with its lock rows:
+  the source labels, profiles, model selections and each dependency's identity
+  and version;
 - `request`: the canonical request, the items by occurrence key, the claims, the
   domains and bounds, the options that affect a result, and every
   deterministic budget that can move a result to `incomplete` (work units,
   state and transition budgets);
 - `backend`: the provider's `BackendId`, the identity string alone;
-- `manifest`: the provider manifest's content identity, the `ManifestDigest`
-  that layer R computes over the canonical bytes of the provider's complete
-  QSpec FR-331 descriptor, as a `quire.tool-manifest.jcs/v1` digest record. A
+- `manifest`: the provider manifest's identity, the provider's complete
+  QSpec FR-331 descriptor in canonical form, which layer R reads as the
+  manifest identity and compares by equality. A
   change to any descriptor member changes the key. The tool version is the
   descriptor's `tool.version`: every descriptor carries `tool` (QSpec FR-331
   "Backend tool"), `{name, version}` of the executable a backend that fronts
   an external tool invokes, queried from that executable at each invocation,
   or of the crate that implements a pure in-process engine, at its version
-  in the producer's build, with `build`, the `quire.build-inputs/v1` digest
-  of the provider code's build inputs that the producer's build computes. A
+  in the producer's build, with `build`, the identity label of the provider
+  code's build that the producer's build records. A
   tool upgrade, an engine release, and an engine code change under an
-  unchanged crate version therefore each change the `ManifestDigest` and the
+  unchanged crate version therefore each change the manifest identity and the
   key and leave the `BackendId` unchanged;
 - `target`: for `generate` only, the generation target and its options.
 
@@ -754,10 +755,10 @@ changed input is a miss and a stale entry is never read. Nothing else
 invalidates entries. There is no index, manifest or ledger: the store is the
 set of entries, each named by its key.
 
-**CA-4 Store and read.** An entry holds the key's JCS preimage and the
+**CA-4 Store and read.** An entry holds the key and the
 stored value: the terminal records' result-identity members, or the artifact
 bytes with their source maps. A read accepts an entry only when the entry's
-name, the digest of its stored preimage and the requested key are equal, and
+name, its stored key and the requested key are equal, and
 the value parses with the same typed reader that reads a fresh result.
 Anything else is a miss. A writer writes to a temporary name and renames it
 into place. Two writers of one key write identical bytes, so a race is

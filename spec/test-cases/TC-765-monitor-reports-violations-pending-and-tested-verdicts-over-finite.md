@@ -32,7 +32,7 @@ Tag the tests `#[trace("TC-765", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: one `MonitorRecord` naming `always p`, `Violated` at position 2, category violation, whose `counterexample` has `prefix` the three positions' digests, an empty `loop` and `trace_position` 2.
+- Step 1: one `MonitorRecord` naming `always p`, `Violated` at position 2, category violation, whose `counterexample` has `prefix` the three positions' state keys, an empty `loop` and `trace_position` 2.
 - Step 2: pending, category inconclusive, exit 0.
 - Step 3: `tested`, category success.
 - Step 4: a violation, category violation.

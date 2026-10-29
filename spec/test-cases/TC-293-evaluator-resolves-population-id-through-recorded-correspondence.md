@@ -25,8 +25,8 @@ Implemented: the evaluator matches
 (`qsl-eval/tests/it/model_reference_queries.rs`).
 
 Catches an implementation that resolves by re-deriving a binding from the
-identity's own bytes (defeating the point of an opaque digest — a real
-digest is not reversible) instead of looking it up in the correspondence
+identity's own bytes (defeating the point of an opaque identity, which
+carries no derivable binding) instead of looking it up in the correspondence
 `model` actually recorded, and an implementation that silently falls back to
 the most-recently-admitted binding regardless of which identity the `Value`
 names (invisible to a test with only one live population in scope).

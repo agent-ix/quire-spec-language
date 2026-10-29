@@ -13,7 +13,7 @@ Round-trip real native snapshots/invocations and every flat value variant.
 ## Test Procedure
 
 Read exact constructor bytes and whitespace/reordered encodings under their
-selected references. Compare original drafts, bytes and digests. Execute
+selected references. Compare original drafts and bytes. Execute
 reread inputs through actual state and operation packages.
 Validate the real envelopes against the local Draft 2020-12 schema, including
 all observations, all ten value variants, populated nested records, duplicate

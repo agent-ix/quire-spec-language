@@ -17,7 +17,7 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-Check the pinned pre-guard-cannot-protect-post and captured-post-value-not-retagged cases under the qualified postcondition context. Compare with same-pre-value-guard and pre-preserves-captured-alias. Keep exact binding/source/anchor identities in each request.
+Check the named pre-guard-cannot-protect-post and captured-post-value-not-retagged cases under the qualified postcondition context. Compare with same-pre-value-guard and pre-preserves-captured-alias. Keep exact binding/source/anchor identities in each request.
 
 ## Expected Results
 

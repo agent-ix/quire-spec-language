@@ -165,7 +165,7 @@ the protocol's qualified name.
   replicated role's binder, a FIFO channel's message binder and the `finish`
   binder at the level that follows the captures, and each role, channel, `sequence` and `finish` node at its
   declaration path and each queue with none; the `roles`,
-  `channels` and `queues` sets are ascending by node digest whatever the
+  `channels` and `queues` sets are ascending by node id (QSpec FR-322 node `id`) whatever the
   source order. A protocol that holds any other construct refuses
   `unsupported_construct`/`not-yet-implemented` at its declaration, once for
   each such construct and naming it, and so does a reference to it: a control
@@ -234,7 +234,7 @@ emissions.
   `reference` (FR-264), so no protocol body nests an application or a
   binding beyond QSpec FR-322's body grammar.
 - The emitter SHALL write each node's `dependencies` as the unique
-  digest-ascending `reference` targets of its body.
+  node-id-ascending `reference` targets of its body.
 - The emitter SHALL write the clause node's `declaration` as `P` and each
   member's as the table gives. A role, a channel, a template and a control of
   one name in one protocol therefore have four distinct declarations. A
@@ -270,12 +270,12 @@ emissions.
 
 - The emitter SHALL write each set of the table (`roles`, `relationships`,
   `channels`, `queues`, `requirements`, `compensations`, `visible`,
-  `contracts`) in strictly ascending node-id digest order. It SHALL write
+  `contracts`) in strictly ascending node-id order. It SHALL write
   `queues` as one queue for each channel, ordered by each queue's own
-  digest and not by its channel's, and SHALL write the cases of a `choice` and
+  node id and not by its channel's, and SHALL write the cases of a `choice` and
   the branches of a `parallel` sorted by label as UTF-8 bytes and the joined
   labels in ascending label order. It SHALL write `related` records sorted by
-  the relationship node's digest, then the canonical bytes of the first end,
+  the relationship node's id, then the canonical bytes of the first end,
   then those of the second.
 - The emitter SHALL write a predicate join's `predicate` member as a
   reference to the `function` node whose key the checked policy
@@ -376,7 +376,7 @@ FR-105).
 | FR-383-AC-9 | A role, a channel, a compensation template and a control all named `X` in one protocol emit four nodes with four distinct `declaration.qualified_name` values; a control's declaration is its holder's followed by its own name, with no segment for a branch, a case or the `then` and `timeout` positions; every declaring construct has one `declaration` occurrence at its region and a source-map row keyed (node id, `declaration`, 0), a queue has one `generated` occurrence and none else, and a binder node has one `expression` occurrence for each introducing construct, in source order. | Test (TC-1062) |
 | FR-383-AC-10 | Binders emit with the levels QSpec FR-464 fixes: in **W**, `view` is level 0, `opened` 1, the capture `order` 2, `sent` the entry count of `Requested`; two constructs that introduce a binder of equal name, level and type share one node with two `expression` occurrences, and a binder is never numbered by source position. | Test (TC-1062) |
 | FR-383-AC-11 | Every guard, constraint, condition, key, initializer and `until` term is a literal or a reference to its FR-093 `expression` node, and a walk of the emitted JSON classifies every protocol body position as a Leaf, Group, Tuple, Member or Body of QSpec FR-322's stratified grammar, with no nested application. | Test (TC-1062) |
-| FR-383-AC-12 | Declaring the roles, channels, compensations, `visible` entries, `contracts`, cases, branches, joined labels and `related by` clauses of **W** in a different order emits the same nodes in the same bytes and the same `package_id`; every set is in ascending digest order, the queues are ordered by their own digests (a source whose channel order differs from the queue-digest order still emits the queue-digest order), and cases and branches are sorted by label as UTF-8 bytes. Swapping two children of a `sequence`, or two captures, changes the node key and the `package_id`. | Test (TC-1062) |
+| FR-383-AC-12 | Declaring the roles, channels, compensations, `visible` entries, `contracts`, cases, branches, joined labels and `related by` clauses of **W** in a different order emits the same nodes in the same bytes and the same `package_id`; every set is in ascending node-id order, the queues are ordered by their own node ids (a source whose channel order differs from the queue node-id order still emits the queue node-id order), and cases and branches are sorted by label as UTF-8 bytes. Swapping two children of a `sequence`, or two captures, changes the node key and the `package_id`. | Test (TC-1062) |
 | FR-383-AC-13 | Two `relationship` declarations binding one model relationship emit one `relationships` entry; two equal `related by` clauses on one `send`, two equal `visible` entries and `requires temporal Due` written twice each emit one entry; each such source emits the same bytes as the source without the repeat. | Test (TC-1062) |
 | FR-383-AC-14 | Each protocol node's key equals the SHA-256 of the RFC 8785 bytes of its `quire.application-node/v1` preimage computed independently. Reformatting **W**, adding a comment and adding a second `protocol OrderFlow` reference leave every protocol key and the `package_id` unchanged; renaming a role, retargeting a reference, changing one literal, changing a capacity, a selector, a join policy or a loop-proof term, changing the clause's `owner_model`, and adding `scheduling adversarial` each change the changed node's key, the clause key and the `package_id`. | Test (TC-1062) |
 | FR-383-AC-15 | Emitting **W** twice, and in a unit that declares an unrelated protocol before it and one after it, gives the same protocol nodes, bytes and `package_id` for **W**; the clause key changes when, and only when, any node it reaches changes. | Test (TC-1062) |
@@ -384,7 +384,7 @@ FR-105).
 | FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package whose lock selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a requirement cycle never reaches S4 (FR-218-AC-25). | Test (TC-1063) |
 | FR-383-AC-18 | A protocol with an S3 refusal (a join naming a missing branch) in a unit that also holds a good protocol emits no node of either protocol and no package; emitting the good protocol alone succeeds. | Test (TC-1063) |
 | FR-383-AC-19 | Reading **W**'s package through QSL's I2 reader admits it and returns every protocol node with the key, tag, form, type, declaration, body, dependencies and occurrences emitted; the protocol rebuilt from the read-back nodes equals the protocol rebuilt from the in-process checked clause in keys, set order, ordered lists, binder levels, channel premises, queue bounds and derived causal relation. | Test (TC-1063) |
-| FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending digest order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |
+| FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending node-id order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
 | FR-383-AC-22 | **W** with `Shipments` joined `predicate(both) [west, east]` over `function both using v(x: Boolean, y: Boolean): Boolean pure { x and y }` emits a `parallel` node whose join Group holds `policy` `predicate` and a `predicate` reference to `both`'s `function` node, which the package holds, and `joined` `east`, `west`; the same unit written `[east, west]` emits the same bytes and the same `package_id`; a second `parallel` joined on `both` references the same node; the read-back of each `parallel` node gives `Predicate{function}` with `both`'s key. Renaming `both` to `either` keeps the `parallel` node's reference equal to the renamed function's node key. | Test (TC-1061) |
 | FR-383-AC-23 | ADR-027 §7's `Fill` with `role w on M` emits a `role` node whose `model` argument is the text `identity` of `M`'s `model_selections` row, with an empty `replication` Group and no `model` dependency, and QSL's I2 reader admits it (QSpec FR-465-AC-9); a clause with `role w on M` and `role u on N` emits two role nodes whose texts are the two selections' identities, with different keys, and a role on the whole model and `role v on M::Cell` have different keys. | Test (TC-1061) |

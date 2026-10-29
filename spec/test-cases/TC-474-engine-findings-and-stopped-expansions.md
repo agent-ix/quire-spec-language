@@ -43,10 +43,8 @@ test system is an integer graph whose `successors` returns a configured
    against the stopping chain.
 6. Sample step 2's graph from `0` with seed `424246`, trace `0` and
    `max_steps` 2, then replay the trace with `"f"` removed from its
-   findings. Seed `424246`'s step-0 draw preimage
-   `{"choice":"0","draw":"0","seed":"424246","step":"0","trace":"0"}` hashes to a digest
-   whose big-endian value is odd, so with `n = 2` it selects index 1, the
-   successor `2` in canonical order.
+   findings. Seed `424246`'s step-0 draw with `n = 2` selects index 1 (read from QSpec's
+   sampler vector for that seed), the successor `2` in canonical order.
 
 Tag the tests `#[trace("TC-474", "FR-101-AC-n")]` and, for step 1's
 categories, `#[trace("TC-474", "FR-097-AC-5")]`.

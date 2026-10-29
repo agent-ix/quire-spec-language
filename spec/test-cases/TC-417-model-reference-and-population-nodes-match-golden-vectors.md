@@ -1,12 +1,12 @@
 ---
 id: TC-417
-title: "Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner"
+title: "Model declaration, Reference and Population nodes key to the vectors under ModelOwner"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-094
     type: verifies
 ---
-# TC-417: Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner
+# TC-417: Model declaration, Reference and Population nodes key to the vectors under ModelOwner
 
 ## Description
 
@@ -29,7 +29,7 @@ Scope: FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 (its
 
 ## Test Procedure
 
-Every fixture admits the domain package `acme/orders` that FR-094's Golden
+Every fixture admits the domain package `acme/orders` that FR-094's Vector index
 vectors section describes, at version `1.0.0` unless a step says otherwise,
 with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
 `Sub` has supertype `Order`, inherits `total` and redefines `size`.

@@ -121,7 +121,7 @@ the internal failure `RunRefusal::Fault`.
 
 | Variant | Carries | Code and cause |
 | --- | --- | --- |
-| `AdmittedPackage` | the admitted package's `package_id` digest, and the checked unit's emitted `package_id` digest or none when the unit was never emitted | `stale_dependency`/`content-mismatch` |
+| `AdmittedPackage` | the admitted package's canonical bytes, and the checked unit's emitted package bytes or none when the unit was never emitted | `stale_dependency`/`content-mismatch` |
 | `ScalarIdentity` | a cause: FR-357's `Node`, `Operator` or `Occurrence`, or this requirement's `Function` | `stale_dependency`/`content-mismatch` |
 | `Operands` | Contract IR's `CheckedScalarOperandError` | `unsupported_construct`/`expression-form` |
 | `OperandNotParameter` | `ordinal` | `unsupported_construct`/`expression-form` |
@@ -231,7 +231,7 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
 | FR-367-AC-9 | The `BoundScalarOperands` returned for a claim equals, member for member, what FR-357's operator-level claim for the same occurrence holds as its ordered operand values, and `values()` is accepted unchanged as the `operands` of a generated oracle's native request (CG `KaniScalarNativeRequest.operands`); a differently ordered or reconstructed vector is a different binding. | Test (TC-1053) |
 | FR-367-AC-10 | Over `function lt using v(a: Int[0, 9]): Int[0, 10] pure { let x = a in x + 1 }`, the `+` occurrence returns `Refused(OperandNotArgument { ordinal: 0, parameter: x, level })` with the binder's declared name and level (`unsupported_construct`/`expression-form`) and binds no partial list; the same holds for a quantifier-bound variable operand, such as `x` in `forall(x in deref(n).items: x + 1 > 0)` over a `Reference<M::Node>` argument. | Test (TC-1053) |
 | FR-367-AC-11 | The entry binds from the caller's one admission: with the emitted unit and its bytes dropped after the caller's `read_checked_package` call, `bind_scalar_operands` over the admitted `CheckedPackageV2` and the unit's `AdmittedModels` and `CheckedUnit` binds `sub`'s `-` occurrence to `[7, 2]` for `b = 2`, `a = 7`. The entry has no byte or `EmittedUnit` input, so by signature it can neither read nor admit the emitted package a second time; the compiler enforces this, and the test observes the binding only. | Test (TC-1053) |
-| FR-367-AC-12 | An admitted package that is not the admission of the checked unit's own emitted bytes, such as the admission of `sub` alone passed with the `CheckedUnit` of `sub` plus a second function `neg`, returns `Refused(AdmittedPackage)` (`stale_dependency`/`content-mismatch`) carrying both `package_id` digests, even though `sub`'s `-` occurrence is a node of both packages; the same occurrence binds `[7, 2]` over the second unit's own admission. | Test (TC-1053) |
+| FR-367-AC-12 | An admitted package that is not the admission of the checked unit's own emitted bytes, such as the admission of `sub` alone passed with the `CheckedUnit` of `sub` plus a second function `neg`, returns `Refused(AdmittedPackage)` (`stale_dependency`/`content-mismatch`) carrying both packages' bytes, even though `sub`'s `-` occurrence is a node of both packages; the same occurrence binds `[7, 2]` over the second unit's own admission. | Test (TC-1053) |
 
 ## Dependencies
 

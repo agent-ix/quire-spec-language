@@ -31,8 +31,8 @@ returns `quire.checked-package/v2` bytes
 ([FR-027](FR-027-export-compiled-native-package.md)). Every other declared
 edition, `0-draft` included, refuses `unknown_edition` (FR-027, FR-100).
 This requirement owns what the two requests share: the envelope, the
-source selections and their labels, path resolution, the intake limits, the
-digest checks and the intake refusal envelope. FR-100, FR-312 and FR-027 own
+source selections and their labels, path resolution, the intake limits and
+the intake refusal envelope. FR-100, FR-312 and FR-027 own
 each request's members, outcome and exit statuses. The driver owns the
 request-file operand, the option spelling that sets each limit, usage and
 arity errors, and writing to the process streams (FR-287).
@@ -44,7 +44,7 @@ The intake limits are the two byte limits `request_bytes` and
 
 A JSON object with format and request fields. Each source selection names
 its file, the two source labels of [FR-001](FR-001-read-exact-source.md)
-(`authority` and `identity`), its SHA-256 digest and its formal
+(`authority` and `identity`) and its formal
 document/revision. Both labels are required members. A request whose source
 identity lacks one, such as a request written with only `identity`, refuses
 at the request stage with the native code `invalid-request`, exit code 20;
@@ -62,7 +62,7 @@ not establish a tenant filesystem boundary.
 (FR-287); the driver renders it and exits with its FR-285 exit code. An
 intake failure's outcome carries no result document and no package bytes. It
 carries a command-error envelope in format `native-run-result/2` (FR-267)
-with the request digest when read, the typed stage and code and the relevant
+with the typed stage and code and the relevant
 original source details. On FR-301's six-code contract, the outcome's exit
 code is 20 for malformed requests and I/O failures. Writing the outcome to a
 stream, and a stream that fails or closes, are the driver's (FR-287,
@@ -86,17 +86,16 @@ configured value.
 The command shall count every dependent file toward `dependent_bytes` by its
 size, whatever its role (model, each program unit, library, snapshot, invocation or
 package), and shall apply no limit on the number of files.
-The command shall verify each selected file's digest before consuming it.
 The command shall begin each invocation with fresh budgets.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-026-AC-3 | Through `command` in process, a `1-draft` run request with a stale source digest, a malformed request, an unknown format and an unavailable file each refuse at their actual stage with their catalogued code and the available source details, with no result document and exit code 20; each command-error envelope conforms to the native result schema. | Test (TC-104) |
+| FR-026-AC-3 | Through `command` in process, a `1-draft` run request with a malformed request, an unknown format and an unavailable file each refuse at their actual stage with their catalogued code and the available source details, with no result document and exit code 20; each command-error envelope conforms to the native result schema. | Test (TC-104) |
 | FR-026-AC-4 | Through `command` in process, a `1-draft` run request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the setting and its configured value; the same requests with each limit raised to their size run; a fresh default request then succeeds. | Test (TC-104) |
 | FR-026-AC-5 | `command` given one `1-draft` request file by its path from two different process working directories returns equal outcomes, the request's relative, absolute and parent-relative file paths resolving against the request's directory and as written; no call writes a byte to stdout or stderr. | Test (TC-104) |
-| FR-026-AC-6 | A `1-draft` run request whose program source names `authority` `agent-ix` and `identity` `p` runs, and its `spine-run-result/1` `source` renders those two labels and the source digest, and no other identity member. The same request without the program source's `authority`, and again without its `identity`, refuses at the request stage with `invalid-request`, exit code 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
+| FR-026-AC-6 | A `1-draft` run request whose program source names `authority` `agent-ix` and `identity` `p` runs, and its `spine-run-result/1` `source` renders those two labels and no other identity member. The same request without the program source's `authority`, and again without its `identity`, refuses at the request stage with `invalid-request`, exit code 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
 ## Dependencies
 

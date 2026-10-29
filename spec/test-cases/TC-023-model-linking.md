@@ -16,7 +16,7 @@ The complete typing/projection acceptance of IT-005 remains separate.
 ## Test Procedure
 
 From TC-020's complete qualified inputs, select a dependency revision/content
-different from the pinned native import closure while retaining the original
+different from the selected native import closure while retaining the original
 expected binding. Use the native resolver's admitted stale control and request
 linking; no Filament package reader is required.
 

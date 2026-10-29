@@ -37,11 +37,10 @@ refuses as `invalid_source_identity`/`blank-label`, naming the first blank
 label (FR-001), before the source path is opened. The source path is an OS
 path for actual I/O, including Unix non-UTF-8 paths. JSON path text is
 display-only and may contain replacement characters; it cannot serve as
-portable source authority. The exact source labels and digest remain
+portable source authority. The authority and identity labels remain
 distinct. The `ParsedSource`
 a successful parse returns names the source by its `RawSourceRef`: the
-authority, the identity and the `quire.source.bytes/v1` digest (QSpec
-STD-150).
+authority and the identity (FR-001).
 
 Native Diagnostic implements standard Display and Error,
 retaining its structured phase/code/source/path/span/message fields and existing
@@ -52,7 +51,7 @@ the source's `RawSourceRef` (FR-001), the reference the checked package's lock
 and source regions name the source by.
 
 Retain the public `source: SourceIdentity` field as diagnostic provenance, not
-an underlying error. Implement these two standard traits directly: the pinned
+an underlying error. Implement these two standard traits directly: the
 thiserror derive treats any field named source as an error cause and cannot
 express this existing API. Display renders `{code}: {message}` and Error has
 no underlying cause. This scoped compatibility exception does not introduce
@@ -67,12 +66,12 @@ The refusal line's keys are in one fixed order, the field order of the refusal r
 | FR-010-AC-1 | `OutcomeDocument::from_parse` over a successful `parse` operation is one `quire-outcome/1` document with operation `parse` and category `success`, whose FR-285 exit code is 0. | Test (TC-015) |
 | FR-010-AC-2 | A refused syntax request whose construct is invalid, not merely unsupported, returns an outcome whose FR-285 exit code is 20, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for invalid or refused input. | Test (TC-015) |
 | FR-010-AC-4 | An exhausted parser request returns an outcome whose FR-285 exit code is 22, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for incomplete. | Test (TC-015) |
-| FR-010-AC-5 | The `ParsedSource` of a successful parse carries the `quire.source.bytes/v1` digest of the bytes actually read. | Test (TC-015) |
-| FR-010-AC-6 | Valid source at a non-UTF-8 Unix file path, read through FR-001's source intake, parses, and the `ParsedSource` the `parse` operation returns for it carries the exact labels and byte digest. | Test (TC-017) |
+| FR-010-AC-5 | **RETIRED (no source digest).** The `ParsedSource` of a successful parse names its source by authority and identity only. | Test (TC-015), retired |
+| FR-010-AC-6 | Valid source at a non-UTF-8 Unix file path, read through FR-001's source intake, parses, and the `ParsedSource` the `parse` operation returns for it carries the exact authority and identity labels. | Test (TC-017) |
 | FR-010-AC-7 | A missing or unreadable source path refuses at FR-001's source intake, exit code 20, before any parse, and no `parse` outcome document is produced. | Test (TC-015, TC-017) |
 | FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test (TC-018) |
 | FR-010-AC-9 | A construct the parser recognizes but the admitted profile does not support returns an outcome whose FR-285 exit code is 21, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for unsupported. | Test (TC-015) |
-| FR-010-AC-11 | The `parse` operation, called in process over an admissible file with source authority `agent-ix` and identity `specs/a.quire`, returns a `ParsedSource` that names its source with authority `agent-ix`, identity `specs/a.quire` and the file's `quire.source.bytes/v1` digest, and no other source member. Source intake with authority `agent-ix`, an empty identity and a missing path refuses `invalid_source_identity`, cause `blank-label`, `label` `identity`, exit code 20, not a file error. `format` takes the same two labels: `format` with authority `agent-ix` and identity `specs/a.quire` over an admissible complete-V1 file returns the formatted source, exit code 0. No call writes a byte to stdout or stderr. | Test (TC-425) |
+| FR-010-AC-11 | The `parse` operation, called in process over an admissible file with source authority `agent-ix` and identity `specs/a.quire`, returns a `ParsedSource` that names its source with authority `agent-ix`, identity `specs/a.quire`, and no other source member. Source intake with authority `agent-ix`, an empty identity and a missing path refuses `invalid_source_identity`, cause `blank-label`, `label` `identity`, exit code 20, not a file error. `format` takes the same two labels: `format` with authority `agent-ix` and identity `specs/a.quire` over an admissible complete-V1 file returns the formatted source, exit code 0. No call writes a byte to stdout or stderr. | Test (TC-425) |
 
 ## Dependencies
 

@@ -13,7 +13,7 @@ relationships:
 ## Description
 
 Verify that a complete-V1 (`1-draft`) source whose `model M` declaration
-selects a domain package by its `sha256-jcs` digest compiles end to end through
+selects a domain package by its identity compiles end to end through
 the spine (S1, S2, I1, the assembler, check, link, the v2 emitter and QSL's I2
 read), that the v2 bytes select that package in `model_selections`, and that
 each defect refuses at the stage that owns it. This catches a model selection
@@ -30,8 +30,7 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    as the package input through S1, S2, `model::intake::admit_unit`,
    `PackageDeclarations::assemble`, check, `CheckedPackage::link` and
    `emit_checked` (`qsl-package`). Read the bytes back through QSL's I2 reader
-   with the document's `sha256-jcs` digest as domain package evidence, then
-   with another digest, first without `code` and `same`; then the fixture
+   first without `code` and `same`; then the fixture
    with `code` only, and with `same` only.
 2. Compile a native-compile/1 request selecting that program and the document
    as a `semantic-ir/2.0.0` model, and compare the outcome's package bytes with
@@ -42,8 +41,8 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    `Widget` and `Gadget` generalize each other.
 4. Compile the fixture through `command` with `deref(g).nope`; with `g = w`
    over `w: M::Rock`; with `Reference<M::Nope>`; with no
-   model; with a document of the same package whose digest differs; and with
-   the declaration's digest spelled `sha256:`.
+   model; with a document of the same package whose version differs; and with
+   a clause after the declaration's identity.
 
 Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1,
 including its two field-access and conforming-equality cases),
@@ -56,17 +55,16 @@ including its two field-access and conforming-equality cases),
 - Step 1: nothing is omitted; `M::Gadget` and `M::Widget` are declared object
   types and `Gadget` conforms to `Widget`, not the reverse; the lock and the
   identity preimage `model_selections` are
-  `[{"identity": "acme/orders", "digest_domain":
-  "sha256-jcs", "digest": <the document's digest>}]`; a model node is emitted;
-  without `code` and `same` the read is Verified and exports `keep` and
-  `held`, and the other digest is refused. With `code` only, the read is
+  `[{"identity": "acme/orders", "version": <the document's version>}]`; a
+  model node is emitted; without `code` and `same` the read is Verified and
+  exports `keep` and `held`. With `code` only, the read is
   Verified and exports `code`: IR-285 and QSpec STD-100 resolve the field
   member through the lock-selected domain package. With `same` only, the
   read is Verified and exports `same`: IR-285's QVC checked-operation
   catalog (STD-101/102) admits conforming operands for
   `quire.op.reference.eq`.
 - Step 2: exit 0; the package bytes equal the library bytes, and its `model_selections`
-  digest is the one the program's `model` declaration spells.
+  entry is the one the program's `model` declaration names.
 - Step 3: one assembler error, `UnresolvedTypeName("M::Nope")`, code
   `missing_declaration`, at `M::Nope`; with no admitted model,
   `UnadmittedModel`, `missing_import`, at the `model` declaration; intake
@@ -76,5 +74,6 @@ including its two field-access and conforming-equality cases),
 - Step 4: exit 20 and no package bytes each time; stage `check` with
   `ill_typed` at `deref(g).nope` and at `g = w`; stage `assembly` with
   `missing_declaration` at `M::Nope`; stage `intake` with `missing_import`
-  (twice) and `invalid_model_binding`, each at the `model` declaration; every
+  and `invalid_model_binding`/`wrong-model-selection`, each at the `model`
+  declaration; `invalid_syntax` at the clause after the identity; every
   message is readable text.

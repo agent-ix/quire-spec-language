@@ -25,7 +25,7 @@ A CG consumer permitted by [FR-060](FR-060-check-qsl-api-surface-boundary.md) T1
 ## Inputs
 
 - `acquire_checked_closure(source, path, bytes, packages, dependencies, limits, replay_limits)`: exactly the seven inputs and limit meanings of `compile_admitted` and `compile_package`.
-- A `CheckedClosureCompilation` returned by acquisition; `lookup_callable(owner_package_id, wire_node_id)` with the exact `DigestRecord` id of the unit or one admitted dependency and the callable's `WireNodeId`; the opaque `CallableSelection` returned by that lookup; a `NestedCallOccurrence` (the checked `call` node's `WireNodeId` and the ordinal of its `expression` occurrence); optional host `BodyFactory` bindings with their leaf `Signature` values; an application environment; completed `Vec<quire_exact::Value>` arguments; and a caller-owned `quire_exact::Meter` with its optional installed cancellation handle.
+- A `CheckedClosureCompilation` returned by acquisition; `lookup_callable(owner_package, wire_node_id)` with the exact package identity of the unit or one admitted dependency and the callable's `WireNodeId`; the opaque `CallableSelection` returned by that lookup; a `NestedCallOccurrence` (the checked `call` node's `WireNodeId` and the ordinal of its `expression` occurrence); optional host `BodyFactory` bindings with their leaf `Signature` values; an application environment; completed `Vec<quire_exact::Value>` arguments; and a caller-owned `quire_exact::Meter` with its optional installed cancellation handle.
 
 ## Outputs
 

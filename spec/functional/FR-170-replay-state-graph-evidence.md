@@ -54,7 +54,7 @@ evaluator, does not count.
 ## Inputs
 
 - FR-098's request: package reference, byte provision (the subject's
-  initial snapshots by `sha256-jcs` digest) and limits, with the subject's
+  initial snapshot documents by their `identity`) and limits, with the subject's
   universes.
 - A `GraphEvidenceEnvelope` whose obligation identity binds the subject,
   the claim and its instance, and whose checked claim occurrence selects the
@@ -64,7 +64,7 @@ evaluator, does not count.
 ```rust
 pub struct ModelPath {
     pub initial: u32,                   // index into the subject's initial states
-    pub steps: Vec<ModelStep>,          // FR-128: transition identity, post-state digest
+    pub steps: Vec<ModelStep>,          // FR-128: transition identity, post-state key
 }
 
 pub struct ModelLasso {
@@ -109,7 +109,7 @@ pub enum GraphEvidence {
 - For a trap, the replay result also carries the closure exploration's
   node count and, when the closure holds a target node, the first such
   node in FR-101 canonical breadth-first order of that exploration, as its
-  `quire.simulation.state-key/v1` digest.
+  `quire.simulation.state-key/v1` state key.
 
 ## Behavior
 
@@ -127,7 +127,7 @@ pub enum GraphEvidence {
 - The executor SHALL re-execute each `ModelPath` from its indexed initial
   state with FR-101 `replay`, refusing as FR-128 refuses on an `initial`
   index outside the subject, a step that is not enabled, or a post-state
-  digest that differs from the recomputed one.
+  key that differs from the recomputed one.
 - The executor SHALL evaluate predicates under the evidence's `over`
   binding through the one clause evaluator (FR-107).
 
@@ -225,11 +225,11 @@ pub enum GraphEvidence {
 | FR-170-AC-1 | ADR-022 §7.1's `ReachesTwo` witnesses replay to `reproduced-with-evaluated-witness`, for a `Sampled` witness and an `Explored` one alike, with no sampler in the replay request. | Test (TC-595) |
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
-| FR-170-AC-4 | A `ModelGraph` request has no generic replay target and resolves the claim from its envelope identity. Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
+| FR-170-AC-4 | A `ModelGraph` request has no generic replay target and resolves the claim from its envelope identity. Refusals settle no result: a witness with one post-state key altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
 | FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`, and so does the evidence with `where.locus` naming another expression, with the same cause. Over the same subject, `always possible PDiv using v over (c: Config::ConfigVersion) from (c.versionNumber >= 1) { 2 div (2 - c.versionNumber) = 2 }` for `c = a`, a claim with two predicates, returns `Undefined` evidence with the same stem whose `where.predicate` names the body; it replays to `reproduced-with-evaluated-witness`, and the same evidence with `where.predicate` naming the `from` predicate `c.versionNumber >= 1`, same cause, settles `inconclusive`, `Verdicts`. | Test (TC-612) |
 | FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
 | FR-170-AC-7 | FR-168-AC-11's guard evidence, FR-168-AC-12's terminal-predicate evidence and FR-168-AC-13's state-constraint evidence each replay to `reproduced-with-evaluated-witness`, and FR-168-AC-13's evidence does so through a request that selects `Half` and through one that selects no constraint, since the replay reads `Half` from `where.locus`; the guard evidence with `where.transition` naming another transition, or with its stem's last step removed, settles `inconclusive`, `Verdicts`. FR-168-AC-13's evidence with its stem's last step removed, which ends at `va = 1` where `Half` is defined, and with its cause changed to another reason, each settle `inconclusive`, `Verdicts`; the same evidence in an envelope over the unit where `Half` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-612) |
-| FR-170-AC-8 | Over ADR-022 §7.2's game model, `CanStillWin`'s trap at `Lost` replays by exploring its forward closure `{Lost}`, which holds no target node, reports node count 1, reproduces, and FR-169 settles it `refuted`, `closed-scope` (V-10) with no certificate checked. The same trap with its stem ending at `Mid`, whose forward closure reaches `Won`, settles `inconclusive`, `Verdicts`, and its replay result names `Won`'s state-key digest as the first target node. | Test (TC-595) |
+| FR-170-AC-8 | Over ADR-022 §7.2's game model, `CanStillWin`'s trap at `Lost` replays by exploring its forward closure `{Lost}`, which holds no target node, reports node count 1, reproduces, and FR-169 settles it `refuted`, `closed-scope` (V-10) with no certificate checked. The same trap with its stem ending at `Mid`, whose forward closure reaches `Won`, settles `inconclusive`, `Verdicts`, and its replay result names `Won`'s state key as the first target node. | Test (TC-595) |
 
 ## Dependencies
 

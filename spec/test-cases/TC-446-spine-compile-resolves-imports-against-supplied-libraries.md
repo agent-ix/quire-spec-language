@@ -34,8 +34,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    and an unimported `test/other` supplied. Read the first package back
    through QSL's I2 read.
 2. Compile `import "test/geometry" as g;` and `import "test/geometry";`.
-   Then follow the identity string with `version "1"`, with `digest "<d>"`
-   and with both. Then supply `test/geometry` from a source whose `f` is
+   Then follow the identity string with `version "1"`. Then supply `test/geometry` from a source whose `f` is
    `x < 6`.
 3. Supply no library; supply two
    libraries as `test/geometry`; supply a library whose source has the
@@ -57,7 +56,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    again.
 7. Call `command`'s `compile` over a native-compile/1 request whose `1-draft`
    program is step 5's unit and whose `libraries` names `test/geometry`
-   by file, source digest and the labels above; then the same request with
+   by file and the labels above; then the same request with
    a `0-draft` program, with a library of an empty identity, and with a
    library object carrying a `version` member.
 
@@ -85,8 +84,8 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 - Step 1: the lock and the identity preimage each hold the one
   `DependencySelection` `{test/geometry, d}`; the I2 read admits it;
   both compiles emit identical bytes.
-- Step 2: both identity-only imports admit and name `test/geometry`; each
-  of the three imports with a `version` or `digest` token refuses at S1 as a
+- Step 2: both identity-only imports admit and name `test/geometry`; the
+  import with a `version` token refuses at S1 as a
   syntax error and records no selection; the changed source compiles and the
   lock's selection holds its recompiled `package_id`.
 - Step 3: `missing_import`/`missing-selection` at the import's identity

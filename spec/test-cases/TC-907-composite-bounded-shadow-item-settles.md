@@ -25,7 +25,7 @@ Scope: FR-358-AC-1 to FR-358-AC-9.
 
 Use FR-358's unit and its names `E`, `N`, `B`, `f`, `g`, `h` and `k`. Build
 each request from the unit's spine compile. Unless a step says otherwise,
-each request's `obligation_identity` is FR-358 step 6's digest over that
+each request's `obligation_identity` is FR-358 step 6's structural identity of that
 call's harness bounds.
 
 1. Falsified, row F-7, with `refinement: Exhausted`, at `E`, with operands
@@ -83,7 +83,7 @@ call's harness bounds.
    of the node's two occurrences, under its own identity, through both
    entries; occurrence 2's claim under occurrence 1's identity.
 10. Identity, written independently: the canonical O-09 text for `f` over
-    `B` and for `g`, hashed in the test, equals the request's identity; a
+    `B` and for `g`, built as a tuple in the test, equals the request's identity; a
     composite literal operand's argument is `graph_child` over its own node
     id with the empty `bounds` domain; at `h`, the argument's text holds the
     depth the harness drew, for depth 3 and for depth 4.
@@ -125,11 +125,11 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
   - F-6: `Incomplete { stage: RefinementCeiling }`
     (`Incomplete(ResourceExhausted)`). The F-4, F-5 and F-6 reports differ in
     their stage.
-- Step 3: in order, `PackageIdMismatch` (`content-mismatch`),
+- Step 3: in order, the package-tie refusal (`stale_dependency`/`content-mismatch`),
   `UnknownFunction` (`missing-name`), three `ScalarIdentity`
   (`content-mismatch`) refusals each with its own cause, two
   `ScalarIdentity::Occurrence` refusals, and `ScalarIdentity::Obligation`
-  naming both digests. Each report carries the full claim.
+  naming both identities. Each report carries the full claim.
 - Step 4: `Proved { basis: Checks { success_checks: 4 }, certification: Certified }`, success, for each (row V-4).
 - Step 5: `Tested`, success and never `Proved`, for each (row V-5).
 - Step 6: `Failed` for both `refinement: Disagreed` calls (row V-1);
@@ -139,12 +139,12 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
 - Step 7: each refuses with no settlement row, at 4 checks and at 0, naming
   the key.
 - Step 8: `Disagreed` (`Failed`, never `Refuted`) for the first five cases.
-  The edited source still refuses `PackageIdMismatch`.
+  The edited source still refuses with the package-tie refusal.
 - Step 9: `Agrees` for both occurrences through the falsified entry and
   `Proved` through the verified one; occurrence 2 under occurrence 1's
   identity refuses `ScalarIdentity::Obligation`.
-- Step 10: every digest equals the hand-hashed text; two drawn depths give
-  two digests.
+- Step 10: every identity equals the hand-built tuple; two drawn depths give
+  two identities.
 - Step 11: equal for the sent claim and unequal for each changed member.
 - Step 12: `LimitAboveReader` under the default, a settlement when raised.
 - Step 13: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming `replay_composite_parity` and `function` (FR-358-AC-9).

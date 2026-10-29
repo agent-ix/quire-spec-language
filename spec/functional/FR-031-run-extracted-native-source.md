@@ -42,7 +42,7 @@ in which `qsl-replay` is built with its feature `quire-extraction` (for the
 ## Inputs
 
 In process: the original Markdown `Source`, with its four FR-001 labels and
-the raw bytes the caller digest-verified; FR-030's `Selection` (the authored
+the raw bytes the caller supplies; FR-030's `Selection` (the authored
 clause id, the authored package and the body's own `SourceIdentity`);
 FR-030's `Limits` for the original document; and the other
 `ClauseRunRequest` members (FR-109): FR-056's package input, FR-099's
@@ -54,14 +54,11 @@ Through the command, the request is FR-312's clause-run request with these
 members beside `clause`:
 
 - `program`: the ordinary source selection, which selects the
-  digest-verified original Markdown document. Its identity satisfies Quire's
+  original Markdown document. Its identity satisfies Quire's
   `SourceLocus` schema.
 - `program.extraction`: a closed record holding `body`:
-  `{authority, identity, document, digest}`. `authority` and `identity` with
-  `digest` are the body's native identity; `document` with `digest` is its
-  formal identity. Each is a document identity plus a content digest, the
-  key QSpec FR-202 gives an authored source (STD-150). `digest` is the
-  raw-artifact digest of the extracted body's complete bytes (QSpec FR-018).
+  `{authority, identity, document}`. `authority` and `identity` are the
+  body's native identity; `document` is its formal identity.
 - `program.clauses`: the authored clause binding, a closed record
   `{clause, package}` naming the authored clause id (the Quire heading id)
   and the authored package. Exactly one binding forms FR-030's `Selection`
@@ -75,12 +72,11 @@ model imports retain their existing authority.
 
 ## Outputs
 
-- A `ClauseRunReport` (FR-109) whose source names the body identity, with the
-  raw-artifact digest of the extracted body's complete bytes, and the
-  original document identity with its digest, and whose `package_id` is the
+- A `ClauseRunReport` (FR-109) whose source names the body identity and the
+  original document identity, and whose `package_id` is the
   one the body compiles to under its body identity (FR-109-AC-6). The report
-  carries the extraction record: the original document identity, path and
-  digest; the body's native and formal identities with their digest; the
+  carries the extraction record: the original document identity and path; the
+  body's native and formal identities; the
   authored binding; Quire's unchanged `ClausesOutcome` (availability,
   clauses, raw `clause_text` and diagnostics); the verified original-to-body
   map's region and segments; and, for a refusal whose locus names a body
@@ -119,10 +115,7 @@ has truth.
 
 The original document and the body shall keep distinct identities. The
 original selects the Markdown bytes; the body's identity owns the compiled
-declarations and so the `package_id` (FR-001, FR-032-AC-4). The command shall
-recompute the body digest over the extracted bytes. If `body.digest`
-differs, then the command shall refuse `stale_dependency`/`content-mismatch`,
-naming both digests.
+declarations and so the `package_id` (FR-001, FR-032-AC-4).
 
 The request reader shall decode `program.extraction` and `program.clauses`
 under FR-100's closed-envelope rules: a `null` or positional record, a
@@ -183,10 +176,10 @@ start at zero.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-031-AC-1 | An LF and a CRLF Markdown document whose one selected fence holds FR-108's healthy-parent unit run through `run_clause` report `success`, exit 0, with the `package_id` of the body compiled alone; violating-parent reports `violation`, exit 10; missing-model reports `compile`, `missing_import`/`missing-selection`, exit 20, with no `package_id`. | Test (TC-109) |
-| FR-031-AC-2 | A selected clause the document does not hold, an unavailable extraction and a stale original digest each end with FR-030's error, retaining the original identity, the selection and Quire's actual outcome, with no compile, no `package_id` and no truth; a body in an `ix:formal` fence refuses at compile with `unknown_language`, exit 20. | Test (TC-109) |
+| FR-031-AC-2 | A selected clause the document does not hold and an unavailable extraction each end with FR-030's error, retaining the original identity, the selection and Quire's actual outcome, with no compile, no `package_id` and no truth; a body in an `ix:formal` fence refuses at compile with `unknown_language`, exit 20. | Test (TC-109) |
 | FR-031-AC-3 | An original over its byte or line limit, a body run with `work_units` 0, and a body compiled under `SpineLimits` whose checking limit is one below the body's checking work each report incomplete with that limit's typed cause; the same request with default limits then succeeds. | Test (TC-109) |
-| FR-031-AC-4 | The report of AC-1's healthy run names the body identity (`agent-ix`, its body identity, the digest of the extracted body bytes) and the original document identity with its digest, and its extraction record holds Quire's unchanged `ClausesOutcome` and the verified map; an expected `package_id` of another unit refuses at compile with `stale_dependency`, naming both. | Test (TC-109) |
-| FR-031-AC-5 | Through the command built with `--features qsl-replay/quire-extraction`, a `1-draft` clause-run request whose `extraction` body record names `authority` `agent-ix`, `identity` `b`, `document` `B` and, as `digest`, the raw-artifact digest of the extracted body's bytes runs, and its `/2` document's `extraction` member renders the native identity (`agent-ix`, `b`, digest) and the formal identity (`B`, digest). The same request without the body's `authority`, or without its `digest`, refuses `invalid-request` at stage `request`, exit 20; with a `digest` of other bytes it refuses `stale_dependency`/`content-mismatch`, naming both digests. The same first request through the command built with no features refuses `invalid-request` at stage `request`, naming `extraction`, exit 20, empty stdout. | Test (TC-430) |
+| FR-031-AC-4 | The report of AC-1's healthy run names the body identity (`agent-ix`, its body identity) and the original document identity, and its extraction record holds Quire's unchanged `ClausesOutcome` and the verified map; an expected `package_id` of another unit refuses at compile with `stale_dependency`, naming both. | Test (TC-109) |
+| FR-031-AC-5 | Through the command built with `--features qsl-replay/quire-extraction`, a `1-draft` clause-run request whose `extraction` body record names `authority` `agent-ix`, `identity` `b`, and `document` `B` runs, and its `/2` document's `extraction` member renders the native identity (`agent-ix`, `b`) and the formal identity (`B`). The same request without the body's `authority`, or without its `document`, refuses `invalid-request` at stage `request`, exit 20. The same first request through the command built with no features refuses `invalid-request` at stage `request`, naming `extraction`, exit 20, empty stdout. | Test (TC-430) |
 | FR-031-AC-6 | With every model file the request names absent, a request carrying `extraction` and `package` refuses `extraction-package-conflict`; one with no `clauses` binding and one with two refuse `extraction-clause-count` with `details` `{"actual": 0}` and `{"actual": 2}`; one carrying `call` in place of `clause`, and a compile request carrying `extraction`, refuse `extraction-requires-run`; each at stage `request`, exit 20, empty stdout, with no file read beyond the request. A `null` `extraction`, a positional `body` and an unknown member in `body` each refuse `invalid-request` naming the member. | Test (TC-109) |
 | FR-031-AC-7 | A clause-only context that Quire's validator rejects refuses `invalid-quire-context` at stage `quire-context`, exit 20, with Quire's producer diagnostics unchanged in `details`; an unavailable extraction through the command writes the command-error envelope at stage `quire` retaining the original identity, the binding and Quire's outcome. | Test (TC-109) |
 | FR-031-AC-8 | Over an indented CRLF fence preceded on its lines by the two-byte character `é`, a body whose second line holds an ill-typed expression refuses at compile `ill_typed` with its body span unchanged and the original regions the map gives, each region's byte offsets equal to the body offsets plus the fence's original offset and indentation; a body refusal spanning the final CRLF the map deletes carries every original region of the span; a package-encoding refusal carries no original region; a malformed original-to-body map refuses before compile with FR-030's correspondence error. | Test (TC-109) |

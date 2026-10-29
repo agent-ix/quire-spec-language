@@ -30,7 +30,7 @@ relationships:
 over a timed subject in exact rational arithmetic (ADR-026 CT-3, TD-3): it
 starts every clock at 0, checks each delay is admissible, checks each
 transition is enabled after its delay, selects the successor by the
-post-state digest, applies resets, checks time invariants, checks the timed
+post-state key, applies resets, checks time invariants, checks the timed
 lasso's closure and fairness, and evaluates the formula over the timed
 lasso. A time-lock counterexample replays by its own arm. Replay needs no
 zone engine.
@@ -65,9 +65,9 @@ refutation.
   - apply the delay, then check the transition identity is enabled at the
     delayed state, refusing `invalid_runtime_input`/`invalid-value`
     naming the step and the guard when it is not;
-  - select the successor whose post-state digest equals the recorded one,
+  - select the successor whose post-state key equals the recorded one,
     refusing `stale_dependency`/`content-mismatch` naming the step and
-    both digests when none does;
+    both keys when none does;
   - apply the resets and check the target's time invariants, refusing
     `invalid_runtime_input`/`invalid-value` when one fails.
 - Every comparison and sum SHALL be exact.
@@ -118,7 +118,7 @@ refutation.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-237-AC-1 | FR-236-AC-1's counterexample replays to `reproduced-with-evaluated-witness`, checking the delay 3 against `x <= 3` and `x <= T` and the guards `x >= 3` and `x >= 1`. `Settles` with `eventually[0 ms, 3 ms)` over `Rpc` with `T = 4 ms` is refuted by `send` at 0 then `reply` after delay 3, and that counterexample reproduces. | Test (TC-692) |
-| FR-237-AC-2 | Refusals settle no result: the `timeout` delay changed to `5/2` (guard `x >= 3` fails); the delay changed to `7/2` (`x <= 3` forbids it); one post-state digest altered (`stale_dependency`/`content-mismatch`); a lasso whose loop has total delay 0; a lasso whose loop does not return to its entry clock values. | Test (TC-692) |
+| FR-237-AC-2 | Refusals settle no result: the `timeout` delay changed to `5/2` (guard `x >= 3` fails); the delay changed to `7/2` (`x <= 3` forbids it); one post-state key altered (`stale_dependency`/`content-mismatch`); a lasso whose loop has total delay 0; a lasso whose loop does not return to its entry clock values. | Test (TC-692) |
 | FR-237-AC-3 | The strict-guard variant's local time-lock counterexample reproduces; the same payload replayed against the variant with `reply` guarded by `x >= 3 ms` settles `inconclusive`, `ReplayParity`, since `reply` is enabled at the last state, so replay takes the non-local arm and its exploration reaches the quiescent `Replied` state. | Test (TC-692) |
 | FR-237-AC-4 | The `Stall` model's non-local time-lock counterexample (stem empty, `final_delay` `1/2`) reproduces by fresh exploration finding no quiescent state and no cycle with positive delay; the same payload against a variant with `ping` resetting `x` settles `inconclusive`, `ReplayParity`; with an exploration limit of one state it settles V-7. The `Stall` payload with `final_delay` 1, whose last state `x = 1` admits no positive delay while `ping` is enabled, takes the non-local arm and reproduces. Replaying one envelope twice gives equal results. | Test (TC-692) |
 | FR-237-AC-5 | FR-239-AC-5's counterexample replays to `reproduced-with-evaluated-witness`; with its last step removed it settles `inconclusive`, `ReplayParity`. | Test (TC-710) |

@@ -48,8 +48,8 @@ drop or the rekey.
    owner's complete retained intake inventory, including the scalar. Collect
    effective-entry and derivation-fact origin keys separately, deduplicated.
 5. Compare the two sets for exact equality, and separately assert that no
-   correspondence entry's original key differs by even one byte (package,
-   node or digest-domain component) from its FR-056 source. Compare the
+   correspondence entry's original key differs by even one byte (package or
+   node component) from its FR-056 source. Compare the
    retained key-to-origin map exactly with the admitted map, not just the
    set of origin values: each complete origin must belong to the same key.
 6. Assert effective-entry/fact origin keys are a subset of the retained
@@ -57,7 +57,7 @@ drop or the rekey.
    their selected qualify facts, and that the scalar receives no fabricated
    qualify fact, effective entry or extra effective-declaration/hash charge.
 7. Repeat with reversed IR-node order, then with equal nodes selected under a
-   different content digest of the same package identity. Original keys and
+   different version of the same package identity. Original keys and
    qualifying effective-declaration identities remain equal; effective-view
    identities differ between selections. Each origin remains the actual FCD
    source or generated origin; compare the complete key-to-origin map after

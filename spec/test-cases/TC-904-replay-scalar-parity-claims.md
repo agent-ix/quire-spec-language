@@ -57,12 +57,11 @@ Claim identity, at both levels:
     an undecodable request, and at the operator level a generated fault and an
     unknown node; compare `claim()` with the claim sent. Compare claims that
     differ in one member.
-13. (Retired with FR-357-AC-14: there is no observation digest.)
+13. (Retired with FR-357-AC-14.)
 14. Recompute the obligation identity of an operator claim over graph-child
     operands (one with a negative range bound), over inline literals, and
     over two inline literals at different positions of one application, and
-    compare with a digest of the preimage's canonical text written out by
-    hand.
+    compare by equality with the preimage tuple written out by hand.
 15. Replay a claim whose request identity was minted over another range,
     operand identity, occurrence key or obligation kind. A differing native
     outcome alone leaves the identity unchanged (it shows as `claim()`).
@@ -73,7 +72,7 @@ Claim identity, at both levels:
     a wide literal range and a wrong operand count.
 17. Verify a zero identity against a preimage with an occurrence ordinal
     beyond 2^53, and against one that encodes.
-18. Digest ADR-013 O-09's worked example (the argument entry and the whole
+18. Build ADR-013 O-09's worked example (the argument entry and the whole
     preimage) through `parity_obligation`, and order and refuse harness
     bounds.
 19. Replay a function request and an operator request with the replay
@@ -105,9 +104,9 @@ the encoded-size bound.
 - Step 12: `claim()` equals the claim sent on every outcome; a claim differing
   in any member is not equal; an agreement's claim is the report's.
 - Step 13: none; retired.
-- Step 14: the recomputed digests equal the hand-computed ones; the two literals differ.
-- Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both digests.
+- Step 14: the recomputed identities equal the hand-written tuples; the two literals differ.
+- Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both identities.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
 - Step 17: cause `Encoding` for the first, `Obligation` for the second.
-- Step 18: the digest of the entry, the SHA-256 of its canonical text; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
+- Step 18: the identity of the entry equals its worked-example tuple; the whole preimage equals its worked-example tuple; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
 - Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

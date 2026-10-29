@@ -63,7 +63,7 @@ building the executor itself is explicitly out of scope here.
 
 ### US-010-EX-3: A stale package fails closed, not open
 
-"Stale package identity" is one check, owned by #243's executor: no source digest is carried or compared at decode (FR-071-AC-6 is retired).
+"Stale package identity" is one check, owned by #243's executor: no source check is carried at decode (FR-071-AC-6 is retired).
 
 - **Given** a replay request naming a `package_id` that no longer matches
   the source the byte provision recompiles to.
@@ -91,8 +91,8 @@ building the executor itself is explicitly out of scope here.
   through its ordinary `Debug`/`Display` rendering, rather than read through
   a typed accessor.
 - **Then** the rendered text carries no unredacted transcript or raw
-  byte-provision content — only a bounded descriptor such as a digest or
-  byte length — while the same content remains fully available to a caller
+  byte-provision content — only a bounded descriptor such as a byte
+  length — while the same content remains fully available to a caller
   that invokes the typed accessor directly.
 
 ## Priority and Risk (Informative)

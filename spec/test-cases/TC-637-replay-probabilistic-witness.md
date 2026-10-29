@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify path-set replay, scheduler, support, digest and prefix checks, subsystem evidence through the checker, the fairness check, and the path-count setting.
+Verify path-set replay, scheduler, support, post-state and prefix checks, subsystem evidence through the checker, the fairness check, and the path-count setting.
 
 Scope: FR-202-AC-1 to FR-202-AC-4 and FR-202-AC-6.
 
@@ -19,7 +19,7 @@ Scope: FR-202-AC-1 to FR-202-AC-4 and FR-202-AC-6.
 Fixtures: §15.4's and §15.2's one-path refutations; §15.3's per-window subsystem refutation; `Coin2`'s fair witness; altered copies.
 
 1. Replay §15.4's and §15.2's path sets.
-2. Replay §15.4's path with a non-scheduler step, an out-of-support value, an altered digest, and duplicated.
+2. Replay §15.4's path with a non-scheduler step, an out-of-support value, an altered post-state key, and duplicated.
 3. Replay §15.3's subsystem evidence; replay `Coin2`'s witness and the copy whose scheduler waits forever.
 4. Refute §15.4 with `max_witness_paths` 0 and replay; replay one envelope twice.
 5. Replay the FR-202-AC-6 quantile path sets over the two-point model and its half-activated variant.

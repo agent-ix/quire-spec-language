@@ -66,7 +66,7 @@ Diagnostic detail capacity and a separate terminal stop reason follow
 | FR-007-AC-3 | Mismatched invocation anchors, selected snapshot roles or pre/post correspondence receive wrong_snapshot. | Test (TC-058, TC-061) |
 | FR-007-AC-4 | An unauthorized changed object field or created/deleted object type receives frame_violation. | Test (TC-062) |
 | FR-007-AC-5 | Failed validation returns no ValidatedContext or predicate Boolean, including mixed invalid/unavailable inputs. | Test (TC-064, TC-077) |
-| FR-007-AC-6 | Foreign authored clauses, model owners, conflicting input identities and stale selected digests refuse without first-match or latest-revision fallback. | Test (TC-058) |
+| FR-007-AC-6 | Foreign authored clauses, model owners, conflicting input identities and stale selected identities refuse without first-match or latest-revision fallback. | Test (TC-058) |
 | FR-007-AC-7 | Every supplied selected object, State value, parameter and result satisfies exact fields, nominal types, scalar bounds, enum variants, option tags and sequence bounds, including skipped fields. | Test (TC-060) |
 | FR-007-AC-8 | Duplicate object identities and wrong reference type/universe refuse; reference cycles terminate validation without merging equal-valued objects. | Test (TC-059, TC-060) |
 | FR-007-AC-9 | Missing required observations or State roots are incomplete; missing self in a complete required population refuses, with post self required only for postconditions. | Test (TC-059, TC-061) |

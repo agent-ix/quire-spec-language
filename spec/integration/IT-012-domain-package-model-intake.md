@@ -47,16 +47,14 @@ All three are Rust crate calls. The integration type is an in-process library ca
 
 - The fixture bundle's artifact paths and bytes, and the exact module manifests.
 - The IR golden for that bundle from filament-core-data.
-- A ModelSelection naming the fixture's domain package identity, version and
-  `sha256-jcs` digest.
+- A ModelSelection naming the fixture's domain package identity and version.
 - A native package whose model references name a fixture object field, a Port
   and a Connection.
 
 ## Test Procedure
 
 1. Run the bundle entry point: extraction and lift over the fixture bundle.
-   - IT-012-SC-01: the lifted bytes equal the filament-core-data golden and their
-     independently computed `sha256-jcs` digest equals the selection's digest.
+   - IT-012-SC-01: the lifted bytes equal the filament-core-data golden.
 2. Run the intake seam over the lifted bytes with the ModelSelection.
    - IT-012-SC-02: intake admits one declaration per IR node with no refusal,
      each type keyed by its artifact id and bound through its construct's
@@ -67,7 +65,7 @@ All three are Rust crate calls. The integration type is an in-process library ca
      connection rule.
 4. Link the native package against the admitted domain package.
    - IT-012-SC-04: every model reference binds to its declaration key and kind
-     under the selected domain package identity and digest.
+     under the selected domain package identity and version.
 5. Inspect the resolved dependency graph and compiler source.
    - IT-012-SC-05: the FCD crates stay `publish = false`, and no compiler source contains a module object-type name
      used for dispatch.

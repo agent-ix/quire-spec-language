@@ -46,7 +46,7 @@ declares `model Config = ...` over it.
    `[".../ConfigVersion/versionNumber"]`.
 3. Add parameter `note` typed `ix://quire/native/Decimal`; then replace it
    with parameter `delta` typed `VersionNumber`. (`Decimal`, not `Text`: the
-   pinned FCD schema validator's native-scalar vocabulary has no `Text`
+   FCD schema validator's native-scalar vocabulary has no `Text`
    entry -- it spells the concept `String`, which QSL's own `NativeValueType`
    in turn has no variant for -- so a `Text` typeRef cannot reach even I1
    through the real pipeline; that cross-repo vocabulary gap is QSL-290, not

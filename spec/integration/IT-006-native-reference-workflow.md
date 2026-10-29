@@ -23,7 +23,7 @@ ConfigVersion model and qualified existing backend in the full assignment.
 
 ## Target Integration
 
-The compiler library consumes the real pinned Contract IR declaration/proof API
+The compiler library consumes the real Contract IR declaration/proof API
 and the source-derived Rust native-rule-model producer qualified by IT-005.
 The test invokes actual public compiler APIs in one Rust process. It does not
 mock an IR environment or reconstruct a second expression interpreter in setup.
@@ -42,7 +42,7 @@ The exact source-derived Node rule model, independently authored native parent
 ordering, reachability and duplicate-preserving sequence predicates, selected
 authored requirement/clause identities and explicit immutable snapshot artifacts.
 Include complete acyclic parent populations, an order violation, a cycle, a
-dangling parent, an incomplete population, a stale selected digest, wrong
+dangling parent, an incomplete population, a stale selected version, wrong
 invocation roles and insufficient evaluation work. Operation cases use exact
 pre/post snapshots, the admitted step anchor and original frame permissions.
 

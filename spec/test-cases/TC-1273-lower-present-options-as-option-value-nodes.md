@@ -24,11 +24,11 @@ Compile a checked function whose result is `Option<Integer>` and whose body is
 `Some(x)` for `x: Integer`. Read its emitted checked package through FR-264.
 Require `Verified`; take `package.package_id()` from the returned verified
 package and assert that it equals the emitted wire's `package_id`. The test
-computes the compared id from the read package and stores no literal digest.
+computes the compared id from the read package and stores no literal id.
 Confirm the option value and its key,
 type, payload dependency, and absence of a `Some` application follow the
 carrier contract in QSpec FR-322; this test does not redefine that wire
-contract or record a copied package digest.
+contract or record a copied package id.
 
 Check a second function with `x: Integer`, result `Option<Boolean>`, and body
 `Some(x)`. It must refuse at the source expression `Some(x)` with code

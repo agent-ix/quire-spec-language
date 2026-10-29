@@ -34,8 +34,7 @@ Config::ConfigVersion::attemptUpdate, invocation: ... }` unless stated.
 2. forbidden-parent-change; a post snapshot that adds object `c2` to
    `config_history`; an invocation declaring `created: [child]`.
 3. changed-version with an expected `package_id` from another unit; with its
-   invocation bytes edited after the digest was taken; with another
-   `model` digest; with `operation` `probe`.
+   another `model` identity; with `operation` `probe`.
 4. `operation: Config::ConfigVersion::missing`; a package operation that no
    clause or attempt names; `operation: Nope::ConfigVersion::attemptUpdate`,
    an alias no `model` declaration binds; `operation:
@@ -67,8 +66,7 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
   `frame_violation`/`unauthorized-change`; `violation` with a witness naming
   the creation of `c2`; `evaluate`, `refusal`,
   `population_delta_mismatch`/`delta-disagreement`, exit 20.
-- Step 3: `compile`, `stale_dependency`, naming both; `admit`,
-  `stale_dependency`/`content-mismatch`; `admit`, `invalid_model_binding`/
+- Step 3: `compile`, `stale_dependency`, naming both; `admit`, `invalid_model_binding`/
   `wrong-model-selection`; `admit`, `wrong_snapshot`/`wrong-invocation`.
   None reaches `evaluate`.
 - Step 4: `select`, `missing_declaration`/`missing-name`, four times;

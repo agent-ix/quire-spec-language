@@ -25,7 +25,7 @@ their declaration/type/role inventories, but those strings cannot manufacture
 admitted models. Resolved expressions remain the original source AST; a second
 expression wire/interpreter is not introduced.
 
-The exact package ByteDigest identifies its complete bytes. The separate native
+The exact package bytes are the complete artifact. The separate native
 static identity follows the complete named derivation below, defined
 independently of any FS05 consumer's own adoption decision. Existing IR
 canonical and bound identities,
@@ -49,19 +49,18 @@ NativePackage::read_verified(
 ) -> Result<NativePackage<'model>, Box<PackageError>>
 NativePackage::checked(&self) -> &CheckedPackage<'model>
 NativePackage::bytes(&self) -> &[u8]
-NativePackage::digest(&self) -> ByteDigest
 NativePackage::canonical_identity(&self) -> NativePackageIdentity
 NativePackage::reference(&self) -> NativePackageRef
 NativePackage::usage(&self) -> &PackageUsage
-NativePackageRef::new(digest: ByteDigest) -> NativePackageRef
-NativePackageRef::digest(&self) -> ByteDigest
+NativePackageRef::new(identity: NativePackageIdentity) -> NativePackageRef
+NativePackageRef::identity(&self) -> &NativePackageIdentity
 NativePackageRef::format(&self) -> &'static str
 ```
 
 NativePackage is constructor-private, owns the checked package and accepted
 immutable artifact bytes, and borrows the same admitted models through that
 checked package. Reference types cannot be interchanged with SourceIdentity,
-SnapshotRef or InvocationRef. A NativePackageRef is a byte selector, not proof
+SnapshotRef or InvocationRef. A NativePackageRef is an identity selector, not proof
 that a package exists or has been checked. It fixes format native-linked-package/1.
 
 PackageReadLimits contains separate `package: PackageLimits`, `syntax: Limits`,
@@ -92,10 +91,10 @@ this package contract does not change the native source grammar.
 | format | String native-linked-package/1 |
 | semantics | The closed semantic-selection record below |
 | required_features | The exact derived feature set, sorted by UTF-8 bytes |
-| source | `{authority, identity, revision_namespace, revision, digest, formal}`; the four labels are the caller-named source labels of FR-001, exact non-empty strings, digest is sha256 plus lowercase hex, formal is `{document, revision}` under existing IR constructors |
+| source | `{authority, identity, revision_namespace, revision, formal}`; the four labels are the caller-named source labels of FR-001 and exact non-empty strings, and formal is `{document, revision}` under existing IR constructors |
 | models | One import record per native source import, in original import order |
 | clauses | One checked clause record per native source clause, in original clause order |
-| canonical_identity | Closed `{domain, version, algorithm, digest}` under the native static identity contract below |
+| canonical_identity | Closed `{domain, version}` selecting the native static identity contract below |
 
 Source/formal labels and all emitted strings retain exact Unicode scalar
 spelling without normalization. The source's local display path is excluded;
@@ -116,9 +115,9 @@ The semantic-selection record has fixed member order `language`, `edition`,
 
 ## Model, clause and correspondence records
 
-An import record has `alias`, `owner`, `digest`, `artifact` in that order. owner
+An import record has `alias`, `owner`, `artifact` in that order. owner
 is `{package, requirement, revision}` using the existing RequirementRef fields
-and constructors. digest is the exact selected NativeModel digest. artifact is
+and constructors. artifact is
 the exact native-state-model/1 UTF-8 artifact represented as a JSON string,
 matching the already qualified model artifact contract. Its internal canonical
 declaration string and role/locus fields retain their existing encoding. It is
@@ -234,8 +233,8 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
 
 ## Intake sequence and failures
 
-1. Admit the entire offered byte length under PackageLimits before hashing or
-   parsing. Verify the expected raw package digest; mismatch is stale_dependency.
+1. Admit the entire offered byte length under PackageLimits before
+   parsing.
 2. Recognize one complete UTF-8 JSON object through a bounded Serde traversal.
    Reject BOM, trailing content, malformed JSON strings/numbers, unpaired
    surrogates and duplicate decoded members at every nesting level as
@@ -253,12 +252,12 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
    closed typed records under a separately metered pass, rejecting extra,
    missing, incorrectly typed or constructor-invalid members as invalid_package.
    Select language, edition, syntax/model/checking profiles, canonical
-   domain/version/algorithm, then required features, in that order.
+   domain/version, then required features, in that order.
    Existing unknown_language/unknown_edition/unknown_profile distinctions apply.
    No decoder fallback or
    interpretation of an unsupported version's fields occurs.
-4. Verify the source's four labels, digest and formal identity against the externally
-   selected bindings. Native byte mismatch is stale_dependency; a foreign
+4. Verify the source's four labels and formal identity against the externally
+   selected bindings. A native label mismatch is stale_dependency; a foreign
    native/formal identity is invalid_model_binding. Check wire authored clause
    bindings against the complete external CheckBindings before they can be used.
    External bindings may be permuted, but duplicate names or owner/clause pairs,
@@ -277,15 +276,15 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
    artifact strings and all ordered arrays remain exact. Any altered or omitted
    derived claim receives invalid_package at its actual package field path.
 7. Expose the NativePackage only after complete agreement. Retain the accepted
-   original bytes/digest, not rewritten canonical bytes. The reconstructed
+   original bytes, not rewritten canonical bytes. The reconstructed
    checked package supplies the source/model/runtime correspondence to callers.
 
 Earlier numbered stages take precedence when several defects coexist. Within
 recognition or closed decoding, stop at the first defect in input traversal
 order; a budget is checked before the operation it charges. Selection uses the
 fixed order above, independent of object-member order. External source checking
-compares the native authority, identity, revision namespace and revision, the
-native digest, then formal identity;
+compares the native authority, identity, revision namespace and revision, then
+the formal identity;
 wire/external authored comparisons follow wire clause order, whose source-order
 claim is independently checked during regeneration. Complete manifest
 comparison follows producer member/array order and reports the first mismatch.
@@ -317,23 +316,23 @@ during reconstruction. Comparison does not skip excluded projection metadata.
 
 ## Native static identity
 
-FR-021 selects domain quire.native.bound-package, version v1, algorithm sha256.
-The emitted digest is bare lowercase 64-hex. NativePackageIdentity is a distinct
-immutable Rust type with Display yielding that bare digest; it is not an IR
-CanonicalDigest or ByteDigest. Its constructor is internal to checked derivation.
+FR-021 selects domain quire.native.bound-package, version v1. The native
+static identity is the canonical content defined below, compared by equality;
+no hash is computed. NativePackageIdentity is a distinct immutable Rust type
+holding that canonical content; it is not an IR identity type.
+Its constructor is internal to checked derivation.
 
 Canonical content is the complete manifest in this contract, excluding the
 top-level canonical_identity member and each clause's projections member.
-Every other member participates, including exact source digest/identities,
+Every other member participates, including exact source identities,
 semantic selection, complete selected model artifact strings, authored
 clause identities, source locations, resolved targets and runtime obligations.
 Import/clause/occurrence arrays remain ordered. Required features and runtime
 universe/observation sets use their expressly defined producer order. Object
 members use the fixed field orders specified here; no global key or array sort
-is applied. Changing source spelling can change this source-bound identity even
-when an independently typed IR expression retains its source-free digest.
+is applied. Changing source spelling can change this source-bound identity.
 
-Encode canonical content as compact UTF-8 JSON with exact decimal integers,
+Canonical content is encoded as compact UTF-8 JSON with exact decimal integers,
 no newline, no normalization and no BOM. String escaping uses double quotes,
 backslash for quote/backslash, the short b/f/n/r/t escapes for their controls,
 and lowercase `\u00xx` for the other U+0000–001F controls. Other Unicode scalars
@@ -342,20 +341,18 @@ escaped. This fixed typed-record encoding is not RFC 8785 and never converts
 u64 revisions through binary64. The already qualified model artifact strings
 retain their complete bytes inside this outer escaping.
 
-The hash preimage is UTF-8 `quire-spec-language`, NUL,
-UTF-8 `quire.native.bound-package/v1`, NUL, UTF-8 `linked-package`, NUL,
-then the canonical content bytes. The textual output domain labels are not
-substitutes for those exact preimage bytes. There is no newline or extra prefix.
-The canonical_identity field is added only after this derivation, avoiding a
-self-referential digest. Its closed selection is domain
-quire.native.bound-package, version v1, algorithm sha256, digest as defined above.
+The canonical_identity member is added only after this derivation, avoiding a
+self-referential member. Its closed selection is domain
+quire.native.bound-package, version v1.
 
 Canonical encoding is a separately bounded/reported pass under NFR-007 before
 the final artifact encoding pass. Both successful and refused work retain their
-own actual counters. The reader selects the canonical domain/version/algorithm
-with unknown_profile for an unsupported selection, then recomputes the digest
-from its reconstructed checked package. A malformed/substituted or mismatching
-digest is invalid_package. Native canonical equality never skips full manifest
+own actual counters. The reader selects the canonical domain/version with
+unknown_profile for an unsupported selection, then compares the canonical content of
+its reconstructed checked package with the wire content and with the expected
+NativePackageRef identity. A mismatch with the expected reference is
+stale_dependency; any other mismatching or substituted content is invalid_package.
+Native canonical equality never skips full manifest
 comparison: forged excluded projections still refuse.
 
 Projection availability is deliberately outside static identity because it is
@@ -370,8 +367,8 @@ this payload contract; that explicit registration under FS05 is not made here.
 IT-007 must build the source-derived rule model, actual checked clauses and this
 package, read it through real reconstruction, then execute healthy/violating,
 refused/incomplete and operation cases through the unchanged runtime APIs.
-Adverse wire/derived mutations recompute the expected raw digest where necessary
-so a digest failure cannot impersonate strict decoding or semantic reconstruction.
+Adverse wire/derived mutations keep the unmutated members intact so an identity
+mismatch cannot impersonate strict decoding or semantic reconstruction.
 Independent assertions enumerate every exported field/obligation and retained
 projection; round-trip equality alone is insufficient qualification.
 

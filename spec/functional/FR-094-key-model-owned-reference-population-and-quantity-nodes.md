@@ -88,7 +88,7 @@ node, both defined below. `check` SHALL key a model-owned node by the
 
 A domain package selects one version of an identity per check (ADR-013 O-01,
 QSpec FR-321), so within one check the owner's (`identity`, `node`) names
-exactly one declaration. The selected package's `sha256-jcs` digest is lock evidence in
+exactly one declaration. The selected package's version is lock evidence in
 `model_selections`, not owner content, so a change of the domain package
 that leaves a node's content unchanged keys the same model-owned nodes, and a node id depends only
 on content (QSpec FR-322-AC-28). The v2 emission writes a model-owned node's
@@ -124,10 +124,10 @@ role it also plays, because a checked node names it only through a
 `relationship_end` member.
 
 The body is empty because the owner already determines the declaration's
-content: the lock selects the domain package's bytes by identity and digest,
+content: the lock selects the domain package's bytes by identity and version,
 and intake admits one selection of an identity per check (QSpec FR-321), so
 within one check `identity` names one set of bytes. Across checks, the node
-id is the same for every version and digest selected under one `identity`,
+id is the same for every version selected under one `identity`,
 as it is for every QSpec `ModelOwner` nominal node. An empty body also keeps model declaration
 nodes out of recursion groups, so two object types that reference each other
 through `Reference` attributes key without a cycle.
@@ -327,7 +327,7 @@ FR-094-AC-11 keys the quotient of a division by a literal.
   that preimage as QSpec FR-322 spells it (FR-322-AC-118): self-typed, with no
   `declaration`, its `nominal_identity_preimage`
   `{version: quire.dimension-equivalence-node/v1, owner, dimension_node_ids,
-  root_scale}` with the two related dimension keys in ascending digest order
+  root_scale}` with the two related dimension keys in ascending key order
   and the root ratio the unit table holds (FR-091 step 6) as `root_scale`, stated
   for the node listed first, depending on
   exactly those two dimension nodes, and carrying one `anchor` occurrence whose
@@ -372,11 +372,14 @@ Building a `Reference`, `Population` or compound-unit type node walks the type
 tree as FR-092 does, over an explicit heap stack within the check stage's
 limits (`CheckingLimits`).
 
-### Golden vectors
+### Vector index
 
-Each vector below is the exact preimage bytes and the key `check` SHALL mint
-for the named node. The domain package is `acme/orders`, at version `1.0.0`;
-at version `2.0.0` every vector is the same (AC-1, AC-5). It declares object type
+Each vector below names a node whose structural key `check` SHALL mint. A
+structural key is the node's preimage value itself (`owner`, `node_tag`,
+`semantic_form`, `body` and the other members stated in Behavior above, with
+each child node referenced by its own key), compared by equality. The domain
+package is `acme/orders`, at version `1.0.0`; at version `2.0.0` every vector is
+the same (AC-1, AC-5). It declares object type
 `ix://acme/orders/Order` with attribute `total: Int[0, 9]` and query
 operations `size(): Integer`, `count(): Integer` and
 `scaled(n: Integer): Integer`, object type `ix://acme/orders/Invoice`, object
@@ -384,328 +387,47 @@ type `ix://acme/orders/Sub` with supertype `Order`, which redefines `size`, and
 redefines `scaled` as `scaled(m: Integer)`; and relationship
 `ix://acme/orders/billedTo`. `M::Order`, `M::Invoice` and
 `M::Sub` name those object types. A
-vector that names another vector's key uses the digest that vector gives, and
+vector that names another vector's key uses the key that vector gives, and
 T1 to T4, L1 and L2 are FR-092's. The root units of U1 to U4 are QSpec's
-`unit-metre` and `unit-second` nominal vectors
-from `node-identity-vectors.json`.
+`unit-metre` and `unit-second` nominal keys.
 
 | Vector | Node | Key |
 |---|---|---|
-| M1 | object type `Order`, owner (`acme/orders`, `ix://acme/orders/Order`) | the SHA-256 of its preimage |
-| M3 | object type `Invoice`, owner (`acme/orders`, `ix://acme/orders/Invoice`) | the SHA-256 of its preimage |
-| M4 | relationship `billedTo`, owner (`acme/orders`, `ix://acme/orders/billedTo`) | the SHA-256 of its preimage |
-| M5 | object type `Sub` (supertype `Order`), owner (`acme/orders`, `ix://acme/orders/Sub`) | the SHA-256 of its preimage |
-| R1 | `Reference<Order>` (M1) | the SHA-256 of its preimage |
-| R3 | `Option<Reference<Order>>` | the SHA-256 of its preimage |
-| S1 | `Set<Reference<Order>>` | the SHA-256 of its preimage |
-| S2 | `Set<Reference<Order>>[0, 3]` | the SHA-256 of its preimage |
-| PO1 | `Population<Order>[3]` | the SHA-256 of its preimage |
-| PO2 | `Population<Order>[5]` | the SHA-256 of its preimage |
-| R4 | `Reference<Sub>` (M5) | the SHA-256 of its preimage |
-| R5 | `Reference<Invoice>` (M3) | the SHA-256 of its preimage |
-| S3 | `Set<Reference<Invoice>>` | the SHA-256 of its preimage |
-| PO3 | `Population<Invoice>[3]` | the SHA-256 of its preimage |
-| P5 | parameter `p: Population<M::Order>[3]`, level 0 | the SHA-256 of its preimage |
-| P6 | parameter `r: Reference<M::Order>`, level 1 | the SHA-256 of its preimage |
-| P7 | parameter `self: Reference<M::Order>`, level 0 | the SHA-256 of its preimage |
-| E4 | `allInstances<M::Order>(p)` | the SHA-256 of its preimage |
-| E5 | `lookup<M::Order>(p, r) absent undefined` | the SHA-256 of its preimage |
-| E6 | `lookup<M::Order>(p, r) absent empty` | the SHA-256 of its preimage |
-| E7 | `deref(r)`, the operand of `deref(r).total` | the SHA-256 of its preimage |
-| E8 | `deref(r).total` | the SHA-256 of its preimage |
-| E9 | `r.size()` | the SHA-256 of its preimage |
-| C1 | precondition clause `true` of `Order.size`, owner (`acme/orders`, `ix://acme/orders/Order/size`) | the SHA-256 of its preimage |
-| C2 | body clause `7` of `Order.size`, same owner | the SHA-256 of its preimage |
-| C4 | precondition clause `true` of `Order.count` | the SHA-256 of its preimage |
-| P8 | parameter `self: Reference<M::Sub>`, level 0 | the SHA-256 of its preimage |
-| L4 | literal `false` | the SHA-256 of its preimage |
-| E10 | `false or true`, the effective precondition of `Sub.size` | the SHA-256 of its preimage |
-| C5 | precondition clause `false` authored on `Sub.size`, owner (`acme/orders`, `ix://acme/orders/Sub/size`) | the SHA-256 of its preimage |
-| C6 | effective precondition `false or true` of candidate `Sub.size`, same owner as C5 | the SHA-256 of its preimage |
-| U1 | compound unit `metre^2` | the SHA-256 of its preimage |
-| U2 | compound unit `metre^1 second^-1` | the SHA-256 of its preimage |
-| U3 | the dimensionless compound unit | the SHA-256 of its preimage |
-| U4 | compound unit `metre^1` | the SHA-256 of its preimage |
-
-**M1**: object type `Order`, owner (`acme/orders`, `ix://acme/orders/Order`)
-
-```json
-{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"model","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Order"},"recursion":null,"semantic_form":"object_type","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**M3**: object type `Invoice`, owner (`acme/orders`, `ix://acme/orders/Invoice`)
-
-```json
-{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"model","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Invoice"},"recursion":null,"semantic_form":"object_type","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**M4**: relationship `billedTo`, owner (`acme/orders`, `ix://acme/orders/billedTo`)
-
-```json
-{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"relation","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/billedTo"},"recursion":null,"semantic_form":"relationship","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**M5**: object type `Sub` (supertype `Order`), owner (`acme/orders`, `ix://acme/orders/Sub`)
-
-```json
-{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"model","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Sub"},"recursion":null,"semantic_form":"object_type","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**R1**: `Reference<Order>` (M1)
-
-```json
-{"body":{"members":[{"target":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"reference","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**R3**: `Option<Reference<Order>>`
-
-```json
-{"body":{"members":[{"target":{"digest":"<digest of R1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**S1**: `Set<Reference<Order>>`
-
-```json
-{"body":{"members":[{"target":{"digest":"<digest of R1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"set","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**S2**: `Set<Reference<Order>>[0, 3]`
-
-```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<digest of S1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**PO1**: `Population<Order>[3]`
-
-```json
-{"body":{"members":[{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"model_population","semantic_type":{"digest":"<digest of S1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**PO2**: `Population<Order>[5]`
-
-```json
-{"body":{"members":[{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"model_population","semantic_type":{"digest":"<digest of S1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**R4**: `Reference<Sub>` (M5)
-
-```json
-{"body":{"members":[{"target":{"digest":"<digest of M5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"reference","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**R5**: `Reference<Invoice>` (M3)
-
-```json
-{"body":{"members":[{"target":{"digest":"<digest of M3>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"reference","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**S3**: `Set<Reference<Invoice>>`
-
-```json
-{"body":{"members":[{"target":{"digest":"<digest of R5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"set","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**PO3**: `Population<Invoice>[3]`
-
-```json
-{"body":{"members":[{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"model_population","semantic_type":{"digest":"<digest of S3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**P5**: parameter `p: Population<M::Order>[3]`, level 0
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"p","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of PO1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**P6**: parameter `r: Reference<M::Order>`, level 1
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"r","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of R1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**P7**: parameter `self: Reference<M::Order>`, level 0
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"self","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of R1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E4**: `allInstances<M::Order>(p)`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.model.all_instances","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"query","result_type":{"digest":"<digest of S2>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"query","semantic_type":{"digest":"<digest of S2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E5**: `lookup<M::Order>(p, r) absent undefined`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P6>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.model.lookup","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":{"kind":"absence","value":"undefined"}},"operator":"query","result_type":{"digest":"<digest of R1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"query","semantic_type":{"digest":"<digest of R1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E6**: `lookup<M::Order>(p, r) absent empty`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P6>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.model.lookup","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":{"kind":"absence","value":"empty"}},"operator":"query","result_type":{"digest":"<digest of R3>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"query","semantic_type":{"digest":"<digest of R3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E7**: `deref(r)`, the operand of `deref(r).total`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P6>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.model.deref","laws":[],"leaves":[],"member":null,"mode":null},"operator":"deref","result_type":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"deref","semantic_type":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E8**: `deref(r).total`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of E7>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.record.project","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"kind":"field","name":"total"},"mode":null},"operator":"query","result_type":{"digest":"<digest of FR-092 T4>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"query","semantic_type":{"digest":"<digest of FR-092 T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E9**: `r.size()`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P6>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.model.dispatch_call","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of M1>","domain":"quire.checked-semantic-node/v1"},"kind":"operation","name":"size"},"mode":null},"operator":"call","result_type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**C1**: precondition clause `true` of `Order.size`, owner (`acme/orders`, `ix://acme/orders/Order/size`)
-
-```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P7>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of FR-092 L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"precondition","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Order/size"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**C2**: body clause `7` of `Order.size`, same owner
-
-```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P7>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of FR-092 L2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"body","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Order/size"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**C4**: precondition clause `true` of `Order.count`
-
-```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P7>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of FR-092 L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"precondition","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Order/count"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**P8**: parameter `self: Reference<M::Sub>`, level 0
-
-```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"self","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of R4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**L4**: literal `false`
-
-```json
-{"body":{"term":"literal","type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"value":false,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**E10**: `false or true`, the effective precondition of `Sub.size`
-
-```json
-{"body":{"arguments":[{"target":{"digest":"<digest of L4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of FR-092 L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.boolean.or","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**C5**: precondition clause `false` authored on `Sub.size`, owner (`acme/orders`, `ix://acme/orders/Sub/size`)
-
-```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P8>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"precondition","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Sub/size"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**C6**: effective precondition `false or true` of candidate `Sub.size`, same owner as C5
-
-```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P8>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of E10>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T3>","domain":"quire.checked-semantic-node/v1"},"value":"precondition","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Sub/size"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of FR-092 T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**U1**: compound unit `metre^2`
-
-```json
-{"body":{"members":[{"members":[{"name":"unit","term":"binding","value":{"target":{"digest":"<QSpec unit-metre key>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"exponent","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}}],"term":"aggregate"}],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"compound_unit","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**U2**: compound unit `metre^1 second^-1`
-
-```json
-{"body":{"members":[{"members":[{"name":"unit","term":"binding","value":{"target":{"digest":"<QSpec unit-metre key>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"exponent","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},{"members":[{"name":"unit","term":"binding","value":{"target":{"digest":"<QSpec unit-second key>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"exponent","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"-1","value_kind":"integer"}}],"term":"aggregate"}],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"compound_unit","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**U3**: the dimensionless compound unit
-
-```json
-{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"compound_unit","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
-
-**U4**: compound unit `metre^1`
-
-```json
-{"body":{"members":[{"members":[{"name":"unit","term":"binding","value":{"target":{"digest":"<QSpec unit-metre key>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"exponent","term":"binding","value":{"term":"literal","type":{"digest":"<digest of FR-092 T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"}],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"compound_unit","semantic_type":null,"version":"quire.structural-node/v1"}
-```
-
-Key: the SHA-256 of the preimage above, as lowercase hex.
+| M1 | object type `Order`, owner (`acme/orders`, `ix://acme/orders/Order`) | its structural key |
+| M3 | object type `Invoice`, owner (`acme/orders`, `ix://acme/orders/Invoice`) | its structural key |
+| M4 | relationship `billedTo`, owner (`acme/orders`, `ix://acme/orders/billedTo`) | its structural key |
+| M5 | object type `Sub` (supertype `Order`), owner (`acme/orders`, `ix://acme/orders/Sub`) | its structural key |
+| R1 | `Reference<Order>` (M1) | its structural key |
+| R3 | `Option<Reference<Order>>` | its structural key |
+| S1 | `Set<Reference<Order>>` | its structural key |
+| S2 | `Set<Reference<Order>>[0, 3]` | its structural key |
+| PO1 | `Population<Order>[3]` | its structural key |
+| PO2 | `Population<Order>[5]` | its structural key |
+| R4 | `Reference<Sub>` (M5) | its structural key |
+| R5 | `Reference<Invoice>` (M3) | its structural key |
+| S3 | `Set<Reference<Invoice>>` | its structural key |
+| PO3 | `Population<Invoice>[3]` | its structural key |
+| P5 | parameter `p: Population<M::Order>[3]`, level 0 | its structural key |
+| P6 | parameter `r: Reference<M::Order>`, level 1 | its structural key |
+| P7 | parameter `self: Reference<M::Order>`, level 0 | its structural key |
+| E4 | `allInstances<M::Order>(p)` | its structural key |
+| E5 | `lookup<M::Order>(p, r) absent undefined` | its structural key |
+| E6 | `lookup<M::Order>(p, r) absent empty` | its structural key |
+| E7 | `deref(r)`, the operand of `deref(r).total` | its structural key |
+| E8 | `deref(r).total` | its structural key |
+| E9 | `r.size()` | its structural key |
+| C1 | precondition clause `true` of `Order.size`, owner (`acme/orders`, `ix://acme/orders/Order/size`) | its structural key |
+| C2 | body clause `7` of `Order.size`, same owner | its structural key |
+| C4 | precondition clause `true` of `Order.count` | its structural key |
+| P8 | parameter `self: Reference<M::Sub>`, level 0 | its structural key |
+| L4 | literal `false` | its structural key |
+| E10 | `false or true`, the effective precondition of `Sub.size` | its structural key |
+| C5 | precondition clause `false` authored on `Sub.size`, owner (`acme/orders`, `ix://acme/orders/Sub/size`) | its structural key |
+| C6 | effective precondition `false or true` of candidate `Sub.size`, same owner as C5 | its structural key |
+| U1 | compound unit `metre^2` | its structural key |
+| U2 | compound unit `metre^1 second^-1` | its structural key |
+| U3 | the dimensionless compound unit | its structural key |
+| U4 | compound unit `metre^1` | its structural key |
 
 ## Constraints
 
@@ -728,7 +450,7 @@ Key: the SHA-256 of the preimage above, as lowercase hex.
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
 | FR-094-AC-9 | For the unreferenced `billedTo` relationship selected through model alias `M`, `check` emits its `relation`/`relationship` node and records one `generated` occurrence at `M`'s declaration-site/source span, regardless of function or frame reachability; fallback `generated_location` and `UnlocatedOccurrence` are forbidden. | Test (TC-417) |
 | FR-094-AC-11 | With FR-093-AC-36's units, the quotient `a / 3 ms` over `a: Quantity<m>` has one `scalar_type`/`compound_unit` node, with no `declaration` and no `owner`, whose body is an `aggregate` of two terms in ascending root-unit node-key order: `unit` the `m` node with `exponent` the integer literal `1`, and `unit` the `s` node with `exponent` the integer literal `-1`. The quotient `d / 3 ms` over `d: Quantity<ms>` has a `compound_unit` node whose body is `aggregate{[]}`, and `d / 3 s`, `d / rational(-3, 1) ms` and `d / -(3 ms)` have that same node, and `a / -(3 ms)` has the node of `a / 3 ms`. Neither node is the `m` unit node, and the node of `a / 3 ms` is the node of `a / 0.5 s`. | Test (TC-419) |
-| FR-094-AC-12 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, whose preimage is `{version: quire.dimension-equivalence-node/v1, owner: SourceOwner, dimension_node_ids: [the two package Time keys in ascending digest order], root_scale: 1/1}` (FR-091-AC-61's the QSpec vector key under QSpec's vector owner), whose `dependencies` are exactly those two keys and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same key; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same key; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes keep the keys they have with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
+| FR-094-AC-12 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, whose preimage is `{version: quire.dimension-equivalence-node/v1, owner: SourceOwner, dimension_node_ids: [the two package Time keys in ascending key order], root_scale: 1/1}` (FR-091-AC-61's the QSpec vector key under QSpec's vector owner), whose `dependencies` are exactly those two keys and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same key; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same key; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes keep the keys they have with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
 
 A check with two admitted versions of one domain package
 identity refuses as an internal fault.

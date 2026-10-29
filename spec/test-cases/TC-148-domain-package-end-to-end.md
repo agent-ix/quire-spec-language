@@ -26,7 +26,7 @@ references to its declarations. Scope: FR-056-AC-8, FR-036-AC-9.
 3. Link a native package whose model references name a fixture object's field, a
    Port and the Connection against the admitted domain package.
 4. Substitute a same-shaped declaration from a different domain package for one
-   reference, and separately change the selected digest.
+   reference, and separately change the selected identity.
 
 ## Expected Results
 

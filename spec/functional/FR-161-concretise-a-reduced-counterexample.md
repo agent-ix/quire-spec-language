@@ -50,7 +50,7 @@ replayer needs to know nothing about symmetry (US-019).
 ## Outputs
 
 A `TemporalCounterexample` (FR-126) whose steps are concrete transition
-identities and concrete post-state digests, with no canonical state,
+identities and concrete post-state keys, with no canonical state,
 permutation or reduction in it.
 
 ## Behavior

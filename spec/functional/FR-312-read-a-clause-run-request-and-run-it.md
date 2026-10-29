@@ -199,8 +199,8 @@ is UNRUN. The accounting setting member is owned by QSL-656; this
 clarification does not duplicate that contract or define a compatibility
 member.
 
-The deletion of native `run` (ADR-031 R-1) also removes the per-file `sha256:`
-digests the native-v1 request selections carry and their checks (FR-026,
+The deletion of native `run` (ADR-031 R-1) also removes the per-file content
+checks the native-v1 request selections carry (FR-026,
 FR-027, FR-100): a request names its files, and the command reads their
 bytes as they are.
 

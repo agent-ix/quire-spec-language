@@ -51,7 +51,7 @@ FR-109's `ClauseRunRequest`, with the selection
   `TraceInput::Lasso{prefix: Vec<DocumentRef>, loop: Vec<DocumentRef>}`, or
   `TraceInput::Model{initial: DocumentRef, universes, prefix:
   Vec<ModelStep>, loop: Vec<ModelStep>}`; each `DocumentRef` names a
-  snapshot in the request's snapshot provision by digest (FR-106);
+  snapshot in the request's snapshot provision by identity (FR-106);
 - `over`: `{"reference": {"population": ..., "key": ...}}`, resolved in the
   observation at position 0, when the clause has an `over` parameter.
 
@@ -64,14 +64,14 @@ and `unsupported` (a missing fairness premise). Its `disposition` for a
 carries the failing `TemporalPosition` and the refutation's
 `TemporalCounterexample`, QSpec FR-364's observed arm, which the entry
 builds from what it ran: one `{document}` step per represented position
-from the `sha256-jcs` digests of the trace's `DocumentRef`s (the `Finite`
+from the identities of the trace's `DocumentRef`s (the `Finite`
 trace as `prefix` with an empty `loop`, or the `Lasso`'s `prefix` and
 `loop`; for an `Undefined` result, the positions 0 to the failing position
 as `prefix` and an empty `loop`), the checked clause's fairness set, the
 interval of its first interval-carrying operator in pre-order (`null` when
 it has none, and for an `Undefined` result), the trace position, and for
 an `Undefined` result the undefined-evaluation envelope whose `where`
-carries the position, that position's document digest and the undefined
+carries the position, that position's document identity and the undefined
 atom's locus. A refused condition's disposition carries its position. The
 FR-267 writer writes these as the report holds them and derives none.
 

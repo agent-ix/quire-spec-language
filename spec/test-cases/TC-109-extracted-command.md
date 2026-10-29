@@ -24,8 +24,7 @@ FR-031-AC-4, FR-031-AC-6 to FR-031-AC-10 and FR-267-AC-17.
    CRLF document; extract each and run healthy-parent, violating-parent and
    missing-model.
 2. Extract with a clause id the document does not hold; with an extraction
-   Quire reports unavailable; with an original whose bytes differ from its
-   verified digest; then run a body taken from an `ix:formal` fence.
+   Quire reports unavailable; then run a body taken from an `ix:formal` fence.
 3. Extract with an original byte limit one below the document's size and a
    line limit one below its line count; run healthy-parent with `work_units`
    0, and compile it under `SpineLimits` whose checking limit is one below
@@ -49,7 +48,7 @@ FR-031-AC-4, FR-031-AC-6 to FR-031-AC-10 and FR-267-AC-17.
 9. Through the binary, run step 1's healthy request and read the `/2`
    document back with the FR-267 strict reader; run the same unit given as
    bytes; read back documents whose `extraction` has an unknown top-level
-   member `source`, no `map`, `binding` `null`, a numeric `body.digest`, and
+   member `source`, no `map`, `binding` `null`, and
    `map.segments` `[]`.
 
 Tag the tests `#[trace("TC-109", "FR-031-AC-n")]`: steps 1 to 4 for AC-1 to
@@ -61,13 +60,13 @@ AC-4 and steps 5 to 9 for AC-6 to AC-10 (AC-5 is TC-430 step 5); step 9 also
 - Step 1: `success`, exit 0, with the `package_id` of compiling the body
   alone, for LF and CRLF alike; `violation`, exit 10; `compile`,
   `missing_import`/`missing-selection`, exit 20, no `package_id`.
-- Step 2: each of the first three ends with FR-030's error, retaining the
+- Step 2: each of the first two ends with FR-030's error, retaining the
   original identity, the selection and Quire's outcome, with no compile and
   no truth; the `ix:formal` body refuses `unknown_language`, exit 20.
 - Step 3: each limited run reports incomplete with that limit's typed
   cause; each default run succeeds.
 - Step 4: the source names the body identity with the extracted body's
-  digest and the original identity with its digest, and the extraction
+  identity and the original identity, and the extraction
   record holds Quire's unchanged outcome and the verified map; the second
   run refuses `stale_dependency`, naming both identities.
 - Step 5: `extraction-package-conflict`; `extraction-clause-count` with

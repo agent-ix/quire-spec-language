@@ -51,8 +51,8 @@ payload.
     `state`/`operation_anchor` and `state`/`frame` nodes (FR-105), and the
     frame's `generated` occurrence key (FR-104);
   - `invocation`: the `DocumentRef` (FR-106) of the invocation, with its pre
-    and post snapshots in the request's byte provision by `sha256-jcs`
-    digest;
+    and post snapshots in the request's byte provision by document
+    identity;
   - `change`: the change the counterexample claims: an object reference and
     a field name for a write, an object reference and its type for a
     creation or deletion, or an object reference and its pre and post types
@@ -73,9 +73,9 @@ payload.
 ## Outputs
 
 - An FR-072 replay result on the envelope's arm, or a typed `ReplayRefusal`
-  with no partial result. A result retains the source identity and digest,
+  with no partial result. A result retains the source identity,
   the `package_id`, the request's `frame_operation`, the payload's anchor,
-  frame and occurrence identities, the identity and digest of the invocation and both snapshots,
+  frame and occurrence identities, the identity of the invocation and both snapshots,
   the witness's `change`, and the change the replay found.
 
 ## Behavior
@@ -143,10 +143,10 @@ payload.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-116-AC-1 | A hand-built envelope for `Config::ConfigVersion::attemptUpdate` carrying the forbidden-parent-change invocation and `change` (`child`, `parent`) settles `reproduced-with-evaluated-witness`. The result holds the source digest, `package_id`, the anchor, frame and occurrence identities equal to the payload's, the three document identities and digests, and both changes. | Test (TC-515) |
+| FR-116-AC-1 | A hand-built envelope for `Config::ConfigVersion::attemptUpdate` carrying the forbidden-parent-change invocation and `change` (`child`, `parent`) settles `reproduced-with-evaluated-witness`. The result holds the source identity, `package_id`, the anchor, frame and occurrence identities equal to the payload's, the three document identities, and both changes. | Test (TC-515) |
 | FR-116-AC-2 | The same envelope carrying the changed-version invocation (inside the frame) settles `inconclusive`, `Verdicts`, holding `violation` and `success`; carrying forbidden-parent-change with `change` (`child`, `versionNumber`) settles `reproduced-with-evaluated-witness` and holds both the payload's change and the replay's (`child`, `parent`); carrying an invocation whose `created` disagrees settles `inconclusive`, `NoValue`. | Test (TC-515) |
 | FR-116-AC-3 | Stale identity: an envelope whose frame node identity is taken from a package whose `attemptUpdate` frame also modifies `parent` refuses `stale_dependency`/`content-mismatch` naming both frame identities, with no admission; a source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule; a `frame_operation` whose `operation` is `missing` refuses `missing_declaration`/`missing-name` naming the target. | Test (TC-515) |
-| FR-116-AC-4 | An envelope whose pre snapshot is absent from the byte provision refuses with FR-106's `unavailable_observation` record, and one whose invocation bytes differ from their digest refuses with `stale_dependency`/`content-mismatch`; neither settles a result. | Test (TC-515) |
+| FR-116-AC-4 | An envelope whose pre snapshot or invocation is absent from the byte provision refuses with FR-106's `unavailable_observation` record; neither settles a result. | Test (TC-515) |
 | FR-116-AC-5 | Replaying one envelope twice gives equal results. `FrameCounterexample` implements `FamilyPayload`, and the envelope carries it as its generic parameter with no string-keyed field. | Test (TC-515) |
 | FR-116-AC-6 | Envelope consistency: the step-1 envelope with its `clause_node` replaced by another package's frame node refuses `stale_dependency`/`content-mismatch` naming the envelope's clause node and the payload's frame node; with its `occurrence_key` at another ordinal it refuses the same way naming both occurrences. Each refuses before the recompile: the request's source does not compile, and the consistent envelope over the same request refuses at the recompile. | Test (TC-515) |
 | FR-116-AC-7 | A hand-built envelope for `Orders::Pump::rehome` carrying TC-1037's invocation I under a frame that modifies no relationship and `change` the link `p1`-`t1` of `Pump-housing-Tank` `removed` settles `reproduced-with-evaluated-witness`, holding the payload's change and the replay's `Link` change; with `change` the link `p1`-`t2` `added` it settles the same and holds both changes as found; under a frame that modifies `Pump-housing-Tank` it settles `inconclusive`, `Verdicts`. | Test (TC-1037) |

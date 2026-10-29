@@ -39,7 +39,7 @@ Tag each test `#[trace("TC-826", "<AC id>")]`.
 - Step 2: each change gives a new union node id and new ids for every node
   naming `Shape`.
 - Step 3: all three equal per member; the FR-441-AC-1 inputs give its
-  digests; the three `X` `VariantId`s differ.
+  keys; the three `X` `VariantId`s differ.
 - Step 4: `true`, `false`, `false`; the cross-union comparison is refused by
   type checking.
 - Step 5: TC-262's verdicts.

@@ -66,9 +66,9 @@ comparing copied source references.
    `CheckedUnit` source reference to compare it against graph or type-report
    fields.
 7. **Profile selection.** A source selects a profile by identity alone
-   (FR-110). The one grammar refuses a profile line that carries a `version`
-   or a `digest` after the identity. Profiles resolve through the `DefinitionLock`
-   and the spine's `LockEvidence`; a revision or digest never belongs to the
+   (FR-110). The one grammar refuses a profile line that carries any clause
+   after the identity. Profiles resolve through the `DefinitionLock`
+   and the spine's `LockEvidence`; a revision never belongs to the
    source.
 8. **Moved families.** The producer admits a family only once its
    type phase runs in S3 over S2 forms. S2 builds a form for a `relation`
@@ -120,8 +120,8 @@ comparing copied source references.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-362-AC-1 | For a source the grammar admits, the producer returns one `CheckedUnit` containing the graph, type report and the source's single `RawSourceRef`; the graph and type report come from that source's one parse. The carried reference's digest is the `quire.source.bytes/v1` digest of the input bytes (QSpec FR-018). | Test (TC-1026) |
-| FR-362-AC-2 | For a source whose profile line carries `version` or `digest` after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test |
+| FR-362-AC-1 | For a source the grammar admits, the producer returns one `CheckedUnit` containing the graph, type report and the source's single `RawSourceRef`; the graph and type report come from that source's one parse. The carried reference holds the source's `authority` and `identity` labels. | Test (TC-1026) |
+| FR-362-AC-2 | For a source whose profile line carries any clause after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test |
 | FR-362-AC-3 | The producer does not accept separately supplied graph, type report and formal source inputs, and exposes no graph/report/source mismatch constructor or typed refusal. Its sole `CheckedUnit` is created from the one source parse. | Inspection |
 | FR-362-AC-4 | A producer-created checked unit yields the inventory rows derived from its own graph and type report. | Test |
 | FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report fields. | Inspection |

@@ -91,7 +91,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
 ## Expected Results
 
-- Step 1: `reproduced-without-witness`, value `false`, the executor's pin and
+- Step 1: `reproduced-without-witness`, value `false`, the executor's implementation identity and
   non-zero work charges; `reproduced-with-evaluated-witness` with no QSpec FR-351
   record; a missing-binding decode refusal naming
   `x`'s node id.
@@ -99,8 +99,8 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   then with cause `NoValue`, replayed verdict `incomplete` and no value;
   `flag(0)` agrees and `flag(1)` is `inconclusive` with value `true`; `lt`
   is `5 < 3`, `false`, and agrees.
-- Step 3: `PackageIdMismatch` naming both identities; the edit keeps the
-  `package_id` and replays; there is no `ByteDigestMismatch`.
+- Step 3: `stale_dependency`/`content-mismatch` naming both lock contents; the edit keeps the
+  `package_id` and lock content and replays; no byte-level mismatch is checked.
 - Step 4: agreement with the document; stage `intake`, `missing_import`
   without it.
 - Step 5: in order, `UnknownFunction` naming the

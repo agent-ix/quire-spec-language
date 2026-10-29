@@ -14,7 +14,7 @@ Verify the complete, honest classification FR-087's owner ruling on
 QSL-158 (2026-09-21) states (Description, item 3, owner ruling (e)): every
 `LibraryRefusal` variant `resolve_libraries` (relocated into `library`) can
 return classifies to exactly one of: an ADR-011 I2 "Package import graph
-rule" (`:203-210`), the §4 binding's condition 2 (digest/preimage
+rule" (`:203-210`), the §4 binding's condition 2 (lock-content
 admission, `verify_package`), or E3 name resolution — except
 `DuplicatePackageId`, the one stated exception, which lies outside all
 three. Scope: FR-087-AC-12.
@@ -32,14 +32,14 @@ three. Scope: FR-087-AC-12.
 
    | Variant | Classification | Why (read from the code) |
    | --- | --- | --- |
-   | `PackageIdMismatch` | §4 condition 2 | Raised inside `verify_package`'s own digest recomputation and comparison — condition 2 itself. |
-   | `InvalidPreimage` | Per-package admission within `verify_package` | Raised after condition 2's digest comparison already completed (`identity_preimage` matched its declared `package_id`); validates the preimage's own structure. Grouped with condition 2 only because the same reused `verify_package` call raises it, not because condition 2 depends on it. |
-   | `UndeclaredExport` | Per-package admission within `verify_package` | Raised by the same `verify_package` call, after the preimage structure check, comparing the package's own declared exports against its own projected declarations. Per-package admission, not an import-graph or name question, and not part of condition 2's digest check either. |
+   | `PackageIdMismatch` | §4 condition 2 | Raised inside `verify_package`'s own lock-content recomputation and equality comparison — condition 2 itself. |
+   | `InvalidPreimage` | Per-package admission within `verify_package` | Raised after condition 2's comparison already completed (the recompiled lock content equals the declared lock content); validates the declared lock content's own structure. Grouped with condition 2 only because the same reused `verify_package` call raises it, not because condition 2 depends on it. |
+   | `UndeclaredExport` | Per-package admission within `verify_package` | Raised by the same `verify_package` call, after the structure check, comparing the package's own declared exports against its own projected declarations. Per-package admission, not an import-graph or name question, and not part of condition 2's comparison either. |
    | `InvalidQualifier` | E3 name resolution | Validates an `as` qualifier used only for binding `a::Name` references; moves conceptually with `resolve_name` to E3. |
    | `ConflictingDefinition` | I2 rule 2 | Two supplied packages claim one library identity, so the identity has no one selection — I2's second rule. |
    | `ImportCycle` | I2 rule 3 | An import-graph cycle — I2's third rule exactly. |
    | `MissingImport` | I2 rule 1 | No supplied package matches the import's identity at all — "an import is missing," I2's first rule. |
-   | `DuplicatePackageId` | Named exception (none of the three) | Raised only after both supplied packages have already, independently, passed `verify_package`'s digest check — so each one's `package_id` already equals the digest recomputed over its own `identity_preimage`. Two packages sharing one `package_id` therefore share byte-identical `identity_preimage` bytes; they can only still differ in the `LibraryPackage` fields the preimage excludes (`imports`, `exports`) — conflicting metadata over identical identity content, not two different contents colliding on one digest. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is a content-addressing precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
+   | `DuplicatePackageId` | Named exception (none of the three) | Raised only after both supplied packages have already, independently, passed `verify_package`'s comparison — so each one's declared lock content already equals its recompiled lock content. Two packages sharing one package identity and version therefore share equal lock content; they can only still differ in the `LibraryPackage` fields the lock excludes (`imports`, `exports`) — conflicting metadata over identical identity content. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is an identity precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
 
 3. Confirm every variant in step 1 receives exactly the classification step
    2's table states; a variant classified to a different bucket than the
@@ -47,18 +47,17 @@ three. Scope: FR-087-AC-12.
    the named exception), or left unclassified, fails this step.
 4. Construct one concrete fixture per row in step 2's table (eight
    fixtures, one per row, each varying exactly the one fault its row
-   names: a package whose declared `package_id` does not equal the digest
-   recomputed over its own `identity_preimage`, all else valid, for
+   names: a package whose declared lock content does not equal the lock content
+   recompiled from its own declarations, all else valid, for
    `PackageIdMismatch` — `resolve_libraries` has no schema-version check to
-   combine this with, so the fixture is a digest mismatch only, not a
-   second, unrelated fault; a structurally malformed preimage for
+   combine this with, so the fixture is a lock-content mismatch only, not a
+   second, unrelated fault; a structurally malformed lock for
    `InvalidPreimage`; a package whose declared export matches no
    declaration for `UndeclaredExport`; a malformed `as` qualifier for
    `InvalidQualifier`; two supplied packages of one identity for
    `ConflictingDefinition`; a two-package import cycle for `ImportCycle`; no supplied package under the
    imported identity at all for `MissingImport`; and two supplied packages
-   sharing one byte-identical `identity_preimage` (and hence one recomputed
-   `package_id`, each independently passing its own digest check) but
+   sharing one package identity and version with equal lock content (each independently passing its own comparison) but
    differing in `imports` or `exports` for `DuplicatePackageId`)
    and
    confirm `resolve_libraries` refuses each with exactly the variant its

@@ -36,7 +36,7 @@ nodes, literal and aggregate value nodes, parameter nodes and function nodes
 whose bodies hold no application. Apart from the `union_value` exception,
 this requirement defines QSL's key for those nodes: the
 `quire.structural-node/v1` preimage. It also fixes the node
-shape of a type, a parameter and a function, which that key hashes.
+shape of a type, a parameter and a function, which that key carries.
 
 ADR-013 O-04 keys these nodes by this QSL-proposed preimage, and QSL
 conforms to QSpec's arm once QSpec publishes one (QC-18, QC-24). It follows the ADR-013 OQ-G ruling
@@ -58,8 +58,8 @@ copied): FR-322, `proposals/checked-package-v2/node-identity-preimage.schema.jso
 
 ## Outputs
 
-- The node's RFC 8785 preimage bytes and its `quire.checked-semantic-node/v1`
-  key: SHA-256 of exactly those bytes.
+- The node's RFC 8785 preimage bytes and its structural key: exactly those
+  bytes, compared by equality and used directly as a map key.
 - Or a typed refusal and no key.
 
 ## Behavior
@@ -84,7 +84,7 @@ specified by [FR-319](FR-319-key-union-member-and-case-nodes.md) and
 The exception applies only to `value`/`union_value`: a `record_value` or
 `tuple_value` whose body contains no application still selects rule 3.
 
-The key is SHA-256 of the RFC 8785 bytes of the preimage, produced by the one
+The key is the RFC 8785 byte string of the preimage, produced by the one
 JCS implementation ADR-013 §2 names (`quire-canonical`).
 
 ### The `quire.structural-node/v1` preimage
@@ -97,7 +97,7 @@ The preimage is one JSON object with these members:
 | `owner` | Present exactly when `declaration` is not `null` or the node is model-owned: the declaring node's QSpec `Owner` (ADR-013 O-04). A `Value` declaration compiled from source carries its unit's `SourceOwner`, `{kind: "source", authority, identity}`. A model-owned node carries `ModelOwner` and a `null` `declaration` ([FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)). Absent otherwise. |
 | `node_tag` | The node's FR-322 `node_tag`. |
 | `semantic_form` | The node's FR-322 `semantic_form`. |
-| `semantic_type` | The `NodeId` (`{domain: "quire.checked-semantic-node/v1", digest}`) of the node's semantic type, or `null` when the node's semantic type is the node itself. When the semantic type is a member of the node's own recursion group, `{term: "group_reference", ordinal}` (Recursion groups). |
+| `semantic_type` | The key of the node's semantic type, or `null` when the node's semantic type is the node itself. When the semantic type is a member of the node's own recursion group, `{term: "group_reference", ordinal}` (Recursion groups). |
 | `declaration` | `{qualified_name}` for a node with a `declaration` source occurrence (FR-322 `declaration`), else `null`. |
 | `recursion` | `null` for a node outside every recursion group, else `{size, ordinal, group}` (Recursion groups). |
 | `body` | The node's FR-322 body term. A `reference` to a member of the node's own recursion group is written `{term: "group_reference", ordinal}`, as `quire.application-node/v1` writes it. |
@@ -122,7 +122,7 @@ a literal's *value*, which includes every bound of `Int[lo, hi]`, and is
 the canonical decimal string at every magnitude (below). Keying never
 refuses an integer for its magnitude. Every key minted before this rule
 had counters below 2^53 and string values, so no existing key changes.
-`recursion`'s `group` is a lowercase hex string. A literal's value is
+`recursion`'s `group` is the group key (Recursion groups). A literal's value is
 spelled by its `value_kind`:
 
 - `integer`: the canonical decimal string of the value: no leading zero, no
@@ -188,7 +188,7 @@ selects (rule 2 or rule 3), with these members:
 - `recursion` is `{size, ordinal}`, where `size` is the number of the
   group's classes and `ordinal` is the rank of the member's class in the
   group order below. In a `quire.structural-node/v1` preimage, `recursion`
-  also has `group`, the group digest below. In a
+  also has `group`, the group key below. In a
   `quire.application-node/v1` preimage, `recursion` is exactly
   `{size, ordinal}`, as FR-322 writes it.
 - Each position that names a member of the node's own group holds
@@ -217,33 +217,32 @@ same group (G9).
    order the positions occur in the RFC 8785 bytes of its full shape. A
    member named twice is listed twice.
 3. A **refinement pass** over one kind of shape computes a signature for
-   each member. `h0(m)` is SHA-256 of the RFC 8785 bytes of `m`'s shape.
-   `h(r+1)(m)` is SHA-256 of the RFC 8785 bytes of
-   `{"shape": h0(m), "targets": [hr(t) for each target t of m]}`. Each digest
-   is written as a lowercase hex string. The pass stops at the first round
+   each member. `h0(m)` is the RFC 8785 byte string of `m`'s shape.
+   `h(r+1)(m)` is the RFC 8785 byte string of
+   `{"shape": h0(m), "targets": [hr(t) for each target t of m]}`. Each
+   signature is that byte string itself, compared bytewise. The pass stops at the first round
    `r` of 1 or more in which the number of distinct `hr` values equals the
    number of distinct `h(r-1)` values, and `hr(m)` is `m`'s signature. Each
    round before the last adds at least one distinct value, so a pass stops
    within `n` rounds for a group of `n` members.
 4. `check` runs one pass over the anonymous shapes and one over the full
    shapes, and orders the members by anonymous signature, then by full
-   signature, each compared as a lowercase hex string.
+   signature, each compared bytewise.
 5. Members with equal full signatures form one **class**. They have equal
    preimages, so they are one node (FR-093's content addressing), and
    `check` keeps one node for the class. A class's `ordinal` is its rank in
    the order, from 0, and `size` is the number of classes.
 
 A member's **group-local preimage** is its preimage built with these
-ordinals, without the `group` member. The **group digest** is SHA-256 of the
-RFC 8785 bytes of the array whose `k`-th element is the lowercase hex SHA-256
-of the group-local preimage of ordinal `k`. A structural in-group node's key
-is SHA-256 of its group-local preimage with `recursion.group` set to the
-group digest. An application in-group node's key is SHA-256 of its
-group-local preimage, which is its FR-322 preimage.
+ordinals, without the `group` member. The **group key** is the RFC 8785 byte string of the
+array whose `k`-th element is the group-local preimage of ordinal `k`. A
+structural in-group node's key is its group-local preimage with
+`recursion.group` set to the group key. An application in-group node's key is
+its group-local preimage, which is its FR-322 preimage.
 
 The order is well defined and not circular. The shapes name only keys
 outside the group, which dependency order has already fixed, and
-placeholders. The signatures are digests of shapes and of other signatures.
+placeholders. The signatures are byte strings built from shapes and from other signatures.
 The ordinals come from the order, the preimages from the ordinals and the
 keys from the preimages. No step reads the key of a member of the group, so
 the order does not depend on node keys.
@@ -256,7 +255,7 @@ builds the lowering), so a reader that derives the ordinal from graph order,
 as IR-242's does, recomputes the keys `check` minted. A reader reads a node's
 `owner` from the node's wire `owner` member, which QSL's v2 emission writes
 on every node whose preimage carries one (FR-093, QSpec FR-322 `owner`), so
-it recomputes an in-group key and its group digest from the package alone.
+it recomputes an in-group key and its group key from the package alone.
 
 A pass computes at most `n` signatures per round for `n` rounds, so at most
 `n²` signatures for a group of `n` members, and a group holds no more nodes
@@ -268,7 +267,7 @@ depends on a member's declared name and owner only through the full pass,
 which breaks ties that the anonymous pass leaves. Names belong in the order
 for three reasons:
 
-- A declared member's key already hashes its `declaration` and `owner`, so
+- A declared member's key already holds its `declaration` and `owner`, so
   renaming the member changes its key whatever the order is.
 - Without names, the members of a mutually recursive pair whose bodies differ
   only in which function they call tie (G10 to G15). Content would then give
@@ -286,11 +285,11 @@ its own and its targets' ordinals. Two application nodes of different groups
 with the same body shape, the same `size` and the same ordinals therefore
 have equal preimages. Groups that differ only in declared names or owners
 always give their in-group application nodes equal preimages: in
-FR-092-AC-7, the preimages of the conditionals of `f` and of `g` both hash
-to G5. Groups that differ in other content can also coincide, when their
+FR-092-AC-7, the preimages of the conditionals of `f` and of `g` both equal
+G5. Groups that differ in other content can also coincide, when their
 application nodes' shapes and ordinals happen to match. A structural
-in-group node carries its group digest, and every group holds a declared
-record or function whose `declaration` and `owner` enter that digest, so a
+in-group node carries its group key, and every group holds a declared
+record or function whose `declaration` and `owner` enter that key, so a
 structural in-group node's key differs from every other group's members'.
 
 `check` SHALL refuse a package in which two members of different recursion
@@ -410,8 +409,8 @@ A function node's body holds references only, never an `application` term. It
 is therefore keyed by `quire.structural-node/v1`, and its preimage carries its
 owner. The root expression and every application inside the body are their
 own `expression` nodes, keyed by `quire.application-node/v1`. They carry no
-`declaration`, so their preimage carries no owner, and their keys equal
-QSpec's application-node vectors for the same node.
+`declaration`, so their preimage carries no owner, and their preimages equal
+QSpec's application-node preimages for the same node.
 
 A clause function that `check` synthesizes from a domain package clause has
 this shape with a `ModelOwner`, a `null` `declaration` and a `clause` binding
@@ -479,73 +478,73 @@ The reference binds this node's key (FR-218). A change to any member of the
 protocol changes the clause node's key (FR-383), and a reference bound to
 the old key is stale.
 
-### Golden vectors
+### Key vectors
 
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
 for the named node. Owners are `SourceOwner{authority: "a", identity: "u"}`
 and, for D2, `{authority: "a", identity: "w"}`. Every function below is
 declared under owner (`a`, `u`). A vector that names another vector's key
-uses the digest that vector gives. E1 to E3 are `quire.application-node/v1`
+uses the key that vector gives. E1 to E3 are `quire.application-node/v1`
 keys of the expression nodes [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
 builds; they are listed here because F2 and E2 depend on them.
 
 | Vector | Node | Key |
 |---|---|---|
-| T1 | Boolean | the SHA-256 of its preimage |
-| T2 | Integer | the SHA-256 of its preimage |
-| T3 | Text scalar | the SHA-256 of its preimage |
-| T4 | Int[0, 9] | the SHA-256 of its preimage |
-| T5 | Option<Int[0, 9]> | the SHA-256 of its preimage |
-| T6 | Sequence<Int[0, 9]> | the SHA-256 of its preimage |
-| T7 | Sequence<Int[0, 9]>[0, 5] | the SHA-256 of its preimage |
-| T8 | Text[0, 64; nfc] | the SHA-256 of its preimage |
-| T9 | Rational scalar | the SHA-256 of its preimage |
-| T10 | Rational[-9, 9; 1, 9] | the SHA-256 of its preimage |
-| T11 | Decimal scalar | the SHA-256 of its preimage |
-| T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | the SHA-256 of its preimage |
-| T13 | Int[0, 18446744073709551615] | the SHA-256 of its preimage |
-| T14 | Int[0, 9223372036854775808] | the SHA-256 of its preimage |
-| T15 | Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727] | the SHA-256 of its preimage |
-| T16 | Int[0, 18446744073709551616] | the SHA-256 of its preimage |
-| D1 | record Point, owner (a, u) | the SHA-256 of its preimage |
-| D2 | record Point, owner (a, w) | the SHA-256 of its preimage |
-| D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | the SHA-256 of its preimage |
-| D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | the SHA-256 of its preimage |
-| D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | the SHA-256 of its preimage |
-| P1 | parameter a: Boolean, level 0 | the SHA-256 of its preimage |
-| P2 | parameter b: Boolean, level 1 | the SHA-256 of its preimage |
-| P3 | let binder y: Boolean, level 1 | the SHA-256 of its preimage |
-| P4 | parameter x: Int[0, 9], level 0 | the SHA-256 of its preimage |
-| L1 | literal true | the SHA-256 of its preimage |
-| L2 | literal 7 | the SHA-256 of its preimage |
-| L3 | literal rational(1, 2) of type Rational[-9, 9; 1, 9] | the SHA-256 of its preimage |
-| L7 | literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091) | the SHA-256 of its preimage |
-| F1 | function f() -> Boolean { true }, owner (a, u) | the SHA-256 of its preimage |
-| E1 | a and b | the SHA-256 of its preimage |
-| F2 | function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u) | the SHA-256 of its preimage |
-| E2 | both(a, true) | the SHA-256 of its preimage |
-| E3 | let y = a in y | the SHA-256 of its preimage |
-| F3 | function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u) | the SHA-256 of its preimage |
-| L5 | literal `0` | the SHA-256 of its preimage |
-| L6 | literal `1` | the SHA-256 of its preimage |
-| E11 | `x > 0` | the SHA-256 of its preimage |
-| E12 | `x - 1` | the SHA-256 of its preimage |
-| E13 | `x - 1` narrowed into `Int[0, 9]` | the SHA-256 of its preimage |
-| G1 | an `option` node over itself, a one-member group, ordinal 0 | the SHA-256 of its preimage |
-| G2 | `record List { next: List?; }`, ordinal 1 | the SHA-256 of its preimage |
-| G3 | `Option<List>`, ordinal 0 | the SHA-256 of its preimage |
-| G4 | function `f`, ordinal 2 | the SHA-256 of its preimage |
-| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | the SHA-256 of its preimage |
-| G6 | `f(x - 1)`, ordinal 1 | the SHA-256 of its preimage |
-| G7 | `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0 | the SHA-256 of its preimage |
-| G8 | `Sequence<Tree>`, ordinal 1 | the SHA-256 of its preimage |
-| G9 | `Sequence<Tree>[0, 3]`, ordinal 2 | the SHA-256 of its preimage |
-| G10 | function `ping`, ordinal 4 | the SHA-256 of its preimage |
-| G11 | function `pong`, ordinal 5 | the SHA-256 of its preimage |
-| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1 | the SHA-256 of its preimage |
-| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0 | the SHA-256 of its preimage |
-| G14 | `ping(x - 1)`, in `pong`, ordinal 2 | the SHA-256 of its preimage |
-| G15 | `pong(x - 1)`, in `ping`, ordinal 3 | the SHA-256 of its preimage |
+| T1 | Boolean | its preimage |
+| T2 | Integer | its preimage |
+| T3 | Text scalar | its preimage |
+| T4 | Int[0, 9] | its preimage |
+| T5 | Option<Int[0, 9]> | its preimage |
+| T6 | Sequence<Int[0, 9]> | its preimage |
+| T7 | Sequence<Int[0, 9]>[0, 5] | its preimage |
+| T8 | Text[0, 64; nfc] | its preimage |
+| T9 | Rational scalar | its preimage |
+| T10 | Rational[-9, 9; 1, 9] | its preimage |
+| T11 | Decimal scalar | its preimage |
+| T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | its preimage |
+| T13 | Int[0, 18446744073709551615] | its preimage |
+| T14 | Int[0, 9223372036854775808] | its preimage |
+| T15 | Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727] | its preimage |
+| T16 | Int[0, 18446744073709551616] | its preimage |
+| D1 | record Point, owner (a, u) | its preimage |
+| D2 | record Point, owner (a, w) | its preimage |
+| D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | its preimage |
+| D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | its preimage |
+| D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | its preimage |
+| P1 | parameter a: Boolean, level 0 | its preimage |
+| P2 | parameter b: Boolean, level 1 | its preimage |
+| P3 | let binder y: Boolean, level 1 | its preimage |
+| P4 | parameter x: Int[0, 9], level 0 | its preimage |
+| L1 | literal true | its preimage |
+| L2 | literal 7 | its preimage |
+| L3 | literal rational(1, 2) of type Rational[-9, 9; 1, 9] | its preimage |
+| L7 | literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091) | its preimage |
+| F1 | function f() -> Boolean { true }, owner (a, u) | its preimage |
+| E1 | a and b | its preimage |
+| F2 | function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u) | its preimage |
+| E2 | both(a, true) | its preimage |
+| E3 | let y = a in y | its preimage |
+| F3 | function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u) | its preimage |
+| L5 | literal `0` | its preimage |
+| L6 | literal `1` | its preimage |
+| E11 | `x > 0` | its preimage |
+| E12 | `x - 1` | its preimage |
+| E13 | `x - 1` narrowed into `Int[0, 9]` | its preimage |
+| G1 | an `option` node over itself, a one-member group, ordinal 0 | its preimage |
+| G2 | `record List { next: List?; }`, ordinal 1 | its preimage |
+| G3 | `Option<List>`, ordinal 0 | its preimage |
+| G4 | function `f`, ordinal 2 | its preimage |
+| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | its preimage |
+| G6 | `f(x - 1)`, ordinal 1 | its preimage |
+| G7 | `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0 | its preimage |
+| G8 | `Sequence<Tree>`, ordinal 1 | its preimage |
+| G9 | `Sequence<Tree>[0, 3]`, ordinal 2 | its preimage |
+| G10 | function `ping`, ordinal 4 | its preimage |
+| G11 | function `pong`, ordinal 5 | its preimage |
+| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1 | its preimage |
+| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0 | its preimage |
+| G14 | `ping(x - 1)`, in `pong`, ordinal 2 | its preimage |
+| G15 | `pong(x - 1)`, in `ping`, ordinal 3 | its preimage |
 
 **T1**: Boolean
 
@@ -553,7 +552,7 @@ builds; they are listed here because F2 and E2 depend on them.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"boolean","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T2**: Integer
 
@@ -561,7 +560,7 @@ Key: the SHA-256 of the preimage above, as lowercase hex.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"integer","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T3**: Text scalar
 
@@ -569,47 +568,47 @@ Key: the SHA-256 of the preimage above, as lowercase hex.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"text","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T4**: Int[0, 9]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T5**: Option<Int[0, 9]>
 
 ```json
-{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":"<key of T4>","term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T6**: Sequence<Int[0, 9]>
 
 ```json
-{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":"<key of T4>","term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T7**: Sequence<Int[0, 9]>[0, 5]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<digest of T6>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":"<key of T6>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T8**: Text[0, 64; nfc]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"64","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"64","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":"<key of T3>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T9**: Rational scalar
 
@@ -617,15 +616,15 @@ Key: the SHA-256 of the preimage above, as lowercase hex.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"rational","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T10**: Rational[-9, 9; 1, 9]
 
 ```json
-{"body":{"members":[{"name":"numerator_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-9","value_kind":"integer"}},{"name":"numerator_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}},{"name":"denominator_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}},{"name":"denominator_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"rational_range","semantic_type":{"digest":"<digest of T9>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"numerator_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"-9","value_kind":"integer"}},{"name":"numerator_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9","value_kind":"integer"}},{"name":"denominator_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}},{"name":"denominator_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"rational_range","semantic_type":"<key of T9>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T11**: Decimal scalar
 
@@ -633,199 +632,199 @@ Key: the SHA-256 of the preimage above, as lowercase hex.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"decimal","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T12**: Decimal[-100000, 100000; 2, 2; nearest-even]
 
 ```json
-{"body":{"members":[{"name":"coefficient_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-100000","value_kind":"integer"}},{"name":"coefficient_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"100000","value_kind":"integer"}},{"name":"scale_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"scale_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"rounding","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"nearest-even","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"decimal_range","semantic_type":{"digest":"<digest of T11>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"coefficient_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"-100000","value_kind":"integer"}},{"name":"coefficient_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"100000","value_kind":"integer"}},{"name":"scale_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"2","value_kind":"integer"}},{"name":"scale_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"2","value_kind":"integer"}},{"name":"rounding","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"nearest-even","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"decimal_range","semantic_type":"<key of T11>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T13**: Int[0, 18446744073709551615]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T14**: Int[0, 9223372036854775808]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T15**: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T16**: Int[0, 18446744073709551616]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D1**: record Point, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"x","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"y","term":"binding","value":{"target":"<key of T4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D2**: record Point, owner (a, w)
 
 ```json
-{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"w","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"x","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"y","term":"binding","value":{"target":"<key of T4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"w","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D3**: record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"<digest of T5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":"<key of T5>","term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D4**: record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"target":{"digest":"<digest of T5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"b","term":"binding","value":{"target":"<key of T5>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D5**: tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u)
 
 ```json
-{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":{"qualified_name":["Pair"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"tuple","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":"<key of T4>","term":"reference"},{"target":"<key of T4>","term":"reference"}],"term":"aggregate"},"declaration":{"qualified_name":["Pair"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"tuple","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P1**: parameter a: Boolean, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P2**: parameter b: Boolean, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P3**: let binder y: Boolean, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P4**: parameter x: Int[0, 9], level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T4>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L1**: literal true
 
 ```json
-{"body":{"term":"literal","type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":"<key of T1>","value":true,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L2**: literal 7
 
 ```json
-{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"7","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":"<key of T2>","value":"7","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L7**: literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091)
 
 ```json
-{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":"<key of T2>","value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L3**: literal rational(1, 2) of type Rational[-9, 9; 1, 9]
 
 ```json
-{"body":{"term":"literal","type":{"digest":"<digest of T10>","domain":"quire.checked-semantic-node/v1"},"value":"1/2","value_kind":"rational"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T10>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":"<key of T10>","value":"1/2","value_kind":"rational"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T10>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **F1**: function f() -> Boolean { true }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":"<key of L1>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E1**: a and b
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.boolean.and","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of P1>","term":"reference"},{"target":"<key of P2>","term":"reference"}],"operation":{"identity":"quire.op.boolean.and","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **F2**: function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of E1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["both"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P1>","term":"reference"},{"target":"<key of P2>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":"<key of E1>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["both"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E2**: both(a, true)
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of F2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of F2>","term":"reference"},{"target":"<key of P1>","term":"reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E3**: let y = a in y
 
 ```json
-{"body":{"arguments":[{"name":"y","term":"binding","value":{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"target":{"digest":"<digest of P3>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.let","laws":[],"leaves":[],"member":null,"mode":null},"operator":"let","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"let","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"name":"y","term":"binding","value":{"target":"<key of P1>","term":"reference"}},{"target":"<key of P3>","term":"reference"}],"operation":{"identity":"quire.op.control.let","laws":[],"leaves":[],"member":null,"mode":null},"operator":"let","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"let","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **F3**: function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["m"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":"<key of L1>","term":"reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["m"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 #### Recursion-group vectors
 
@@ -856,189 +855,189 @@ declared member is under owner (`a`, `u`):
   and `function pong`, the same body calling `ping`, a mutually recursive
   pair whose bodies differ only in which function they call, a group of six.
 
-Each group's members in group order and its group digest are below, and the
+Each group's members in group order and its group key are below, and the
 tests assert both against the lowered graph. The group order separates G4 to
 G6, G2 and G3 and G7 to G9 by their content alone. G10 to G15 holds three
 pairs of members that differ only in which function they call, ordered by the
 names `ping` and `pong`. Only G1's signatures are published, because a unit
 test asserts them; the signatures of the other groups are intermediate values
-that the group digest binds.
+that the group key holds.
 
 **L5**: literal `0`
 
 ```json
-{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L6**: literal `1`
 
 ```json
-{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E11**: `x > 0`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of L5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of P4>","term":"reference"},{"target":"<key of L5>","term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E12**: `x - 1`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of P4>","term":"reference"},{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":"<key of T2>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":"<key of T2>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E13**: `x - 1` narrowed into `Int[0, 9]`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of E12>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of E12>","term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":"<key of T4>","kind":"type_argument"},"mode":null},"operator":"convert","result_type":"<key of T4>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":"<key of T4>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G1**: an `option` node over itself, a one-member group, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G1>","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group key of G1>","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G2**: `record List { next: List?; }`, ordinal 1
 
 ```json
-{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G2>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G2>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G3**: `Option<List>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G2>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group key of G2>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G4**: function `f`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G4>","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G4>","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G5**: `if x > 0 then f(x - 1) else true`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of E11>","term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G6**: `f(x - 1)`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":"<key of E13>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G7**: `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0
 
 ```json
-{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G7>","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G7>","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G8**: `Sequence<Tree>`, ordinal 1
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G7>","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group key of G7>","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G9**: `Sequence<Tree>[0, 3]`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"<group digest of G7>","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"<group key of G7>","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G10**: function `ping`, ordinal 4
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G10>","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G10>","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G11**: function `pong`, ordinal 5
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G10>","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G10>","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G12**: `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of E11>","term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G13**: `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":"<key of E11>","term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G14**: `ping(x - 1)`, in `pong`, ordinal 2
 
 ```json
-{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":"<key of E13>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G15**: `pong(x - 1)`, in `ping`, ordinal 3
 
 ```json
-{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":"<key of E13>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
 ```
 
-Key: the SHA-256 of the preimage above, as lowercase hex.
+Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 
-G1, group digest (the SHA-256 of the group preimage):
+G1, group key (the array of the group-local preimages):
 
 | Ordinal | Member | Anonymous signature | Full signature |
 |---|---|---|---|
-| 0 | G1 | the group member's own signature digest | the group member's own signature digest |
+| 0 | G1 | the group member's own anonymous signature | the group member's own full signature |
 
-G2-G3, group digest (the SHA-256 of the group preimage):
+G2-G3, group key (the array of the group-local preimages):
 
 | Ordinal | Member |
 |---|---|
 | 0 | G3 `Option<List>` |
 | 1 | G2 `List` |
 
-G4-G6, group digest (the SHA-256 of the group preimage):
+G4-G6, group key (the array of the group-local preimages):
 
 | Ordinal | Member |
 |---|---|
@@ -1046,7 +1045,7 @@ G4-G6, group digest (the SHA-256 of the group preimage):
 | 1 | G6 call |
 | 2 | G4 `f` |
 
-G7-G9, group digest (the SHA-256 of the group preimage):
+G7-G9, group key (the array of the group-local preimages):
 
 | Ordinal | Member |
 |---|---|
@@ -1054,7 +1053,7 @@ G7-G9, group digest (the SHA-256 of the group preimage):
 | 1 | G8 `Sequence<Tree>` |
 | 2 | G9 `Sequence<Tree>[0, 3]` |
 
-G10-G15, group digest (the SHA-256 of the group preimage):
+G10-G15, group key (the array of the group-local preimages):
 
 | Ordinal | Member |
 |---|---|
@@ -1069,7 +1068,7 @@ G10-G15, group digest (the SHA-256 of the group preimage):
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-092-CON-1 | Only `check` builds a structural-node preimage and calls the kernel `NodeKey` constructor with its digest (ADR-011 FB-13, T-12). | Design | Inspection |
+| FR-092-CON-1 | Only `check` builds a structural-node preimage and calls the kernel `NodeKey` constructor with its preimage (ADR-011 FB-13, T-12). | Design | Inspection |
 | FR-092-CON-2 | The match that selects a preimage by node kind, and the match that builds a type node from a checked `ValueType`, have no `_` or catch-all arm (ADR-012 §5.1). | Design | Test (TC-413) |
 
 ## Acceptance Criteria
@@ -1081,18 +1080,18 @@ G10-G15, group digest (the SHA-256 of the group preimage):
 | FR-092-AC-3 | With `type Digit = Int[0, 9];` and `function g using v(x: Digit): Boolean pure { true }`, the semantic type of `g`'s parameter node is T4, and the checked graph holds no node whose `declaration` is `Digit`. | Test (TC-413) |
 | FR-092-AC-4 | For `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, `a`'s and `b`'s parameter nodes key to P1 and P2, and `both` keys to F2. For `function f using v(): Boolean pure { true }`, the literal node keys to L1 and `f` keys to F1. For `function h using v(a: Boolean): Boolean pure { let y = a in y }`, `y`'s parameter node keys to P3. For `function k using v(n: Boolean): Integer pure { 7 }`, the literal node keys to L2, whose preimage spells the value as the string `"7"`. | Test (TC-414) |
 | FR-092-AC-5 | `function unused using v(a: Boolean, b: Boolean): Boolean pure { a }` gives a function node whose `parameters` binding lists P1 and then P2, although the body never reads `b`. `function both2 using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, declared beside `both` in the same unit, reuses P1 and P2. | Test (TC-414) |
-| FR-092-AC-6 | No function node's body contains an `application` term, and every function node's key is the SHA-256 of its `quire.structural-node/v1` preimage, which carries the unit's `owner`. The node of `a and b` in `both` is keyed by `quire.application-node/v1`; its preimage has no `owner` member, and its key is E1. | Test (TC-414) |
-| FR-092-AC-7 | On a thread with a 512 KiB stack, a parameter typed with 100,000 nested `Option`s around `Boolean`, under S1 and S3 limits raised to fit it, is keyed, and its type node's key equals the key of the same type keyed on a thread with an 8 MiB stack. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both hash to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. On a 2 MiB stack, at the default limits, a chain of 30 records each holding an optional field of the next, the last into a text field, checks. | Test (TC-413) |
-| FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the recorded `sha256`. | Test (TC-413) |
+| FR-092-AC-6 | No function node's body contains an `application` term, and every function node's key is its `quire.structural-node/v1` preimage, which carries the unit's `owner`. The node of `a and b` in `both` is keyed by `quire.application-node/v1`; its preimage has no `owner` member, and its key is E1. | Test (TC-414) |
+| FR-092-AC-7 | On a thread with a 512 KiB stack, a parameter typed with 100,000 nested `Option`s around `Boolean`, under S1 and S3 limits raised to fit it, is keyed, and its type node's key equals the key of the same type keyed on a thread with an 8 MiB stack. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both equal G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. On a 2 MiB stack, at the default limits, a chain of 30 records each holding an optional field of the next, the last into a text field, checks. | Test (TC-413) |
+| FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the RFC 8785 byte strings of those preimages. | Test (TC-413) |
 | FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b: Int[0, 9]?; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
-| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5 and E11 to E13, whose E12 holds the literal `1` as an inline literal term; a function whose body is the literal `1` to a graph holding L6; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
-| FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
+| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5 and E11 to E13, whose E12 holds the literal `1` as an inline literal term; a function whose body is the literal `1` to a graph holding L6; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's key. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
+| FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` carrying one supplied key and once through one carrying a different supplied key, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 | FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
 | FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` and `Int[0, 18446744073709551616]` give type nodes with the preimage bytes and keys of vectors T13, T14, T15 and T16 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |
-| FR-092-AC-15 | QSL's node-key builder encodes `recursion.size`, `recursion.ordinal`, `group_reference.ordinal` and `operation.member.position` according to QSpec FR-322's counter rule. For both `group_reference.ordinal` and `operation.member.position`, the encoded preimage uses the JSON number `9007199254740991` at that value and the canonical decimal string `"9007199254740992"` at the next value; each key equals the SHA-256 of the RFC 8785 bytes of its encoded preimage. The result also equals every published `integer_encoding_vectors` key (FR-322-AC-58). Keying never refuses a counter for its magnitude: `NodeKeyRefusal` has no magnitude variant. | Test (TC-910) |
+| FR-092-AC-15 | QSL's node-key builder encodes `recursion.size`, `recursion.ordinal`, `group_reference.ordinal` and `operation.member.position` according to QSpec FR-322's counter rule. For both `group_reference.ordinal` and `operation.member.position`, the encoded preimage uses the JSON number `9007199254740991` at that value and the canonical decimal string `"9007199254740992"` at the next value; each key equals the RFC 8785 byte string of its encoded preimage. Keying never refuses a counter for its magnitude: `NodeKeyRefusal` has no magnitude variant. | Test (TC-910) |
 | FR-092-AC-16 | A unit that declares `protocol Fill` and holds `protocol Fill` as an expression emits a graph with one `protocol`/`protocol_reference` node whose body is exactly `{term: "reference", target: Fill's node key}`, whose `semantic_type` equals the `Fill` node's, whose `dependencies` are exactly that key, and which has one `expression` occurrence at the reference's region (ordinal 0) and no `declaration`, `owner`, nominal preimage or recursion group. The graph has one node collection and no protocol-reference collection. The emitted package admits through the IR v2 reader as `ProtocolForm::ProtocolReference`. | Test (TC-1021) |
-| FR-092-AC-17 | Changing the target protocol so its node key changes, and re-emitting, changes the reference node's key and the package identity; a unit with two protocols and the reference written against each gives two different reference keys; the same unit emitted twice gives equal keys. A unit that holds `protocol Fill` twice emits one `protocol_reference` node for `Fill` with two `expression` occurrences, ordinals 0 and 1 in source order at the two references' regions, each with its own source-map row, and the node's key, body and `dependencies` equal the one-reference unit's carrier. Removing the second occurrence and its source-map row from that emitted package leaves the carrier key and the package identity unchanged. The reference's key equals the SHA-256 of the RFC 8785 bytes of its `quire.structural-node/v1` preimage. | Test (TC-1021) |
+| FR-092-AC-17 | Changing the target protocol so its node key changes, and re-emitting, changes the reference node's key and the package's lock content; a unit with two protocols and the reference written against each gives two different reference keys; the same unit emitted twice gives equal keys. A unit that holds `protocol Fill` twice emits one `protocol_reference` node for `Fill` with two `expression` occurrences, ordinals 0 and 1 in source order at the two references' regions, each with its own source-map row, and the node's key, body and `dependencies` equal the one-reference unit's carrier. Removing the second occurrence and its source-map row from that emitted package leaves the carrier key and the package's lock content unchanged. The reference's key equals the RFC 8785 byte string of its `quire.structural-node/v1` preimage. | Test (TC-1021) |
 | FR-092-AC-18 | A unit that declares `protocol Fill` made only of the constructs FR-383's staged-emission paragraph lists as emitted (static and replicated roles, channels and their queues, `sequence`/`branch`/`case` controls, binders, captures and an `each` guard with no declaration read, a finish with no declaration read, scheduling) and that checks emits one `protocol`/`protocol_clause` node whose body is a `quire.op.protocol.control` application carrying the selected `protocol_profile` law and the `protocol` `profile_operator` member and the thirteen clause arguments of FR-383, whose `semantic_type` is the Boolean scalar type node, which is keyed by `quire.application-node/v1`, and which has one `declaration` occurrence at the declaration's region. The IR v2 reader admits it, and a reference to `Fill` (AC-16) resolves to this node's key. The unit selects a protocol profile by a header `profile` (FR-110): QSpec FR-322-AC-22 admits no `protocol_control` application without a selected law, so a unit that selects none emits no protocol node and no refusal for the declaration, and a reference to a protocol in it refuses `missing_declaration`/`missing-selection` (FR-218-AC-8). A protocol that names a construct FR-383 lists as not yet emitted refuses `unsupported_construct`/`not-yet-implemented` at the construct, naming it and the ticket that writes it, and writes no clause node. | Test (TC-1021) |
 
 ## Dependencies
@@ -1141,7 +1140,7 @@ G10-G15, group digest (the SHA-256 of the group preimage):
   ordinal, and the `quire.application-node/v1` preimage has no member that
   names the group, so two groups that differ only in declared names give
   their in-group application nodes one key. QSL's structural preimage
-  carries the group digest, so only application nodes collide. Until QSpec
+  carries the group key, so only application nodes collide. Until QSpec
   adds a group identity to the application-node `recursion` member (ADR-013
   QC-24), `check` refuses the collision (Groups that collide) rather than
   merge the nodes.

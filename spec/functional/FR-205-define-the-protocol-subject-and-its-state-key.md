@@ -40,7 +40,7 @@ A verification operator asks whether a claim holds over a protocol that
 forks two branches over one cell. They name the model subject, the
 protocol, the object its `over` parameter binds and the model each static
 role plays. Every engine and replay reads one definition of what a protocol
-state is, so a counterexample's state digests mean the same thing to the
+state is, so a counterexample's state keys mean the same thing to the
 model checker and to replay, and a loop that forks again reaches a state it
 has already seen instead of a new one.
 

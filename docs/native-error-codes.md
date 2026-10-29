@@ -19,7 +19,6 @@ reused; prose may change without changing classification.
 | --- | --- |
 | io-error | A selected local file could not be opened or read. |
 | invalid-request | A closed command request has invalid JSON or fields. |
-| invalid-digest | A selected command digest has an invalid spelling. |
 | invalid-identifier | A selected command identifier fails its constructor. |
 | output-failure | A typed command result could not be serialized. |
 | unsupported_projection | A real, admitted capability this build does not implement yet: a checked-package/v2 emission path not yet built. |
@@ -30,7 +29,6 @@ reused; prose may change without changing classification.
 | invalid-quire-context | Quire rejected the semantic context; details identify its contract versions and original diagnostics. |
 | invalid_source_identity | Required source identity, revision or display path is absent. |
 | invalid_source_map | Correspondence, source binding or queried range is invalid. |
-| source_digest_mismatch | Admitted source bytes differ from the supplied raw SHA-256 digest. |
 | invalid_utf8 | Source bytes cannot be decoded as UTF-8. |
 | invalid_syntax | Malformed source, including forbidden source characters. |
 | unsupported_construct | Recognized construct is outside the admitted grammar/profile. |
@@ -42,10 +40,10 @@ reused; prose may change without changing classification.
 | unknown_wire | The native package or runtime-input format selector is unsupported. |
 | unknown_required_feature | A package feature is unknown or outside the consumer's declared support. |
 | missing_import | A selected formal package or native import alias is absent. |
-| stale_dependency | A known package has no exact selected revision and declaration byte digest. |
+| stale_dependency | A known package has no exact selected identity and version. |
 | ambiguous_declaration | Multiple exact candidates or visible exports match; related formal loci are retained. |
 | missing_declaration | A required value, field, type or variant cannot be resolved. |
-| invalid_model_binding | A digest, explicit context binding or clause name is invalid. |
+| invalid_model_binding | An explicit context binding or clause name is invalid. |
 | invalid_runtime_input | Native runtime input structure is invalid, including a local root/child outside its admitted arena ordering. |
 | wrong_snapshot | A native result/pre expression has the wrong observation, or a runtime selection's artifact role, observation or invocation context/name/anchor disagrees with its checked clause. |
 | dangling_reference | A runtime object target is absent from its complete required population. |

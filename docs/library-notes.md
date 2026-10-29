@@ -8,8 +8,7 @@ Reference details for calling QSL as a Rust library. The
 - Source identity and revision labels are opaque diagnostic labels: authority,
   id, revision namespace and revision. They are not interchange source
   references.
-- `Source::read_verified` checks a selected byte digest. `parse_source` keeps
-  that verified, immutable source.
+- `parse_source` keeps the read, immutable source.
 - Byte spans are half-open. Line and column numbers start at one, and columns
   count Unicode scalar values.
 - CLI identity labels must be UTF-8. Invalid encoding exits 20. File operands
@@ -54,7 +53,7 @@ crate calls quire-rs's extractor and returns an `ExtractedSource`, which holds:
 
 It takes these inputs:
 
-- `original`: a digest-verified `Source`.
+- `original`: an immutable `Source`.
 - `context`: a loaded Quire `SemanticContext`. The `run` command builds it with
   `qsl_source::clause_context`.
 - `selection`: a `Selection` naming the authored clause id, the package and the

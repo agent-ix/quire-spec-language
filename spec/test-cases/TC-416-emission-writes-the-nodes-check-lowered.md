@@ -20,7 +20,7 @@ hashed, which a reader would refuse as `stale-node-key`.
 
 It also verifies each node's `dependencies` against FR-093's Node
 dependencies rules, and the emission against QSpec's v2 positive fixtures by
-the members those fixtures pin. This catches a type annotation listed as a
+the members those fixtures fix. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
@@ -124,10 +124,10 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   `expression` occurrence per read; the scalar nodes typing P1's body
   literals have a `generated` occurrence.
 - Step 5: the three members carry the label
-  the group digest of FR-092 vectors G4 to G6, their
+  the group key of FR-092 vectors G4 to G6, their
   graph order is G5, G6, G4 (ordinals 0 to 2), and step 2's recomputation
   from graph order gives G4 to G6.
-- Step 6: every emitted list equals its rebuilt list. In ascending digest
+- Step 6: every emitted list equals its rebuilt list. In ascending node-key
   order, E1 lists P2, P1; F2 lists P2, P1, E1; E2 lists L1, F2, P1; T4 lists
   T2; G4 lists G5, P4; G5 lists L1, G6, E11; G6 lists E13, G4; G7 lists G9;
   G8 lists G7; G9 lists G8; T1, L1 and P1 list none.

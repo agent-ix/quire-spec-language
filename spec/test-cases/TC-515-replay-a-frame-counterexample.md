@@ -36,8 +36,7 @@ the domain package and the invocation documents in the byte provision.
    envelope, once with the envelope's `clause_node` replaced by the other
    package's frame node, and once with its `occurrence_key` at another
    ordinal.
-4. forbidden-parent-change with its pre snapshot removed from the provision;
-   with its invocation bytes edited under the same digest.
+4. forbidden-parent-change with its pre snapshot removed from the provision.
 5. Step 1's envelope twice.
 6. Over FR-121-AC-18's domain package (`Sub` inherits `attemptUpdate`),
    step 1's envelope rebuilt over that package, the request's and the
@@ -60,8 +59,8 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
 ## Expected Results
 
 - Step 1: `reproduced-with-evaluated-witness`; the result holds the source
-  digest, `package_id`, the payload's anchor, frame and occurrence
-  identities, the three document identities and digests, and both changes.
+  labels, the package reference, the payload's anchor, frame and occurrence
+  identities, the three document identities, and both changes.
 - Step 2: `inconclusive`, `Verdicts` (`violation`, `success`);
   `reproduced-with-evaluated-witness` holding the payload's change
   (`child`, `versionNumber`) and the replay's (`child`, `parent`);
@@ -72,9 +71,8 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
   the recompile, and the other two refuse `stale_dependency`/
   `content-mismatch` naming the envelope's and the payload's frame node,
   then occurrence, with no recompile.
-- Step 4: a `ReplayRefusal` holding `unavailable_observation`; a
-  `ReplayRefusal` holding `stale_dependency`/`content-mismatch`. Neither
-  settles a result.
+- Step 4: a `ReplayRefusal` holding `unavailable_observation`, which settles
+  no result.
 - Step 5: equal results. `FrameCounterexample: FamilyPayload` compiles, and
   the envelope has no string-keyed field.
 - Step 6: `reproduced-with-evaluated-witness` with the target

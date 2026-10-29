@@ -68,7 +68,7 @@ pub struct MonitorLimits {
   that re-enters at its first position. Each position is a snapshot named
   by its `DocumentRef`.
 - `snapshots`: the FR-106 snapshot provision, document bytes by
-  `sha256-jcs` digest, that the positions name; `packages`: FR-056's
+  identity labels, that the positions name; `packages`: FR-056's
   package input, the domain package bytes FR-106 admission reads.
 - `limits`: the observation and model-normalization limits FR-106
   admission takes, the evaluator's accounting limits, and FR-194's
@@ -85,10 +85,10 @@ with the closed member set `format`, `prefix` and `loop`:
 {
   "format": "quire.monitor-trace/1",
   "prefix": [
-    {"identity": {"authority": "agent-ix", "identity": "ix://example/counter/run-1/0"}, "digest": "sha256-jcs:<hex>"}
+    {"identity": {"authority": "agent-ix", "identity": "ix://example/counter/run-1/0"}}
   ],
   "loop": [
-    {"identity": {"authority": "agent-ix", "identity": "ix://example/counter/run-1/1"}, "digest": "sha256-jcs:<hex>"}
+    {"identity": {"authority": "agent-ix", "identity": "ix://example/counter/run-1/1"}}
   ]
 }
 ```
@@ -96,7 +96,7 @@ with the closed member set `format`, `prefix` and `loop`:
 - `format` is the string `quire.monitor-trace/1`.
 - `prefix` and `loop` are arrays of snapshot `DocumentRef`s, each spelled
   as an FR-106 invocation's `pre` member: `identity`, the FR-001 labels,
-  and `digest`, the snapshot's `sha256-jcs` digest.
+  the snapshot's document identity.
 - With `loop` absent the trace is finite, its positions the `prefix`
   elements in order, and `prefix` holds at least one element. With `loop`
   present the trace is a lasso of `n = len(prefix) >= 0` prefix positions
@@ -104,7 +104,7 @@ with the closed member set `format`, `prefix` and `loop`:
   `n` (FR-329); FR-330's `TraceInput::Finite` and `TraceInput::Lasso` are
   the same traces as typed values.
 - Positions are numbered from 0, prefix first, then loop. Each position is
-  one observation that FR-106 admits from `snapshots` by its digest, as
+  one observation that FR-106 admits from `snapshots` by its identity labels, as
   FR-330 admits a `Temporal` trace's positions.
 
 The document is read with `quire-canonical`'s shared reader (FR-261) at any
@@ -126,10 +126,9 @@ naming its JSON pointer:
    `unknown_wire`/`unsupported-wire` at `/format`.
 5. A `prefix` or `loop` that is not an array, or an element that is not a
    `DocumentRef` object: `invalid_runtime_input`/`wrong-value-kind`; an
-   element missing `identity` or `digest`, or holding another member:
-   `missing-member` or `unknown-member`; a `digest` that is not
-   `sha256-jcs:` followed by 64 lowercase hexadecimal digits:
-   `invalid_runtime_input`/`invalid-value`.
+   element missing `identity`, or holding another member:
+   `missing-member` or `unknown-member`; an `identity` with a blank label:
+   `invalid_source_identity`/`blank-label`.
 6. An empty `prefix` with `loop` absent, and an empty `loop`:
    `invalid_runtime_input`/`invalid-value` at `/prefix` and at `/loop`.
 
@@ -169,7 +168,7 @@ in the place of `holds`, under ADR-014 A-4:
 - `position` is the `TemporalPosition` (FR-327) of the trace.
 - `counterexample` is the `TemporalCounterexample` FR-330's report holds:
   QSpec FR-364's observed arm, built from the trace's `DocumentRef`
-  digests, with `trace_position` equal to `position`. It lets QSpec FR-364's
+  identities, with `trace_position` equal to `position`. It lets QSpec FR-364's
   replayer re-run the trace.
 - `witness` is the QSpec FR-351 separating witness record of the violation,
   the record that backs a decisive temporal counterexample (QSpec FR-351,
@@ -255,8 +254,8 @@ record.
 | FR-283-AC-4 | For each AC-1 and AC-2 trace, the verdict `monitor` reports equals the verdict layer-6 replay's trace evaluation reports for the same clause and trace. | Test (TC-766) |
 | FR-283-AC-5 | Over a three-position finite trace whose `x` is 0 at position 1, `always (10 / x > 0)` reports a violation at position 1, category violation, with cause `UndefinedEvaluation` whose `cause` is `division-by-zero`; the record carries no `undefined` label, and FR-285 maps the outcome to exit 10. | Test (TC-765) |
 | FR-283-AC-6 | Over AC-2's lasso, `always eventually q` under `fair weak inc` settles its record unsupported, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`, and FR-285 maps the outcome to exit 21; in a request selecting it beside AC-2's clause without fairness, the second clause still reports `tested`. | Test (TC-766) |
-| FR-283-AC-7 | AC-1's three-position trace as the document `{"format":"quire.monitor-trace/1","prefix":[R0,R1,R2]}`, each `Ri` a snapshot `DocumentRef` in `snapshots`, gives the AC-1 records; AC-2's lasso as `{"format":"quire.monitor-trace/1","prefix":[R0,R1],"loop":[R2,R3]}` gives the AC-2 records. Each record is a `MonitorRecord` naming its clause; AC-1's violation is `Violated` at position 2 whose `counterexample` is FR-330's `TemporalCounterexample` with `prefix` the three digests, an empty `loop` and `trace_position` 2. | Test (TC-765) |
-| FR-283-AC-8 | Each of these trace documents refuses the whole request with `MonitorRefusal::TraceDocument`, no position admitted and no record: bytes `[` (`invalid_runtime_input`/`invalid-value` at `""`); the JSON array `[]` (`invalid_runtime_input`/`wrong-value-kind` at `""`); `{"prefix":[]}` with no `format` (`invalid_runtime_input`/`missing-member` naming `format`, not `unknown_wire`); `format` `quire.monitor-trace/2` (`unknown_wire`/`unsupported-wire` at `/format`); no `prefix` (`missing-member`); an extra member `fairness` (`unknown-member`); `prefix` a string (`wrong-value-kind` at `/prefix`); an element with a `digest` of 63 hexadecimal digits (`invalid-value` at `/prefix/0/digest`); `{"format":"quire.monitor-trace/1","prefix":[]}` (`invalid-value` at `/prefix`); and a document one byte above `observation.input_bytes` (`stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes`). | Test (TC-766) |
+| FR-283-AC-7 | AC-1's three-position trace as the document `{"format":"quire.monitor-trace/1","prefix":[R0,R1,R2]}`, each `Ri` a snapshot `DocumentRef` in `snapshots`, gives the AC-1 records; AC-2's lasso as `{"format":"quire.monitor-trace/1","prefix":[R0,R1],"loop":[R2,R3]}` gives the AC-2 records. Each record is a `MonitorRecord` naming its clause; AC-1's violation is `Violated` at position 2 whose `counterexample` is FR-330's `TemporalCounterexample` with `prefix` the three identities, an empty `loop` and `trace_position` 2. | Test (TC-765) |
+| FR-283-AC-8 | Each of these trace documents refuses the whole request with `MonitorRefusal::TraceDocument`, no position admitted and no record: bytes `[` (`invalid_runtime_input`/`invalid-value` at `""`); the JSON array `[]` (`invalid_runtime_input`/`wrong-value-kind` at `""`); `{"prefix":[]}` with no `format` (`invalid_runtime_input`/`missing-member` naming `format`, not `unknown_wire`); `format` `quire.monitor-trace/2` (`unknown_wire`/`unsupported-wire` at `/format`); no `prefix` (`missing-member`); an extra member `fairness` (`unknown-member`); `prefix` a string (`wrong-value-kind` at `/prefix`); an element with a blank `authority` label (`invalid_source_identity`/`blank-label` at `/prefix/0/identity`); `{"format":"quire.monitor-trace/1","prefix":[]}` (`invalid-value` at `/prefix`); and a document one byte above `observation.input_bytes` (`stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes`). | Test (TC-766) |
 | FR-283-AC-9 | Over AC-1's trace, a request selecting `always p` and `always (10 / x > 0)` returns two records in request order; over FR-327-AC-1's closed `Counter` trace (`c.value` 0, 1, 2) as a three-position finite document, `eventually[0,2] holds(c.value = 2)` under event-position false-extension, `on origin`, reports `Tested`, category success, exit 0, and `eventually[0,1] holds(c.value = 2)` reports `Violated` at position 0. | Test (TC-765) |
 | FR-283-AC-10 | AC-1's `always p` violation carries a `witness` with trace position 2, no deciding quantifier and no index, deciding element `false` and the empty value path at the observation's root. Over a three-position finite trace whose position-2 snapshot holds a collection field `items` of values 3, 0, 5, the clause `always holds(forall i in self.items : i > 0)` reports `Violated` at position 2 whose `witness` names the `forall` occurrence key as deciding quantifier, deciding element 0, index 1, the FR-207 value path to `items` and trace position 2, equal to the record FR-107's evaluator retains for that `holds` atom over the position-2 observation. | Test (TC-765) |
 | FR-283-AC-11 | Over FR-327-AC-1's closed `Counter` trace (`c.value` 0, 1, 2) as a three-position finite document under event-position false-extension, `always[0,2] (count over past[0, 9] min_count 2 >= 1)` `on origin` reports `InsufficientData` at position 0 with `count` 1 and `min_count` 2, category undefined, the label `undefined` with reason `insufficient-data`, and exit 10. | Test (TC-765) |

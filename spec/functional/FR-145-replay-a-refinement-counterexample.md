@@ -51,7 +51,7 @@ count.
 
 - FR-128's inputs, with these additions: the byte provision also holds the
   abstract subject's initial snapshots, and, when the abstract model is a
-  dependency's, that dependency's digest-addressed source (ADR-015).
+  dependency's, that dependency's identity-addressed source (ADR-015).
 - A `WitnessEnvelope<TemporalCounterexample>` whose source is
   `ReplaySource::ModelTrace` naming the refinement node, and whose payload's
   `refinement` member holds the recorded `RefinementFailure`.

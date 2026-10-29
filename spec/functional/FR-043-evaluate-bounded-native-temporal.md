@@ -147,15 +147,14 @@ so that a changed period, epoch, unit or sequence authority yields a distinct
 result identity and refuses reuse of an earlier result.
 
 A `quire.compiled-protocol/1` body carries a clock binding name and the selected
-definition entry's identity and revision, and no definition digest, declared
+definition entry's identity and revision, and no declared
 period, epoch, unit or sequence authority. Through the `/1` entry points
 (`temporal::evaluate`, `evaluate_with_progress`) the evaluator therefore retains
 those trace values as unauthenticated premises and does not compare them with
 the artifact.
 
 A strict `quire.compiled-protocol/2` package (FR-050) carries each temporal
-declaration's binding: its definition identity, revision and the digest of the
-exact definition artifact, and one typed clock configuration. Through the `/2`
+declaration's binding: its definition identity and revision, and one typed clock configuration. Through the `/2`
 entry points (`temporal::evaluate_v2`, `evaluate_with_progress_v2`) the
 evaluator SHALL authenticate the trace against that binding before it visits any
 position:
@@ -176,12 +175,12 @@ position:
 
 A refused authentication SHALL return no truth and retain no authenticated
 binding. An authenticated evaluation SHALL retain the authenticated binding on
-its report: the admitted package digest, the declaration, the definition
+its report: the admitted package identity and version, the declaration, the definition
 identity and revision, the clock binding name and the exact parameter map. The
-definition artifact digest is authenticated by the strict `/2` reader, which
-recomputes it from the supplied definition bytes (FR-050), so a `/2` result
+definition identity and revision are authenticated by the strict `/2` reader
+against the supplied definition entry (FR-050), so a `/2` result
 satisfies `ix://agent-ix/quire-specification/FR-090`-AC-2 for every clock
-parameter and the definition digest.
+parameter and the definition identity.
 
 The evaluator SHALL interpret one interval tick as one admitted semantic-event
 position under `quire.temporal.event-position.false-extension/v1`, one declared
@@ -298,7 +297,7 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-11 | A fixed-sample or timestamped watermark reaching an inclusive deadline with complete valuations settles a silent obligation, an instant exactly at the deadline participates before settlement, an instant after it does not, and an event-position clock does not advance during silence. | Test (TC-122) |
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122); Analysis |
-| FR-043-AC-14 | Through `temporal::evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package digest, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the temporal `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122) |
+| FR-043-AC-14 | Through `temporal::evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the temporal `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122) |
 
 ## Dependencies
 
@@ -314,7 +313,7 @@ closure combination, and SHALL refuse any one-axis substitution.
   [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md).
 - **Upstream**: [FR-050](./FR-050-publish-authenticated-temporal-artifacts.md)
   emits and strictly reads the `quire.compiled-protocol/2` package whose
-  temporal bindings carry the definition digest and clock configuration the `/2`
+  temporal bindings carry the definition identity and revision and clock configuration the `/2`
   entry points authenticate (FR-050-AC-6). A `/1` result retains its clock
   parameters as unauthenticated premises, and no temporal-to-TL correspondence
   may claim them authenticated.

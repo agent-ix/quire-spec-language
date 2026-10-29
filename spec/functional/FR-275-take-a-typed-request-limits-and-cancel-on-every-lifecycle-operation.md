@@ -38,7 +38,7 @@ qualification runner call it. The driver-owned operations `lower`, `generate` an
 | --- | --- | --- | --- |
 | `parse` | source bytes and `SourceIdentity` | `Staged<ParsedSource>` | FR-278 |
 | `format` | an admissible `ParsedSource` | `Staged<FormattedSource>`, the formatted bytes | FR-003 |
-| `select` | domain package documents by digest, the unit's model selections | `Staged<AdmittedModels>` | FR-278 |
+| `select` | domain package documents by identity, the unit's model selections | `Staged<AdmittedModels>` | FR-278 |
 | `check` | `ParsedSource`, `AdmittedModels`, the dependency input, lock evidence | `Staged<CheckedPackage>` | FR-278 |
 | `check_fences` | a spec artifact inventory and the module manifests that type it | `Staged<FenceReport>` | FR-355 |
 | `package` | `&CheckedPackage` | `Staged<EmittedPackage>` | FR-278 |

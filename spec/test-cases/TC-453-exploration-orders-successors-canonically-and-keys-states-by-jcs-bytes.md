@@ -40,7 +40,7 @@ public entries; `explore` is `pub(crate)` (FR-101).
 6. Call `explore_request` with an empty `domains` set, `max_depth` 0, on systems whose one initial state is the
    FR-101-AC-2 state with `float64` bits `0000000000000000`,
    `8000000000000000`, `7ff8000000000000` and `7ff8000000000001` in turn,
-   and read each frontier digest. Then call `explore_request` with an empty `domains` set, generous limits, on a
+   and read each frontier key. Then call `explore_request` with an empty `domains` set, generous limits, on a
    system with an initial state and one successor for each of the two
    value pairs (the signed zeros, the NaNs).
 7. Call `explore_request` with an empty `domains` set, generous limits, on two paths 0 → 1 → 3 and 0 → 2 → 3 that
@@ -53,22 +53,21 @@ public entries; `explore` is `pub(crate)` (FR-101).
 
 ## Expected Results
 
-- Step 1: the frontier lists `a`'s post-state digest before `z`'s.
-- Step 2: the frontier lists `step(10)`'s post-state digest before
+- Step 1: the frontier lists `a`'s post-state key before `z`'s.
+- Step 2: the frontier lists `step(10)`'s post-state key before
   `step(9)`'s.
-- Step 3: the frontier lists the smaller state key's digest first.
+- Step 3: the frontier lists the smaller state key first.
 - Step 4: `BoundReached{depth: 0}` with 3 states; the frontier is the
-  three distinct initial states' digests in ascending key order. The
+  three distinct initial states' keys in ascending key order. The
   duplicate is one state.
-- Step 5: `Cancelled`, frontier 3's digest then 4's: level-2 parents keep
+- Step 5: `Cancelled`, frontier 3's key then 4's: level-2 parents keep
   the FIFO order 1, 2.
-- Step 6: the four digests are
-  the SHA-256 of each state's JCS key bytes, each a
-  `DigestRecord` under `quire.simulation.state-key/v1`; each exploration
+- Step 6: the four keys are
+  each state's JCS key bytes, compared directly as the state key; each exploration
   counts two states.
 - Step 7: `Exhaustive` with 4 states and 4 transitions.
 - Step 8: `Bounded` at `Limit::States` with 2 states and frontier a, b, c,
-  d (admitted a, b; refused c; then d), as digests; with `max_states` 0,
+  d (admitted a, b; refused c; then d), as keys; with `max_states` 0,
   `Bounded` at `Limit::States` with 0 states and frontier a, b, c, d; with
   no initial state, `Exhaustive` with zero states, transitions and depth.
 - Step 9: `explore_request` and `sample_request` refuse

@@ -19,7 +19,7 @@ Verify the unit-level behaviour of the gate: every refusal is reported, per unit
 3. Compile a unit with a `model` declaration, a supplied domain package and a model construct, whose only header profile is `quire.value.complete/v1`.
 4. Compile a unit whose profile `v` names `quire.model.complete/v1`; read the emitted lock.
 5. Compile a unit holding model constructs with the header profile set to the `ieee_profile` row's identity, then to `test:unknown-profile`.
-6. Under `make conformance`, compare QSL's complete-model entries in `DefinitionLock::pinned()` with QSpec FR-001 and FR-201-AC-9's source-of-truth lock.
+6. Under `make conformance`, compare QSL's complete-model entries in QSL's built-in `DefinitionLock` with QSpec FR-001 and FR-201-AC-9's source-of-truth lock.
 7. Read the S2 forms of the unit of step 1.
 8. Compile `body b using V on M::A::add(x) { x }` with `V` the only profile (`quire.value.complete/v1`); then with a second profile `W` naming `quire.model.complete/v1`, still `using V`.
 9. Compile a unit whose only profile `t` names `quire.temporal.complete/v1`, holding a `model` declaration and one construct of each family of item 5 written `using t`; then the same unit with the profile naming `quire.value.complete/v1`; then a unit whose profile names `quire.model.complete/v1` and that writes a `time` member. Read the first unit's lock, and the lock of a unit that selects only `quire.model.complete/v1`.

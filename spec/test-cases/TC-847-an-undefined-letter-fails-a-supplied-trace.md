@@ -61,7 +61,7 @@ refusal.
    formula packet over FR-327-AC-7's one-position trace that yields
    `InsufficientData`, then replay the false packet with the temporal Work
    budget set to zero so evaluation returns `Incomplete`. Submit an observed
-   arm with a missing document digest, model payload, and a function target;
+   arm with a missing document identity, model payload, and a function target;
    for the undefined packet, submit same-position payloads with only the
    source locus and only the cause changed.
 6. Evaluate each clause of FR-327-AC-7, in its order, over the closed trace, and the two
@@ -96,7 +96,7 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   `invalid_runtime_input`/`invalid-value` at
   `/replay/observed_counterexample/trace_position`; both refuse before
   document admission. The missing-document packet refuses
-  `missing_import`/`missing-selection` naming its digest record; the model
+  `missing_import`/`missing-selection` naming its document identity; the model
   payload refuses `invalid_runtime_input`/`invalid-value` at
   `/replay/observed_counterexample/trace`; the function target refuses
   `invalid_runtime_input`/`unknown-member` at

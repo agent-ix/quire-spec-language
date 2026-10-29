@@ -73,7 +73,7 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-315-AC-49, FR-315-AC-51, FR-315-AC-52, F
 7. With `settle_hyper_smt` for the same item, settle outcomes carrying its
    identity: `BoundReached{depth: 2}`; the leaky vault's `Violated`
    `Lockstep` lasso (method `SmtUnrolling`), then the same lasso with one
-   post-state digest altered, then the same lasso with its `instance`
+   post-state altered, then the same lasso with its `instance`
    binding `w`; FR-315-AC-9's undefined-match base model as an `Undefined`
    counterexample (method `KInduction`); `Unknown{depth: 1, method:
    KInduction}`; `Cancelled{source: Requested, method:

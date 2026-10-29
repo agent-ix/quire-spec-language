@@ -167,13 +167,13 @@ invalid. No bound in QSL is "unspecified".
 
 | ID | Concept | Owner and type | Rule |
 | --- | --- | --- | --- |
-| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`. Amended by ADR-024 RP-1: a statistical run is identified by its provenance, the seed, the sampler and each test's trace-index range |
+| TR-1 | Trace identity | No new identity. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`. Amended by ADR-024 RP-1: a statistical run is identified by its provenance, the seed, the sampler and each test's trace-index range |
 | TR-2 | Trace position | Layer-5 TemporalTrace evaluator: `TemporalPosition(u64)`, the zero-based index into the represented trace, prefix first, then loop. It crosses replay in `qsl_replay::TracePosition` as decimal ASCII with no leading zero (`0` is position zero). Replay stores it and does not read it (O-25) | Only the TemporalTrace evaluate hook decodes it. A position outside the represented trace refuses at reconstruction, `invalid_runtime_input`/`invalid-value` |
 | TR-3 | Interval | Layer-3 TemporalTrace `check`: `TemporalInterval{lower: u64, upper: TemporalUpper}`, `TemporalUpper::{Finite(u64), Open}`, one validated constructor. It exists under a bounded profile and, amended by ADR-018 IV-1, on an interval operator under infinite-trace. Its key is QSpec FR-255's (`lower`, `upper`, profile identity, clock binding), and it is identified by the checked node id of the operator that carries it (O-04). A checked operator holds `Option<TemporalInterval>`: `Some` under a bounded profile; under infinite-trace `Some` for an interval operator and `None` for an unbounded one | `lower > upper`, a missing interval under a bounded profile, and `[a,*]` under a bounded profile each refuse as QSpec FR-091, FR-092 and FR-090 state. Under infinite-trace a closed interval and an `[a,*]` interval are admitted (amended by ADR-018 IV-1), and the key carries the infinite-trace profile identity. Bounded-profile and infinite-trace operators never share a representation |
 | TR-4 | Horizon | Derived, not stored. The TemporalTrace `check` computes the greatest reach of a bounded-profile formula's intervals with checked arithmetic. Overflow past `u64` refuses as a TemporalTrace `check` stage limit, `LimitExceeded` with limit kind work budget (`stage_limit_exceeded`), at the operator. An infinite-trace formula has no horizon | A horizon is a B-1 consequence, never a budget |
 | TR-5 | Evaluation budget | The kernel `Meter` (B-2). The S6a TemporalTrace evaluator charges `quire_exact::LimitKind::WorkUnits` once per (temporal node, position) visit | Running out yields `Incomplete`, never a truth value. The native `quire.native.temporal-work/1` counters retire with M-6c. Amended by ADR-024 WA-5: an aggregate atom also charges one unit per window position it visits |
 | TR-6 | Seed | `SampleProvenance.seed` in `qsl_eval::simulation`. Exhaustive exploration (`explore`) has no seed: it is deterministic given its `Limits` and the model | The same seed and sampler reproduce the same traces. Amended by ADR-024 RP-2: a statistical model-checking run (EN-4) carries a seed, and the same seed, sampler, subject, claim (its confidence parameters included) and method reproduce its samples and its decision |
-| TR-7 | Frontier | `qsl_eval::simulation::frontier::Frontier`, the unexplored states' `quire.simulation.state-key/v1` digests (FR-101), in `explore::Outcome::{Bounded{stats, frontier, limit}, Cancelled{stats, frontier, cause}}` | An exploration that stops early reports its frontier and never claims exhaustive success (QSpec FR-181) |
+| TR-7 | Frontier | `qsl_eval::simulation::frontier::Frontier`, the unexplored states' canonical state keys (FR-101), in `explore::Outcome::{Bounded{stats, frontier, limit}, Cancelled{stats, frontier, cause}}` | An exploration that stops early reports its frontier and never claims exhaustive success (QSpec FR-181) |
 | TR-8 | Liveness capability | No new type. It is the QSpec FR-290 pair (`temporal-satisfaction`, `unbounded`) in `BackendDescriptor.advertises`, plus a CG `negotiate_*` arm that discharges the infinite-trace IR form. Amended by ADR-018 §3: QSL's explicit-state model checker (ADR-018 EN-1) is a registered liveness backend; its arm reads the property form and the model subject, and it runs in process at S6c | §6 |
 
 ### 4. Extent, domains and the available finite bound (Q222-3)
@@ -204,7 +204,7 @@ empty path. `Population{member_type: WireNodeId, ordinal: u32}` is a
 population with no maximum (ADR-012 §15.7). It is a
 wire-level key because it crosses to CG and to replay; layer 3 converts its
 `NodeKey`s to `WireNodeId`s when it builds the request (ADR-013 O-04). F
-`bound` is a new foundation module that imports only K, F `digest` and F
+`bound` is a new foundation module that imports only K and F
 `selection` (for `IntervalKey`'s `DefinitionRef`), so
 `qsl-replay`, layer 3 and the request writer can all name it.
 
@@ -279,7 +279,7 @@ bounds for one domain cannot be built: the writer takes a map keyed by
 **IR's predicate.** AD-016's IR `requires-bound` is the same classification
 over the lowered form: which IR forms carry an unbounded domain. IR reads the
 v2 wire QSL emits (ADR-011 FB-05), and an S-6 and IR conformance test over
-the §10 scenarios pins that the two agree. QSL's record is the authority
+the §10 scenarios confirms that the two agree. QSL's record is the authority
 for an operation-application claim's extent. IR's predicate agrees with it
 per application node for each record whose roots are all reachable from
 the application node through its operands: IR's predicate on that node
@@ -459,13 +459,13 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    TemporalTrace `FamilyPayload`, `TemporalCounterexample`, defined in
    `qsl-replay` beside the other family payloads, is QSpec FR-364's
    counterexample with its two arms: `trace: "observed"`, whose steps are
-   the observed documents by `sha256-jcs` digest, prefix then loop, for a
+   the observed documents by `identity`, prefix then loop, for a
    counterexample over a supplied trace (FR-331), and `trace: "model"`,
    ADR-018 CX-2's model steps, for one over a model subject (FR-128). Its
    `interval` is FR-364's shape (`{lower, upper}`, `{lower, upper: null}` or
    `null`) and its `fairness` names the clause's fairness constraints. At
    ADR-011 E9 the
-   layer-6 `replay` facade recompiles from digest-addressed source and
+   layer-6 `replay` facade recompiles from identity-addressed source and
    resolves the occurrence key to the operator node. It refuses, with
    `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics), when the recompiled clause's
    interval, the profile selection or the fairness set differs from the

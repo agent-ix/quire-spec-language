@@ -35,18 +35,18 @@ FR-106-AC-38.
   `{"kind":"text","text":"abc"}` and `aliases` `{"sequence":[]}`, and `root`
   holding `title` `{"kind":"text","text":"Root"}`, `subtitle`
   `{"absent":{}}`, `code` `{"kind":"text","text":"r"}` and `aliases`
-  `{"sequence":[]}`. Digests are recomputed for every mutated document, except
-  where a step says the selected digest stays the base snapshot's.
+  `{"sequence":[]}`. Every mutated document is provided under the base
+  snapshot's identity.
 - Scalars are named by code point. Where a row says `U+00E9` or a pair, the
   document holds the literal scalars or their JSON `\u` escape, as the step
-  says; the digest is the same either way.
+  says; the typed observation is the same either way.
 
 ## Test Procedure
 
 1. Admit the base snapshot for `ParentOrder` with `Current` selection
    (anchor `handler validate`, `self` `child`). Reorder the members of the
    `title` object and the whitespace of the document, and admit again.
-2. Admit one mutation per row of `title` texts, each with its own digest:
+2. Admit one mutation per row of `title` texts:
    `"a"`; `"abcdefgh"`; `"a;b>>>c"`; T1 U+00E9; T2 U+0065 U+0301; eight
    pairs of U+0065 U+0301 (sixteen scalars); `"\u0000"`; the paired escape
    `"\ud83d\ude00"`, and separately the literal character U+1F600. Admit
@@ -95,22 +95,19 @@ FR-106-AC-38.
    is the last object walked) to `{"sequence":[{"kind":"text","text":"x"}]}` and admit
    the document with `observation.values` set to its exact value count, then
    to one less.
-10. Select each of these documents under the base snapshot's digest (the
-    selected digest stays the base's): a `title` text holding the escape
-    `\ud800`; one holding the escape `\udc00`; one holding the raw byte
-    `0xC0`; the first of them with a wrong-kind `token` (a Timestamp object) as
-    well. Then admit a document whose `title` text has 1,048,576 `a`, so that
-    the document exceeds 1 MiB.
+10. Admit a document whose `title` text has 1,048,576 `a`, so that
+    the document exceeds 1 MiB. (The earlier byte-selection documents are
+    retired with FR-106 check 1.3.)
 
 ## Expected Results
 
 - Step 1 admits one observation in which `child.title` is a Text value of
   the retained sequence `Ready`; the reordered document gives the same typed
-  observation and digest.
+  observation.
 - Step 2 admits every row. Each row's retained sequence is the text under
-  `nfc`: T1 and T2 retain one scalar U+00E9 and are equal values with two
-  different digests, the sixteen scalars retain eight, and the paired escape
-  and the literal U+1F600 give one value and one digest. `"a;b>>>c"` retains
+  `nfc`: T1 and T2 retain one scalar U+00E9 and are equal values from two
+  different documents, the sixteen scalars retain eight, and the paired escape
+  and the literal U+1F600 give one value. `"a;b>>>c"` retains
   seven scalars. `subtitle` is present, and the four-U+00E9 `subtitle` and
   the three `code` rows retain their scalars and bytes unchanged. `aliases`
   holds `a` and the empty Text, in order; the empty text is a `Tag` value
@@ -155,10 +152,7 @@ FR-106-AC-38.
 - Step 9 admits at the exact count; one less returns
   `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`,
   the bound and the count the Text object inside `aliases` would have reached.
-- Step 10 refuses each of the four documents
-  `stale_dependency`/`byte-digest-mismatch` carrying the selected digest and
-  the raw bytes' own digest (check 1.3), with no `wrong-value-kind` from
-  `token`; the oversize document refuses `stage_limit_exceeded`/
+- Step 10 refuses the oversize document `stage_limit_exceeded`/
   `input-bytes-exceeded` naming `observation.input_bytes` (check 1.2).
 - Assertions compare typed code, cause, input path, member and bound, never
   rendered text.

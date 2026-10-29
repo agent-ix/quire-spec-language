@@ -74,7 +74,7 @@ pub struct ProtocolCertificateRequest<'a> {
 
 ```rust
 pub struct ProductStateRef {
-    pub model_state: DigestRecord,          // quire.simulation.state-key/v1
+    pub model_state: StateKey,             // quire.simulation.state-key/v1
     pub automaton_state: AutomatonStateKey, // the translation's canonical key
 }
 pub struct ClosureCertificate {
@@ -171,7 +171,7 @@ checker named beside it returns that alternative:
 | `HyperProductState(ProductStateKey)` | Hyper product state | FR-163 |
 | `HyperTransitionTuple` | Hyper transition tuple | FR-163 |
 | `CertificateMember` | Certificate member | FR-163 (`components`), FR-201 (`ranking`, `policy`, `components`), FR-245 (`components`, `divergence`, `bounds`) |
-| `ModelState(DigestRecord)` | State | FR-169; FR-245 (the initial discrete state) |
+| `ModelState(StateKey)` | State | FR-169; FR-245 (the initial discrete state) |
 | `Entry { index }` | State-graph entry | FR-169 |
 | `SimulationStep { position, edge, verdict }` | Simulation step | FR-149 |
 | `ProbabilisticProductState(ProductKey)` | Probabilistic product state | FR-201 |
@@ -210,16 +210,14 @@ materialization counter or provider-selected encoding is not a member.
 
 `AutomatonStateKey` SHALL be the RFC 8785 canonical UTF-8 octets of
 `["quire.automaton-state-key/v1", context, state]`, through ADR-013's one
-`quire-canonical` encoder. There is no BOM, whitespace, trailing newline,
-hash or digest of this array. This discriminator identifies an octet
-encoding, not a new member of QSpec FR-201's digest-domain vocabulary.
-Equality SHALL compare complete octets; order SHALL be ascending unsigned
+`quire-canonical` encoder. There is no BOM, whitespace, trailing newline
+in this array. Equality SHALL compare complete octets; order SHALL be ascending unsigned
 lexicographic octet order. FR-331's base64url is a transport of these
 octets, not a second state identity.
 
 `context` is `[root, profile, activation, binding]`. For a clause, `root`
 is `[node,role,ordinal]`: `node` is FR-322's existing NodeId object,
-exactly `{"domain":"quire.checked-semantic-node/v1","digest":hex}`;
+carried exactly as the QSpec FR-322 node `id` member spells it;
 `role` and `ordinal` are the checked clause's O-07 occurrence role and
 ordinal encoded as a JSON string in the checked O-07 u64 domain. Its
 lexical form is `"0"` or `[1-9][0-9]*`, with value at most
@@ -591,7 +589,7 @@ model state, which no product state precedes, the locus is the least
 certificate state carrying that model state, or, when none carries it, the
 least certificate state, ordered as for refused keys above. For an empty
 certificate the rejection is `BadState` at `ProductState` with that initial
-model state (the least such state by `model_state` digest octets when
+model state (the least such state by `model_state` octets when
 several read undefined) and the item context's rejecting key,
 `K_C(["safety",[]])` for TP-1 and TP-3 or `K_C(["reject"])` for TP-2: an
 undefined letter is a violation (UE-1), so `BadState` is the rule that
@@ -796,7 +794,7 @@ run budgets are not substituted for state facts.
 Let `C` be the rederived context of the checked formula named in each
 vector. Write `K_C(S)` for the **exact UTF-8 JCS encoding** of
 `["quire.automaton-state-key/v1",C,S]`; C is supplied by that checked
-fixture, not an invented digest. The following state bodies are exact
+fixture, not an invented value. The following state bodies are exact
 ASCII octets, with no invisible suffix. The full key embeds the body
 after the encoded C and comma and ends with one additional `]`.
 
@@ -910,7 +908,7 @@ different materialization orders SHALL produce identical full octets.
   acceptance, and one refused key SHALL reject the whole certificate however
   many other states are valid.
 - When more than one state's key is refused, the checker SHALL report the
-  least refused `ProductStateRef`, ordered by the `model_state` digest
+  least refused `ProductStateRef`, ordered by the `model_state`
   octets and then the `automaton_state` octets, ascending unsigned
   lexicographic, so the locus does not depend on the order of `states`.
 - If the certificate's `package_id` equals the recompiled one and the

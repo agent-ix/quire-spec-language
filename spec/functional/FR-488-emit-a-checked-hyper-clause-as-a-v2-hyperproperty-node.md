@@ -166,7 +166,7 @@ with its seven bindings in that order:
     nodes, for the reason in Q-1.
 
 **Grammar fit.** Every shape the aggregate uses is legal in FR-322 "Body
-grammar", and the pinned reader's flat-wire rules (`flat_wire.rs`, `Flat::enter`
+grammar", and the QSpec reader's flat-wire rules (`flat_wire.rs`, `Flat::enter`
 and `aggregate_stratum`) place it as follows. The node body is a Body
 aggregate, so each of the seven bindings stands as a Member `binding`
 (rule: Body aggregate members are Members; `Place::Member` takes a
@@ -186,7 +186,7 @@ none. The `aggregate_stratum` rule reads a binding value by its first
 non-Leaf member, so the `quantifiers` Tuple SHALL hold only Groups and a
 Group only Leaves and bindings of Leaves.
 
-**Structural stage.** After the flat wire, the pinned reader's structural
+**Structural stage.** After the flat wire, the QSpec reader's structural
 stage (`structural.rs`, `validate_structural_nodes`) checks per node kind. For
 the kinds this requirement emits:
 
@@ -263,7 +263,7 @@ Q-3).
 
 ### Slot node names
 
-The pinned reader requires a `value`/`parameter` node's `name` to be an ASCII
+The QSpec reader requires a `value`/`parameter` node's `name` to be an ASCII
 identifier, `[A-Za-z_][A-Za-z0-9_]*` (`typed_parameter_binding` with
 `is_identifier`, structural stage), so a name cannot carry `@`, `.` or `:`.
 The emitter SHALL write every slot node name by this encoding, which is
@@ -490,7 +490,7 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
   the `forall`/`exists` literal, the alias literal and a nested aggregate of
   fairness constraints, is not expressible in FR-322 "Body grammar": a
   `binding` in a Group has a Leaf value only, and a constraint of several
-  members needs a further aggregate, a stratum below the Group. The pinned
+  members needs a further aggregate, a stratum below the Group. The QSpec
   reader refuses it `malformed_wire`. QSL writes a Tuple of Groups (one
   quantifier Group per quantifier, one fairness Group per constraint, naming
   its variable) and asks QSpec to state a legal shape; QSL then changes this

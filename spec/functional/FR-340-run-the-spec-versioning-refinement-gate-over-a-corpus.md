@@ -120,14 +120,14 @@ passed to FR-344's report.
 
 - The make target `refinement-versioning`, which `make ci` runs, SHALL
   generate the real corpus into a temporary directory, taking the model's
-  package identity, package version and digest from the model file
+  package identity and package version from the model file
   (`examples/config-version/model.semantic-ir.json`) at that run. It SHALL
   run `cargo run --package xtask -- refinement versioning` over the
   generated directory, remove the directory when it ends, and fail when the
   gate's exit code is not 0 (FR-344 "Invocation and exit").
-- Neither the make target nor the gate SHALL read a committed model digest.
-  FR-056 selects a model by digest, so a digest committed in a corpus would
-  change with every edit to the model.
+- Neither the make target nor the gate SHALL read a committed model version.
+  FR-056 selects a model by identity alone, so nothing committed in a corpus
+  restates the model file.
 
 ## Constraints
 
@@ -146,8 +146,8 @@ passed to FR-344's report.
 | FR-340-AC-5 | Copying a corpus to another directory and running the gate there gives a report byte-equal to the original's. | Test (TC-860) |
 | FR-340-AC-6 | `make refinement-versioning` generates the corpus into a temporary directory from the model file, runs the gate over it, and passes. | Test (TC-864) |
 | FR-340-AC-7 | Adding the seeded-regression pair of TC-864 to a copy of the generated corpus makes the gate fail. | Test (TC-864) |
-| FR-340-AC-8 | After the model file's package version is edited, generating the corpus again gives a unit, a superseding unit and both snapshots that carry the edited version and the new digest and no other digest, and the gate passes. | Test (TC-864) |
-| FR-340-AC-9 | Given a repository root holding only the model file, generating the corpus and running the gate over it passes: neither reads a committed digest. | Test (TC-864) |
+| FR-340-AC-8 | After the model file's package version is edited, generating the corpus again gives a unit, a superseding unit and both snapshots that carry the edited version, and the gate passes. | Test (TC-864) |
+| FR-340-AC-9 | Given a repository root holding only the model file, generating the corpus and running the gate over it passes: neither reads a committed model version. | Test (TC-864) |
 
 ## Dependencies
 

@@ -19,7 +19,7 @@ rule directly: "In QSL only `check` calls it" (the constructor). ADR-013
 O-04 (`:175`) states how E4 and E9 relate to a `WireNodeId` instead: "It
 becomes a `NodeKey` only by lookup in a QSL checked package" — at E4,
 against the dependency's own checked package, compiled independently from
-its digest-addressed source, whose own S3 checking already minted the
+its identity-addressed source, whose own S3 checking already minted the
 `NodeKey` being referenced; at E9 in the `replay` facade, against the
 package recompiled from source, likewise already checked. Neither E4 nor
 E9 calls the constructor: both resolve a `WireNodeId` to a `NodeKey` that
@@ -40,8 +40,8 @@ anywhere to be fed by a `PackageNodeKey`'s `WireNodeId`. Scope: FR-087-AC-6.
 1. Search `library`'s whole source, `package`'s E4 dependency-resolution
    code path, and `replay`'s E9 lookup for any reference to a `NodeKey`
    constructor, called or passed as a function value
-   (`NodeKey::from_digest`), any
-   `node_key_of(` call, or an equivalent construction from a digest or
+   (`NodeKey::from_hex`), any
+   `node_key_of(` call, or an equivalent construction from a hex string or
    wire-read value.
 2. Confirm none exists in any of the three: E4's dependency resolution (in
    `package`) resolves a `PackageNodeKey`'s `WireNodeId` to a `NodeKey` by

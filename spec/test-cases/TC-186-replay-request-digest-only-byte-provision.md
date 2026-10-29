@@ -13,8 +13,7 @@ relationships:
 Verify that the replay request type has no field, accessor or constructor
 argument typed as a filesystem path, environment variable name, or search
 location, so every recompilation input is reachable only by lookup (source
-labels, package identity) in the byte provision; that an entry keyed by a
-digest domain outside the closed FR-201 set refuses at decode; that two
+labels, package identity) in the byte provision; that two
 entries under one key refuse; that the
 byte provision must be complete for every source the package reference
 names; and that an oversized encoding refuses rather than decoding
@@ -37,9 +36,8 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
    (source, generated docs, or a reflection-based listing) for any member
    typed as a path, `OsString` treated as a path, or environment-variable
    name.
-2. Attempt to construct a request whose byte provision entry is keyed by a
-   digest domain outside the closed FR-201 domain set, and one with two
-   entries under one source label pair.
+2. Attempt to construct a request with two entries under one source label
+   pair. (Retired with FR-071-AC-6/AC-11: the entry-key domain check.)
 3. (Retired with FR-071-AC-6: supply a source whose bytes differ from the
    proving run's; the request constructs, and the edit is refused at
    execution by the `package_id` comparison, TC-444 step 3.)
@@ -56,11 +54,9 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
 
 7. Construct a request whose package reference carries two `dependencies`
    entries and round-trip it; omit one entry's source from the byte
-   provision; decode an entry with an empty identity and one whose
-   `package_id` is in the `quire.source.bytes/v1` domain.
+   provision; decode an entry with an empty identity.
 8. Decode a request whose semantic profile selection names
-   `quire.profile.unknown/v1`, with a byte-provision entry whose bytes do
-   not recompute to its key.
+   `quire.profile.unknown/v1`.
 9. (Retired at decode with FR-071-AC-11; the same documents are now read by
    intake at recompile and refuse there, FR-056.) A domain package entry holding a
    repeated member name, then one longer than the request's
@@ -76,7 +72,7 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
 
 - Step 1 finds no path-, environment-variable-, or search-location-typed
   member anywhere on the request type.
-- Step 2 refuses construction (`stale_dependency`/`digest-domain-mismatch` for the domain; `invalid_package`/`conflicting-definition` for the repeat).
+- Step 2 refuses construction (`invalid_package`/`conflicting-definition` for the repeat).
   Step 3 is retired.
 - Step 4's lookup succeeds by labels alone, with no path involved at any
   point.
@@ -86,10 +82,8 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
   request value at all, in particular no request holding a truncated
   prefix of the padded entries.
 - Step 7: the round trip preserves both entries in order; the omitted
-  source refuses construction as step 5 does; the empty identity and the
-  source-domain `package_id` each refuse at decode.
-- Step 8 refuses `unknown_profile`/`unsupported-selection`, not
-  a digest mismatch, keeping the selection
+  source refuses construction as step 5 does; the empty identity refuses at decode.
+- Step 8 refuses `unknown_profile`/`unsupported-selection`, keeping the selection
   (`quire.profile.unknown/v1`) and its role
   (`replay.semantic_profile_selections`).
 - Step 9 (at recompile, `ReplayRefusal::Recompile`): the repeated-name entry refuses

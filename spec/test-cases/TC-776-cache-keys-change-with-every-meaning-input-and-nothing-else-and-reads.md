@@ -19,7 +19,7 @@ Scope: FR-292-AC-1 to FR-292-AC-4.
 1. Serialize the key members of TC-762's `analyze` request, then of requests that each change exactly one claim bound, one result-affecting option or the state budget; then of requests that each change only the request file path, the working directory, the wall-clock deadline, `max_solver_time` or the execution backend.
 2. Run TC-762's `analyze` request twice from different working directories and request file paths, and serialize the records to RFC 8785 bytes.
 3. Read each step 2 record back with the typed reader; then read the same bytes with whitespace inserted between two members, and with two members swapped.
-4. Parse TC-762's canonical request bytes and re-encode them; compare each `items` entry with the item's QSpec FR-331 frame-form spelling, `candidates` included, plus its `settlement`; serialize the request with one item's settlement moved to another engine. Serialize requests that each change one `initial` digest, one universe key or one domain package digest, one that lists the domain packages in another order, and ones with `deadline_ms` 1 and absent.
+4. Parse TC-762's canonical request bytes and re-encode them; compare each `items` entry with the item's QSpec FR-331 frame-form spelling, `candidates` included, plus its `settlement`; serialize the request with one item's settlement moved to another engine. Serialize requests that each change one `initial` state key, one universe key or one domain package identity, one that lists the domain packages in another order, and ones with `deadline_ms` 1 and absent.
 
 Tag the tests `#[trace("TC-776", "<AC id>")]`.
 

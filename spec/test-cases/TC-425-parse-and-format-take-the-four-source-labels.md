@@ -33,8 +33,7 @@ Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
 ## Expected Results
 
 - Step 1: exit code 0; the result's source reads authority `agent-ix`, identity
-  `specs/a.quire` and the file's `quire.source.bytes/v1` digest, and no
-  other member.
+  `specs/a.quire`, and no other member.
 - Step 2: exit code 20 with `invalid_source_identity`, cause `blank-label`,
   `label` `identity`, not a file error.
 - Step 3: the formatted source, exit code 0.

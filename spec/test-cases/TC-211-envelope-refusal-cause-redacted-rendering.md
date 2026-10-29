@@ -18,8 +18,8 @@ transcript, byte-provision, or full concrete-value content through its own
 restriction on the *cause* type — the offending content itself is neither
 destroyed nor made unreachable in general, only kept out of the cause's
 default rendering. A wrong implementation this test would catch: a
-`stale_dependency`/`byte-digest-mismatch` cause that embeds the offending
-entry's full raw bytes as a field (rather than its digest) so that logging
+`stale_dependency`/`content-mismatch` cause that embeds the offending
+entry's full raw bytes as a field (rather than its identity) so that logging
 the cause reproduces the bytes; or, in the opposite direction, an
 implementation that "fixes" this by making the content generally
 unconstructible or unreadable everywhere, which would break FR-071's and
@@ -33,7 +33,7 @@ readable). Scope: FR-073-AC-3.
 
 ## Test Procedure
 
-1. Produce a `stale_dependency`/`byte-digest-mismatch` refusal from the
+1. Produce a `stale_dependency`/`content-mismatch` refusal from the
    replay request (FR-071, TC-186 step 3's construction) whose mismatched
    entry carries several kilobytes of distinctive bytes ("entry X").
 2. Produce a malformed-transcript refusal from the witness envelope
@@ -47,8 +47,8 @@ readable). Scope: FR-073-AC-3.
    marker string.
 5. Construct a second, validly-admitted replay request whose byte
    provision carries entry X's exact bytes under their own correct,
-   matching digest (no mismatch), and look up that entry through the
-   request's typed byte-provision accessor by digest. Separately,
+   matching identity (no mismatch), and look up that entry through the
+   request's typed byte-provision accessor by identity. Separately,
    construct a second, validly-admitted witness envelope from transcript
    Y trimmed to its one well-formed assertion block, and call its typed
    accessor (`decode()` or `concrete_values()`) to retrieve the marker
@@ -58,7 +58,7 @@ readable). Scope: FR-073-AC-3.
 ## Expected Results
 
 - No captured output (step 3) contains entry X's raw bytes or transcript
-  Y's marker string; each cause's rendering shows at most a digest, locus,
+  Y's marker string; each cause's rendering shows at most an identity, locus,
   or other bounded descriptor.
 - Step 5's two typed-accessor lookups, each against a separately and
   validly constructed value (never the refused construction's own

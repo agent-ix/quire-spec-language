@@ -80,7 +80,7 @@ pub struct ProductClosureCertificate {
 ```
 
 A product state key is the tuple of each component's
-`quire.simulation.state-key/v1` digest in variable order, with the property
+`quire.simulation.state-key/v1` state key in variable order, with the property
 automaton's canonical state key (ADR-018 PC-3), and for HP-3 the witness
 set's members as sorted (existential tuple key, automaton key) pairs.
 

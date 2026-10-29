@@ -58,8 +58,8 @@ observations belong only to the later consumer fixture.
    accepted selection. Include native versus formal source revisions, rule
    bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
-   optional feature. Substitute source, domain package `sha256-jcs`, IR and
-   result-JCS digests into the external package and source byte slots; require
+   optional feature. Substitute a different source, domain package, IR and
+   result identity into the external package and source reference slots; require
    typed refusal.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
@@ -235,8 +235,8 @@ observations belong only to the later consumer fixture.
     Rust interfaces, preserving exact selectors and finite graph/source links.
     In B's Rust integration harness, independently select the supplied original
     sources, admitted domain packages, registry/contract and compiler source
-    identity (a digest on `Producer.binary` over the producer's own source
-    text, not a dependency's retained bytes) to construct the reader's
+    identity (an identity label on `Producer.binary` naming the producer's own
+    source file, not a dependency's retained bytes) to construct the reader's
     accepted inventory. Compare the offered package against that inventory;
     neither the payload nor the fixture's `expected.json` authorizes its own
     selections.
@@ -254,7 +254,7 @@ observations belong only to the later consumer fixture.
     its domain package through the real FR-056 intake seam (parts, interfaces,
     ports and a connection between two ports, as IT-012 exercises), link a
     native package that references it, and emit the compiled-protocol package.
-    Decode the emitted `Model` and confirm its identity, version and digest,
+    Decode the emitted `Model` and confirm its identity and version,
     read directly from the `Model` record, equal the `DomainPackageRef` the
     intake seam admitted, with no `correspondence`, `producer` or `interface`
     member present. Separately, hand-construct a decoder input whose `Model`
@@ -294,7 +294,7 @@ observations belong only to the later consumer fixture.
     requirement naming `population` export `[Pump, <population>]`, the
     operation is named by its `operation` export `[Pump, run]` with `Pump` as
     context, and the strict reader reads the bytes back unchanged. Require a
-    changed package digest, an undeclared population or operation export, a
+    changed package identity, an undeclared population or operation export, a
     population pair keyed to `Sys` and a precondition context of `Sys` each to
     refuse, and a `Pump` covered by no population declaration, or by two, to
     refuse emission as `Unsupported::Export`. Drop the population pair of a
@@ -324,7 +324,7 @@ observations belong only to the later consumer fixture.
     exactly as a downstream crate would, never an example, a private helper or
     a dev-dependency-only type. Confirm the two written trees are
     byte-identical, that the written `expected.json` selection's artifact
-    reference and digest match the written offer and reference files, and that
+    reference matches the written offer and reference files, and that
     the strict public reader (used in step 7 and by
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the
     written offer against that written selection with no other input. Call

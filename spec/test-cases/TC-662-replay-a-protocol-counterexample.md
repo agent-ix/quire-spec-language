@@ -10,14 +10,14 @@ relationships:
 
 ## Description
 
-Verify replay of protocol counterexamples: digest, enabledness and package checks, the deadlock check with blocked threads, and lasso fairness over scheduler constraints.
+Verify replay of protocol counterexamples: state key, enabledness and package checks, the deadlock check with blocked threads, and lasso fairness over scheduler constraints.
 
 Scope: FR-217-AC-1 to FR-217-AC-7, FR-217-AC-9.
 
 ## Test Procedure
 
 1. Replay `Fill`'s deadlock counterexample; serialize its envelope.
-2. Replay with a changed digest, with `join(Both)` as the second step, and
+2. Replay with a changed state key, with `join(Both)` as the second step, and
    against the repaired package.
 3. Replay with a blocked list missing `right`, and with a prefix that runs
    to s6.
@@ -41,7 +41,7 @@ Tag the tests `#[trace("TC-662", "FR-217-AC-n")]`.
 - Step 1: `reproduced-with-evaluated-witness`; protocol identities and
   the blocked list in the envelope.
 - Step 2: `stale_dependency`/`content-mismatch` naming the step and both
-  digests; `invalid_runtime_input`/`invalid-value`; FR-098's package
+  state keys; `invalid_runtime_input`/`invalid-value`; FR-098's package
   refusal.
 - Step 3: `inconclusive`, `ReplayParity`, both times.
 - Step 4: `reproduced-with-evaluated-witness`; then

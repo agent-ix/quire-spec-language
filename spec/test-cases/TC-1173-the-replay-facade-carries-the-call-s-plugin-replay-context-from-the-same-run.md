@@ -86,7 +86,7 @@ Tag the tests `#[trace("TC-1173", "<AC id>")]`.
 5. Different `package_id`s and equal occurrence keys; `ForeignRun`
    (`stale_dependency`/`content-mismatch`) retaining both `package_id`s, with
    no request, settling `failed` naming `acme`; each own request carries its
-   own run's `package_id` and source digest.
+   own run's `package_id` and source identity.
 6. `stage_limits` holds `s1.tokens` 200000 and `library.definitions` 9000;
    `accounting_limits` has `work_units` 5000; `s1.tokens` 1 refuses `Compile`
    at the S1 token limit with no context, while `run_with_requirements` with

@@ -15,7 +15,7 @@ failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure
 
-Use a successfully checked source with two authored clauses and exact native model artifacts. Alter selected RequirementRef/ClauseId, model owner/digest, operation context/name/anchor, snapshot digest/labels and observation role one at a time. Add duplicate/conflicting artifact inventory entries, foreign model bindings, unselected inventory and same labels with snapshot/invocation kinds.
+Use a successfully checked source with two authored clauses and exact native model artifacts. Alter selected RequirementRef/ClauseId, model owner/identity, operation context/name/anchor, snapshot identity/labels and observation role one at a time. Add duplicate/conflicting artifact inventory entries, foreign model bindings, unselected inventory and same labels with snapshot/invocation kinds.
 
 ## Expected Results
 

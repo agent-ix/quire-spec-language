@@ -33,8 +33,8 @@ relationships:
 When a complete-V1 unit declares an `import`, spine `compile`
 (the FR-278 composition) SHALL resolve it against the dependency
 input its caller supplies, compile each imported library from its source
-through S1 to S4, bind each import to the library's recomputed
-`package_id`, type every use of an imported name from the library's checked
+through S1 to S4, bind each import to the library's recompiled
+lock selection (identity, version), type every use of an imported name from the library's checked
 graph, and emit the importing package with the library closure and its
 cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
@@ -63,10 +63,9 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 ## Behavior
 
 - An import SHALL be `import "L" [as a];`: it names its library by identity
-  alone. S1 SHALL refuse a `version` or `digest` token after the identity
-  string as a syntax error. The library is selected by identity, and its
-  content is bound by the `package_id` the resolution recomputes and the
-  lock records (ADR-013 O-02).
+  alone. S1 SHALL refuse a `version` token after the identity
+  string as a syntax error. The library is selected by identity, and the
+  lock records the selection the resolution recompiles (ADR-013 O-02).
 - A library identity SHALL be any non-empty string, compared and ordered by
   its UTF-8 bytes, with no segment structure (`LibraryName`).
 - The dependency input SHALL refuse a second library supplied under an
@@ -103,9 +102,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   unit's own list, and each library's lock holds that library's own list,
   since entries are keyed by refinement name and QSpec FR-323 and FR-307 give
   each package its own value. The emitter SHALL omit
-  the member when every list is empty, never writing `[]` or `null`. The
-  member is in no identity preimage; a non-empty list changes the
-  `package_id` through the refinement node's `abstract_internal`. The replay
+  the member when every list is empty, never writing `[]` or `null`. The replay
   request copies the member from the lock (QSpec FR-323).
 - Each library's value SHALL be the value of that library's own refinements
   only; the unit's value SHALL NOT be applied to a library's refinements nor
@@ -156,10 +153,10 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 - The compile SHALL wrap every other refusal raised while resolving or
   compiling a library as `CompileRefusal::Dependency { path, refusal }`,
   carrying the library's own stage and a region in the library's source.
-- The resolution SHALL recompute each library's `package_id` by emitting its
-  checked package and bind it as the library's selection in the lock.
+- The resolution SHALL recompile each library by emitting its
+  checked package and bind its identity and version as the library's selection in the lock.
 - The resolution SHALL read each library's emitted bytes through the I2
-  reader, pinned to that one selection, into its `ImportView` (ADR-011 §4).
+  reader, for that one selection, into its `ImportView` (ADR-011 §4).
 - E3 SHALL resolve `a::Name` through the import's `ImportView` (FR-087-AC-13)
   and SHALL type the use from the library's `CheckedGraph`, finding the
   declaration by lookup of the resolved `WireNodeId` among that graph's keys
@@ -184,7 +181,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   neither compiled nor recorded.
 - The lowering SHALL write a reference to an imported declaration as the
   FR-322 `dependency_reference` term `{package, node}` (the view's
-  `package_id` and the declaration's `WireNodeId`) in the node body and in
+  package reference and the declaration's `WireNodeId`) in the node body and in
   its node-identity preimage, and SHALL NOT list it in the node's
   `dependencies`.
 
@@ -192,12 +189,12 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-099-AC-1 | A unit declaring `import "test/geometry" as g;`, and referencing nothing of it, compiled with `test/geometry` supplied from source that compiles to `package_id` `d`, emits a package whose lock and identity preimage each hold the one `DependencySelection` `{test/geometry, d}`, and QSL's I2 read admits it. The same unit with `test/geometry` and an unimported `test/other` supplied emits identical bytes. | Test (TC-446) |
-| FR-099-AC-2 | `import "test/geometry" as g;` and `import "test/geometry";` each admit and name `test/geometry` by identity alone. An import with `version "1"`, with `digest "<d>"`, or with both after the identity string refuses at S1 as a syntax error and records no selection. The same import compiled against `test/geometry` supplied from a source whose one declaration is changed compiles, and the lock's selection holds the changed source's recompiled `package_id`. | Test (TC-446) |
+| FR-099-AC-1 | A unit declaring `import "test/geometry" as g;`, and referencing nothing of it, compiled with `test/geometry` supplied from source, emits a package whose lock holds the one `DependencySelection` naming `test/geometry`, and QSL's I2 read admits it. The same unit with `test/geometry` and an unimported `test/other` supplied emits identical bytes. | Test (TC-446) |
+| FR-099-AC-2 | `import "test/geometry" as g;` and `import "test/geometry";` each admit and name `test/geometry` by identity alone. An import with `version "1"` after the identity string refuses at S1 as a syntax error and records no selection. The same import compiled against `test/geometry` supplied from a source whose one declaration is changed compiles, and the lock's selection names `test/geometry`. | Test (TC-446) |
 | FR-099-AC-3 | With no library supplied as `test/geometry` the import refuses `missing_import`/`missing-selection` at the import's identity string, stage `intake`; with two libraries supplied as `test/geometry`, or a library whose source has the unit's authority and identity, the dependency input refuses `invalid_package`/`conflicting-definition` naming both; with an empty identity it refuses `invalid_identifier`; with `test/a` and `test/b` supplied, each importing the other, the compile refuses `invalid_package`/`definition-cycle`, unwrapped, naming both identities, at `test/b`'s import of `test/a`; with `test/a` importing a `test/missing` no library supplies, the compile refuses `CompileRefusal::Dependency` with path `[test/a]` carrying `missing_import`/`missing-selection` in `test/a`'s source. None yields a package. | Test (TC-446) |
 | FR-099-AC-4 | `LibraryName` admits `test/geometry`, `a.b` and `L` and refuses only the empty string; two supplied libraries `test/b` and `test/a` import in either order into a closure listed `test/a` then `test/b`. | Test (TC-446) |
-| FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package_id>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)` emits the `Int[0, 9]` type node typing the conversion of `3` to `f`'s parameter, as a call of a local function does. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
-| FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
+| FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package reference>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)` emits the `Int[0, 9]` type node typing the conversion of `3` to `f`'s parameter, as a call of a local function does. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
+| FR-099-AC-6 | **RETIRED (no content-addressed ids).** Node ids and the package reference are structural (owner, declaration path, role, ordinal), so a body change to a supplied library does not change them. | Test (TC-446), retired |
 
 | FR-099-AC-7 | A unit importing `test/a`, which imports `test/b`, which imports `test/c`, compiled with `dependency.libraries` at 2, refuses `stage_limit_exceeded` at stage `intake` at `test/b`'s import of `test/c`, with limit kind node count, bound 2, actual 3 and setting `dependency.libraries`, and no package; with `dependency.libraries` at 3 it compiles. The same unit with `dependency.import_edges` at 2 refuses naming edge count, bound 2, actual 3 and setting `dependency.import_edges`; with `dependency.source_bytes` one byte below the three libraries' summed source bytes it refuses naming input bytes and setting `dependency.source_bytes`. A chain of 200 libraries, each importing the next, compiles at the default limits. | Test (TC-446) |
 | FR-099-AC-8 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }` and the importing unit also declaring a local `function f2 using v(x: Int[0, 9]): Boolean pure { x < 5 }`, each call `g::f(e)` receives the same verdict, refusal code, cause and locus as `f2(e)` in the same body, for `e` each of `y` with `y: Int[0, 9]`, `3`, `12`, `y` with `y: Int[0, 20]`, and `y` with `y: Int[0, 20]` under `if y <= 9`. With `f`'s body changed to `(10 div x) < 5`, whose divisor `x` may be zero, the compile refuses `CompileRefusal::Dependency` with path `[test/geometry]` carrying `undefined_expression`/`unproved-nonzero` in the library's source, and raises no refusal at the call site. | Test (TC-894) |

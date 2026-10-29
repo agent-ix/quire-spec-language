@@ -62,10 +62,10 @@ pub fn sample_probabilistic(
 ) -> Result<SampledBehaviour, SampleStop>;
 
 // SampledStep, SampledBehaviour and SampleStop are public items of qsl-eval's simulation module.
-pub struct SampledStep { pub transition: TransitionId, pub post_digest: DigestRecord, // the post-state-key digest
+pub struct SampledStep { pub transition: TransitionId, pub post_key: StateKey, // the post-state key (canonical state bytes)
     pub choices: Vec<u32>, // selected item index of each choice that drew, in choice-index order
     pub random: Vec<Value>, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
-pub struct SampledBehaviour { pub trace: u64, pub start: DigestRecord, pub steps: Vec<SampledStep> } // start: the state-key digest
+pub struct SampledBehaviour { pub trace: u64, pub start: StateKey, pub steps: Vec<SampledStep> } // start: the start state's key
 pub enum SampleStop {
     GeneratorMismatch { supplied: DefinitionRef }, // FR-101's refusal, before any draw
     Expansion(ExpansionStop), NotMarkov(NotMarkov),

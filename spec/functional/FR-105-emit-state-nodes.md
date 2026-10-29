@@ -149,7 +149,7 @@ source map (FR-095).
   `state`/`transition` body root is a `quire.op.state.transition`
   application). The fixed table in the TC-250 test
   `node_tag_and_semantic_form_mapping_matches_a_fixed_table_and_is_total_and_injective`
-  (`qsl-semantics/src/check/identity.rs:619-631`), which pins
+  (`qsl-semantics/src/check/identity.rs:619-631`), which asserts
   (`state`, `frame`) today, changes with this: the implementer SHALL update
   it to (`state`, `transition`) in the same change.
 - The decoder of `CheckedClauseKind` SHALL map (`state`, `frame`) to no clause
@@ -157,7 +157,7 @@ source map (FR-095).
   application, so a frame under an `operation_anchor` never decodes as
   `StateTransition` or any other clause kind.
 - S4 SHALL list a frame's `modifies`, `creates` and `deletes` entries in
-  ascending order of (object type node digest, field name, scope with
+  ascending order of (object type node reference, field name, scope with
   `every-object` first), and SHALL list
   each entry's object type node in the frame's `dependencies` (QSpec FR-340's
   dependency rule).

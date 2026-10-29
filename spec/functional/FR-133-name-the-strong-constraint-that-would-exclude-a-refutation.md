@@ -62,8 +62,8 @@ computes it and what it writes.
 - The canonical operation order of a model is its operations, each once under
   the type that declares it (an operation a subtype inherits belongs to the
   supertype that declares it, whichever type admits it), the declaring types
-  in ascending order of their `EffectiveId` digest bytes (the order of the
-  64 lowercase hex digits FR-120 encodes it as), then each type's operations
+  in ascending order of their `EffectiveId` structural keys (the order of the
+  canonical key FR-120 encodes it as), then each type's operations
   in ascending UTF-8 byte order of the operation name. Source position and
   display names do not enter it (FR-133-AC-4).
 - For each operation of the model, in canonical operation order, the

@@ -58,7 +58,7 @@ a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
 5. Search the relocated `library` module's whole source for any
    `NodeKey`-constructing call — `NodeKey::of(`, `NodeKey::from_bytes(`,
    `NodeKey::from_hex(`, `node_key_of(`, or an equivalent construction from
-   a digest or wire-read value — and confirm none exists; separately,
+   a wire-read value — and confirm none exists; separately,
    search every type `library` defines — not only a cross-package reference
    type such as `ExportIdentity`/`PackageNodeKey`, but every type, including
    `package_identity`'s relocated structural types — for a `NodeKey`-typed

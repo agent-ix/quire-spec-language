@@ -23,7 +23,7 @@ Scope: FR-127-AC-1 to FR-127-AC-5, FR-127-AC-7 to FR-127-AC-10 and FR-127-AC-16.
 2. Read `TerminalValue::category` for each value of FR-127-AC-2.
 3. Settle FR-126-AC-1's outcomes: the weak `each` proof; the counterexample
    under the constraint with no granularity, with its replay; that
-   counterexample with one post-state digest altered; in an envelope for
+   counterexample with one post-state key altered; in an envelope for
    the weak `each` clause; with its last step removed; one whose formula
    evaluates `true` on replay; one whose replay returns `InternalFault`
    through a replay stand-in.

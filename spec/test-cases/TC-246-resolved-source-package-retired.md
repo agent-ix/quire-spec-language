@@ -49,11 +49,11 @@ both successors exist"; ruling on QSL-229):
 
 | Former scenario | Backing test |
 | --- | --- |
-| unknown, stale-revision, stale-digest and conflicting header profiles | `a_header_profile_resolves_only_against_the_root_row` (TC-490, `qsl-replay/src/spine.rs`) |
+| unknown, stale-revision and conflicting header profiles | `a_header_profile_resolves_only_against_the_root_row` (TC-490, `qsl-replay/src/spine.rs`) |
 | stale profile at parse time | `tests/it/complete_editor.rs` |
 | duplicate selection alias | `using_aliases_resolve_to_the_units_profile_selections` and its duplicate-alias case (FR-091-AC-22, `qsl-semantics/src/check/assemble/tests.rs`) |
 | inadmissible parse | the spine's S1 refusal (`tests/it/spine_run.rs`, `tests/it/compile_command.rs`) |
-| model selection and a `sha256:` model digest | TC-442 step 4 (`tests/it/compile_command.rs`) |
+| model selection | TC-442 step 4 (`tests/it/compile_command.rs`) |
 | closure, bundle, limits, identity, causes | TC-491 (`library::bundle_tests`, carrying FR-131/FR-339 tags) |
 | source authority and span on a refusal | deleted with `SourceAuthority` (FR-087 disposition table); a bundle refusal names its root's index |
 

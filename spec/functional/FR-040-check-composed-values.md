@@ -162,7 +162,7 @@ the real domain-package intake integration.
 Compiler [#35](https://github.com/agent-ix/quire-spec-language/issues/35),
 [#36](https://github.com/agent-ix/quire-spec-language/issues/36) and
 [#39](https://github.com/agent-ix/quire-spec-language/issues/39) retain full
-delivery obligations. The pinned IR already supplies rational types, literals,
+delivery obligations. The IR already supplies rational types, literals,
 arithmetic and definedness. [FR-041](FR-041-admit-rational-native-model-profile.md)
 specifies the explicit `/2` native model source extension while historical
 `/1` admission retains its rational refusal. Composed definedness consumes those

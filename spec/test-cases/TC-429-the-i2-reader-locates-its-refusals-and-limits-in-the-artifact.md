@@ -12,7 +12,7 @@ relationships:
 
 Verify FR-096's O-22 reader: the I2 reader carries IR's version refusal as
 `unknown_wire`/`unsupported-wire` naming the actual and expected versions at
-`/contract_version` in the digest-addressed artifact, locates IR's limits
+`/contract_version` in the artifact, locates IR's limits
 at IR's pointer, and gives its own byte ceiling and a refusal at no value
 no locus. This catches an
 empty pointer standing in for a located failure.
@@ -39,11 +39,9 @@ locus hashes the bytes in the test.
 
 - Step 1: `StageFailure::Refused`, code `unknown_wire`/`unsupported-wire`,
   `actual` `quire.checked-package/v3` and `expected`
-  `quire.checked-package/v2`, locus `Locus::Artifact` with the bytes'
-  `raw-artifact-digest` and pointer `/contract_version`.
+  `quire.checked-package/v2`, locus `Locus::Artifact` with pointer `/contract_version`.
 - Step 2: `StageFailure::Limit`, kind node count, bound `B`, IR's consumed
-  counter, locus `Locus::Artifact` with the bytes' `raw-artifact-digest`
-  and IR's pointer.
+  counter, locus `Locus::Artifact` with IR's pointer.
 - Step 3: kind input bytes and no locus.
 - Step 4: a refusal with no locus.
 - Step 5: the envelope refusal carries the native code `noncanonical_wire`, not `invalid_package`.

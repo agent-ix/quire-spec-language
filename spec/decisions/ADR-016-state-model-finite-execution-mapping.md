@@ -194,8 +194,8 @@ S3 admits, S6a completes with the same truth value. With different
 configured values, S6a may stop at its own ceiling, and that stop is a
 resource refusal, never a different truth value. A generalization cycle or
 an unknown supertype never reaches S6a: S6a re-normalizes each domain
-package from provision bytes whose digest equals the `model_selections`
-digest the package was checked against (FR-106), and normalization refuses
+package from provision bytes keyed by the `model_selections`
+identity the package was checked against (FR-106), and normalization refuses
 both.
 
 **No population data at check time.** A universe, a snapshot or an initial
@@ -211,16 +211,16 @@ refusal cites the row of ADR-012 §15.6 or FR-098 that fixes its code.
 
 | ID | Identity | Minted by | Execute (S6a, simulation) | Proof handoff (E5 to E8) | Replay (E9) | Equality | Oracle |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ID-1 | Original declaration: `DeclarationKey{package, node}` | the domain package; admitted at I1 (ADR-013 O-03) | Carried in `StateObject.type_identity`, the `semantic` map keys and FR-120's declaration identity text | Reached from a `NodeKey` only through the model correspondence (ID-3) | Re-admitted from the QC-1 byte provision; a digest mismatch refuses `stale_dependency`/`content-mismatch` (ADR-013 O-01; QSpec FR-154, FR-272) | declared | FR-081 tests; TC-469 step 6, one `package_id` across every case (`config_version_spine.rs:806`) |
+| ID-1 | Original declaration: `DeclarationKey{package, node}` | the domain package; admitted at I1 (ADR-013 O-03) | Carried in `StateObject.type_identity`, the `semantic` map keys and FR-120's declaration identity text | Reached from a `NodeKey` only through the model correspondence (ID-3) | Re-admitted from the QC-1 byte provision; a re-admitted lock content that differs from the `model_selections` row refuses `stale_dependency`/`content-mismatch` (ADR-013 O-01; QSpec FR-154, FR-272) | declared | FR-081 tests; TC-469 step 6, one package identity across every case (`config_version_spine.rs:806`) |
 | ID-2 | Effective declaration: `EffectiveId` | `model` normalization only (O-05) | The type component of every `ObjectReference`; FR-120 encodes it as `object_type` | Absent from v2 (O-05) | Recomputed by re-normalization; a reference whose type is no `EffectiveId` of the bound universe refuses at FR-106 admission, `invalid_runtime_input` (ADR-012 §15.6) | normalized | FR-081 tests; FR-120-AC-4 (G-4) |
 | ID-3 | Checked node of a model declaration: `NodeKey` over `ModelOwner` | `check` only (O-04, C-02), recorded in `ModelCorrespondence` | S6a selects clauses, anchors and frames by `NodeKey` | Written as `WireNodeId` | `WireNodeId` → `NodeKey` by lookup in the recompiled package (O-04) | normalized | TC-417 to TC-419 (FR-094) |
 | ID-4 | Reference: `ObjectReference{UniverseId, EffectiveId, ObjectId}` | `model` at admission (O-05) | Keys `ObjectEnvironment`; QSpec FR-181 triple in state keys | Only as a witness value decoded by `Witness::decode` (C-11) | Admitted again from the replay input; a foreign universe refuses `foreign_reference` (FR-096) | declared over the triple | FR-084 tests (`model_population.rs`) |
 | ID-5 | Population: `PopulationId` | `model` at admission (O-13, QC-21) | Resolves its `PopulationBinding` through `ObjectEnvironment` | Absent | Re-minted by re-admission | normalized | TC-291 to TC-297; FR-089-AC-7 (G-3) |
 | ID-6 | Clause, anchor and frame: the node ids of `state`/`state_clause`, `operation_anchor` and `frame` | `check` (ADR-012 §15.4) | Selected by the name → (node id, occurrence) table in the in-process `CheckedPackage` (FR-109) | Clause node id and occurrence key enter the obligation identity (O-09) | Resolved in the recompiled package; a differing frame refuses `FrameIdentityMismatch` (FR-116) | normalized | TC-515 (FR-116) |
-| ID-7 | Observation: snapshot or invocation `DocumentRef` with `sha256-jcs` digest | the document's producer; admitted by FR-106 | Anchors each clause evaluation; carried in the run report | Not on the v2 wire (ADR-012 §15.4) | Supplied by digest; a mismatch refuses `stale_dependency` (ADR-012 §15.6) | normalized | FR-106 admission tests |
-| ID-8 | Simulated state: QSpec FR-181 state key and its `quire.simulation.state-key/v1` digest | `qsl_eval::simulation` from the `TransitionSystem` key (FR-101) | Coalescing compares full key bytes; traces and frontiers hold digests | Absent | FR-101 `replay` recomputes it; never E9 | lexical over key bytes | TC-453 (FR-101-AC-2) |
+| ID-7 | Observation: snapshot or invocation `DocumentRef` addressed by its document `identity` label set | the document's producer; admitted by FR-106 | Anchors each clause evaluation; carried in the run report | Not on the v2 wire (ADR-012 §15.4) | Supplied by identity through the byte provision; a provision that does not hold it refuses `stale_dependency` (ADR-012 §15.6) | normalized | FR-106 admission tests |
+| ID-8 | Simulated state: QSpec FR-181 state key, the canonical RFC 8785 byte string of the state (`quire.simulation.state-key/v1`) | `qsl_eval::simulation` from the `TransitionSystem` key (FR-101) | Coalescing compares full key bytes; traces and frontiers hold keys | Absent | FR-101 `replay` recomputes it; never E9 | lexical over key bytes | TC-453 (FR-101-AC-2) |
 | ID-9 | Transition: QSpec FR-181 `{"type":"transition","operation":…,"receiver":…\|null,"arguments":…}` (receiver not among the arguments; JCS key order `arguments`, `operation`, `receiver`, `type`) | the `TransitionSystem`; FR-120 names the operation by ID-1's declaration identity text | Orders successors (FR-101) | Absent | FR-101 `replay` | lexical over JCS bytes | TC-453 (FR-101-AC-1) |
-| ID-10 | Synthesized state observation: the pair (`DocumentRef{quire, quire.simulation.state/<digest>, quire.simulation.state-key/v1, 1}`, anchor) | FR-120 `model::state::StateModel::observation` | Lets a clause evaluation name a simulated state as an observation. Its identity is the pair: one `DocumentRef` names every anchoring of one state, because the key omits the anchor | Absent | Never resolved through a byte provision; only through ID-8 | the pair | FR-120-AC-5 (G-4) |
+| ID-10 | Synthesized state observation: the pair (`DocumentRef{quire, quire.simulation.state/<state key>, quire.simulation.state-key/v1, 1}`, anchor) | FR-120 `model::state::StateModel::observation` | Lets a clause evaluation name a simulated state as an observation. Its identity is the pair: one `DocumentRef` names every anchoring of one state, because the key omits the anchor | Absent | Never resolved through a byte provision; only through ID-8 | the pair | FR-120-AC-5 (G-4) |
 | ID-11 | Counterexample: `WitnessEnvelope<P>` | CG from a backend run (O-25) | not applicable | Carries obligation identity, occurrence key, `package_id`, `run_limits`, declared domains, `trace_position` | The only E9 input (FR-098) | lexical over the admitted transcript | TC-515 |
 
 **Original and effective provenance.** The original `DeclarationKey` is the
@@ -238,10 +238,12 @@ internal fault (G-8).
 FR-089's open preimage question is settled here, and FR-089's Behavior is
 amended to state the result. The `PopulationId` preimage is exactly
 `{version, domain_package_selection, population_key, admission_role,
-declared_maximum, members, pre}`, with the encodings FR-089 gives. The
-version label `POPULATION_ID_DOMAIN` is unchanged: no `PopulationId` is
-persisted or sent on any wire, so the golden vector
-(`model/population.rs:2160`) is regenerated in the implementing PR. So:
+declared_maximum, members, pre}`, with the encodings FR-089 gives. A
+`PopulationId` is that preimage tuple itself, compared by equality; it is
+never hashed. No `PopulationId` is persisted or sent on any wire, so the
+`POPULATION_ID_DOMAIN` label and its hex vector
+(`model/population.rs:2160`) are replaced by tuple-equality tests in the
+implementing PR. So:
 
 - two admissions that agree on every member share one id;
 - two that differ in members, in declared maximum (a caller argument of
@@ -261,7 +263,7 @@ the change needs no migration.
 keys a population domain as `DomainKey::Population{member_type:
 object_type node, ordinal}` (ADR-012 §15.7). That key crosses to `route`, CG and
 QSpec FR-331. FR-120 names every simulation root (population, parameter,
-result, granted field) by a `WireNodeId::from_digest` over a naming object,
+result, granted field) by a structural key (owner, simulation role, ordinal) over a naming object,
 and FR-101's `RequiresBound` reports it. That key is local to one
 `ModelSimulationRequest`. It never crosses to `route`, CG, QSpec FR-331 or
 replay, and no conversion between the two exists. A caller answers a
@@ -286,7 +288,7 @@ FR-181's sense), and an **exhaustive run** is one whose frontier emptied
 | EX-6 | Cancellation | Only exploration is cancellable. `poll` is called once before each state's expansion, so a cancellation takes effect within one expansion; the returned outcome is `Cancelled{cause: cancelled/caller-cancelled}`. S6a clause evaluation and admission are not cancellable (ADR-014 §7). Sampling is bounded by `max_steps` and is not cancellable. |
 | EX-7 | Bound exhaustion versus a clause meter | If the run reaches `max_states` or `max_transitions`, it returns `Bounded{limit}`; a run that completes its `max_depth` search horizon returns `BoundReached{depth}`, which is inconclusive. If a clause meter runs out inside an expansion, the run is not bound-exhausted: an invariant evaluation records `InvariantUndetermined`, and a contract-clause evaluation or the `max_candidates` cap stops the expansion with `ExpansionStop` `resource_exhausted`/`insufficient-next-charge` (FR-120). |
 | EX-8 | Incomplete outcomes | `Bounded`, `Cancelled` and `Stopped` with `resource_exhausted` are ADR-013 O-16 incomplete. `Stopped` with `runtime_invariant` is internal failure. `NotSimulated::RequiresBound` is a disposition, not an outcome. FR-106 `incomplete_population` is incomplete at admission. `Exhaustive` is success of the exploration only (§6). |
-| EX-9 | Evidence scope | An exploration result is evidence only for its request: the `package_id`, the domain-package digests, the initial `DocumentRef`s, the universes, `Limits`, `ExpansionLimits` and the meter budget (ADR-014 §8). No type carries this set and no function compares results; this is a scope statement, verified by analysis. |
+| EX-9 | Evidence scope | An exploration result is evidence only for its request: the `package_id`, the domain-package identities, the initial `DocumentRef`s, the universes, `Limits`, `ExpansionLimits` and the meter budget (ADR-014 §8). No type carries this set and no function compares results; this is a scope statement, verified by analysis. |
 | EX-10 | Clean run | A run is clean exactly when it is `Exhaustive`, expanded at least one state, and has no finding. An `Exhaustive` run over no initial state (FR-101-AC-9) is not clean. |
 
 ### 4. Frame effects and model-bound evaluation through the Layer 3 clause/frame path

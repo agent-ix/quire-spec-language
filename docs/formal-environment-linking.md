@@ -32,16 +32,15 @@ For each validated environment, the existing
 the selected artifact bytes. The native model import uses:
 
 - package: exact `environment.owner().package().as_str()`;
-- version: exact decimal `environment.owner().revision().get()` spelling;
-- digest: ByteDigest::of(output.bytes().as_slice()), rendered as sha256 plus
-  the lowercase hexadecimal hash, under the existing ByteDigest Display contract.
+- version: exact decimal `environment.owner().revision().get()` spelling.
+
+The package and version alone select the environment.
 
 The actual RequirementRef, including its requirement identifier, remains in
-the canonical bytes and resolved declaration identity. CanonicalDigest hashes a
-different preimage and cannot be substituted. This selected artifact excludes
-IR source provenance according to its existing profile: semantic declaration
-identity and declaration source correspondence remain separate output facts.
-The native source bytes and their digest are always retained independently.
+the canonical bytes and resolved declaration identity. This selected artifact
+excludes IR source provenance according to its existing profile: semantic
+declaration identity and declaration source correspondence remain separate
+output facts. The native source bytes are always retained independently.
 No compiled Filament artifact, manifest, lock or historical fixture is silently
 renamed into this new binding profile.
 
@@ -51,8 +50,8 @@ artifact bytes; no external package closure is guessed. This is the stale-closur
 control for this profile, not a claim to have decoded another model's lock format.
 
 Resolve all imports in source order. A package absent from the supplied inventory
-returns missing_import. A known package with no exact revision/digest returns
-stale_dependency. A malformed digest returns invalid_model_binding at its token.
+returns missing_import. A known package with no exact revision returns
+stale_dependency.
 Multiple exact candidates refuse as ambiguous_declaration; no input order wins.
 Distinct imports may share an alias. Context/enum lookup considers all exact
 imports under that alias, chooses one matching export or reports missing_declaration
@@ -117,7 +116,7 @@ introduced by this library milestone.
 The public integration tests construct actual IR environments. Two distinct
 RequirementRef owners exporting BoundedCounter under one repeated native alias
 exercise real ambiguity, with both declaration sources retained. Exact source,
-foreign digest, changed unused dependency, lexical scope, missing names,
+foreign package, changed unused dependency, lexical scope, missing names,
 unsupported mappings, boundary limits and prior-call/permutation controls are
 independent expected cases. TC-020–024 qualify resolution; TC-025–029 remain
 the separately planned static judgments. FR-013 adds the concrete API controls.
