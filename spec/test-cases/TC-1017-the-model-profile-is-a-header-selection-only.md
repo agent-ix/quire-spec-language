@@ -19,11 +19,11 @@ Verify the unit-level behaviour of the gate: every refusal is reported, per unit
 3. Compile a unit with a `model` declaration, a supplied domain package and a model construct, whose only header profile is `quire.value.complete/v1`.
 4. Compile a unit whose profile `v` names `quire.model.complete/v1`; read the emitted lock.
 5. Compile a unit holding model constructs with the header profile set to the `ieee_profile` row's identity, then to `test:unknown-profile`.
-6. Under `make conformance`, compare the DefinitionLock rows that come from QSpec's complete-model lock with the lock read from `QSPEC_DIR`.
+6. Under `make conformance`, compare QSL's complete-model entries in `DefinitionLock::pinned()` with the QSpec FR-001 and FR-201-AC-9 source-of-truth lock in the QSpec submodule.
 7. Read the S2 forms of the unit of step 1.
 8. Compile `body b using V on M::A::add(x) { x }` with `V` the only profile (`quire.value.complete/v1`); then with a second profile `W` naming `quire.model.complete/v1`, still `using V`.
 9. Compile a unit whose only profile `t` names `quire.temporal.complete/v1`, holding a `model` declaration and one construct of each family of item 5 written `using t`; then the same unit with the profile naming `quire.value.complete/v1`; then a unit whose profile names `quire.model.complete/v1` and that writes a `time` member. Read the first unit's lock, and the lock of a unit that selects only `quire.model.complete/v1`.
-10. Under `make conformance`, compare the DefinitionLock rows that come from QSpec's complete-temporal lock, and the temporal row of the layer table, with QSpec's lock and `header_selectable_layers` row read from `QSPEC_DIR`.
+10. Under `make conformance`, compare QSL's complete-temporal entries and temporal layer entry with QSpec FR-001 and FR-453's source-of-truth lock and `header_selectable_layers` entries in the QSpec submodule.
 
 ## Expected Results
 
@@ -32,8 +32,8 @@ Verify the unit-level behaviour of the gate: every refusal is reported, per unit
 3. The construct is refused; the unit never compiles.
 4. The model layer resolves. `definition_selections` hold the model layer, `quire.state.graph/v1`, `quire.value.complete/v1`, their required layers, the complete-value lock's selected `package_selection` rows and the complete-model lock's `always` rows, written out as a literal in the test, and no layer that requires the model layer.
 5. `unknown_profile`/`wrong-selection-role`, then `unknown_profile`/`unsupported-selection`; no S3 refusal.
-6. The rows (role, authority, identity, in order) and package-selection rules are equal.
+6. The conformance assertion passes because QSL's model-lock entries satisfy the QSpec source-of-truth contract; it has no copied expected-row list.
 7. S2 holds a form for every construct and reports no refusal.
 8. The first compile has one refusal (the family refusal); the second has FR-110's layer refusal alone.
 9. The first unit compiles with no model-gate refusal because the temporal layer's `requires` closure includes `quire.model.complete/v1`; the second refuses each model construct once; the third refuses the `time` member alone (`unsupported_construct`/`declaration-form`, FR-230) and no model construct. The first lock's `definition_selections` and lock rows are the literal of FR-361-AC-14; the model-only unit's lock holds no complete-temporal row.
-10. The rows and package-selection rules are equal, and the layer-table row equals QSpec's.
+10. The conformance assertion passes because QSL's temporal-lock and layer entries satisfy the QSpec source-of-truth contracts; it has no copied expected-row list.
