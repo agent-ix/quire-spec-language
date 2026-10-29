@@ -578,11 +578,10 @@ impl Lowering<'_> {
     /// With a profile selected, a protocol that names a construct whose node
     /// is not written yet refuses at its declaration, once for each such
     /// construct (`unsupported_construct`/`not-yet-implemented`), and so
-    /// does a reference to it. `cyclic` is whether the protocol belongs to a
-    /// cyclic component of function calls and protocol references
-    /// ([`ProtocolConstruct::ReferenceCycle`]). Every function and protocol
-    /// the protocol's bodies name must be keyed first (FR-093): the caller
-    /// lowers the unit in dependency order.
+    /// does a reference to it. `cyclic` is true when this protocol has a
+    /// placeholder in a mixed function/protocol recursion component; its
+    /// final key is resolved when every member of that component has been
+    /// lowered. Dependencies outside the component are keyed first (FR-093).
     pub(crate) fn protocol_node_step(
         &mut self,
         index: usize,
