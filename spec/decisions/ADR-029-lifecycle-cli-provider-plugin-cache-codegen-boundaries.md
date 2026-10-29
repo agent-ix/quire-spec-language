@@ -716,8 +716,8 @@ monitoring are cheap and deterministic and run every time.
 
 **CA-2 Key.** The key is one canonical content identity: a digest in a
 QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of QSpec
-FR-306's closed object `{operation, package_id, request, backend, manifest,
-target}`, and no other member:
+FR-306's closed object `{operation, package_id, request, backend, target}`,
+and no other member:
 
 - `operation`: `prove`, `analyze` or `generate`;
 - `package_id`: the subject's identity. Its FR-322 preimage binds the source digests,
@@ -727,19 +727,6 @@ target}`, and no other member:
   deterministic budget that can move a result to `incomplete` (work units,
   state and transition budgets);
 - `backend`: the provider's `BackendId`, the identity string alone;
-- `manifest`: the provider manifest's content identity, the `ManifestDigest`
-  that layer R computes over the canonical bytes of the provider's complete
-  QSpec FR-331 descriptor, as a `quire.tool-manifest.jcs/v1` digest record. A
-  change to any descriptor member changes the key. The tool version is the
-  descriptor's `tool.version`: every descriptor carries `tool` (QSpec FR-331
-  "Backend tool"), `{name, version}` of the executable a backend that fronts
-  an external tool invokes, queried from that executable at each invocation,
-  or of the crate that implements a pure in-process engine, at its version
-  in the producer's build, with `build`, the `quire.build-inputs/v1` digest
-  of the provider code's build inputs that the producer's build computes. A
-  tool upgrade, an engine release, and an engine code change under an
-  unchanged crate version therefore each change the `ManifestDigest` and the
-  key and leave the `BackendId` unchanged;
 - `target`: for `generate` only, the generation target and its options.
 
 Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's

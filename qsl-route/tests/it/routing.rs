@@ -196,6 +196,42 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
     );
 }
 
+/// FR-290 "Candidate set and negotiation": registration refusals are
+/// reported ordered bytewise by backend identity. Conflicting two
+/// identities, `same` and `earlier`, in either arrival order, reports
+/// `earlier`'s refusal before `same`'s.
+#[test]
+#[trace("TC-155", "FR-057-AC-8")]
+fn refusals_order_bytewise_by_identity() {
+    let bounded = [(Some("value-validity"), "bounded")];
+    let unbounded = [(Some("value-validity"), "unbounded")];
+    let conflict = |id: &str| {
+        [
+            admit(id, &bounded).expect("admitted"),
+            admit(id, &unbounded).expect("admitted"),
+        ]
+    };
+    for same_first in [true, false] {
+        let (first, second) = if same_first {
+            (conflict("same"), conflict("earlier"))
+        } else {
+            (conflict("earlier"), conflict("same"))
+        };
+        let mut registry = Registry::new();
+        for descriptor in first.into_iter().chain(second) {
+            let _ = registry.register(descriptor);
+        }
+        let ids: Vec<_> = registry
+            .refusals()
+            .map(|refusal| refusal.identity().as_str().to_owned())
+            .collect();
+        assert_eq!(ids, ["earlier", "same"], "same_first={same_first}");
+        assert!(registry
+            .refusals()
+            .all(|refusal| refusal.cause() == &RegistrationCause::DuplicateBackend));
+    }
+}
+
 /// The TC-155 step 4 registry: two backends advertising
 /// (`operation-contract`, `bounded`) and one advertising only
 /// `global-conformance`, registered in `order`.

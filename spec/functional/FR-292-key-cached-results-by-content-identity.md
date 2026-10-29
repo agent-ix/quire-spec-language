@@ -31,12 +31,9 @@ relationships:
 QSpec FR-306 owns the cache: what is cached (`prove` terminal records,
 `analyze` terminal records and `generate` artifacts), the key (a digest in
 the QSpec FR-201 domain `quire.cache-key/v1` over the RFC 8785 bytes of
-FR-306's closed object `{operation, package_id, request, backend, manifest,
-target}`: the operation, the subject's `package_id`, the canonical request,
-the provider's `BackendId`, its QSpec FR-331 `ManifestDigest` record, whose
-preimage includes the descriptor's `tool` `{name, version, build}`, so an
-engine code change keys apart even under an unchanged crate version, and,
-for `generate` only, the target and its options), what stays outside the key, invalidation, the store and its read check. The driver's `quire-cache`
+FR-306's closed object `{operation, package_id, request, backend, target}`:
+the operation, the subject's `package_id`, the canonical request, the
+provider's `BackendId`, and, for `generate` only, the target and its options), what stays outside the key, invalidation, the store and its read check. The driver's `quire-cache`
 implements it (ADR-029 CA-1 to CA-5), reading the cache for an item routed to a backend that fronts an external tool only after that item's tool probe passes (CA-4) and never storing a `tool-unavailable` result (CA-5).
 
 QSL's part is what the cache reads from QSL:
