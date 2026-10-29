@@ -12,9 +12,10 @@
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::settle::Truth;
 use crate::proof_result::{
-    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
-    UnavailabilityCause,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalRecord,
+    TerminalValue, UnavailabilityCause,
 };
+use qsl_foundation::{BackendId, RequestIndex};
 
 /// The induction depth of a per-step simulation record (ADR-020 RE-2).
 pub const STEP_INDUCTION_DEPTH: u64 = 1;
@@ -80,6 +81,15 @@ pub struct StepSimulationSettlement {
     pub basis: SettlementBasis,
     /// The truth.
     pub truth: Truth,
+}
+
+impl StepSimulationSettlement {
+    /// The FR-331 terminal record of this settlement for the per-step
+    /// simulation record at `request_index`, which `backend` settled. A
+    /// per-step record never settles `refuted`, so it carries no replay.
+    pub fn to_terminal(&self, request_index: RequestIndex, backend: BackendId) -> TerminalRecord {
+        TerminalRecord::with_backend(request_index, backend, self.value.clone())
+    }
 }
 
 /// FR-146: settle `outcome` as one terminal value. Never `Refuted`.

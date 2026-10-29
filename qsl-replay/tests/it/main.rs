@@ -20,6 +20,8 @@ mod refinement_fixture;
 mod refinement_hidden;
 mod refinement_history;
 mod refinement_mapping;
+#[path = "../../../tests/support/refinement_smt_proofs.rs"]
+mod refinement_proofs;
 mod refinement_ring;
 mod refinement_smt;
 mod refinement_step;
