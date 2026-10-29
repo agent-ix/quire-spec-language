@@ -4686,6 +4686,12 @@ impl PackageDeclarations {
             (quire_exact::EffectiveId, String),
             std::collections::BTreeSet<state_clause::PopulationDomain>,
         > = BTreeMap::new();
+        // ... and the populations each clause ranges over, by its node, which
+        // a hypothesis adds to every record.
+        let mut clause_populations: BTreeMap<
+            quire_exact::NodeKey,
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
         // FR-104 "Requirements": one `operation-contract` record per clause,
         // keyed by its `claim` occurrence, and one per frame of an operation
         // a `pre` or `post` clause names, keyed by the frame node's own
@@ -4709,17 +4715,20 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
+                let ranged = claims
+                    .iter()
+                    .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
+                    .flat_map(|claim| claim.populations.iter().copied());
                 if let Some(operation) = &form.operation {
                     contract_populations
                         .entry(state_clause::operation_reference(operation))
                         .or_default()
-                        .extend(
-                            claims
-                                .iter()
-                                .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
-                                .flat_map(|claim| claim.populations.iter().copied()),
-                        );
+                        .extend(ranged.clone());
                 }
+                clause_populations
+                    .entry(lowered.key)
+                    .or_default()
+                    .extend(ranged);
                 let keyed = state_clause::clause_records(
                     &typed,
                     &claims,
@@ -5176,6 +5185,7 @@ impl PackageDeclarations {
                 step_sources: &emission.step_sources,
                 boolean,
                 contracts: &contract_populations,
+                clauses: &clause_populations,
                 object_node: &object_node,
                 types: scope.types(),
                 position_limit: limits.nodes(),
