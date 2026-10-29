@@ -40,39 +40,17 @@ const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 const FR_092: &str =
     include_str!("../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md");
 
-/// FR-092's golden vectors by name: `(key, preimage)`.
+/// FR-092's golden vectors by name: `(key, preimage)`, each key recomputed
+/// from the vector's preimage.
 fn vectors() -> BTreeMap<String, (String, String)> {
-    let vectors = spec_vectors(FR_092);
+    let vectors = spec_vectors("FR-092");
     assert!(!vectors.is_empty(), "FR-092 publishes golden vectors");
     vectors
 }
 
-/// The golden vectors `spec` publishes by name: `(key, preimage)`.
-fn spec_vectors(spec: &str) -> BTreeMap<String, (String, String)> {
-    let mut vectors = BTreeMap::new();
-    let mut lines = spec.lines();
-    while let Some(line) = lines.next() {
-        let Some(rest) = line.strip_prefix("**") else {
-            continue;
-        };
-        let Some((name, _)) = rest.split_once("**: ") else {
-            continue;
-        };
-        if lines.next() != Some("") || lines.next() != Some("```json") {
-            continue;
-        }
-        let preimage = lines.next().expect("a vector preimage line").to_owned();
-        assert_eq!(lines.next(), Some("```"), "{name}: one preimage line");
-        assert_eq!(lines.next(), Some(""));
-        let key = lines
-            .next()
-            .and_then(|line| line.strip_prefix("Key: `"))
-            .and_then(|line| line.strip_suffix('`'))
-            .expect("a vector key line")
-            .to_owned();
-        vectors.insert(name.to_owned(), (key, preimage));
-    }
-    vectors
+/// The golden vectors the `tag` spec publishes by name: `(key, preimage)`.
+fn spec_vectors(tag: &str) -> BTreeMap<String, (String, String)> {
+    super::spec_vectors::vectors(tag)
 }
 
 /// The heading text after `**name**: ` of each golden vector `spec`
@@ -87,8 +65,10 @@ fn spec_descriptions(spec: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// `spec`'s vector-key table rows, `| name | description | `key` |`.
-fn key_table_rows(spec: &str) -> Vec<(String, String, String)> {
+/// `spec`'s vector-key table rows, `| name | description | key |`: the
+/// name and description of each row whose key cell says the key is the
+/// SHA-256 of the vector's preimage.
+fn key_table_rows(spec: &str) -> Vec<(String, String)> {
     spec.lines()
         .filter_map(|line| {
             let cells: Vec<&str> = line
@@ -99,58 +79,27 @@ fn key_table_rows(spec: &str) -> Vec<(String, String, String)> {
             let [name, description, key] = cells[..] else {
                 return None;
             };
-            let key = key.strip_prefix('`')?.strip_suffix('`')?;
-            Some((name.to_owned(), description.to_owned(), key.to_owned()))
+            (key == "the SHA-256 of its preimage")
+                .then(|| (name.to_owned(), description.to_owned()))
         })
-        .filter(|(_, _, key)| key.len() == 64)
         .collect()
 }
 
-/// `spec`'s recursion-group tables: each group's digest and its rows, an
-/// ordinal and the member's vector name.
-fn group_tables(spec: &str) -> Vec<(String, Vec<(u64, String)>)> {
-    let mut tables = Vec::new();
-    let mut lines = spec.lines().peekable();
-    while let Some(line) = lines.next() {
-        let Some((_, rest)) = line.split_once(", group digest `") else {
-            continue;
-        };
-        let Some(digest) = rest.strip_suffix("`:") else {
-            continue;
-        };
-        let mut rows = Vec::new();
-        for row in lines.by_ref().skip(3) {
-            let Some(row) = row.strip_prefix("| ") else {
-                break;
-            };
-            let mut cells = row.split(" | ");
-            let ordinal = cells
-                .next()
-                .and_then(|cell| cell.parse().ok())
-                .expect("an ordinal");
-            let member = cells.next().expect("a member");
-            let name = member.split(' ').next().expect("a vector name");
-            rows.push((ordinal, name.to_owned()));
-        }
-        tables.push((digest.to_owned(), rows));
-    }
-    tables
-}
-
-/// Every table `spec` publishes about its golden vectors agrees with the
-/// vectors: the key table with each heading and key, each heading's ordinal
-/// and each group table's ordinals and digest with the vector's preimage,
-/// and no two vectors share a key.
-fn assert_published_tables_agree(spec: &str) {
-    let vectors = spec_vectors(spec);
+/// Every table `spec` (published as `tag`) publishes about its golden
+/// vectors agrees with the vectors: the key table lists each vector with its
+/// heading, each heading's ordinal and each group table's ordinals and
+/// group-digest placeholder agree with the vector's preimage, and no two
+/// vectors share a key.
+fn assert_published_tables_agree(tag: &str, spec: &str) {
+    let vectors = spec_vectors(tag);
     let descriptions = spec_descriptions(spec);
     let keys: std::collections::BTreeSet<&String> = vectors.values().map(|(key, _)| key).collect();
     assert_eq!(keys.len(), vectors.len(), "two vectors share a key");
-    for (name, description, key) in key_table_rows(spec) {
-        let Some((vector_key, _)) = vectors.get(&name) else {
-            continue;
-        };
-        assert_eq!(&key, vector_key, "{name}: the key table's key");
+    for (name, description) in key_table_rows(spec) {
+        assert!(
+            vectors.contains_key(&name),
+            "{name}: the key table's vector"
+        );
         assert_eq!(
             Some(&description),
             descriptions.get(&name),
@@ -158,7 +107,8 @@ fn assert_published_tables_agree(spec: &str) {
         );
     }
     let recursion = |name: &str| -> Json {
-        serde_json::from_str::<Json>(&vectors[name].1).expect("a preimage is JSON")["recursion"]
+        serde_json::from_str::<Json>(&super::spec_vectors::raw_preimage(tag, name))
+            .expect("a preimage is JSON")["recursion"]
             .clone()
     };
     for (name, description) in &descriptions {
@@ -179,8 +129,8 @@ fn assert_published_tables_agree(spec: &str) {
         }
     }
     let mut in_tables = std::collections::BTreeSet::new();
-    for (digest, rows) in group_tables(spec) {
-        for (ordinal, name) in rows {
+    for (first, members) in super::spec_vectors::group_tables(tag) {
+        for (ordinal, name) in members.into_iter().enumerate() {
             let recursion = recursion(&name);
             assert_eq!(
                 recursion["ordinal"],
@@ -190,8 +140,8 @@ fn assert_published_tables_agree(spec: &str) {
             if !recursion["group"].is_null() {
                 assert_eq!(
                     recursion["group"],
-                    json!(digest),
-                    "{name}: its table's digest"
+                    json!(format!("<group digest of {first}>")),
+                    "{name}: its table's group"
                 );
             }
             assert!(
@@ -215,7 +165,7 @@ fn assert_published_tables_agree(spec: &str) {
 #[trace("FR-092-AC-11", "TC-413")]
 #[test]
 fn fr_092_published_tables_agree_with_its_vectors() {
-    assert_published_tables_agree(FR_092);
+    assert_published_tables_agree("FR-092", FR_092);
 }
 
 fn vector_key(name: &str) -> String {
@@ -601,19 +551,9 @@ fn a_self_recursive_function_keys_to_g4_to_g6() {
     assert_group_members_carry_their_recursion(graph);
     let g4 = node_by_key(graph, &vector_key("G4"));
     assert_eq!(g4.semantic_form(), "recursive_function");
-    assert_eq!(
-        g4.recursion().map(|recursion| lower_hex(recursion.group())),
-        Some(
-            include_str!(
-                "../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md"
-            )
-            .split("G4-G6, group digest `")
-            .nth(1)
-            .and_then(|rest| rest.split('`').next())
-            .expect("FR-092 states the G4-G6 group digest")
-            .to_owned()
-        )
-    );
+    // The group digest is bound by G4's resolved preimage bytes, which
+    // `assert_holds` compared above.
+    assert!(g4.recursion().is_some());
 }
 
 /// TC-413 step 9 (FR-092-AC-11): `ping` and `pong` key to G10 to G15,

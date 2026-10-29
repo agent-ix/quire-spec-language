@@ -72,7 +72,7 @@ point. There is no host-function registration API in the current QSL
 evaluator. These source locations explain why the new leaf cannot simply
 depend on today's evaluator or checker crates.
 
-RT AD-004 (`quire-contract-runtime` commit `d610131`, document
+RT AD-004 (`quire-contract-runtime`, document
 `spec/assurance/AD-004-runtime-crate-layout.md`) records the earlier ported
 `exact::CheckedPackage::{call,evaluate}` surface and its old Q-1 question.
 Its fixed `MAX_CALL_DEPTH` / `DepthAboveMaximum` design is superseded by the

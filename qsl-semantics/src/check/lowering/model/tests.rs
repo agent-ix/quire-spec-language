@@ -42,36 +42,11 @@ mod place_rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
-const FR_094: &str = include_str!(
-    "../../../../../spec/functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md"
-);
-
-/// FR-094's golden vectors by name: `(key, preimage)`.
+/// FR-094's golden vectors by name: `(key, preimage)`, each key recomputed
+/// from the vector's preimage. The vectors that name a QSpec key are absent
+/// while `QSPEC_DIR` is unset.
 fn vectors() -> BTreeMap<String, (String, String)> {
-    let mut vectors = BTreeMap::new();
-    let mut lines = FR_094.lines();
-    while let Some(line) = lines.next() {
-        let Some(rest) = line.strip_prefix("**") else {
-            continue;
-        };
-        let Some((name, _)) = rest.split_once("**: ") else {
-            continue;
-        };
-        if lines.next() != Some("") || lines.next() != Some("```json") {
-            continue;
-        }
-        let preimage = lines.next().expect("a vector preimage line").to_owned();
-        assert_eq!(lines.next(), Some("```"), "{name}: one preimage line");
-        assert_eq!(lines.next(), Some(""));
-        let key = lines
-            .next()
-            .and_then(|line| line.strip_prefix("Key: `"))
-            .and_then(|line| line.strip_suffix('`'))
-            .expect("a vector key line")
-            .to_owned();
-        vectors.insert(name.to_owned(), (key, preimage));
-    }
-    vectors
+    crate::check::lowering::spec_vectors::vectors("FR-094")
 }
 
 fn vector_key(name: &str) -> NodeKey {
@@ -1042,19 +1017,16 @@ fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
 
 mod quantities {
     use super::*;
-    use crate::value::semantic_node::{
-        NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
-    };
+    use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
     use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
     use quire_semantic_value::quantity::UnitTable;
-    use std::sync::LazyLock;
 
     fn owner_json() -> Json {
         json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
     }
 
     fn node_id(key: &str) -> Json {
-        json!({"domain": "quire.checked-semantic-node/v1", "digest": key})
+        json!({"domain": "quire.checked-semantic-node/v1", "digest": resolved(key)})
     }
 
     fn dimension(name: &str) -> DimensionPreimage {
@@ -1080,70 +1052,41 @@ mod quantities {
         .expect("a root unit")
     }
 
-    /// The node keys of QSpec's `dimension-length`, `dimension-time`,
-    /// `unit-metre` and `unit-second` nodes, recomputed from their
-    /// preimages (`admit_unit_graph` refuses a key that is not the
-    /// preimage's digest). `the_fixture_keys_are_qspecs_published_vectors`
-    /// compares them with QSpec's vectors, read at run time.
-    static LENGTH: LazyLock<String> = LazyLock::new(|| preimage_key(&dimension("Length")));
-    static TIME: LazyLock<String> = LazyLock::new(|| preimage_key(&dimension("Time")));
-    static METRE: LazyLock<String> = LazyLock::new(|| preimage_key(&unit("metre", &LENGTH)));
-    static SECOND: LazyLock<String> = LazyLock::new(|| preimage_key(&unit("second", &TIME)));
+    // QSpec's nominal vectors, by name; each key is recomputed from the
+    // hand-written preimage (`spec_vectors::local_key`), and
+    // `the_nominal_keys_are_qspecs_published_vectors` compares them with
+    // QSpec's published vectors when `$QSPEC_DIR` is set.
+    const LENGTH: &str = "dimension-length";
+    const TIME: &str = "dimension-time";
+    const METRE: &str = "unit-metre";
+    const SECOND: &str = "unit-second";
 
-    trait Preimage {
-        fn key_digest(&self) -> [u8; 32];
-    }
-
-    impl Preimage for DimensionPreimage {
-        fn key_digest(&self) -> [u8; 32] {
-            self.digest(qsl_foundation::IdentityLimits::default())
-                .expect("a base dimension has a digest")
+    /// `name_or_hex`, with a QSpec vector name replaced by that vector's key.
+    fn resolved(name_or_hex: &str) -> String {
+        if name_or_hex.starts_with("dimension-") || name_or_hex.starts_with("unit-") {
+            crate::check::lowering::spec_vectors::local_key(name_or_hex)
+                .unwrap_or_else(|| panic!("QSpec publishes no vector {name_or_hex}"))
+        } else {
+            name_or_hex.to_owned()
         }
     }
 
-    impl Preimage for UnitPreimage {
-        fn key_digest(&self) -> [u8; 32] {
-            self.digest(qsl_foundation::IdentityLimits::default())
-                .expect("a root unit has a digest")
-        }
-    }
-
-    fn preimage_key(preimage: &impl Preimage) -> String {
-        preimage
-            .key_digest()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
-    }
-
-    /// The fixture keys are the ones QSpec publishes for the same nodes,
-    /// read from `$QSPEC_DIR` (skipped when it is unset; `make conformance`
-    /// requires it).
+    /// The recomputed keys are the ones QSpec publishes for the same nodes
+    /// (compared only when `$QSPEC_DIR` is set; `make conformance` requires
+    /// it).
     #[test]
-    fn the_fixture_keys_are_qspecs_published_vectors() {
-        let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-            println!("skipped: QSPEC_DIR not set");
-            return;
-        };
-        let path = std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/node-identity-vectors.json");
-        let document: Json = serde_json::from_slice(&std::fs::read(&path).expect("vectors read"))
-            .expect("vectors parse");
-        let published = |name: &str| {
-            document["vectors"]
-                .as_array()
-                .and_then(|vectors| vectors.iter().find(|vector| vector["name"] == name))
-                .and_then(|vector| vector["sha256"].as_str())
-                .unwrap_or_else(|| panic!("QSpec publishes vector {name}"))
-                .to_owned()
-        };
-        assert_eq!(*LENGTH, published("dimension-length"));
-        assert_eq!(*TIME, published("dimension-time"));
-        assert_eq!(*METRE, published("unit-metre"));
-        assert_eq!(*SECOND, published("unit-second"));
+    fn the_nominal_keys_are_qspecs_published_vectors() {
+        for name in [LENGTH, TIME, METRE, SECOND] {
+            let Some(published) = crate::check::lowering::spec_vectors::published_key(name) else {
+                println!("skipped: QSPEC_DIR not set");
+                return;
+            };
+            assert_eq!(resolved(name), published, "{name}");
+        }
     }
 
     fn node_key(hex: &str) -> NodeKey {
+        let hex = &resolved(hex);
         let mut digest = [0_u8; 32];
         for (index, byte) in digest.iter_mut().enumerate() {
             *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).expect("hex");
@@ -1163,12 +1106,12 @@ mod quantities {
     fn unit_graph() -> quire_semantic_value::unit::UnitGraph {
         admit_unit_graph(
             [
-                (dimension("Length"), node_key(&LENGTH)),
-                (dimension("Time"), node_key(&TIME)),
+                (dimension("Length"), node_key(LENGTH)),
+                (dimension("Time"), node_key(TIME)),
             ],
             [
-                (unit("metre", &LENGTH), node_key(&METRE)),
-                (unit("second", &TIME), node_key(&SECOND)),
+                (unit("metre", LENGTH), node_key(METRE)),
+                (unit("second", TIME), node_key(SECOND)),
             ],
             &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
                 authority: "agent-ix".into(),
@@ -1198,8 +1141,8 @@ mod quantities {
         let package = |body: Expression| PackageDeclarations {
             types: TypeEnvironment::default().with_units(units()),
             aliases: vec![
-                ("Length".to_owned(), quantity(&METRE)),
-                ("Time".to_owned(), quantity(&SECOND)),
+                ("Length".to_owned(), quantity(METRE)),
+                ("Time".to_owned(), quantity(SECOND)),
             ],
             functions: vec![function(
                 "q",
@@ -1213,7 +1156,7 @@ mod quantities {
         let graph = plain.semantic_graph();
         assert_eq!(
             parameter(graph, "a", 0).semantic_type(),
-            Some(node_key(&METRE))
+            Some(node_key(METRE))
         );
         assert!(graph
             .nodes()
@@ -1221,27 +1164,27 @@ mod quantities {
         // The type node is the unit's QSpec nominal node, built from its
         // `quire.unit-node/v1` preimage and typed by its dimension's nominal
         // node, which the graph holds too.
-        let metre = graph.node(node_key(&METRE)).expect("the metre unit node");
+        let metre = graph.node(node_key(METRE)).expect("the metre unit node");
         assert_eq!(
             (metre.node_tag(), metre.semantic_form()),
             (NodeTag::ScalarType, "unit")
         );
         assert!(matches!(metre.nominal(), Some(NominalNode::Unit(None))));
-        assert_eq!(metre.semantic_type(), Some(node_key(&LENGTH)));
+        assert_eq!(metre.semantic_type(), Some(node_key(LENGTH)));
         assert_eq!(
             Sha256::digest(metre.preimage()).as_slice(),
-            node_key(&METRE).as_bytes(),
+            node_key(METRE).as_bytes(),
             "the unit node's preimage is the one its key hashes"
         );
         let length = graph
-            .node(node_key(&LENGTH))
+            .node(node_key(LENGTH))
             .expect("the Length dimension node");
         assert_eq!(length.semantic_form(), "dimension");
         assert!(matches!(
             length.nominal(),
             Some(NominalNode::Dimension(None))
         ));
-        assert!(graph.node(node_key(&SECOND)).is_some() && graph.node(node_key(&TIME)).is_some());
+        assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
 
         let square = Expression::binary(BinaryOperator::Multiply, name("a"), name("a"));
         let squared = check_declarations(package(Expression::binary(
@@ -1263,7 +1206,7 @@ mod quantities {
                 .expect("an admitted unit")
                 .clone()
         };
-        let (metre, second) = (unit(&METRE), unit(&SECOND));
+        let (metre, second) = (unit(METRE), unit(SECOND));
         let form = |operation, left: &QuantityUnit, right: &QuantityUnit| {
             result_unit(operation, left, right).expect("the unit forms")
         };
@@ -1293,9 +1236,9 @@ mod quantities {
         let u2 = preimage(graph.node(vector_key("U2")).unwrap());
         assert_eq!(
             u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
-            json!(METRE.as_str())
+            json!(resolved(METRE))
         );
-        assert_ne!(vector_key("U4"), node_key(&METRE));
+        assert_ne!(vector_key("U4"), node_key(METRE));
     }
 
     /// FR-093 `ConvertScalar` quantity row (FR-093-AC-3): converting a
@@ -1310,8 +1253,8 @@ mod quantities {
             "version": "quire.unit-node/v1",
             "owner": owner_json(),
             "qualified_declaration": ["Example", "kilometre"],
-            "dimension_node_id": node_id(&LENGTH),
-            "target_unit_node_id": node_id(&METRE),
+            "dimension_node_id": node_id(LENGTH),
+            "target_unit_node_id": node_id(METRE),
             "scale": {"numerator": "1000", "denominator": "1"},
             "offset": {"numerator": "0", "denominator": "1"},
         }))
@@ -1323,12 +1266,12 @@ mod quantities {
         );
         let graph = admit_unit_graph(
             [
-                (dimension("Length"), node_key(&LENGTH)),
-                (dimension("Time"), node_key(&TIME)),
+                (dimension("Length"), node_key(LENGTH)),
+                (dimension("Time"), node_key(TIME)),
             ],
             [
-                (unit("metre", &LENGTH), node_key(&METRE)),
-                (unit("second", &TIME), node_key(&SECOND)),
+                (unit("metre", LENGTH), node_key(METRE)),
+                (unit("second", TIME), node_key(SECOND)),
                 (kilometre, km),
             ],
             &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
@@ -1342,7 +1285,7 @@ mod quantities {
         let checked = check_declarations(PackageDeclarations {
             types: TypeEnvironment::default().with_units(UnitTable::declared(&graph)),
             aliases: vec![
-                ("Length".to_owned(), quantity(&METRE)),
+                ("Length".to_owned(), quantity(METRE)),
                 ("Km".to_owned(), km_type),
             ],
             functions: vec![function(
@@ -1403,16 +1346,16 @@ mod quantities {
                 .insert(QuantityUnit::Declared(Box::new(unit.clone())))
                 .expect("a declared unit's id is its key");
         }
-        assert!(table.get(UnitId::declared(node_key(&METRE))).is_some());
+        assert!(table.get(UnitId::declared(node_key(METRE))).is_some());
         let (result, graph) = lower(&[], table, |lowering| {
-            lowering.type_node(&quantity(&METRE), &generated_location())
+            lowering.type_node(&quantity(METRE), &generated_location())
         });
         assert!(matches!(
             result,
             Err(CheckRefusal {
                 cause: CheckCause::InternalFault(fault),
                 ..
-            }) if *fault == KeyFault::UnheldNominal(node_key(&METRE))
+            }) if *fault == KeyFault::UnheldNominal(node_key(METRE))
         ));
         assert_eq!(graph.nodes().count(), 0);
     }

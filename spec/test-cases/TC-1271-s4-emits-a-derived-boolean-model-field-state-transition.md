@@ -31,9 +31,8 @@ Scope: FR-105-AC-13 to FR-105-AC-17.
    operation `set(flag: Boolean)` whose frame modifies all five, with
    `pre P1 { flag or self.on }`, `post Q1 { self.on }`, and one
    postcondition reading each of `armed`, `count` and `seq`. Decode the graph
-   and read it through QSL's I2 reader (IR-1052 landed in IR main f862d15;
-   strict-reader readback waits only on a QSL `quire-contract-model` lock bump
-   from 8b49bd4).
+   and read it through QSL's I2 reader (IR-1052 landed in IR main;
+   strict-reader readback waits only on a QSL `quire-contract-model` lock bump).
 2. Add `post Q2 { self.on = pre(self.on) or flag }` and
    `pre P2 { not flag or self.lit }`. Decode; then swap the source order of
    `Q1` and `Q2` and recompile; then declare `P1` twice with equal bodies under two names.

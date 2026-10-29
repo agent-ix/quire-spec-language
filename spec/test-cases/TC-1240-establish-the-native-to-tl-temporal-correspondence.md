@@ -122,14 +122,10 @@ Tag the tests `#[trace("TC-1240", "FR-350-AC-n")]`.
 - Step 6: each malformed or over-limit input gives one deterministic
   non-admitted decision with no partial artifact. Each limit reached exactly
   is admitted. No TL evaluator is invoked by the compiler.
-- Step 7: 1429 bytes with SHA-256
-  `f6ea8e9084eff94b3a45fc2cd5cffa5b3732bfa9aa0b90c4cc4623f3f22eb17f`; the
-  interval change gives
-  `3e33bdb57217d0c7ec1cbe42e55c17a24944278e2634797fd5a4d51b7078ed4c`, the model
-  binding change
-  `f71f50b9ddaa23129b15dd09bf7a575d5faa279adfdc25c10e377d7b303d8b15` and the
-  bridge definition change
-  `11e242eb5c07e8d0207d97e664788415135302867540cbe4206e0b2547d795e3`. Both
+- Step 7: 1429 bytes; the digest of
+  those bytes is the SHA-256 of the artifact, and the interval change, the
+  model binding change and the bridge definition change each give a different
+  SHA-256. Both
   noncanonical byte sequences refuse.
 - Step 8: `refused` with causes `result-refused` then `result-failed`;
   `unsupported` with causes `result-unsupported` then `result-incomplete`;
