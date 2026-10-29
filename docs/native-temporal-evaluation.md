@@ -188,7 +188,5 @@ carries no clock parameters, because classification takes no trace. The
 `support` and `retained` fields stay public plain data, so a consumer that needs
 the disposition bound to the selection re-classifies from the named package.
 `evaluate_v2` derives its `AuthenticatedBinding` through the same binding
-resolution.
-Its table restates `quire-specification` FR-095's reviewed disposition. The
-emission half of that requirement remains blocked on `quire-contract-ir#63`,
-`quire-contract-ir#64` and actual TL capability.
+resolution. QSL's temporal-artifact emission remains blocked on
+`quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability.
