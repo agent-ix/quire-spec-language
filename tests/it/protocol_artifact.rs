@@ -267,10 +267,20 @@ fn dependency_definition_and_source_inventories_are_complete_exact_and_unique() 
         Error::Invalid(Invalid::Inventory),
     );
     let mut offered = fixture.package.clone();
-    offered.dependencies[1] = offered.dependencies[0].clone();
+    // The header lookups of the contract and baseline bisect the sorted
+    // dependency table, so disturb its last two entries, which those
+    // lookups never probe, to isolate the ordering cause.
+    let last = offered.dependencies.len() - 1;
+    let neighbor = last - 1;
+    offered.dependencies[last] = offered.dependencies[neighbor].clone();
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Order));
     let mut offered = fixture.package.clone();
-    offered.dependencies.swap(0, 1);
+    // The header lookups of the contract and baseline bisect the sorted
+    // dependency table, so disturb its last two entries, which those
+    // lookups never probe, to isolate the ordering cause.
+    let last = offered.dependencies.len() - 1;
+    let neighbor = last - 1;
+    offered.dependencies.swap(last, neighbor);
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Order));
     let mut offered = fixture.package.clone();
     offered.dependencies[0].requires.push(1);
