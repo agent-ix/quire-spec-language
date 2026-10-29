@@ -103,11 +103,10 @@ FR-056-CON-4.
   admission does the same under either digest, never `stale_dependency`.
   `{"a":1,"a":2,"n":1e400}` and `[1e400` refuse `inexact-integer` at `/n` and
   `/0`; `{"a":1,"a":2,"n":1e-400}` is a repeated-name document, malformed at
-  the parse and digested raw by admission; `{"x":[1e-400,1e400]}` names `/x/1`,
+  the parse; `{"x":[1e-400,1e400]}` names `/x/1`,
   ahead of the earlier inexact number. 1 then 400 zeros then `.5` refuses
   `inexact-number`, and 1 then 400 zeros then `e-1` `inexact-integer`.
-  The lone-surrogate document refuses `stale_dependency`/`byte-digest-mismatch`,
-  and `not json` refuses `invalid_model_binding`/`wrong-model-selection`. Each
+  The lone-surrogate document and `not json` refuse `invalid_model_binding`/`malformed-declaration`. Each
   limit case refuses `resource_exhausted`/`intake-limit-exceeded` naming its
   limit. The parse refuses each whole number beyond ±2^53
   `noncanonical_wire`/`inexact-integer` with `document_pointer` naming it
@@ -128,9 +127,8 @@ FR-056-CON-4.
   `noncanonical_wire`/`inexact-number` and the `0.1` document admits. The
   parse refuses each repeated-name
   document at the repeated name's byte offset and the byte-order-mark
-  document at byte 0, and the repeated-name document offered under its
-  last-wins digest refuses `stale_dependency`/`byte-digest-mismatch` with its
-  raw digest.
+  document at byte 0, and the repeated-name document refuses
+  `invalid_model_binding`/`malformed-declaration`.
 - Step 4: the title and displayName runs leave every key, export, ordering and
   linker binding byte-identical; equal titles stay two distinct declarations.
   The id runs change the type's key and its members' keys (FR-154-AC-6): the

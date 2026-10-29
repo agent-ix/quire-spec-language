@@ -551,14 +551,14 @@ Each `resolve_source_package` capability goes one of two ways:
 | Unknown, stale-revision and stale-digest profile refusals (`unknown_profile`, `stale_dependency`) | FR-110, against the `DefinitionLock` catalog. |
 | Conflicting selections of one profile identity (`ambiguous_declaration`/`conflicting-authority`) | FR-110: every selection but the exact `root` row refuses, so the non-matching one refuses `stale_dependency`. |
 | Duplicate selection alias | FR-091-AC-22 (the assembler). |
-| Model selection | I1 (FR-056) and `CheckedGraph::model_selections`. A `sha256:` compiled-model digest refuses `invalid_model_binding` at I1 (FR-056-CON-4). |
+| Model selection | I1 (FR-056) and `CheckedGraph::model_selections`. A `model` declaration carries no digest (FR-056). |
 | An inadmissible parse | Spine `compile` refuses it at S1 (`CompileRefusal::Source`). |
 | Definition closure over a caller-supplied `DefinitionCatalog`: root refusals (`unknown_profile`, `stale_dependency`), dependency edges, `missing_import`, `conflicting-authority`, `definition-cycle` | Moves to `library::bundle` ([FR-111](FR-111-link-a-complete-v1-definition-bundle.md)). |
 | Complete-V1 facet and 176-capability bundle (`CompleteBundle`, `feature-set-mismatch`, `unknown_required_feature`) | Moves to `library::bundle` (FR-111). |
 | `PackageLimits` (definitions, dependency edges, artifact bytes, single-artifact bytes) | Moves to `library::bundle`; every field still applies, to the catalog and to the closure (FR-111). |
 | Resolved-graph identity (`quire.complete.resolved-graph/2` `SemanticDigest`) | Moves to `library::bundle` as the bundle identity (FR-111). |
 | Source authority and selection spans on a refusal (`SourceAuthority`, `PackageRefusal`'s span) | Deleted. A bundle refusal names its root's index (FR-111); a spine refusal names its region (FR-110, ADR-011 §2.3). |
-| Compiled-model resolution (`ModelCatalog`, `ModelArtifact`, `ModelConflict`, the model `PackageError` variants) | Deleted. Model selections resolve only through I1 (FR-056-CON-4: a `sha256:` compiled-model digest has no admitted form). The FR-131 half of its test, a definition root naming a compiled model's identity, moves to FR-111-AC-2 (`unsupported-selection`). |
+| Compiled-model resolution (`ModelCatalog`, `ModelArtifact`, `ModelConflict`, the model `PackageError` variants) | Deleted. Model selections resolve only through I1 (a `model` declaration has no digest form, FR-056). The FR-131 half of its test, a definition root naming a compiled model's identity, moves to FR-111-AC-2 (`unsupported-selection`). |
 
 `library::bundle` is layer-3 `library`, the owner ADR-011 §6.2 gives
 `complete::package`. It keeps QSpec FR-131-AC-1 to AC-3 and FR-339-AC-3

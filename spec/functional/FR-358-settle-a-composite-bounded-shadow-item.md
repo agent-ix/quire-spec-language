@@ -100,7 +100,6 @@ With the request, both entries take a `CompositeParityClaim`:
 | `obligation_kind` | text | The CG `ObligationKind` wire string in the O-09 preimage |
 | `harness_bounds` | list of `ProofBound` | The bounds the harness ran, each keyed by its `DomainKey` (for an enum position, the variants it drew, as `FiniteBound::Variants`): a parameter node id and the child-index path into its type |
 | `limits` | `ScalarLimits` | The accounting limits the exact evaluation runs under, retained from the proving run |
-| `content_identity` | `DigestRecord` | The canonical proof-content identity binding the claim to the proved artifact. It is carried into the claim identity and never recomputed |
 
 `replay_composite_parity` also takes a `FalsifiedParity`:
 
@@ -158,8 +157,8 @@ strengths and its `ShadowCounterexample` row for a falsified shadow harness.
 - Each report has a `terminal_value` for the proof envelope (FR-069).
 - `report.claim()` is a `CompositeIdentity`, the FULL claim on every
   outcome, a refusal included: the obligation identity, `node`, `occurrence`,
-  `operator`, `obligation_kind`, `harness_bounds`, `limits`,
-  `content_identity` and the observation as supplied. A falsified item's
+  `operator`, `obligation_kind`, `harness_bounds`, `limits`
+  and the observation as supplied. A falsified item's
   observation is its operands, `shadow`, `native` and `refinement`; a
   verified item's is its `success_checks` and `refinement`. There is no
   partial shape on any outcome. The consumer's check is
@@ -340,7 +339,7 @@ claim, so it comes before every row, `Disagreed` included.
 - `ScalarAgrees` SHALL widen to parity claims, keeping its name and its
   wire spelling, consistently with FR-357. FR-357's `ScalarClaim` gains a
   `CompositeEquality` arm holding the obligation identity, `node`,
-  `operator`, both admitted operands, `content_identity` and `limits`.
+  `operator`, both admitted operands and `limits`.
   FR-357's `ScalarOutcome` gains an `Equality(EqualityOutcome)` arm for the
   agreed outcome. The cause holds no predicate verdict, and the proof
   envelope's encoded-size bound (FR-069-AC-4) counts it.

@@ -76,7 +76,7 @@ signature's own domain, so no drawn or substituted bound enters the
 identity.
 
 No other member is in the preimage. The bindings, the generated outcome,
-the generated-content identity, the package identity, the function's
+the package identity, the function's
 qualified name, the accounting and stage limits and every source region are
 outside it; they belong to the claim, not to its obligation (Retained claim
 inputs). The function's result type, body and owner are bound through
@@ -115,7 +115,6 @@ derives none of them.
 | The proof bounds and declared domains | Fixed by the form: the empty list | The request's proof bounds and declared domains |
 | The generator identity | The generated-code driver: the QSpec FR-331 `BackendId` of the provider whose `generate` operation produced the artifact it ran | The request's `backend` member (ADR-013 O-19) |
 | The generated outcome | The generated-code driver's observation at `b`: a value, an out-of-range outcome, `Undefined` or `OtherRefusal` | `ValueClaim.generated`, a `ScalarOutcome` |
-| The generated-content identity | The generated-code driver, which authenticates it against the artifact it ran before it hands the claim over | `ValueClaim.content_identity`, a `DigestRecord` |
 
 The proof bounds and declared domains are empty because the obligation is
 checked on the declared signature itself: each argument's `type` binds its
@@ -201,7 +200,7 @@ from the admitted envelope carries the same members.
 `ReplayLimits`. Its `claim()` holds the obligation identity, the
 `package_id`, the `function` target, the occurrence key, the `source`, the
 effective accounting limits, the effective supplied-value ceilings (A, H
-and B), the generated outcome and the generated-content identity, and
+and B) and the generated outcome, and
 nothing else. The other retained inputs
 enter the claim through these members: the source digests, the
 dependencies, the byte provision and the lock's clause-profile rows through
@@ -220,7 +219,7 @@ are equal, whatever their results read.
 - Minting: a `call_site` function selection (FR-121) of a function whose
   declared result is not `Boolean`.
 - Replay: an FR-071 `function` replay request built from the retained
-  inputs, a `ValueClaim { generated, content_identity }` and the
+  inputs, a `ValueClaim { generated }` and the
   `ReplayLimits` (FR-357).
 
 ## Outputs
@@ -304,12 +303,8 @@ are equal, whatever their results read.
   `source` as supplied, its effective accounting limits, its effective
   `limits.supplied` ceilings (each omitted ceiling resolved to its
   published default, so an omitted B and a stated 4096 are one claim), and
-  the `ValueClaim`'s generated outcome and generated-content identity.
-- The generated-content identity is carry-and-bind: QSL SHALL bind it into
-  the claim identity and carry it unchanged, and SHALL NOT recompute,
-  authenticate or refuse it. QSL never sees the generated artifact; the
-  driver that ran it authenticates the identity against it before it hands
-  the claim over.
+  the `ValueClaim`'s generated outcome.
+- A `ValueClaim` holds the generated outcome only. It carries no generated-content digest: the generated-code driver compares the artifact it ran with the one it generated before it hands the claim over (quire-driver FR-009), and QSL, which never sees the artifact, could only echo a digest back.
 - A claim producer SHALL take the obligation identity from
   `FunctionSite.value_parity.obligation_identity` and each other retained
   input from the source the Retained claim inputs table names, and SHALL
@@ -330,10 +325,10 @@ are equal, whatever their results read.
 | FR-484-AC-2 | With the same `node`, the empty argument list encodes to `{"arguments":[],"node":"2222222222222222222222222222222222222222222222222222222222222222","occurrence_key":{"ordinal":0,"role":"declaration"},"subject_kind":"function-value-parity"}` with the SHA-256 of that text, and the first argument of AC-1 alone gives the SHA-256 of its own text; the two parameters of AC-1 declared in the other order (positions swapped) give a different SHA-256, so the declared order is part of the identity. | Test (TC-1252) |
 | FR-484-AC-3 | Changing `node`, one argument's `parameter`, `position` or `type`, or adding or removing an argument, gives a different digest; an argument whose `position` is not its index refuses `PositionOrder`; and the digest of AC-1 is unequal to the operator-parity digest of a preimage with the same `node` and an `obligation_kind`, since no preimage text of one form equals one of the other. | Test (TC-1252) |
 | FR-484-AC-4 | Over a unit declaring `function inc using v(x: Int[0, 9]): Integer pure { x + 1 }`, `function add using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { x + y }` and `function small using v(x: Int[0, 9]): Boolean pure { x < 3 }`, `call_site` returns for `inc` and `add` a `value_parity` whose `preimage.node` is `FunctionSite.function`, whose arguments are `FunctionSite.parameters`' node ids in declared order each with the `semantic_type` the compiled package's parameter node carries, and whose `obligation_identity` equals the SHA-256 of that preimage's canonical text written out independently from the package's node ids; for `small` it returns `value_parity` as `None`. | Test (TC-1252) |
-| FR-484-AC-5 | A value-parity request for `inc` built only from AC-4's retained inputs (the `CallSite` package reference, `inc`'s `QualifiedName`, `FunctionSite.declaration`, `value_parity.obligation_identity`, one `Input` assignment of `x` = 3 keyed by its `FunctionSite` node id, the limits) replays with `ValueClaim { generated: 4, content_identity }` to `Agrees` and with `generated: 5` to `Diverged`, each report's `claim()` holding every retained input unchanged. | Test (TC-1252) |
+| FR-484-AC-5 | A value-parity request for `inc` built only from AC-4's retained inputs (the `CallSite` package reference, `inc`'s `QualifiedName`, `FunctionSite.declaration`, `value_parity.obligation_identity`, one `Input` assignment of `x` = 3 keyed by its `FunctionSite` node id, the limits) replays with `ValueClaim { generated: 4 }` to `Agrees` and with `generated: 5` to `Diverged`, each report's `claim()` holding every retained input unchanged. | Test (TC-1252) |
 | FR-484-AC-6 | AC-5's request with `obligation_identity` replaced by `add`'s identity, by the all-zero identity, or by an identity minted over `inc`'s preimage with `type` changed to 64 `4` digits refuses `ScalarIdentity` (`stale_dependency`/`content-mismatch`) with cause `Obligation` naming the claimed and the recomputed digest, after the occurrence check and before the argument join (an assignment naming `add`'s `y` added still refuses `Obligation`, not `UnknownParameter`), and settles `Inconclusive(ReplayRefused(stale_dependency))` with the claim identity carried. | Test (TC-1252) |
 | FR-484-AC-7 | AC-5's request with the occurrence key replaced by `add`'s `declaration` occurrence, by the `expression` occurrence of `inc`'s `x + 1` application, or by (`inc`'s node, `declaration`, 1) refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming that key and `inc`, before any call and with no charge; with `package_id` stale it refuses `PackageIdMismatch` instead, and for `small` it refuses `NotAValueFunction` instead. | Test (TC-1252) |
-| FR-484-AC-8 | Two `inc` claims that differ only in the generated-content identity carry their own identity unchanged on `Agrees`, `Diverged`, `RefusedInput` and an identity refusal, and their `claim()` values are unequal; a content identity that matches no artifact is not refused. Claims that differ only in the occurrence key are likewise unequal. | Test (TC-1252) |
+| FR-484-AC-8 | Two `inc` claims that differ only in the occurrence key carry their own key unchanged on `Agrees`, `Diverged`, `RefusedInput` and an identity refusal, and their `claim()` values are unequal. (The generated-content identity half of this criterion is removed: a `ValueClaim` holds the generated outcome only.) | Test (TC-1252) |
 | FR-484-AC-9 | Over AC-4's unit with `function grow using v(n: Integer): Integer pure { n + 1 }` added, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each filled by "The input-arm packet" from `call_site` (`clause_node` = `FunctionSite.function`, `occurrence_key` = `FunctionSite.declaration`, `obligation_identity` = `value_parity.obligation_identity`, `profile_selections` = `[]`, `run_limits` = the request's accounting limits, `declared_domains` = `[]`, `backend` = the driver's generator identity, `generator-under-test` in the test, `trace_position` = none, `source` = `Input`), reconstructs through `WitnessEnvelope::reconstruct`; every member round-trips exactly; the request built from the admitted envelope replays `grow` against generated 42 to `Agrees` and `inc` against 5 to `Diverged`. | Test (TC-1252) |
 | FR-484-AC-10 | Over AC-9's unit with `function wide using v(m: Int[0, 2199023255552]): Integer pure { m + 1 }` added (the upper bound is 2^41), the request for `wide` at `m` = 2^40 (1099511627776, a 41-bit value), retained with B 4096, replays against generated 1099511627777 to `Agrees`; the same request with B 40 settles `PreCallIncomplete`, which is `Incomplete(ResourceExhausted)`, with the limit cause naming `supplied.numeric_magnitude_bits` and limit 40, and no outcome compared, and its `claim()` differs from the first only in B; the same request with B omitted has a `claim()` equal to the first; AC-9's `grow` request at `n` = 2^40 with B 40 is admitted (an unbounded `Integer` has no value-in-domain comparison) and replays against 1099511627777 to `Agrees`; and two `wide` claims differing only in A or only in H are unequal. | Test (TC-1252) |
 | FR-484-AC-11 | Over the unit `UC` (TC-1252: the ConfigVersion model, the temporal profile `quire.temporal.infinite-trace/v1` and the protocol profile `quire.protocol.finite-global/v1` selected, the temporal clause `ReachesTwo`, the protocol `Flow` and `inc`), the emitted lock's `profile_selections` holds exactly the two rows whose RFC 8785 texts are `{"definition":{"authority":"agent-ix","identity":"quire.temporal.infinite-trace/v1"},"role":"temporal_profile"}` and `{"definition":{"authority":"agent-ix","identity":"quire.protocol.finite-global/v1"},"role":"protocol_profile"}`; the `WitnessPacket<NoPayload>` for `inc` at `x` = 3, filled by "The input-arm packet", has `profile_selections` `[]`, reconstructs through `WitnessEnvelope::reconstruct`, and the request built from the admitted envelope decodes (no `unknown_profile`/`unsupported-selection` refusal) and replays against generated 4 to `Agrees` and against 5 to `Diverged`, each `claim()` holding the `package_id` of `UC`; the same request for `inc` over AC-4's unit, whose lock `profile_selections` is `[]`, carries the same `profile_selections` `[]`. | Test (TC-1252) |

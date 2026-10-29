@@ -214,10 +214,10 @@ section.
 
 E3 SHALL resolve each `model` declaration only against the domain package
 I1 admitted for it (FR-056; ADR-011 §2.4). A declaration naming no supplied
-package, a stale digest, or a `sha256:` compiled-model digest
-refuses at I1 with FR-056's cause (FR-056-AC-2, FR-056-AC-7, FR-056-CON-4).
+package refuses at I1 with FR-056's cause (FR-056-AC-2, FR-056-AC-7). A
+`digest` clause on a `model` declaration refuses at parse (`invalid_syntax`).
 The emitted `model_selections` are `CheckedGraph::model_selections`, one
-`{identity, sha256-jcs digest}` entry per admitted package.
+`{identity, version}` entry per admitted package.
 
 ### Lock rows
 

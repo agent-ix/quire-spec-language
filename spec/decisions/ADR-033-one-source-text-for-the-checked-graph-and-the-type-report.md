@@ -156,8 +156,8 @@ Measured on main when this was written.
   `tests/support/composed_types`, `tests/support/protocol_artifact` and
   `tests/fixtures/composed-choreography.native`; and in 40 files under
   `artifacts/compiled-protocol-v1` and `artifacts/compiled-protocol-v2`. A
-  `model M = ".." version ".." digest ".."` line is complete-V1 and is not
-  composed; only `profile` and `import` are identity-only. Each surviving
+  `model M = ".."` line (identity only, no digest) is complete-V1 and is not
+  composed; `profile` and `import` are identity-only too. Each surviving
   fixture takes the identity-only profile spelling and a complete-V1 profile
   binding. A test that asserts the composed grammar's own shape
   (`composed_syntax`, `parser_differential`) is deleted with the parser it

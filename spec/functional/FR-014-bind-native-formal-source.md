@@ -40,7 +40,7 @@ its exact byte digest.
 
 The source bridge shall retain the supplied native and formal identities without deriving either identity or revision from the other.
 
-If a forward request differs in either of the native source's two labels ([FR-001](FR-001-read-exact-source.md): authority and identity), display path or byte digest, then the source bridge shall reject the request.
+If a forward request differs in either of the native source's two labels ([FR-001](FR-001-read-exact-source.md): authority and identity), or display path, then the source bridge shall reject the request. No byte digest is compared: formal positions derive from the bound Source's own bytes.
 
 When a valid forward span is mapped, the source bridge shall derive both formal endpoints from the original UTF-8 bytes using one-based lines and Unicode scalar columns.
 

@@ -27,6 +27,11 @@ exact FormalSource and complete authored clause/requirement/execution-point
 correspondence, and caller-configured CheckLimits. No runtime sample participates
 in type inference or proof. The concrete contract and proof abstraction are
 defined in [native-model-checking.md](../../docs/native-model-checking.md).
+The `CheckBindings` source is compared with the linked unit's source by its two
+FR-001 labels and its display path only; no byte digest is compared. Source
+spans and formal positions are derived from the linked unit's own `Source`
+bytes, so a binding source that differs only in bytes cannot misplace a
+position, and the comparison needs no hash.
 
 ## Outputs
 

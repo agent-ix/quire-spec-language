@@ -30,8 +30,11 @@ replay, the request SHALL additionally carry the typed common
 `WitnessEnvelope` and the observed-arm `TemporalCounterexample` payload
 defined by QSpec FR-364. This is a typed request arm, not an untyped
 extension map. The type SHALL make it structurally impossible to obtain a
-recompilation input other than by digest: it SHALL carry a digest-addressed
-byte provision (QSpec FR-323 `byte_provision`, ADR-013 QC-1) and SHALL have
+recompilation input other than by lookup in the request's byte provision.
+The request SHALL carry a byte provision (QSpec FR-323 `byte_provision`,
+ADR-013 QC-1) whose source and definition entries are keyed by their FR-001
+labels (authority and identity) and whose domain package entries are keyed by
+package identity. The type SHALL have
 no field, accessor or constructor argument typed as a filesystem path,
 environment variable name, or search location.
 
@@ -60,14 +63,16 @@ key or request `over` member on that arm.
 - Optionally, the object environment of a replay whose function takes a
   `Reference`: the reference to one `quire.state.snapshot/v1` document
   (FR-106) in the byte provision.
-- The digest-addressed byte provision (QSpec FR-323 `byte_provision`): every
-  source, definition and domain-package input the replay would recompile,
-  each keyed by its declared digest domain and digest.
+- The byte provision (QSpec FR-323 `byte_provision`): every source, definition
+  and domain-package input the replay would recompile. A source or definition
+  entry is keyed by its FR-001 labels (authority, identity); a domain package
+  entry by its package identity. No such entry carries or is keyed by a content
+  digest. (Observed-trace and object-environment snapshot documents remain
+  `sha256-jcs`-keyed, unchanged by this amendment.)
 - For observed temporal replay, the common `WitnessEnvelope` and QSpec
   FR-364 `TemporalCounterexample` observed arm, including its `{document}`
   trace steps, fairness, interval and `trace_position`; its `ReplaySource`
-  SHALL be `Witness`, and every observed document is in the digest-addressed
-  byte provision.
+  SHALL be `Witness`, and every observed document is in the byte provision.
 
 ## Outputs
 
@@ -80,17 +85,19 @@ key or request `over` member on that arm.
 - The request type SHALL carry exactly the ADR-013 O-26 members (the O-25
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
-  package reference (`package_id`, every `RawSourceRef`
-  digest), the replay members (`ReplaySource`, `QualifiedName`, a `function`
+  package reference (`package_id`, every source
+  (authority, identity) pair), the replay members (`ReplaySource`, `QualifiedName`, a `function`
   request's occurrence key, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
   domains, trace position, `backend`), the byte provision, and the limits
   exactly.
 - Every recompilation input SHALL be reachable from the request only by
-  digest lookup in its byte provision; the request type SHALL define no
-  path-typed, environment-variable-typed, or search-location-typed member,
-  and a byte-provision entry naming a digest domain outside the closed
-  FR-201 domain set SHALL refuse at decode.
+  lookup in its byte provision, by source labels or package identity; the
+  request type SHALL define no path-typed, environment-variable-typed, or
+  search-location-typed member, and a byte-provision entry whose key is
+  neither a source label pair, a package identity nor an observed document
+  digest of a closed FR-201 domain SHALL refuse at decode. Two entries under
+  one key refuse `invalid_package`/`conflicting-definition`, naming both.
 - The package reference SHALL carry QSpec FR-323's `sources` and
   `dependencies`: `sources` names the proved package's own source
   references, and `dependencies` one entry per entry of the proved
@@ -98,36 +105,33 @@ key or request `over` member on that arm.
   `{identity, package_id, sources}` (ADR-015 D-4). `identity` is a
   `LibraryName` and `package_id` a `quire.package.semantic/v2`
   `DigestRecord`; an empty identity, or a `package_id` in
-  another domain, refuses at decode. Every source reference of every entry
-  is a `RawSourceRef` the byte provision SHALL cover, as the proved
-  package's are.
+  another domain, refuses at decode. Every source of every entry
+  is a source reference (authority, identity) the byte provision SHALL cover,
+  as the proved package's are.
 - The package reference and each `dependencies` entry SHALL carry an
   optional `refinement_internals` member (QSpec FR-323), a JSON value kept
   exactly as decoded. The decoder SHALL NOT validate it; an absent member is
   the empty list, and its defects surface from the recompile (FR-098,
   FR-147).
 - Each package-reference source entry SHALL carry FR-001's two source labels
-  (authority and identity) and its digest (QSpec STD-150), so the executor
-  (FR-098) recompiles a source under exactly the labels the proving run
-  used (ADR-013 §7 S-4b).
-- The request decoder SHALL verify each byte-provision entry under its declared domain: a
-  raw-byte-addressed domain (source and definition documents) against the
-  SHA-256 of its bytes, and `sha256-jcs` (a domain package document)
-  against the SHA-256 of the document's RFC 8785 bytes, the digest I1 keys
-  its package input by. Any other FR-201 domain refuses as ineligible.
-  A `sha256-jcs` entry is read through intake's one read
-  (`PackageDocument::parse`, FR-260), and a refusal of that read keeps its
-  cause: bytes it cannot read refuse
-  `invalid_model_binding`/`malformed-declaration`; bytes over an intake
-  limit refuse with intake's limit outcome,
-  `resource_exhausted`/`intake-limit-exceeded`, naming the limit and its
-  bound (FR-056); a read or digest that cannot reserve memory refuses
-  `resource_exhausted`/`allocation-failed`, carrying the bytes requested
-  (FR-259 B6); and a document holding a number with no exact RFC 8785
-  spelling refuses `noncanonical_wire` with intake's cause
-  (`inexact-integer` or `inexact-number`) and `document_pointer` (FR-056).
-  **Amended**: `sha256-jcs` used to refuse as ineligible, which
-  left no way for a domain package to reach the executor.
+  (authority and identity) and no digest, so the executor (FR-098) recompiles
+  a source under exactly the labels the proving run used (ADR-013 §7 S-4b).
+  Whether the supplied bytes are the bytes the proving run compiled is decided
+  by one check, the recompiled `package_id` against the request's (FR-098),
+  which no source digest strengthens: a byte edit that cannot change the
+  `package_id` cannot change what the replay decides.
+- The request decoder SHALL NOT hash a source, definition or domain-package
+  entry. It SHALL verify only an entry still keyed by digest (an observed
+  document or an object-environment snapshot, `sha256-jcs`): its bytes SHALL
+  recompute to the key, else `stale_dependency`/`content-mismatch` carrying both
+  digests. A domain package document is read by intake (`PackageDocument::parse`,
+  FR-260) when the executor recompiles, and a refusal of that read keeps its
+  cause (`invalid_model_binding`/`malformed-declaration`,
+  `resource_exhausted`/`intake-limit-exceeded`,
+  `resource_exhausted`/`allocation-failed`, `noncanonical_wire` with intake's
+  cause and `document_pointer`, FR-056, FR-259 B6) as a `ReplayRefusal::Recompile`
+  rather than a decode refusal. **Amended**: the decode-time raw-byte and
+  domain-package digest verification is removed (FR-071-AC-6, AC-11).
 - A present `object_environment` member SHALL be a closed object with exactly
   `identity` and `digest`, in the form FR-106's invocation uses for its `pre`
   and `post` members: the identity labels of a snapshot document and its
@@ -147,21 +151,11 @@ key or request `over` member on that arm.
   or `digest`; `unknown-member` for any other member, naming the first in
   document order; and `invalid-value` for a `digest` that is not in the
   `sha256-jcs` domain or whose hex is not 64 lowercase digits.
-- The byte provision SHALL be complete at construction: every
-  `RawSourceRef` digest the package reference names SHALL have a matching
-  byte-provision entry; a request whose package reference names a digest
+- The byte provision SHALL be complete at construction: every source
+  (authority, identity) the package reference names SHALL have a matching
+  byte-provision entry; a request whose package reference names a source
   with no corresponding entry SHALL refuse at construction rather than
   admitting an incomplete provision for a later consumer to discover.
-- A byte-provision entry's stored bytes SHALL hash, under its declared
-  digest domain's algorithm, to exactly its declared digest; an entry whose
-  bytes do not match their own declared digest SHALL refuse at construction
-  with cause `stale_dependency`/`byte-digest-mismatch` carrying the declared digest and the digest of the raw bytes, and a `sha256-jcs` entry whose document recomputes to another digest SHALL refuse with `stale_dependency`/`content-mismatch` carrying both digests. This is this
-  ticket's own half of "stale package identity": it is a decode-time byte
-  vs. declared-digest integrity check that needs no recompilation. The
-  complementary half — recomputing `package_id` from recompiled source and
-  requiring it to equal the request's declared `package_id` — needs an
-  actual compile and is #243's (TK-01 executor, ADR-013 C-13), not this
-  requirement's.
 - The closed known set of semantic profiles is exactly the one profile
   identifier `quire.profile.v1`; a v2 lock's clause-profile definition
   identities (such as `quire.temporal.infinite-trace/v1` or
@@ -237,15 +231,15 @@ key or request `over` member on that arm.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-071-AC-1 | A function, frame or state-clause request carries exactly its O-26 members; an observed temporal request additionally carries its typed counterexample arm. Construct → encode → decode preserves the applicable package reference, replay members, byte provision and limits. | Test (TC-185) |
-| FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry whose digest domain is outside the closed FR-201 set refuses at decode. | Test (TC-186) |
+| FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry keyed by a digest domain outside the closed FR-201 set refuses at decode, and two entries under one source label pair or package identity refuse `invalid_package`/`conflicting-definition`. | Test (TC-186) |
 | FR-071-AC-3 | No public constructor or decoder of the request accepts a bare `&str` or `String` for function selection, and no implicit conversion from a string to `QualifiedName` exists; an attempted call site passing a string literal in that position fails to compile. | Test (TC-187) |
-| FR-071-AC-5 | A request whose package reference names a `RawSourceRef` digest with no matching byte-provision entry refuses at construction with `missing_import`/`missing-selection`, naming the requested digest record (domain and digest) and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
-| FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch` carrying the declared digest and the raw bytes' own digest (an entry under a raw-byte domain) or `stale_dependency`/`content-mismatch` (a `sha256-jcs` entry, by its recomputed digest); this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
+| FR-071-AC-5 | A request whose package reference names a source (authority, identity) with no matching byte-provision entry refuses at construction with `missing_import`/`missing-selection`, naming the source labels and where the package reference names it; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
+| FR-071-AC-6 | **RETIRED (source digest removed).** A source, definition or domain-package entry carries no digest and is not hashed at decode, so there is no `byte-digest-mismatch` or source-entry `content-mismatch` at construction. A byte edit that changes meaning is refused at execution by the `package_id` comparison (FR-098-AC-3); one that cannot change `package_id` cannot change what the replay decides. A digest-keyed entry (observed document, object-environment snapshot) still refuses `stale_dependency`/`content-mismatch` when its bytes do not recompute to its key. | Test (TC-186), retired for source entries |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-8 | An observed temporal request round trip preserves the shared `WitnessEnvelope<TemporalCounterexample>` and its observed payload, including `ReplaySource::Witness`, clause identity, document digests, fairness, interval and trace position; a missing document digest refuses `missing_import`/`missing-selection` naming its digest record, a mismatched clause identity refuses `stale_dependency`/`content-mismatch`, a trace-position mismatch refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace_position`, `ReplaySource::Input` refuses `invalid_runtime_input`/`invalid-value` at `/replay/source`, a model variant refuses `invalid_runtime_input`/`invalid-value` at `/replay/observed_counterexample/trace`, and a non-state-clause target refuses `invalid_runtime_input`/`unknown-member` at `/replay/observed_counterexample`; each refusal occurs before document admission and returns no partial request. | Test (TC-847) |
-| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
-| FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
-| FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; an entry intake refuses at one of its limits refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096; and an entry holding `18446744073709551616` at `/package/count` refuses `noncanonical_wire`/`inexact-integer` with `document_pointer` `/package/count`, and one holding `0.1000000000000000000001` at `/a~1b/0` refuses `noncanonical_wire`/`inexact-number` with `document_pointer` `/a~1b/0`. | Test (TC-186) |
+| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source (authority, identity) has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
+| FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a digest-keyed byte-provision entry's bytes do not recompute to its key: the byte provision is not read first. | Test (TC-186) |
+| FR-071-AC-11 | **RETIRED at decode (domain-package digest removed).** A domain package document is not hashed at decode, so these causes are no longer decode refusals; intake's read refuses them with the same causes when the executor recompiles (FR-056, FR-259 B6), settling `ReplayRefusal::Recompile`: a repeated member name `invalid_model_binding`/`malformed-declaration`; a limit `resource_exhausted`/`intake-limit-exceeded`; a 4096-byte allocation failure `resource_exhausted`/`allocation-failed`; `18446744073709551616` at `/package/count` `noncanonical_wire`/`inexact-integer`; `0.1000000000000000000001` at `/a~1b/0` `noncanonical_wire`/`inexact-number`, each with its `document_pointer`. | Test (TC-186) |
 | FR-071-AC-12 | A request whose `object_environment` is `{"digest": <sha256-jcs digest>, "identity": {...}}` round-trips it exactly. Each of these refuses at decode with `invalid_runtime_input`, naming the member: a string for `object_environment` (`wrong-value-kind`); an object without `digest` (`missing-member` naming `object_environment.digest`); a third member (`unknown-member`); a `digest` in the `quire.source.bytes/v1` domain, and a `sha256-jcs` digest of 63 hex digits (each `invalid-value`). A request whose `object_environment` digest has no byte-provision entry constructs: the entry is read at admission, not at decode. | Test (TC-1042) |
 | FR-071-AC-13 | A request whose package reference carries `refinement_internals` `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` and whose `dependencies` entry carries its own value round-trips both exactly; a request with the member absent round-trips with it absent; the values `{}`, `null` and `7` decode and round-trip unchanged. | Test (TC-186) |
 | FR-071-AC-14 | A request whose replay target is `function`, one whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and one whose replay target is `state_clause` (`VersionUnchanged`) each round-trip with that one target unchanged. The reader refuses a request with no target `invalid_runtime_input`/`missing-member` at `/replay`, one with `function` and `frame_operation` `invalid_runtime_input`/`invalid-value` at `/replay/frame_operation`, one with `function` and `state_clause` the same at `/replay/state_clause`, and the frame request carrying `arguments` `invalid_runtime_input`/`unknown-member` at `/replay/arguments`, each with a byte-provision entry removed changing none of these refusals (QSpec FR-323-AC-19). | Test (TC-185) |
@@ -255,7 +249,7 @@ key or request `over` member on that arm.
 ## Dependencies
 
 - **Upstream**: [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md);
-  ADR-013 O-26, O-11 (`QualifiedName`), QC-1 (digest-addressed byte
+  ADR-013 O-26, O-11 (`QualifiedName`), QC-1 (byte
   provision); ADR-011 §4 (dependency binding, E4/E9), §2.1 E9; QSpec
   [FR-323](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/interfaces/FR-323-native-runtime-envelope.md)
   (Accepted complete-V1 boundary value contract) AC-5 (`byte_provision`) and
@@ -269,5 +263,7 @@ key or request `over` member on that arm.
   ADR-013 C-13) consumes it to recompile, recompute `package_id` from the
   recompiled source, and select the function — that recompilation-time
   staleness check, and the function call itself, are explicitly out of this
-  requirement's scope; this requirement owns only the decode-time
-  byte-vs-declared-digest integrity check (AC-6).
+  requirement's scope; this requirement owns no source-byte
+  integrity check (AC-6 is retired). Its QSpec FR-323 `byte_provision` and
+  `RawSourceRef` wire must drop the source digest and key source entries by
+  labels before this text is implementable; that amendment is QSpec's.

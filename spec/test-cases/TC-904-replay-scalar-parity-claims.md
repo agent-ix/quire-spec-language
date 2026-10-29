@@ -57,8 +57,7 @@ Claim identity, at both levels:
     an undecodable request, and at the operator level a generated fault and an
     unknown node; compare `claim()` with the claim sent. Compare claims that
     differ in one member.
-13. Replay claims that differ only in the observation digest, on every kind of
-    outcome.
+13. (Retired with FR-357-AC-14: there is no observation digest.)
 14. Recompute the obligation identity of an operator claim over graph-child
     operands (one with a negative range bound), over inline literals, and
     over two inline literals at different positions of one application, and
@@ -105,7 +104,7 @@ the encoded-size bound.
 
 - Step 12: `claim()` equals the claim sent on every outcome; a claim differing
   in any member is not equal; an agreement's claim is the report's.
-- Step 13: each report carries the digest it was sent; the claims differ.
+- Step 13: none; retired.
 - Step 14: the recomputed digests equal the hand-computed ones; the two literals differ.
 - Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both digests.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.

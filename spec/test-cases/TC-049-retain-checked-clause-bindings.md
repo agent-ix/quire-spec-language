@@ -15,7 +15,7 @@ must use the qualified source-derived Rust producer and actual public IR APIs.
 
 ## Test Procedure
 
-Supply complete explicit clause-name/RequirementRef/ClauseId/ExecutionPoint mappings to check. Independently remove, duplicate or add a binding, change native source labels/path/bytes, collide with a model source identity, or supply a mismatched invariant/operation anchor. Include multiple requirements reusing a local ClauseId and an actual duplicate qualified clause identity; verify binding-set defects are located at the exact source-start region and point mismatches at the authored clause span.
+Supply complete explicit clause-name/RequirementRef/ClauseId/ExecutionPoint mappings to check. Independently remove, duplicate or add a binding, change native source labels or path (a bytes-only change under equal labels and path is not a defect: positions come from the linked unit's own bytes), collide with a model source identity, or supply a mismatched invariant/operation anchor. Include multiple requirements reusing a local ClauseId and an actual duplicate qualified clause identity; verify binding-set defects are located at the exact source-start region and point mismatches at the authored clause span.
 
 ## Expected Results
 

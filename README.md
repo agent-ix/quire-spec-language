@@ -32,7 +32,7 @@ model `example/config-version`:
 ```
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
-model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:…";
+model Config = "example/config-version";
 
 invariant ParentOrder using v on Config::ConfigVersion at current {
   present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber

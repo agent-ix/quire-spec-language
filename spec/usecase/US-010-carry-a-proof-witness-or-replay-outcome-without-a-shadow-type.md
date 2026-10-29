@@ -63,17 +63,7 @@ building the executor itself is explicitly out of scope here.
 
 ### US-010-EX-3: A stale package fails closed, not open
 
-"Stale package identity" splits into two checks, each owned by a different
-ticket, and this ticket owns only the first:
-
-- **Given** a replay request whose byte-provision entry's stored bytes do
-  not hash to that entry's own declared digest.
-- **When** this ticket's own decoder constructs the request.
-- **Then** construction refuses with a structured
-  `stale_dependency` cause (`byte-digest-mismatch` for raw bytes,
-  `content-mismatch` for a `sha256-jcs` document), before any recompilation
-  is attempted, and never returns a partial or best-effort request
-  (FR-071-AC-6).
+"Stale package identity" is one check, owned by #243's executor: no source digest is carried or compared at decode (FR-071-AC-6 is retired).
 
 - **Given** a replay request naming a `package_id` that no longer matches
   the source the byte provision recompiles to.

@@ -41,10 +41,9 @@ occurrence key unless a step names another occurrence.
 2. Replay `small(3)`, and `small(7)` with a zero work budget; replay
    `flag(0)` and `flag(1)`; replay `lt` with `b = 3` given before `a = 5`.
 3. Replay against the original `package_id` with `x < 6` as the source;
-   then with a blank line added, supplied under its own digest and under the
-   original digest.
+   then with a blank line added, supplied under the source's labels.
 4. Compile a unit that selects `tests/fixtures/spine-model.semantic-ir.json`
-   by `sha256-jcs`; replay it with and without the document in the byte
+   by its package identity; replay it with and without the document in the byte
    provision.
 5. Replay with the selections `large` and
    `module.small`; no argument, an extra argument naming `flag`'s parameter,
@@ -61,7 +60,7 @@ occurrence key unless a step names another occurrence.
    unit's one source, `dependencies` holds `{test/units, <its
    package_id>, [its one source]}`, and the byte provision carries both.
    Replay `q(3)`. Then replace `test/units`'s bytes with `x > 6`, with the
-   entry's digest updated to the new bytes; then restore them and change
+   entry's bytes replaced; then restore them and change
    only the entry's `package_id`; then add an extra entry no import
    reaches; then swap two entries; then repeat the entry; then add an entry
    whose source has `test/units`'s authority and identity; then remove the
@@ -101,8 +100,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `flag(0)` agrees and `flag(1)` is `inconclusive` with value `true`; `lt`
   is `5 < 3`, `false`, and agrees.
 - Step 3: `PackageIdMismatch` naming both identities; the edit keeps the
-  `package_id`, and the two supplies refuse `IncompleteByteProvision` (`missing_import`/`missing-selection`) and
-  `ByteDigestMismatch`.
+  `package_id` and replays; there is no `ByteDigestMismatch`.
 - Step 4: agreement with the document; stage `intake`, `missing_import`
   without it.
 - Step 5: in order, `UnknownFunction` naming the
