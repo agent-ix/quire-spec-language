@@ -2,7 +2,7 @@
 //! FR-208 persistence-interface binder.
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
 use crate::model::intake::{read_persistence_interface, NodeCtx};

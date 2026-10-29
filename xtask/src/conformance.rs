@@ -79,8 +79,7 @@ fn resolve(input: Option<&OsStr>, workspace: &Path) -> Result<PathBuf> {
         .filter(|value| !value.is_empty())
         .ok_or_else(|| Error::ConformanceInput {
             path: PathBuf::new(),
-            reason: "QSPEC_DIR must point to an available QSpec checkout; no default is used"
-                .to_owned(),
+            reason: "set QSPEC_DIR to a quire-specification checkout".to_owned(),
         })?;
     let path = Path::new(raw);
     let candidate = if path.is_absolute() {
@@ -210,24 +209,17 @@ fn run_with(
     Ok(String::new())
 }
 
-fn configured_qspec() -> Option<OsString> {
-    std::env::var_os("QSPEC_DIR")
-}
-
-/// Validate the caller-provided QSpec checkout before other local CI lanes begin.
+/// Validate the checkout before other local CI lanes begin.
 pub fn check_input(workspace: &Path) -> Result<String> {
-    resolve(configured_qspec().as_deref(), workspace)?;
+    let input = std::env::var_os("QSPEC_DIR");
+    resolve(input.as_deref(), workspace)?;
     Ok(String::new())
 }
 
-/// Validate the caller-provided checkout and run every required exact vector selection.
+/// Validate the checkout and run every required exact QSpec vector selection.
 pub fn run(workspace: &Path) -> Result<String> {
-    run_with(
-        Path::new("cargo"),
-        workspace,
-        configured_qspec().as_deref(),
-        &[],
-    )
+    let input: Option<OsString> = std::env::var_os("QSPEC_DIR");
+    run_with(Path::new("cargo"), workspace, input.as_deref(), &[])
 }
 
 fn run_ci_with(
@@ -255,15 +247,10 @@ fn run_ci_with(
     Ok(String::new())
 }
 
-/// Launch the entire local CI graph with the validated QSpec checkout.
+/// Launch the entire local CI graph with one validated absolute QSpec checkout.
 pub fn run_ci(workspace: &Path) -> Result<String> {
-    run_ci_with(
-        Path::new("make"),
-        workspace,
-        configured_qspec().as_deref(),
-        &[],
-        &[],
-    )
+    let input = std::env::var_os("QSPEC_DIR");
+    run_ci_with(Path::new("make"), workspace, input.as_deref(), &[], &[])
 }
 
 #[cfg(test)]

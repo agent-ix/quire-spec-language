@@ -696,7 +696,14 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
 /// supplies no domain package or a document whose digest differs, at
 /// `intake`; and a `sha256:` model digest at `intake`.
 #[test]
-#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
+#[trace(
+    "TC-442",
+    "TC-136",
+    "FR-027-AC-9",
+    "FR-056-AC-9",
+    "FR-049-AC-10",
+    "FR-049-AC-11"
+)]
 fn a_model_bearing_request_refuses_at_the_owning_stage() {
     let program = crate::support::spine_model::unit();
     let document = crate::support::spine_model::DOCUMENT.to_vec();

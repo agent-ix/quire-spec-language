@@ -528,7 +528,7 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         sources(&package, expected, &mut work)?;
         let registered = definitions(&package, &supplied, &mut work)?;
         super::validate::package(&package, &registered, &mut work)?;
-        let model_schema = super::models::validate(
+        super::models::validate(
             &package,
             expected.models,
             expected.domain_packages,
@@ -545,7 +545,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             package,
             digest,
             artifact: retained_reference(expected.artifact)?,
-            model_schema,
         })
     })();
     report(work, result)

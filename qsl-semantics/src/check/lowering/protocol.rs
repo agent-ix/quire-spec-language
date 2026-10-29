@@ -17,14 +17,14 @@
 //! What this writes is what QSL can prove IR admits. A protocol that names a
 //! construct whose node is not written yet (a role, a channel, a
 //! predicate-joined `parallel`, a post-test `repeat`, a `terminal` member, a
-//! requirement, a compensation, a protocol reference written directly in a
-//! capture, guard, terminal, control or `finish` body) is refused with that construct named
+//! protocol reference written directly in a capture, guard, terminal, control
+//! or `finish` body) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
 //! by `quire.structural-node/v1`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
@@ -204,9 +204,6 @@ impl ProtocolInput<'_> {
             .any(|channel| bounded_carries(&channel.carries))
         {
             unemitted.push(ProtocolConstruct::ChannelCarriesBounded);
-        }
-        if !form.requirements.is_empty() {
-            unemitted.push(ProtocolConstruct::Requirements);
         }
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
@@ -392,7 +389,7 @@ impl ProtocolInput<'_> {
     /// refer to, each by declaration index, ascending and once. Each is a
     /// node the protocol's own key hashes, so it is keyed before this
     /// protocol is (FR-093 `Call` row, FR-464 `protocol_reference`).
-    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>) {
+    pub(crate) fn dependencies(&self) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
         let roots = self.body_roots();
         let mut functions = Vec::new();
         let mut protocols = Vec::new();
@@ -412,7 +409,15 @@ impl ProtocolInput<'_> {
             list.sort_unstable();
             list.dedup();
         }
-        (functions, protocols)
+        let mut requirements: Vec<usize> = self
+            .checked
+            .requirements
+            .iter()
+            .map(|requirement| requirement.temporal)
+            .collect();
+        requirements.sort_unstable();
+        requirements.dedup();
+        (functions, protocols, requirements)
     }
 }
 
@@ -447,6 +452,13 @@ fn bounded_carries(carries: &ValueType) -> bool {
 /// A protocol's channel nodes and queue nodes, each set ascending by digest,
 /// and each channel's node by its name.
 type ChannelNodes = (Vec<NodeKey>, Vec<NodeKey>, Vec<(String, NodeKey)>);
+
+/// The already-keyed nodes a protocol clause includes as set members.
+struct ProtocolClauseMembers<'a> {
+    attempts: &'a [AttemptNodes],
+    compensations: &'a [CompensationNodes],
+    requirements: &'a [NodeKey],
+}
 
 /// The operations of a protocol's `channel` and `queue` nodes.
 struct ChannelOperations {
@@ -516,6 +528,49 @@ impl Lowering<'_> {
     /// node yet, so a reference to one that is not keyed refuses.
     pub(crate) fn begin_protocols(&mut self, count: usize) {
         self.protocol_keys = vec![ProtocolKey::Unkeyed; count];
+        self.protocol_attempts = vec![Vec::new(); count];
+        self.protocol_compensations = vec![Vec::new(); count];
+    }
+
+    /// Record a temporal clause key for the protocols that require it.
+    pub(crate) fn record_temporal_key(&mut self, index: usize, key: NodeKey) {
+        self.temporal_keys.insert(index, key);
+    }
+
+    /// Record that the `index`-th temporal clause's lowering refused.
+    pub(crate) fn record_temporal_refused(&mut self, index: usize) {
+        self.refused_temporals.insert(index);
+    }
+
+    /// The keys of the temporal clauses `protocol` requires, in requirement
+    /// order, or `None` when one of them was refused: that refusal is
+    /// already reported at the clause, so the protocol is left unkeyed and
+    /// adds none of its own. A required clause that is neither keyed nor
+    /// refused is bound to a key no emitted node carries and refuses
+    /// `missing_declaration`/`missing-name` at the protocol that requires it
+    /// (FR-383-AC-17).
+    fn required_temporal_keys(
+        &self,
+        protocol: &ProtocolInput<'_>,
+        location: &Location,
+    ) -> Result<Option<Vec<NodeKey>>, CheckRefusal> {
+        let requirements = protocol.checked.requirements.iter();
+        resolve_temporal_requirement_keys(
+            requirements.map(|requirement| {
+                (
+                    requirement.temporal,
+                    protocol
+                        .form
+                        .requirements
+                        .iter()
+                        .find(|written| written.temporal.span == requirement.span)
+                        .map_or("", |written| written.temporal.name.as_str()),
+                )
+            }),
+            &self.temporal_keys,
+            &self.refused_temporals,
+            location,
+        )
     }
 
     /// Lower and key the `index`-th protocol, recording its one
@@ -574,7 +629,21 @@ impl Lowering<'_> {
             self.set_protocol_key(index, ProtocolKey::AfterClauses);
             return Ok(Vec::new());
         }
-        match self.protocol_node_for(protocol, &law, owner, &[], &[], &location) {
+        let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
+            self.set_protocol_key(index, ProtocolKey::Unkeyed);
+            return Ok(Vec::new());
+        };
+        match self.protocol_node_for(
+            protocol,
+            &law,
+            owner,
+            ProtocolClauseMembers {
+                attempts: &[],
+                compensations: &[],
+                requirements: &requirements,
+            },
+            &location,
+        ) {
             Ok(key) => {
                 self.set_protocol_key(index, ProtocolKey::Keyed(key));
                 Ok(Vec::new())
@@ -601,15 +670,20 @@ impl Lowering<'_> {
         }
     }
 
-    /// The nodes of the protocols that hold an `attempt`, written once the
-    /// state clauses and operation anchors they name are (`attempts[i]` is
-    /// the `i`-th protocol's). Each is refused or keyed as the rest are.
+    /// Retain attempt and compensation nodes and write clauses that hold an
+    /// `attempt` once their state clauses and operation anchors are keyed.
+    /// The mixed dependency order has already keyed temporal requirements.
     pub(crate) fn protocol_nodes_with_attempts(
         &mut self,
         protocols: &[ProtocolInput<'_>],
         attempts: &[Vec<AttemptNodes>],
         compensations: &[Vec<CompensationNodes>],
     ) -> Result<(), CheckRefusal> {
+        for index in 0..protocols.len() {
+            self.protocol_attempts[index] = attempts.get(index).cloned().unwrap_or_default();
+            self.protocol_compensations[index] =
+                compensations.get(index).cloned().unwrap_or_default();
+        }
         for (index, protocol) in protocols.iter().enumerate() {
             if !matches!(
                 self.protocol_keys.get(index),
@@ -624,12 +698,19 @@ impl Lowering<'_> {
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
             let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
             let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
+            let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
+                self.protocol_keys[index] = ProtocolKey::Unkeyed;
+                continue;
+            };
             let key = self.protocol_node_for(
                 protocol,
                 &law,
                 owner,
-                nodes,
-                compensation_nodes,
+                ProtocolClauseMembers {
+                    attempts: nodes,
+                    compensations: compensation_nodes,
+                    requirements: &requirements,
+                },
                 &location,
             )?;
             self.protocol_keys[index] = ProtocolKey::Keyed(key);
@@ -781,15 +862,13 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
         owner: EffectiveId,
-        attempts: &[AttemptNodes],
-        compensation_nodes: &[CompensationNodes],
+        members: ProtocolClauseMembers<'_>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let previous = self
             .active_protocol
             .replace(protocol.form.name.name.clone());
-        let result =
-            self.protocol_node(protocol, law, owner, attempts, compensation_nodes, location);
+        let result = self.protocol_node(protocol, law, owner, members, location);
         self.active_protocol = previous;
         result
     }
@@ -801,8 +880,7 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         law: &OperationLaw,
         owner: EffectiveId,
-        attempts: &[AttemptNodes],
-        compensation_nodes: &[CompensationNodes],
+        members: ProtocolClauseMembers<'_>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
@@ -855,7 +933,7 @@ impl Lowering<'_> {
                 law,
                 roles: &roles_by_name,
                 channels: &named_channels,
-                attempts,
+                attempts: members.attempts,
                 clause_binders: &readable,
                 boolean,
             },
@@ -868,7 +946,7 @@ impl Lowering<'_> {
             &run.nodes,
             &readable,
             boolean,
-            compensation_nodes,
+            members.compensations,
         )?;
         let named_roles: BTreeMap<String, NodeKey> = roles_by_name.iter().cloned().collect();
         let finish = self.finish_node(protocol, &operation("finish")?, &run.readable, boolean)?;
@@ -929,7 +1007,12 @@ impl Lowering<'_> {
                         "queues",
                         BindingValue::Group(GroupTerm::references(queues)),
                     ),
-                    MemberTerm::binding("requirements", empty_group()),
+                    MemberTerm::binding(
+                        "requirements",
+                        BindingValue::Group(GroupTerm::references(sorted(
+                            members.requirements.iter().copied(),
+                        ))),
+                    ),
                     MemberTerm::binding(
                         "compensations",
                         BindingValue::Group(GroupTerm::references(compensations)),
@@ -1956,6 +2039,24 @@ impl Lowering<'_> {
     }
 }
 
+fn resolve_temporal_requirement_keys<'n>(
+    requirements: impl IntoIterator<Item = (usize, &'n str)>,
+    temporal_keys: &BTreeMap<usize, NodeKey>,
+    refused: &BTreeSet<usize>,
+    location: &Location,
+) -> Result<Option<Vec<NodeKey>>, CheckRefusal> {
+    let mut keys = Vec::new();
+    let mut any_refused = false;
+    for (requirement, name) in requirements {
+        match temporal_keys.get(&requirement) {
+            Some(key) => keys.push(*key),
+            None if refused.contains(&requirement) => any_refused = true,
+            None => return Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
+        }
+    }
+    Ok((!any_refused).then_some(keys))
+}
+
 impl Lowering<'_> {
     /// QSpec FR-375's class catalog of a refinement, lowered to node keys:
     /// an operation class names its owner's model node, a protocol class
@@ -2124,4 +2225,43 @@ pub(super) enum ProtocolKey {
     /// The profile is selected and the protocol names this construct, the
     /// first of those whose node is not written yet.
     NotEmitted(ProtocolConstruct),
+}
+
+#[cfg(test)]
+mod requirement_key_tests {
+    use super::*;
+
+    fn location() -> Location {
+        Location::root(Origin::Expression)
+    }
+
+    /// FR-383-AC-17: a required clause no emitted node carries refuses
+    /// `missing-name` naming the clause, never an internal fault.
+    #[ix_trace_rs::trace("FR-383-AC-17", "TC-1063")]
+    #[test]
+    fn a_required_temporal_without_a_key_is_missing_name() {
+        let Err(refusal) = resolve_temporal_requirement_keys(
+            [(7, "Due")],
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &location(),
+        ) else {
+            panic!("an unkeyed, unrefused required clause refuses");
+        };
+        assert_eq!(refusal.cause, CheckCause::MissingName("Due".to_owned()));
+    }
+
+    /// A required clause whose own lowering refused leaves the protocol
+    /// unkeyed without a second refusal.
+    #[ix_trace_rs::trace("FR-383-AC-17", "TC-1063")]
+    #[test]
+    fn a_refused_required_temporal_adds_no_refusal() {
+        let keys = BTreeMap::from([(1, NodeKey::from_digest([1; 32]))]);
+        let refused = BTreeSet::from([7]);
+        let resolved =
+            resolve_temporal_requirement_keys([(1, "A"), (7, "Due")], &keys, &refused, &location());
+        assert!(matches!(resolved, Ok(None)), "{resolved:?}");
+        let resolved = resolve_temporal_requirement_keys([(1, "A")], &keys, &refused, &location());
+        assert!(matches!(resolved, Ok(Some(found)) if found == [NodeKey::from_digest([1; 32])]));
+    }
 }

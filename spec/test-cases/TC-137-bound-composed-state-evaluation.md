@@ -43,3 +43,10 @@ allows the fixture to complete work beyond that default. Each charged counter
 and charge point has an independent oracle; omitting one charge makes its
 corresponding mutation control fail. TC-1073 separately proves accumulation
 across sequential protocol-slot calls on one shared meter.
+
+The protocol-slot boundary trace is
+`qsl-eval/tests/it/protocol_slots.rs::protocol_slot_calls_share_meter_usage_and_obey_work_boundaries`.
+It measures a successful result, completes at the exact work-unit limit,
+refuses one unit short without charging the denied unit, refuses at zero, and
+repeats the immutable call with a fresh meter to verify the same result and
+usage. Its trace tags include TC-137, TC-1073, FR-049-AC-7/8 and NFR-009-AC-1/2/4.

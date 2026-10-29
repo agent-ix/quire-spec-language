@@ -3291,7 +3291,7 @@ fn a_function_declaration_is_outside_state_queries() {
 
 /// FR-110-AC-8: the value layer admits what it adds to state core, and the
 /// header layers are recorded in the assembled package, ascending.
-#[trace("TC-490", "FR-110-AC-7")]
+#[trace("TC-490", "TC-136", "FR-110-AC-7", "FR-049-AC-10")]
 #[test]
 fn the_value_layer_admits_functions_and_the_package_records_its_layers() {
     let package = assemble(
