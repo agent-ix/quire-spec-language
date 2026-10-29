@@ -1013,7 +1013,7 @@ fn emitter_authored_units_keep_format_identity() {
             &source_literal(fixture, "ORDERED_COMPARISON"),
         )],
     ));
-    let model = include_str!("../fixtures/spine-model.native");
+    let model = crate::support::spine_model::unit();
     let field = source_literal(fixture, "FIELD_ACCESS");
     let equality = source_literal(fixture, "CONFORMING_EQUALITY");
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
@@ -1160,32 +1160,31 @@ fn assembler_checked_owner_and_declaration_variants_keep_format_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
-    for (path, bytes) in [
+    use crate::support::package_vector_setup::{cases, vectors};
+    let model = vectors::model();
+    let mut fixtures: Vec<(String, Vec<u8>)> = vec![
         (
-            "composed-choreography.native",
-            include_bytes!("../fixtures/composed-choreography.native").as_slice(),
+            "composed-choreography.native".to_owned(),
+            include_bytes!("../fixtures/composed-choreography.native").to_vec(),
         ),
         (
-            "parent.native",
-            include_bytes!("../fixtures/parent.native").as_slice(),
+            "parent.native".to_owned(),
+            include_bytes!("../fixtures/parent.native").to_vec(),
         ),
         (
-            "native-package/controls.native",
-            include_bytes!("../fixtures/native-package/controls.native").as_slice(),
+            "native-package/header.native".to_owned(),
+            include_bytes!("../fixtures/native-package/header.native").to_vec(),
         ),
+    ];
+    // The legacy native-package vectors, composed over their model.
+    fixtures.extend(cases(&model).map(|vector| {
         (
-            "native-package/header.native",
-            include_bytes!("../fixtures/native-package/header.native").as_slice(),
-        ),
-        (
-            "native-package/minimal.native",
-            include_bytes!("../fixtures/native-package/minimal.native").as_slice(),
-        ),
-        (
-            "native-package/multiple.native",
-            include_bytes!("../fixtures/native-package/multiple.native").as_slice(),
-        ),
-    ] {
+            format!("native-package/{}.native", vector.name),
+            vector.source.into_bytes(),
+        )
+    }));
+    for (path, bytes) in &fixtures {
+        let path = path.as_str();
         let refusal = emitted(
             SourceIdentity::new("test", path, "fixture", "1"),
             path,
@@ -2115,6 +2114,7 @@ fn wide_integer_fixture_units_keep_checked_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
+    let spine_model = crate::support::spine_model::unit();
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     for (name, bytes) in [
@@ -2126,10 +2126,7 @@ fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
             "spine-run.native",
             include_bytes!("../fixtures/spine-run.native").as_slice(),
         ),
-        (
-            "spine-model.native",
-            include_bytes!("../fixtures/spine-model.native").as_slice(),
-        ),
+        ("spine-model.native", spine_model.as_bytes()),
         (
             "value-format.native",
             include_bytes!("../fixtures/value-format.native").as_slice(),

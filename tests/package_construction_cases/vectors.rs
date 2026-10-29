@@ -37,21 +37,21 @@ const MODEL_SUFFIX: &str = concat!(
     "}\n"
 );
 
-pub(super) const CLAUSE: &str = "invariant Rule on M::Node at current { true }";
-pub(super) const SECOND_CLAUSE: &str = "invariant Second on M::Node at current { false }";
-pub(super) const OWNER: &str =
+pub(crate) const CLAUSE: &str = "invariant Rule on M::Node at current { true }";
+pub(crate) const SECOND_CLAUSE: &str = "invariant Second on M::Node at current { false }";
+pub(crate) const OWNER: &str =
     r#"{"package":"example/package-model","requirement":"PackageModel","revision":1}"#;
 const AUTHOR: &str = r#"{"package":"example/package-rules","requirement":"Rule","revision":2}"#;
 const SEMANTICS: &str = r#"{"language":"ix:native","edition":"0-draft","syntax_profile":"state-finite/0-draft","model_profile":"native-state-model/1","checking_contract":"native-checked-clauses/1"}"#;
 
-pub(super) fn model() -> NativeModel {
+pub(crate) fn model() -> NativeModel {
     let input = format!("{MODEL_PREFIX}{MODEL_NODE}{MODEL_SUFFIX}");
     native_rule_model::from_text(&input, "package-model.json", "1")
         .expect("minimal source-derived model setup")
         .model()
 }
 
-pub(super) fn source_prefix(model: &NativeModel) -> String {
+pub(crate) fn source_prefix(model: &NativeModel) -> String {
     format!(
         "{}model M = \"example/package-model\" version \"1\" digest \"{}\";\n",
         super::HEADER,
@@ -59,21 +59,21 @@ pub(super) fn source_prefix(model: &NativeModel) -> String {
     )
 }
 
-pub(super) fn source(model: &NativeModel) -> String {
+pub(crate) fn source(model: &NativeModel) -> String {
     format!("{}{CLAUSE}\n", source_prefix(model))
 }
 
-pub(super) fn source_multiple(model: &NativeModel) -> String {
+pub(crate) fn source_multiple(model: &NativeModel) -> String {
     format!("{}{CLAUSE}\n{SECOND_CLAUSE}\n", source_prefix(model))
 }
 
-pub(super) struct Expected {
+pub(crate) struct Expected {
     pub canonical: String,
     pub artifact: String,
     pub digest: String,
 }
 
-pub(super) fn expected(
+pub(crate) fn expected(
     model: &NativeModel,
     identity_json: &str,
     revision_json: &str,
@@ -82,7 +82,7 @@ pub(super) fn expected(
     expected_inner(model, identity_json, revision_json, formal_revision, false)
 }
 
-pub(super) fn expected_multiple(
+pub(crate) fn expected_multiple(
     model: &NativeModel,
     identity_json: &str,
     revision_json: &str,

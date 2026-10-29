@@ -127,13 +127,9 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
     )
     .unwrap();
     let v1 = old.admit(ModelLimits::default()).unwrap();
-    let frozen: Value = serde_json::from_slice(include_bytes!(
-        "../fixtures/native-package/minimal.package.json"
-    ))
-    .unwrap();
     assert_eq!(
         v1.artifact_bytes(),
-        frozen["models"][0]["artifact"].as_str().unwrap().as_bytes()
+        crate::support::historical_model_artifact()
     );
     assert_eq!(direct.artifact_bytes(), v1.artifact_bytes());
     let selected = read(source(text), FORMAT_V2, ModelSourceLimits::default()).unwrap();
