@@ -22,13 +22,13 @@ fn schema() -> JSONSchema {
 fn structural_schema_accepts_fixed_and_real_producer_manifests() {
     let schema = schema();
     let models = [vectors::model()];
-    for vector in package_vector_setup::cases() {
+    for vector in package_vector_setup::cases(&models[0]) {
         let package = NativePackage::new(
             package_vector_setup::checked(&vector, &models),
             PackageLimits::default(),
         )
         .unwrap();
-        for bytes in [vector.artifact, package.bytes()] {
+        for bytes in [&vector.artifact[..], package.bytes()] {
             let value: Value = serde_json::from_slice(bytes).unwrap();
             assert!(
                 schema.is_valid(&value),
@@ -86,10 +86,8 @@ fn structural_schema_accepts_fixed_and_real_producer_manifests() {
 #[trace("TC-083", "FR-020-AC-2")]
 fn structural_schema_rejects_missing_unknown_and_wrong_type_members() {
     let schema = schema();
-    let value: Value = serde_json::from_slice(include_bytes!(
-        "../fixtures/native-package/multiple.package.json"
-    ))
-    .unwrap();
+    let [_, _, multiple] = package_vector_setup::cases(&vectors::model());
+    let value: Value = serde_json::from_slice(&multiple.artifact).unwrap();
     assert!(schema.is_valid(&value), "positive structural precondition");
     assert_closed_records(&schema, &value);
     for (path, replacement) in [

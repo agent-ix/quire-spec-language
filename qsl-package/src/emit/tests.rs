@@ -2400,9 +2400,11 @@ fn spine_compile_package() -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
+#[path = "../../../tests/support/spine_model.rs"]
+mod spine_model;
+
 /// The domain package document `spine-model.native`'s `model M` selects.
-const SPINE_MODEL_DOCUMENT: &[u8] =
-    include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
+const SPINE_MODEL_DOCUMENT: &[u8] = spine_model::DOCUMENT;
 
 /// `unit` run S1, S2, I1 (against `packages`) and the assembler, as spine
 /// `compile` runs it.
@@ -2443,8 +2445,7 @@ const CONFORMING_EQUALITY: &str =
 /// The spine-model fixture with `removed` taken out, each of which the
 /// fixture holds.
 fn spine_model_without(removed: &[&str]) -> String {
-    const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-model.native");
-    removed.iter().fold(FIXTURE.to_owned(), |unit, line| {
+    removed.iter().fold(spine_model::unit(), |unit, line| {
         assert!(unit.contains(line), "the fixture holds {line:?}");
         unit.replace(line, "")
     })
@@ -2726,8 +2727,8 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
 #[trace("TC-442", "FR-056-AC-9")]
 #[test]
 fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
-    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
-    let unknown = UNIT.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
+    let fixture = spine_model::unit();
+    let unknown = fixture.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -2763,13 +2764,13 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
     assert_eq!(&unknown[error.span.start..error.span.end], "M::Nope");
 
     let missing = qsl_semantics::model::intake::admit_unit(
-        &unit_selections(UNIT),
+        &unit_selections(&fixture),
         &BTreeMap::new(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect_err("no domain package is supplied");
     assert_eq!(missing.cause.code(), qsl_foundation::Code::MissingImport);
-    assert!(UNIT[missing.span.start..missing.span.end].starts_with("model M = "));
+    assert!(fixture[missing.span.start..missing.span.end].starts_with("model M = "));
 }
 
 /// `unit`'s S2 selections.
@@ -2794,11 +2795,11 @@ fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection>
 #[trace("TC-442", "FR-056-AC-9")]
 #[test]
 fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
-    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let fixture = spine_model::unit();
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
-        UNIT.as_bytes(),
+        fixture.as_bytes(),
         qsl_cst::Limits::default(),
     )
     .unwrap();
@@ -2818,7 +2819,7 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
         }
     );
     assert_eq!(first.cause.code(), qsl_foundation::Code::MissingImport);
-    assert!(UNIT[first.span.start..first.span.end].starts_with("model M = "));
+    assert!(fixture[first.span.start..first.span.end].starts_with("model M = "));
 }
 
 /// FR-056-AC-9 (TC-442 step 3): a refusal after admission and a
@@ -2830,8 +2831,8 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
 #[trace("TC-442", "FR-056-AC-9")]
 #[test]
 fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
-    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
-    let selections = unit_selections(UNIT);
+    let fixture = spine_model::unit();
+    let selections = unit_selections(&fixture);
     let limited = qsl_semantics::model::intake::admit_unit(
         &selections,
         &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
@@ -2855,7 +2856,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         qsl_foundation::Code::ResourceExhausted
     );
     assert_eq!(limited.cause.cause(), Some("insufficient-next-charge"));
-    assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
+    assert!(fixture[limited.span.start..limited.span.end].starts_with("model M = "));
 
     let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
     for node in cyclic["types"].as_array_mut().unwrap() {
@@ -2868,10 +2869,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
-    let text = UNIT.replace(
-        &UNIT[UNIT.find("sha256-jcs:").unwrap()..][..75],
-        &format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
-    );
+    let text = spine_model::unit_selecting(digest);
     let refused = qsl_semantics::model::intake::admit_unit(
         &unit_selections(&text),
         &packages,

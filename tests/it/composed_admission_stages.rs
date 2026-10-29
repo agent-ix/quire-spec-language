@@ -884,14 +884,14 @@ fn read_relabelled(
 #[trace("TC-115", "FR-036-AC-8")]
 fn historical_package_identities_and_atomic_refusals_are_unchanged() {
     let models = [historical_model()];
-    for vector in package_vector_setup::cases() {
+    for vector in package_vector_setup::cases(&models[0]) {
         let checked = package_vector_setup::checked(&vector, &models);
         let bindings = checked.bindings().clone();
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact, "{}", vector.name);
         assert_eq!(
             package.canonical_identity().to_string(),
-            vector.digest.trim_end(),
+            vector.digest.as_str(),
             "{}",
             vector.name
         );
@@ -915,7 +915,7 @@ fn historical_package_identities_and_atomic_refusals_are_unchanged() {
 #[trace("TC-115", "FR-036-AC-8")]
 fn a_changed_profile_label_cannot_admit_composed_input_into_the_historical_reader() {
     let models = [historical_model()];
-    let vector = &package_vector_setup::cases()[0];
+    let vector = &package_vector_setup::cases(&models[0])[0];
     let checked = package_vector_setup::checked(vector, &models);
     let bindings = checked.bindings().clone();
     let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
@@ -989,7 +989,7 @@ fn a_changed_profile_label_cannot_admit_composed_input_into_the_historical_reade
     assert_eq!(package.bytes(), vector.artifact);
     assert_eq!(
         package.canonical_identity().to_string(),
-        vector.digest.trim_end()
+        vector.digest.as_str()
     );
 }
 

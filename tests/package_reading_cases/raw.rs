@@ -11,11 +11,11 @@ use sha2::{Digest, Sha256};
 #[trace("TC-083", "FR-020-AC-2")]
 fn wire_inventory_cardinality_is_closed_before_rebinding() {
     let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases();
+    let [vector, _, _] = package_vector_setup::cases(&models[0]);
     let bindings = package_vector_setup::checked(&vector, &models)
         .bindings()
         .clone();
-    let original: Value = serde_json::from_slice(vector.artifact).unwrap();
+    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
     for (field, maximum) in [("models", 64), ("clauses", 256)] {
         for count in [maximum, maximum + 1] {
             let mut changed = original.clone();
@@ -42,11 +42,11 @@ fn wire_inventory_cardinality_is_closed_before_rebinding() {
 #[trace("TC-091", "FR-021-AC-5")]
 fn raw_ir_and_jcs_digests_cannot_replace_native_static_identity() {
     let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases();
+    let [vector, _, _] = package_vector_setup::cases(&models[0]);
     let bindings = package_vector_setup::checked(&vector, &models)
         .bindings()
         .clone();
-    let original: Value = serde_json::from_slice(vector.artifact).unwrap();
+    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
     let declaration = models[0]
         .environment()
         .canonical_declaration(ir::CanonicalProfile::V1)
@@ -54,11 +54,11 @@ fn raw_ir_and_jcs_digests_cannot_replace_native_static_identity() {
     // This independent JCS document contains only one integer and one ASCII key,
     // so its canonical bytes are fixed without another canonicalizer.
     for digest in [
-        format!("{:x}", Sha256::digest(vector.artifact)),
+        format!("{:x}", Sha256::digest(&vector.artifact)),
         declaration.digest().to_string(),
         format!("{:x}", Sha256::digest(br#"{"a":1}"#)),
     ] {
-        assert_ne!(digest, vector.digest.trim_end());
+        assert_ne!(digest, vector.digest.as_str());
         let mut changed = original.clone();
         changed["canonical_identity"]["digest"] = json!(digest);
         let error = read(&changed, bindings.clone(), &models).unwrap_err();
@@ -156,7 +156,7 @@ fn every_closed_record_rejects_raw_duplicate_members_before_typed_decoding() {
 #[trace("TC-083", "TC-082", "FR-020-AC-2", "FR-020-AC-10")]
 fn maximum_revision_survives_and_fraction_exponent_or_overflow_spelling_refuses() {
     let models = [model()];
-    let [mut vector, _, _] = package_vector_setup::cases();
+    let [mut vector, _, _] = package_vector_setup::cases(&models[0]);
     vector.formal_revision = 9_007_199_254_740_992;
     let package = NativePackage::new(
         package_vector_setup::checked(&vector, &models),
