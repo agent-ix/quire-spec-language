@@ -497,8 +497,7 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
 #[test]
 fn braking2_restored_nodes_match_qspec_vectors() {
     let qspec = qspec_directory();
-    let path = std::path::PathBuf::from(qspec)
-        .join("proposals/checked-package-v2/hybrid-node-vectors.json");
+    let path = qspec.join("proposals/checked-package-v2/hybrid-node-vectors.json");
     let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("QSpec vectors"))
         .expect("QSpec vector JSON");
     let expected = fixture["restored_nodes"]
