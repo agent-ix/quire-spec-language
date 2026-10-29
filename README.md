@@ -259,6 +259,25 @@ prints the checked package as `quire.checked-package/v2` JSON:
 target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
 ```
 
+**Emit package bytes from a source file.** `compile` needs a request file with
+source digests. For a downstream reader that wants the bytes of one `1-draft`
+source, the `emit_checked_v2` example takes the files directly and calls the
+same producer (`qsl_replay::compile_package`), so the bytes follow the
+producer and nothing is frozen. Pass each domain package document the
+source's `model` declarations select with `--model`, and each imported library
+as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
+A refused source writes nothing, prints the diagnostic on stderr and exits
+nonzero (the refusing code's category: 20 refusal, 22 incomplete).
+
+```sh
+cargo run --locked --example emit_checked_v2 -- \
+  --model tests/fixtures/spine-model.semantic-ir.json \
+  tests/fixtures/spine-model.native > package.json
+```
+
+The package is read back with the same domain documents as evidence
+(`CheckedPackageEvidence::insert_domain_package_document`).
+
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
 and incomplete runs. `run` can also evaluate one pure function;
