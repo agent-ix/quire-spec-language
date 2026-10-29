@@ -234,12 +234,7 @@ two failure types stopped it: `LimitExceeded`'s own
 the order a `TransitionSystem` lists them in. Breadth-first exploration
 keeps parent states in FIFO discovery order within a level. Each parent's
 successors are visited in ascending unsigned-lexicographic order of the
-RFC 8785 JCS UTF-8 bytes of their transition identity,
-`{"type":"transition","operation":"<qualified-name>","receiver":<encoded>|null,"arguments":[<encoded>, ...]}`
-(`receiver` the operation's receiver reference, `null` for an operation with
-no receiver; `arguments` the declared parameters in declaration order, the
-receiver not among them). Written as bytes the keys are in JCS order:
-`arguments`, `operation`, `receiver`, `type`.
+RFC 8785 JCS UTF-8 bytes of the QSpec FR-181 transition identity.
 FR-181 does not order two successors with equal transition identities and
 different post-states. QSL orders them by the post-state's state-key bytes,
 ascending. Initial states are admitted in ascending state-key byte order,
@@ -254,15 +249,10 @@ initial state is in the frontier. Exploring a system with no initial state
 returns `Exhaustive` with zero states, transitions and depth: its reachable
 set is empty and fully visited.
 
-**State key.** The state key is FR-181's
-`{"type":"simulation-state","semantic":…,"control":…,"queues":…,"roles":…,"observations":…,"bounds":…}`
-typed canonical form, serialized with RFC 8785 JCS through
-`quire-canonical`, ADR-013 §2's one RFC 8785 encoder. Two states are the
-same state exactly when their full key bytes are equal. The state-key digest
-is SHA-256 over those bytes, with no domain label in the preimage, held as
-a `DigestRecord` (`qsl_foundation::digest`) under the
-`quire.simulation.state-key/v1` domain (`DigestDomain::SimulationStateKeyV1`,
-QSpec FR-201). Coalescing compares full key bytes, never digests.
+**State key.** QSL uses the typed canonical form and digest domain specified
+by QSpec FR-181 and FR-201. QSL coalesces states by equality of the complete
+canonical key bytes; it uses the digest only in traces and frontiers, as
+FR-181 specifies.
 
 **Traces and frontiers record digests.** Following FR-181, every state a
 trace or frontier names is its state-key digest, not its key bytes:
@@ -271,25 +261,15 @@ trace or frontier names is its state-key digest, not its key bytes:
 `KeyMismatch.{expected, actual}` are `DigestRecord`s. Replay recomputes each
 candidate state's digest and compares it with the recorded digest.
 
-**Sampler.** Sampling runs `quire.simulation.sampler/v1`, and only that
-generator. `sample_request` first compares the supplied `DefinitionRef`'s
-identity with `quire.simulation.sampler/v1`, and refuses any other with
-`NotSimulated::GeneratorMismatch`, before any draw. A step of
-`sample_request` makes one uniform choice over its enabled successors, with
-choice index `c = 0` (QSpec FR-181).
-Draw `d` of choice `c` at trace `t`, step `s` under seed `k` is SHA-256 of
-the JCS object `{"choice":"c","draw":"d","seed":"k","step":"s","trace":"t"}`,
-each member a decimal string, encoded through `quire-canonical`; this is
-the preimage QSpec FR-181 states, and QSpec TC-210's vector is computed
-under it. `s` is the
-0-based index of the transition within the trace: it advances once per
-transition taken, whether or not that step computed a digest. With `n`
-successors in canonical order and `v` the digest read as a big-endian
-`u256`, `v` is accepted when `v < n * floor(2^256 / n)` and selects index
-`v mod n`; a rejected `v` increments `d`. `d` restarts at 0 at every choice.
-`n = 1` selects index 0 with no digest. `n = 0` ends the trace with
-`StopReason::NoSuccessors` and no draw. Reaching `max_steps` ends it with
-`StopReason::StepLimit`. FR-181 names one initial state; when a
+**Sampler.** Sampling uses QSpec's `quire.simulation.sampler/v1` definition
+and the sampling contract in QSpec FR-181; that contract owns the draw
+preimage and selection algorithm. `sample_request` first compares the
+supplied `DefinitionRef`'s identity with `quire.simulation.sampler/v1`, and
+refuses any other with `NotSimulated::GeneratorMismatch`, before any draw.
+QSL advances its trace step once per transition taken, including a
+single-successor step that requires no draw. A system with no enabled
+successor ends the trace with `StopReason::NoSuccessors`; reaching
+`max_steps` ends it with `StopReason::StepLimit`. When a
 `TransitionSystem` has `m > 1` initial states after coalescing equal keys,
 QSL starts trace `t` from the initial state at index `t mod m` in canonical
 order, with no draw. This is QSL's choice.
@@ -360,7 +340,7 @@ repository (this repository's TC-210 is a witness-envelope case).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-101-AC-1 | Exploration visits each parent's successors in ascending JCS byte order of their transition identity, whatever order the `TransitionSystem` lists them in and whatever their post-states' keys: a state listing `z` before `a` is expanded `a` first, and `step(10)` is visited before `step(9)`, because `{"arguments":[{"type":"integer","value":"10"}],…}` precedes `{"arguments":[{"type":"integer","value":"9"}],…}` bytewise. Successors with equal transition identities are visited in ascending state-key byte order. Parent states keep FIFO discovery order within a level, whatever their keys. | Test (TC-453) |
+| FR-101-AC-1 | Exploration visits each parent's successors in ascending JCS byte order of their QSpec FR-181 transition identities, whatever order the `TransitionSystem` lists them in and whatever their post-states' keys: a state listing `z` before `a` is expanded `a` first, and `step(10)` is visited before `step(9)`, because `{"arguments":[{"type":"integer","value":"10"}],…}` precedes `{"arguments":[{"type":"integer","value":"9"}],…}` bytewise. Successors with equal transition identities are visited in ascending state-key byte order. Parent states keep FIFO discovery order within a level, whatever their keys. | Test (TC-453) |
 | FR-101-AC-2 | The state key is the JCS encoding of FR-181's typed canonical form, and exploration coalesces two states exactly when their full key bytes are equal. The state whose `semantic` member is `float64` bits `0000000000000000` and every map empty has the SHA-256 of its JCS key bytes as its digest; with bits `8000000000000000` (negative zero) it has the SHA-256 of its own, different, key bytes, and the two remain two states. Two NaNs with different payloads are two states. Each digest is a `DigestRecord` under `quire.simulation.state-key/v1`. | Test (TC-453) |
 | FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector, as amended with QSpec FR-181's `choice` preimage member: seed `424242`, trace `0`, choice `0`, `n = 5` draws indices `1, 3, 3, 4, 4` at steps 0 to 4, and the step-0 preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` hashes to its SHA-256. Seed `424242`, trace `1`, `n = 5` draws `4, 4, 1, 3, 4`; seed `424242`, trace `0`, `n = 3` draws `1, 2, 0, 0, 1`. `n = 1` selects index 0 and computes no digest, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `3` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
 | FR-101-AC-4 | Two sampled runs with equal seeds and trace indices over the same `TransitionSystem` produce identical traces, including provenance. The provenance records the seed, the trace index and the sampler identity; a different seed or trace index gives different provenance. With `m > 1` initial states after coalescing equal keys, trace `t` starts at canonical initial state `t mod m`, and no draw selects the start. | Test (TC-454) |
@@ -378,11 +358,12 @@ repository (this repository's TC-210 is a witness-envelope case).
 
 ## Dependencies
 
-- QSpec FR-181, its exploration contract and typed canonical form, and QSpec
-  TC-210's sampler vector.
+- QSpec FR-181's exploration contract, typed canonical form and transition
+  identity; QSpec TC-210's sampler vector, read in place from the QSpec
+  checkout.
 - QSpec `quire.simulation.sampler/v1`
-  (`proposals/quire-v1/definitions/simulation-sampler.md`), whose preimage
-  includes `choice`.
+  (`proposals/quire-v1/definitions/simulation-sampler.md`), which owns the
+  sampler's draw contract.
 - QSpec FR-201: the `quire.simulation.state-key/v1` digest domain.
 - [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
   §1, §4, §7 and TR-1, TR-6, TR-7.
