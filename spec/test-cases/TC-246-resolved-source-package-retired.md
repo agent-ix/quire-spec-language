@@ -53,7 +53,7 @@ both successors exist"; ruling on QSL-229):
 | stale profile at parse time | `tests/it/complete_editor.rs` |
 | duplicate selection alias | `using_aliases_resolve_to_the_units_profile_selections` and its duplicate-alias case (FR-091-AC-22, `qsl-semantics/src/check/assemble/tests.rs`) |
 | inadmissible parse | the spine's S1 refusal (`tests/it/spine_run.rs`, `tests/it/compile_command.rs`) |
-| model selection | TC-442 step 4 (`tests/it/compile_command.rs`) |
+| model selection | `tests/it/compile_command.rs` (FR-056-AC-9) |
 | closure, bundle, limits, identity, causes | TC-491 (`library::bundle_tests`, carrying FR-131/FR-339 tags) |
 | source authority and span on a refusal | deleted with `SourceAuthority` (FR-087 disposition table); a bundle refusal names its root's index |
 

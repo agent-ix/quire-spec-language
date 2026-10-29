@@ -266,7 +266,7 @@ for the function family.
   provenance guarantees are built from.
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md) and
   [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md) define
-  the node shapes and preimages the declaration and call identities hash.
+  the node shapes and preimages the declaration and call identities are made of.
 - QSpec FR-322 publishes operation-node identity vectors used by the
   application-node key conformance check in FR-065-AC-8.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).

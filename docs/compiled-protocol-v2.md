@@ -18,7 +18,7 @@ clock configuration. It embeds the version-1 package, including its shared
 
 The external `ix.artifact-ref/3-draft` has `kind:"linked-package"` and
 `wire:{identity:"quire.compiled-protocol",version:"2"}`. Its digest is SHA-256
-over the complete canonical version-2 payload. Version-1 references and payloads
+over the complete canonical version-2 payload (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest). Version-1 references and payloads
 retain version `1` and their original bytes.
 
 All encoding, number, name, canonical ordering, selection, model, producer,
@@ -64,7 +64,7 @@ declaration families. Bindings sort by `declaration` and cannot repeat.
 `definition` equals that declaration's `profile` index. The selected definition
 identity/revision is the indexed `Definition`; its `artifact` selects the exact
 dependency `ArtifactRef`, and admission recomputes that reference's digest from
-the independently supplied original bytes. The clock tag is determined by the
+the independently supplied original bytes (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest). The clock tag is determined by the
 selected exact profile identity:
 
 | Definition identity | Required clock tag and fields |
@@ -105,14 +105,14 @@ Version-2 selection failures use `Error::V2(v2::Refusal)`. `Refusal` carries
 public typed `HeaderField`, `BindingCause`/`InventorySide`, `BindingIndex`,
 `SelectionSide`, `DeclarationField`, `DefinitionField`/`ArtifactField`, and `ClockField`
 discriminants. `Refusal::code()` returns the stable machine code (for example
-`v2.definition.artifact.digest` or `v2.clock.sequence-authority`); consumers do
+`v2.clock.sequence-authority`); consumers do
 not parse diagnostics to distinguish axes. Closed-JSON shape errors such as a
 missing or renamed required clock member remain `Error::Json`, while valid
 objects with a wrong alternative or value receive the exact v2 selection code.
 
 `Error::code()` extends that guarantee to every other axis, so a consumer never
 matches on a variant to tell two refusals apart. It returns `json` for a
-closed-JSON shape error and `invalid.seal` for a failed external seal — the two
+closed-JSON shape error and `invalid.seal` for a failed external seal (BLOCKED-BY QSL-1270 (draco), ArtifactRef seal) — the two
 identities the version-2 refusal codes cannot express — and dotted codes under
 `allocation`, `numeric.`, `producer.`, `invalid.`, `unsupported.` and
 `incomplete.` for the remaining variants; a version-2 refusal delegates to
@@ -131,7 +131,7 @@ keyed by exact source artifact and declaration byte span. Each record includes
 the expected definition identity/revision/artifact and one typed clock
 configuration. The producer matches those selections to the proof report rather
 than accepting a same-named declaration or shape. `AdmissionV2` exposes
-canonical bytes, their digest and a strict admitted view, never a freely
+canonical bytes, their digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) and a strict admitted view, never a freely
 constructible external artifact authority token. Its enclosing `Report` owns
 usage and effective limits. L3/L4 add no native `state` evaluator: the artifact-graph `state::evaluate_v2`
 path and its `state::Refusal::UnpublishedArtifact` were retired under FR-049
@@ -153,11 +153,11 @@ progress during artifact admission.
 checks the declaration's authenticated definition/profile binding before using
 the existing surrounding-execution-closure classifier and makes no parameter-map
 claim. Its `Classification::authenticated()` accessor returns the sealed
-`AuthenticatedSelection` containing package digest, declaration, definition
-identity/revision and definition artifact digest. Version-1 classification
+`AuthenticatedSelection` containing the package, declaration, definition
+identity/revision and definition artifact. Version-1 classification
 returns `None`; neither path authenticates clock parameters without a trace.
-`evaluate_with_progress_v2` keys retained progress by the admitted package
-digest, declaration, definition identity/revision and exact clock configuration,
+`evaluate_with_progress_v2` keys retained progress by the admitted package,
+declaration, definition identity/revision and exact clock configuration,
 so another artifact, `/1` evaluation or changed clock selection cannot lend it
 progress.
 
@@ -183,14 +183,14 @@ that retains this contract and names the exact public surface it consumes:
 The producing caller supplies the actual parser/linker/proof report plus the
 complete `native::Selections`: original native source and model artifacts,
 unreconstructed dependency bytes, their exact artifact identities and raw-byte
-digests, and a complete temporal selection table. `admit_v2` returns a
+digests (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest), and a complete temporal selection table. `admit_v2` returns a
 `Report<AdmissionV2>`. The report, not `AdmissionV2`, owns the effective limits,
 usage and typed refusal. On success `AdmissionV2::bytes()` and `digest()` expose
-the raw canonical `/2` payload and its SHA-256 digest, while `admitted()` exposes
+the raw canonical `/2` payload and its SHA-256 digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest), while `admitted()` exposes
 only the constructor-private local view.
 
 The external linked-package `ArtifactRef` is a separate consumer-authorized
-selection. Its version is `2` and its digest is computed from the returned raw
+selection. Its version is `2` and its digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) is computed from the returned raw
 bytes; A does not mint consumer authority by returning that reference. Before
 reading, the caller independently constructs `v2::Expected` from its selected
 artifact, contract, baseline, producer, source, dependency and model inventories
@@ -204,7 +204,7 @@ The executable recipe is
 [`tests/support/native_protocol/mod.rs`](../tests/support/native_protocol/mod.rs).
 It starts with real native compilation, reconstructs reader expectations from
 the original inputs rather than emitted wire, and covers cross-version offers,
-selection/configuration substitutions, raw digest-domain crossings,
+selection/configuration substitutions,
 same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
 These fixtures demonstrate A's producer and reader boundary only; they do not
 claim that B admitted the artifact or completed an ecosystem acceptance run.
@@ -244,12 +244,12 @@ than discovering them through an environment variable or shadow vocabulary.
 The directory contains:
 
 - `compiled-protocol-v2.json` and `compiled-protocol-v2.ref.json`: the raw
-  canonical bytes and separately authorized external seal;
+  canonical bytes and separately authorized external seal (BLOCKED-BY QSL-1270 (draco), ArtifactRef seal);
 - `expected-v2.json`: inherited independent reader selectors, exact temporal
   source/declaration/definition/configuration selectors and selected limits;
 - `event-clock.json`, `sample-clock.json` and `timestamp-clock.json`: the
   original deliberately noncanonical configuration bytes and sidecar
-  identities/raw-byte digests that select them; their parsed typed values emit
+  identities/raw-byte digests (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) that select them; their parsed typed values emit
   canonical package members, so an input recanonicalization changes the input
   artifact instead of becoming a vacuous byte comparison;
 - `mutations/manifest.json`: `quire.protocol.v2-mutations/1`, naming the base
@@ -257,14 +257,14 @@ The directory contains:
   input operation and expected stable refusal code. The release producer replays
   every generated case through `v2::read` and refuses to publish the directory
   if any actual code differs;
-- `mutations/*.json` and `mutations/*.bin`: independently re-sealed header,
-  binding-index/inventory, declaration, definition identity/revision/artifact/digest-domain,
+- `mutations/*.json` and `mutations/*.bin`: independent header,
+  binding-index/inventory, declaration, definition identity/revision/artifact,
   every clock-alternative/member, malformed-member and original-definition-byte
   substitutions;
 - the four original `.native` files and `model-source.json`; and
 - `dependencies/*.bin`: every exact original definition, rule, model package
   and contract selected by the invocation, with paths, identities, direct
-  prerequisites and raw-byte digests in `expected-v2.json`.
+  prerequisites and raw-byte digests (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) in `expected-v2.json`.
 
 `expected-v2.json` and `mutations/manifest.json` are the two interchange files a
 consumer decodes, so their record shapes are published as
@@ -280,6 +280,6 @@ The focused release-recipe control is the test
 [`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
 The non-release mutation controls remain in
 [`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), including
-cross-version, every temporal selection family, artifact/digest-domain and
+cross-version, every temporal selection family, artifact and
 same-meaning recanonicalized-input substitutions. These controls qualify A's
 handoff only and do not assert B or campaign acceptance.

@@ -43,7 +43,8 @@ display name or inferred unit is not a compiler clock configuration.
 Canonical `quire.compiled-protocol/2` bytes and their complete raw-byte digest,
 or FR-042's typed invalid, unsupported or resource-incomplete disposition with
 no partial package. The caller remains responsible for placing that digest in
-an independently authorized external `ArtifactRef`; the compiler does not mint
+an independently authorized external `ArtifactRef` (BLOCKED-BY QSL-1270 (draco),
+ArtifactRef digest); the compiler does not mint
 its authority, identity or revision. A successful strict `/2` read returns a constructor-private
 `protocol_artifact::v2::AdmittedPackage`; it does not authenticate `/1` bytes or
 produce a temporal/protocol assessment result.
@@ -86,7 +87,7 @@ The producer's `temporal` input SHALL be a complete table of
 declaration byte span, with expected definition identity/revision/artifact and
 one typed clock configuration.
 
-`AdmissionV2` SHALL expose immutable canonical bytes, digest and the strict `/2`
+`AdmissionV2` SHALL expose immutable canonical bytes, their digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) and the strict `/2`
 admitted view while retaining the same constructor-private native authority as
 FR-042's producer. Its enclosing `Report<AdmissionV2>` SHALL expose effective
 limits and usage exactly once, following the existing FR-042 report pattern.
@@ -127,7 +128,8 @@ The binding's definition index SHALL equal the selected declaration's existing
 
 The selected `Definition` SHALL supply the exact identity and revision, and its
 `artifact` index SHALL select one exact dependency `ArtifactRef` whose digest
-matches the independently supplied original definition bytes.
+matches the independently supplied original definition bytes (BLOCKED-BY QSL-1270 (draco),
+ArtifactRef digest).
 
 The fixed-sample period SHALL be a positive reduced exact number representable
 by FR-038 without floating conversion, sign repair or zero substitution.
@@ -176,7 +178,7 @@ that exact registered profile.
 
 The strict `/2` reader SHALL recompute the selected definition dependency digest
 from the independently supplied original bytes rather than trust the offered
-artifact reference alone.
+artifact reference alone (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest).
 
 The strict `/2` reader SHALL apply FR-042's canonical byte comparison, closed
 shape validation, complete inventory checks and charge-before-work limits to the
@@ -199,13 +201,12 @@ requested surrounding-execution closure; it SHALL NOT claim to authenticate a
 parameter map that is not an input to mapping classification.
 
 The progress ledger identity used by `evaluate_with_progress_v2` SHALL include
-the admitted package digest, declaration, definition identity/revision and exact
+the admitted package, declaration, definition identity/revision and exact
 clock configuration. Progress recorded for `/1`, another `/2` artifact or a
 different authenticated clock configuration SHALL NOT settle this evaluation.
 
 Changing a selected definition artifact, sequence authority, epoch, period,
-unit or timestamp unit SHALL change canonical `/2` bytes and the external
-artifact digest without changing the admitted native source.
+unit or timestamp unit SHALL change canonical `/2` bytes without changing the admitted native source.
 
 The compiler SHALL NOT interpret clock progress, settle temporal truth, map a TL
 formula, create observation records or emit a protocol result through this
@@ -215,9 +216,9 @@ extension.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity/revision/artifact digest and the matching event-position, fixed-sample or timestamped configuration. | Test (TC-138) |
+| FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity/revision/artifact (digest: BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) and the matching event-position, fixed-sample or timestamped configuration. | Test (TC-138) |
 | FR-050-AC-2 | Missing, surplus, duplicate, reordered, foreign-owner and out-of-range bindings refuse independently; a definition/profile mismatch and every wrong clock alternative refuse without defaulting or shape-based selection. | Test (TC-138) |
-| FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and substituted definition identity/revision/artifact/bytes/digest produce their exact typed causes without a partial package. | Test (TC-138) |
+| FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and substituted definition identity/revision/artifact/bytes/digest (digest: BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) produce their exact typed causes without a partial package. | Test (TC-138) |
 | FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138) |
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results, while the existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138) |

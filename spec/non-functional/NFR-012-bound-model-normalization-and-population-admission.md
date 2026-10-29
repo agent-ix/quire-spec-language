@@ -70,6 +70,7 @@ per-charge record, so its memory does not grow with the work it bounds.
 | Derivation facts | At most the selected ceiling (default 1600000) per normalization | 1600000 facts by default | negative-abuse-testing |
 | Effective declarations | At most the selected ceiling (default 1600000) per normalization | 1600000 declarations by default | negative-abuse-testing |
 | Dispatch candidates | At most the selected ceiling (default 1600000) per dispatch link | 1600000 candidates by default | negative-abuse-testing |
+| Hashed preimage bytes | **RETIRED (QSL computes no hash and meters none).** None. | None | negative-abuse-testing |
 | Normalization work | At most the selected ceiling (default 16777216 work units) per normalization | 16777216 units by default | negative-abuse-testing |
 | Ancestor steps | At most the selected ceiling (default 16777216 edges) per conformance walk | 16777216 edges by default | negative-abuse-testing |
 | Family steps | At most the selected ceiling (default 16777216 edges) per dispatch-family link | 16777216 edges by default | negative-abuse-testing |
@@ -97,7 +98,7 @@ per-charge record, so its memory does not grow with the work it bounds.
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
 - **Hashed bytes.** The QSpec limit `hashed_bytes` is QSpec's; QSL computes
-  no hash and meters none. BLOCKED-BY STD-583 (QSpec limit name).
+  no hash and meters none. BLOCKED-BY STD-583 (unassigned; planner relay).
   A chain whose every type declares one field has (n+1)(n+2)/2 effective
   members and is refused beyond 1786 edges on the effective-declaration
   ceiling; those are member counts, which identity chaining does not reduce.

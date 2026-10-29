@@ -100,7 +100,7 @@ legacy independent pairs or produces a static-authority input.
 The executable trace is distributed across the tagged cases named in the
 FR-049 verification cells: value-shape and availability cases, graph identity
 cases in TC-129, owner-specific source/model/profile/configuration admission
-cases in TC-115, TC-138, TC-442, TC-465 and TC-490, and protocol-slot short-circuit
+cases in TC-115, TC-138, TC-465 and TC-490, and protocol-slot short-circuit
 cases in `qsl-eval/tests/it/protocol_slots.rs`. These cases preserve their
 owning FR tags; TC-136 is the shared test-case classification, not a claim that
 one test function covers every owner.

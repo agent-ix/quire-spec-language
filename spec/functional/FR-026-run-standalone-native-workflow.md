@@ -76,7 +76,7 @@ The command shall decode the envelope and select its format before request field
 The command shall admit, at decode, the members FR-100 and FR-027 define for a
 `1-draft` program.
 The command shall reject unknown/duplicate fields and positional record arrays.
-The command shall open each file once and cap reads before parsing or hashing.
+The command shall open each file once and cap reads before parsing.
 The command shall read the request under the caller's `request_bytes` limit
 (default 1 MiB) and the dependent files it names under the caller's
 `dependent_bytes` limit on their total size (default 8 MiB). The caller sets

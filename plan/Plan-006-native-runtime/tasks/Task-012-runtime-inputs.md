@@ -28,7 +28,7 @@ Implement the reviewed flat Snapshot/Invocation input artifacts and exact emitte
 ## Subtasks
 
 - [x] Add meaningful Rust public API tests first for all value/root variants, exact independent envelope bytes, stable role-specific refs, invalid indices and immutable errors; record the initial missing-API failure.
-- [x] Implement typed flat drafts, immutable artifacts, InputError and bounded deterministic encoding using the existing serde_json/sha2/IR identities.
+- [x] Implement typed flat drafts, immutable artifacts, InputError and bounded deterministic encoding using the existing serde_json.
 - [x] Count every node, metadata entry, string byte and output byte before work; compute structural depth without shared-node expansion or recursive owned values.
 - [x] Qualify exact/lowered/hard/coupled ceilings, unused nodes, duplicate retention and bounded destruction; preserve raw duplicate vectors for model-aware validation.
 - [x] Run the targeted serial tests and relevant format/Clippy checks, update only actually executed matrix rows and retain commands/source revision.
@@ -39,7 +39,7 @@ Public input constructors/references and standard Rust errors; independent struc
 
 ## Notes
 
-Start from the existing SourceIdentity/ByteDigest and native_model artifact pattern, but keep the new payload's explicit schema and stage distinctions. Adding new dependencies, source decoding or changed semantics reopens the spec gate.
+Start from the existing SourceIdentity and native_model artifact pattern, but keep the new payload's explicit schema and stage distinctions. Adding new dependencies, source decoding or changed semantics reopens the spec gate.
 
 Qualified. SR-096 records
 the actual code/Rust review, 21 constructor tests, one role compile-fail doctest,

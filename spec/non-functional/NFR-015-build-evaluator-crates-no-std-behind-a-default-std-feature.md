@@ -66,7 +66,7 @@ only, the move needs no `std` rework and keeps the closure tier.
   under `#[cfg(test)]`.
 - A dependency that has a `std` feature is declared with
   `default-features = false`, and the crate's `std` feature turns that
-  dependency's `std` feature on (`serde/std`, `sha2/std`, `thiserror/std`,
+  dependency's `std` feature on (`serde/std`, `thiserror/std`,
   and a QSL dependency's own `std`). A dependency used only by `std` items
   is `optional = true` and enabled by `std` (`dep:<name>`).
 - `--no-default-features` disables `std` and nothing else is needed to
@@ -112,7 +112,7 @@ feature unification would turn it back on.
 
 | Crate | Slice | Tier | Normal dependencies with `std` disabled | Behind `std` | Closure-tier condition |
 | --- | --- | --- | --- | --- | --- |
-| `qsl-foundation` | S3 (IR-587) | closure | `quire-exact` (no features; `#![no_std]`), `quire-semantic-value` (`#![no_std]`; from ADR-011 X-13 or X-14, whichever lands first), `serde` with `derive` and `alloc`, `sha2`, `thiserror`, each with default features off; the `ix-trace-rs` proc macro, which runs on the host | no item: every `std::` path the crate uses (`cmp`, `fmt`, `str`, `hash`, `marker`, `num`, `iter`, `slice`, `error::Error`, `collections::{BTreeMap, BTreeSet, btree_map}`, `sync::Arc`) has a `core::` or `alloc::` equivalent on this target | holds: every dependency listed is `no_std`-capable |
+| `qsl-foundation` | S3 (IR-587) | closure | `quire-exact` (no features; `#![no_std]`), `quire-semantic-value` (`#![no_std]`; from ADR-011 X-13 or X-14, whichever lands first), `serde` with `derive` and `alloc`, `thiserror`, each with default features off; the `ix-trace-rs` proc macro, which runs on the host | no item: every `std::` path the crate uses (`cmp`, `fmt`, `str`, `hash`, `marker`, `num`, `iter`, `slice`, `error::Error`, `collections::{BTreeMap, BTreeSet, btree_map}`, `sync::Arc`) has a `core::` or `alloc::` equivalent on this target | holds: every dependency listed is `no_std`-capable |
 | `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-semantic-value` and `ix-trace-rs` | `quire-contract-model`, `quire-canonical` (without `std` in the workspace table), `quire-exact` and `thiserror`, each optional and enabled by `std` because only `std` items use them (`serde` is a dev-dependency only: shipped source does not use it), and the items listed in "`qsl-package` surface with `std` disabled" | none in AD-001's slices: `qsl-package` stays crate tier. The evaluator path is `quire-eval`, `quire-checked` and the foundation items moved to SV (FR-403), so no slice makes `qsl-semantics`, `qsl-forms` or `qsl-cst` build with `std` disabled |
 
 `qsl-semantics` and `qsl-eval` have no row. The `no_std` evaluator is
@@ -153,9 +153,10 @@ crate tier, so its host check needs only its own source to be `no_std`.
 
 The wire representation is unchanged: QSpec FR-322 defines
 `quire.checked-package/v2`, IR's `quire-contract-model` owns its reader,
-and QSL's emitter writes it. `package_id` is the SHA-256 of the RFC 8785
-(JCS) bytes of the `quire.checked-package-id/v2` identity preimage, encoded
-through `quire-canonical`, the one encoder (ADR-013 §2). When a `no_std`
+and QSL's emitter writes it. `package_id` is the QSpec FR-322 identity
+member of the `quire.checked-package-id/v2` identity preimage, encoded
+through `quire-canonical`, the one encoder (ADR-013 §2); QSL computes no hash
+of it (BLOCKED-BY STD-583 (unassigned; planner relay)). When a `no_std`
 crate must read JSON, it reads through `quire-canonical`'s `read` (the one
 shared iterative reader, ADR-030 RU-2, which builds `no_std` + `alloc`),
 never through `serde_json` or a second reader, and it encodes identities
@@ -226,7 +227,7 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | NFR-015-AC-1 | `qsl-foundation` declares a `std` feature with `default = ["std"]`, and `cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi` succeeds on the toolchain `rust-toolchain.toml` selects. | Test (TC-1110) |
-| NFR-015-AC-2 | `cargo tree --locked -p qsl-foundation --no-default-features -e normal --depth 1 --target thumbv7em-none-eabi` lists exactly `quire-exact`, `quire-semantic-value` (from ADR-011 X-13 or X-14, whichever lands first), `serde`, `sha2`, `thiserror` and the `ix-trace-rs` proc macro, and the full `cargo tree --locked -p qsl-foundation --no-default-features -e normal,features --target thumbv7em-none-eabi` lists no `std` feature of `serde`, `sha2` or `thiserror`. | Test (TC-1110) |
+| NFR-015-AC-2 | `cargo tree --locked -p qsl-foundation --no-default-features -e normal --depth 1 --target thumbv7em-none-eabi` lists exactly `quire-exact`, `quire-semantic-value` (from ADR-011 X-13 or X-14, whichever lands first), `serde`, `thiserror` and the `ix-trace-rs` proc macro, and the full `cargo tree --locked -p qsl-foundation --no-default-features -e normal,features --target thumbv7em-none-eabi` lists no `std` feature of `serde` or `thiserror`. | Test (TC-1110) |
 | NFR-015-AC-3 | `cargo test --locked -p qsl-foundation` and `cargo test --locked -p qsl-foundation --no-default-features` both pass on the host, and every workspace test lane passes with `qsl-foundation`'s default features. | Test (TC-1110) |
 | NFR-015-AC-4 | `qsl-package` declares a `std` feature with `default = ["std"]` that enables `dep:quire-contract-model` and `qsl-foundation/std`; `cargo check --locked -p qsl-package --no-default-features` succeeds on the host with the crate root `no_std`; and the full `cargo tree --locked -p qsl-package --no-default-features -e normal -i quire-contract-model` finds no path to `quire-contract-model`. | Test (TC-1111) |
 | NFR-015-AC-5 | With `std` disabled, every export in the "With `std` disabled" column of the `qsl-package` surface table resolves, and every export in its "Behind `std`" column does not. | Test (TC-1111) |

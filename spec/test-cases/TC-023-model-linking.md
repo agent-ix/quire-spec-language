@@ -15,11 +15,11 @@ The complete typing/projection acceptance of IT-005 remains separate.
 
 ## Test Procedure
 
-From TC-020's complete qualified inputs, select a dependency revision/content
-different from the selected native import closure while retaining the original
-expected binding. Use the native resolver's admitted stale control and request
-linking; no Filament package reader is required.
+From TC-020's complete qualified inputs, select a dependency whose content
+differs from the content the request's package identity names, while retaining
+the original expected binding. Use the native resolver's admitted stale control
+and request linking; no Filament package reader is required.
 
 ## Expected Results
 
-Linkage returns stale_dependency with the selected dependency identity and native import locus. It does not silently refresh or substitute a closure. No LinkedPackage is returned.
+Linkage refuses `stale_dependency`/`content-mismatch`, naming the request's package identity and the recomputed one, as FR-098-AC-3 states. It does not silently refresh or substitute a closure. No LinkedPackage is returned.

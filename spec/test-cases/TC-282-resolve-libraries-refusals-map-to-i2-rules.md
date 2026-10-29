@@ -25,8 +25,9 @@ three. Scope: FR-087-AC-12.
    `UndeclaredExport`, `InvalidQualifier`,
    `ConflictingDefinition`, `ImportCycle`, `MissingImport`, and
    `DuplicatePackageId` — seven variants, plus any variant its refusal type
-   gains after relocation. (`PackageIdMismatch` is retired with the
-   lock-content comparison.)
+   gains after relocation. (`LibraryRefusal::PackageIdMismatch` is retired with the
+   lock-content comparison; `ReplayRefusal::PackageIdMismatch` is the
+   replay-side recompute of FR-098 and is a different enum.)
 2. For each variant, read the code path that raises it and classify it
    against this fixed table (not the earlier, incomplete "one for one with
    an I2 rule" claim):

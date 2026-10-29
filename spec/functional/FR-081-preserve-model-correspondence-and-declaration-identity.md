@@ -251,7 +251,7 @@ binder SHALL NOT charge an ancestor path's length for an acyclic package.
 expansion. An effective type's identity is built in phase 3, before
 phase 4, because phase 4's charge order uses it. That key holds only the type's own key and its direct edges,
 each already admitted by a `normalize.fact` and a `normalize.cycle-check`
-charge. QSL meters no hash: the QSpec limit name `hashed_bytes` is QSpec's, BLOCKED-BY STD-583 (QSpec limit name).
+charge. QSL meters no hash: the QSpec limit name `hashed_bytes` is QSpec's, BLOCKED-BY STD-583 (unassigned; planner relay).
 
 The phase-4 charges are unchanged in kind and count a type's derivation facts
 as its retained facts, its qualify fact and one inherit fact per direct
@@ -280,7 +280,7 @@ of `m + r` work units, and each (effective type, redefined member) reached by
 | FR-081-AC-5 | Given the same `DomainPackage` value and the same limits, two independent binder invocations — including invocations in two separate process runs — produce byte-identical original keys, effective identities and correspondence ordering, with no observable interaction between the runs. | Test (TC-217) |
 | FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
-| FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
+| FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration charge. | Test |
 | FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1022) |
 | FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1023) |
 | FR-081-AC-11 | **RETIRED (QSL computes no hash).** The closed formulas of this criterion metered the bytes of every identity, universe and view preimage; QSL meters none. | Test (TC-1024), retired |

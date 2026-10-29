@@ -29,11 +29,9 @@ add, omit and rename a parameter-map key independently.
 
 Remove, duplicate, reorder and append one binding; cross its declaration and
 definition indices; substitute each definition identity, revision, artifact
-reference, raw byte digest and raw bytes; cross every pair of clock alternatives;
+reference, raw byte digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) and raw bytes; cross every pair of clock alternatives;
 and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
-component-overflow periods plus a changed epoch or unit. Re-seal each mutated
-candidate so the test reaches the owning validation rather than passing on an
-earlier digest mismatch.
+component-overflow periods plus a changed epoch or unit.
 
 Exercise `mapping_support_v2` without a trace and require its admitted
 definition/profile binding before formula classification. For progress, attempt
@@ -62,7 +60,7 @@ Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
 that public function -- exactly as a downstream crate would. Confirm the two
 written trees are byte-identical, that each written clock
-input's bytes match its selection entry's digest, and that the strict `/2`
+input's bytes match its selection entry's digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest), and that the strict `/2`
 reader admits the written offer against the written selection with no other
 input. Decode the written mutation manifest, confirm every case's referenced
 file(s) exist, and replay one case's exact bytes through the strict `/2`

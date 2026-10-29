@@ -55,7 +55,7 @@ drop or the rekey.
 6. Assert effective-entry/fact origin keys are a subset of the retained
    inventory, that the two object types and owned field/operation receive
    their selected qualify facts, and that the scalar receives no fabricated
-   qualify fact, effective entry or extra effective-declaration/hash charge.
+   qualify fact, effective entry or extra effective-declaration charge.
 7. Repeat with reversed IR-node order, then with equal nodes selected under a
    different version of the same package identity. Original keys and
    qualifying effective-declaration identities remain equal; effective-view

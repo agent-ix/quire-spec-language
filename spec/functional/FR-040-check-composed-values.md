@@ -121,7 +121,7 @@ evade the byte or structure charges. Parser and binding budgets remain separate.
 
 | Work | Charged unit |
 | --- | --- |
-| Bytes | Each offered formal-correspondence metadata/content byte once on intake, plus each subsequent byte copied, hashed or scanned by this stage. |
+| Bytes | Each offered formal-correspondence metadata/content byte once on intake, plus each subsequent byte copied or scanned by this stage. |
 | Declarations and expressions | Each visited declaration and each visited native value/control occurrence; repeated visits and callee instantiations count again. |
 | Type and dependency work | Each constraint creation/inspection, type-wrapper traversal/copy, resolution attempt and native call/dependency-edge visit, including shared dependencies and cache hits. |
 | Proof and guard work | Each inspected/propagated fact, generated symbolic value/graph node, proof goal and materialized IR node, with both per-goal and total expansion limits. Rational normalization/arithmetic steps have explicit charged work before computation. |

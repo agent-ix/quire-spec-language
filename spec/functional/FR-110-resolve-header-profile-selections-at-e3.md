@@ -211,8 +211,8 @@ E3 SHALL resolve each `model` declaration only against the domain package
 I1 admitted for it (FR-056; ADR-011 §2.4). A declaration naming no supplied
 package refuses at I1 with FR-056's cause (FR-056-AC-2, FR-056-AC-7). A
 `model` declaration carries no clause beyond its identity; any other clause refuses at parse (`invalid_syntax`).
-The emitted `model_selections` are `CheckedGraph::model_selections`, one
-`{identity}` entry per admitted package.
+The emitter records each admitted package by its `model_root` node only
+(QSpec #510); the package has no model selection lock section.
 
 ### Emitted definition selections
 

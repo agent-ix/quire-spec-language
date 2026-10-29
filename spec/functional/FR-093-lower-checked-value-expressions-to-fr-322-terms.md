@@ -595,8 +595,8 @@ undeclared node that is not model-owned carry no `owner`. The node's
 `owner` is not carried in a separate projection; the wire carries no `identity_projection`. A reader therefore re-derives every structural key, in-group
 keys and group labels included, from the emitted package alone, and reads
 no owner from the source map. The lock's `sources` holds each emitted
-`SourceOwner`'s (`authority`, `identity`) and its `model_selections` each
-emitted `ModelOwner`'s `identity`, the joins FR-322 checks.
+`SourceOwner`'s (`authority`, `identity`), and each emitted `ModelOwner`'s
+`identity` joins to a `model_root` node, the joins FR-322 checks.
 
 A recursion group's members carry one `recursion_group`
 label, the group label (FR-092), and the emission
@@ -724,6 +724,9 @@ are:
 
 T1 to T3 are FR-092's. The QSpec `structural-eq-record` and `collection-contains` operation vectors
 fix the leaf spelling.
+
+The `digest` and `domain` members of a node-id object in the vectors below
+are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (unassigned; planner relay)).
 
 | Vector | Node | Key |
 |---|---|---|

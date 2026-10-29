@@ -208,8 +208,7 @@ run before the recompile:
    (ADR-013 O-26; QSpec FR-323), else the existing `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`). An edited
    dependency source changes the proved package's `package_id` too, so rules
    6 and 7 run first and name the stale dependency. What that identity is
-   rests on QSpec's structural identity, BLOCKED-BY STD-583 (structural
-   identity spec landing).
+   rests on QSpec's structural identity, BLOCKED-BY STD-583 (unassigned; planner relay).
 6. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`).

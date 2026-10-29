@@ -37,7 +37,7 @@ the identities their step names.
    `import A` in `B`; then with a dependency input supplying a library whose
    source has `A`'s (authority, identity).
 3. Compile FR-480-AC-3's two-alias units with distinct bodies; with `B`'s
-   body on `A`'s operation; with the two selections under different versions.
+   body on `A`'s operation.
 4. Through the FR-278 composition, compile FR-480-AC-4's profile-order and
    profile-set mismatches between two `1-draft` units, its `v`/`w` alias
    pair, the empty list and the duplicate source identity.
@@ -66,8 +66,7 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
   unsupplied-import refusal; `invalid_package`/`conflicting-definition`
   before any parse, naming `A` and the library entry.
 - Step 3: links; `conflicting_declaration`/`duplicate-declaration`, no
-  package; `invalid_package`/`conflicting-definition` naming both
-  selections.
+  package.
 - Step 4: `invalid_package`/`conflicting-definition` at the later header for
   each mismatch; the alias pair checks; `invalid_package`/`invalid-value`;
   `invalid_package`/`conflicting-definition` before any parse.

@@ -223,8 +223,7 @@ are equal, whatever their results read.
   key and the `subject_kind` are fixed by the form and are not fields.
 - `qsl_replay::value_parity_obligation(&ValueParityPreimage)`: the preimage
   itself as the identity, after the position check, or the position-order
-  refusal of the Behavior section. BLOCKED-BY STD-583 (structural identity
-  spec landing).
+  refusal of the Behavior section. BLOCKED-BY STD-583 (unassigned; planner relay).
 - `FunctionSite.value_parity: Option<ValueParitySite>`, with
   `ValueParitySite { preimage: ValueParityPreimage, obligation_identity:
   ObligationIdentity }`: `Some` exactly when the selected function's

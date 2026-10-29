@@ -88,8 +88,8 @@ ancestors, at any depth.
    `record_form` maps both kinds to no node, so the checked package names no
    relation to the selection that declares `supertypes`; the emitter is
    changed by the slice that implements this requirement. With that node the
-   relation is carried by content the package holds: the `ModelOwner` joins to a
-   `model_selections` row (FR-322 "Model-owned members" step 2), that
+   relation is carried by content the package holds: the `ModelOwner` joins to the
+   `model_root` node of the selected package (FR-322 "Model-owned members" step 2), that
    document declares the record's `supertypes`, and FR-322-AC-30 resolves an
    inherited field on the subtype's node. The lowered read stays
    `quire.op.record.project` with `field{declaration: P's node, name}` (FR-093)

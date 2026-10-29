@@ -243,8 +243,7 @@ parameter, `bound_value` is QSpec FR-181's complete typed canonical
 value. Parameter order is the
 checked item's binding order; a genuinely parameter-free item uses `[]`.
 No absent/default binding is synthesized. The property state is separate
-from the model state; its context does not copy the model subject or hash
-the existing obligation again. The certificate request still binds that
+from the model state; its context does not copy the model subject. The certificate request still binds that
 subject through O-09 and FR-125. `profile` is the exact admitted temporal profile identity;
 `activation` is `"origin"` or `"each"` for a bounded monitor, and
 `"infinite"` for an infinite-trace `on origin` property. An unguarded
