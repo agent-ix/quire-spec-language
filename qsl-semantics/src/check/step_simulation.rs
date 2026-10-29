@@ -31,7 +31,8 @@
 //! each population a `reaches` in the state mapping walks; an `Initial`
 //! record over the population covering each concrete object type the state
 //! mapping maps and, since its obligation evaluates the mapping, each
-//! population a `reaches` in the state mapping walks.
+//! population a `reaches` in the state mapping walks. Every record reads
+//! its hypotheses, so the populations they range over enter every record.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -90,6 +91,8 @@ pub(crate) struct ExtentInputs<'a> {
     /// The populations each concrete operation's contract clauses range
     /// over, by the operation's declaring type and name.
     pub(crate) contracts: &'a BTreeMap<(EffectiveId, String), BTreeSet<PopulationDomain>>,
+    /// The populations each state clause ranges over, by its node.
+    pub(crate) clauses: &'a BTreeMap<NodeKey, BTreeSet<PopulationDomain>>,
     /// The `model`/`object_type` node of a population's member type.
     pub(crate) object_node: &'a dyn Fn(EffectiveId) -> Option<NodeKey>,
     pub(crate) types: &'a TypeEnvironment,
@@ -149,8 +152,22 @@ pub(crate) fn simulation_records(
     let mut written = Vec::with_capacity(inputs.step_sources.len() + 1);
     // The `Initial` obligation evaluates the state mapping, so it ranges
     // over the populations a `reaches` there walks as well.
+    // Every record reads its hypotheses, so the populations they range over
+    // enter every record.
+    let read: BTreeSet<PopulationDomain> = roots
+        .mapping
+        .iter()
+        .copied()
+        .chain(
+            hypotheses
+                .iter()
+                .filter_map(|hypothesis| inputs.clauses.get(hypothesis))
+                .flatten()
+                .copied(),
+        )
+        .collect();
     let mut initial_populations = roots.initial.clone();
-    initial_populations.extend(roots.mapping.iter().copied());
+    initial_populations.extend(read.iter().copied());
     let initial = extent_record(None, &initial_populations, None, inputs)?;
     written.push((
         StepSimulationEntry::new(
@@ -179,7 +196,7 @@ pub(crate) fn simulation_records(
             .get(*source)
             .and_then(|keyed| keyed.source_node)
             .ok_or_else(|| fault(location))?;
-        let mut populations: BTreeSet<PopulationDomain> = roots.mapping.clone();
+        let mut populations: BTreeSet<PopulationDomain> = read.clone();
         populations.extend(*context);
         populations.extend(inputs.contracts.get(operation).into_iter().flatten());
         let record = extent_record(
