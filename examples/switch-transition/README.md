@@ -9,28 +9,40 @@ these paths.
 
 | File | Role |
 | --- | --- |
-| `switch.native` | the QSL source (edition `1-draft`) |
-| `switch.semantic-ir.json` | the domain model package document it selects by digest |
+| `switch.native.in` | the QSL source template (edition `1-draft`); its `model` line carries the placeholder `{model_digest}`, never a digest |
+| `switch.semantic-ir.json` | the domain model package document the source selects by digest |
 
-Emit the `quire.checked-package/v2` bytes from the repository root:
+FR-056 selects models by digest, so no committed file carries it: a model edit
+would silently stale it. The digest is derived from `switch.semantic-ir.json`
+at run time, by `emit_checked_v2`.
+
+Emit the `quire.checked-package/v2` bytes from the repository root (the
+placeholder is filled in memory from the single `--model`):
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
   --model examples/switch-transition/switch.semantic-ir.json \
-  examples/switch-transition/switch.native
+  examples/switch-transition/switch.native.in
 ```
 
-The emitted bytes embed the source path exactly as given, so a caller that
-needs stable bytes passes the canonical repository-relative paths above from
-the repository root every time. From another checkout directory, run with that
-directory as the working directory.
+To also write the rendered, digest-carrying source (the generated
+`switch.native`, for a consumer that needs the source file itself), add
+`--source-out`:
 
-The source names the model by its `sha256-jcs` digest (FR-056 selects models
-by digest), and the
-`the_switch_example_pair_emits_a_transition_and_is_admitted` test in
-`tests/it/emit_checked_v2.rs` checks that digest against the model file; the
-digest is over canonical JSON, so reformatting the model is harmless, and a
-real model edit fails the test with the computed digest to paste into
-`switch.native`. That embedded digest is a known frozen-digest antipattern
-(follow-up in the STD-565 family). The test derives every other expectation
-from the producer and from Contract IR's strict `CheckedPackageV2::read`.
+```sh
+mkdir -p target/switch-transition
+cargo run --locked --example emit_checked_v2 -- \
+  --model examples/switch-transition/switch.semantic-ir.json \
+  --source-out target/switch-transition/switch.native \
+  examples/switch-transition/switch.native.in
+```
+
+The generated pair is `target/switch-transition/switch.native` plus
+`examples/switch-transition/switch.semantic-ir.json`; `target/` is untracked,
+so nothing generated is committed. The emitted bytes embed the source path
+exactly as given, so a caller that needs stable bytes passes the canonical
+repository-relative paths above from the repository root every time.
+
+Tests (`tests/it/emit_checked_v2.rs`) render the template themselves, derive
+the digest from the model file, and never assert a literal; one test scans this
+directory and fails if any file carries a `sha256-jcs:` digest literal.

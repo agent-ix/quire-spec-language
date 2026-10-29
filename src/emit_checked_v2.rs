@@ -35,10 +35,16 @@ use qsl_replay::{
 use quire_contract_model::ExecutionPoint;
 use quire_semantic_value::catalog::Category;
 
+/// The placeholder a source template carries where a `model` statement's
+/// digest goes. FR-056 selects a model by digest, so a committed source that
+/// held the digest would stale on every model edit; a template holds this
+/// token instead and [`emit`] fills it from the single `--model` file.
+pub const MODEL_DIGEST_TOKEN: &str = "{model_digest}";
+
 /// The usage line, shown on a malformed command line.
 pub const USAGE: &str = "usage: emit_checked_v2 [--model <domain-package-file>]... \
 [--library <identity>=<source-file>]... [--execution-points <json-file>] \
-[--out <path>] <source-file>";
+[--source-out <path>] [--out <path>] <source-file>";
 
 /// Why no bytes were emitted.
 #[derive(Debug, thiserror::Error)]
@@ -82,6 +88,13 @@ pub enum Error {
         /// What is wrong with it.
         message: String,
     },
+    /// The source is a template (it carries [`MODEL_DIGEST_TOKEN`]) but the
+    /// command line does not supply exactly one `--model` to take the digest
+    /// from.
+    #[error(
+        "the source carries {MODEL_DIGEST_TOKEN} and needs exactly one --model to derive it from"
+    )]
+    Template,
     /// The producer refused the source.
     #[error("{}", without_limit_hint(.0))]
     Producer(Box<ReplayRefusal>),
@@ -98,6 +111,7 @@ impl Error {
             | Self::Read { .. }
             | Self::Write { .. }
             | Self::TooLarge { .. }
+            | Self::Template
             | Self::Points { .. } => None,
         };
         code.map_or(Category::Refusal.exit_code(), |code| {
@@ -119,6 +133,9 @@ pub struct Request {
     /// an object from exact authored clause name to an execution point such
     /// as `{"kind": "post", "operation": "set"}`.
     pub execution_points: Option<PathBuf>,
+    /// Where to write the source after template substitution, when the source
+    /// is a template.
+    pub source_out: Option<PathBuf>,
     /// Where to write the bytes instead of stdout.
     pub out: Option<PathBuf>,
 }
@@ -130,6 +147,7 @@ impl Request {
         let mut models = Vec::new();
         let mut libraries = Vec::new();
         let mut out = None;
+        let mut source_out = None;
         let mut execution_points = None;
         let mut source = None;
         let mut rest = arguments.iter();
@@ -145,6 +163,9 @@ impl Request {
                 Some("--execution-points") if execution_points.is_none() => {
                     execution_points = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
                 }
+                Some("--source-out") if source_out.is_none() => {
+                    source_out = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
+                }
                 Some("--out") if out.is_none() => {
                     out = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
                 }
@@ -158,6 +179,7 @@ impl Request {
             models,
             libraries,
             execution_points,
+            source_out,
             out,
         })
     }
@@ -273,6 +295,7 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
         .iter()
         .map(|path| read(path, true))
         .collect::<Result<Vec<_>, _>>()?;
+    let source = render_source(source, &models, request.source_out.as_deref())?;
     let libraries = request
         .libraries
         .iter()
@@ -304,6 +327,37 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
     )
     .map_err(|refusal| Error::Producer(Box::new(refusal)))?;
     Ok(compiled.bytes().to_vec())
+}
+
+/// Fill [`MODEL_DIGEST_TOKEN`] in a template `source` with the digest of the
+/// one supplied model document, and write the result to `source_out` when
+/// given. A source without the token is returned unchanged (and
+/// `source_out` is then a copy of it).
+#[ix_trace_rs::string_edge]
+fn render_source(
+    source: Vec<u8>,
+    models: &[Vec<u8>],
+    source_out: Option<&Path>,
+) -> Result<Vec<u8>, Error> {
+    let rendered = match std::str::from_utf8(&source) {
+        Ok(text) if text.contains(MODEL_DIGEST_TOKEN) => {
+            let [document] = models else {
+                return Err(Error::Template);
+            };
+            let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+            let digest = packages.keys().next().ok_or(Error::Template)?;
+            text.replace(MODEL_DIGEST_TOKEN, &qsl_semantics::model::key::hex(digest))
+                .into_bytes()
+        }
+        _ => source,
+    };
+    if let Some(path) = source_out {
+        std::fs::write(path, &rendered).map_err(|source| Error::Write {
+            path: path.display().to_string(),
+            source,
+        })?;
+    }
+    Ok(rendered)
 }
 
 /// Parse `arguments`, emit, and write the bytes to `--out` or `stdout`.

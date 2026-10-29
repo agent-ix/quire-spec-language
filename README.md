@@ -287,6 +287,13 @@ cargo run --locked --example emit_checked_v2 -- \
 The package is read back with the same domain documents as evidence
 (`CheckedPackageEvidence::insert_domain_package_document`).
 
+**Source templates.** A source that carries the placeholder `{model_digest}` where a
+`model` statement's digest goes (as `tests/fixtures/spine-model.native` and
+`examples/switch-transition/switch.native.in` do) is filled in memory with the
+`sha256-jcs` digest of the single `--model` file, so no committed file freezes a
+digest; `--source-out <path>` also writes the rendered source. More than one
+`--model`, or none, with the placeholder present is an explicit refusal (exit 20).
+
 **Accepted execution points.** `--execution-points <file>` supplies accepted
 state-clause execution points (FR-104-AC-15) through the producer's
 `check_with_execution_points` (`qsl_replay::compile_package_with_execution_points`),

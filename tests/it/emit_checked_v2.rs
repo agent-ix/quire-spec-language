@@ -14,7 +14,7 @@ use qsl_replay::spine::DependencyInput;
 use quire_contract_model::{
     CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
 };
-use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
+use quire_spec_language::emit_checked_v2::{emit, run, Error, Request, MODEL_DIGEST_TOKEN};
 use serde_json::{json, Value};
 
 fn args(items: &[&Path]) -> Vec<OsString> {
@@ -72,8 +72,10 @@ fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
 /// same bytes the default stdout carries.
 #[test]
 fn the_output_is_the_producers_bytes_and_reads_back() {
-    let source = std::fs::read_to_string("tests/fixtures/spine-model.native").unwrap();
     let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
+    let source = std::fs::read_to_string("tests/fixtures/spine-model.native")
+        .unwrap()
+        .replace(MODEL_DIGEST_TOKEN, &model_digest(&document));
     let directory = tempfile::tempdir().unwrap();
     let out = directory.path().join("package.json");
     let model = Path::new("tests/fixtures/spine-model.semantic-ir.json");
@@ -97,6 +99,37 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     assert_eq!(std::fs::read(&out).unwrap(), stdout);
 }
 
+/// The digest `emit_checked_v2` derives for a domain package document.
+fn model_digest(document: &[u8]) -> String {
+    let packages = qsl_semantics::model::intake::package_input([document]);
+    qsl_semantics::model::key::hex(packages.keys().next().unwrap())
+}
+
+/// The switch template with its digest filled from the model file, as the
+/// producer renders it; the test derives it, nothing is frozen.
+fn rendered_switch_source() -> String {
+    let document = std::fs::read("examples/switch-transition/switch.semantic-ir.json").unwrap();
+    std::fs::read_to_string("examples/switch-transition/switch.native.in")
+        .unwrap()
+        .replace(MODEL_DIGEST_TOKEN, &model_digest(&document))
+}
+
+/// No file under `examples/switch-transition/` carries a digest literal: FR-056
+/// selects models by digest, so a committed one would silently stale on a
+/// model edit.
+#[test]
+fn the_switch_example_directory_carries_no_digest_literal() {
+    for entry in std::fs::read_dir("examples/switch-transition").unwrap() {
+        let path = entry.unwrap().path();
+        let text = std::fs::read_to_string(&path).unwrap();
+        for (at, _) in text.match_indices("sha256-jcs:") {
+            let tail = &text[at + "sha256-jcs:".len()..];
+            let run = tail.bytes().take_while(u8::is_ascii_hexdigit).count();
+            assert!(run < 64, "{} carries a digest literal", path.display());
+        }
+    }
+}
+
 /// The QSL-owned Boolean Switch pair (`examples/switch-transition/`): the
 /// derived Boolean model-field transition (FR-105-AC-13) is emitted from the
 /// checked-in source and domain model, and the package reads back admitted
@@ -106,21 +139,24 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
 #[test]
 fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
-    let program = Path::new("examples/switch-transition/switch.native");
+    let program = Path::new("examples/switch-transition/switch.native.in");
     let document = std::fs::read(model).unwrap();
-    let source = std::fs::read_to_string(program).unwrap();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
-    let line = source
-        .lines()
-        .find(|line| line.starts_with("model "))
-        .unwrap_or("<no model line>");
+    let template = std::fs::read_to_string(program).unwrap();
     assert!(
-        source.contains(&format!("sha256-jcs:{digest}")),
-        "the source must select the model file by its digest. Computed model digest: \
-         sha256-jcs:{digest}; the source's current line: {line}. Update \
-         examples/switch-transition/switch.native so its `model` line carries the computed digest."
+        template.contains(MODEL_DIGEST_TOKEN),
+        "the committed source is a template, not a digest-carrying source"
     );
+    let source = rendered_switch_source();
+    assert!(
+        source.contains(&format!("sha256-jcs:{}", model_digest(&document))),
+        "the rendered source selects the model file by its derived digest"
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let rendered = directory.path().join("switch.native");
+    let mut with_source_out = strings(&["--source-out"]);
+    with_source_out.extend(args(&[&rendered, Path::new("--model"), model, program]));
+    emit(&Request::parse(&with_source_out).unwrap()).expect("renders and emits");
+    assert_eq!(std::fs::read_to_string(&rendered).unwrap(), source);
 
     let mut command = strings(&["--model"]);
     command.extend(args(&[model, program]));
@@ -137,7 +173,8 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     assert_eq!(transitions, 1, "one derived transition for (set, on)");
 }
 
-/// A source the producer refuses (its `model` is not supplied) writes no bytes
+/// A source the producer refuses (its `model` is not supplied: the template's
+/// digest cannot be derived) writes no bytes
 /// and fails with the refusing stage's nonzero exit code; a malformed command
 /// line and an unreadable file fail the same way.
 #[test]
@@ -145,7 +182,7 @@ fn a_refused_source_writes_nothing_and_exits_nonzero() {
     let program = Path::new("tests/fixtures/spine-model.native");
     let mut stdout = Vec::new();
     let refusal = run(&args(&[program]), &mut stdout).expect_err("the model is not supplied");
-    assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
+    assert!(matches!(refusal, Error::Template), "{refusal:?}");
     assert_ne!(refusal.exit_code(), 0);
     assert!(!refusal.to_string().is_empty());
     assert!(stdout.is_empty());
@@ -227,7 +264,7 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
 #[test]
 fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
     let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
-    let program = Path::new("examples/switch-transition/switch.native");
+    let program = Path::new("examples/switch-transition/switch.native.in");
     let document = std::fs::read(model).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let points = |text: &str| {
@@ -321,8 +358,7 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
 fn several_accepted_execution_points_each_reach_their_clause() {
     let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
     let document = std::fs::read(model).unwrap();
-    let source = std::fs::read_to_string("examples/switch-transition/switch.native").unwrap()
-        + "pre Q0 using v on M::Switch::set { true }\n";
+    let source = rendered_switch_source() + "pre Q0 using v on M::Switch::set { true }\n";
     let directory = tempfile::tempdir().unwrap();
     let program = directory.path().join("two-clauses.native");
     std::fs::write(&program, source).unwrap();
@@ -371,7 +407,7 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     command.extend(strings(&["--execution-points"]));
     command.extend(args(&[&points]));
     command.extend(args(&[Path::new(
-        "examples/switch-transition/switch.native",
+        "examples/switch-transition/switch.native.in",
     )]));
     let mut stdout = Vec::new();
     let refusal = run(&command, &mut stdout).expect_err("an over-cap points file");
