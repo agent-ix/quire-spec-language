@@ -347,11 +347,7 @@ fn combined_reductions_are_reported_in_canonical_order() {
         &["a", "b", "c"],
         &[vec![0, 0, 0]],
     );
-    let mut request = world.request(
-        &["a", "b", "c"],
-        vec![world.item("Anything")],
-        no_samples(),
-    );
+    let mut request = world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples());
     request.reductions.partial_order = true;
     request
         .reductions
