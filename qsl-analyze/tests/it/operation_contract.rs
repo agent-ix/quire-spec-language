@@ -615,3 +615,63 @@ fn a_rule_of_a_refinement_with_a_hidden_field_is_unsupported() {
         assert_eq!(reason.as_str(), "refinement-not-step-simulable");
     }
 }
+
+/// QSpec FR-485 "Forms" over a QSL-emitted step relation (FR-180): with
+/// `attemptUpdate` bound by the abstraction relation, QSL writes the
+/// relation's operation-contract code claim beside its model claim. The
+/// code claim selects the `step-relation` form and, the arm holding no
+/// implementation engine, settles `unsupported` `no-implementation-engine`;
+/// the model claim, a `temporal-satisfaction` item, selects no form.
+#[trace("QSpec-TC-974", "QSpec-FR-485-AC-8")]
+#[test]
+fn a_bound_step_relation_is_unsupported_with_no_implementation_engine() {
+    let world = World::with_profiles(
+        config_version(),
+        "profile m = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.infinite-trace/v1\";\n",
+        &format!(
+            "{CONFIG_CONTRACT}\
+             relation Det using t over (x: Config::ConfigVersion::attemptUpdate, \
+             y: Config::ConfigVersion::attemptUpdate) \
+             {{ pre(x.self.versionNumber) = pre(y.self.versionNumber) \
+             implies x.self.versionNumber = y.self.versionNumber }}\n{}",
+            relation(true)
+        ),
+        &[&[("a", &[("versionNumber", 0)])]],
+    );
+    let graph = world.package.graph();
+    let [relation] = graph.step_relations() else {
+        panic!("one step relation");
+    };
+    let node = WireNodeId::from_digest(*relation.identity().expect("assembled").as_bytes());
+    let code: Vec<&OccurrenceKey> = graph
+        .requirements()
+        .iter()
+        .filter(|(occurrence, record)| {
+            occurrence.node() == node
+                && record.requirements().kind()
+                    == qsl_semantics::check::Capability::OperationContract
+        })
+        .map(|(occurrence, _)| occurrence)
+        .collect();
+    let [code] = code[..] else {
+        panic!("one code claim: {code:?}");
+    };
+    let selected = select_contract(&world.package, code).expect("selects");
+    assert_eq!(selected.form().as_str(), "step-relation");
+    assert!(selected.bound());
+    let record = run(&world, code, None);
+    let TerminalValue::Unsupported(UnavailabilityCause::ContractCheck { form, reason }) =
+        terminal(&record)
+    else {
+        panic!("expected unsupported: {:?}", terminal(&record));
+    };
+    assert_eq!(form.as_str(), "step-relation");
+    assert_eq!(reason.as_str(), "no-implementation-engine");
+
+    let model = relation.occurrence().expect("the model claim");
+    assert_eq!(
+        select_contract(&world.package, model),
+        Err(ContractSelection::NoForm)
+    );
+}

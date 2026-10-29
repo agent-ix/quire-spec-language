@@ -22,10 +22,10 @@
 //! item whose operation has an FR-353 implementation binding is not run, and
 //! a `frame` item with none has no contract-level reading. Every
 //! counterexample it writes has `bound` `false` and is replayed on the
-//! recorded values by the native evaluator. QSL lowers a step relation
-//! only to its model claim (`temporal-satisfaction`), so a QSL package holds
-//! no `claim`/`step_relation` operation-contract item and no claim selects
-//! the `step-relation` form here.
+//! recorded values by the native evaluator. A step relation's
+//! operation-contract item exists only when every execution is bound
+//! (ADR-023 XC-1), so the `step-relation` form always settles
+//! `no-implementation-engine`.
 
 use qsl_eval::simulation::model::{
     ClauseOutcome, ContractClause, ContractClauseKind, DeclaredStates, ModelFinding, ModelSimState,
@@ -37,7 +37,7 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    AbstractionKey, CheckedAbstractionRelation, CheckedRefinement, OperationKey,
+    AbstractionKey, Capability, CheckedAbstractionRelation, CheckedRefinement, OperationKey,
 };
 use qsl_semantics::model::state::ModelState;
 use quire_exact::{EffectiveId, Identifier, NodeKey, Value};
@@ -59,6 +59,8 @@ pub enum ContractForm {
     Clause,
     /// An operation's frame.
     Frame,
+    /// A step relation every execution of which is bound.
+    StepRelation,
     /// A refinement's per-step simulation obligation.
     Simulation,
 }
@@ -70,6 +72,7 @@ impl ContractForm {
             Self::Invariant => "invariant",
             Self::Clause => "clause",
             Self::Frame => "frame",
+            Self::StepRelation => "step-relation",
             Self::Simulation => "simulation",
         }
     }
@@ -155,6 +158,8 @@ enum Target {
     Frame,
     /// A rule of a refinement that is not proof-eligible (FR-146).
     NotStepSimulable,
+    /// A bound step relation; it is always bound, so never evaluated.
+    StepRelation,
     /// A refinement's initial-state rule (ordinal 0) or step row `source`.
     Simulation {
         refinement: usize,
@@ -279,6 +284,14 @@ pub fn select_contract(
         bound,
     };
     match (role, node) {
+        ("claim", Some(node))
+            if graph
+                .step_relations()
+                .iter()
+                .any(|relation| relation.identity() == Some(node)) =>
+        {
+            step_relation(package, claim, node)
+        }
         ("claim", Some(node)) => {
             let clause = graph
                 .state_clauses()
@@ -376,6 +389,54 @@ pub fn select_contract(
         }
         _ => Err(ContractSelection::NoForm),
     }
+}
+
+/// The `step-relation` form of `claim` on the step-relation node `node`
+/// (QSpec FR-485 "Forms"): the node's operation-contract code claim, which
+/// QSL writes only when every execution's operation is bound (ADR-023 XC-1).
+/// The node's model claim, a `temporal-satisfaction` item, selects no form;
+/// a bound item that reads an element with no abstraction binding is
+/// [`ContractSelection::Unbound`].
+fn step_relation(
+    package: &CheckedPackage,
+    claim: &OccurrenceKey,
+    node: NodeKey,
+) -> Result<ContractClaim, ContractSelection> {
+    let graph = package.graph();
+    let relation = graph
+        .step_relations()
+        .iter()
+        .find(|relation| relation.identity() == Some(node))
+        .ok_or(ContractSelection::NoForm)?;
+    let code = graph
+        .requirements()
+        .get(claim)
+        .is_some_and(|record| record.requirements().kind() == Capability::OperationContract);
+    if relation.occurrence() == Some(claim) || !code {
+        return Err(ContractSelection::NoForm);
+    }
+    let elements = graph
+        .item_elements(claim)
+        .transpose()
+        .map_err(ContractSelection::Fault)?
+        .unwrap_or_default();
+    let relation_bindings = package.abstraction();
+    let mut bound = true;
+    for (_, operation) in relation.executions() {
+        bound &= binding(relation_bindings, operation, elements.iter().cloned())?;
+    }
+    if !bound {
+        // QSL writes the code claim only over bound executions.
+        return Err(ContractSelection::Fault(fault(
+            "a-step-relation-code-claim-is-bound",
+        )));
+    }
+    Ok(ContractClaim {
+        claim: claim.clone(),
+        form: ContractForm::StepRelation,
+        target: Target::StepRelation,
+        bound,
+    })
 }
 
 /// A `generated` claim with no step-simulation entry: `Ok` when it names a
@@ -851,7 +912,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 context,
                 operation,
             } => self.postcondition(case.state(), *clause, *context, operation),
-            Target::Frame | Target::NotStepSimulable => {
+            Target::Frame | Target::NotStepSimulable | Target::StepRelation => {
                 Err(Stop::Fault(fault("an-unsupported-item-is-not-evaluated")))
             }
             Target::Simulation { refinement, row } => {

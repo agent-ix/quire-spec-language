@@ -528,6 +528,7 @@ impl<'a> ModelSystem<'a> {
                     contract: &mut contract,
                     successors: &mut successors,
                     enabled: Some(&mut enabled),
+                    enabled_transitions: None,
                 },
             )?;
         }
