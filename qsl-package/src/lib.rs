@@ -36,11 +36,11 @@ pub use checked_v2::{
     state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint, CheckedClockPlace,
     CheckedClockReset, CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel,
     CheckedTimedPredicate, CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockPathStep,
-    ClockSlotSelector, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
-    ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim,
-    ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect,
-    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
-    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal,
+    PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
+    ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect, StateGraphKind,
+    StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
+    V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{

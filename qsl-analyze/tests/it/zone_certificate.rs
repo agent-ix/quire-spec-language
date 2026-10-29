@@ -396,7 +396,7 @@ fn a_zone_proof_settles_through_the_core_checker() {
             ZoneItem::Outcome(outcome),
             &package_id(),
             &Cancel::new(),
-            |certificate| verdict(&world, certificate),
+            |certificate| Ok(verdict(&world, certificate)),
             |_| Err(fault()),
         )
     };
@@ -441,7 +441,7 @@ fn a_settles_proof_settles_through_the_core_checker() {
             ZoneItem::Outcome(outcome),
             &package_id(),
             &Cancel::new(),
-            |certificate| verdict(&world, certificate),
+            |certificate| Ok(verdict(&world, certificate)),
             |_| Err(fault()),
         )
     };
@@ -878,5 +878,42 @@ fn an_identity_mismatch_names_both_identities() {
             ))),
             recompiled: Box::new(ItemIdentity::DeadlockFreedom),
         }
+    );
+}
+
+/// FR-235 over a checker refusal: a certificate the checker refuses as
+/// naming another item settles `Inconclusive(ReplayRefused(stale_dependency))`,
+/// as FR-127's row for a certificate of another package, and any other
+/// refusal settles `failed`, never a verdict.
+#[trace("TC-690")]
+#[test]
+fn a_refused_certificate_check_settles_stale_or_failed() {
+    let world = rpc(4);
+    let proof = claim(&world, ZoneCheckLimits::default(), &Cancel::new());
+    let ZoneCheckOutcome::Holds { certificate, .. } = &proof else {
+        panic!("a proof");
+    };
+    let settle = |refusal: qsl_replay::ZoneCertificateRefusal<ItemObligation<&'static str>>| {
+        settle_zone_check(
+            ZoneItem::Outcome(&proof),
+            &package_id(),
+            &Cancel::new(),
+            |_| Err(refusal),
+            |_| Err(fault()),
+        )
+        .value
+    };
+    assert_eq!(
+        settle(qsl_replay::ZoneCertificateRefusal::ObligationMismatch {
+            certificate: Box::new(certificate.obligation.clone()),
+            item: Box::new(certificate.obligation.clone()),
+        }),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+            qsl_foundation::diagnostic::Code::StaleDependency
+        ))
+    );
+    assert_eq!(
+        settle(qsl_replay::ZoneCertificateRefusal::UnsupportedItem),
+        TerminalValue::Failed
     );
 }

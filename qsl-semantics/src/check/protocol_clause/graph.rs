@@ -12,7 +12,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{AnchorSite, JoinPolicy, ParallelForm, ProtocolDeclarationForm, ProtocolNodeKind};
+use qsl_forms::{
+    AnchorSite, JoinPolicy, ParallelForm, ProtocolDeclarationForm, ProtocolNodeKind, RepeatForm,
+};
 use qsl_foundation::Span;
 
 use super::refusal;
@@ -64,6 +66,20 @@ fn fault(invariant: &'static str) -> Vec<(Span, CheckRefusal)> {
             ))),
         },
     )]
+}
+
+/// The child of the `repeat` control `control` (declared by `form`) that is
+/// its body, not its `exhausted` control.
+pub(crate) fn repeat_body(
+    protocol: &ProtocolDeclarationForm,
+    control: &CheckedControl,
+    form: &RepeatForm,
+) -> Option<ProtocolNodeId> {
+    control
+        .children
+        .iter()
+        .copied()
+        .find(|child| contains(form.body, protocol.declarations[child.0].name.span))
 }
 
 fn contains(outer: Span, inner: Span) -> bool {
@@ -509,8 +525,8 @@ fn cycles(
     refusals
 }
 
-/// One `declaration-form` refusal per `repeat` whose body does not
-/// necessarily step (QSpec FR-464 "Progress").
+/// The `declaration-form` refusal of the first `repeat`, in tree order,
+/// whose body does not necessarily step (QSpec FR-464 "Progress").
 pub(super) fn progress(
     protocol: &ProtocolDeclarationForm,
     tree: &CheckedControlTree,
@@ -534,15 +550,26 @@ pub(super) fn progress(
             K::Send | K::Receive | K::Attempt | K::Effect | K::Event | K::Commit | K::Fence => true,
             K::Await | K::Parallel => true,
             K::Check | K::Finish | K::CompensateTemplate => false,
+            // QSpec FR-464 "Nested `repeat` rule": a `repeat` steps for an
+            // enclosing one only when its exit is infeasible, its maximum is
+            // absent or at least 1 and its body steps. Its `exhausted`
+            // control is never counted.
             K::Repeat => {
+                let form = protocol
+                    .repeats
+                    .iter()
+                    .find(|repeat| repeat.declaration == control.node.0);
+                let entered = form
+                    .and_then(|form| form.max.as_ref())
+                    .is_none_or(|max| max.value >= 1);
                 !nested_false_feasible
                     .get(&control.node)
                     .copied()
                     .unwrap_or(false)
-                    && control
-                        .children
-                        .iter()
-                        .any(|child| steps.get(child).copied().unwrap_or(false))
+                    && entered
+                    && form
+                        .and_then(|form| repeat_body(protocol, control, form))
+                        .is_some_and(|body| steps.get(&body).copied().unwrap_or(false))
             }
             K::Branch | K::Case => child(0),
             K::Sequence => control
@@ -568,14 +595,12 @@ pub(super) fn progress(
         else {
             continue;
         };
-        let body = control
-            .children
-            .iter()
-            .copied()
-            .find(|child| contains(form.body, protocol.declarations[child.0].name.span));
+        let body = repeat_body(protocol, control, form);
         if body.and_then(|body| steps.get(&body).copied()) == Some(true) {
             continue;
         }
+        // FR-464 "Progress": the first such `repeat` in tree order is
+        // refused, once.
         let span = form.name.span;
         refusals.push((
             span,
@@ -585,6 +610,7 @@ pub(super) fn progress(
                 span,
             }),
         ));
+        break;
     }
     refusals
 }

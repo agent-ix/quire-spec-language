@@ -1222,7 +1222,7 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1 and EN-4 registrations and leaves the missing witness kinds empty.
+    /// EN-1, EN-4 and EN-6 registrations and leaves the missing witness kinds empty.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1233,7 +1233,7 @@ mod tests {
         let CandidateOutcome::Candidates(temporal) =
             first.candidates(Capability::TemporalSatisfaction)
         else {
-            panic!("EN-1 gives a temporal candidate set");
+            panic!("EN-1 and EN-6 give a temporal candidate set");
         };
         assert_eq!(
             temporal
@@ -1241,7 +1241,7 @@ mod tests {
                 .iter()
                 .map(|candidate| candidate.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1"]
+            ["en-1", "en-6"]
         );
 
         let engines = Engines::qsl().expect("linked engine descriptors are admitted");

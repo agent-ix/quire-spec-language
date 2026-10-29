@@ -2,17 +2,7 @@
 
 For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
 
-## Hash / digest / pin antipattern: present, slated for removal
-
-This repository still contains hashes, digests, SHAs, pins, checksum catalogs and
-records that track files, versions or tools. That is an antipattern and it is slated
-for removal. Do not introduce any new use of it. When you touch code or specs that
-contain one, remove it as part of the change. The only hash that stays is a canonical
-identity digest that binds a proof to the exact content it proved. Package versions
-live in Cargo.toml / package.json and their lockfiles only; reports name the app
-version they ran.
-
-Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
+Read README.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
 retired; remaining non-temporal work belongs to the current `quire-agent-a/b/c`
@@ -30,7 +20,7 @@ with C before overlapping edits.
 - Use isolated worktrees for concurrent code sessions; preserve unrelated edits.
 - Run the actual build/test commands documented in README.md.
 - New integration tests go in `tests/it/<name>.rs` with a `mod <name>;` line added to `tests/it/main.rs` never a new top-level `tests/*.rs` file.
-- Owner directive: qualification checks run locally until stable. The native compiler CI workflow remains manual-dispatch only (`workflow_dispatch`); do not add automatic qualification triggers or dispatch a run without explicit direction. The automatic containment check `.github/workflows/language-boundary.yml` may run on `pull_request_target` solely to invoke the trusted Rust language-boundary checker and publish its result to the pull request head. This status is containment evidence, not a passing local build, test or qualification gate. The existing CLA workflow is separate. See NFR-002.
+- Owner directive: qualification checks run locally until stable. The native compiler CI workflow remains manual-dispatch only (`workflow_dispatch`); do not add automatic qualification triggers or dispatch a run without explicit direction. The existing CLA workflow is separate. See NFR-002.
 
 <!-- required-language-policy:start -->
 ## Required implementation language and containment
@@ -57,10 +47,8 @@ code smells are part of that review. For `/spec-review`, select the analyses
 applicable to the change; running all seven optional analyses is not required.
 
 Owner update: keep prototype bookkeeping minimal. Use ordinary Git history, PR
-links and brief test results. Do not maintain manual SHA inventories or
-per-document checksum catalogs, refresh hashes for routine draft edits, create
-successor draft files for working history, or record every intermediate step in
-status/review logs. Update existing artifacts and tickets for material decisions
+links and brief test results. Do not create successor draft files for working history, or record every
+intermediate step in status/review logs. Update existing artifacts and tickets for material decisions
 and remaining work.
 
 Owner update (2026-09-09): prioritize engineering toward the first proof of
