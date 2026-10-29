@@ -1215,9 +1215,6 @@ impl TimedModel {
         if constraint.parameter.is_some() {
             return None;
         }
-        if !constraint.via.is_empty() {
-            return Some(UnwrittenTimedMember::OtherObjectClock);
-        }
         if !constraint.slots.is_empty() {
             return Some(UnwrittenTimedMember::QuantifiedClause);
         }

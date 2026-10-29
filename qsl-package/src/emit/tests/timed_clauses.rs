@@ -474,6 +474,71 @@ fn two_guarded_preconditions_are_one_guard_of_their_conjunction() {
     assert_declared_order(&wire);
 }
 
+/// [`document`] with the required field `peer: ConfigVersion`, a
+/// reference to another object of the type.
+fn peer_document() -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(&document(false)).expect("JSON");
+    let config = &mut document["types"][1];
+    let owner = config["identity"].as_str().expect("an identity").to_owned();
+    let identity = format!("{owner}/peer");
+    let mut peer = config["fields"][0].clone();
+    peer["identity"] = json!(identity);
+    peer["name"] = json!("peer");
+    peer["typeRef"] = json!(owner);
+    peer["presence"] = json!("required");
+    peer["multiplicity"] = json!({"lower": 1, "upper": 1, "ordered": false, "unique": true});
+    peer["origin"]["generated"]["generatorIdentity"] = json!(identity);
+    peer["origin"]["generated"]["inputIdentities"] = json!([identity]);
+    config["fields"].as_array_mut().expect("fields").push(peer);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-10, QSpec FR-322 "Clause nodes" and "Presence": a constraint
+/// on another object's clock, `peer_clock(self) <= 2 ms` with `peer_clock`
+/// reading `o.peer.x`, is a `clock_constraint`
+/// of kind `place` on the template of `x` whose owner term is the
+/// expression `self.peer`: the `record.project` of `peer` over the
+/// `quire.op.model.deref` of `self`, as S3 lowers an attribute read.
+#[trace("TC-685", "FR-230-AC-10", "FR-230-AC-54", "QSpec-FR-322-AC-261")]
+#[test]
+fn a_constraint_on_another_objects_clock_names_its_owner_term() {
+    let (unit, wire) = emitted(
+        &peer_document(),
+        "function peer_clock using v(o: Config::ConfigVersion): Clock pure { o.peer.x }\n\
+         pre Near using v on Config::ConfigVersion::attemptUpdate { peer_clock(self) <= 2 ms }\n",
+    );
+    let [place] = timed(&wire, "clock_place")[..] else {
+        panic!("one place");
+    };
+    let [constraint] = timed(&wire, "clock_constraint")[..] else {
+        panic!("one constraint");
+    };
+    assert_eq!(literal(&constraint["body"], "kind"), "place");
+    assert_eq!(
+        member(&constraint["body"], "place")["target"],
+        place["node_id"]
+    );
+    assert_eq!(located(&wire, constraint, &unit), "peer_clock(self) <= 2 ms");
+    let owner = target(&wire, member(&constraint["body"], "owner"));
+    assert_eq!(owner["node_tag"], "expression");
+    assert_eq!(
+        owner["body"]["operation"]["identity"],
+        "quire.op.record.project"
+    );
+    assert_eq!(owner["body"]["operation"]["member"]["name"], "peer");
+    let [dereferenced] = owner["body"]["arguments"].as_array().expect("arguments").as_slice()
+    else {
+        panic!("one argument");
+    };
+    let dereferenced = target(&wire, dereferenced);
+    assert_eq!(
+        dereferenced["body"]["operation"]["identity"],
+        "quire.op.model.deref"
+    );
+    assert_self(&wire, &dereferenced["body"]["arguments"][0]);
+    assert_declared_order(&wire);
+}
+
 /// The member a refused model names, and the text of its span in `unit`.
 fn unwritten(document: &[u8], body: &str) -> (qsl_semantics::check::UnwrittenTimedMember, String) {
     let (unit, checked) = checked(document, body);

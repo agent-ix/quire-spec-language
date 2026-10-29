@@ -17,10 +17,11 @@
 //! A reset by selection binds its element by a `parameter` node of the
 //! slot's selector domain, `Integer`, which is its one slot term.
 
-use quire_exact::{EffectiveId, NodeKey, ValueType};
+use quire_exact::{EffectiveId, Identifier, NodeKey, ValueType};
 use quire_semantic_value::location::Location;
 
-use super::{Binder, Binders, Lowering};
+use super::{Binder, Binders, Lowering, PlaceStep};
+use crate::value::member::Member;
 use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{
     BodyTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag, Operation, Operator,
@@ -240,13 +241,66 @@ impl Lowering<'_> {
         Ok(ConstraintNodes {
             target: ConstraintTargetNodes::Place {
                 clock: constraint.clock(),
-                owner: self.timed_self(context, location)?,
+                owner: self.timed_owner(context, constraint.via(), location)?,
                 slots: Vec::new(),
             },
             comparison: constraint.op(),
             bound: constraint.bound().clone(),
             span: constraint.span(),
         })
+    }
+
+    /// The owner term of a clock `self` reaches through the reference
+    /// fields `via` (FR-230-AC-10's `self.peer`): `self`, then for each
+    /// field the `quire.op.model.deref` of the reference so far, typed at
+    /// its object type's model node, and over it the `record.project` of the
+    /// field, typed `Reference<T>`, as S3 lowers an attribute read.
+    fn timed_owner(
+        &mut self,
+        context: EffectiveId,
+        via: &[PlaceStep],
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let mut owner = self.timed_self(context, location)?;
+        let mut at = context;
+        for step in via {
+            let unreachable = || super::fault(location, KeyFault::UnkeyableRequirements);
+            let PlaceStep::Field(name) = step else {
+                return Err(unreachable());
+            };
+            let next = self
+                .models
+                .iter()
+                .find_map(|model| model.referenced_object(at, name))
+                .ok_or_else(unreachable)?;
+            let object = self.object_node(at, location)?;
+            let dereferenced = self.typed_application(
+                location,
+                object,
+                Operator::Deref,
+                Operation::plain("quire.op.model.deref"),
+                vec![MemberTerm::Leaf(LeafTerm::reference(owner))],
+            )?;
+            let field_type = self.type_node(&ValueType::Reference(next), location)?;
+            self.record(field_type, OccurrenceRole::Type, location.clone());
+            let name = Identifier::new(name.as_str()).map_err(|_| unreachable())?;
+            let read = self.typed_application(
+                location,
+                field_type,
+                Operator::Query,
+                Operation {
+                    member: Some(Member::Field {
+                        declaration: object,
+                        name,
+                    }),
+                    ..Operation::plain("quire.op.record.project")
+                },
+                vec![MemberTerm::Leaf(dereferenced)],
+            )?;
+            owner = read.key().ok_or_else(unreachable)?;
+            at = next;
+        }
+        Ok(owner)
     }
 
     /// `self`: the `parameter` node at level 0 typed `Reference<context>`.

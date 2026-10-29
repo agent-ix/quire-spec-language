@@ -1208,9 +1208,6 @@ pub enum UnwrittenTimedMember {
     /// clock presence, whose `presence_read` over a `clock_place` S3 does
     /// not lower yet.
     PresenceRead,
-    /// A constraint on the clock of another object than the receiver
-    /// (`self.peer.x`), whose owner term S3 does not lower yet.
-    OtherObjectClock,
     /// A guard disjunct that constrains no clock: a `clock_guard` part
     /// names at least one constraint (QSpec FR-322-AC-261, `CL-20`).
     UnconstrainedGuardPart,
@@ -1241,7 +1238,6 @@ impl UnwrittenTimedMember {
                 "a clock-reading clause bound to an execution point waits on STD-555"
             }
             Self::PresenceRead => "a predicate reading a clock presence is not lowered yet",
-            Self::OtherObjectClock => "a constraint on another object's clock is not lowered yet",
             Self::UnconstrainedGuardPart => "a guard disjunct that constrains no clock",
             Self::CollectionWrite => "a clock collection written whole",
             Self::PresenceDrop => "a clock place set absent",
