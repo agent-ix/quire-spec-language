@@ -594,6 +594,33 @@ pub(crate) fn config_world(claims: &str, starts: &[(i64, i64)]) -> World {
     config_world_over("", claims, &["a", "b"], &starts)
 }
 
+/// ADR-021 §7.2's three-counter POR instance, with `ReachesTwo` bound to
+/// `x = a` and all three counters initially zero.
+pub(crate) fn por_reachestwo_world() -> World {
+    let model = Model {
+        package: "test/por",
+        alias: "M",
+        object: "Counter",
+        population: "counters",
+        symmetric: false,
+        fields: vec![Field {
+            name: "v",
+            range: Some((0, 2)),
+        }],
+        operations: vec![Operation {
+            name: "bump",
+            modifies: &["v"],
+        }],
+    };
+    let source = concat!(
+        "pre CanBump using v on M::Counter::bump { self.v < 2 }\n",
+        "post Bumped using v on M::Counter::bump { (pre(self.v) = 0 and self.v = 1) or (pre(self.v) = 1 and self.v = 2) }\n",
+        "possible ReachesTwo using v over (x: M::Counter) { x.v = 2 }\n",
+    );
+    let counters: [Object<'_>; 3] = [("a", &[("v", 0)]), ("b", &[("v", 0)]), ("c", &[("v", 0)])];
+    World::new(model, source, &[&counters])
+}
+
 /// §7.1's world with `extra` added to its contract, universe `keys`, and one
 /// snapshot per entry of `starts`, each the version of every key in order.
 pub(crate) fn config_world_over(

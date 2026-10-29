@@ -33,8 +33,8 @@ use quire_exact::{Cancel, CancelCause, ObjectReference};
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
     config_version, config_world, config_world_over, detour_world, fork_world, game_world,
-    job_world, job_world_with_claims, ladder_world, Field, Model, Operation, World, CAN_STILL_WIN,
-    DIVIDES, REACHES_THREE, REACHES_TWO,
+    job_world, job_world_with_claims, ladder_world, por_reachestwo_world, Field, Model, Operation,
+    World, CAN_STILL_WIN, DIVIDES, REACHES_THREE, REACHES_TWO,
 };
 
 pub(crate) const AB: &[&str] = &["a", "b"];
@@ -282,16 +282,11 @@ fn possible_under_por_returns_holds_reduced_with_witnesses() {
 #[trace("TC-593", "FR-168-AC-14")]
 #[test]
 fn possible_reachestwo_for_one_binding_uses_the_por_ample_set() {
-    let world = crate::graph_world::config_world_over(
-        "pre CanAdvance using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 2 }\n",
-        "possible ReachesTwo using v over (x: Config::ConfigVersion) { x.versionNumber = 2 }\n",
-        &["a", "b", "c"],
-        &[vec![0, 0, 0]],
-    );
+    let world = por_reachestwo_world();
     let binding = ModelInstance {
         population: quire_checked::key::DeclarationKey {
-            package: "test/config".to_owned(),
-            node: "ix://test/config/config_history".to_owned(),
+            package: "test/por".to_owned(),
+            node: "ix://test/por/counters".to_owned(),
         },
         key: "a".to_owned(),
     };
@@ -368,16 +363,16 @@ fn possible_reachestwo_for_one_binding_uses_the_por_ample_set() {
             .map(|step| (operation(step), receiver(step)))
             .collect::<Vec<_>>(),
         [
-            ("attemptUpdate".to_owned(), "b".to_owned()),
-            ("attemptUpdate".to_owned(), "b".to_owned()),
-            ("attemptUpdate".to_owned(), "c".to_owned()),
-            ("attemptUpdate".to_owned(), "c".to_owned()),
-            ("attemptUpdate".to_owned(), "a".to_owned()),
-            ("attemptUpdate".to_owned(), "a".to_owned()),
+            ("bump".to_owned(), "b".to_owned()),
+            ("bump".to_owned(), "b".to_owned()),
+            ("bump".to_owned(), "c".to_owned()),
+            ("bump".to_owned(), "c".to_owned()),
+            ("bump".to_owned(), "a".to_owned()),
+            ("bump".to_owned(), "a".to_owned()),
         ]
     );
     let replayed = positions(&world, &["a", "b", "c"], &paths[0].path);
-    assert_eq!(world.value(&replayed[6], "a", "versionNumber"), 2);
+    assert_eq!(world.value(&replayed[6], "a", "v"), 2);
     for witness in paths {
         let replay = world.replay_witness(
             world.claim("ReachesTwo"),
