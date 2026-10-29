@@ -50,6 +50,9 @@ struct Raw {
     groups: BTreeMap<Name, Vec<String>>,
 }
 
+/// `#[string_edge]`: reads the spec's markdown text, whose line markers are
+/// the intake of this test-vector table.
+#[ix_trace_rs::string_edge]
 fn parse(tag: &str, spec: &str, raw: &mut Raw) {
     let mut lines = spec.lines().peekable();
     while let Some(line) = lines.next() {
@@ -124,6 +127,7 @@ fn hex_of(digest: [u8; 32]) -> String {
 /// The key of QSpec's nominal vector `name` (`dimension-length`,
 /// `dimension-time`, `unit-metre`, `unit-second`), recomputed from the
 /// hand-written preimage; no published key is recorded.
+#[ix_trace_rs::string_edge]
 pub fn local_key(name: &str) -> Option<String> {
     use crate::value::semantic_node::NodeIdentityPreimage;
     use crate::value::unit::{DimensionPreimage, UnitPreimage};
@@ -178,6 +182,7 @@ struct Resolver<'a> {
 impl Resolver<'_> {
     /// `text` with every placeholder replaced, or `None` when one needs a
     /// QSpec key that is unavailable.
+    #[ix_trace_rs::string_edge]
     fn resolve(&mut self, tag: &str, text: &str) -> Option<String> {
         let mut out = String::new();
         let mut rest = text;
