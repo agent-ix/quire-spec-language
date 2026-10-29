@@ -394,9 +394,7 @@ impl World {
 
     /// The item `name`; its instances are the subject's universe keys.
     pub(crate) fn item(&self, name: &str) -> StateGraphItem<'_> {
-        StateGraphItem {
-            claim: self.claim(name),
-        }
+        StateGraphItem::new(self.claim(name))
     }
 
     /// A request over universe `keys` for `items`, with no deadlock item, no

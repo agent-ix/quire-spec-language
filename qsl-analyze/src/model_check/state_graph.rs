@@ -62,6 +62,30 @@ use super::ModelCheckRefusal;
 pub struct StateGraphItem<'a> {
     /// The checked claim.
     pub claim: &'a CheckedStateGraphClaim,
+    /// An optional `over` binding to decide for this request item. When
+    /// absent, FR-125 instancing supplies every compatible key in canonical
+    /// order. When present, the request runs just that binding while keeping
+    /// the subject's full state space.
+    pub binding: Option<ModelInstance>,
+}
+
+impl<'a> StateGraphItem<'a> {
+    /// Decide every instance of `claim` selected by the subject's universes.
+    pub fn new(claim: &'a CheckedStateGraphClaim) -> Self {
+        Self {
+            claim,
+            binding: None,
+        }
+    }
+
+    /// Decide only `binding` of an `over` claim, retaining the full subject
+    /// and its transitions for state-graph exploration.
+    pub fn for_binding(claim: &'a CheckedStateGraphClaim, binding: ModelInstance) -> Self {
+        Self {
+            claim,
+            binding: Some(binding),
+        }
+    }
 }
 
 /// One EN-1 run over a model subject's state-graph items (FR-166, FR-167).
@@ -264,7 +288,7 @@ fn instances<'a>(
                     (role, body)
                 })
                 .collect();
-            let bindings: Vec<(Option<ObjectReference>, Option<ModelInstance>)> =
+            let mut bindings: Vec<(Option<ObjectReference>, Option<ModelInstance>)> =
                 match entry.claim.over() {
                     None => vec![(None, None)],
                     Some(over) => system
@@ -279,6 +303,9 @@ fn instances<'a>(
                         })
                         .collect::<Result<_, _>>()?,
                 };
+            if let Some(selected) = &entry.binding {
+                bindings.retain(|(_, binding)| binding.as_ref() == Some(selected));
+            }
             Ok(bindings
                 .into_iter()
                 .enumerate()
@@ -311,9 +338,10 @@ fn symmetry_instances<'a>(
                     result.push(view);
                     continue;
                 };
-                let orbit = declared
+                let mut orbit = declared
                     .class_of(&binding.population, &binding.key)
                     .map_or_else(|| vec![binding.key.clone()], |class| class.keys.clone());
+                orbit.sort();
                 let representative = orbit
                     .first()
                     .cloned()
@@ -326,9 +354,6 @@ fn symmetry_instances<'a>(
                 view.orbit = orbit;
                 result.push(view);
             }
-            // Ensure identity-bound predicates remain invariant for every
-            // representative in the shared exploration: retain only the
-            // symmetry transformations that fix all representatives.
             Ok(result)
         })
         .collect()
@@ -662,6 +687,7 @@ pub fn check_state_graph(
         views: &views,
         deadlock_freedom: request.deadlock_freedom,
         por: por.as_ref(),
+        declared_symmetry: &declared_symmetry,
         symmetry: &symmetry_group,
     }
     .run()?;
@@ -736,7 +762,7 @@ pub fn check_state_graph(
     })
 }
 
-fn applied_reductions(
+pub(super) fn applied_reductions(
     partial_order: bool,
     declared: &SymmetryGroup,
     applied: &SymmetryGroup,
@@ -747,7 +773,7 @@ fn applied_reductions(
         reductions.push(AppliedReduction::Symmetry {
             groups: declared.classes.clone(),
             orbit: orbit.to_vec(),
-            stabiliser: applied.classes.clone(),
+            stabiliser: reported_stabiliser(declared, applied),
         });
     }
     if partial_order {
@@ -756,6 +782,38 @@ fn applied_reductions(
         });
     }
     reductions
+}
+
+/// Preserve fixed keys as singleton blocks in the reported stabilizer
+/// partition, while the execution group contains only non-trivial blocks.
+fn reported_stabiliser(
+    declared: &SymmetryGroup,
+    applied: &SymmetryGroup,
+) -> Vec<qsl_eval::simulation::SymmetryClass> {
+    let mut result = Vec::new();
+    for group in &declared.classes {
+        let start = result.len();
+        let moving = applied
+            .classes
+            .iter()
+            .find(|class| class.population == group.population)
+            .map(|class| class.keys.as_slice())
+            .unwrap_or_default();
+        for key in group.keys.iter().filter(|key| !moving.contains(key)) {
+            result.push(qsl_eval::simulation::SymmetryClass {
+                population: group.population.clone(),
+                keys: vec![key.clone()],
+            });
+        }
+        if !moving.is_empty() {
+            result.push(qsl_eval::simulation::SymmetryClass {
+                population: group.population.clone(),
+                keys: moving.to_vec(),
+            });
+        }
+        result[start..].sort_by(|left, right| left.keys[0].cmp(&right.keys[0]));
+    }
+    result
 }
 
 /// ADR-022 GR-1: selected state-space reductions are rejected by the form's

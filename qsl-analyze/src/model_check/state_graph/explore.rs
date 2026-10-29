@@ -27,10 +27,9 @@ use qsl_eval::automaton::{SafetyState, SafetyTranslation};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::{SymmetryGroup, TransitionSystem};
 use qsl_replay::{
-    AppliedReduction, ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit,
-    ModelCheckLimits, ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, Proviso, RunEnd,
-    RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, RunEnd, RunStats,
+    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -83,6 +82,7 @@ pub(super) struct Exploration<'r, 'a, 'v> {
     pub(super) views: &'r [Vec<InstanceView<'v>>],
     pub(super) deadlock_freedom: bool,
     pub(super) por: Option<&'r Por<'r, 'a>>,
+    pub(super) declared_symmetry: &'r SymmetryGroup,
     pub(super) symmetry: &'r SymmetryGroup,
 }
 
@@ -476,30 +476,12 @@ impl Exploration<'_, '_, '_> {
                     stats,
                 },
                 RunEnd::Completed if walk.reduced => ModelCheckOutcome::HoldsReduced {
-                    reductions: if walk.partial_order_reduced {
-                        let mut reductions = vec![AppliedReduction::PartialOrder {
-                            proviso: Proviso::BreadthFirstRevisit,
-                        }];
-                        if !self.symmetry.is_trivial() {
-                            reductions.insert(
-                                0,
-                                AppliedReduction::Symmetry {
-                                    groups: self.symmetry.classes.clone(),
-                                    orbit: Vec::new(),
-                                    stabiliser: self.symmetry.classes.clone(),
-                                },
-                            );
-                        }
-                        reductions
-                    } else if !self.symmetry.is_trivial() {
-                        vec![AppliedReduction::Symmetry {
-                            groups: self.symmetry.classes.clone(),
-                            orbit: Vec::new(),
-                            stabiliser: self.symmetry.classes.clone(),
-                        }]
-                    } else {
-                        Vec::new()
-                    },
+                    reductions: super::applied_reductions(
+                        walk.partial_order_reduced,
+                        self.declared_symmetry,
+                        self.symmetry,
+                        &[],
+                    ),
                     stats,
                 },
                 RunEnd::Completed => ModelCheckOutcome::Holds {
