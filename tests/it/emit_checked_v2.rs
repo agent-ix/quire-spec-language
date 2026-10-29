@@ -7,7 +7,7 @@
 //! is frozen.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
@@ -26,6 +26,15 @@ fn args(items: &[&Path]) -> Vec<OsString> {
 
 fn strings(items: &[&str]) -> Vec<OsString> {
     items.iter().map(OsString::from).collect()
+}
+
+/// `tests/fixtures/spine-model.native` with its model digest filled in
+/// (`crate::support::spine_model::unit`), written to `directory` for the
+/// runnable output to read.
+fn spine_model_source(directory: &Path) -> PathBuf {
+    let path = directory.join("spine-model.native");
+    std::fs::write(&path, crate::support::spine_model::unit()).unwrap();
+    path
 }
 
 /// IR's strict read of `bytes`, supplied `documents` as domain evidence.
@@ -72,20 +81,21 @@ fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
 /// same bytes the default stdout carries.
 #[test]
 fn the_output_is_the_producers_bytes_and_reads_back() {
-    let source = std::fs::read_to_string("tests/fixtures/spine-model.native").unwrap();
-    let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
+    let source = crate::support::spine_model::unit();
+    let document = crate::support::spine_model::DOCUMENT;
     let directory = tempfile::tempdir().unwrap();
     let out = directory.path().join("package.json");
     let model = Path::new("tests/fixtures/spine-model.semantic-ir.json");
-    let program = Path::new("tests/fixtures/spine-model.native");
+    let program = spine_model_source(directory.path());
+    let program = program.as_path();
 
     let mut stdout = Vec::new();
     let mut command = strings(&["--model"]);
     command.extend(args(&[model, program]));
     run(&command, &mut stdout).expect("the fixture emits");
     assert!(!stdout.is_empty());
-    assert_eq!(stdout, producer_bytes(program, &source, &[&document]));
-    read_back(&stdout, &[&document]);
+    assert_eq!(stdout, producer_bytes(program, &source, &[document]));
+    read_back(&stdout, &[document]);
 
     let mut elsewhere = Vec::new();
     let mut command = strings(&["--out"]);
@@ -142,9 +152,10 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
 /// line and an unreadable file fail the same way.
 #[test]
 fn a_refused_source_writes_nothing_and_exits_nonzero() {
-    let program = Path::new("tests/fixtures/spine-model.native");
+    let directory = tempfile::tempdir().unwrap();
+    let program = spine_model_source(directory.path());
     let mut stdout = Vec::new();
-    let refusal = run(&args(&[program]), &mut stdout).expect_err("the model is not supplied");
+    let refusal = run(&args(&[&program]), &mut stdout).expect_err("the model is not supplied");
     assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_ne!(refusal.exit_code(), 0);
     assert!(!refusal.to_string().is_empty());

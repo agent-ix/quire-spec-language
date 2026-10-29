@@ -280,8 +280,8 @@ ceiling is an explicit refusal naming the file (exit 20), never truncated.
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
-  --model tests/fixtures/spine-model.semantic-ir.json \
-  tests/fixtures/spine-model.native > package.json
+  --model examples/switch-transition/switch.semantic-ir.json \
+  examples/switch-transition/switch.native > package.json
 ```
 
 The package is read back with the same domain documents as evidence
