@@ -1447,6 +1447,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // normalization can report the ordered QSL loci.
         .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
         .filter_map(|located| {
+            if let Some(refusal) = clock_variant_payload_refusal(document, located) {
+                return Some(refusal);
+            }
             if let Some(refusal) = duplicate_member_identity_refusal(document, located) {
                 return Some(refusal);
             }
@@ -1490,6 +1493,47 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// QSpec FR-154-AC-25 classifies a `Clock` variant payload as an unsupported
+/// payload, although the FCD reader reports `INVALID_CLOCK_MEMBER`. Project
+/// that reader diagnostic to QSL's `unsupported_construct` outcome at the
+/// variant payload locus instead of exposing the generic malformed mapping.
+#[ix_trace_rs::string_edge]
+fn clock_variant_payload_refusal(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    let pointer = located.pointer.strip_prefix("/ir").unwrap_or(&located.pointer);
+    let mut segments = pointer.strip_prefix('/')?.split('/');
+    if segments.next()? != "types" {
+        return None;
+    }
+    let type_index = segments.next()?.parse::<usize>().ok()?;
+    if segments.next()? != "variants" {
+        return None;
+    }
+    let variant_index = segments.next()?.parse::<usize>().ok()?;
+    if segments.next()? != "payloadType" || segments.next().is_some() {
+        return None;
+    }
+    let case = document
+        .tree
+        .get("types")?
+        .as_array()?
+        .get(type_index)?
+        .get("variants")?
+        .as_array()?
+        .get(variant_index)?;
+    if case.get("payloadType")?.as_str()? != "ix://quire/native/Clock" {
+        return None;
+    }
+    Some(unsupported_member(
+        case,
+        &format!("$.types[{type_index}].variants[{variant_index}]"),
+        MemberPath::new(MemberRoot::Variant).name("payloadType"),
+        format!("{}:payloadType", meaning::VARIANT_TYPE),
+    ))
 }
 
 #[ix_trace_rs::string_edge]

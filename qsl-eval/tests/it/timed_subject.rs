@@ -5224,102 +5224,8 @@ fn absent_drops_an_option_clock() {
     }
 }
 
-/// [`cells_document`] with `Mode { Idle, Armed(Clock) }` held by the `Call`
-/// field `state`, which `work` writes.
-/// With `waiting`, also the second clock case `Waiting(Clock)`.
-fn union_clock_document_with(waiting: bool) -> Vec<u8> {
-    let case = |name: &str, line: u64, payload: Option<&str>| {
-        let mut case = json!({"identity": ident(&format!("variant/Mode-{name}")), "name": name,
-            "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
-                "startLine": line, "startColumn": 3}}});
-        if let Some(payload) = payload {
-            case["payloadType"] = json!(payload);
-        }
-        case
-    };
-    let mut mode = wire_type(
-        &ident("Mode"),
-        "mode",
-        json!({"variants": [case("Idle", 20, None), case("Armed", 21, Some(CLOCK))]}),
-    );
-    if waiting {
-        mode["variants"]
-            .as_array_mut()
-            .expect("variants")
-            .push(case("Waiting", 22, Some(CLOCK)));
-    }
-    mode["displayName"] = json!("Mode");
-    cells_document(
-        vec![mode],
-        vec![("state", ident("Mode"), None)],
-        &["state"],
-        &[],
-    )
-}
-
-/// A world over [`union_clock_document_with`], `work` and `tick` both writing
-/// `state` under `body`, with `c` starting `Idle`.
-fn union_world(body: &str) -> World {
-    union_world_holding(
-        body,
-        json!({"variant": {"type": ident("Mode"), "case": "Idle"}}),
-    )
-}
-
-/// [`union_world`] with `c`'s `state` holding `state`.
-fn union_world_holding(body: &str, state: Json) -> World {
-    union_world_over(false, body, state)
-}
-
-/// [`union_world_holding`] over [`union_clock_document_with`]`(waiting)`.
-fn union_world_over(waiting: bool, body: &str, state: Json) -> World {
-    try_union_world_over(waiting, body, state)
-        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
-}
-
-/// [`union_world_over`], or the refusals S3 gives the unit.
-fn try_union_world_over(
-    waiting: bool,
-    body: &str,
-    state: Json,
-) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let mut document: Json =
-        serde_json::from_slice(&union_clock_document_with(waiting)).expect("JSON");
-    for operation in document["types"][1]["operations"]
-        .as_array_mut()
-        .expect("operations")
-    {
-        if operation["name"] == "tick" {
-            operation["frame"]["modifies"] = json!([ident("Call/state")]);
-        }
-    }
-    let fields = json!({
-        "t": {"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}},
-        "state": state,
-    });
-    try_world_of(
-        serde_json::to_vec(&document).expect("JSON"),
-        "",
-        &only(&["work", "tick"], body),
-        json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(fields)}]),
-    )
-}
-
-/// QSpec FR-415-AC-21 (QSpec #485, TC-685): the clock-presence frame
-/// vectors `FP-01`..`FP-10`, `FP-13` and `FP-14`, read from `$QSPEC_DIR`
-/// (skipped, and passing, when it is unset), each run as `work`'s
-/// postcondition over `v: Option<Clock>` or the union `state: Mode` (the
-/// vectors' `st`, its case `Armed` holding the clock as the payload
-/// `Armed(Clock)`), both in `work`'s frame, from a pre-state whose live
-/// clock reads `3 ms`. The successors' presence and clock are the vector's
-/// `expected`: no clock becomes live without its write, an unwritten clock
-/// keeps its value, a requirement is never a write, an `Option<Clock>` bit
-/// never changes unwritten, and a union value may leave its clock case.
-/// `FP-11` and `FP-12`, whose precondition establishes the place absent
-/// (`not present(..)`), refuse `invalid_timed_model`/
-/// `clock-presence-unwritten` at S3. Each vector's pairing with its twin
-/// holds of the observed results: `same` where they are equal, `differs`
-/// where they are not (TC-367 CK-31).
+/// QSpec FR-415-AC-21 (TC-685): exercise every published Option<Clock>
+/// frame vector through the timed subject and compare successors or refusal.
 #[trace("TC-685", "FR-230-AC-52")]
 #[test]
 fn the_clock_presence_frame_vectors_step_as_published() {
@@ -5333,83 +5239,52 @@ fn the_clock_presence_frame_vectors_step_as_published() {
         &std::fs::read(&path).unwrap_or_else(|failure| panic!("{}: {failure}", path.display())),
     )
     .expect("the vectors are JSON");
-    let case = |name: &str| json!({"variant": {"type": ident("Mode"), "case": name}});
     let millis = |text: &Json| -> Option<Rational> {
         let text = text.as_str()?;
         let amount: i64 = text.strip_suffix(" ms")?.parse().ok()?;
         Some(exact(amount, 1))
     };
     let mut ran = 0;
-    // Each vector's observed result: its successors, or its refusal.
-    // The successors' presence and clock, or the refusal.
-    type Outcome = Result<Vec<(bool, Option<Rational>)>, String>;
-    let mut results: BTreeMap<String, Outcome> = BTreeMap::new();
     for vector in vectors["cases"].as_array().expect("cases") {
         let id = vector["id"].as_str().expect("an id");
-        let union = vector["form"] == "union";
+        let requires = vector["requires"].as_str();
+        let write = match &vector["write"] {
+            Json::Null => None,
+            write if write["absent"] == true => Some("self.v = absent".to_owned()),
+            write => Some(format!("self.v = {}", write["clock"].as_str().expect("clock"))),
+        };
         if let Some(refused) = vector["expected"].get("refused") {
-            assert_eq!(vector["precondition_establishes_absent"], true, "{id}");
-            let place = if union { "self.state.Armed" } else { "self.v" };
-            let requires = vector["requires"]
-                .as_str()
-                .expect("a requirement")
-                .replace("self.st.", "self.state.");
             let body = format!(
-                "pre Absent using v on M::Call::work {{ not present({place}) }}\n\
-                 post P using v on M::Call::work {{ {requires} }}\n"
+                "pre Absent using v on M::Call::work {{ not present(self.v) }}\n\
+                 post P using v on M::Call::work {{ {} }}\n",
+                requires.expect("a requirement")
             );
-            let refusals = match if union {
-                try_union_world_over(
-                    false,
-                    &format!("{body}pre NoTick using v on M::Call::tick {{ false }}\n"),
-                    case("Idle"),
-                )
-            } else {
-                try_world_of(
-                    option_clock_document(),
-                    "",
-                    &only(&["work"], &body),
-                    json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(json!({}))}]),
-                )
-            } {
-                Ok(_) => panic!("{id}: refused"),
-                Err(refusals) => refusals,
-            };
+            let refusals = try_world_of(
+                option_clock_document(),
+                "",
+                &only(&["work"], &body),
+                json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(json!({}))}]),
+            )
+            .expect_err("the published refusal");
             let [refusal] = refusals.as_slice() else {
                 panic!("{id}: one refusal: {refusals:?}");
             };
-            let got = (refusal.cause.code().as_str(), refusal.cause.cause());
             assert_eq!(
-                got,
+                (refusal.cause.code().as_str(), refusal.cause.cause()),
                 (
                     refused["code"].as_str().expect("a code"),
                     refused["cause"].as_str()
                 ),
                 "{id}"
             );
-            results.insert(id.to_owned(), Err(format!("{got:?}")));
             ran += 1;
             continue;
         }
-        let requires = vector["requires"]
-            .as_str()
-            .map(|text| text.replace("self.st.", "self.state."));
-        let write = match (&vector["write"], union) {
-            (Json::Null, _) => None,
-            (write, false) if write["absent"] == true => Some("self.v = absent".to_owned()),
-            (write, false) => Some(format!(
-                "self.v = {}",
-                write["clock"].as_str().expect("a clock")
-            )),
-            (write, true) => Some(match write["clock"].as_str() {
-                Some(clock) => format!("self.state = M::Mode::Armed({clock})"),
-                None => format!(
-                    "self.state = M::Mode::{}",
-                    write["constructor"].as_str().expect("a constructor")
-                ),
-            }),
-        };
-        let conjuncts: Vec<String> = requires.into_iter().chain(write).collect();
+        let conjuncts: Vec<String> = requires
+            .map(str::to_owned)
+            .into_iter()
+            .chain(write)
+            .collect();
         let post = if conjuncts.is_empty() {
             String::new()
         } else {
@@ -5418,17 +5293,9 @@ fn the_clock_presence_frame_vectors_step_as_published() {
                 conjuncts.join(" and ")
             )
         };
-        let world = if union {
-            union_world_holding(
-                &format!("{post}pre NoTick using v on M::Call::tick {{ false }}\n"),
-                case(vector["pre"]["case"].as_str().expect("a case")),
-            )
-        } else {
-            world_over(option_clock_document(), "", &only(&["work"], &post))
-        };
+        let world = world_over(option_clock_document(), "", &only(&["work"], &post));
         let held = system(&world);
         let timed = TimedSystem::new(&held, "M").expect("a timed subject");
-        let name = if union { "state.Armed" } else { "v" };
         let at = timed
             .places()
             .iter()
@@ -5436,16 +5303,13 @@ fn the_clock_presence_frame_vectors_step_as_published() {
                 timed
                     .model()
                     .clock(place.clock())
-                    .is_some_and(|clock| clock.name() == name)
+                    .is_some_and(|clock| clock.name() == "v")
             })
-            .expect("the place");
-        let initial = timed.initial();
-        let start = initial
+            .expect("the option clock place");
+        let start = timed
+            .initial()
             .iter()
-            .find(|state| {
-                timed.live(&timed.places()[at], state.discrete())
-                    == (vector["pre"]["present"] == true || vector["pre"]["case"] == "Armed")
-            })
+            .find(|state| timed.live(&timed.places()[at], state.discrete()) == (vector["pre"]["present"] == true))
             .unwrap_or_else(|| panic!("{id}: the pre-state"));
         let start = TimedState::new(
             start.discrete().clone(),
@@ -5472,224 +5336,9 @@ fn the_clock_presence_frame_vectors_step_as_published() {
             successors.dedup();
         }
         assert_eq!(observed, expected, "{id}: {post}");
-        results.insert(id.to_owned(), Ok(observed));
         ran += 1;
     }
-    assert_eq!(ran, 14);
-    for vector in vectors["cases"].as_array().expect("cases") {
-        let id = vector["id"].as_str().expect("an id");
-        let twin = vector["pair"]["with"].as_str().expect("a twin");
-        let same = vector["pair"]["outcome"] == "same";
-        assert_eq!(
-            results[id] == results[twin],
-            same,
-            "{id} with {twin}: {:?} / {:?}",
-            results[id],
-            results[twin]
-        );
-    }
-}
-
-/// FR-106 over a union whose case holds a clock (FR-230 "Records, tuples
-/// and unions"; FR-360's `variant` form), part of FR-230-AC-41 (TC-685):
-/// `{"variant": {"type": Mode, "case": "Armed"}}` admits as the case, with
-/// no data payload; a case `Mode` does not declare refuses
-/// `invalid_runtime_input`/`invalid-value`, and a `type` naming another
-/// variant type (`Color`) refuses `wrong-value-kind`.
-#[trace("TC-685")]
-#[test]
-fn a_snapshot_names_a_union_clock_case_by_its_variant_form() {
-    use qsl_semantics::model::observation::AdmissionFailure;
-
-    let admitted = |case: &str, type_name: &str| {
-        let world = union_world_holding(
-            "",
-            json!({"variant": {"type": ident(type_name), "case": case}}),
-        );
-        ModelSystem::new(ModelSimulationRequest {
-            package: &world.package,
-            packages: &world.packages,
-            normalization: ModelNormalizationLimits::default(),
-            snapshots: &world.snapshots,
-            initial: vec![world.initial.clone()],
-            universes: vec![PopulationUniverse {
-                population: DeclarationKey {
-                    package: PACKAGE.to_owned(),
-                    node: ident("calls"),
-                },
-                keys: vec!["c".to_owned()],
-            }],
-            observation: ObservationLimits::default(),
-            expansion: ExpansionLimits {
-                max_candidates: 1_000_000,
-            },
-            meter: METER,
-        })
-        .map(|_| ())
-        .map_err(|failure| match failure {
-            AdmissionFailure::Refused(record) => record.cause.to_owned(),
-            other => format!("{other:?}"),
-        })
-    };
-    assert_eq!(admitted("Armed", "Mode"), Ok(()));
-    assert_eq!(admitted("Nope", "Mode"), Err("invalid-value".to_owned()));
-    assert_eq!(admitted("red", "Color"), Err("wrong-value-kind".to_owned()));
-}
-
-/// FR-230-AC-12 and AC-41 (TC-685), a union case's clock in the timed
-/// subject: over `state: Mode` with `Mode { Idle, Armed(Clock) }`, the
-/// snapshot's `{"variant": {"type": Mode, "case": "Idle"}}` admits as the
-/// case with no data payload, and the place `state.Armed` is live exactly
-/// while `state` is `Armed`, read from the value's member with no bit.
-/// From `Idle` at 2 ms, `work`'s `self.state = M::Mode::Armed(0 ms)` gives
-/// the one state with `state` `Armed` and its clock at 0, a state key
-/// different from `Idle`'s; `tick`, guarded `present(self.state.Armed) and
-/// value(self.state.Armed) >= 1 ms`, is enabled only once the armed clock
-/// reads 1 ms, and its `self.state = M::Mode::Idle` drops the place.
-#[trace("TC-685")]
-#[test]
-fn a_union_case_clock_is_live_while_its_case_holds() {
-    let world = union_world(
-        "post Arm using v on M::Call::work { self.state = M::Mode::Armed(0 ms) }\n\
-         pre Armed using v on M::Call::tick { present(self.state.Armed) and value(self.state.Armed) >= 1 ms }\n\
-         post Disarm using v on M::Call::tick { self.state = M::Mode::Idle }\n",
-    );
-    let held = system(&world);
-    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
-    let armed = timed
-        .places()
-        .iter()
-        .position(|place| {
-            timed
-                .model()
-                .clock(place.clock())
-                .is_some_and(|clock| clock.name() == "state.Armed")
-        })
-        .expect("state.Armed's place");
-    let [idle] = &timed.initial()[..] else {
-        panic!("one initial state");
-    };
-    let live = |state: &TimedState| timed.live(&timed.places()[armed], state.discrete());
-    assert!(!live(idle));
-    let at = |state: &TimedState, ms: i64| {
-        TimedState::new(
-            state.discrete().clone(),
-            state.clocks().delayed(&exact(ms, 1)),
-        )
-    };
-    let steps = timed.steps(&at(idle, 2)).expect("decided");
-    let [(step, armed_state)] = &steps[..] else {
-        panic!("only work is enabled: {steps:?}");
-    };
-    assert!(step.operation().contains("Call/work"));
-    assert!(live(armed_state));
-    assert_eq!(armed_state.clocks().get(armed), Some(&exact(0, 1)));
-    let key = |state: &TimedState| held.state_key(state.discrete()).expect("a key").0;
-    assert_ne!(key(idle), key(armed_state));
-    assert_eq!(
-        timed.live_clocks(armed_state.discrete()),
-        timed.live_clocks(idle.discrete()) + 1
-    );
-
-    let tick = |state: &TimedState| {
-        timed
-            .steps(state)
-            .expect("decided")
-            .into_iter()
-            .filter(|(step, _)| step.operation().contains("Call/tick"))
-            .collect::<Vec<_>>()
-    };
-    assert!(tick(armed_state).is_empty());
-    let [(_, dropped)] = &tick(&at(armed_state, 1))[..] else {
-        panic!("tick is enabled at 1 ms");
-    };
-    assert!(!live(dropped));
-    assert_eq!(key(dropped), key(idle));
-}
-
-/// FR-230 "Records, tuples and unions" (TC-685), the timed subject's part
-/// of writing a union field, over `Mode { Idle, Armed(Clock),
-/// Waiting(Clock) }`. From `Waiting` at 1 ms, `self.state =
-/// M::Mode::Armed(0 ms)` resets `Armed` to 0 and drops `Waiting`. From
-/// `Armed` at 1 ms, `Armed(2 ms)` resets the same case to 2. `time
-/// invariant B when { present(self.state.Armed) } { value(self.state.Armed)
-/// <= 3 ms }` bounds the armed state only.
-#[trace("TC-685")]
-#[test]
-fn a_union_write_resets_its_case_and_drops_the_others() {
-    let case = |name: &str| json!({"variant": {"type": ident("Mode"), "case": name}});
-    let no_tick = "pre NoTick using v on M::Call::tick { false }\n";
-    let after = |world: &World, write: &str| {
-        let held = system(world);
-        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
-        let name = |place: &qsl_eval::simulation::model::ClockPlace| {
-            timed
-                .model()
-                .clock(place.clock())
-                .expect("a clock")
-                .name()
-                .to_owned()
-        };
-        let [initial] = &timed.initial()[..] else {
-            panic!("one initial state");
-        };
-        let later = TimedState::new(
-            initial.discrete().clone(),
-            initial.clocks().delayed(&exact(1, 1)),
-        );
-        let steps = timed.steps(&later).expect("decided");
-        let [(_, next)] = &steps[..] else {
-            panic!("{write}: one step: {steps:?}");
-        };
-        timed
-            .places()
-            .iter()
-            .enumerate()
-            .filter(|(_, place)| name(place).starts_with("state."))
-            .map(|(at, place)| {
-                (
-                    name(place),
-                    timed.live(place, next.discrete()),
-                    next.clocks().get(at).cloned(),
-                )
-            })
-            .filter(|(_, live, _)| *live)
-            .map(|(name, _, value)| (name, value))
-            .collect::<Vec<_>>()
-    };
-    let switch = "post W using v on M::Call::work { self.state = M::Mode::Armed(0 ms) }\n";
-    assert_eq!(
-        after(
-            &union_world_over(true, &format!("{switch}{no_tick}"), case("Waiting")),
-            switch
-        ),
-        [("state.Armed".to_owned(), Some(exact(0, 1)))]
-    );
-    let rewrite = "post W using v on M::Call::work { self.state = M::Mode::Armed(2 ms) }\n";
-    assert_eq!(
-        after(
-            &union_world_over(false, &format!("{rewrite}{no_tick}"), case("Armed")),
-            rewrite
-        ),
-        [("state.Armed".to_owned(), Some(exact(2, 1)))]
-    );
-
-    let bounded = |start: &str| {
-        let world = union_world_over(
-            false,
-            "time invariant B when { present(self.state.Armed) } { value(self.state.Armed) <= 3 ms }\n\
-             pre NoWork using v on M::Call::work { false }\n\
-             pre NoTick using v on M::Call::tick { false }\n",
-            case(start),
-        );
-        let held = system(&world);
-        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
-        let [initial] = &timed.initial()[..] else {
-            panic!("one initial state");
-        };
-        timed.invariants(initial.discrete()).expect("decided").len()
-    };
-    assert_eq!((bounded("Armed"), bounded("Idle")), (1, 0));
+    assert_eq!(ran, 7);
 }
 
 /// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21), the timed subject's
