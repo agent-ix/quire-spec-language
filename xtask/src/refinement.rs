@@ -18,11 +18,12 @@ use crate::error::{Error, Result};
 use crate::Outcome;
 
 pub mod compare;
+pub mod corpus;
 pub mod layering;
 pub mod report;
 pub mod versioning;
 
-const USAGE: &str = "usage: cargo xtask refinement versioning <corpus> | layering <corpus>";
+const USAGE: &str = "usage: cargo xtask refinement versioning <corpus> | layering <corpus> | generate-versioning <dir>";
 
 /// `cargo xtask refinement <gate> <corpus>`: run the selected gate and return
 /// its report with the exit code of its verdict (FR-344).
@@ -32,6 +33,13 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         return Err(Error::Usage(USAGE));
     };
     let path = Path::new(corpus);
+    if gate.to_str() == Some("generate-versioning") {
+        corpus::generate(workspace_root, path)?;
+        return Ok(Outcome {
+            stdout: String::new(),
+            code: 0,
+        });
+    }
     let (stdout, code) = match gate.to_str() {
         Some("versioning") => {
             let report = versioning::run(path, workspace_root);

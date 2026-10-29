@@ -17,8 +17,9 @@ relationships:
 Verify the gate end to end over a test-only corpus that the gate's real run
 does not read: one real pair whose superseding revision tightens a
 ConfigVersion clause is a violation naming exactly the seeded case, while
-the rest of the corpus holds. Verify also that the real corpus passes
-`make refinement-versioning` and fails once the seed is added.
+the rest of the corpus holds. Verify also that the real corpus, generated at run time with the model
+digest computed from the model file, passes `make refinement-versioning`,
+fails once the seed is added, and follows an edit to the model file.
 
 Scope: FR-340-AC-6, FR-343-AC-2 to FR-343-AC-4, FR-344-AC-5.
 
@@ -39,10 +40,13 @@ Build the test corpus from FR-108's ConfigVersion fixtures:
 1. Run the gate over the seed pair together with the identity pair.
 2. Run the gate over the dropped pair.
 3. Run the gate over the broken pair.
-4. Run `make refinement-versioning` over
-   `tests/fixtures/refinement/versioning/`; add the seed pair to a copy of
-   that corpus and run `cargo run --package xtask -- refinement versioning`
-   over the copy.
+4. Run `make refinement-versioning`, which generates the real corpus into a
+   temporary directory with the digest computed from the model file; add the
+   seed pair to a copy of that generated corpus and run
+   `cargo run --package xtask -- refinement versioning` over the copy.
+5. Edit the model file (in a copy of the repository root), generate the
+   corpus from it and run the gate over the result. Commit no generated
+   corpus and no digest.
 
 Each expected result is a literal in the test. Tag the tests
 `#[trace("TC-864", "<AC>")]` with the AC each step backs.
@@ -59,5 +63,7 @@ Each expected result is a literal in the test. Tag the tests
   `regression`.
 - Step 3: healthy-parent is a `regression`; violating-parent is `not
   applicable`.
-- Step 4: the real corpus exits 0; the copy with the seed exits 10 and the
-  step fails.
+- Step 4: the generated real corpus exits 0; the copy with the seed exits 10
+  and the step fails.
+- Step 5: the generated unit and snapshots carry a digest different from the
+  unedited model's, and the gate exits 0.

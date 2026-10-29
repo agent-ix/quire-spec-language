@@ -118,10 +118,16 @@ passed to FR-344's report.
 
 ### Where it runs
 
-- The make target `refinement-versioning`, which `make ci` runs, SHALL run
-  `cargo run --package xtask -- refinement versioning
-  tests/fixtures/refinement/versioning/` over the real corpus and SHALL
-  fail when the gate's exit code is not 0 (FR-344 "Invocation and exit").
+- The make target `refinement-versioning`, which `make ci` runs, SHALL
+  generate the real corpus into a temporary directory, computing the model
+  digest from the model file (`examples/config-version/model.semantic-ir.json`)
+  at that run, SHALL run `cargo run --package xtask -- refinement versioning`
+  over the generated directory, and SHALL fail when the gate's exit code is
+  not 0 (FR-344 "Invocation and exit"). The corpus SHALL NOT be committed:
+  no file in the repository SHALL carry the model's digest, because FR-056
+  selects a model by digest and a committed digest would change with every
+  edit to the model. The temporary directory SHALL be removed when the
+  target ends.
 
 ## Constraints
 
@@ -138,7 +144,7 @@ passed to FR-344's report.
 | FR-340-AC-3 | A pair whose `prior` unit admits a case and whose `superseding` unit refuses it is compared in that direction: the case is a regression; the same two units named the other way round give `not applicable`. | Test (TC-860) |
 | FR-340-AC-4 | A case stating no limit sets runs with each set's published default; the same case stating `accounting` with a work budget of one unit runs both revisions with that budget: both classes are `incomplete` and the case is `unresolved (incomplete)`. | Test (TC-860) |
 | FR-340-AC-5 | Copying a corpus to another directory and running the gate there gives a report byte-equal to the original's. | Test (TC-860) |
-| FR-340-AC-6 | `make refinement-versioning` runs the gate over `tests/fixtures/refinement/versioning/` and passes; adding the seeded-regression pair of TC-864 to that corpus makes the target fail. | Test (TC-864) |
+| FR-340-AC-6 | `make refinement-versioning` generates the corpus into a temporary directory with the model digest computed from the model file at that run, runs the gate over it and passes; adding the seeded-regression pair of TC-864 to a copy of that generated corpus makes the gate fail; after the model file is edited the target generates the corpus again with the new digest and still passes. No committed file carries the digest. | Test (TC-864) |
 
 ## Dependencies
 

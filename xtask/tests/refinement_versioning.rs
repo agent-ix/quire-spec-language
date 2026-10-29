@@ -13,7 +13,7 @@ use qsl_foundation::source::provenance::RawSourceRef;
 use serde_json::{json, Value};
 use xtask::refinement::compare::CaseResult;
 use xtask::refinement::report::{CaseEntry, CaseName, Report, SelectionName, SideReport, Verdict};
-use xtask::refinement::versioning;
+use xtask::refinement::{corpus, versioning};
 
 #[path = "../../examples/config-version/spine_unit.rs"]
 mod config_version;
@@ -308,8 +308,13 @@ fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-fn real_corpus() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/refinement/versioning")
+/// The real corpus as `make refinement-versioning` builds it (FR-340): generated
+/// into a temporary directory from `root`'s model file, never read from a
+/// committed directory.
+fn real_corpus(root: &Path) -> tempfile::TempDir {
+    let out = tempfile::tempdir().unwrap();
+    corpus::generate(root, out.path()).unwrap();
+    out
 }
 
 /// Run the built binary as `make refinement-versioning` does and return its
@@ -651,20 +656,55 @@ fn a_superseding_compile_refusal_regresses_every_admitted_case() {
 #[test]
 #[trace("TC-864", "FR-340-AC-6")]
 fn the_real_corpus_passes_and_the_seeded_copy_fails() {
-    let real = real_corpus();
-    let report = versioning::run(&real, &repository());
+    let generated = real_corpus(&repository());
+    let real = generated.path();
+    let report = versioning::run(real, &repository());
     assert_eq!(
         report.verdict,
         Verdict::Success,
         "{}",
         report.to_json().unwrap()
     );
-    assert_eq!(exit_code(&real), 0);
+    assert_eq!(exit_code(real), 0);
 
     let seeded = tempfile::tempdir().unwrap();
-    copy_directory(&real, seeded.path());
+    copy_directory(real, seeded.path());
     seed_pair().write(&seeded.path().join("seed"));
     assert_eq!(exit_code(seeded.path()), 10);
+}
+
+/// FR-340-AC-6: the corpus carries the digest of the model file as it stands.
+/// After the model file is edited the corpus is generated again with the new
+/// digest and the gate still passes; nothing frozen is read.
+#[test]
+#[trace("TC-864", "FR-340-AC-6")]
+fn the_generated_corpus_follows_the_model_file() {
+    let root = tempfile::tempdir().unwrap();
+    let model = "examples/config-version/model.semantic-ir.json";
+    fs::create_dir_all(root.path().join("examples/config-version")).unwrap();
+    let original = fs::read_to_string(repository().join(model)).unwrap();
+    // A model edit that keeps the package valid: the source version moves.
+    let edited = original.replacen(
+        "\"identity\": \"ix://example/config-version/spec\",\n    \"version\": \"1.0.0\"",
+        "\"identity\": \"ix://example/config-version/spec\",\n    \"version\": \"1.0.1\"",
+        1,
+    );
+    assert_ne!(edited, original, "the model edit applies");
+    fs::write(root.path().join(model), &edited).unwrap();
+
+    let before = real_corpus(&repository());
+    let after = real_corpus(root.path());
+    let unit = |corpus: &tempfile::TempDir| {
+        fs::read_to_string(corpus.path().join("config-version-revision/unit.native")).unwrap()
+    };
+    assert_ne!(unit(&before), unit(&after), "the digest follows the model");
+    let report = versioning::run(after.path(), root.path());
+    assert_eq!(
+        report.verdict,
+        Verdict::Success,
+        "{}",
+        report.to_json().unwrap()
+    );
 }
 
 /// FR-343-AC-5 (unsupported half): an unsupported superseding compile and an

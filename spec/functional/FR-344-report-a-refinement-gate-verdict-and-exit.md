@@ -50,11 +50,13 @@ their exits.
   versioning <corpus>` and `cargo run --package xtask -- refinement
   layering <corpus>`, and through the make targets `refinement-versioning`
   and `refinement-layering`, each over its real corpus, both listed in
-  `make ci`.
+  `make ci`. The versioning gate's real corpus is generated at run time
+  with the model digest computed from the model file (FR-340 "Where it
+  runs"); nothing is committed with a frozen digest.
 - The gate process SHALL write the report to stdout and exit with the
   verdict's code from the table below, and with no other code.
 - The `refinement-versioning` make target SHALL fail exactly when its CLI
-  exits with a code other than 0. The `refinement-layering` target SHALL
+  exits with a code other than 0 over the corpus it generated. The `refinement-layering` target SHALL
   apply FR-345-AC-9's expected-exit rule: its CLI exits 21 for the expected
   unresolved report, and the target succeeds only for that exit code and
   report; it fails for any other code or report.
