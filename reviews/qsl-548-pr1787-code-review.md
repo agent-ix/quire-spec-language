@@ -57,3 +57,18 @@ Head 39c8b047f, base terra-qsl-integration. Checked against FR-146 as amended by
 ## Verdict
 
 Mergeable. Both findings are low and spec-facing.
+
+## Dispositions
+
+Round 1, head 231b86a62 (fix 231b86a62), against FR-146 Claim extent on main (#1794, 57f25efb).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-146 now names each population the operation's contract clauses range over (quantifier, `allInstances` or `reaches`, FR-104 and FR-391), which is what `contract_populations` takes |
+| FND-002 | fixed | The `Initial` record takes `roots.initial` plus `roots.mapping`, as FR-146 now states |
+
+New this round:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | An invariant hypothesis that ranges over a population adds no domain to any record. Probe: `invariant NotesSeen using inf on Impl::Counter at current { forall(o in allInstances<Impl::Note>(Impl::notes) : o.seen >= 0) }` beside `CasRefinesCounter` leaves `notes` out of all eight extents. FR-146 now lists the contract clauses "(precondition, postcondition, invariant)" whose populations count, "because the record reads the clause bodies", and every record reads its hypotheses | FR-146 Claim extent |

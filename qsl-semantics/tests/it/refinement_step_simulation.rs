@@ -558,3 +558,30 @@ fn a_mapped_type_two_populations_cover_refuses_at_the_refinement() {
     let spares = message.find("spares").expect("names spares");
     assert!(crates < spares, "{message}");
 }
+
+/// FR-146 "Claim extent" (TC-551): every record reads its hypotheses, so a
+/// population an invariant hypothesis ranges over (`notes`, through
+/// `allInstances`) enters every record, the `Initial` one included.
+#[trace("TC-551", "FR-146-AC-10")]
+#[test]
+fn a_hypothesis_population_enters_every_record() {
+    let graph = checked_variant(
+        plain_peek(),
+        vec![object_type(CAS, "Note", &[("seen", INTEGER)], Vec::new())],
+        vec![population(CAS, "notes", "Note")],
+        "invariant NotesSeen using inf on Impl::Counter at current { \
+         forall(o in allInstances<Impl::Note>(Impl::notes) : o.seen >= 0) }\n",
+    );
+    let mut expected = vec![
+        population_key(&graph, "Impl", "counters"),
+        population_key(&graph, "Impl", "notes"),
+    ];
+    expected.sort();
+    let found = domains(&graph);
+    assert_eq!(found.len(), 8);
+    for (obligation, domains) in found {
+        let mut keys: Vec<DomainKey> = domains.into_iter().map(|(key, _)| key).collect();
+        keys.sort();
+        assert_eq!(keys, expected, "{obligation:?}");
+    }
+}

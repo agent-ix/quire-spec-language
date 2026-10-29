@@ -37,3 +37,12 @@ Gaps:
 ## Verdict
 
 Mergeable. Both findings are low.
+
+## Dispositions
+
+Round 1, head 231b86a62.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `contract_and_mapping_populations_enter_the_records`: a `reaches` in `peek`'s precondition (`audits`) and an FR-391-named population in its postcondition (`notes`) enter `peek`'s `Step` record only; a mapping `reaches` (`tags`) enters every record, `Initial` included |
+| FND-002 | fixed | `a_mapped_type_two_populations_cover_refuses_at_the_refinement` refuses `ambiguous-name` at `CasRefinesCounter`, naming `crates` before `spares` |
