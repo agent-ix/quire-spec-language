@@ -24,10 +24,11 @@ executed in the same run (FR-350).
 
 - The per-vector outcomes of FR-350.
 - The scope: the capability ids the caller selects, or, when the caller
-  selects none, every capability in QSpec FR-336 `coverage.primary` whose
-  `applicability.consumer_types` includes a QSL consumer type and whose
-  `applicability.semantic_profiles` includes a profile in QSL's definition
-  catalog ([FR-350](FR-350-run-the-conformance-corpus-against-qsl.md)).
+  selects none, QSL's default scope of corpus capabilities applicable to a
+  QSL consumer and a profile in QSL's definition catalog. QSpec FR-336 owns
+  the capability inventory and applicability representation;
+  [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md) defines QSL's
+  consumer selection.
 
 ## Outputs
 
@@ -61,8 +62,8 @@ of the vectors that decided it.
   twice. Selection does not grant a new consumer type to its vectors. An
   explicitly selected capability with no QSL-applicable vectors is
   `uncovered`, even when its monitor-only vectors have recorded passes.
-- If the caller selects a `capability_id` absent from QSpec FR-336
-  `coverage.primary`, then the runner SHALL refuse the run with
+- If the caller selects a capability id not declared by the QSpec FR-336
+  corpus, then the runner SHALL refuse the run with
   `unknown_required_feature`/`unknown-feature`, naming the id, before it
   executes any vector.
 
@@ -71,13 +72,13 @@ of the vectors that decided it.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-351-AC-1 | A capability whose three vectors are `passed` is `passed`. A capability with one `passed` and one `failed` vector is `failed`, holding the failed vector's id. A capability with one `unsupported` and one `incomplete` vector is `unsupported`. A capability with one `tool-failure` and one `failed` vector is `failed`. | Test |
-| FR-351-AC-2 | A capability whose applicability names the `language` consumer type and a catalog-held profile, with no vector, is `uncovered`. A capability whose applicability names only the `monitor` consumer type, and a language capability whose applicability names only a profile absent from QSL's catalog, are outside the default scope and appear in no outcome. | Test |
-| FR-351-AC-3 | A corpus whose `results` member records `passed` for a vector QSL fails settles that vector's capability `failed`. | Test |
-| FR-351-AC-4 | A run scoped to two capability ids settles exactly those two and executes no vector from another capability. Repeating one selected id gives the same vector executions and capability outcomes as naming it once. Explicitly selecting a monitor-only capability settles it `uncovered` without running its vectors. A run scoped to an id the corpus does not list refuses `unknown_required_feature`/`unknown-feature` naming the id and executes no vector. | Test |
+| FR-351-AC-2 | A capability that QSpec FR-336 marks applicable to the `language` consumer and a catalog-held profile, with no vector, is `uncovered`. A capability applicable only to the `monitor` consumer, and a language capability applicable only to a profile absent from QSL's catalog, are outside the default scope and appear in no outcome. | Test |
+| FR-351-AC-3 | A corpus that records `passed` for a vector QSL fails does not change the result: QSL settles that capability as `failed` from the vector executed in this run. | Test |
+| FR-351-AC-4 | A run scoped to two capability ids settles exactly those two and executes no vector from another capability. Repeating one selected id gives the same vector executions and capability outcomes as naming it once. Explicitly selecting a monitor-only capability settles it `uncovered` without running its vectors. A run scoped to an id the corpus does not declare refuses `unknown_required_feature`/`unknown-feature` naming the id and executes no vector. | Test |
 
 ## Dependencies
 
 - [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md) (per-vector
   outcomes).
 - QSpec FR-311 (a missing, unsupported, failed or unexecuted vector is a
-  gap) and FR-336 (capability ids, applicability, the `results` member).
+  gap) and FR-336 (the corpus capability inventory and applicability).
