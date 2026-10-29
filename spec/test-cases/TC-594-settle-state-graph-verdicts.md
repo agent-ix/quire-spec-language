@@ -15,7 +15,7 @@ state-graph outcomes, the `Witness` proof basis and its sources, the
 settlement method and seed in the record, and that no evidence settles
 before it replays.
 
-Scope: FR-169-AC-1 to FR-169-AC-5 and FR-169-AC-16.
+Scope: FR-169-AC-1 to FR-169-AC-5 and FR-169-AC-16 to FR-169-AC-17.
 
 ## Test Procedure
 
@@ -32,6 +32,8 @@ Scope: FR-169-AC-1 to FR-169-AC-5 and FR-169-AC-16.
    `Trapped` outcome whose replay a limit stops.
 6. Request a state-graph claim over a subject with an empty universe and no
    instance, and one over a subject with an admitted instance.
+7. Settle the engine-produced symmetry and POR results and the unreduced
+   symmetry result from FR-168-AC-14.
 
 Tag the tests `#[trace("TC-594", "FR-169-AC-n")]`.
 
@@ -53,3 +55,8 @@ Tag the tests `#[trace("TC-594", "FR-169-AC-n")]`.
 - Step 6: `NoInstance` before any state is explored, settling
   `inconclusive`, `Inconclusive(NoInstance)`, never `proved`; the admitted
   instance proceeds through the state-graph outcome map.
+- Step 7: the symmetry and POR results each settle `Proved{basis:
+  Reduced{…}, certification: Uncertified}` with their exact respective
+  reductions, without a certificate check or replay; the unreduced symmetry
+  result settles `Proved{Exhaustive, Certified}` after its certificate is
+  accepted.

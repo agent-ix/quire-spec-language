@@ -68,6 +68,13 @@ pub struct GraphNode {
     pub labels: Vec<PredicateLabel>,        // per item, instance and predicate
 }
 
+pub struct GraphEdge {
+    pub source: NodeIndex,
+    pub transition: TransitionIdentity,
+    pub target: NodeIndex,
+    pub permutation: Permutation, // identity when symmetry is not applied
+}
+
 pub enum OpenCause {
     MaxDepth,
     ConstraintBoundary,
@@ -98,7 +105,23 @@ pub enum RunEnd {
 
 - The engine SHALL explore the subject's `ModelSystem` (FR-120) directly,
   with no property automaton, by FR-101's canonical breadth-first engine,
-  and retain every explored edge.
+  and retain every explored edge. With no reduction, a closed node's outgoing
+  edges SHALL be exactly its FR-120 successors. With a selected reduction
+  admitted by ADR-021 PT-2, the engine SHALL retain the quotient or ample-set
+  edges specified by ADR-021; a node is closed when that reduced expansion is
+  complete.
+- When symmetry is selected and admitted for the item's form, the engine
+  SHALL canonicalise each initial and successor state with the declaration's
+  group or the instance binding's stabiliser (ADR-021 SYM-6, SYM-7), coalesce
+  equal canonical states, and retain the permutation that maps each concrete
+  successor to its canonical target on the edge. Predicate labels SHALL be
+  evaluated for each item instance under its binding, using the symmetric
+  predicates admitted by ADR-021 SYM-3. The graph SHALL retain enough edge
+  information for FR-168 witnesses and FR-170 replay to recover concrete
+  transitions.
+- When partial-order reduction is selected and admitted for the item's form,
+  the engine SHALL expand the ample set and apply the breadth-first revisit
+  proviso as ADR-021 POR-6 to POR-8 specify.
 - One exploration SHALL serve every state-graph item of the subject, every
   instance of each, and the subject's deadlock-freedom item, under one
   method.
@@ -128,8 +151,9 @@ pub enum RunEnd {
 - When `max_states`, `max_transitions`, a clause meter or a cancelled
   `Cancel` handle stops the run, every discovered node not yet expanded SHALL be open,
   `NotExpanded`, and `end` SHALL be `Stopped` with that limit.
-- Every other node SHALL be closed: its retained outgoing edges are exactly
-  its FR-120 successors.
+- Every other node SHALL be closed: in an unreduced run its retained outgoing
+  edges are exactly its FR-120 successors; in a reduced run its selected
+  quotient or ample-set expansion is complete.
 
 ### Placement
 
@@ -140,7 +164,7 @@ pub enum RunEnd {
 ### Determinism
 
 - The explored graph, its labels and its open set SHALL be functions of the
-  subject, the items and the limits.
+  subject, the items, the limits and the selected reductions.
 
 ## Acceptance Criteria
 
@@ -151,6 +175,7 @@ pub enum RunEnd {
 | FR-167-AC-3 | §7.2's game with no `terminal` declaration: the deadlock-freedom item's violation is `Lost` with the path `play, lose`. A subject with no initial state ends `NoInitialState`. An unbounded population root returns `RequiresBound` with no node explored. | Test (TC-592) |
 | FR-167-AC-4 | With partial-order reduction selected, an `always possible` item and a `unique path` item settle V-6 `ReductionNotPreserving` before any expansion while a `possible` item over the same subject is explored under it; with symmetry selected, a `unique path` item settles `ReductionNotPreserving`. The EN-1 manifest's `state_graph_forms` lists the three exact FR-390 forms, the trace monitor's manifest has no such member, and candidate computation filters a state-graph item by its exact form. | Test (TC-592, TC-193) |
 | FR-167-AC-5 | Running AC-1's §7.2 request twice gives byte-equal explored graphs, labels and open sets. | Test (TC-592) |
+| FR-167-AC-6 | Over ADR-021 §7.1 with the admitted `config_history` symmetry declaration and `ReachesTwo` instance `c = a`, EN-1 stores the 18 states of the instance's stabiliser quotient rather than 27; every retained edge targets a canonical state and carries the permutation mapping its concrete successor to that target, and predicate labels remain keyed to `c = a`. The same request without symmetry stores 27 states. | Test (TC-592) |
 
 ## Dependencies
 

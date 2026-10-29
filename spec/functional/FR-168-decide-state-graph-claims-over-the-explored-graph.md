@@ -52,7 +52,7 @@ left undecided, never guessed.
 
 - `Witnessed { paths }`: one `ModelPath` per initial state, each ending at a
   node where the target holds, each with its source, `Sampled(…)` (FR-166)
-  or `Explored`, on a run that completed with no open node;
+  or `Explored`, on an unreduced run that completed with no open node;
 - `WitnessedUnchecked { paths, end, open }`: the same witnesses on a run
   that a limit stopped or that ended with open nodes, so a reachable
   undefined evaluation is not ruled out, with the run's end
@@ -61,8 +61,11 @@ left undecided, never guessed.
 - `PathPair { stem, first, second }`: a stem ending at a node where `from`
   holds and two distinct step sequences from it, each ending at its first
   `to` node;
-- `Holds { basis }`: `Exhaustive`, or `Reduced{reductions}` under an
-  admitted reduction;
+- `Holds`: an exhaustive state-graph proof, with its certificate;
+- `HoldsReduced { reductions }`: a proof from a completed graph under the
+  reductions admitted for the claim, with the applied reductions in
+  ADR-021's canonical order (symmetry, then partial-order reduction); no
+  certificate is returned for this quotient or ample-set proof;
 - `NoDecision { end, open }`: the run's end and the causes of its open
   nodes, which FR-169 maps;
 - `Undefined { stem, undefined }`: a `ModelPath` ending at the first node, in
@@ -72,10 +75,15 @@ left undecided, never guessed.
   its `UndefinedEvaluation{where, cause}`;
 - `NoInitialState`.
 
-With `Witnessed`, and with `Holds{Exhaustive}`, the engine SHALL also return
+With `Witnessed`, and with `Holds`, the engine SHALL also return
 the `StateGraphCertificate` FR-169 checks: the explored states, and the
-target distances or path counts it computed (ADR-022 GC-1). `Holds` under a
-reduction carries none (GC-4).
+target distances or path counts it computed (ADR-022 GC-1). `HoldsReduced`
+carries none (GC-4). If `Possible` finds a witness for every initial state
+on a completed run under an admitted reduction, the engine SHALL return
+`HoldsReduced{reductions}` rather than `Witnessed`: the terminal result then
+states that its well-definedness conclusion depends on the reduced
+exploration. On a run that has open nodes or stopped at a limit, the engine
+SHALL return `WitnessedUnchecked` with the paths and run status.
 
 Each carries its instance's `over` binding.
 
@@ -104,14 +112,18 @@ Each carries its instance's `over` binding.
   whose target has `d_P` one less, so the witness ends at a target node
   whether or not the run has open nodes.
 - When every initial state has a sampled or explored witness, `Possible`
-  SHALL return `Witnessed` if the run completed with no open node, and
-  `WitnessedUnchecked` otherwise. Otherwise, if an initial state is a trap,
+  SHALL return `Witnessed` if the unreduced run completed with no open node,
+  and `HoldsReduced{reductions}` if a run under an admitted reduction
+  completed with no open node. It SHALL return `WitnessedUnchecked` when the
+  run has open nodes or a limit stopped it. Otherwise, if an initial state is a trap,
   it SHALL return `Trapped` with that initial state and an empty stem.
 - `AlwaysPossible` SHALL return `Trapped` when a trap where `from` holds is
   reachable: the first such trap in FR-101 canonical breadth-first discovery
   order, with the canonical breadth-first path to it as its stem.
 - `AlwaysPossible` SHALL return `Holds` when no node is open and every
-  reachable node where `from` holds is in `E⁺`.
+  reachable node where `from` holds is in `E⁺` in an unreduced run, and
+  `HoldsReduced{reductions}` when the same condition holds over a graph
+  reduced by an admitted selection.
 
 ### `unique path`: path counting
 
@@ -138,7 +150,8 @@ Each carries its instance's `over` binding.
   breadth-first stem. A closed node that counts 0 only because the nodes it
   reaches are open is not known and is no trap.
 - `UniquePath` SHALL return `Holds` when no node is open and every reachable
-  node where `from` holds counts exactly 1.
+  node where `from` holds counts exactly 1 in an unreduced run. ADR-021 PT-2
+  rejects the currently defined symmetry and POR reductions for this form.
 
 ### Undefined evaluation
 
@@ -167,8 +180,8 @@ Each carries its instance's `over` binding.
 - The engine SHALL NOT read an undefined guard as a disabled transition, and
   SHALL NOT read an undefined `terminal when` predicate as a non-terminal
   node.
-- `Undefined` SHALL take the place of `Witnessed`, `WitnessedUnchecked`
-  and `Holds`, whether the witnesses were sampled or explored. When a trap
+- `Undefined` SHALL take the place of `Witnessed`, `WitnessedUnchecked`,
+  `Holds` and `HoldsReduced`, whether the witnesses were sampled or explored. When a trap
   or a path pair is found at a node earlier in discovery order, the engine
   SHALL return that evidence instead. A node that is undefined and also a
   trap or a count-2 node SHALL return `Undefined` (QSpec FR-391).
@@ -177,9 +190,9 @@ Each carries its instance's `over` binding.
 
 - A trap, a path pair and an undefined evaluation SHALL be returned whether
   `end` is `Completed` or `Stopped`, and whatever other nodes are open.
-- `Witnessed` and `Holds` SHALL be returned only when the run completed with
-  no open node. Witnesses for every initial state on any other run SHALL be
-  returned as `WitnessedUnchecked`.
+- `Witnessed`, `Holds` and `HoldsReduced` SHALL be returned only when the run
+  completed with no open node. Witnesses for every initial state on any
+  other run SHALL be returned as `WitnessedUnchecked`.
 - Every instance with none of the above SHALL return `NoDecision`, carrying
   the run's end and the set of open causes.
 
@@ -195,8 +208,8 @@ Each carries its instance's `over` binding.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-168-AC-1 | ADR-022 §7.1 with `witness_samples` 0: `ReachesTwo` for `c = a` returns `Witnessed` with the explored path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, and for `c = b` the same with `upd(b)`; `ReachesThree` returns `Trapped` with initial state `(0, 0)` and an empty stem for each instance. | Test (TC-593) |
-| FR-168-AC-2 | §7.2: `CanStillWin` returns `Trapped` at `Lost` with stem `play, lose`; with `from (x.phase != Lost)` it returns `Holds{Exhaustive}`; with the `restart` operation and no `from` it returns `Holds{Exhaustive}`. | Test (TC-593) |
-| FR-168-AC-3 | §7.3: `InOneWay` returns `PathPair` with an empty stem, first `stepA, stepB, finish` and second `stepB, stepA, finish`; the sequenced variant returns `Holds{Exhaustive}`. The sequenced variant with `reset` (precondition `a and not b`, postcondition `not a`, frame `[a]`) returns `PathPair` with first `stepA, stepB, finish` and second `stepA, reset, stepA, stepB, finish`. | Test (TC-593) |
+| FR-168-AC-2 | §7.2: `CanStillWin` returns `Trapped` at `Lost` with stem `play, lose`; with `from (x.phase != Lost)` it returns `Holds`; with the `restart` operation and no `from` it returns `Holds`. | Test (TC-593) |
+| FR-168-AC-3 | §7.3: `InOneWay` returns `PathPair` with an empty stem, first `stepA, stepB, finish` and second `stepB, stepA, finish`; the sequenced variant returns `Holds`. The sequenced variant with `reset` (precondition `a and not b`, postcondition `not a`, frame `[a]`) returns `PathPair` with first `stepA, stepB, finish` and second `stepA, reset, stepA, stepB, finish`. | Test (TC-593) |
 | FR-168-AC-4 | The §7.2 game with field `n: Int[0, 50]`, initially 0, and operation `celebrate` (precondition `phase = Won and n < 50`, postcondition `n = n + 1`, frame `[n]`), under the search horizon `max_depth` 3: `CanStillWin` returns `Trapped` at `Lost` although the node `Won` with `n = 1` is open; `possible x.phase = Won and x.n = 50` returns `NoDecision` with `end` `Completed` and open cause `MaxDepth`. | Test (TC-593) |
 | FR-168-AC-5 | Over §7.1's subject, `possible 2 div (2 - c.versionNumber) = 2` for `c = a` under the subject's integer-division law (its package selects one, as FR-168-AC-11's fixture does; `div` needs that selection) returns `Undefined` with the canonical path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, `where` `(2, 0)` and cause `division-by-zero`, although `(1, 0)` satisfies the target. | Test (TC-612) |
 | FR-168-AC-6 | `ReachesTwo` with `witness_samples` 64 and with 0 both return `Witnessed`, with sources `Sampled` and `Explored` respectively. Running AC-2's three requests twice gives byte-equal outcomes. | Test (TC-593) |
@@ -207,6 +220,7 @@ Each carries its instance's `over` binding.
 | FR-168-AC-11 | Over §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (FR-169-AC-11's fixture), `ReachesTwo` for `c = a`, which has a witness ending at `va = 2`, returns `Undefined`, not `Witnessed`, with stem `(0) -upd(a)-> (1) -upd(a)-> (2)` and a `where` naming the state key of `va = 2`, the guard's locus and the transition identity of `upd(a)`, with no predicate; `always possible CanReachTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }` for `c = a` returns the same evidence; `ReachesThree` (`possible c.versionNumber = 3`, which no node satisfies) over the same subject returns the same `Undefined` evidence, not `Trapped`, with the node `va = 2` open `UndecidedSuccessor`; each item settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` (FR-169). | Test (TC-612) |
 | FR-168-AC-12 | Over FR-126-AC-9's `Counter` subject with `terminal Done using v on Counter when { 6 mod (3 - c.value) = 0 }`, the claim `possible c.value = 3` returns `Undefined` at the terminal node `value = 3`, with a `where` naming its state key and the terminal predicate's locus, with neither a predicate nor a transition, although the node satisfies the target. | Test (TC-612) |
 | FR-168-AC-13 | Over §7.1's subject with universe `{a}`, the one initial state `va = 0`, a package that selects an integer-division law (as FR-168-AC-11's fixture does) and the unit declaring the state constraint `constraint Half using v on Config::ConfigVersion at current { 2 div (2 - self.versionNumber) >= 1 }` (ADR-021 SC-1; S2 kind `Constraint` by FR-102, checked by FR-158 and emitted by FR-105 as a `state`/`state_clause` node of clause `constraint`), selected by the request's `reductions.constraint` (FR-159): the unit compiles, `Half` holds at `va = 0` and `va = 1` so both are expanded, and `ReachesTwo` for `c = a` returns `Undefined` at `va = 2` with stem `(0) -upd(a)-> (1) -upd(a)-> (2)`, cause `division-by-zero` and a `where` naming its state key and the locus of `Half` (its `state_clause` node and claim occurrence), with neither a predicate nor a transition; the node is not reported as a `ConstraintBoundary`, and the item settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` (FR-169). | Test (TC-612) |
+| FR-168-AC-14 | Over ADR-021 §7.1 with the admitted `config_history` symmetry declaration, `ReachesTwo` (`possible` for `c = a`) and `always possible` for `c = a` that `c.versionNumber = 2` each return `HoldsReduced{[Symmetry{config_history, [[a, b, c]]}]}`, with no certificate; `unique path` under that declaration returns `ReductionNotPreserving` before its item is expanded. On the same subject with partial-order reduction, `ReachesTwo` returns `HoldsReduced{[PartialOrder{BreadthFirstRevisit}]}`, with no certificate, while `always possible` remains `ReductionNotPreserving`. | Test (TC-593) |
 
 ## Dependencies
 

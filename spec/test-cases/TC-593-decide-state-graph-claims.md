@@ -14,7 +14,7 @@ Verify witnesses, traps, path pairs and proofs on ADR-022 §7's worked
 examples and their variants, decisive evidence on a partial run, and that
 phase 0 changes only a witness's source.
 
-Scope: FR-168-AC-1 to FR-168-AC-4, FR-168-AC-6 and FR-168-AC-10.
+Scope: FR-168-AC-1 to FR-168-AC-4, FR-168-AC-6, FR-168-AC-10 and FR-168-AC-14.
 
 ## Test Procedure
 
@@ -31,6 +31,10 @@ and the sequenced variant with `reset` (FR-168-AC-3); `Ladder` and
    x.phase = Won and x.n = 50`.
 5. `ReachesTwo` with `witness_samples` 64 and 0; step 2's requests twice.
 6. `unique path Once` over `Ladder` and over `Detour`.
+7. ADR-021 §7.1's `ReachesTwo` and `always possible` claims for `c = a`
+   under the admitted symmetry declaration, and `ReachesTwo` under
+   partial-order reduction; request `unique path` under symmetry and
+   `always possible` under POR.
 
 Tag the tests `#[trace("TC-593", "FR-168-AC-n")]`.
 
@@ -50,3 +54,7 @@ Tag the tests `#[trace("TC-593", "FR-168-AC-n")]`.
   outcomes.
 - Step 6: `PathPair`, empty stem; `Ladder` first `a, c`, second `a, d`;
   `Detour` first `t, w`, second `s, u, x`.
+- Step 7: both symmetry claims and `ReachesTwo` under POR return
+  `HoldsReduced` with their exact applied reduction and no certificate; the
+  `unique path` symmetry and
+  `always possible` POR runs settle `ReductionNotPreserving` before expansion.
