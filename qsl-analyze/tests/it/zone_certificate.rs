@@ -85,7 +85,7 @@ fn without_node(certificate: &Certificate, removed: usize) -> Certificate {
     if let Some(components) = &mut tampered.components {
         components.numbering.remove(removed);
     }
-    tampered.initial = certificate.initial.iter().map(|&n| renumber(n)).collect();
+    tampered.initials = certificate.initials.iter().map(|&n| renumber(n)).collect();
     tampered.admitted.start = renumber(certificate.admitted.start);
     tampered.admitted.path = certificate
         .admitted
@@ -137,7 +137,7 @@ fn the_search_certificates_are_accepted() {
 fn each_tampering_is_rejected_at_its_rule_and_locus() {
     let (world, certificate) = no_late_reply();
     let last = certificate.nodes.len() - 1;
-    assert!(!certificate.initial.contains(&last));
+    assert!(!certificate.initials.contains(&last));
     assert_eq!(certificate.admitted.target, DivergentTarget::Quiescent(0));
     let removed = without_node(&certificate, last);
     assert_eq!(
@@ -192,7 +192,7 @@ fn each_tampering_is_rejected_at_its_rule_and_locus() {
     );
 
     let mut misplaced = certificate.clone();
-    misplaced.initial = vec![target];
+    misplaced.initials = vec![target];
     let CertificateLocus::ModelState(digest) = (match verdict(&world, &misplaced) {
         ZoneCertificateVerdict::Rejected(CertificateRejection {
             rule: CertificateRule::InitialMissing,
@@ -320,7 +320,7 @@ fn a_locked_node_is_checked_for_divergence() {
         .find(|(step, _)| step.operation().contains("Call/go\""))
         .expect("`go` is enabled");
     let b = key(gone.discrete());
-    let old_a = certificate.nodes[certificate.initial[0]].state_key;
+    let old_a = certificate.nodes[certificate.initials[0]].state_key;
     let mut reset_bounds = certificate.clone();
     for listed in &mut reset_bounds.nodes {
         listed.state_key = if listed.state_key == old_a { a } else { b };
@@ -699,7 +699,7 @@ fn a_zeno_set_is_bounded_by_its_own_invariants() {
         transition(start.discrete(), "go"),
         transition(gone.discrete(), "ping"),
     );
-    let initial_key = certificate.nodes[certificate.initial[0]].state_key;
+    let initial_key = certificate.nodes[certificate.initials[0]].state_key;
     let mut moved = retarget(certificate, &resetting);
     for listed in &mut moved.nodes {
         listed.state_key = if listed.state_key == initial_key {

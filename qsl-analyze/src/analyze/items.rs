@@ -14,7 +14,11 @@ use qsl_replay::{
     ReplayRefusal, SubjectRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
     ZoneCertificateRequest,
 };
-use qsl_route::request::RequirementItem;
+use qsl_replay::{ModelCheckItem, ModelCheckLimits};
+use qsl_route::deadlock::ObligationKind;
+use qsl_route::request::{
+    DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem,
+};
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, HyperForm};
 use qsl_semantics::family::UnsupportedItem;
@@ -30,7 +34,7 @@ use crate::statistical::{check_statistical, manifest as en4, StatisticalRequest}
 use crate::zone_check::{
     certificate_item, check_timed_model, check_timed_refinement, manifest as en6,
     settle_timed_refinement, settle_zone_check, TimedRefinementRefusal, TimedRefinementRequest,
-    ZoneCheckRefusal, ZoneCheckRequest, ZoneItem,
+    ZoneCheckItem, ZoneCheckLimits, ZoneCheckRefusal, ZoneCheckRequest, ZoneItem,
 };
 
 /// The FR-396/FR-399 negotiation seam for a routed hyper item. HP-4 calls
@@ -203,6 +207,128 @@ pub fn zone_item<'a, S: Clone + Eq + 'a>(
             }
         },
     )
+}
+
+/// Why a derived item adapter built no item: the engine run is not the
+/// derived request item's (QSpec FR-368).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DerivedItemMismatch {
+    /// The request item is not a derived item of a kind the engine decides.
+    #[error("request item {index:?} is no derived item this engine decides")]
+    NotDerived {
+        /// The request item's index.
+        index: RequestIndex,
+    },
+    /// The engine run decides another item than the request item's kind.
+    #[error("the run decides another item than request item {index:?}'s {kind:?}")]
+    OtherItem {
+        /// The request item's index.
+        index: RequestIndex,
+        /// The request item's kind.
+        kind: ItemKind,
+    },
+}
+
+/// The run's limits under a derived item's caller settings (QSpec FR-368
+/// "Negotiation of a derived or refinement item"): each limit the caller set
+/// replaces `default`'s, the routed provider's published value, and every
+/// other limit keeps it.
+fn derived_limit(limits: &DerivedLimits, limit: DerivedLimit, default: u64) -> u64 {
+    limits.get(limit).unwrap_or(default)
+}
+
+/// The EN-1 item that runs the derived `deadlock-freedom` request item
+/// `derived` (FR-124): [`model_item`] at the request item's index, with the
+/// request item's caller-set `max_states` and `max_transitions` over EN-1's
+/// defaults, and no `max_depth`, since a derived item is an exhaustive
+/// search (QSpec FR-368-AC-20).
+///
+/// # Errors
+///
+/// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` item or
+/// `item` runs another item.
+pub fn derived_model_item<'a>(
+    derived: &RequestItem,
+    mut item: ModelItem<'a>,
+) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
+    let index = derived.index();
+    let (Some(ItemKind::DeadlockFreedom), Some(limits)) =
+        (derived.item_kind(), derived.derived_limits())
+    else {
+        return Err(DerivedItemMismatch::NotDerived { index });
+    };
+    if !matches!(item.request.item, ModelCheckItem::DeadlockFreedom) {
+        return Err(DerivedItemMismatch::OtherItem {
+            index,
+            kind: ItemKind::DeadlockFreedom,
+        });
+    }
+    let defaults = ModelCheckLimits::default().limits;
+    let widen = |value: usize| u64::try_from(value).unwrap_or(u64::MAX);
+    let narrow = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
+    item.request.limits.limits = qsl_eval::simulation::Limits {
+        max_states: narrow(derived_limit(
+            limits,
+            DerivedLimit::MaxStates,
+            widen(defaults.max_states),
+        )),
+        max_transitions: narrow(derived_limit(
+            limits,
+            DerivedLimit::MaxTransitions,
+            widen(defaults.max_transitions),
+        )),
+    };
+    item.request.max_depth = None;
+    Ok(model_item(index, item))
+}
+
+/// The EN-6 item that runs the derived `deadlock-freedom` or
+/// `time-lock-freedom` request item `derived` over a timed subject
+/// (FR-232, FR-243): [`zone_item`] at the request item's index, its run's
+/// obligation the item's kind, with the request item's caller-set
+/// `max_states` and `max_transitions` bounding the symbolic states and
+/// edges over EN-6's defaults.
+///
+/// # Errors
+///
+/// [`DerivedItemMismatch`] when `derived` is no such item or `item` runs
+/// another item.
+pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
+    derived: &RequestItem,
+    mut item: TimedItem<'a, S>,
+) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
+    let index = derived.index();
+    let (Some(kind), Some(limits)) = (derived.item_kind(), derived.derived_limits()) else {
+        return Err(DerivedItemMismatch::NotDerived { index });
+    };
+    let runs = match kind {
+        ItemKind::DeadlockFreedom => {
+            matches!(item.request.item, ZoneCheckItem::DeadlockFreedom)
+                && item.request.obligation.kind == ObligationKind::DeadlockFreedom
+        }
+        ItemKind::TimeLockFreedom => {
+            matches!(item.request.item, ZoneCheckItem::TimeLockFreedom)
+                && item.request.obligation.kind == ObligationKind::TimeLockFreedom
+        }
+        ItemKind::Formula | ItemKind::RaceFreedom | ItemKind::Refinement => {
+            return Err(DerivedItemMismatch::NotDerived { index })
+        }
+    };
+    if !runs {
+        return Err(DerivedItemMismatch::OtherItem { index, kind });
+    }
+    let defaults = ZoneCheckLimits::default();
+    item.request.limits.max_symbolic_states = derived_limit(
+        limits,
+        DerivedLimit::MaxStates,
+        defaults.max_symbolic_states,
+    );
+    item.request.limits.max_symbolic_transitions = derived_limit(
+        limits,
+        DerivedLimit::MaxTransitions,
+        defaults.max_symbolic_transitions,
+    );
+    Ok(zone_item(index, item))
 }
 
 /// An EN-6 timed refinement item (QSpec FR-430, FR-144): the safety half's

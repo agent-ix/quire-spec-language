@@ -5722,6 +5722,23 @@ impl CheckedGraph {
         &self.model_selections
     }
 
+    /// The identity of the domain package the model `model` selects, where
+    /// `model` names it as [`ModelTimeSource::model`] and
+    /// [`CheckedTerminal::model`] do: the alias of the `model` declaration
+    /// that selects it, or the package identity when no alias names it.
+    /// `None` for a name no selection carries.
+    pub fn model_package_identity(&self, model: &str) -> Option<&str> {
+        self.model_names
+            .get(model)
+            .map(abstraction::ModelNames::package)
+            .or_else(|| {
+                self.model_selections
+                    .iter()
+                    .find(|selection| selection.identity == model)
+                    .map(|selection| selection.identity.as_str())
+            })
+    }
+
     /// QSpec FR-322: each selection with its `model_root` node key, in
     /// `model_selections` order.
     pub fn model_roots(&self) -> impl Iterator<Item = (&DomainPackageRef, quire_exact::NodeKey)> {

@@ -270,7 +270,7 @@ fn a_divergence_part_must_cover_every_valuation() {
     let mut forged = proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
     forged.obligation.kind = ObligationKind::TimeLockFreedom;
     let state_of = |node: usize| forged.nodes[node].state_key;
-    let a = forged.initial[0];
+    let a = forged.initials[0];
     let b = (0..forged.nodes.len())
         .find(|&node| state_of(node) != state_of(a))
         .expect("a `B` node");

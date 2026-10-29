@@ -218,6 +218,13 @@ impl OccurrenceKey {
         Self { node, origin }
     }
 
+    /// The `generated` occurrence of `node` at ordinal 0: the one
+    /// occurrence of a node the producer writes with no source construct of
+    /// its own, such as a `model_root` node (QSpec FR-322-AC-132).
+    pub fn generated(node: WireNodeId) -> Self {
+        Self::new(node, Origin::new(Role::new("generated"), 0))
+    }
+
     /// The occurrence's wire node id.
     pub fn node(&self) -> WireNodeId {
         self.node
