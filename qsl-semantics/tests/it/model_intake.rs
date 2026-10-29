@@ -284,7 +284,7 @@ fn lifts_hyphenated_business_ids_and_reads_authored_member_names() {
         ),
         (
             "spec/functional/FR-001-note.md",
-            "---\nid: FR-001-note\ntitle: Note\nobject: entity\ntype: entity\nname: Note\n---\n# FR-001-note: Note\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| id | String | 1 | identity |\n| created_at | String | 1 | |\n\n## Operations\n\n### find_by_id\n\nFind a note by its id. The operation takes no parameters and returns nothing.\n",
+            "---\nid: FR-001-note\ntitle: Note\nobject: entity\ntype: entity\nname: Note\n---\n# FR-001-note: Note\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| id | String | 1 | identity |\n| created_at | String | 1 | |\n\n## Operations\n\n### find_by_id\n\n| Param | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| note_id | String | 1 | |\n\nFind a note by its id. The operation returns nothing.\n",
         ),
         (
             "spec/functional/OP-001-check.md",
@@ -330,6 +330,14 @@ fn lifts_hyphenated_business_ids_and_reads_authored_member_names() {
         note["operations"][0]["identity"],
         "ix://acme/identity-service/FR-001-note/find_by_id"
     );
+    assert_eq!(
+        note["operations"][0]["params"][0]["name"], "note_id",
+        "FCD retains the authored operation parameter name"
+    );
+    assert_eq!(
+        note["operations"][0]["params"][0]["identity"],
+        "ix://acme/identity-service/FR-001-note/find_by_id/note_id"
+    );
     let checker = find_type("ix://acme/identity-service/OP-001-check");
     let note_ref = checker["fields"]
         .as_array()
@@ -360,6 +368,16 @@ fn lifts_hyphenated_business_ids_and_reads_authored_member_names() {
     assert!(has_field(
         "ix://acme/identity-service/OP-001-check/note_ref"
     ));
+    let has_operation_parameter = records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::OperationMember(operation)
+        if operation.parameters.iter().any(|parameter| {
+            parameter.key.node == "ix://acme/identity-service/FR-001-note/find_by_id/note_id"
+        }))
+    });
+    assert!(
+        has_operation_parameter,
+        "QSL retains the authored parameter identity"
+    );
     let note_reference = records.iter().find_map(|record| match record {
         DomainPackageRecord::FieldMember(field)
             if field.key.node == "ix://acme/identity-service/OP-001-check/note_ref" =>
