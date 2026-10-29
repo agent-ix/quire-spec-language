@@ -779,7 +779,7 @@ fn an_undetermined_step_is_undecided_whatever_its_post_state() {
 
 /// The record `analyze` settles for `world`'s one refinement on EN-6,
 /// through `timed_refinement_item` and FR-145's replay over FR-241's delays.
-fn analyzed(world: &Refining) -> qsl_analyze::analyze::AnalyzeRecord {
+pub(crate) fn analyzed(world: &Refining) -> qsl_analyze::analyze::AnalyzeRecord {
     use qsl_analyze::analyze::{analyze, timed_refinement_item, Engines, TimedRefinementItem};
     let [refinement] = world.package.graph().refinements() else {
         panic!("one refinement");

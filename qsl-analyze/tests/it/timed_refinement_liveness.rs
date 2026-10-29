@@ -16,7 +16,7 @@ use qsl_replay::{
 };
 use quire_exact::{Cancel, Integer, Rational};
 
-use crate::timed_refinement::{refinement, replay, safety_request};
+use crate::timed_refinement::{analyzed, refinement, replay, safety_request};
 use crate::timed_world::{document, refining, renamed_package, Refining, DENSE};
 
 /// FR-430-AC-5's `Req`: `send` with the precondition `not self.sent` (here
@@ -585,4 +585,40 @@ fn a_tick_source_refutes_by_a_loop_of_ticks() {
         replay(&world, &counterexample),
         RefinementTraceSettlement::Reproduced { .. }
     ));
+}
+
+/// FR-144 over EN-6 (TC-1170): the item's value is the liveness half's
+/// once the safety half is proved. With safety `Holds` and its certificate
+/// accepted, the `poll` loop's violation settles the item `refuted` through
+/// the lasso's replay, carrying the lasso; with the time invariant the
+/// liveness half holds and the item is `Proved{Exhaustive, Uncertified}`,
+/// since no core checker covers that half (ADR-020 CT-4).
+#[trace("TC-1170", "FR-430-AC-5")]
+#[test]
+fn the_item_settles_from_its_liveness_half_once_safety_is_proved() {
+    use qsl_replay::{Certification, ProofBasis, TerminalValue};
+
+    let violated = polling(false, false);
+    assert!(matches!(
+        check(&violated).safety,
+        TimedSafetyOutcome::Holds { .. }
+    ));
+    let record = analyzed(&violated);
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(*terminal.value(), TerminalValue::Refuted);
+    let counterexample = record.counterexample().expect("the replayed lasso");
+    assert!(counterexample.lasso.is_some(), "{counterexample:?}");
+    assert!(matches!(
+        counterexample.refinement,
+        Some(RefinementFailure::Divergence { .. })
+    ));
+
+    let holds = analyzed(&polling(false, true));
+    assert_eq!(
+        *holds.terminal().expect("a terminal record").value(),
+        TerminalValue::Proved {
+            basis: ProofBasis::Exhaustive,
+            certification: Certification::Uncertified,
+        }
+    );
 }
