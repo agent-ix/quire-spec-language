@@ -1,48 +1,42 @@
 ---
 id: TC-142
-title: "Evaluate admitted version-2 compensation expressions"
+title: "Evaluate compensation slots after strict package read-back"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-049
-    type: verifies
-  - target: ix://agent-ix/quire-spec-language/NFR-009
-    type: verifies
+  - { target: ix://agent-ix/quire-spec-language/FR-049, type: verifies }
+  - { target: ix://agent-ix/quire-spec-language/FR-390, type: references }
 ---
-# TC-142: Evaluate admitted version-2 compensation expressions
+# TC-142: Evaluate compensation slots after strict package read-back
 
 ## Description
 
-Verify that the public state evaluator executes the exact guard, retry and
-recovery value handles from a strictly admitted compiled-protocol `/2` package
-without translating the package or weakening its authority and resource rules.
+Scope: FR-049-AC-9.
+
+Verify the end-to-end replacement for the retired version-2 state evaluator:
+strictly read the package emitted for a compensation fixture, select the exact
+checked protocol slots and evaluate them through FR-390's slot entry point.
+TC-1070 through TC-1073 own the detailed expression, admission, unavailable
+input and accounting cases; this test adds the emitted-bytes/read-back path.
 
 ## Test Procedure
 
-Compile and strictly read the real native compensation fixture as `/2`. Select
-each compensation's authored guard, retry and recovery handle from the admitted
-package and supply its exact typed binder, population and authority inputs.
-Make both Full and Partial retry/recovery expressions read immutable
-registration and activation captures; supply only their authored external
-forward-effect and trigger sources, never the capture binders themselves.
-Evaluate each handle with sufficient limits and repeat the same call.
-
-Independently cross the declaration, expression handle, compiled artifact,
-binding authority, model, anchor and population selections. Evaluate a
-compiler-produced `/2` package before it has an independently admitted artifact
-identity. Remove one required input. Finally, rerun an exercised dimension with
-zero, the exact successful usage and one less than that usage, then retry the
-original request with fresh sufficient limits. Exercise the unchanged
-version-1 entry point in the same crate build.
+Compile the real compensation fixture used by TC-1070 through the supported
+checked source pipeline, emit its checked-package V2 bytes and admit them with
+the strict version-exact reader. From the admitted checked package, select the
+registration/activation captures, trigger guard, retry relation and recovery
+predicate by their exact protocol slots. Supply the corresponding `ProtocolSlot`
+and typed `ProtocolSupply` cases from TC-1070 and evaluate through
+`CheckedPackageEvaluation::evaluate_protocol_slot` with the shared meter.
+Repeat the same slot calls over the checked package before emission. Compare
+results and charge logs. Cross one slot with another slot's supply and verify
+admission refusal before charge. Do not call `state::evaluate_v2` or construct
+an artifact-value `StateView`.
 
 ## Expected Results
 
-The three exact `/2` compensation expressions return their independently
-expected Boolean values and exact replay returns the same value and usage.
-Forward-effect sources admit only through the exact compensation-registration
-anchor, subject, type, model and authority, and captures remain evaluator-owned.
-Every crossed or unpublished selection returns a typed refusal before runtime
-authority is accepted. Missing data returns `Incomplete`; insufficient work
-returns `Exhausted` with its exact dimension and no partial value; a fresh retry
-completes. Version-1 evaluation remains source-compatible. The implementation
-uses one shared evaluator over the admitted package view and performs no JSON
-round-trip, public version conversion or second expression interpretation.
+The strict reader's checked package selects and evaluates the same exact
+compensation slots as the source-checked package, with equal typed results and
+charge logs. A crossed slot/supply refuses before charge. All protocol
+expression, typed-failure, unavailable-input and budget boundaries are the
+single cases specified by TC-1070 through TC-1073; this integration case adds
+only the emitted V2/read-back round trip.

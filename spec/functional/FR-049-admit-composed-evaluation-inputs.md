@@ -1,6 +1,6 @@
 ---
 id: FR-049
-title: "Admit immutable composed evaluation inputs"
+title: "Route composed evaluation through checked-term runtime inputs"
 type: FR
 relationships:
   - { target: ix://agent-ix/quire-spec-language/US-002, type: implements }
@@ -9,218 +9,141 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
   - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-106, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-107, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-255, type: references }
+  - { target: ix://agent-ix/quire-spec-language/NFR-009, type: depends_on }
   - { target: ix://agent-ix/quire-protocol/FR-003, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-390, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-405, type: references }
+  - { target: ix://agent-ix/quire-spec-language/ADR-011, type: references }
 ---
-# FR-049: Admit immutable composed evaluation inputs
+# FR-049: Route composed evaluation through checked-term runtime inputs
 
 ## Description
 
-When a caller evaluates a value from an admitted composed artifact, the
-compiler library SHALL validate an explicit immutable typed state view before
-executing the selected value graph.
+When a caller evaluates a checked expression or protocol slot, QSL SHALL route
+it through the `qsl-eval` checked-term APIs, which dispatch checked-term evaluation to `quire-eval`, with the exact checked identity,
+typed runtime environment and caller-owned accounting context required by that
+entry point. The retired native `state` artifact-graph evaluator has no
+parallel replacement API.
 
-This requirement supplies the shared runtime-input seam needed by
-[FR-046](FR-046-execute-predicates-and-ordered-queries.md) and
-[FR-047](FR-047-evaluate-finite-object-reference-graphs.md). It does not create
-an observation store, protocol executor, model source or alternate source
-representation.
+This requirement ties the replacement entry points together for
+[FR-046](FR-046-execute-predicates-and-ordered-queries.md),
+[FR-047](FR-047-evaluate-finite-object-reference-graphs.md),
+[FR-048](FR-048-preserve-native-choreography-semantics.md) and
+[FR-390](FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md).
+The retirement follows [ADR-011 §7.3, M-6c, row 1250](../decisions/ADR-011-stage-dag-and-dependency-architecture.md#L1250)
+and [FR-405, “The state after the switch,” item 1, lines 156–163](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md#L156):
+the artifact-graph evaluators are deleted under M-6c. The old API names below
+describe the boundary being retired; they do not preserve that boundary or add
+a compatibility façade.
 
 ## Inputs
 
-The public Rust entry points take either a version-1 `AdmittedPackage` or a
-version-2 `v2::AdmittedPackage`, an `EvaluationRequest`, a borrowed `StateView`
-and caller-configured `Limits`. The request selects one declaration and one
-declaration-local value handle. The state view contains explicit binder values
-and finite population/object views selected by their declaration-local binding
-requirements. Version-2 evaluation includes compensation guard, retry and
-recovery value handles retained by [FR-048](FR-048-preserve-native-choreography-semantics.md).
+Checked-term evaluation receives only the checked package and expression
+identity selected by its owning entry point (`CheckedPackageEvaluation::call`,
+`evaluate` or `evaluate_protocol_slot`, or the applicable checked-family
+function such as `evaluate_closed`, `evaluate_state_predicate` or
+`evaluate_refinement_row`). Family evaluation receives its
+typed checked family form and family-specific immutable inputs. Protocol-node
+evaluation receives the `ProtocolSlot`, `ProtocolSupply` and caller-supplied
+`Meter` specified by FR-390. Clause execution obtains its model environment
+through the clause-run contract; it does not convert a free-standing native
+`StateView` or artifact graph. Model authority remains owned by
+[FR-056](FR-056-admit-domain-package-model-declarations.md), and snapshot and
+invocation authority remains owned by
+[FR-106](FR-106-admit-snapshots-and-invocations.md) and its selected
+observation contract; QSL does not mint or duplicate that authority.
 
-The domain package admitted under
-[FR-056](FR-056-admit-domain-package-model-declarations.md) supplies model,
-object-type, relationship and population-declaration identity as declaration
-keys. `StaticAuthority`'s document, model, profile and configuration identity
-and digest are checked independently of that domain-package identity: each is
-a static identity paired with a digest in the FR-056 `sha256-jcs` domain, which
-the evaluator checks before executing any value. One digest domain for every
-identity the language admits gives one preimage that any party recomputes from
-the selected document, so a `StaticAuthority` digest and a domain package
-digest of the same document are the same string.
+The retiring public Rust surface comprises `evaluate`/`evaluate_v2`;
+`EvaluationRequest`; `ObservationKey`, `ObservationIdentity`, `ObjectKey`,
+`CanonicalDigest` and `ObservationDigest`; `StaticAuthority`,
+`StaticAuthorityMember`, `StaticAuthorityDigestCause`, `AssessmentAuthority`,
+`AuthorityEvidence`, `AuthorityAdapter`, `AdapterArtifact` and
+`InvalidAdapterArtifact`; `MissingInput`, `ValuePathSegment`, `InputSlot`,
+`ContextualSlot`, `ContextualValue`, `ContextualValueKind`, `FieldValue`,
+`FieldInput`, `Value`, `ValueKind`, `BinderInput`, `ObjectInput`,
+`PopulationInput` and `StateView`; `Refusal`, `EvaluationOutcome`,
+`EvaluationReport`; and `Limits`, `Usage`, `Dimension`, `Exhaustion`,
+`ExhaustionCause` and `ACCOUNTING_VERSION`. The replacement mapping is:
 
-A `StaticAuthority` digest is spelled `sha256-jcs:` followed by 64 lowercase
-hexadecimal digits. Its preimage is the RFC 8785 (JCS) encoding, as UTF-8
-bytes, of the one parsed JSON value of the selected document, model, profile
-or configuration artifact, parsed and encoded exactly as FR-056's package
-document rule does. The preimage carries no domain-tag prefix, length prefix or
-identity: `sha256-jcs:` is the spelling of the domain and is not hashed. The
-digest is SHA-256 over those bytes. The document identity pairs with the
-document's digest, and likewise for the model, profile and configuration; no
-member's digest is computed over another member.
+| Retired state capability | Replacement owner and exercised entry point |
+| --- | --- |
+| `evaluate` / `evaluate_v2`, `EvaluationRequest` | The checked source pipeline selects a `CheckedPackage` and checked expression; `CheckedPackageEvaluation::{call, evaluate}` plus the applicable checked-family function such as `evaluate_closed`, `evaluate_state_predicate` or `evaluate_refinement_row` (FR-046/FR-047; TC-136) |
+| `StateView`, `BinderInput`, `PopulationInput`, `ObjectInput`, `FieldInput`, `FieldValue`, `InputSlot`, `ContextualSlot`, `ContextualValue`, `ContextualValueKind`, `Value`, `ValueKind`, `ValuePathSegment`, `ObjectKey`, `ObservationKey`, `ObservationIdentity` | The `ObjectEnvironment` and checked clause environment from FR-107, with the family inputs owned by FR-046/FR-047 and the observation selections owned by FR-106 (TC-136) |
+| `StaticAuthority`, `StaticAuthorityMember`, `StaticAuthorityDigestCause`, `AssessmentAuthority`, `AuthorityEvidence`, `AuthorityAdapter`, `AdapterArtifact`, `InvalidAdapterArtifact`, `CanonicalDigest`, `ObservationDigest` | FR-056 selects static declarations; FR-106 owns snapshot/invocation and assessment authority; FR-107/FR-390 admit clause environments and protocol-slot supplies (TC-136, TC-1071) |
+| Evaluate compensation guards, captures, retry and recovery expressions | `CheckedPackageEvaluation::evaluate_protocol_slot` with `ProtocolSlot`, `ProtocolSupply` and shared `Meter` (FR-390, TC-1070–TC-1073); TC-142's eval portion is re-homed there |
+| `MissingInput`, `Refusal`, `EvaluationOutcome`, `EvaluationReport` | The owning checked-term entry point's typed `Evaluation`, `FamilyOutcome` and `CallFailure` categories; FR-107/FR-390 (TC-136, TC-1071–TC-1073) |
+| Bound and account evaluation work | Caller-owned `quire-exact::Meter` and the shared accounting contract; FR-390 and NFR-009 (TC-137, TC-1073) |
 
-Vectors (each source parses to the value shown; keys sort and insignificant
-whitespace drops under RFC 8785):
-
-| Member | Source text | Preimage bytes (UTF-8) | Digest |
-| --- | --- | --- | --- |
-| document | `{ "version": 1, "name": "orders" }` | `{"name":"orders","version":1}` | `sha256-jcs:<SHA-256 of the canonical text>` |
-| model | `{"objects": ["Order", "Line"], "id": "orders-model"}` | `{"id":"orders-model","objects":["Order","Line"]}` | `sha256-jcs:<SHA-256 of the canonical text>` |
-| profile | `{"limits": {"depth": 8}, "profile": "strict"}` | `{"limits":{"depth":8},"profile":"strict"}` | `sha256-jcs:<SHA-256 of the canonical text>` |
-| configuration | `{"enabled": true, "mode": "batch"}` | `{"enabled":true,"mode":"batch"}` | `sha256-jcs:<SHA-256 of the canonical text>` |
-
-The document source text's raw bytes hash to
-their own SHA-256; that
-raw-byte digest is not the document's `sha256-jcs` digest.
-
-A digest in any other domain is refused before any value executes, with the
-closed typed `Refusal::StaticAuthorityDigest` naming the member (document,
-model, profile or configuration) and one cause: `wrong-domain` for a digest
-spelled `sha256:` (the algorithm-prefixed spelling of the retired
-`filament-canonical-json-1` domain) or for any spelling other than
-`sha256-jcs:`, and `malformed` for the `sha256-jcs:` spelling with other than
-64 lowercase hexadecimal digits. The evaluator never rewrites a prefix or accepts a digest by its hexadecimal digits alone. A caller holding an identity paired with
-a `sha256:` digest re-derives the digest from the selected artifact under the
-preimage above and supplies the `sha256-jcs:` spelling; no evaluator input
-carries both spellings or converts one to the other. When several members
-carry refused digests, the refusal names the first in the order document,
-model, profile, configuration. F's selected observation binding
-and assessment-input contract supplies concrete records, occurrence
-correlation, membership, observation anchors, progress and completeness.
-That observation contract additionally
-names a producer interface version for each assessment input; `StaticAuthority`
-carries no such member and this requirement never compares one. The
-caller translates those authorities into this typed Rust view; field spelling,
-JSON shape or the offered protocol artifact cannot appoint them.
-
-At the observation boundary, a concrete population document uses
-`ArtifactRef(kind="population")` and a concrete finite window document uses
-`ArtifactRef(kind="window")`. Those references retain the documents' byte
-identity; their semantic digests remain separate typed members. A population model export remains `ExportKind::Population`. A window
-is an assessment selection rather than a model export and therefore has no
-`ExportKind` alternative.
+TC-134 retains compiler emission and independent reader coverage only; its
+evaluator calls are covered by TC-1070 through TC-1073. No old `/1` or `/2`
+artifact-graph evaluator behavior remains an entry point.
 
 ## Outputs
 
-An `EvaluationReport` containing effective limits, deterministic usage and one
-`EvaluationOutcome`: `Completed(Value)`, `Incomplete(MissingInput)`,
-`Refused(Refusal)` or `Exhausted(Exhaustion)`. Only `Completed` contains a value.
-Each non-complete outcome carries the exact selected declaration/value or input
-identity and a closed typed reason; callers never classify outcomes from text.
+The result shapes owned by checked-term and family APIs, as FR-107 and FR-390
+define them. A non-complete result never exposes a partial completed value;
+callers use the typed result and its cause rather than diagnostic text.
 
 ## Behavior
 
-The public evaluators SHALL accept only packages produced by their constructor-
-private successful version-exact compiled-artifact readers.
+Each evaluation entry point SHALL accept only checked terms or protocol slots
+whose checked identity is established by its owning compile/read path.
 
-When the caller selects version-2 evaluation, the evaluator SHALL read the
-admitted inherited value/type/binding graph, retained model schema and selected
-version-2 artifact identity without converting the package to version 1.
+Family entry points SHALL preserve the evaluation semantics of their owning
+requirement: ordered query stopping and partial-result discard under FR-046,
+finite graph identity and closure under FR-047, and choreography expression
+semantics under FR-048/FR-390. They SHALL receive no semantic meaning from a
+freely constructed artifact graph or reparsed expression text.
 
-If a version-2 compiler emission has no independently admitted published
-artifact identity, then the evaluator SHALL refuse before accepting runtime
-authority with `Refusal::UnpublishedArtifact`.
+The checked-term admission path SHALL admit runtime values and model fields
+against their checked types and selected FR-056/FR-106 model and observation
+authority at the relevant clause or protocol-slot boundary. Missing or
+unavailable input SHALL remain distinct from a completed value, invalid
+admission, resource exhaustion and an internal fault; source-order and
+short-circuit behavior remains as specified by the owning family requirement.
 
-The request validator SHALL reject an absent declaration, a foreign or
-out-of-range value handle and a value whose owner differs from the selected
-declaration.
+All evaluation work SHALL use the caller's existing accounting context. A
+retry that starts a new evaluation uses a fresh meter; protocol slots evaluated
+as one operation share the same meter and accumulate charges in call order.
+The evaluator SHALL borrow immutable checked packages and environments and
+retain no mutable process-global evaluation state.
 
-The input validator SHALL bind every supplied binder and population to one exact
-declaration-local compiled requirement and reject duplicate or surplus bindings.
-
-The compiled artifact SHALL distinguish a later population requirement, window
-requirement and clock requirement as `BindingKind::Population`,
-`BindingKind::Window` and `BindingKind::Clock`. A binding requirement's
-`authority` selects the applicable contract artifact; it is not the concrete
-runtime population or window document. A clock identity or configuration SHALL
-NOT stand in for a window identity, membership, coverage or document digest.
-
-The input validator SHALL validate every available Boolean, exact integer,
-reduced rational, text, enum, record, option, ordered sequence, reference and
-object value against its compiled nominal type, unit, bounds, field exports and
-declared maximum before evaluation.
-
-Every supplied value position SHALL be an explicit typed slot containing either
-an `Available` payload or one `Unavailable` cause. Aggregate payloads SHALL
-retain their child slots recursively in authored order, so an ordered sequence
-or record can carry an unavailable child without inventing that child's value.
-
-An `Unavailable` slot SHALL retain one typed missing observation, field, member,
-membership, sequence, population or closure identity without constructing a
-placeholder semantic value.
-
-The input validator SHALL permit an unavailable value at a position whose
-compiled expected type and authority are known, so evaluation can preserve
-short-circuit behavior without inventing its payload.
-
-The population validator SHALL use the complete storage key `(observation
-occurrence, model, universe, object type, object identifier)` and reject two
-entries with the same key. The observation occurrence contains the exact
-semantic anchor, snapshot identity, optional window identity and record
-identity. Domain-package declaration keys, F identities and `sha256-jcs` domain
-package digests remain typed separately from compiled-protocol artifact
-references and raw-byte digests.
-
-The population validator SHALL permit the same model/universe/type/object
-identity under distinct pre, post or current anchors, snapshots, windows or
-record occurrences as distinct storage entries.
-
-The identity comparator SHALL project away only the complete observation
-occurrence when the language explicitly compares cross-observation object
-identity; field reads and graph traversal SHALL retain the full storage key.
-
-If a population is declared complete, then the population validator SHALL
-reject a reference target absent from its exact full storage-key domain.
-
-If population membership or closure is unavailable, then the input validator SHALL
-retain `Incomplete` rather than reinterpret the offered subset as a complete
-empty or closed view.
-
-The evaluator SHALL validate request and structural/authority invariants before
-executing the selected value, then preserve the first runtime incomplete,
-refused or exhausted outcome encountered under the selected operator order.
-
-The evaluator SHALL borrow the admitted package and state view without mutating
-them or retaining mutable process-global evaluation state.
-
-The version-1 and version-2 entry points SHALL execute one shared evaluator
-implementation with identical request, input, outcome and accounting semantics.
-
-The evaluator SHALL apply the versioned charge-before-work rules in
-[NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md) and start every
-call with fresh counters.
-
-The public API SHALL expose no entry point that evaluates freely constructed
-wire records, reparsed expression strings or unauthenticated payload bytes.
+No compatibility API SHALL keep the retired `state` evaluator reachable.
+Native `/1` and `/2` artifact-graph inputs are not converted into checked terms
+to preserve the old entry points; the supported replacement is the checked
+source pipeline and its FR-046/047/048/390 entry points.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-049-AC-1 | Only an `AdmittedPackage` plus an exact declaration-local value selection reaches evaluation; raw bytes, freely constructed wire packages and crossed/out-of-range handles cannot. | Test (TC-136) |
-| FR-049-AC-2 | Binder, population and window inputs retain exact declaration, compiled requirement, model, type, unit, anchor and authority; concrete population/window documents use their distinct artifact kinds, and duplicate, surplus, foreign and wrong-type entries refuse independently. | Test (TC-136) |
-| FR-049-AC-3 | Every available payload and recursively typed aggregate slot satisfies the exact compiled Boolean/numeric/text/enum/record/option/sequence/reference/object domain without implicit conversion, normalization or duplicate coalescing. | Test (TC-136) |
-| FR-049-AC-4 | Unavailable values preserve typed missing identities and participate only if evaluation reaches them; they never become null, false, zero, empty or a completed output member. | Test (TC-136) |
-| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct observation occurrences, compares permitted cross-observation identity without retagging reads, keeps domain-package/F identity and digest domains separate from compiled artifacts, distinguishes population/window/clock roles, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
-| FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
-| FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
-| FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |
-| FR-049-AC-9 | A strictly read `/2` package evaluates its exact compensation guard, retry and recovery handles through the shared state evaluator. Crossed handles and artifact/authority substitutions refuse with their existing typed causes; an unpublished compiler emission returns `Refusal::UnpublishedArtifact`; missing inputs and exhausted work remain distinct; the version-1 API remains source-compatible. | Test (TC-142) |
-| FR-049-AC-10 | A `StaticAuthority` whose four digests are the `sha256-jcs:` digests of the vectors in the `StaticAuthority` digest rule of Inputs evaluates; a digest is SHA-256 over the RFC 8785 bytes of the parsed artifact with no prefix, so the document vector's source text, key-sorted and whitespace-free, yields the listed preimage and digest and its raw bytes yield a different one. | Test (TC-136) |
-| FR-049-AC-11 | A member digest spelled `sha256:<64 hex>` refuses with `Refusal::StaticAuthorityDigest` naming that member and cause `wrong-domain`, even when its hexadecimal digits equal the correct `sha256-jcs` digest; a `sha256-jcs:` digest with 63 digits, 65 digits, uppercase digits or a non-hex digit refuses `malformed`; no value executes, and with two refused members the refusal names the earlier in document, model, profile, configuration order. | Test (TC-136) |
+| FR-049-AC-1 | Each checked-term evaluation selects an exact checked declaration/expression identity; raw bytes, freely constructed wire records and a foreign or out-of-range checked handle cannot enter an evaluation session. | Test |
+| FR-049-AC-2 | Runtime binders and model/observation values are admitted only through the owning checked environment and authority contracts; duplicate, surplus, foreign and wrong-type inputs refuse at admission, and concrete population/window/clock roles remain distinct. | Test |
+| FR-049-AC-3 | Available Boolean, numeric, text, enum, record, option, sequence, reference and object values satisfy their checked type, unit, bound and field contracts without implicit conversion, normalization or duplicate coalescing. | Test |
+| FR-049-AC-4 | Unavailable values preserve their typed missing identity and affect evaluation only when reached; they never become null, false, zero, empty or a completed output member. | Test |
+| FR-049-AC-5 | Graph evaluation uses the complete observation/model/universe/object-type/object identity, rejects duplicate storage keys, permits distinct observation occurrences, and distinguishes a missing target in a complete domain from unavailable membership or closure. Static and assessment identity authority remains owned by FR-056 and the selected observation contract. | Test |
+| FR-049-AC-6 | Every checked-term entry returns its owning typed result; completed values are distinct from unavailable input, admission refusal, incomplete results and internal faults, and an incomplete result caused by `resource_exhausted` retains that cause; no caller classifies results from diagnostic text. | Test |
+| FR-049-AC-7 | Each applicable shared-meter counter has zero/no-work, exact-usage and one-short evidence; over-budget work produces no completed partial value and stops at the specified charge point. | Test |
+| FR-049-AC-8 | Repeating an evaluation over the same immutable checked package and runtime environment with a fresh sufficient meter returns the same result and leaves inputs unchanged; sequential protocol-slot calls on one meter accumulate in call order. | Test |
+| FR-049-AC-9 | A checked protocol package evaluates its exact compensation guard, capture, retry and recovery slots through FR-390's `evaluate_protocol_slot`; crossed slot/supply selections refuse before charge, unavailable inputs and resource stops remain distinct, and no `/1` or `/2` state evaluator or compatibility entry point exists. | Test |
+| FR-049-AC-10 | Evaluation uses only static declaration identities selected by the FR-056 intake path and assessment identities supplied by their owning observation contract; replacing a selected identity independently is refused before evaluation. | Test |
+| FR-049-AC-11 | The checked-term entry path is unreachable when FR-056 refuses static package authority; the FR-056 malformed, wrong-domain and mismatched-identity cases preserve their declared cause and locus at the evaluation boundary. | Test |
 
 ## Dependencies
 
 [FR-036](FR-036-link-composed-native-packages.md) and
 [FR-040](FR-040-check-composed-values.md) own the static declaration/type graph.
-The already implemented artifact-core portions of
-[FR-042](FR-042-publish-compiled-protocol-artifacts.md)—canonical schema,
-constructor-private emission, strict reader and bounded admitted package—supply
-the input authority; FR-042's later family-completeness and consumer-handoff
-criteria do not precede this requirement. The domain package and the
-observation system retain their own identities and meanings; this interface checks selected values
-against the compiled requirements they supply.
-
-The domain package is selected by identity and digest.
+The domain package and observation system retain their own identities and
+meanings. FR-046/047 own query and graph semantics; FR-390 owns checked
+protocol-slot evaluation and shared-meter behavior; FR-107 owns checked-term
+result categories and the clause environment; FR-056 owns static domain-package
+identity, while FR-106 owns snapshot and invocation authority.
 
 `quire-protocol` [FR-003](ix://agent-ix/quire-protocol/FR-003) consumes the
-version-2 entry point for compensation assessment. QSL remains the sole owner of
-native expression evaluation; the consumer neither reparses nor mirrors the
-admitted graph.
+checked protocol evaluation contract. QSL owns source checking and checked-term
+entry-point selection; `qsl-eval` exposes the family entry points and dispatches
+checked-term execution to `quire-eval`. The consumer neither reparses source nor
+mirrors a retired artifact graph.
