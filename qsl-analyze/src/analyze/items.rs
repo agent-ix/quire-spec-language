@@ -5,6 +5,7 @@
 //! "Engine refusals" table.
 
 use qsl_eval::simulation::model::{ClauseOutcome, DEFAULT_MAX_CLOCKS};
+use qsl_eval::simulation::protocol::ProtocolTransition;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::RequestIndex;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
@@ -14,8 +15,8 @@ use qsl_replay::{
     ReplayRefusal, SubjectRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
     ZoneCertificateRequest,
 };
-use qsl_replay::{ModelCheckItem, ModelCheckLimits};
-use qsl_route::deadlock::ObligationKind;
+use qsl_replay::{ModelCheckItem, ModelCheckLimits, ProtocolCertificateRequest, SubjectIdentity};
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::request::{DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem};
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, HyperForm};
@@ -25,8 +26,8 @@ use quire_semantic_value::catalog::CatalogCode;
 
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::model_check::{
-    check_model, manifest as en1, HyperRefusal, LivenessRefusal, ModelCheckRefusal,
-    ModelCheckRequest,
+    check_model, check_protocol, manifest as en1, HyperRefusal, LivenessRefusal, ModelCheckRefusal,
+    ModelCheckRequest, ProtocolCheckRequest,
 };
 use crate::statistical::{check_statistical, manifest as en4, StatisticalRequest};
 use crate::zone_check::{
@@ -101,6 +102,62 @@ pub fn model_item<'a>(index: RequestIndex, item: ModelItem<'a>) -> AnalyzeItem<'
             let limits = request.limits;
             match check_model(request, cancel) {
                 Ok(outcome) => EngineReport::Model(Box::new(qsl_replay::settle_model_check(
+                    &outcome,
+                    &limits,
+                    &package_id,
+                    &certificate,
+                    cancel,
+                    replay,
+                ))),
+                Err(refusal) => EngineReport::Refused(model_refusal(&refusal)),
+            }
+        },
+    )
+}
+
+/// An EN-1 item over a protocol subject (FR-215): the run, the certificate
+/// request that re-admits its subject for the protocol closure checker, the
+/// `package_id` the run checked, and the replay of a counterexample
+/// (FR-217), which in production is `replay_protocol_trace` over the same
+/// source.
+pub struct ProtocolItem<'a> {
+    /// The EN-1 run over the protocol subject.
+    pub request: ProtocolCheckRequest<'a>,
+    /// The protocol closure checker's request over the same subject and
+    /// item.
+    pub certificate: ProtocolCertificateRequest<'a>,
+    /// The `package_id` of the package the run checked.
+    pub package_id: DigestRecord,
+    /// Replays the run's counterexample.
+    pub replay: Box<ProtocolReplayFn<'a>>,
+}
+
+/// The replay of an EN-1 counterexample over a protocol subject (FR-217).
+pub type ProtocolReplayFn<'a> = dyn FnOnce(
+        &TemporalCounterexample<ProtocolTransition>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal>
+    + 'a;
+
+/// The `temporal-satisfaction` item that runs `item` on EN-1 over its
+/// protocol subject and settles it by `settle_protocol_check` (FR-215,
+/// FR-217). It is `Supported(EN-1)` until the caller's negotiation says
+/// otherwise ([`AnalyzeItem::disposed`]).
+pub fn protocol_item<'a>(index: RequestIndex, item: ProtocolItem<'a>) -> AnalyzeItem<'a> {
+    AnalyzeItem::new(
+        index,
+        Capability::TemporalSatisfaction,
+        Mode::Bounded,
+        en1::BACKEND_ID,
+        move |cancel| {
+            let ProtocolItem {
+                request,
+                certificate,
+                package_id,
+                replay,
+            } = item;
+            let limits = request.limits;
+            match check_protocol(request, cancel) {
+                Ok(outcome) => EngineReport::Protocol(Box::new(qsl_replay::settle_protocol_check(
                     &outcome,
                     &limits,
                     &package_id,
@@ -217,7 +274,10 @@ pub enum DerivedItemMismatch {
         /// The request item's index.
         index: RequestIndex,
     },
-    /// The engine run decides another item than the request item's kind.
+    /// The engine run or its certificate check decides another item than
+    /// the request item's kind, or is over another subject, a protocol
+    /// subject's resolved models included (QSpec FR-425), than the request
+    /// item's obligation.
     #[error("the run decides another item than request item {index:?}'s {kind:?}")]
     OtherItem {
         /// The request item's index.
@@ -248,18 +308,35 @@ fn derived_limit(limits: &DerivedLimits, limit: DerivedLimit, default: u64) -> u
     limits.get(limit).unwrap_or(default)
 }
 
+/// EN-1's explored-graph limits under a derived item's caller settings:
+/// `max_states` and `max_transitions`, each over EN-1's default when unset.
+fn derived_graph_limits(limits: &DerivedLimits) -> qsl_eval::simulation::Limits {
+    let defaults = ModelCheckLimits::default().limits;
+    let widen = |value: usize| u64::try_from(value).unwrap_or(u64::MAX);
+    let narrow = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
+    let limit = |limit, default| narrow(derived_limit(limits, limit, widen(default)));
+    qsl_eval::simulation::Limits {
+        max_states: limit(DerivedLimit::MaxStates, defaults.max_states),
+        max_transitions: limit(DerivedLimit::MaxTransitions, defaults.max_transitions),
+    }
+}
+
 /// The EN-1 item that runs the derived `deadlock-freedom` request item
 /// `derived` (FR-124): [`model_item`] at the request item's index, with the
 /// request item's caller-set `max_states` and `max_transitions` over EN-1's
 /// defaults, and no `max_depth`, since a derived item is an exhaustive
 /// search (QSpec FR-368-AC-20).
 ///
+/// `obligation` is `derived`'s obligation identity, as the written request
+/// gives it: the run and its certificate check must be over its subject.
+///
 /// # Errors
 ///
-/// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` item or
-/// `item` runs another item.
+/// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` item, or
+/// `item` runs another item or is over another subject than `obligation`'s.
 pub fn derived_model_item<'a>(
     derived: &RequestItem,
+    obligation: &ItemObligation<SubjectIdentity>,
     mut item: ModelItem<'a>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     let index = derived.index();
@@ -268,29 +345,97 @@ pub fn derived_model_item<'a>(
     else {
         return Err(DerivedItemMismatch::NotDerived { index });
     };
-    if !matches!(item.request.item, ModelCheckItem::DeadlockFreedom) {
+    // A subject whose package has no identity is no subject the request
+    // was written over.
+    let over = |subject: &qsl_eval::model_subject::ModelSubject<'_>| {
+        SubjectIdentity::of(subject).is_ok_and(|identity| identity == obligation.subject)
+    };
+    if !matches!(item.request.item, ModelCheckItem::DeadlockFreedom)
+        || !matches!(item.certificate.item, ModelCheckItem::DeadlockFreedom)
+        || obligation.kind != ObligationKind::DeadlockFreedom
+        || !over(&item.request.subject)
+        || !over(&item.certificate.subject)
+    {
         return Err(DerivedItemMismatch::OtherItem {
             index,
             kind: ItemKind::DeadlockFreedom,
         });
     }
-    let defaults = ModelCheckLimits::default().limits;
-    let widen = |value: usize| u64::try_from(value).unwrap_or(u64::MAX);
-    let narrow = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
-    item.request.limits.limits = qsl_eval::simulation::Limits {
-        max_states: narrow(derived_limit(
-            limits,
-            DerivedLimit::MaxStates,
-            widen(defaults.max_states),
-        )),
-        max_transitions: narrow(derived_limit(
-            limits,
-            DerivedLimit::MaxTransitions,
-            widen(defaults.max_transitions),
-        )),
-    };
+    item.request.limits.limits = derived_graph_limits(limits);
     item.request.max_depth = None;
     Ok(model_item(index, item))
+}
+
+/// The EN-1 item that runs the derived `deadlock-freedom` (QSpec FR-429) or
+/// `race-freedom` (QSpec FR-438) request item `derived` over a protocol
+/// subject: [`protocol_item`] at the request item's index, with no
+/// `max_depth`, since a derived item is an exhaustive search, and the
+/// request item's caller-set limits over EN-1's defaults (QSpec FR-368
+/// "Negotiation of a derived or refinement item"): `max_states` and
+/// `max_transitions`, and `max_store_buffer`, `max_messages` and
+/// `max_live_instances` for both the run and its certificate check, an
+/// unset one keeping EN-1's default.
+///
+/// `obligation` is `derived`'s obligation identity, as the written request
+/// gives it: its resolved models are part of the protocol subject (QSpec
+/// FR-425), so the run and its certificate check must be over exactly
+/// those models.
+///
+/// # Errors
+///
+/// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` or
+/// `race-freedom` item, or `item`'s run or its certificate check decides
+/// another item or is over other resolved models than `obligation`'s.
+pub fn derived_protocol_item<'a, S>(
+    derived: &RequestItem,
+    obligation: &ItemObligation<S>,
+    mut item: ProtocolItem<'a>,
+) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
+    let index = derived.index();
+    let (Some(kind), Some(limits)) = (derived.item_kind(), derived.derived_limits()) else {
+        return Err(DerivedItemMismatch::NotDerived { index });
+    };
+    let decides: fn(&ModelCheckItem<'_>) -> bool = match kind {
+        ItemKind::DeadlockFreedom => |run| matches!(run, ModelCheckItem::DeadlockFreedom),
+        ItemKind::RaceFreedom => |run| matches!(run, ModelCheckItem::RaceFreedom),
+        ItemKind::Formula | ItemKind::TimeLockFreedom | ItemKind::Refinement => {
+            return Err(DerivedItemMismatch::NotDerived { index })
+        }
+    };
+    let models = match (&obligation.kind, kind) {
+        (ObligationKind::ProtocolDeadlockFreedom { models }, ItemKind::DeadlockFreedom)
+        | (ObligationKind::RaceFreedom { models }, ItemKind::RaceFreedom) => models,
+        _ => return Err(DerivedItemMismatch::OtherItem { index, kind }),
+    };
+    let over = |memory: &qsl_eval::simulation::protocol::ResolvedMemory| {
+        memory.parallels().len() == models.len()
+            && memory
+                .parallels()
+                .iter()
+                .zip(models)
+                .all(|(resolved, (parallel, model))| {
+                    resolved.parallel == *parallel && resolved.model == *model
+                })
+    };
+    if !decides(&item.request.item)
+        || !decides(&item.certificate.item)
+        || !over(&item.request.subject.memory)
+        || !over(&item.certificate.subject.memory)
+    {
+        return Err(DerivedItemMismatch::OtherItem { index, kind });
+    }
+    item.request.limits.limits = derived_graph_limits(limits);
+    item.request.max_depth = None;
+    let max_store_buffer = limits.get(DerivedLimit::MaxStoreBuffer);
+    let max_messages = limits.get(DerivedLimit::MaxMessages);
+    let max_live_instances = limits.get(DerivedLimit::MaxLiveInstances);
+    item.request.max_store_buffer = max_store_buffer;
+    item.request.max_messages = max_messages;
+    item.request.max_live_instances = max_live_instances;
+    item.certificate.max_store_buffer = max_store_buffer;
+    item.certificate.max_messages = max_messages;
+    item.certificate.max_live_instances = max_live_instances;
+    Ok(protocol_item(index, item))
 }
 
 /// The EN-6 item that runs the derived `deadlock-freedom` or

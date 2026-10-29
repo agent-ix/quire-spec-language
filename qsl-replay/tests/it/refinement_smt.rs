@@ -557,7 +557,7 @@ fn values(settled: &StepRecordsSettlement) -> Vec<TerminalValue> {
 /// FR-314 verifies the refinement's certificate, `Uncertified` with no
 /// certificate, and every record of `CasRefinesCounterAdd`, whose `_` row
 /// FR-315 refuses to encode, `Uncertified`.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-4")]
 #[test]
 fn step_records_are_certified_only_by_a_verified_certificate() {
     let holds = vec![StepRecordVerdict::Holds; 8];
@@ -671,7 +671,7 @@ fn a_rejected_part_rejects_only_its_record() {
 /// `proved`, step counterexample, certificate shown wrong, other backend
 /// result, then the proof, `Certified` only when every record and every
 /// hypothesis item is.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn the_safety_half_settles_by_the_first_rule_that_applies() {
     let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
@@ -753,7 +753,7 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
 /// neither holds nor fails settles its record as FR-331 records it, and the
 /// safety half takes the first such record's result in record order, after
 /// every rule before it.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn other_backend_results_settle_the_record_and_the_half() {
     let solver = TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
@@ -850,7 +850,7 @@ fn a_proof_over_ill_sorted_literals_is_rejected() {
 /// limit or a cancellation stops settles every holding record V-7 with its
 /// cause, and one that faults settles them `failed`, never `Uncertified`;
 /// the safety half takes the first record's result.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
     let holds = vec![StepRecordVerdict::Holds; 8];
@@ -882,7 +882,7 @@ fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
 /// rejects the base part `QueryMismatch` at `Base`, so the `Initial` record
 /// is `CertificateRejected{QueryMismatch, Base}`, every other record
 /// `Uncertified`, and the safety half `CertificateRejected`.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-4")]
 #[test]
 fn a_refused_initial_query_rejects_the_initial_record() {
     let world = World::new(&mutated(
@@ -916,4 +916,129 @@ fn a_refused_initial_query_rejects_the_initial_record() {
         assert_eq!(values(&settled), expected);
         assert_eq!(settled.safety.value, wrong);
     });
+}
+
+/// TC-551 and FR-146-AC-8, by QSpec FR-468 "Settlement" as STD-570 fixes it
+/// (QSpec FR-468-AC-11 to AC-18): the half takes the first rule in rule
+/// order whatever the position of the queries that trigger it, and within
+/// a rule the first query (initial, then step rows in `steps` order).
+#[trace("TC-551", "FR-146-AC-8")]
+#[test]
+fn the_rule_order_outranks_the_query_order() {
+    let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
+    let unknown = StepRecordVerdict::Other(OtherBackendResult::Inconclusive(
+        InconclusiveCause::SolverInconclusive {
+            trace: None,
+            replay: None,
+        },
+    ));
+    let timeout =
+        StepRecordVerdict::Other(OtherBackendResult::Incomplete(IncompleteCause::TimedOut));
+    let solver = TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+        trace: None,
+        replay: None,
+    });
+    let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    let certified = proved(Certification::Certified);
+    let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
+    let rejection = CertificateRejection {
+        rule: CertificateRule::QueryMismatch,
+        at: CertificateLocus::Query { part: step_part(4) },
+    };
+    let rejected = StepCertification::of_check(Some(Err(rejection.clone())), 7);
+    let wrong = TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+        rule: rejection.rule,
+        at: rejection.at.clone(),
+    });
+    let half = |verdicts: &[StepRecordVerdict],
+                certification: &StepCertification,
+                hypotheses: &[(quire_exact::NodeKey, TerminalValue)]| {
+        settle_step_records(verdicts, certification, hypotheses, no_replay)
+            .safety
+            .value
+    };
+    // Record 0 is `Initial`; record `r + 1` is row `r`.
+    let with = |changes: &[(usize, StepRecordVerdict)]| {
+        let mut verdicts = vec![StepRecordVerdict::Holds; 8];
+        for (index, verdict) in changes {
+            verdicts[*index] = verdict.clone();
+        }
+        verdicts
+    };
+
+    // AC-11: an unknown at row 1 (or at the initial query) and a
+    // counterexample at row 3: the counterexample's rule wins.
+    let early_unknown = with(&[(2, unknown.clone()), (4, StepRecordVerdict::Counterexample)]);
+    assert_eq!(half(&early_unknown, &verified, &[]), induction);
+    let initial_unknown = with(&[(0, unknown.clone()), (4, StepRecordVerdict::Counterexample)]);
+    assert_eq!(half(&initial_unknown, &verified, &[]), induction);
+    // AC-12: a counterexample at row 1 and a timeout at row 3.
+    let late_timeout = with(&[(2, StepRecordVerdict::Counterexample), (4, timeout.clone())]);
+    assert_eq!(half(&late_timeout, &verified, &[]), induction);
+    // AC-13: with no counterexample, unproved hypothesis or rejection, the
+    // half takes the first other result in query order.
+    let two_others = with(&[(2, unknown.clone()), (4, timeout.clone())]);
+    assert_eq!(
+        half(&two_others, &verified, &[(hypothesis, certified.clone())]),
+        solver
+    );
+    // AC-14: an unproved hypothesis item outranks the initial query's
+    // unknown.
+    let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    assert_eq!(
+        half(
+            &with(&[(0, unknown.clone())]),
+            &verified,
+            &[(hypothesis, unproved)]
+        ),
+        TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
+            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            result: ItemLabel::Inconclusive,
+        })
+    );
+    // AC-15: a rejected certificate outranks any query's other result.
+    assert_eq!(half(&two_others, &rejected, &[]), wrong);
+    assert_eq!(half(&with(&[(0, timeout.clone())]), &rejected, &[]), wrong);
+    // AC-16: a step counterexample outranks a rejected certificate.
+    assert_eq!(
+        half(
+            &with(&[(7, StepRecordVerdict::Counterexample)]),
+            &rejected,
+            &[]
+        ),
+        induction
+    );
+    // AC-17: a stopped or faulted check is no rejection: it takes the other
+    // results' rule, below a step counterexample and in query order.
+    let limit = IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::CertificateMaxBytes,
+        value: 1,
+    };
+    let stopped = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(limit))), 7);
+    assert_eq!(
+        half(&with(&[]), &stopped, &[]),
+        TerminalValue::Incomplete(limit)
+    );
+    assert_eq!(
+        half(
+            &with(&[(3, StepRecordVerdict::Counterexample)]),
+            &stopped,
+            &[]
+        ),
+        induction
+    );
+    assert_eq!(half(&with(&[(0, unknown)]), &stopped, &[]), solver);
+    // AC-18: counterexamples at rows 1 and 3 settle `induction-not-closed`
+    // with depth 1 and no row member.
+    assert_eq!(
+        half(
+            &with(&[
+                (2, StepRecordVerdict::Counterexample),
+                (4, StepRecordVerdict::Counterexample)
+            ]),
+            &verified,
+            &[]
+        ),
+        induction
+    );
 }

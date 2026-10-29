@@ -197,8 +197,10 @@ impl<S: Clone + Eq> ModelRequest<S> {
     /// any` gets a `deadlock-freedom` item, each timed subject a
     /// `time-lock-freedom` item, and each protocol subject with a weak
     /// resolved model and a non-atomic shared access a `race-freedom` item
-    /// for each distinct set of resolved models its items are over (QSpec
-    /// FR-425, FR-438). A derived item's
+    /// (QSpec FR-438). A protocol subject's resolved models are part of it
+    /// (QSpec FR-425), so each distinct set of resolved models a caller
+    /// subject's items are over is its own protocol subject with its own
+    /// derived items (QSpec FR-429). A derived item's
     /// candidates are the `temporal-satisfaction` backends under `registry`
     /// for the backend `named`, restricted to EN-6's zone search, the
     /// backends deciding timed subjects, for a timed subject (FR-243) and to those advertising the request's
@@ -219,14 +221,7 @@ impl<S: Clone + Eq> ModelRequest<S> {
         let selected: BTreeSet<_> = writer.reductions().selected().into_iter().collect();
         let mut unanchored = Vec::new();
         for (subject, reading) in by_subject(readings) {
-            let kinds = [
-                (!reading.opted_out()).then_some(Derived::Deadlock),
-                reading.timed().then_some(Derived::TimeLock),
-            ]
-            .into_iter()
-            .flatten()
-            .chain(reading.races().iter().cloned().map(Derived::Race));
-            for derived in kinds {
+            for derived in derived_kinds(&reading) {
                 let kind = derived.item_kind();
                 let property_form = derived.property_form();
                 let claim = match reading.anchor() {
@@ -272,11 +267,34 @@ impl<S: Clone + Eq> ModelRequest<S> {
     }
 }
 
+/// The derived items of the subject `reading` reads, in QSpec FR-368's
+/// order. A model subject gets the deadlock-freedom item unless it opts out
+/// and, when timed, the time-lock-freedom item. A protocol subject, its
+/// resolved models included (QSpec FR-425), gets the deadlock-freedom item
+/// over those models unless its clause opts out (QSpec FR-429) and, when
+/// they race, the race-freedom item (QSpec FR-438); it is never timed.
+fn derived_kinds(reading: &SubjectReading) -> Vec<Derived> {
+    let deadlock = !reading.opted_out();
+    let kinds = match reading.protocol_models() {
+        Some(models) => [
+            deadlock.then(|| Derived::ProtocolDeadlock(models.to_vec())),
+            reading.races().then(|| Derived::Race(models.to_vec())),
+        ],
+        None => [
+            deadlock.then_some(Derived::Deadlock),
+            reading.timed().then_some(Derived::TimeLock),
+        ],
+    };
+    kinds.into_iter().flatten().collect()
+}
+
 /// A derived item the writer adds (FR-124, FR-232, FR-224), in FR-368's
 /// order within one subject.
 #[derive(Clone, Debug)]
 enum Derived {
     Deadlock,
+    /// A protocol subject's, over its resolved models.
+    ProtocolDeadlock(Vec<(String, MemoryModelName)>),
     TimeLock,
     /// Over the protocol subject's resolved models.
     Race(Vec<(String, MemoryModelName)>),
@@ -285,17 +303,19 @@ enum Derived {
 impl Derived {
     const fn item_kind(&self) -> ItemKind {
         match self {
-            Self::Deadlock => ItemKind::DeadlockFreedom,
+            Self::Deadlock | Self::ProtocolDeadlock(_) => ItemKind::DeadlockFreedom,
             Self::TimeLock => ItemKind::TimeLockFreedom,
             Self::Race(_) => ItemKind::RaceFreedom,
         }
     }
 
-    /// The obligation identity's fixed kind (ADR-013 O-09), the race-freedom
-    /// item's with its resolved models.
+    /// The obligation identity's fixed kind (ADR-013 O-09), a protocol
+    /// subject's deadlock-freedom and race-freedom items' with its resolved
+    /// models.
     fn obligation_kind(self) -> ObligationKind {
         match self {
             Self::Deadlock => ObligationKind::DeadlockFreedom,
+            Self::ProtocolDeadlock(models) => ObligationKind::ProtocolDeadlockFreedom { models },
             Self::TimeLock => ObligationKind::TimeLockFreedom,
             Self::Race(models) => ObligationKind::RaceFreedom { models },
         }
@@ -307,7 +327,9 @@ impl Derived {
     /// and has none.
     const fn property_form(&self) -> Option<PropertyForm> {
         match self {
-            Self::Deadlock | Self::Race(_) => Some(PropertyForm::ReachableInvariant),
+            Self::Deadlock | Self::ProtocolDeadlock(_) | Self::Race(_) => {
+                Some(PropertyForm::ReachableInvariant)
+            }
             Self::TimeLock => None,
         }
     }

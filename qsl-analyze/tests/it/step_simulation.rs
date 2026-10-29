@@ -101,3 +101,116 @@ fn a_verified_certificate_settles_every_record_certified() {
         );
     });
 }
+
+/// Settle `records` of `request` with `certificate` and `hypotheses`.
+fn settle(
+    request: &qsl_eval::smt::RefinementCertificateRequest<'_>,
+    records: Vec<StepRecordResult>,
+    certificate: Option<qsl_replay::RefinementSmtCertificate>,
+    hypotheses: Vec<(quire_exact::NodeKey, TerminalValue)>,
+) -> Result<qsl_analyze::step_simulation::StepSimulationRecords, StepSimulationRefusal> {
+    settle_step_simulations(
+        StepSimulationItem {
+            request,
+            backend: BackendId::new("smt"),
+            records,
+            certificate,
+            hypotheses,
+            certificate_limits: CertificateCheckLimits::default(),
+            replay_initial: Box::new(|| panic!("no initial counterexample")),
+        },
+        &Cancel::new(),
+    )
+}
+
+/// SR-1821001 FND-001 (TC-551): the records are checked against the
+/// refinement. With the `Initial` record alone, with or without a valid
+/// certificate, and with nine records, `settle_step_simulations` refuses
+/// `RecordCount`, never settling the half `proved` over step obligations
+/// that have no result.
+#[trace("TC-551")]
+#[test]
+fn records_that_are_not_the_refinements_are_refused() {
+    let world = World::new(&cas_refines_counter());
+    with_request(&world, |request| {
+        let valid = certificate(request, 7);
+        for certificate in [None, Some(valid)] {
+            let mut initial = holding();
+            initial.truncate(1);
+            assert_eq!(
+                settle(request, initial, certificate, Vec::new()).map(|_| ()),
+                Err(StepSimulationRefusal::RecordCount {
+                    expected: 8,
+                    given: 1
+                })
+            );
+        }
+        let mut nine = holding();
+        nine.push(StepRecordResult {
+            request_index: RequestIndex::new(8),
+            result: Some(proved(Certification::Uncertified)),
+        });
+        assert_eq!(
+            settle(request, nine, None, Vec::new()).map(|_| ()),
+            Err(StepSimulationRefusal::RecordCount {
+                expected: 8,
+                given: 9
+            })
+        );
+    });
+}
+
+const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
+     self.busyA or self.tmpA <= self.value }\n";
+
+/// SR-1821001 FND-001 and FR-146-AC-8 (TC-551): over `CasRefinesCounter`
+/// with `CasInv`, an empty hypothesis list is refused rather than dropping
+/// the hypotheses rule; an unproved `CasInv` item settles the half
+/// `inconclusive`, `hypotheses-not-established` naming `CasInv`, although
+/// every record holds; an `Uncertified` `CasInv` item settles it `proved`,
+/// `Uncertified`.
+#[trace("TC-551", "FR-146-AC-8")]
+#[test]
+fn the_hypothesis_items_decide_the_half() {
+    let world = World::new(&format!("{}\n{CAS_INV}", cas_refines_counter()));
+    let clauses = world.refinement().step_simulations()[0]
+        .record()
+        .hypotheses
+        .clone();
+    let [cas_inv] = clauses.as_slice() else {
+        panic!("CasInv is the one hypothesis");
+    };
+    with_request(&world, |request| {
+        assert_eq!(
+            settle(request, holding(), None, Vec::new()).map(|_| ()),
+            Err(StepSimulationRefusal::Hypotheses)
+        );
+        let unproved =
+            TerminalValue::Inconclusive(qsl_replay::InconclusiveCause::InductionNotClosed {
+                depth: 1,
+            });
+        let settled = settle(request, holding(), None, vec![(*cas_inv, unproved)])
+            .expect("the records settle");
+        assert_eq!(
+            settled.safety.value,
+            TerminalValue::Inconclusive(qsl_replay::InconclusiveCause::HypothesesNotEstablished {
+                hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*cas_inv.as_bytes()),
+                result: qsl_replay::ItemLabel::Inconclusive,
+            })
+        );
+        assert!(settled
+            .records
+            .iter()
+            .all(|record| record.value() == &proved(Certification::Uncertified)));
+
+        let settled = settle(
+            request,
+            holding(),
+            None,
+            vec![(*cas_inv, proved(Certification::Uncertified))],
+        )
+        .expect("the records settle");
+        assert_eq!(settled.safety.value, proved(Certification::Uncertified));
+        assert_eq!(settled.safety.basis, SettlementBasis::DecisiveWitness);
+    });
+}

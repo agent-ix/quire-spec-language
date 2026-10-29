@@ -8,8 +8,11 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
+use qsl_analyze::analyze::{
+    analyze, derived_protocol_item, AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem,
+};
 use qsl_analyze::model_check::manifest as en1;
-use qsl_analyze::model_check::ModelCheckRefusal;
+use qsl_analyze::model_check::{ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_analyze::zone_check::manifest as en6;
 
 use qsl_eval::model_subject::ModelLetters;
@@ -23,12 +26,15 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_replay::node_occurrence;
 use qsl_replay::{
-    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause, ModelCheckItem,
+    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause,
+    IncompleteCause, MemoryBound, MemoryBoundMember, ModelCheckItem, ModelCheckLimit,
     ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
     ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
-    TemporalCounterexample,
+    TemporalCounterexample, TerminalValue,
 };
-use qsl_route::deadlock::{ModelTemporalItem, NoAnchor, ObligationKind, ProtocolTemporalItem};
+use qsl_route::deadlock::{
+    ItemObligation, ModelTemporalItem, NoAnchor, ObligationKind, ProtocolTemporalItem,
+};
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::request::{DerivedLimits, ItemKind, RequestItem};
 use qsl_semantics::check::Capability;
@@ -39,7 +45,9 @@ use quire_semantic_value::fairness::PropertyForm;
 use serde_json::{json, Value as Json};
 
 use crate::dense_route::{ids, registry};
-use crate::derived_request::{derived_subjects, items_of_kind, protocol_request};
+use crate::derived_request::{
+    derived_subjects, items_of_kind, protocol_request, protocol_request_under, settled,
+};
 use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
 use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
 
@@ -1536,14 +1544,16 @@ fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
     assert!(written.unanchored().is_empty());
 }
 
-/// QSpec FR-425 with FR-438: the resolved models are part of the protocol
-/// subject, so two caller items over one subject `SB`, one under `ra` and one
-/// under `tso`, give one race-freedom item for each set of models, in the
-/// order each first occurs after `SB`'s one deadlock-freedom item; neither
-/// set's item is dropped.
+/// QSpec FR-425 with FR-429, FR-438 and FR-368's order: the resolved models
+/// are part of the protocol subject, so caller items over `SB` under `ra`
+/// and under `tso` are over two protocol subjects, each with its own
+/// deadlock-freedom item and race-freedom item over its models. The
+/// subjects follow in the order each first occurs, so the subject of an item
+/// between the two stands between their derived items.
 #[trace("QSpec-TC-392", "QSpec-FR-438-AC-2")]
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
 #[test]
-fn each_set_of_resolved_models_of_one_subject_gets_its_race_freedom_item() {
+fn each_set_of_resolved_models_of_one_subject_gets_its_derived_items() {
     let case = two_plain_stores();
     let under_ra = case.subject(&ra());
     let under_tso = case.subject(&tso());
@@ -1552,40 +1562,139 @@ fn each_set_of_resolved_models_of_one_subject_gets_its_race_freedom_item() {
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let between = OccurrenceKey::generated(WireNodeId::from_digest([8; 32]));
     let other = other_claim();
-    let item = |occurrence, models| ProtocolTemporalItem {
+    let sb = under_ra.protocol.clone();
+    let elsewhere = "Elsewhere".to_owned();
+    let item = |occurrence, subject, models| ProtocolTemporalItem {
         occurrence,
-        subject: &under_ra.protocol,
+        subject,
         protocol,
         models,
         non_atomic_access: true,
     };
-    let written = protocol_request(&[item(&clause, &ra_models), item(&other, &tso_models)]);
-    let derived: Vec<_> = written.items()[2..]
+    let written = protocol_request(&[
+        item(&clause, &sb, &ra_models),
+        item(&between, &elsewhere, &ra_models),
+        item(&other, &sb, &tso_models),
+    ]);
+    let derived: Vec<_> = written.items()[3..]
+        .iter()
+        .map(|item| {
+            let obligation = written.obligation(item.index()).expect("its obligation");
+            (
+                item.item_kind(),
+                obligation.subject.clone(),
+                obligation.kind.clone(),
+            )
+        })
+        .collect();
+    let deadlock = |subject: &String, models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::DeadlockFreedom),
+            subject.clone(),
+            ObligationKind::ProtocolDeadlockFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
+    let race = |subject: &String, models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::RaceFreedom),
+            subject.clone(),
+            ObligationKind::RaceFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
+    assert_eq!(
+        derived,
+        [
+            deadlock(&sb, &ra_models),
+            race(&sb, &ra_models),
+            deadlock(&elsewhere, &ra_models),
+            race(&elsewhere, &ra_models),
+            deadlock(&sb, &tso_models),
+            race(&sb, &tso_models),
+        ]
+    );
+    assert!(written.unanchored().is_empty());
+}
+
+/// QSpec FR-425 for authored items: the resolved models are part of the
+/// protocol subject and so of the authored obligation identity, so one
+/// clause over `SB` under `ra` and under `tso` is two request items, each
+/// subject's derived items following in the order each first occurs; the
+/// same clause under `ra` again is the first item.
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
+#[test]
+fn one_clause_under_two_sets_of_resolved_models_is_two_items() {
+    let case = two_plain_stores();
+    let under_ra = case.subject(&ra());
+    let under_tso = case.subject(&tso());
+    let (ra_models, tso_models) = (models_of(&under_ra), models_of(&under_tso));
+    let graph = case.checked().graph();
+    let protocol = graph.protocol("SB").expect("SB");
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let sb = under_ra.protocol.clone();
+    let item = |models| ProtocolTemporalItem {
+        occurrence: &clause,
+        subject: &sb,
+        protocol,
+        models,
+        non_atomic_access: true,
+    };
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let mut request = ModelRequest::new();
+    let first = request.protocol(&item(&ra_models), &record);
+    let second = request.protocol(&item(&tso_models), &record);
+    assert_eq!(request.protocol(&item(&ra_models), &record), first);
+    assert_ne!(first, second);
+    let written = request.derived(&registry(), None, &DerivedLimits::default());
+    let items: Vec<_> = written
+        .items()
         .iter()
         .map(|item| {
             let obligation = written.obligation(item.index()).expect("its obligation");
             (item.item_kind(), obligation.kind.clone())
         })
         .collect();
+    let authored = |models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::Formula),
+            ObligationKind::ProtocolAuthored {
+                occurrence: clause.clone(),
+                models: models.to_vec(),
+            },
+        )
+    };
+    let deadlock = |models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::DeadlockFreedom),
+            ObligationKind::ProtocolDeadlockFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
+    let race = |models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::RaceFreedom),
+            ObligationKind::RaceFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
     assert_eq!(
-        derived,
+        items,
         [
-            (
-                Some(ItemKind::DeadlockFreedom),
-                ObligationKind::DeadlockFreedom
-            ),
-            (
-                Some(ItemKind::RaceFreedom),
-                ObligationKind::RaceFreedom { models: ra_models }
-            ),
-            (
-                Some(ItemKind::RaceFreedom),
-                ObligationKind::RaceFreedom { models: tso_models }
-            ),
+            authored(&ra_models),
+            authored(&tso_models),
+            deadlock(&ra_models),
+            race(&ra_models),
+            deadlock(&tso_models),
+            race(&tso_models),
         ]
     );
-    assert!(written.unanchored().is_empty());
 }
 
 /// QSpec FR-368-AC-24 and AC-25: a protocol subject of a unit that selects
@@ -1654,4 +1763,415 @@ fn a_protocol_subject_of_a_unit_with_no_protocol_profile_is_settled_unsupported(
             .collect();
         assert_eq!(unanchored, expected, "{selection:?} {non_atomic_access}");
     }
+}
+
+/// The EN-1 run over `case`'s `SB` under `selection` deciding `item`, its
+/// certificate check deciding `certified`, with no bounds of its own; its
+/// counterexample replays by FR-217 for the race-freedom item or the
+/// deadlock-freedom item.
+fn protocol_run<'c>(
+    case: &'c Case,
+    selection: &'c [MemorySelection],
+    item: ModelCheckItem<'c>,
+    certified: ModelCheckItem<'c>,
+) -> ProtocolItem<'c> {
+    let race = matches!(item, ModelCheckItem::RaceFreedom);
+    ProtocolItem {
+        request: ProtocolCheckRequest {
+            subject: case.subject(selection),
+            item,
+            max_depth: Some(1),
+            max_store_buffer: None,
+            max_messages: None,
+            ignore_memory_constraints: false,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+        },
+        certificate: ProtocolCertificateRequest {
+            subject: case.subject(selection),
+            item: certified,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        },
+        package_id: case.package_id(),
+        replay: Box::new(move |payload| {
+            if race {
+                case.replay_race(selection, payload.clone())
+            } else {
+                case.replay(selection, payload.clone())
+            }
+        }),
+    }
+}
+
+/// Thread `a` of `SB` stores to `x` and thread `b` to `b_cell`, each with
+/// no `ordering`, in a unit selecting the protocol profile, so `SB`'s
+/// derived items are anchored and written: the two stores race when
+/// `b_cell` is `x`.
+fn profiled_stores(b_cell: &str) -> Case {
+    let run = litmus_run(
+        &[
+            ("a", steps("A", &[put("Sa", "x", "")])),
+            ("b", steps("B", &[put("Sb", b_cell, "")])),
+        ],
+        "",
+    );
+    Case::protocol_profiled(&(contracts() + &protocol("SB", &run) + NO_BOTH_ZERO), &MP)
+}
+
+/// The written request over `case`'s clause on `SB` under `ra`, with the
+/// caller's derived-item settings `limits`.
+fn derived_request(case: &Case, limits: &DerivedLimits) -> WrittenRequest<String> {
+    derived_request_over(case, &ra(), limits)
+}
+
+/// [`derived_request`] with `SB` resolved by `selection`.
+fn derived_request_over(
+    case: &Case,
+    selection: &[MemorySelection],
+    limits: &DerivedLimits,
+) -> WrittenRequest<String> {
+    let subject = case.subject(selection);
+    let models = models_of(&subject);
+    let graph = case.checked().graph();
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    protocol_request_under(
+        &[ProtocolTemporalItem {
+            occurrence: &clause,
+            subject: &subject.protocol,
+            protocol: graph.protocol("SB").expect("SB"),
+            models: &models,
+            non_atomic_access: true,
+        }],
+        limits,
+    )
+}
+
+/// The one written item of `kind` in `written`, with its obligation.
+fn written_item(
+    written: &WrittenRequest<String>,
+    kind: ItemKind,
+) -> (RequestItem, ItemObligation<String>) {
+    let [written] = &items_of_kind(written, kind)[..] else {
+        panic!("one {kind:?} item");
+    };
+    written.clone()
+}
+
+/// `analyze` over EN-1 alone of `items`.
+fn analyzed(items: Vec<qsl_analyze::analyze::AnalyzeItem<'_>>) -> Vec<AnalyzeRecord> {
+    analyze(
+        &Engines::qsl().expect("the layer-A manifests register"),
+        items,
+        &Cancel::new(),
+    )
+}
+
+/// FR-281-AC-2 over a protocol subject's derived items (QSpec FR-429,
+/// FR-438): the written deadlock-freedom and race-freedom items run on EN-1
+/// by `derived_protocol_item` and settle through `settle_protocol_check` at
+/// their request indices. With the two threads storing to different cells
+/// both settle `proved` under `ra`; with both storing to `x` the
+/// race-freedom item settles `refuted`, its record carrying the replayed
+/// race on `x`, and the deadlock-freedom item stays `proved`. The run's own
+/// `max_depth` of 1 is dropped: a derived item is an exhaustive search.
+#[trace("TC-762", "FR-281-AC-2")]
+#[test]
+fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
+    let selection = ra();
+    let run = |case: &Case| -> Vec<(usize, String, TerminalValue, Option<CounterexampleKind>)> {
+        let written = derived_request(case, &DerivedLimits::default());
+        let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                Some(ItemKind::Formula),
+                Some(ItemKind::DeadlockFreedom),
+                Some(ItemKind::RaceFreedom)
+            ]
+        );
+        let items = [
+            (ItemKind::DeadlockFreedom, ModelCheckItem::DeadlockFreedom),
+            (ItemKind::RaceFreedom, ModelCheckItem::RaceFreedom),
+        ]
+        .into_iter()
+        .map(|(kind, item)| {
+            let (derived, obligation) = written_item(&written, kind);
+            derived_protocol_item(
+                &derived,
+                &obligation,
+                protocol_run(case, &selection, item, item),
+            )
+            .expect("the derived run")
+        })
+        .collect();
+        analyzed(items)
+            .iter()
+            .map(|record| {
+                let (backend, value) = settled(record);
+                (
+                    record.request_index.get(),
+                    backend,
+                    value,
+                    record
+                        .protocol_counterexample()
+                        .map(|counterexample| counterexample.kind.clone()),
+                )
+            })
+            .collect()
+    };
+
+    let ordered = run(&profiled_stores("y"));
+    let [(1, deadlock_backend, deadlock, None), (2, race_backend, race, None)] = &ordered[..]
+    else {
+        panic!("{ordered:?}");
+    };
+    assert_eq!(deadlock_backend, en1::BACKEND_ID);
+    assert_eq!(race_backend, en1::BACKEND_ID);
+    assert!(
+        matches!(deadlock, TerminalValue::Proved { .. }),
+        "{deadlock:?}"
+    );
+    assert!(matches!(race, TerminalValue::Proved { .. }), "{race:?}");
+
+    let racing = profiled_stores("x");
+    let racy = run(&racing);
+    let [(1, _, deadlock, None), (2, race_backend, TerminalValue::Refuted, Some(kind))] = &racy[..]
+    else {
+        panic!("{racy:?}");
+    };
+    assert_eq!(race_backend, en1::BACKEND_ID);
+    assert!(
+        matches!(deadlock, TerminalValue::Proved { .. }),
+        "{deadlock:?}"
+    );
+    let CounterexampleKind::Race(race) = kind else {
+        panic!("{kind:?}");
+    };
+    assert_eq!(race.location, location_of(&racing, "x"));
+}
+
+/// QSpec FR-368-AC-20 for a protocol subject's derived item through
+/// `derived_protocol_item`: the caller's `max_states` reaches EN-1's run,
+/// and its `max_messages` reaches both the run and the certificate check, so
+/// the settled record states that bound; an unset limit keeps EN-1's
+/// default.
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-20")]
+#[test]
+fn a_protocol_derived_items_caller_limits_reach_en1() {
+    let case = profiled_stores("y");
+    let selection = ra();
+    let settle = |limits: &DerivedLimits| {
+        let written = derived_request(&case, limits);
+        let (derived, obligation) = written_item(&written, ItemKind::RaceFreedom);
+        let item = protocol_run(
+            &case,
+            &selection,
+            ModelCheckItem::RaceFreedom,
+            ModelCheckItem::RaceFreedom,
+        );
+        analyzed(vec![
+            derived_protocol_item(&derived, &obligation, item).expect("the race-freedom run")
+        ])
+        .remove(0)
+    };
+
+    let one_state = DerivedLimits::from_settings([("max_states", 1)]).expect("a member");
+    assert_eq!(
+        settled(&settle(&one_state)).1,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 1,
+        })
+    );
+
+    let bound = |record: &AnalyzeRecord| {
+        record
+            .protocol_check
+            .as_ref()
+            .and_then(|check| check.memory_bound.as_ref())
+            .map(|stated| stated.bound)
+    };
+    let messages = |value| MemoryBound {
+        member: MemoryBoundMember::MaxMessages,
+        value,
+    };
+    let default = settle(&DerivedLimits::default());
+    assert_eq!(bound(&default), Some(messages(4)));
+    let two = DerivedLimits::from_settings([("max_messages", 2)]).expect("a member");
+    let bounded = settle(&two);
+    assert_eq!(bound(&bounded), Some(messages(2)));
+    assert!(
+        matches!(settled(&bounded).1, TerminalValue::Proved { .. }),
+        "{bounded:?}"
+    );
+}
+
+/// `derived_protocol_item` builds no item for a request item that is not a
+/// protocol derived item, or for a run or certificate check that decides
+/// another item than the request item's kind.
+#[test]
+fn a_protocol_derived_item_refuses_another_items_run() {
+    let case = profiled_stores("y");
+    let selection = ra();
+    let written = derived_request(&case, &DerivedLimits::default());
+    let formula = written.items()[0].clone();
+    let (deadlock, deadlock_obligation) = written_item(&written, ItemKind::DeadlockFreedom);
+    let (race, race_obligation) = written_item(&written, ItemKind::RaceFreedom);
+    let run = |item, certified| protocol_run(&case, &selection, item, certified);
+    let obligation_of = |derived: &RequestItem| {
+        if derived.index() == race.index() {
+            race_obligation.clone()
+        } else {
+            deadlock_obligation.clone()
+        }
+    };
+    let refusal = |derived: &RequestItem, item| {
+        derived_protocol_item(derived, &obligation_of(derived), item).err()
+    };
+    assert_eq!(
+        refusal(
+            &formula,
+            run(
+                ModelCheckItem::DeadlockFreedom,
+                ModelCheckItem::DeadlockFreedom
+            )
+        ),
+        Some(DerivedItemMismatch::NotDerived {
+            index: formula.index()
+        })
+    );
+    assert_eq!(
+        refusal(
+            &deadlock,
+            run(ModelCheckItem::RaceFreedom, ModelCheckItem::RaceFreedom)
+        ),
+        Some(DerivedItemMismatch::OtherItem {
+            index: deadlock.index(),
+            kind: ItemKind::DeadlockFreedom,
+        })
+    );
+    assert_eq!(
+        refusal(
+            &race,
+            run(ModelCheckItem::RaceFreedom, ModelCheckItem::DeadlockFreedom)
+        ),
+        Some(DerivedItemMismatch::OtherItem {
+            index: race.index(),
+            kind: ItemKind::RaceFreedom,
+        })
+    );
+}
+
+/// SR-1826001 FND-001 (QSpec FR-425, FR-368-AC-17): a protocol subject's
+/// resolved models are part of its identity, so a run or a certificate
+/// check over `SB` under `tso` is no run of the `ra` subject's derived item:
+/// `derived_protocol_item` refuses it, and the `tso` subject's own item
+/// accepts its own run.
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
+#[test]
+fn a_protocol_derived_item_refuses_a_run_over_other_resolved_models() {
+    let case = profiled_stores("y");
+    let (ra_selection, tso_selection) = (ra(), tso());
+    for kind in [ItemKind::DeadlockFreedom, ItemKind::RaceFreedom] {
+        let item = if kind == ItemKind::RaceFreedom {
+            ModelCheckItem::RaceFreedom
+        } else {
+            ModelCheckItem::DeadlockFreedom
+        };
+        let (derived, obligation) = written_item(
+            &derived_request_over(&case, &ra_selection, &DerivedLimits::default()),
+            kind,
+        );
+        let mismatch = Some(DerivedItemMismatch::OtherItem {
+            index: derived.index(),
+            kind,
+        });
+        let tso_run = protocol_run(&case, &tso_selection, item, item);
+        assert_eq!(
+            derived_protocol_item(&derived, &obligation, tso_run).err(),
+            mismatch,
+            "{kind:?}: a tso run for the ra item"
+        );
+        // The run over ra, its certificate check over tso.
+        let mut mixed = protocol_run(&case, &ra_selection, item, item);
+        mixed.certificate.subject = case.subject(&tso_selection);
+        assert_eq!(
+            derived_protocol_item(&derived, &obligation, mixed).err(),
+            mismatch,
+            "{kind:?}: a tso certificate check for the ra item"
+        );
+        let (tso_derived, tso_obligation) = written_item(
+            &derived_request_over(&case, &tso_selection, &DerivedLimits::default()),
+            kind,
+        );
+        assert!(derived_protocol_item(
+            &tso_derived,
+            &tso_obligation,
+            protocol_run(&case, &tso_selection, item, item)
+        )
+        .is_ok());
+    }
+}
+
+/// SR-1826002 FND-001 (QSpec FR-368-AC-20, FR-439): under `tso` the
+/// caller's `max_store_buffer` reaches both EN-1's run and the certificate
+/// check through `derived_protocol_item`. Thread `a` stores twice, so
+/// a buffer of one entry limits the run, which the record states as
+/// reached, and the stated bound is the certificate check's; the default
+/// bound is not reached.
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-20")]
+#[test]
+fn a_protocol_derived_items_max_store_buffer_reaches_the_run_and_the_check() {
+    let run = litmus_run(
+        &[
+            (
+                "a",
+                steps("A", &[put("Sa", "x", "relaxed"), put("Sc", "y", "relaxed")]),
+            ),
+            ("b", steps("B", &[put("Sb", "y", "relaxed")])),
+        ],
+        "",
+    );
+    let case = Case::protocol_profiled(&(contracts() + &protocol("SB", &run) + NO_BOTH_ZERO), &MP);
+    let selection = tso();
+    let settle = |limits: &DerivedLimits| {
+        let written = derived_request_over(&case, &selection, limits);
+        let (derived, obligation) = written_item(&written, ItemKind::DeadlockFreedom);
+        let item = protocol_run(
+            &case,
+            &selection,
+            ModelCheckItem::DeadlockFreedom,
+            ModelCheckItem::DeadlockFreedom,
+        );
+        analyzed(vec![
+            derived_protocol_item(&derived, &obligation, item).expect("the deadlock-freedom run")
+        ])
+        .remove(0)
+    };
+    let stated = |record: &AnalyzeRecord| {
+        record
+            .protocol_check
+            .as_ref()
+            .and_then(|check| check.memory_bound)
+            .map(|stated| (stated.bound, stated.reached))
+    };
+    let buffer = |value| MemoryBound {
+        member: MemoryBoundMember::MaxStoreBuffer,
+        value,
+    };
+    let one = DerivedLimits::from_settings([("max_store_buffer", 1)]).expect("a member");
+    let limited = settle(&one);
+    let (bound, reached) = stated(&limited).expect("a tso record states its bound");
+    assert_eq!(
+        bound,
+        buffer(1),
+        "the certificate check's bound: {limited:?}"
+    );
+    assert!(reached, "the run was limited by the caller's bound");
+    let (bound, reached) =
+        stated(&settle(&DerivedLimits::default())).expect("a tso record states its bound");
+    assert_ne!(bound, buffer(1));
+    assert!(!reached, "the default bound does not limit two stores");
 }
