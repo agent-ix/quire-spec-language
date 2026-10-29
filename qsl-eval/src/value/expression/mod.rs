@@ -56,7 +56,8 @@ pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, Valu
 // scope to call it.
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode};
-use quire_eval::{CallFailure, Evaluation};
+use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, Evaluation};
+use quire_semantic_value::catalog::CatalogCode;
 
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
 /// body (it reads no local), to its outcome under `meter`. `slots` is the
@@ -716,6 +717,16 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// FR-390: select and evaluate one checked expression stored on a V2
+    /// protocol node, admitting only the expression's exact binder sources
+    /// before the shared S6a evaluator runs.
+    fn evaluate_protocol_slot(
+        &self,
+        slot: &ProtocolSlot,
+        supply: &ProtocolSupply<'_>,
+        meter: &mut Meter,
+    ) -> Result<ProtocolSlotEvaluation, CallFailure>;
+
     /// FR-327 "Bounded-profile evaluation": evaluate the condition of the
     /// `holds` atom `atom` of the temporal clause `clause` over `objects`,
     /// the observation at one position, with `over` the clause's `over`
@@ -1194,6 +1205,183 @@ impl CheckedPackageEvaluation for CheckedPackage {
         registry
             .begin_expression(expression, arguments, objects, meter)?
             .run()
+    }
+
+    fn evaluate_protocol_slot(
+        &self,
+        slot: &ProtocolSlot,
+        supply: &ProtocolSupply<'_>,
+        meter: &mut Meter,
+    ) -> Result<ProtocolSlotEvaluation, CallFailure> {
+        let selected = protocol_slot::resolve::select(self, slot)?;
+        let sources = selected
+            .frame
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| selected.body.reads_local(*index))
+            .map(|(index, source)| {
+                source
+                    .node
+                    .map(|node| (index, source, node))
+                    .ok_or_else(|| {
+                        CallFailure::Fault(InternalFault::new(
+                            "FR-390",
+                            "checked-protocol-slot-source-has-a-keyed-binder",
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut supplied = supply.binders.iter().collect::<Vec<_>>();
+        supplied.sort_by_key(|(key, _)| {
+            (
+                selected
+                    .frame
+                    .iter()
+                    .find(|source| source.node == Some(*key))
+                    .map_or(usize::MAX, |source| source.level),
+                *key,
+            )
+        });
+        for (position, (key, _)) in supplied.iter().enumerate() {
+            if supplied[..position].iter().any(|(prior, _)| prior == key) {
+                return Err(protocol_slot::resolve::refused(
+                    "invalid_runtime_input",
+                    "duplicate-member",
+                    CallAdmissionLocus::Binder(*key),
+                ));
+            }
+        }
+        for (key, _) in &supplied {
+            if !sources.iter().any(|(_, _, source)| *source == *key) {
+                return Err(protocol_slot::resolve::refused(
+                    "invalid_runtime_input",
+                    "unknown-member",
+                    CallAdmissionLocus::Binder(*key),
+                ));
+            }
+        }
+        for (_, _, key) in &sources {
+            if !supplied.iter().any(|(candidate, _)| candidate == key) {
+                return Err(protocol_slot::resolve::refused(
+                    "invalid_runtime_input",
+                    "missing-member",
+                    CallAdmissionLocus::Binder(*key),
+                ));
+            }
+        }
+        let mut frame = vec![None; selected.frame.len()];
+        let mut unavailable = std::collections::BTreeMap::new();
+        for (index, source, key) in sources {
+            let Some((_, supplied)) = supply
+                .binders
+                .iter()
+                .find(|(candidate, _)| *candidate == key)
+            else {
+                return Err(CallFailure::Fault(InternalFault::new(
+                    "FR-390",
+                    "admitted-source-is-supplied",
+                )));
+            };
+            match supplied {
+                SuppliedValue::Value(value) => {
+                    let admitted = self
+                        .graph()
+                        .scope()
+                        .types()
+                        .admits(&source.value_type, value)
+                        .map_err(|failure| CallFailure::Storage {
+                            parameter: index,
+                            failure,
+                        })?;
+                    if !admitted {
+                        return Err(protocol_slot::resolve::refused(
+                            "invalid_runtime_input",
+                            if protocol_slot::resolve::shape_matches(&source.value_type, value) {
+                                "invalid-value"
+                            } else {
+                                "wrong-value-kind"
+                            },
+                            CallAdmissionLocus::Binder(key),
+                        ));
+                    }
+                    for reference in protocol_slot::references(value) {
+                        let Some(observation) = supply.observation else {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
+                                    code: CatalogCode::new(
+                                        "unavailable_observation",
+                                        "missing-required-artifact",
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        };
+                        if !observation.environment.references().contains(&reference) {
+                            let foreign = !observation.environment.references().is_empty()
+                                && observation
+                                    .environment
+                                    .references()
+                                    .iter()
+                                    .all(|held| held.universe() != reference.universe());
+                            if foreign {
+                                return Err(protocol_slot::resolve::refused(
+                                    "foreign_reference",
+                                    "foreign-universe",
+                                    CallAdmissionLocus::Binder(key),
+                                ));
+                            }
+                            if observation.populations.values().any(|complete| !complete) {
+                                return Err(CallFailure::Admission(Box::new(
+                                    CallAdmissionFailure::Incomplete(
+                                        quire_eval::CallAdmissionRecord {
+                                            code: CatalogCode::new(
+                                                "incomplete_population",
+                                                "incomplete-scope",
+                                            ),
+                                            locus: CallAdmissionLocus::Binder(key),
+                                        },
+                                    ),
+                                )));
+                            }
+                            return Err(protocol_slot::resolve::refused(
+                                "dangling_reference",
+                                "absent-target-in-complete-population",
+                                CallAdmissionLocus::Binder(key),
+                            ));
+                        }
+                    }
+                    frame[index] = Some(value.clone());
+                }
+                SuppliedValue::Unavailable(cause) => {
+                    unavailable.insert(index, (key, *cause));
+                }
+            }
+        }
+        let empty = ObjectEnvironment::default();
+        let current = supply
+            .observation
+            .map(|observation| &observation.environment)
+            .unwrap_or(&empty);
+        frame.resize(selected.body.frame_slots(frame.len()), None);
+        let result = Machine::with_pre(
+            self.graph().scope(),
+            self.graph(),
+            current,
+            None,
+            Some(&std::collections::BTreeMap::new()),
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .run_protocol_frame(selected.body.root(), frame, unavailable)
+        .map_err(CallFailure::Fault)?;
+        match result {
+            Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),
+            Err((binder, cause, location)) => Ok(ProtocolSlotEvaluation::Unavailable {
+                binder,
+                cause,
+                location,
+            }),
+        }
     }
 
     fn evaluate_holds(

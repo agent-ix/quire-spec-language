@@ -1188,6 +1188,11 @@ pub(crate) fn check_clause_admitted(
             ),
         },
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        // State-clause evaluation does not select an emitted protocol slot.
+        Err(CallFailure::Admission(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "call",
+            "evaluate-clause-has-no-protocol-slot-admission",
+        )),
         // Clause evaluation uses the checked interpreter, not the public
         // registered-body application facade.
         Err(CallFailure::Body(_)) => unreachable!("clause evaluation registers no host bodies"),
@@ -1349,6 +1354,12 @@ pub(crate) fn check_frame(
         Err(CallFailure::Input(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
             "call",
             "frame-invocation-mismatch",
+        )),
+        // Frame evaluation consumes the already admitted state invocation,
+        // not a protocol-node slot or caller-supplied protocol binder set.
+        Err(CallFailure::Admission(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "call",
+            "evaluate-frame-has-no-protocol-slot-admission",
         )),
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
         // Frame evaluation uses the checked interpreter, not the public
