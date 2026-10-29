@@ -81,4 +81,5 @@ of the vectors that decided it.
 - [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md) (per-vector
   outcomes).
 - QSpec FR-311 (a missing, unsupported, failed or unexecuted vector is a
-  gap) and FR-336 (the corpus capability inventory and applicability).
+  gap) and FR-336 (the corpus capability inventory and applicability, including
+  its `results` member).
