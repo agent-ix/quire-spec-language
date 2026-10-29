@@ -15,15 +15,17 @@
 //! `refinement`, in the caller's order. [`ModelRequest::derived`] is the one
 //! way to finish it: it appends the derived items after them, grouped by
 //! subject in the order each subject first occurs among the caller's items
-//! and, within one subject, `deadlock-freedom` then `time-lock-freedom`, so
-//! adding or removing a derived item never moves a caller's item. Each
-//! derived item's claim is its subject's anchor; a subject that reads
-//! no `model_selections` row or several has none, and its derived items are
-//! settled `unsupported` with no request item ([`UnanchoredItem`]).
+//! and, within one subject, `deadlock-freedom`, `time-lock-freedom`, then
+//! `race-freedom`, so adding or removing a derived item never moves a
+//! caller's item. Each derived item's claim is its subject's anchor: a
+//! protocol subject's clause node, any other model subject's `model_root`.
+//! A model subject that reads no `model_selections` row or several has none,
+//! nor does a protocol subject whose clause has no node, and its derived
+//! items are settled `unsupported` with no request item ([`UnanchoredItem`]).
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::{BackendId, RequestIndex};
+use qsl_foundation::{BackendId, MemoryModelName, RequestIndex};
 use qsl_semantics::check::Capability;
 use qsl_semantics::family::Requirements;
 use quire_semantic_value::catalog::CatalogCode;
@@ -31,7 +33,7 @@ use quire_semantic_value::fairness::PropertyForm;
 
 use crate::deadlock::{
     by_subject, ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem,
-    NoAnchor, ObligationKind, SubjectReading,
+    NoAnchor, ObligationKind, ProtocolTemporalItem, SubjectReading,
 };
 use crate::reductions::{ObligationReductions, Reductions};
 use crate::request::{AbstractSubject, DerivedLimits, ItemKind, RequestItem, RequestWriter};
@@ -133,6 +135,32 @@ impl<S: Clone + Eq> ModelRequest<S> {
         Some(index)
     }
 
+    /// Write the `formula` item for the temporal `item` over a protocol
+    /// subject with its `requirements`, as [`Self::authored`] writes one
+    /// over a model subject. The subject's derived items are read from its
+    /// protocol clause and memory (QSpec FR-429, FR-438), not from its
+    /// model's selections, so a protocol subject and a model subject over
+    /// one model are two subjects.
+    pub fn protocol(
+        &mut self,
+        item: &ProtocolTemporalItem<'_, S>,
+        requirements: &Requirements,
+    ) -> RequestIndex {
+        let obligation = item.obligation().reduced(self.writer.reductions());
+        if let Some(index) = self.index_of(&obligation) {
+            return index;
+        }
+        let index = self.writer.model_item(
+            item.occurrence.clone(),
+            requirements,
+            ItemKind::Formula,
+            None,
+        );
+        self.obligations.push(obligation);
+        self.readings.push((item.subject.clone(), item.reading()));
+        index
+    }
+
     /// Join the subject of the state-graph item `item` (FR-165), over a
     /// subject reading the `model_selections` rows `selections`, to the
     /// derivation: state-graph claims share their model subject's derived
@@ -161,10 +189,13 @@ impl<S: Clone + Eq> ModelRequest<S> {
     }
 
     /// The finished request: the caller's items, then the derived items of
-    /// their subjects (FR-124, FR-232, QSpec FR-368 "Position of derived
-    /// items in the request"). Each subject that a model it reads does not
-    /// opt out by `terminal any` gets a `deadlock-freedom` item, and each
-    /// timed subject a `time-lock-freedom` item. A derived item's
+    /// their subjects (FR-124, FR-232, FR-224, QSpec FR-368 "Position of
+    /// derived items in the request"). Each subject that a model it reads,
+    /// or for a protocol subject its clause, does not opt out by `terminal
+    /// any` gets a `deadlock-freedom` item, each timed subject a
+    /// `time-lock-freedom` item, and each protocol subject with a weak
+    /// resolved model and a non-atomic shared access a `race-freedom` item
+    /// (QSpec FR-438). A derived item's
     /// candidates are the `temporal-satisfaction` backends under `registry`
     /// for the backend `named`, restricted to EN-6's zone search, the
     /// backends deciding timed subjects, for a timed subject (FR-243) and to those advertising the request's
@@ -186,11 +217,13 @@ impl<S: Clone + Eq> ModelRequest<S> {
         let mut unanchored = Vec::new();
         for (subject, reading) in by_subject(readings) {
             let kinds = [
-                (!reading.opted_out()).then_some(Derived::DeadlockFreedom),
-                reading.timed().then_some(Derived::TimeLockFreedom),
+                (!reading.opted_out()).then_some(Derived::Deadlock),
+                reading.timed().then_some(Derived::TimeLock),
+                reading.race().map(|models| Derived::Race(models.to_vec())),
             ];
             for derived in kinds.into_iter().flatten() {
                 let kind = derived.item_kind();
+                let property_form = derived.property_form();
                 let claim = match reading.anchor() {
                     Ok(claim) => claim,
                     Err(cause) => {
@@ -215,13 +248,7 @@ impl<S: Clone + Eq> ModelRequest<S> {
                     ),
                     &selected,
                 );
-                writer.derived_item(
-                    claim,
-                    kind,
-                    derived.property_form(),
-                    candidates,
-                    limits.clone(),
-                );
+                writer.derived_item(claim, kind, property_form, candidates, limits.clone());
                 obligations.push(
                     ItemObligation {
                         subject: subject.clone(),
@@ -240,37 +267,43 @@ impl<S: Clone + Eq> ModelRequest<S> {
     }
 }
 
-/// A derived item over a model subject the writer adds (FR-124, FR-232),
-/// in FR-368's order within one subject.
-#[derive(Clone, Copy, Debug)]
+/// A derived item the writer adds (FR-124, FR-232, FR-224), in FR-368's
+/// order within one subject.
+#[derive(Clone, Debug)]
 enum Derived {
-    DeadlockFreedom,
-    TimeLockFreedom,
+    Deadlock,
+    TimeLock,
+    /// Over the protocol subject's resolved models.
+    Race(Vec<(String, MemoryModelName)>),
 }
 
 impl Derived {
-    const fn item_kind(self) -> ItemKind {
+    const fn item_kind(&self) -> ItemKind {
         match self {
-            Self::DeadlockFreedom => ItemKind::DeadlockFreedom,
-            Self::TimeLockFreedom => ItemKind::TimeLockFreedom,
+            Self::Deadlock => ItemKind::DeadlockFreedom,
+            Self::TimeLock => ItemKind::TimeLockFreedom,
+            Self::Race(_) => ItemKind::RaceFreedom,
         }
     }
 
-    /// The obligation identity's fixed kind (ADR-013 O-09).
-    const fn obligation_kind(self) -> ObligationKind {
+    /// The obligation identity's fixed kind (ADR-013 O-09), the race-freedom
+    /// item's with its resolved models.
+    fn obligation_kind(self) -> ObligationKind {
         match self {
-            Self::DeadlockFreedom => ObligationKind::DeadlockFreedom,
-            Self::TimeLockFreedom => ObligationKind::TimeLockFreedom,
+            Self::Deadlock => ObligationKind::DeadlockFreedom,
+            Self::TimeLock => ObligationKind::TimeLockFreedom,
+            Self::Race(models) => ObligationKind::RaceFreedom { models },
         }
     }
 
     /// The property form the item is routed and settled as: the
-    /// deadlock-freedom item's `ReachableInvariant` (FR-124); the
-    /// time-lock-freedom item is settled by FR-235 and has none.
-    const fn property_form(self) -> Option<PropertyForm> {
+    /// deadlock-freedom and race-freedom items' `ReachableInvariant`
+    /// (FR-124, FR-224); the time-lock-freedom item is settled by FR-235
+    /// and has none.
+    const fn property_form(&self) -> Option<PropertyForm> {
         match self {
-            Self::DeadlockFreedom => Some(PropertyForm::ReachableInvariant),
-            Self::TimeLockFreedom => None,
+            Self::Deadlock | Self::Race(_) => Some(PropertyForm::ReachableInvariant),
+            Self::TimeLock => None,
         }
     }
 }
@@ -318,9 +351,9 @@ impl<S: Eq> WrittenRequest<S> {
     }
 }
 
-/// A derived item over a model subject with no anchor (QSpec
-/// FR-361-AC-17, FR-368-AC-22): the subject reads no `model_selections`
-/// row or several, so the producer settles the item `unsupported` with
+/// A derived item over a subject with no anchor (QSpec FR-361-AC-17,
+/// FR-368-AC-22): a model subject that reads no `model_selections` row or
+/// several, or a protocol subject whose clause has no node, so the producer settles the item `unsupported` with
 /// `unsupported_projection`/`unsupported-requested-capability` and writes
 /// no request item for it. It is settled here, before any request is
 /// negotiated or run, so before any `requires-bound`, `no-initial-state`
@@ -351,6 +384,9 @@ impl<S> UnanchoredItem<S> {
             }
             NoAnchor::SeveralSelections { rows } => format!(
                 "the {kind} item's subject reads {rows} model selections, so it has no anchor"
+            ),
+            NoAnchor::NoProtocolNode => format!(
+                "the {kind} item's protocol subject's clause has no node, so it has no anchor"
             ),
         }
     }

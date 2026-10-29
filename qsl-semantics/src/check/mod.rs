@@ -4403,6 +4403,13 @@ impl PackageDeclarations {
                 .position(|protocol| protocol.name.name == *clause)
                 .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
         }
+        // QSpec FR-368: each clause's own node, its subject's derived-item
+        // anchor; a clause with no node keeps none.
+        for (index, place) in protocol_places.iter().enumerate() {
+            if let Some(checked) = place.and_then(|place| checked_protocols.get_mut(place)) {
+                checked.node = lowering.protocol_key(index, &root(Origin::Expression)).ok();
+            }
+        }
         // FR-337: each emitted temporal clause, after every function its
         // conditions may call, minting its node identity and recording its
         // `claim` occurrence.

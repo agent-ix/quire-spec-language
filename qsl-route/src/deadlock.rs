@@ -6,9 +6,9 @@
 //! items the writer adds one deadlock-freedom item, unless the subject's state
 //! model declares `terminal any`. The item is `always holds(not deadlocked)`,
 //! requested as (`temporal-satisfaction`, unbounded) and routed, negotiated
-//! and settled as a [`PropertyForm::ReachableInvariant`] item. Its obligation
-//! identity is the subject and the fixed kind `deadlock-freedom`, so it is
-//! never an authored claim's identity over the same subject.
+//! and settled as a [`ReachableInvariant`] item. Its obligation identity is
+//! the subject and the fixed kind `deadlock-freedom`, so it is never an
+//! authored claim's identity over the same subject.
 //!
 //! A refinement item (FR-144) counts as a temporal item over its concrete
 //! subject: it brings that subject's deadlock-freedom item unless the
@@ -18,21 +18,24 @@
 //! A timed subject (FR-232, ADR-026 TD-2) also gets one time-lock-freedom
 //! item, with no opt-out.
 //!
-//! A protocol subject (FR-211, ADR-027 PD-3) gets its item the same way,
-//! from [`protocol_deadlock_freedom_items`]: one per distinct protocol
-//! subject, unless its protocol clause declares `terminal any`.
-//!
-//! A protocol subject with a weak `parallel` and a non-atomic shared access
-//! gets one race-freedom item (FR-224, ADR-025 DR-4) from
-//! [`race_freedom_items`]. It is the same shape, `always holds(not raced)`,
-//! with the fixed kind `race-freedom` and the subject's resolved models in its
-//! identity.
+//! A protocol subject (FR-211, ADR-027 PD-3; QSpec FR-429) gets its
+//! deadlock-freedom item the same way, unless its protocol clause declares
+//! `terminal any`; the model's own `terminal` is not read for it. A protocol
+//! subject with a weak `parallel` and a non-atomic shared access also gets
+//! one race-freedom item (FR-224, ADR-025 DR-4; QSpec FR-438), `always
+//! holds(not raced)` with the fixed kind `race-freedom` and the subject's
+//! resolved models in its identity. A protocol subject and a model subject
+//! over the same model are two subjects.
 //!
 //! Which subjects get which item is read from each caller item's
-//! [`SubjectReading`]: the selections its subject reads, and whether one of
-//! their models opts out, is timed or is dense. The request writer,
-//! [`crate::model_request::ModelRequest::derived`], writes the items in
-//! QSpec FR-368's order and anchors each at its subject's `model_root`.
+//! [`SubjectReading`]: for a model subject, the selections it reads, and
+//! whether one of their models opts out, is timed or is dense; for a
+//! protocol subject, its clause's node, `terminal` member and memory. The
+//! request writer, [`crate::model_request::ModelRequest::derived`], writes
+//! the items in QSpec FR-368's order and anchors each at its subject's
+//! `model_root`, or at a protocol subject's clause node.
+//!
+//! [`ReachableInvariant`]: quire_semantic_value::fairness::PropertyForm::ReachableInvariant
 
 use std::collections::BTreeSet;
 
@@ -40,14 +43,11 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
-    Capability, CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember,
-    TerminalDeclaration,
+    CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember, TerminalDeclaration,
 };
 use qsl_semantics::model::observation::DocumentRef;
-use quire_semantic_value::fairness::PropertyForm;
 
 use crate::reductions::{ObligationReductions, Reductions};
-use crate::request::ExtentClassification;
 
 /// One temporal item over a model subject, as the writer reads it: the
 /// claim's occurrence, its subject, and the checked package the subject is
@@ -180,46 +180,6 @@ impl<S> ItemObligation<S> {
     }
 }
 
-/// One derived deadlock-freedom item over a protocol subject (FR-211).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeadlockFreedomItem<S> {
-    subject: S,
-}
-
-impl<S: Clone> DeadlockFreedomItem<S> {
-    /// The subject the item is over.
-    pub fn subject(&self) -> &S {
-        &self.subject
-    }
-
-    /// The item's obligation identity: the subject and `deadlock-freedom`.
-    pub fn obligation(&self) -> ItemObligation<S> {
-        ItemObligation {
-            subject: self.subject.clone(),
-            kind: ObligationKind::DeadlockFreedom,
-            reductions: ObligationReductions::default(),
-        }
-    }
-
-    /// The requested capability kind: `temporal-satisfaction`.
-    pub fn kind(&self) -> Capability {
-        Capability::TemporalSatisfaction
-    }
-
-    /// The extent classification: unbounded, over the infinite-trace domain
-    /// no finite bound stands for.
-    pub fn extent(&self) -> ExtentClassification {
-        ExtentClassification::Unbounded {
-            finite_bound_available: false,
-        }
-    }
-
-    /// The property form the item is routed and settled as.
-    pub fn property_form(&self) -> PropertyForm {
-        PropertyForm::ReachableInvariant
-    }
-}
-
 /// What the request writer reads about the subject of one caller item to
 /// derive the subject's items (FR-124, FR-232, FR-243, QSpec FR-368): the
 /// `model_root` node of each `model_selections` row the subject reads, and
@@ -231,6 +191,18 @@ pub struct SubjectReading {
     roots: BTreeSet<WireNodeId>,
     opted_out: bool,
     timed: bool,
+    /// For a protocol subject, what its clause gives the derivation.
+    protocol: Option<ProtocolReading>,
+}
+
+/// What a protocol subject's clause gives the derivation (QSpec FR-368,
+/// FR-438).
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ProtocolReading {
+    /// The clause's node; `None` for a clause with no node.
+    node: Option<WireNodeId>,
+    /// The resolved models of a subject that gets a race-freedom item.
+    race: Option<Vec<(String, MemoryModelName)>>,
 }
 
 impl SubjectReading {
@@ -251,6 +223,7 @@ impl SubjectReading {
                 .time_sources()
                 .iter()
                 .any(|source| own(&source.model)),
+            protocol: None,
         }
     }
 
@@ -273,14 +246,38 @@ impl SubjectReading {
         self.roots.extend(other.roots.iter().copied());
         self.opted_out |= other.opted_out;
         self.timed |= other.timed;
+        match (&mut self.protocol, &other.protocol) {
+            (None, Some(protocol)) => self.protocol = Some(protocol.clone()),
+            (Some(seen), Some(protocol)) => {
+                seen.node = seen.node.or(protocol.node);
+                if seen.race.is_none() {
+                    seen.race.clone_from(&protocol.race);
+                }
+            }
+            (_, None) => {}
+        }
+    }
+
+    /// The resolved models of a protocol subject that gets a race-freedom
+    /// item (FR-224, QSpec FR-438); `None` for every other subject.
+    pub fn race(&self) -> Option<&[(String, MemoryModelName)]> {
+        self.protocol.as_ref()?.race.as_deref()
     }
 
     /// QSpec FR-368 "Claim and anchor of a derived or refinement item": the
-    /// claim of a derived item over the subject, the `model_root` node of
+    /// claim of a derived item over the subject. A protocol subject's is its
+    /// clause node's `declaration` occurrence at ordinal 0. Any other
+    /// subject's is the `model_root` node of
     /// the one selection it reads and that node's one occurrence, of role
     /// `generated` and ordinal 0 (QSpec FR-322-AC-132). A subject that
     /// reads no row or several has no anchor (QSpec FR-361-AC-17).
     pub fn anchor(&self) -> Result<OccurrenceKey, NoAnchor> {
+        if let Some(protocol) = &self.protocol {
+            return protocol
+                .node
+                .map(OccurrenceKey::declaration)
+                .ok_or(NoAnchor::NoProtocolNode);
+        }
         let mut roots = self.roots.iter();
         match (roots.next(), roots.next()) {
             (Some(root), None) => Ok(OccurrenceKey::generated(*root)),
@@ -305,6 +302,9 @@ pub enum NoAnchor {
         /// The number of rows it reads.
         rows: usize,
     },
+    /// The protocol subject's clause has no node, as when its package
+    /// selects no protocol profile.
+    NoProtocolNode,
 }
 
 /// The subjects of `readings`, in the order each first occurs, each with
@@ -334,9 +334,10 @@ impl<S: Clone> ModelRefinementItem<'_, S> {
 }
 
 /// One temporal item over a protocol subject, as the writer reads it: the
-/// claim's occurrence, the protocol subject, and its checked protocol
-/// clause.
-#[derive(Clone, Copy, Debug)]
+/// claim's occurrence, the protocol subject, its checked protocol clause,
+/// the resolved model of each of its outermost `parallel`s, and whether it
+/// has a non-atomic shared access (ADR-025 MA-2).
+#[derive(Debug)]
 pub struct ProtocolTemporalItem<'g, S> {
     /// The authored claim's occurrence.
     pub occurrence: &'g OccurrenceKey,
@@ -344,113 +345,50 @@ pub struct ProtocolTemporalItem<'g, S> {
     pub subject: &'g S,
     /// The subject's checked protocol clause.
     pub protocol: &'g CheckedProtocol,
-}
-
-/// FR-211 (ADR-027 PD-3): the deadlock-freedom items of a request whose
-/// temporal items over protocol subjects are `items`: one per distinct
-/// subject, in the order the subjects first appear, and none for a subject
-/// whose protocol clause declares `terminal any`.
-pub fn protocol_deadlock_freedom_items<S: Clone + Eq>(
-    items: &[ProtocolTemporalItem<'_, S>],
-) -> Vec<DeadlockFreedomItem<S>> {
-    let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
-    for item in items {
-        let opts_out = matches!(item.protocol.slots.terminal, CheckedTerminalMember::Any);
-        if opts_out || derived.iter().any(|seen| seen.subject == *item.subject) {
-            continue;
-        }
-        derived.push(DeadlockFreedomItem {
-            subject: item.subject.clone(),
-        });
-    }
-    derived
-}
-
-/// One item over a protocol subject, as the race-freedom writer reads it
-/// (FR-224): the subject, the resolved model of each of its outermost
-/// `parallel`s, and whether it has a non-atomic shared access (ADR-025 MA-2).
-#[derive(Debug)]
-pub struct ProtocolMemoryItem<'g, S> {
-    /// The protocol subject.
-    pub subject: &'g S,
-    /// The resolved model of each outermost `parallel`, by scoped path.
+    /// The resolved model of each outermost `parallel`, by scoped path, in
+    /// ascending path order.
     pub models: &'g [(String, MemoryModelName)],
     /// Whether some access of a weak `parallel` loads or stores a shared
     /// location with no `ordering`.
     pub non_atomic_access: bool,
 }
 
-impl<S> Clone for ProtocolMemoryItem<'_, S> {
+impl<S> Clone for ProtocolTemporalItem<'_, S> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<S> Copy for ProtocolMemoryItem<'_, S> {}
+impl<S> Copy for ProtocolTemporalItem<'_, S> {}
 
-/// One derived race-freedom item (FR-224).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RaceFreedomItem<S> {
-    subject: S,
-    models: Vec<(String, MemoryModelName)>,
-}
-
-impl<S: Clone> RaceFreedomItem<S> {
-    /// The subject the item is over.
-    pub fn subject(&self) -> &S {
-        &self.subject
-    }
-
-    /// The item's obligation identity: the subject, its resolved models and
-    /// `race-freedom`.
+impl<S: Clone> ProtocolTemporalItem<'_, S> {
+    /// The item's obligation identity: its subject and its occurrence.
     pub fn obligation(&self) -> ItemObligation<S> {
         ItemObligation {
             subject: self.subject.clone(),
-            kind: ObligationKind::RaceFreedom {
-                models: self.models.clone(),
-            },
+            kind: ObligationKind::Authored(self.occurrence.clone()),
             reductions: ObligationReductions::default(),
         }
     }
 
-    /// The requested capability kind: `temporal-satisfaction`.
-    pub fn kind(&self) -> Capability {
-        Capability::TemporalSatisfaction
-    }
-
-    /// The extent classification: unbounded, as the deadlock-freedom item's.
-    pub fn extent(&self) -> ExtentClassification {
-        ExtentClassification::Unbounded {
-            finite_bound_available: false,
+    /// The reading of the item's protocol subject (QSpec FR-429, FR-438):
+    /// its clause's node, whether the clause declares `terminal any`, and,
+    /// when a resolved model is weak and an access is non-atomic, the
+    /// models the race-freedom item is over. A protocol subject is never
+    /// read as timed, and its model's `terminal` is not read.
+    pub fn reading(&self) -> SubjectReading {
+        let weak = self.models.iter().any(|(_, model)| model.is_weak());
+        SubjectReading {
+            roots: BTreeSet::new(),
+            opted_out: matches!(self.protocol.slots.terminal, CheckedTerminalMember::Any),
+            timed: false,
+            protocol: Some(ProtocolReading {
+                node: self
+                    .protocol
+                    .node()
+                    .map(|key| WireNodeId::from_digest(*key.as_bytes())),
+                race: (weak && self.non_atomic_access).then(|| self.models.to_vec()),
+            }),
         }
     }
-
-    /// The property form the item is routed and settled as.
-    pub fn property_form(&self) -> PropertyForm {
-        PropertyForm::ReachableInvariant
-    }
-}
-
-/// FR-224 (ADR-025 DR-4): the race-freedom items of a request whose items
-/// over protocol subjects are `items`: one per distinct (subject, resolved
-/// models) among those with a weak resolved model and a non-atomic shared
-/// access, in the order they first appear, and none for any other subject.
-pub fn race_freedom_items<S: Clone + Eq>(
-    items: &[ProtocolMemoryItem<'_, S>],
-) -> Vec<RaceFreedomItem<S>> {
-    let mut derived: Vec<RaceFreedomItem<S>> = Vec::new();
-    for item in items {
-        let weak = item.models.iter().any(|(_, model)| model.is_weak());
-        let seen = derived
-            .iter()
-            .any(|seen| seen.subject == *item.subject && seen.models == item.models);
-        if !weak || !item.non_atomic_access || seen {
-            continue;
-        }
-        derived.push(RaceFreedomItem {
-            subject: item.subject.clone(),
-            models: item.models.to_vec(),
-        });
-    }
-    derived
 }

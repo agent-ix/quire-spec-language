@@ -30,6 +30,7 @@ use qsl_replay::{
 };
 use qsl_route::deadlock::{
     ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem, NoAnchor,
+    ProtocolTemporalItem,
 };
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::reductions::Reductions;
@@ -102,6 +103,55 @@ pub(crate) fn derived_items<S: Clone + Eq>(
         .collect()
 }
 
+/// The request `ModelRequest::derived` writes, with EN-1 and EN-6
+/// registered, after the temporal items `items` over protocol subjects, in
+/// that order, each written with a bounded `temporal-satisfaction` record.
+pub(crate) fn protocol_request<S: Clone + Eq>(
+    items: &[ProtocolTemporalItem<'_, S>],
+) -> WrittenRequest<S> {
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let mut request = ModelRequest::new();
+    for item in items {
+        request.protocol(item, &record);
+    }
+    request.derived(&registry(), None, &DerivedLimits::default())
+}
+
+/// The items of `written` of kind `kind`, each with its obligation.
+pub(crate) fn items_of_kind<S: Clone + Eq>(
+    written: &WrittenRequest<S>,
+    kind: ItemKind,
+) -> Vec<(RequestItem, ItemObligation<S>)> {
+    written
+        .items()
+        .iter()
+        .filter(|item| item.item_kind() == Some(kind))
+        .map(|item| {
+            let obligation = written.obligation(item.index()).expect("its obligation");
+            (item.clone(), obligation.clone())
+        })
+        .collect()
+}
+
+/// The subject of each derived item of kind `kind` that `written`
+/// derives, in derivation order among the written ones and then among the
+/// ones settled `unsupported` for want of an anchor.
+pub(crate) fn derived_subjects<S: Clone + Eq>(
+    written: &WrittenRequest<S>,
+    kind: ItemKind,
+) -> Vec<S> {
+    let unanchored = written
+        .unanchored()
+        .iter()
+        .filter(|item| item.kind == kind)
+        .map(|item| item.subject.clone());
+    items_of_kind(written, kind)
+        .into_iter()
+        .map(|(_, obligation)| obligation.subject)
+        .chain(unanchored)
+        .collect()
+}
+
 /// The claim QSpec FR-368 gives a derived item over a subject reading the
 /// selection `identity` of `package`: its `model_root` node's `generated`
 /// occurrence at ordinal 0.
@@ -146,7 +196,7 @@ fn settled(record: &AnalyzeRecord) -> (String, TerminalValue) {
 
 /// QSpec FR-368-AC-17 and AC-18 with FR-243, and the producer half of
 /// AC-14 (the model subject's `model_root` anchor; the protocol anchor is
-/// QSL-1235's) and of AC-16 (`unbounded`, no finite bound, no
+/// `race_freedom`'s) and of AC-16 (`unbounded`, no finite bound, no
 /// `extent.bounds`; QSL writes no extent domain list): over the dense
 /// `Rpc`, the request holds the authored clause at index 0, then the
 /// deadlock-freedom and then the time-lock-freedom item. Both derived

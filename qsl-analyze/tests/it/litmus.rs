@@ -263,10 +263,15 @@ pub(crate) fn contracts() -> String {
 /// The unit selecting the domain package as `M`, with `body` after the
 /// header.
 pub(crate) fn unit_text(body: &str) -> String {
+    unit_text_with("", body)
+}
+
+/// [`unit_text`] with the further `profiles` lines in its header.
+fn unit_text_with(profiles: &str, body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
+         profile t0 = \"quire.temporal.infinite-trace/v1\";\n{profiles}\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
         hex(&document_digest(&document()))
     )
@@ -274,8 +279,19 @@ pub(crate) fn unit_text(body: &str) -> String {
 
 /// The checked package of `body`.
 pub(crate) fn package(body: &str) -> CheckedPackage {
+    package_with("", body)
+}
+
+/// The checked package of `body` that also selects the protocol profile,
+/// so each protocol clause the package writes has its node.
+pub(crate) fn protocol_profiled_package(body: &str) -> CheckedPackage {
+    package_with("profile pp = \"quire.protocol.finite-global/v1\";\n", body)
+}
+
+/// The checked package of `body` under the header's further `profiles`.
+fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
-    let text = unit_text(body);
+    let text = unit_text_with(profiles, body);
     let packages = package_input([document.as_slice()]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "litmus", "git", "1"),

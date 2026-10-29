@@ -484,7 +484,7 @@ pub struct CheckedTemporalClause {
     time_binding: Option<ModelTimeBinding>,
     /// Under the timed profile: the clause's timed property form.
     timed_form: Option<TimedPropertyForm>,
-    /// Whether the clause's subject is a model that declares `time dense`
+    /// Whether the clause's subject is a model that is timed (dense or tick)
     /// (FR-243).
     timed: bool,
 }

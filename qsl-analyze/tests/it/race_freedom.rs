@@ -8,25 +8,38 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::model_check::ModelCheckRefusal;
+use qsl_analyze::zone_check::manifest as en6;
 
 use qsl_eval::model_subject::ModelLetters;
+use qsl_eval::model_subject::ProtocolSubject;
 use qsl_eval::simulation::protocol::{
     MemoryModel, MemorySelection, ProtocolTransition, Ra, StepKind, Tso,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
+use qsl_replay::node_occurrence;
 use qsl_replay::{
     check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause, ModelCheckItem,
     ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
     ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
     TemporalCounterexample,
 };
-use qsl_route::deadlock::{race_freedom_items, ProtocolMemoryItem};
+use qsl_route::deadlock::{ModelTemporalItem, ObligationKind, ProtocolTemporalItem};
+use qsl_route::model_request::{ModelRequest, WrittenRequest};
+use qsl_route::request::{DerivedLimits, ItemKind, RequestItem};
+use qsl_semantics::check::Capability;
+use qsl_semantics::family::{ClaimExtent, Requirements};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
+use quire_semantic_value::fairness::PropertyForm;
 use serde_json::{json, Value as Json};
 
+use crate::dense_route::{ids, registry};
+use crate::derived_request::{derived_subjects, items_of_kind, protocol_request};
 use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
 use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
 
@@ -99,24 +112,55 @@ fn location_of_under(case: &Case, key: &str, selection: &[MemorySelection]) -> L
         .expect("a shared location")
 }
 
-/// The obligation identity of the race-freedom item `case`'s request gives
-/// under `selection`.
-fn race_freedom_obligation(case: &Case, selection: &[MemorySelection]) -> String {
-    let accesses = case.accesses(selection);
-    let subject = case.subject(selection);
-    let models: Vec<(String, MemoryModelName)> = subject
+/// The resolved model of each outermost `parallel` of `subject`, by scoped
+/// path.
+fn models_of(subject: &ProtocolSubject<'_>) -> Vec<(String, MemoryModelName)> {
+    subject
         .memory
         .parallels()
         .iter()
         .map(|resolved| (resolved.parallel.clone(), resolved.model))
-        .collect();
-    let item = ProtocolMemoryItem {
+        .collect()
+}
+
+/// A second caller item's claim over `SB`, beside the unit's clause.
+fn other_claim() -> OccurrenceKey {
+    OccurrenceKey::generated(WireNodeId::from_digest([9; 32]))
+}
+
+/// The request over `case`'s two temporal items over `SB` under
+/// `selection`, its unit's clause and [`other_claim`], when the caller has
+/// found a non-atomic shared access or not.
+fn race_freedom_request(
+    case: &Case,
+    selection: &[MemorySelection],
+    non_atomic_access: bool,
+) -> WrittenRequest<String> {
+    let subject = case.subject(selection);
+    let models = models_of(&subject);
+    let graph = case.checked().graph();
+    let protocol = graph.protocol("SB").expect("SB");
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let other = other_claim();
+    let item = |occurrence| ProtocolTemporalItem {
+        occurrence,
         subject: &subject.protocol,
+        protocol,
         models: &models,
-        non_atomic_access: !accesses.non_atomic().is_empty(),
+        non_atomic_access,
     };
-    let items = race_freedom_items(&[item]);
-    format!("{:?}", items[0].obligation())
+    protocol_request(&[item(&clause), item(&other)])
+}
+
+/// The obligation identity of the race-freedom item `case`'s request gives
+/// under `selection`.
+fn race_freedom_obligation(case: &Case, selection: &[MemorySelection]) -> String {
+    let accesses = case.accesses(selection);
+    let written = race_freedom_request(case, selection, !accesses.non_atomic().is_empty());
+    let [(_, obligation)] = &items_of_kind(&written, ItemKind::RaceFreedom)[..] else {
+        panic!("one race-freedom item");
+    };
+    format!("{obligation:?}")
 }
 
 /// FR-224's request writer over `case`'s `ra` request: the number of
@@ -133,19 +177,21 @@ fn race_freedom_item_count_for_access(
     selection: &[MemorySelection],
     non_atomic_access: bool,
 ) -> usize {
-    let subject = case.subject(selection);
-    let models: Vec<(String, MemoryModelName)> = subject
-        .memory
-        .parallels()
-        .iter()
-        .map(|resolved| (resolved.parallel.clone(), resolved.model))
-        .collect();
-    let item = ProtocolMemoryItem {
-        subject: &subject.protocol,
-        models: &models,
-        non_atomic_access,
-    };
-    race_freedom_items(&[item, item]).len()
+    let written = race_freedom_request(case, selection, non_atomic_access);
+    derived_subjects(&written, ItemKind::RaceFreedom).len()
+}
+
+/// Two threads of `SB` that each store to `x` with no `ordering`, in a unit
+/// selecting the protocol profile, so `SB`'s clause has its node.
+fn two_plain_stores() -> Case {
+    let run = litmus_run(
+        &[
+            ("a", steps("A", &[put("Sa", "x", "")])),
+            ("b", steps("B", &[put("Sb", "x", "")])),
+        ],
+        "",
+    );
+    Case::protocol_profiled(&(contracts() + &protocol("SB", &run) + NO_BOTH_ZERO), &MP)
 }
 
 /// Whether EN-1 finds a non-atomic shared access in a reachable state.
@@ -1232,7 +1278,10 @@ fn a_later_enabled_rmw_creates_the_race_freedom_item_under_ra_and_tso() {
 /// FR-224-AC-3 (TC-669), the `tso` half: a subject whose shared accesses are
 /// all atomic carries no `RaceFreedom` item under `tso`, nor does the AC-1
 /// shape under `sc`; two items over one subject give one item, whose identity
-/// differs between the `tso` and `ra` requests.
+/// differs between the `tso` and `ra` requests. The AC-1 shape's clause has
+/// no node, so its item is settled `unsupported` with no request item and
+/// is counted there; the identities are compared over two plain stores whose
+/// clause has one.
 #[trace("TC-669", "FR-224-AC-3")]
 #[test]
 fn the_race_freedom_item_is_derived_only_for_a_weak_subject_with_a_non_atomic_access() {
@@ -1242,9 +1291,10 @@ fn the_race_freedom_item_is_derived_only_for_a_weak_subject_with_a_non_atomic_ac
     let sc = [select("SB::Main::Both", MemoryModelName::Sc)];
     assert_eq!(race_freedom_item_count(&plain, &sc), 0);
     assert_eq!(race_freedom_item_count(&plain, &tso()), 1);
+    let emitted = two_plain_stores();
     assert_ne!(
-        race_freedom_obligation(&plain, &tso()),
-        race_freedom_obligation(&plain, &ra())
+        race_freedom_obligation(&emitted, &tso()),
+        race_freedom_obligation(&emitted, &ra())
     );
 }
 
@@ -1367,4 +1417,121 @@ fn seq_cst_fences_do_not_order_threads_under_tso() {
         matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
         "{replayed:?}"
     );
+}
+
+/// QSpec FR-368-AC-14 and AC-17 with FR-429 and FR-438, the producer half:
+/// over two threads that each store `x` with no `ordering` under `ra`, in a
+/// unit selecting the protocol profile, a request whose
+/// caller items are a temporal item over the protocol subject `SB`, one over
+/// the model subject of `SB`'s own model, and a second over `SB`, holds those
+/// three first in that order. The derived items follow, grouped by the
+/// subject's first occurrence: `SB`'s `deadlock-freedom` and then its
+/// `race-freedom` item, and then the model subject's `deadlock-freedom`
+/// item, since a protocol subject and a model subject over one model are two
+/// subjects. `SB`'s two derived items name its protocol clause node's
+/// `declaration` occurrence at ordinal 0, which the emitted package's source
+/// map holds, not the `model_root` the model subject's item names. Both are
+/// unbounded `temporal-satisfaction` items routed as `ReachableInvariant`
+/// with the untimed candidates EN-1 and EN-6, and the race-freedom item's
+/// identity holds `SB`'s resolved models.
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-14")]
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
+#[trace("QSpec-TC-392", "QSpec-FR-438-AC-2")]
+#[test]
+fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
+    let case = two_plain_stores();
+    assert!(!case.accesses(&ra()).non_atomic().is_empty());
+    let subject = case.subject(&ra());
+    let models = models_of(&subject);
+    let graph = case.checked().graph();
+    let protocol = graph.protocol("SB").expect("SB");
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let other = other_claim();
+    let protocol_item = |occurrence| ProtocolTemporalItem {
+        occurrence,
+        subject: &subject.protocol,
+        protocol,
+        models: &models,
+        non_atomic_access: true,
+    };
+    let model_subject = "SB's model".to_owned();
+    let selections: BTreeSet<&str> = graph
+        .model_roots()
+        .map(|(selection, _)| selection.identity.as_str())
+        .collect();
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let mut request = ModelRequest::new();
+    request.protocol(&protocol_item(&clause), &record);
+    request.authored(
+        &ModelTemporalItem {
+            occurrence: &clause,
+            subject: &model_subject,
+            package: graph,
+        },
+        &record,
+        &selections,
+    );
+    request.protocol(&protocol_item(&other), &record);
+    let written = request.derived(&registry(), None, &DerivedLimits::default());
+
+    let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            Some(ItemKind::Formula),
+            Some(ItemKind::Formula),
+            Some(ItemKind::Formula),
+            Some(ItemKind::DeadlockFreedom),
+            Some(ItemKind::RaceFreedom),
+            Some(ItemKind::DeadlockFreedom),
+        ]
+    );
+    let subjects: Vec<_> = written
+        .items()
+        .iter()
+        .map(|item| {
+            written
+                .obligation(item.index())
+                .expect("its obligation")
+                .subject
+                .clone()
+        })
+        .collect();
+    let sb = subject.protocol.clone();
+    assert_eq!(
+        subjects,
+        [
+            sb.clone(),
+            model_subject.clone(),
+            sb.clone(),
+            sb.clone(),
+            sb,
+            model_subject
+        ]
+    );
+    for (position, item) in written.items().iter().enumerate() {
+        assert_eq!(item.index().get(), position);
+    }
+
+    let node = protocol.node().expect("SB's clause has a node");
+    let anchor = OccurrenceKey::declaration(WireNodeId::from_digest(*node.as_bytes()));
+    let emission = qsl_package::emit_checked(case.checked()).expect("the package emits");
+    assert!(emission.source_map().regions(&anchor).is_some());
+    for item in &written.items()[3..5] {
+        assert_eq!(item.occurrence(), &anchor);
+        assert_eq!(item.kind(), Capability::TemporalSatisfaction);
+        assert_eq!(item.property_form(), Some(PropertyForm::ReachableInvariant));
+        assert_eq!(
+            ids(item.candidates().expect("a derived item's candidates")),
+            [en1::BACKEND_ID, en6::BACKEND_ID]
+        );
+    }
+    assert_ne!(written.items()[5].occurrence(), &anchor);
+    assert_eq!(
+        written
+            .obligation(written.items()[4].index())
+            .map(|obligation| &obligation.kind),
+        Some(&ObligationKind::RaceFreedom { models })
+    );
+    assert!(written.unanchored().is_empty());
 }
