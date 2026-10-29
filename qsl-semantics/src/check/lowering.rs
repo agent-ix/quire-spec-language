@@ -98,7 +98,7 @@ mod state_graph;
 mod state_transition;
 mod temporal;
 mod terminal;
-mod urgency;
+mod timed_clause;
 mod wire;
 
 pub(crate) use abstraction::{object_type_node, population_node, relation_node};
@@ -133,6 +133,7 @@ pub(crate) use temporal::{
     temporal_location, temporal_site, LoweredTemporalClause, TemporalClauseInput, TemporalSite,
 };
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
+pub(crate) use timed_clause::TimedClauseInput;
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
@@ -639,6 +640,10 @@ pub(crate) struct Lowering<'a> {
     composite_placeholders: BTreeMap<NodeKey, NodeKey>,
     /// Whether a recursive function group is being lowered.
     functions_open: bool,
+    /// The `clock_place` template node of each clock place of the unit's
+    /// timed models, which a `presence_read` names (QSpec FR-322
+    /// "Presence").
+    timed_places: Vec<timed_clause::TimedPlace>,
     /// Each placeholder, and the draft it became once built.
     placeholders: BTreeMap<NodeKey, Option<NodeKey>>,
     /// How many placeholders this lowering has made.
@@ -1628,6 +1633,7 @@ impl<'a> Lowering<'a> {
             composites_in_progress: Vec::new(),
             composite_placeholders: BTreeMap::new(),
             functions_open: false,
+            timed_places: Vec::new(),
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
             drafts: BTreeMap::new(),
@@ -3648,15 +3654,47 @@ impl<'a> Lowering<'a> {
                     Operands::One(reference),
                 )
             }
+            // FR-230 "Presence is derived", QSpec FR-322 "Presence":
+            // `present(r.f)` of a clock place is the `presence_read`
+            // application over the place's `clock_place` template and the
+            // owner term `r`.
+            NodeKind::PlacePresence {
+                reference,
+                field,
+                case,
+            } => {
+                let mut path = vec![PlaceStep::Field(field.name.clone())];
+                path.extend(case.clone().map(PlaceStep::Union));
+                let place = self.timed_place(field.owner, &path).ok_or_else(|| {
+                    refuse(
+                        node.location(),
+                        CheckCause::UnsupportedFeature {
+                            loci: vec![node.location().clone()],
+                        },
+                    )
+                })?;
+                return self.next_operand(
+                    Box::new(OperandsFrame {
+                        node,
+                        operands: Operands::One(reference),
+                        next: 0,
+                        terms: vec![LeafTerm::reference(place)],
+                        keyed: Keyed::Application(
+                            Operator::Present,
+                            plain("quire.op.option.present"),
+                        ),
+                    }),
+                    frames,
+                );
+            }
             // FR-139, FR-138: a population-valued form and a history read
             // live in a refinement row, which S4 does not emit yet
-            // (FR-310's node): no FR-093 row lowers either.
-            // FR-230 "Presence is derived": a presence read lives in a timed
-            // predicate, which S4 does not emit yet; S3 keeps it out of
+            // (FR-310's node): no FR-093 row lowers either. A quantifier
+            // over a clock collection's slots has no checked form until
+            // STD-554, so S3 keeps `forall(e in r.q: present(e))` out of
             // every lowered clause body.
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
-            | NodeKind::PlacePresence { .. }
             | NodeKind::SlotPresence { .. }
             | NodeKind::Seq { .. } => {
                 return Err(refuse(

@@ -32,7 +32,7 @@ FR-065-AC-6.
 3. Construct a replay request naming a `QualifiedName` that does not resolve
    against the recompiled package's declarations (a name with no matching
    declaration); invoke the executor entry.
-4. Recompile the package from its digest-addressed source (as `replay`
+4. Recompile the package from its label-addressed source (as `replay`
    does) and confirm the executor entry resolves the request's
    `QualifiedName` against the recompiled package's own declaration table,
    not against any cached or pre-linked table from a prior compile.

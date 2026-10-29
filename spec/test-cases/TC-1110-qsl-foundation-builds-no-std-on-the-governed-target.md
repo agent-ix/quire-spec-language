@@ -32,13 +32,13 @@ gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3 and NFR-015-AC-8.
 
 ## Expected Results
 
-1. `[features]` has `default = ["std"]`; `serde`, `sha2` and `thiserror` are
+1. `[features]` has `default = ["std"]`; `serde` and `thiserror` are
    declared with `default-features = false` and `std` enables their `std`
    features; the crate root has `#![cfg_attr(not(feature = "std"), no_std)]`.
 2. The build succeeds.
 3. The depth-1 tree lists exactly `quire-exact`, `quire-semantic-value` (from
-   ADR-011 X-13 or X-14, whichever lands first), `serde`, `sha2`, `thiserror` and the `ix-trace-rs` proc macro; the full feature tree lists
-   no `std` feature of `serde`, `sha2` or `thiserror`.
+   ADR-011 X-13 or X-14, whichever lands first), `serde`, `thiserror` and the `ix-trace-rs` proc macro; the full feature tree lists
+   no `std` feature of `serde` or `thiserror`.
 4. Both runs pass.
 5. The recipe runs step 2's command and `cargo clippy --locked -p
    qsl-foundation --no-default-features --target thumbv7em-none-eabi -- -D

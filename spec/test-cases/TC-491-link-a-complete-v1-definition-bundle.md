@@ -32,7 +32,7 @@ dependency edges between them.
    reaches another selection of a root's identity, and a catalog with a
    dependency cycle.
 4. Link a closure missing one facet, and one missing one capability.
-5. Compute the identity of the golden preimage, then change one
+5. Compute the identity (the structural preimage) of the bundle, then change one
    definition's role, dependencies, capabilities and bytes in turn.
 6. For each `PackageLimits` field, build and link at its bound and one
    past it; raise `definitions` above the default and build a catalog the
@@ -52,7 +52,7 @@ dependency edges between them.
   the cycle in path order.
 - Step 4 refuses `invalid_package`/`feature-set-mismatch` naming the facet,
   and `unknown_required_feature`/`unsupported-feature`.
-- Step 5 matches the golden vector, and each change gives a different
+- Step 5 equals the expected preimage tuple, and each change gives a different
   identity.
 - Step 6 admits each bound and refuses one past it with
   `resource_exhausted`/`insufficient-next-charge`; the raised ceiling

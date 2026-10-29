@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify the positive read and admission of FR-106's documents, digest
+Verify the positive read and admission of FR-106's documents, identity
 stability, and that admission reads nothing ambient.
 
 Scope: FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8, FR-106-AC-9.
@@ -19,7 +19,7 @@ Scope: FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8, FR-106-AC-9.
 
 Compile FR-108's unit against TC-458's fixture package. Documents are
 FR-106's examples, labelled as there, held in in-memory provisions keyed by
-their `sha256-jcs` digest.
+their document identity.
 
 1. Admit the healthy-parent snapshot for `ParentOrder` with `Current {
    snapshot, anchor: {handler, validate}, self: {config_history, child} }`;
@@ -68,9 +68,9 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 - Step 1: one current observation; population `config_history` complete;
   `root.versionNumber` 1, `root.parent` absent, `child.versionNumber` 2,
   `child.parent` present naming `root`; `self` is `child`; the snapshot's
-  identity and digest are retained. In the `archive` variant, the snapshot
+  identity is retained. In the `archive` variant, the snapshot
   admits with `child.parent` present naming `k`, typed `Sub`.
-- Step 2: the same digest and an equal admitted value.
+- Step 2: the same identity and an equal admitted value.
 - Step 3: distinct pre and post observations, `self` `child` in both,
   `result` true, no parameters, empty created and deleted.
 - Step 4: equal results to steps 1 and 3.

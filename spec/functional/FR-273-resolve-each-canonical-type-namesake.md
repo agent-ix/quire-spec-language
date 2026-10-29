@@ -135,7 +135,7 @@ FR-273-AC-n.
 | 32 | `quire_eval::Evaluation` (the S6a evaluation, O-16; FR-401 and ADR-011 X-14 place it in `quire-eval`) | root `command::output::types::Evaluation` | the evaluation status member of a run-result document | delete; removed with M-6c (ADR-011 §7.3) |
 | 33 | `quire_exact::location::Location` (O-12) | root `package::view::Location` | the serialized view of a declaration location | delete; removed with M-6c (ADR-011 §7.3) |
 | 34 | `qsl_foundation::source::provenance::OccurrenceKey` (O-07) | root `protocol_artifact::occurrence::OccurrenceKey` | a validated runtime workflow key | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
-| 35 | `qsl_foundation::source::provenance::RawSourceRef` (O-07, digest domain `quire.source.bytes/v1`) | `qsl_replay::identity::RawSourceRef` | a definition-document reference whose digest is in any domain | rename `DefinitionSourceRef` |
+| 35 | `qsl_foundation::source::provenance::RawSourceRef` (O-07) | `qsl_replay::identity::RawSourceRef` | a definition-document reference | rename `DefinitionSourceRef` |
 | 36 | `quire_checked::key::DeclarationKey` (O-03) | root `linking::DeclarationKey` | a declaration path within one requirement owner (lane-private, ADR-013 §6) | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
 | 37 | `qsl_cst::ParsedSource` (O-15) | root `linking::composed::ParsedSource` | parsed evidence kept when namespace admission fails | delete; removed with M-6e, SEAM-2 (ADR-011 §7.3) |
 | 38 | `qsl_package::checked::CheckedPackage` (O-15) | root `checking::CheckedPackage<'a>` | native-v1 checked clauses that keep the linked AST (lane-private, ADR-013 §6) | delete; removed with M-6c (ADR-011 §7.3) |

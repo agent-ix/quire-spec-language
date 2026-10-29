@@ -333,7 +333,7 @@ automaton states and the depth reached.
 - When a safety item's (TP-1, TP-2, TP-3, deadlock-freedom) first phase
   completes with an empty frontier and no violation, the engine SHALL
   return `Holds{basis: Exhaustive}` with a `ClosureCertificate` holding
-  every explored product state: its model state's state-key digest and
+  every explored product state: its model state's state key (the canonical byte string of the state) and
   its automaton state's canonical key (ADR-018 PC-3).
 
 ### Second phase (TP-4)
@@ -453,7 +453,7 @@ automaton states and the depth reached.
   subject: the index of its initial state in `subject.initial`; its steps in
   the `CounterexampleSteps::Model` arm (FR-128), each step as its FR-120
   transition identity and its post-state's
-  `quire.simulation.state-key/v1` digest, which selects the step's
+  `quire.simulation.state-key/v1` state key, which selects the step's
   successor among the post-states of its transition identity; the loop
   entry, when there is a loop; the terminal stutter marker, when the loop
   is the stutter step, and on a formula counterexample of a safety clause
@@ -488,7 +488,7 @@ automaton states and the depth reached.
   limits, and SHALL list every sequence in the following order, so two runs
   over the same inputs produce equal certificates:
   - **Closure states.** The closure's `states` SHALL be ascending by
-    `ProductStateRef`: the `model_state` digest octets, then the
+    `ProductStateRef`: the `model_state` key octets, then the
     `automaton_state` octets, ascending unsigned lexicographic (FR-338's
     locus order), with no duplicate.
   - **Bindings.** Every component of one `over` binding's product SHALL

@@ -1,24 +1,23 @@
 ---
 id: TC-411
-title: "A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal"
+title: "A quantity UnitId is a declared unit's node key or a compound unit's term list, and the two never compare equal"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-088
     type: verifies
 ---
-# TC-411: A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal
+# TC-411: A quantity UnitId is a declared unit's node key or a compound unit's term list, and the two never compare equal
 
 ## Description
 
 Verify FR-088-AC-12. QSL's kernel `UnitId` preserves the distinct identities
-for declared and compound units and compares the domain label before the
-digest bytes (ADR-013 T-6, OQ-B ruling). QSpec FR-142-AC-8 owns the
-compound-unit identity schema, vectors and digest derivation. Scope:
-FR-088-AC-12.
+for declared and compound units and compares the arm tag before the key
+(ADR-013 T-6, OQ-B ruling). The compound `UnitId` is its ordered term list,
+compared by equality. Scope: FR-088-AC-12.
 
-This catches four faults: a single-domain `UnitId` that drops the label; a
+This catches four faults: a single-arm `UnitId` that drops the tag; a
 declared unit collapsed to its root, so that `km` equals `m`; a compound
-digest that differs from QSpec's vectors; and a non-unit node key accepted
+`UnitId` whose terms differ from the unit expression's; and a non-unit node key accepted
 as a declared-arm `UnitId` (ADR-013 C-30).
 
 ## Test Procedure
@@ -27,10 +26,8 @@ as a declared-arm `UnitId` (ADR-013 C-30).
    `Length`, and the unit `km` with target `m` and scale 1000.
 2. Build the `UnitId`s of `m` and `km` through C-26, and the compound
    `UnitId` of `m^1` through `semantic_value`.
-3. Read every entry of QSpec's compound-unit vectors in place from the QSpec
-   checkout at
-   `proposals/quire-v1/definitions/value-compound-unit-vectors.json` and
-   build the compound `UnitId` from the entry's terms.
+3. Build the compound `UnitId` of `m^1` and of `m^2` from the unit
+   expression's terms.
 4. Pass `Length`'s node key to C-30 as a declared-arm `UnitId`.
 
 Tag the test `#[trace("FR-088-AC-12", "TC-411")]`.
@@ -38,7 +35,7 @@ Tag the test `#[trace("FR-088-AC-12", "TC-411")]`.
 ## Expected Results
 
 - Step 2: the three `UnitId`s are pairwise unequal, and `m`'s carries `m`'s
-  node key under the `quire.checked-semantic-node/v1` label.
-- Step 3: each `UnitId` carries the vector's digest under the
-  `quire.value.compound-unit/v1` label.
+  node key under the declared arm.
+- Step 3: each compound `UnitId` carries its expression's terms under the
+  compound arm, `m^1` and `m^2` unequal.
 - Step 4: C-30 refuses the key.

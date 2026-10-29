@@ -17,7 +17,6 @@ NativeModel::source(&self) -> &FormalSource
 NativeModel::environment(&self) -> &DeclarationEnvironment
 NativeModel::roles(&self) -> &NativeRoles
 NativeModel::artifact_bytes(&self) -> &[u8]
-NativeModel::digest(&self) -> ByteDigest
 link_native(unit: ParsedUnit, models: &[NativeModel], limits: LinkLimits)
     -> Result<LinkedPackage<'_>, Box<LinkingError>>
 ```
@@ -94,8 +93,7 @@ first model profile, including in unused declarations.
 The artifact is UTF-8 compact JSON with fixed top-level field order: profile,
 declarations, source, loci, roles. profile is native-state-model/1; declarations
 is the exact existing V1 canonical-declaration UTF-8 JSON encoded as a JSON
-string. source contains the opaque native identity/revision, SHA-256 source-byte
-digest and explicit formal identity. The local display path is retained in the
+string. source contains the opaque native identity/revision and explicit formal identity. The local display path is retained in the
 model but excluded from portable artifact identity. loci contains every supplied
 formal declaration's source span in declaration-key order. roles retains all
 explicit semantic metadata and role source spans, with object/operation/scalar
@@ -107,8 +105,7 @@ Artifact numbers use exact base-ten integer spelling, with no floating-point
 conversion. Strings use JSON scalar escaping, no Unicode normalization, and
 otherwise retain UTF-8; object field order is fixed by the documented structures.
 The serde_json writer emits this raw artifact. This is not a new FS05
-canonical identity domain or an IR CanonicalDigest. Native import digest is
-ByteDigest::of(artifact_bytes); package and version retain the exact IR owner
+canonical identity domain. Package and version retain the exact IR owner
 namespace and positive revision decimal spelling. All included provenance and
 unused declarations participate. There is no general artifact decoder in this
 API and no new non-Rust producer execution.
@@ -126,7 +123,7 @@ LinkedPackage exposes its binding profile, and each LinkedModel exposes its
 optional NativeModel correspondence. Existing link results have no native model.
 In the native profile, deref/reference fields and operation clauses resolve to
 their explicit roles. Same formal source identity with different native source
-labels/revision/digest anywhere in the supplied inventory refuses. An exact
+labels/revision anywhere in the supplied inventory refuses. An exact
 duplicate model still produces the existing ambiguity refusal, not precedence.
 One formal RequirementRef cannot denote different native model artifacts inside
 the inventory, even if their model source identities differ.
@@ -162,8 +159,7 @@ the selected operation's AnchorName and native clause category. The caller owns
 assigning authored identities, as with FormalSource; the future Quire manifest
 consumer must validate that correspondence against its actual authored manifest.
 
-The source binding must match the package's immutable identity/revision/path/
-digest. It cannot collide with a model's formal source identity under a different
+The source binding must match the package's immutable identity/revision/path. It cannot collide with a model's formal source identity under a different
 native binding. check requires the native model profile; passing a plain formal
 link result refuses unsupported_construct. It never guesses native roles.
 

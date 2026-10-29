@@ -1,0 +1,97 @@
+---
+id: TC-490
+title: "E3 resolves header profile selections against the layer table"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-110
+    type: verifies
+---
+# TC-490: E3 resolves header profile selections against the layer table
+
+## Description
+
+Verify that spine `compile` admits a header profile only when its identity
+is a header-selectable layer's, refuses every other header profile
+with its catalogued code and cause, and restricts each declaration to its
+selected layer's forms. Scope: FR-110-AC-1 to FR-110-AC-3 and FR-110-AC-5
+to FR-110-AC-13.
+
+This catches a resolver that accepts any catalog row as a profile, a parser
+that still accepts a header `version` or `digest`, and a resolver that stops
+at the first refusing profile.
+
+## Test Procedure
+
+Every unit starts with `language "ix:native" edition "1-draft";`, then its
+header profiles, each `profile <alias> = "<identity>";`, then
+`function f using v(): Boolean pure { true }`. `R` is
+the layer table's root definition identity; the test reads it from the
+table, never from a literal.
+
+1. Compile the unit whose one profile is `v` with `R`'s identity. Read the
+   emitted package.
+2. Compile it with the identity `test:unknown-profile`.
+3. Compile it with the `ieee_profile` definition's identity, then with the
+   `edition` definition's.
+4. Compile it with one further token, the word `version`, after the
+   profile's identity string and before its `;`.
+5. Compile a unit with profiles `v` (`R`'s identity), `w` (the
+   `ieee_profile` definition's identity) and `x` (`test:unknown-profile`). Then
+   compile a unit with profiles `v` and `u`, both `R`'s identity.
+6. Compile six units, each with one profile `v` naming, in turn,
+   `quire.state.core/v1`, `quire.state.queries/v1`,
+   `quire.state.graph/v1`, `quire.value.complete/v1`,
+   `quire.model.complete/v1` and `quire.temporal.complete/v1`; each unit's
+   declaration uses only forms admitted by that profile.
+7. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
+   declaration calls a named predicate, then one that declares a named
+   predicate; then both units with `v` naming `quire.state.queries/v1`.
+
+8. (Retired with FR-110-AC-9: no layer-table comparison.)
+9. For each layer FR-110-AC-10 names, compile a unit whose profile `v`
+   names the layer and whose declaration holds one equality of each
+   FR-110-AC-10 operand family, then the `r = 1` unit under
+   `quire.state.core/v1`.
+10. Compile a unit with no header profile holding `r = q` over records and
+    `x = y` over `Int[0, 9]`; then, under `quire.value.complete/v1`,
+    `quire.state.graph/v1` and `quire.model.complete/v1`, a unit holding
+    `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with
+    a `Reference<Order>` field (FR-110-AC-11).
+11. Build `complete::header_profile_catalog()`. Call `contains` with each
+    identity of the layer table's layers, with
+    `test:unknown-profile` and with each qualification definition's
+    identity. For each layer step 6 names, run `complete::parse_with_catalog`
+    with that catalog over the unit whose one profile `v` names the layer;
+    then over the unit with `test:unknown-profile`, and over the unit with
+    the `ieee_profile` definition's identity (FR-110-AC-12).
+
+12. Compile a unit whose profile `v` names `quire.temporal.complete/v1` and
+    whose declarations hold one equality of each FR-110-AC-10 operand
+    family (FR-110-AC-13).
+
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-13", "TC-490")]` over the
+criteria each step backs.
+
+## Expected Results
+
+- Step 1 compiles. `profile_selections` is empty.
+- Step 2 refuses `unknown_profile`/`unsupported-selection` at the identity
+  literal's span, naming `v`, the selection and required role `root`. No
+  package.
+- Step 3 refuses `unknown_profile`/`wrong-selection-role` twice, once per
+  compile, each retaining the selection and required role `root`.
+- Step 4 refuses as a syntax error at the token after the identity string,
+  before E3, with no package.
+- Step 5's first unit refuses with exactly two refusals, `w`'s then `x`'s,
+  and no package. Its second unit compiles.
+- Step 6: all six units compile.
+- Step 7: the call refuses `unsupported_construct`/`expression-form` at the
+  call's span and the predicate declaration refuses
+  `unsupported_construct`/`declaration-form` at the declaration's span,
+  each naming `quire.state.core/v1`, with no package; both
+  `quire.state.queries/v1` units compile.
+- Step 8: retired.
+- Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
+- Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
+- Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every qualification definition identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
+- Step 12: the unit compiles; every equality compiles (FR-110-AC-13).

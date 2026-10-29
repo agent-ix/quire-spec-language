@@ -195,7 +195,7 @@ The item settles `refuted` (V-4) with this lasso, bound to the only `m`:
 | 1 | `2` | `rel`, back to position 0 |
 
 Replay re-executes `acq(2)` and `rel` from the snapshot, checks that the last
-post-state digest equals position 0's, checks weak fairness of `acq(1)` (it
+post-state key equals position 0's, checks weak fairness of `acq(1)` (it
 is disabled at position 1) and of `acq(2)` (taken), and evaluates `always
 eventually holds(m.owner = 1)` over the lasso: `owner` is never 1, so the
 formula is false at position 0, `trace_position` `0`. `acquire` is taken in

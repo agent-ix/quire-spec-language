@@ -37,7 +37,7 @@ the identities their step names.
    `import A` in `B`; then with a dependency input supplying a library whose
    source has `A`'s (authority, identity).
 3. Compile FR-480-AC-3's two-alias units with distinct bodies; with `B`'s
-   body on `A`'s operation; with the two selections under different digests.
+   body on `A`'s operation.
 4. Through the FR-278 composition, compile FR-480-AC-4's profile-order and
    profile-set mismatches between two `1-draft` units, its `v`/`w` alias
    pair, the empty list and the duplicate source identity.
@@ -45,7 +45,7 @@ the identities their step names.
    owner, node id, source-map region and the `package_id`.
 6. Compile FR-480-AC-6's two documents in both orders.
 7. Replay step 1's first package through FR-098 with the canonical
-   reference, the reversed reference, a repeated source, `U2` dropped and a
+   reference, the reversed reference, a repeated source and a
    definition document.
 8. Read AC-2's checked units and inspect the source reference and type report
    carried by each.
@@ -59,15 +59,14 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
 
 - Step 1: D10's results (`absent-key`, then `precondition-false`) with equal
   charges in every order and placement; byte-equal packages for both
-  orders of each placement; `lock.sources` in canonical unit order; the
+  orders of each placement; `sources` in canonical unit order; the
   shared `false` node's occurrences numbered `U1`'s first in both orders.
 - Step 2: checks, `px`'s parameter typed by `A`'s `Point`;
   `ambiguous_declaration`/`ambiguous-name` naming both declarations; FR-099's
   unsupplied-import refusal; `invalid_package`/`conflicting-definition`
   before any parse, naming `A` and the library entry.
 - Step 3: links; `conflicting_declaration`/`duplicate-declaration`, no
-  package; `invalid_package`/`conflicting-definition` naming both
-  selections.
+  package.
 - Step 4: `invalid_package`/`conflicting-definition` at the later header for
   each mismatch; the alias pair checks; `invalid_package`/`invalid-value`;
   `invalid_package`/`conflicting-definition` before any parse.
@@ -76,8 +75,7 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
 - Step 6: row 1 at `z`, then row 6 at `u_self`.
 - Step 7: the same `package_id` and the D10 call replays, for the
   canonical and the reversed reference; `invalid_package`/`invalid-value`
-  at `/package/sources` before any recompile for the repeated source; `stale_dependency`/`content-mismatch` on the
-  `package_id` comparison; a refusal before any recompile.
+  at `/package/sources` before any recompile for the repeated source; a refusal before any recompile for the definition document.
 - Step 8: two checked units, each carrying its own source reference and a type
   report from that source's parse; the API provides no separate report/source
   rebinding operation.

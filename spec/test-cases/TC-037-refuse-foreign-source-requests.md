@@ -14,14 +14,8 @@ Integration, P1; verifies FR-014-AC-3 at the native-to-IR trust boundary.
 
 ## Test Procedure
 
-Bind one Source. Reload four requests, each changing exactly one of its native
-identity, revision, path or same-length bytes. Map a valid span from each request
-and then map the original span again. Also reload an independently allocated
-Source with all four values identical and map the same span.
+**RETIRED with FR-014-AC-3.** The bridge compares no request source against a bound source, so there is no foreign-source refusal to test.
 
 ## Expected Results
 
-Each changed request refuses with invalid_source_map/source_map at byte zero of
-the bound source, retaining its original labels, no related declarations and no
-upstream diagnostic. The original and independently reloaded identical requests
-produce equal IR spans after every refusal.
+None: retired with FR-014-AC-3.

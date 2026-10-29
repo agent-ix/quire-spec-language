@@ -1,26 +1,26 @@
 ---
 id: TC-416
-title: "The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id"
+title: "The v2 emission arm writes the nodes check lowered, and each emitted node rebuilds to its key"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-093
     type: verifies
 ---
-# TC-416: The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id
+# TC-416: The v2 emission arm writes the nodes check lowered, and each emitted node rebuilds to its key
 
 ## Description
 
 Verify the FR-093 ownership split: `check` lowers and keys, and the layer-4
-`package` emission arm only serializes. Every emitted node's key, recomputed
-from the node as written, equals its `node_id`, and `package` builds no body
+`package` emission arm only serializes. Every emitted node's key, rebuilt
+from the node as written, equals the preimage `check` keyed, and `package` builds no body
 term and calls no key function.
 
 This catches a second lowering in `package` that drifts from the one `check`
-hashed, which a reader would refuse as `stale-node-key`.
+keyed.
 
 It also verifies each node's `dependencies` against FR-093's Node
 dependencies rules, and the emission against QSpec's v2 positive fixtures by
-the members those fixtures pin. This catches a type annotation listed as a
+the members those fixtures fix. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
@@ -32,7 +32,7 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
    (FR-093-AC-1, AC-2) under owner (`a`, `u`).
 2. For each emitted node, rebuild its preimage from the wire node (FR-322's
    application-node rule when its body holds an application, else FR-092's
-   structural-node rule) and hash it.
+   structural-node rule) and compare it with the node's key.
 3. Scan the `package` crate's non-test code for a node body term
    constructor, a node-identity preimage builder and a `NodeKey`
    constructor call.
@@ -74,8 +74,8 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     writes (admitted, or one of the two cases of FR-093-AC-19) or as a
     kind QSL never writes, with its reason. Emit a fixture for each family
     QSL writes: the packages of steps 1, 5, 6, 7 and 10, `fadd` over
-    `Float32[nearest-even]`, the declared record and tuple, TC-435's and
-    TC-442's spine fixtures, TC-442's unit with a `Population<M::Gadget>[3]`
+    `Float32[nearest-even]`, the declared record and tuple, TC-435's spine
+    fixtures, `tests/fixtures/spine-model.native`'s unit with a `Population<M::Gadget>[3]`
     parameter, and with `Population<M::Gadget>[N]` parameters for N = 0, N = 1
     and two distinct bounds in one function, each population node carrying
     role `type` alone and its bound as the `max` binding, a reference to a systems interface, TC-469's ConfigVersion
@@ -97,15 +97,14 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     each clause function's `generated` occurrence is placed at a region of
     it; an `UnlocatedOccurrence` refusal fails the step. For every emitted node, read its `owner` and
     compare it with the owner of the node's preimage; confirm the wire
-    `identity_preimage` carries no `identity_projection`; recompute each structural key and each
+    `identity_preimage` carries no `identity_projection`; rebuild each structural key and each
     group label from the wire node alone with a test-side key function that
     calls no `qsl-package` function, and read each package with IR's v2
     reader (FR-093-AC-21).
 13. Check and emit `record Point { x: Integer; }` and
     `record List { next?: List; }` under (`agent-ix`, `example-a`), then
     under (`agent-ix`, `example-b`). Compare the two packages' `Point` ids,
-    `List` group labels, `List` group member ids, `Integer` ids and
-    `package_id`s, and read both with IR's v2 reader (FR-093-AC-22).
+    `List` group labels, `List` group member ids and `Integer` ids, and read both with IR's v2 reader (FR-093-AC-22).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -117,38 +116,34 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
 
 ## Expected Results
 
-- Step 2: every recomputed key equals the node's `node_id`.
+- Step 2: every rebuilt preimage equals the node's key.
 - Step 3: no match.
 - Step 4: every node has at least one occurrence; `a`'s parameter node has an
   `expression` occurrence over its binder site (QSpec FR-341-AC-10) and one
   `expression` occurrence per read; the scalar nodes typing P1's body
   literals have a `generated` occurrence.
 - Step 5: the three members carry the label
-  the group digest of FR-092 vectors G4 to G6, their
-  graph order is G5, G6, G4 (ordinals 0 to 2), and step 2's recomputation
+  the group key of FR-092 vectors G4 to G6, their
+  graph order is G5, G6, G4 (ordinals 0 to 2), and step 2's rebuild
   from graph order gives G4 to G6.
-- Step 6: every emitted list equals its rebuilt list. In ascending digest
+- Step 6: every emitted list equals its rebuilt list. In ascending node-key
   order, E1 lists P2, P1; F2 lists P2, P1, E1; E2 lists L1, F2, P1; T4 lists
   T2; G4 lists G5, P4; G5 lists L1, G6, E11; G6 lists E13, G4; G7 lists G9;
   G8 lists G7; G9 lists G8; T1, L1 and P1 list none.
 - Step 7: IR admits each emitted package, and each compared member equals
   the fixture's. The compared members are exactly those FR-093-AC-13
   names.
-- Step 8: the lock and the identity preimage carry the same two entries,
-  `test/geometry` then `test/units`, each with the package's `package_id`;
-  the package reads back Verified and its `package_id` differs from the
-  unlinked graph's; the chain's closure is `test/b`, `test/c`, `test/units`,
+- Step 8: the package carries the two entries,
+  `test/geometry` then `test/units`, each with the `package_id` the emitted library carries (a wire member, QSpec FR-322);
+  the package reads back Verified; the chain's closure is `test/b`, `test/c`, `test/units`,
   with paths `[b]`, `[b, c]` and `[b, c, units]`; `test/\u{FF61}` is
-  written before `test/\u{1F600}` and reads back Verified. The
-  vectors' `package_id` recomputes, each entry mutation refuses at its entry
+  written before `test/\u{1F600}` and reads back Verified. Each entry mutation refuses at its entry
   and each order vector gets its recorded outcome and locus.
 - Step 9: `diagnostics.catalog` is exactly authority `agent-ix` and
   identity `quire.native.diagnostics/v1`, with no other member, and IR
-  admits the package (FR-093-AC-17). The lock's `edition` and each
-  `definition_selections` row are exactly the catalog row's `authority` and
+  admits the package (FR-093-AC-17). The package's `edition` is exactly the catalog row's `authority` and
   `identity`, and a `Float64` addition's `ieee_profile` law `definition` is
-  the same two-member row and a member of `definition_selections`
-  (FR-093-AC-20).
+  the same two-member row (FR-093-AC-20).
 - Step 10: every package emits with nothing omitted. Each member node's
   occurrences are exactly one `generated` occurrence, ordinal 0, whose
   region text is `a < b`, `a = b`, or `Status` when no function names the
@@ -158,7 +153,7 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   Verified (FR-093-AC-18).
 - Step 11: every IR node kind is classified exactly once, and every family
   a fixture emits is classified as written by QSL. IR admits every fixture
-  at its emitted `package_id` with a node of each of its rows' families,
+  as emitted with a node of each of its rows' families,
   the `Tree` equality's `quire.op.structural.eq` node included.
   TC-160's `q` and `t`, over a `metre` unit the fixture unit's own source
   declares, give the `dimension`, `unit` and `compound_unit` rows. No node is
@@ -168,9 +163,9 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   `SourceOwner` (`a`, `u`) on `P`, `Tree` and the declared function, the
   `ModelOwner` on M1, M5 and the clause functions C1, C2, C4, C5 and C6,
   and no `owner` on any other node, including the enum declaration and
-  member nodes; every recomputed key
-  equals its `node_id`, the `Tree` label recomputes, and IR admits each
+  member nodes; every rebuilt key
+  equals its node's key, the `Tree` label rebuilds, and IR admits each
   package (FR-093-AC-21).
 - Step 13: the `Point` ids differ, the `List` labels and member ids differ,
-  the `Integer` id is equal, the `package_id`s differ, and IR admits both
+  the `Integer` id is equal, and IR admits both
   (FR-093-AC-22).

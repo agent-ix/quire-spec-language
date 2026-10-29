@@ -50,15 +50,13 @@ The numbered groups correspond to the requirement's acceptance criteria.
    with rational content and then with only historical integer/text content.
    Both selected `/2` imports refuse before a historical LinkedPackage exists.
    Keep a matching `/1` control. Bind real `/2` exports through composed
-   `bind_models`; independently substitute digest, nominal owner and export
+   `bind_models`; independently substitute nominal owner and export
    selection and require the existing typed refusal with original source locus.
 6. Compare `/1` and `/2` artifacts over identical compatible typed inputs:
-   their profile fields and raw native digests differ. Mutate rational bounds,
+   their profile fields and raw native bytes differ. Mutate rational bounds,
    unit and source bytes individually; reorder set-like role/site inventories
    separately. Compare actual artifact content and upstream IR canonical bytes,
    requiring mutation sensitivity and deterministic permitted reordering.
-   Substitute IR canonical and source-byte digests at the native import slot;
-   neither selects the model. No manual checksum catalog is needed.
 7. Derive source-byte, entry, role/site/type-node and output-size expectations
    from controlled fixed inputs and existing accounting rules, including wrapped
    rational leaves and profile-bearing artifact content. Run zero, exact,

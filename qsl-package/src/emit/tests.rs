@@ -69,6 +69,7 @@ mod state_transition;
 mod step_relation;
 mod temporal_clause;
 mod terminal;
+mod timed_clauses;
 mod timed_source;
 mod union_nodes;
 mod variant_types;
@@ -1458,7 +1459,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
             }
-            Err(EmitRefusal::TimedModelNotEmitted { .. }) => {
+            Err(EmitRefusal::TimedModelNotEmitted { .. } | EmitRefusal::TimedOrder(_)) => {
                 panic!("the fixture set declares no timed model")
             }
         }

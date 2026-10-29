@@ -16,7 +16,7 @@ Scope: FR-320-AC-1, FR-320-AC-2.
 
 1. Compile and emit a package with `union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }`, `area` (FR-318-AC-1) and a function returning
    `Shape::Rect(2, 3)`; read it back through I2.
-2. Recompile the digest-addressed source through replay's S1 to S4.
+2. Recompile the identity-addressed source through replay's S1 to S4.
 3. Emit the same package against an IR build that cannot decode the union
    (tag, form).
 

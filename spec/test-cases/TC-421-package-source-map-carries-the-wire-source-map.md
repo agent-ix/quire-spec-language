@@ -24,7 +24,7 @@ Scope: FR-095-AC-3, FR-095-AC-4.
    regions. Look up each entry's key and each node's occurrences.
 2. Build a map with an empty entry, and one with a key mapped twice.
 3. Convert a hand-built entry with region start 9, end 3, and one whose node
-   id digest is uppercase hex; read each defect's refusal code. Map each of
+   id is not lowercase hex; read each defect's refusal code. Map each of
    IR's six occurrence roles to its spelling and compare it with IR's own
    serialized spelling.
 4. Read the QSpec checkout's published positive fixtures at
@@ -40,7 +40,7 @@ Tag the tests `#[trace("TC-421", "FR-095-AC-n")]` with the AC each backs.
 ## Expected Results
 
 - Step 1: each key maps to exactly its wire regions in wire order, under the
-  wire's authority, identity and digest; each node has exactly its
+  wire's authority and identity; each node has exactly its
   one entry.
 - Step 2: `NoRegion` and `DuplicateOccurrence`.
 - Step 3: `ReversedRegion` and a node-id defect, each `invalid_source_map`;
