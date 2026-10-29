@@ -556,10 +556,6 @@ pub struct AdmittedPackage {
     package: wire::Package,
     digest: ByteDigest,
     artifact: wire::ArtifactRef,
-    // Owned copies of the independently admitted models retain the field/type
-    // schema needed by state evaluation after the reader's borrowed inputs end.
-    // `None` for a domain-package model, which state evaluation cannot read.
-    model_schema: Vec<Option<NativeModel>>,
     clocks: ClockNames,
 }
 
@@ -575,12 +571,6 @@ impl AdmittedPackage {
     /// Raw-byte digest that matched the independently expected external seal.
     pub fn digest(&self) -> ByteDigest {
         self.digest
-    }
-
-    pub(crate) fn schema_model(&self, index: u32) -> Option<&NativeModel> {
-        self.model_schema
-            .get(usize::try_from(index).ok()?)?
-            .as_ref()
     }
 
     /// Independently selected compiled artifact identity admitted by the reader.

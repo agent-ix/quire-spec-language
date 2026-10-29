@@ -117,6 +117,24 @@ impl Engine {
         contract_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
     }
 
+    /// The value-validity arm publishing `max_cases` as its default case
+    /// budget (QSpec FR-483 "Descriptor modes, domains and registration").
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the arm's manifest.
+    pub fn value_check_with_max_cases(
+        max_cases: std::num::NonZeroU64,
+    ) -> Result<Self, RegistrationRefusal> {
+        value_check::manifest::descriptor_with(ProviderOrigin::Linked, linked_digest(), max_cases)
+            .map(Self::new)
+    }
+
+    /// The default `max_cases` this engine's descriptor publishes.
+    pub(crate) fn max_cases(&self) -> Option<std::num::NonZeroU64> {
+        self.descriptor.max_cases()
+    }
+
     /// The engine's backend identity.
     pub fn id(&self) -> &BackendId {
         self.descriptor.id()
@@ -321,7 +339,7 @@ pub(crate) enum Refusal {
 }
 
 /// The work an engine runs for one item.
-type Work<'a> = Box<dyn FnOnce(&Cancel) -> EngineReport + 'a>;
+type Work<'a> = Box<dyn FnOnce(&Cancel, &Engine) -> EngineReport + 'a>;
 
 /// One item to analyze: its request index, its claim, its settled
 /// disposition and the work an engine runs for it, when the claim kind has an
@@ -344,6 +362,25 @@ impl<'a> AnalyzeItem<'a> {
         mode: Mode,
         backend: &str,
         work: impl FnOnce(&Cancel) -> EngineReport + 'a,
+    ) -> Self {
+        Self {
+            index,
+            kind,
+            mode,
+            disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
+            diagnostic: None,
+            work: Some(Box::new(move |cancel, _| work(cancel))),
+        }
+    }
+
+    /// As [`Self::new`], for work that reads the engine's descriptor: the
+    /// value-validity arm takes its `max_cases` default from it.
+    pub(crate) fn new_with_engine(
+        index: RequestIndex,
+        kind: Capability,
+        mode: Mode,
+        backend: &str,
+        work: impl FnOnce(&Cancel, &Engine) -> EngineReport + 'a,
     ) -> Self {
         Self {
             index,
@@ -454,6 +491,20 @@ impl AnalyzeRecord {
     /// from its own disposition and diagnostic.
     pub fn outcome_item(&self) -> Option<OutcomeItem> {
         let terminal = self.terminal()?;
+        if let (Some(value), TerminalValue::Refuted) = (&self.value_check, terminal.value()) {
+            if let Some(undefined) = &value.reproduced.violation().undefined {
+                return Some(OutcomeItem::undefined_evaluation(
+                    self.request_index,
+                    format!(
+                        "node {}, occurrence {}/{}",
+                        undefined.locus.node(),
+                        undefined.locus.origin().role().as_str(),
+                        undefined.locus.origin().ordinal()
+                    ),
+                    undefined.reason,
+                ));
+            }
+        }
         let kind = self
             .counterexample()
             .map(|counterexample| &counterexample.kind)
@@ -571,7 +622,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
             IncompleteCause::Cancelled { source },
         )));
     }
-    settle(index, kind, engine, work(cancel))
+    settle(index, kind, engine, work(cancel, engine))
 }
 
 fn terminal(record: TerminalRecord) -> Settlement {

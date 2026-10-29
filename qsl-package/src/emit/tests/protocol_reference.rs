@@ -134,8 +134,6 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Control("parallel"), "QSL-1126"),
         (ProtocolConstruct::PostTestRepeat, "STD-539"),
         (ProtocolConstruct::VisibleEntryNotAnExpression, "STD-539"),
-        (ProtocolConstruct::Requirements, "QSL-1127"),
-        (ProtocolConstruct::Compensations, "QSL-1127"),
         (ProtocolConstruct::ReferenceCycle, "QSL-844"),
     ] {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");

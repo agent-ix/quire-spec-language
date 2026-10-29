@@ -571,13 +571,16 @@ fn one_source_under_two_owners_differs_exactly_on_the_owner_keyed_nodes() {
 /// The emitter reproduces the nodes of QSpec's published two-owner and
 /// recursive-record fixtures (QSpec FR-322-AC-53): equal node ids, owners,
 /// group labels and bodies for `Point`, `List`, its `Option` node and
-/// `Integer`. Reads the fixtures from `the QSpec checkout` (skipped, and passing,
+/// `Integer`. Reads the fixtures from `$QSPEC_DIR` (skipped, and passing,
 /// when it is unset; `make conformance` requires it); nothing of QSpec is
 /// copied into this repository.
 #[trace("FR-093-AC-22", "TC-416")]
 #[test]
 fn conformance_the_emitter_reproduces_qspec_two_owner_fixture_nodes() {
-    let qspec = qspec_directory();
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2/fixtures");
     for (file, identity) in [
         ("positive-two-owners-a.json", "example-a"),
@@ -614,14 +617,4 @@ fn conformance_the_emitter_reproduces_qspec_two_owner_fixture_nodes() {
             }
         }
     }
-}
-
-fn qspec_directory() -> std::path::PathBuf {
-    std::path::PathBuf::from(
-        std::env::var_os("QSPEC_DIR")
-            .filter(|path| !path.is_empty())
-            .unwrap_or_else(|| {
-                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
-            }),
-    )
 }

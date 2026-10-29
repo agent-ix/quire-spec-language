@@ -131,6 +131,7 @@ fn p_environment() -> TypeEnvironment {
 
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-1")]
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-5")]
+#[trace("TC-136", "FR-049-AC-3")]
 #[test]
 fn r01_equal_records_compare_structurally_whatever_the_source_field_order() {
     let env = p_environment();
@@ -174,6 +175,7 @@ fn r01_equal_records_compare_structurally_whatever_the_source_field_order() {
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-2")]
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-5")]
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-6")]
+#[trace("TC-136", "FR-049-AC-3")]
 #[test]
 fn r02_equal_shapes_of_distinct_declarations_do_not_compare() {
     let x = || vec![field("x", ValueType::Integer, Presence::Required)];
@@ -322,6 +324,7 @@ fn r06_recursion_rule_names_each_refused_cycle() {
 
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-6")]
+#[trace("TC-136", "FR-049-AC-3")]
 #[test]
 fn r07_absence_null_and_malformed_constructions_refuse_at_their_origin() {
     let env = p_environment();
@@ -1179,6 +1182,7 @@ mod checked {
     }
 
     #[trace("QSpec-TC-188", "QSpec-FR-143-AC-10")]
+    #[trace("TC-136", "FR-049-AC-3")]
     #[test]
     fn r11_optional_field_projections_need_present_or_value() {
         let x = [("x", composite("P"))];

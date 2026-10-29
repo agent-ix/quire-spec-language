@@ -45,7 +45,6 @@ pub mod package_vector_setup;
 pub mod protocol_artifact;
 pub mod spine_model;
 pub mod standalone_setup;
-pub mod static_authority;
 pub mod temporal;
 pub mod workspace;
 

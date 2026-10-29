@@ -220,9 +220,6 @@ cd quire-spec-language
 cargo build --locked --bin quire-spec
 ```
 
-Conformance and qualification checks require `QSPEC_DIR` to name an available
-QSpec checkout. This repository stores no QSpec source or revision.
-
 **Format.** `format` prints the formatted source and leaves the file unchanged.
 The four arguments before the path are the source identity (authority, id,
 revision namespace, revision). Every diagnostic carries them.
@@ -284,11 +281,25 @@ ceiling is an explicit refusal naming the file (exit 20), never truncated.
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
   --model examples/switch-transition/switch.semantic-ir.json \
-  examples/switch-transition/switch.native > package.json
+  examples/switch-transition/switch.native.in > package.json
 ```
 
 The package is read back with the same domain documents as evidence
 (`CheckedPackageEvidence::insert_domain_package_document`).
+
+**Source templates.** A source that carries the placeholder `{model_digest}` where a
+`model` statement's digest goes (as `examples/switch-transition/switch.native.in` does) is
+filled, byte-wise, with the `sha256-jcs` digest of the single `--model` file, so no
+committed file freezes a digest. Every occurrence of the exact text `{model_digest}` is
+replaced; other `{...}` text is untouched and `{{model_digest}}` becomes the digest in
+single braces; a non-UTF-8 source is filled the same way and left to the producer to
+refuse. A template with no `--model`, several, or one that is not a domain package
+document is an explicit refusal (exit 20, each with its own message). `--source-out
+<path>` writes the rendered source only for a template, only after the producer accepted
+it, and atomically (temporary file, then rename); a refusal leaves no file and a source
+without the placeholder is not copied. The emitted bytes embed the path of the source as
+given, that is the template path (`examples/switch-transition/switch.native.in`), not the
+path of the rendered file.
 
 **Accepted execution points.** `--execution-points <file>` supplies accepted
 state-clause execution points (FR-104-AC-15) through the producer's
@@ -339,7 +350,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 
 | Repository | Role | Relation to QSL |
 | --- | --- | --- |
-| quire-specification | Owns the language standard, profiles, interchange formats and corpus contract. | QSL reads its source-of-truth specification and conformance vectors from the checkout named by `QSPEC_DIR`; `make ci` checks QSL against those vectors, and `make qualify` runs QSL against a supplied corpus. |
+| quire-specification (private) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
@@ -398,14 +409,11 @@ Other directories:
 ## Contributing
 
 `make ci` is the local gate: formatting, clippy, tests across feature
-combinations, docs and the architecture lints. Set `QSPEC_DIR` to an available
-QSpec checkout before running conformance or CI; there is no default checkout
-path. `make qualify CORPUS=<dir>` reads QSpec-owned corpus contracts from
-`QSPEC_DIR` and runs the supplied corpus. The hosted native compiler CI runs
-only on manual dispatch, so run the
-gate before opening a pull request. The separate pull request language-boundary
-check reports only whether new executable paths respect the Rust containment
-rule. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+combinations, docs and the architecture lints. It reads the standard's test
+vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). The hosted
+native compiler CI runs only on manual dispatch, so run the gate before opening
+a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 Contributions require the [CLA](CLA.md).
 

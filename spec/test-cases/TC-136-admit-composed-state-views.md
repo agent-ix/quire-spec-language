@@ -45,6 +45,12 @@ performing a field read under each original full occurrence. With complete
 membership omit a referenced object; repeat with membership or closure
 unavailable.
 
+For a foreign-observation control, keep the checked clause and its selected
+model unchanged, but replace the selected snapshot's `model.digest` with the
+computed digest of another package (TC-465, row 13). Run observation admission
+through the spine entry point and assert `invalid_model_binding` /
+`wrong-model-selection`, no `AdmittedObservations`, and no evaluator call.
+
 Exercise the four former `StaticAuthority` roles at their current owners:
 (1) compile the source document through FR-036 and admit the model fixture
 `{"objects": ["Order", "Line"], "id": "orders-model"}` as the selected
@@ -87,5 +93,14 @@ unavailable values retain their typed cause, skipped unavailable values do not
 change a decisive result, and no incomplete/refused value is exposed as a
 completed result. Model and observation digest mutations retain FR-056/FR-106's
 typed refusal and exact locus; profile resolution and compile configuration
-retain FR-110/FR-036 behavior. No checked-evaluation request accepts the four
+retain FR-110/FR-036 behavior. The foreign-observation control refuses at
+FR-106 admission before evaluation. No checked-evaluation request accepts the four
 legacy independent digest pairs or produces `StaticAuthorityDigest`.
+
+The executable trace is distributed across the tagged cases named in the
+FR-049 verification cells: value-shape and availability cases, graph identity
+cases in TC-129, owner-specific source/model/profile/configuration admission
+cases in TC-115, TC-138, TC-442, TC-465 and TC-490, and protocol-slot short-circuit
+cases in `qsl-eval/tests/it/protocol_slots.rs`. These cases preserve their
+owning FR tags; TC-136 is the shared test-case classification, not a claim that
+one test function covers every owner.
