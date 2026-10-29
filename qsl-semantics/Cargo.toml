@@ -34,7 +34,7 @@ quire-checked = { workspace = true, features = ["construct"] }
 quire-semantic-value = { workspace = true }
 # FR-307's identity projection reads the IR-owned closed V2 node-tag
 # vocabulary; it must not carry a second QSL copy that can drift from I2.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "code/ir1105-product-no-digests" }
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1).
 quire-walk = { workspace = true }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] }
