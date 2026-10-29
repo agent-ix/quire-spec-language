@@ -12,9 +12,8 @@ relationships:
 
 Verify `library`'s verified binding (ADR-011 §4): a `VerifiedPackage` is
 constructed from v2 wire bytes only when all three named conditions hold —
-(1) the schema version is a supported v2 version, (2) the recomputed
-FR-322 `package_id` (the `quire.package.semantic/v2` digest of the JCS
-bytes of the read `identity_preimage`) lexically equals the declared
+(1) the schema version is a supported v2 version, (2) the `package_id`
+recomputed according to QSpec FR-322 lexically equals the declared
 `package_id`, and (3) that identity is listed in the consumer's library
 lock or pinned request — and that each of the three failure modes refuses
 independently, with a named cause and no partial output, never falling
@@ -62,7 +61,8 @@ FR-087-AC-3.
    two declaring nodes, one in ascending and one in descending node-id
    order, each pinned at its own recomputed `package_id`. Under
    `make conformance`, read every QSpec positive fixture
-   (`$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json`)
+   (in place from the QSpec checkout at
+   `proposals/checked-package-v2/fixtures/positive-*.json`)
    through the whole I2 read. Then check an identity preimage that repeats a
    node id at adjacent positions, and one that repeats it two positions
    apart (`[R, S, R]`).
