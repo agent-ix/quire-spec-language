@@ -199,10 +199,14 @@ pub struct SubjectReading {
 /// FR-438).
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ProtocolReading {
-    /// The clause's node; `None` for a clause with no node.
+    /// The clause's node; `None` for a clause with no node. A subject names
+    /// one protocol clause, so every reading of it has the same node.
     node: Option<WireNodeId>,
-    /// The resolved models of a subject that gets a race-freedom item.
-    race: Option<Vec<(String, MemoryModelName)>>,
+    /// Each distinct set of resolved models the subject's items are over
+    /// that gets a race-freedom item, in the order each first occurs: the
+    /// resolved models are part of the protocol subject (QSpec FR-425), so
+    /// each set gets its own item, as one `(subject, models)` pair does.
+    races: Vec<Vec<(String, MemoryModelName)>>,
 }
 
 impl SubjectReading {
@@ -250,18 +254,23 @@ impl SubjectReading {
             (None, Some(protocol)) => self.protocol = Some(protocol.clone()),
             (Some(seen), Some(protocol)) => {
                 seen.node = seen.node.or(protocol.node);
-                if seen.race.is_none() {
-                    seen.race.clone_from(&protocol.race);
+                for models in &protocol.races {
+                    if !seen.races.contains(models) {
+                        seen.races.push(models.clone());
+                    }
                 }
             }
             (_, None) => {}
         }
     }
 
-    /// The resolved models of a protocol subject that gets a race-freedom
-    /// item (FR-224, QSpec FR-438); `None` for every other subject.
-    pub fn race(&self) -> Option<&[(String, MemoryModelName)]> {
-        self.protocol.as_ref()?.race.as_deref()
+    /// Each set of resolved models of a protocol subject that gets a
+    /// race-freedom item (FR-224, QSpec FR-438), in the order each first
+    /// occurs; none for every other subject.
+    pub fn races(&self) -> &[Vec<(String, MemoryModelName)>] {
+        self.protocol
+            .as_ref()
+            .map_or(&[], |protocol| protocol.races.as_slice())
     }
 
     /// QSpec FR-368 "Claim and anchor of a derived or refinement item": the
@@ -387,7 +396,11 @@ impl<S: Clone> ProtocolTemporalItem<'_, S> {
                     .protocol
                     .node()
                     .map(|key| WireNodeId::from_digest(*key.as_bytes())),
-                race: (weak && self.non_atomic_access).then(|| self.models.to_vec()),
+                races: if weak && self.non_atomic_access {
+                    vec![self.models.to_vec()]
+                } else {
+                    Vec::new()
+                },
             }),
         }
     }

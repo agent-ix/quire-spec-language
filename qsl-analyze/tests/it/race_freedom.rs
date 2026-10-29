@@ -28,13 +28,13 @@ use qsl_replay::{
     ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
     TemporalCounterexample,
 };
-use qsl_route::deadlock::{ModelTemporalItem, ObligationKind, ProtocolTemporalItem};
+use qsl_route::deadlock::{ModelTemporalItem, NoAnchor, ObligationKind, ProtocolTemporalItem};
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::request::{DerivedLimits, ItemKind, RequestItem};
 use qsl_semantics::check::Capability;
 use qsl_semantics::family::{ClaimExtent, Requirements};
 use quire_exact::Cancel;
-use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::PropertyForm;
 use serde_json::{json, Value as Json};
 
@@ -1534,4 +1534,121 @@ fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
         Some(&ObligationKind::RaceFreedom { models })
     );
     assert!(written.unanchored().is_empty());
+}
+
+/// QSpec FR-425 with FR-438: the resolved models are part of the protocol
+/// subject, so two caller items over one subject `SB`, one under `ra` and one
+/// under `tso`, give one race-freedom item for each set of models, in the
+/// order each first occurs after `SB`'s one deadlock-freedom item; neither
+/// set's item is dropped.
+#[trace("QSpec-TC-392", "QSpec-FR-438-AC-2")]
+#[test]
+fn each_set_of_resolved_models_of_one_subject_gets_its_race_freedom_item() {
+    let case = two_plain_stores();
+    let under_ra = case.subject(&ra());
+    let under_tso = case.subject(&tso());
+    let (ra_models, tso_models) = (models_of(&under_ra), models_of(&under_tso));
+    assert_ne!(ra_models, tso_models);
+    let graph = case.checked().graph();
+    let protocol = graph.protocol("SB").expect("SB");
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let other = other_claim();
+    let item = |occurrence, models| ProtocolTemporalItem {
+        occurrence,
+        subject: &under_ra.protocol,
+        protocol,
+        models,
+        non_atomic_access: true,
+    };
+    let written = protocol_request(&[item(&clause, &ra_models), item(&other, &tso_models)]);
+    let derived: Vec<_> = written.items()[2..]
+        .iter()
+        .map(|item| {
+            let obligation = written.obligation(item.index()).expect("its obligation");
+            (item.item_kind(), obligation.kind.clone())
+        })
+        .collect();
+    assert_eq!(
+        derived,
+        [
+            (
+                Some(ItemKind::DeadlockFreedom),
+                ObligationKind::DeadlockFreedom
+            ),
+            (
+                Some(ItemKind::RaceFreedom),
+                ObligationKind::RaceFreedom { models: ra_models }
+            ),
+            (
+                Some(ItemKind::RaceFreedom),
+                ObligationKind::RaceFreedom { models: tso_models }
+            ),
+        ]
+    );
+    assert!(written.unanchored().is_empty());
+}
+
+/// QSpec FR-368-AC-22's settlement for a protocol subject whose clause has
+/// no node (its unit selects no protocol profile): its deadlock-freedom and
+/// race-freedom items are written as no request item and settled
+/// `unsupported` with `unsupported_projection`/
+/// `unsupported-requested-capability`, cause `NoProtocolNode`, each detail
+/// naming the item kind and the missing node. QSpec FR-368 states no anchor
+/// for such a clause; this is QSL's reading, by FR-331's unemitted package.
+#[trace("QSpec-TC-431")]
+#[test]
+fn a_protocol_subject_whose_clause_has_no_node_gets_no_derived_request_item() {
+    let case = unit(&message_passing("", "release", "acquire"), &MP);
+    let subject = case.subject(&ra());
+    let models = models_of(&subject);
+    let graph = case.checked().graph();
+    let protocol = graph.protocol("SB").expect("SB");
+    assert_eq!(protocol.node(), None);
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let written = protocol_request(&[ProtocolTemporalItem {
+        occurrence: &clause,
+        subject: &subject.protocol,
+        protocol,
+        models: &models,
+        non_atomic_access: true,
+    }]);
+    let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
+    assert_eq!(kinds, [Some(ItemKind::Formula)]);
+    let unanchored: Vec<_> = written
+        .unanchored()
+        .iter()
+        .map(|item| {
+            (
+                item.subject.as_str(),
+                item.kind,
+                item.cause,
+                item.catalog_code(),
+                item.detail(),
+            )
+        })
+        .collect();
+    let code = CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
+    assert_eq!(
+        unanchored,
+        [
+            (
+                "SB",
+                ItemKind::DeadlockFreedom,
+                NoAnchor::NoProtocolNode,
+                code,
+                "the deadlock-freedom item's protocol subject's clause has no node, \
+                 so it has no anchor"
+                    .to_owned()
+            ),
+            (
+                "SB",
+                ItemKind::RaceFreedom,
+                NoAnchor::NoProtocolNode,
+                code,
+                "the race-freedom item's protocol subject's clause has no node, \
+                 so it has no anchor"
+                    .to_owned()
+            ),
+        ]
+    );
 }

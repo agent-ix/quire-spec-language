@@ -195,7 +195,8 @@ impl<S: Clone + Eq> ModelRequest<S> {
     /// any` gets a `deadlock-freedom` item, each timed subject a
     /// `time-lock-freedom` item, and each protocol subject with a weak
     /// resolved model and a non-atomic shared access a `race-freedom` item
-    /// (QSpec FR-438). A derived item's
+    /// for each distinct set of resolved models its items are over (QSpec
+    /// FR-425, FR-438). A derived item's
     /// candidates are the `temporal-satisfaction` backends under `registry`
     /// for the backend `named`, restricted to EN-6's zone search, the
     /// backends deciding timed subjects, for a timed subject (FR-243) and to those advertising the request's
@@ -219,9 +220,11 @@ impl<S: Clone + Eq> ModelRequest<S> {
             let kinds = [
                 (!reading.opted_out()).then_some(Derived::Deadlock),
                 reading.timed().then_some(Derived::TimeLock),
-                reading.race().map(|models| Derived::Race(models.to_vec())),
-            ];
-            for derived in kinds.into_iter().flatten() {
+            ]
+            .into_iter()
+            .flatten()
+            .chain(reading.races().iter().cloned().map(Derived::Race));
+            for derived in kinds {
                 let kind = derived.item_kind();
                 let property_form = derived.property_form();
                 let claim = match reading.anchor() {
