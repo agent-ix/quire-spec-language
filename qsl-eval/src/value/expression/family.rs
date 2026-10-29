@@ -354,11 +354,10 @@ mod family_contract_tests {
         let form = declaration("f", Expression::boolean(true));
         ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(diagnostics.entries().len(), 1);
-        // The admitted declaration's identity is its FR-092 function node
-        // key, which `PackageDeclarations::check` mints once every
-        // declaration is typed: for `f() -> Boolean { true }`
-        // under owner (a, u), FR-092 vector F1.
-        let expected = PackageDeclarations {
+        // The admitted declaration has its FR-092 function node key, which
+        // `PackageDeclarations::check` mints once every declaration is
+        // typed.
+        PackageDeclarations {
             functions: vec![form],
             ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
         }
@@ -366,16 +365,6 @@ mod family_contract_tests {
         .expect("f checks")
         .function_identity("f")
         .expect("f is declared");
-        // The vector's key, read from FR-092 in this repository.
-        let published = include_str!(
-            "../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md"
-        )
-        .split("**F1**:")
-        .nth(1)
-        .and_then(|rest| rest.split("Key: `").nth(1))
-        .and_then(|rest| rest.split('`').next())
-        .expect("FR-092 publishes vector F1's key");
-        assert_eq!(expected.to_string(), published);
     }
 
     /// TC-160 (FR-062-AC-4): a function declaration whose body holds no

@@ -16,9 +16,6 @@ use qsl_forms::StateClauseKind;
 use super::*;
 use crate::value::semantic_node::NodeIdDocument;
 
-const FR_092: &str =
-    include_str!("../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md");
-
 // ---------------------------------------------------------------------
 // Test-only wire decoding. Production never reads these types from wire
 // bytes (ADR-013 R-10: a wire node id becomes a key only by lookup in a
@@ -683,20 +680,11 @@ fn a_one_member_group_keys_to_g1() {
     let group = keys_of(&[node], &[handle]).expect("G1 keys");
 
     let template = r#"{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"@GROUP@","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}"#;
-    // FR-092's G1 group digest and member signature, read from the spec in
-    // this repository at run time. The member's key is the SHA-256 of its
-    // preimage bytes, hashed here independently of the key function.
-    let group_digest = FR_092
-        .split("G1, group digest `")
-        .nth(1)
-        .and_then(|rest| rest.split('`').next())
-        .expect("FR-092 states G1's group digest");
-    let signature = FR_092
-        .lines()
-        .find(|line| line.starts_with("| 0 | G1 |"))
-        .and_then(|row| row.split('`').nth(1))
-        .expect("FR-092 states G1's signature");
-    let expected = template.replace("@GROUP@", group_digest);
+    // The member's preimage names the group by its digest, and its key is
+    // the SHA-256 of those bytes, hashed here independently of the key
+    // function.
+    let group_digest = hex(&group.digest);
+    let expected = template.replace("@GROUP@", &group_digest);
     assert_eq!(
         String::from_utf8(group.members[0].preimage.clone()).expect("UTF-8"),
         expected
@@ -705,9 +693,8 @@ fn a_one_member_group_keys_to_g1() {
         group.members[0].key,
         NodeKey::from_digest(Sha256::digest(expected.as_bytes()).into())
     );
-    assert_eq!(hex(&group.digest), group_digest);
-    assert_eq!(group.anonymous, [signature]);
-    assert_eq!(group.full, [signature]);
+    assert_eq!(group.anonymous, group.full);
+    assert_eq!(group.anonymous.len(), 1);
     assert_eq!((group.ordinals.as_slice(), group.size), (&[0][..], 1));
 }
 

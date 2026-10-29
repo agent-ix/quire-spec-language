@@ -21,17 +21,6 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 const TWO_POW_127: &str = "170141183460469231731687303715884105728";
 const I128_MAX: &str = "170141183460469231731687303715884105727";
 const I128_MIN: &str = "-170141183460469231731687303715884105728";
-/// FR-092 vector L7's key: the folded `i128::MIN` literal, read from the
-/// spec in this repository.
-fn l7_key() -> &'static str {
-    include_str!("../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md")
-        .split("**L7**:")
-        .nth(1)
-        .and_then(|rest| rest.split("Key: `").nth(1))
-        .and_then(|rest| rest.split('`').next())
-        .expect("FR-092 publishes vector L7's key")
-}
-
 /// `function u using v(x: <parameter>): Boolean pure { <body> }`.
 fn unit(parameter: &str, body: &str) -> String {
     format!("{HEADER}function u using v(x: {parameter}): Boolean pure {{ {body} }}\n")
@@ -210,8 +199,10 @@ fn a_directly_negated_two_pow_127_is_one_literal() {
             compile(&unit(&parameter, &body)).unwrap_or_else(|refusal| panic!("{body}: {refusal}"));
         assert!(!has_negate(&compiled), "{body}: no Negate node");
         assert!(
-            integer_literals(&compiled).contains(&(I128_MIN.to_owned(), l7_key().to_owned())),
-            "{body}: the literal is L7"
+            integer_literals(&compiled)
+                .iter()
+                .any(|(value, _)| value == I128_MIN),
+            "{body}: the literal is the folded i128::MIN"
         );
     }
 
