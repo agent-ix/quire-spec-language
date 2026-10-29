@@ -79,7 +79,8 @@ fn key_table_rows(spec: &str) -> Vec<(String, String)> {
             let [name, description, key] = cells[..] else {
                 return None;
             };
-            (key == "the SHA-256 of its preimage").then(|| (name.to_owned(), description.to_owned()))
+            (key == "the SHA-256 of its preimage")
+                .then(|| (name.to_owned(), description.to_owned()))
         })
         .collect()
 }
@@ -96,7 +97,7 @@ fn assert_published_tables_agree(tag: &str, spec: &str) {
     assert_eq!(keys.len(), vectors.len(), "two vectors share a key");
     for (name, description) in key_table_rows(spec) {
         assert!(
-            vectors.contains_key(&name) || !super::spec_vectors::qspec_available(),
+            vectors.contains_key(&name),
             "{name}: the key table's vector"
         );
         assert_eq!(

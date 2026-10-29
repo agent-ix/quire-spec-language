@@ -10,9 +10,9 @@
 //! of the RFC 8785 array of its members' group-local preimage digests
 //! (FR-092 "Recursive groups"). No key is recorded anywhere, so the spec and
 //! the tests cannot drift apart and nothing is a copy of a computed value.
-//! A placeholder for a QSpec vector key (`<QSpec NAME key>`) reads
-//! `$QSPEC_DIR/proposals/checked-package-v2/node-identity-vectors.json`; the
-//! vectors that need one are absent when `QSPEC_DIR` is unset.
+//! A placeholder for a QSpec vector key (`<QSpec NAME key>`) is recomputed
+//! from QSpec's hand-written nominal preimage (`local_key`); a test compares
+//! it with QSpec's published vector when `QSPEC_DIR` is set.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -100,9 +100,12 @@ fn hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-pub(in crate::check::lowering) fn qspec_key(name: &str) -> Option<String> {
+/// The key QSpec publishes for its nominal vector `name`, read from
+/// `$QSPEC_DIR`; `None` while it is unset.
+pub(in crate::check::lowering) fn published_key(name: &str) -> Option<String> {
     let dir = std::env::var_os("QSPEC_DIR")?;
-    let path = std::path::Path::new(&dir).join("proposals/checked-package-v2/node-identity-vectors.json");
+    let path =
+        std::path::Path::new(&dir).join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =
         std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
     let document: Value = serde_json::from_slice(&bytes)
@@ -113,6 +116,62 @@ pub(in crate::check::lowering) fn qspec_key(name: &str) -> Option<String> {
         .find(|vector| vector["name"] == name)
         .and_then(|vector| vector["sha256"].as_str())
         .map(str::to_owned)
+}
+
+fn owner_json() -> Value {
+    serde_json::json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
+}
+
+fn hex_of(digest: [u8; 32]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The key of QSpec's nominal vector `name` (`dimension-length`,
+/// `dimension-time`, `unit-metre`, `unit-second`), recomputed from the
+/// hand-written preimage; no published key is recorded.
+pub(in crate::check::lowering) fn local_key(name: &str) -> Option<String> {
+    use crate::value::semantic_node::NodeIdentityPreimage;
+    use crate::value::unit::{DimensionPreimage, UnitPreimage};
+    let limits = qsl_foundation::IdentityLimits::default();
+    let dimension = |declared: &str| {
+        let preimage = DimensionPreimage::from_json(serde_json::json!({
+            "version": "quire.dimension-node/v1",
+            "owner": owner_json(),
+            "qualified_declaration": ["Example", declared],
+            "terms": [],
+        }))
+        .expect("a base dimension");
+        hex_of(
+            preimage
+                .digest(limits)
+                .expect("a base dimension has a digest"),
+        )
+    };
+    let unit = |declared: &str, of: &str| {
+        let preimage = UnitPreimage::from_json(serde_json::json!({
+            "version": "quire.unit-node/v1",
+            "owner": owner_json(),
+            "qualified_declaration": ["Example", declared],
+            "dimension_node_id": {
+                "domain": "quire.checked-semantic-node/v1",
+                "digest": local_key(of)?,
+            },
+            "target_unit_node_id": null,
+            "scale": {"numerator": "1", "denominator": "1"},
+            "offset": {"numerator": "0", "denominator": "1"},
+        }))
+        .expect("a root unit");
+        Some(hex_of(
+            preimage.digest(limits).expect("a root unit has a digest"),
+        ))
+    };
+    match name {
+        "dimension-length" => Some(dimension("Length")),
+        "dimension-time" => Some(dimension("Time")),
+        "unit-metre" => unit("metre", "dimension-length"),
+        "unit-second" => unit("second", "dimension-time"),
+        _ => None,
+    }
 }
 
 struct Resolver<'a> {
@@ -138,9 +197,7 @@ impl Resolver<'_> {
             let inner = &tail[..end];
             let replacement = if let Some(target) = inner.strip_prefix("digest of ") {
                 let (target_tag, name) = match target.split_once(' ') {
-                    Some((target_tag, name)) if target_tag.starts_with("FR-") => {
-                        (target_tag, name)
-                    }
+                    Some((target_tag, name)) if target_tag.starts_with("FR-") => (target_tag, name),
                     _ => (tag, target),
                 };
                 Some(self.key(target_tag, name)?)
@@ -150,7 +207,7 @@ impl Resolver<'_> {
                 .strip_prefix("QSpec ")
                 .and_then(|name| name.strip_suffix(" key"))
             {
-                Some(qspec_key(name)?)
+                Some(local_key(name)?)
             } else {
                 None
             };
@@ -207,17 +264,20 @@ impl Resolver<'_> {
             let local = raw.replacen(&marker, "", 1);
             locals.push(self.resolve(tag, &local).map(|local| hex(local.as_bytes())));
         }
-        let digest = locals.into_iter().collect::<Option<Vec<_>>>().map(|locals| {
-            let array = format!(
-                "[{}]",
-                locals
-                    .iter()
-                    .map(|local| format!("\"{local}\""))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-            hex(array.as_bytes())
-        });
+        let digest = locals
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .map(|locals| {
+                let array = format!(
+                    "[{}]",
+                    locals
+                        .iter()
+                        .map(|local| format!("\"{local}\""))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+                hex(array.as_bytes())
+            });
         self.group_digests.insert(id, digest.clone());
         digest
     }
@@ -235,7 +295,7 @@ fn raw() -> &'static Raw {
 }
 
 /// `tag`'s vectors by name, `(key, preimage)`, resolved. A vector that
-/// needs a QSpec key is absent while `QSPEC_DIR` is unset.
+/// names a QSpec key has it recomputed.
 pub(in crate::check::lowering) fn vectors(tag: &str) -> BTreeMap<String, Vector> {
     let raw = raw();
     let mut resolver = Resolver {
@@ -267,10 +327,4 @@ pub(in crate::check::lowering) fn group_tables(tag: &str) -> Vec<(String, Vec<St
 /// A vector's preimage as the spec writes it, placeholders unresolved.
 pub(in crate::check::lowering) fn raw_preimage(tag: &str, name: &str) -> String {
     raw().preimages[&(tag.to_owned(), name.to_owned())].clone()
-}
-
-/// Whether QSpec's vector keys are available to resolve the vectors that
-/// name them.
-pub(in crate::check::lowering) fn qspec_available() -> bool {
-    std::env::var_os("QSPEC_DIR").is_some()
 }
