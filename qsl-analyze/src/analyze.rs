@@ -46,8 +46,9 @@ use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
 pub use items::{
-    hyper_form_item, model_item, statistical_item, timed_refinement_item, zone_item, ModelItem,
-    RefinementReplayFn, TimedItem, TimedRefinementItem,
+    derived_model_item, derived_zone_item, hyper_form_item, model_item, statistical_item,
+    timed_refinement_item, zone_item, DerivedItemMismatch, ModelItem, RefinementReplayFn,
+    TimedItem, TimedRefinementItem,
 };
 
 use crate::zone_check::ZoneCheckRecord;

@@ -113,6 +113,17 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
+// FR-092/093/094's golden vectors, resolved from the specs' hand-written
+// preimages; the package emitter's and the evaluator's tests recompute the
+// keys through it, so only `test-support` exposes it.
+#[cfg(any(test, feature = "test-support"))]
+#[path = "lowering/spec_vectors.rs"]
+pub mod spec_vectors;
+// FR-091's dimension, unit and enum key vectors, recomputed from the spec's
+// stated preimage content.
+#[cfg(any(test, feature = "test-support"))]
+#[path = "lowering/fr091_vectors.rs"]
+pub mod fr091_vectors;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 mod hybrid;
@@ -377,7 +388,8 @@ pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
-    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedProtocol, CheckedProtocolBinderKey, CheckedProtocolNodeKeys, CheckedRole, CheckedVia,
+    ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -619,6 +631,9 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-390: emitted protocol node keys mapped back to their one S3
+    /// checked protocol declaration and slot rows.
+    protocol_node_keys: BTreeMap<String, CheckedProtocolNodeKeys>,
     /// FR-337: every emitted temporal clause, in declaration order.
     temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-488: every emitted hyper clause over `behaviours`, in declaration
@@ -4637,11 +4652,12 @@ impl PackageDeclarations {
         // FR-094: `check` is the model correspondence's only writer; it
         // holds exactly the model declaration nodes lowering keyed, and a
         // conflicting entry refused the lowering above (FR-303).
-        let (semantic_graph, model_correspondence, identities, binders) = (
+        let (semantic_graph, model_correspondence, identities, binders, lowered_protocol_members) = (
             lowered.graph,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
+            lowered.protocol_members,
         );
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
@@ -5021,11 +5037,11 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
-                    // FR-243: a clause over a `time dense` subject is EN-6's
-                    // item.
+                    // FR-243: a clause over a timed subject, `dense` or
+                    // `tick`, is EN-6's item.
                     let record = claims::RequirementRecord::unguarded(
-                        if checked.dense_time() {
-                            extent.over_dense_time()
+                        if checked.timed() {
+                            extent.over_timed()
                         } else {
                             extent
                         },
@@ -5150,17 +5166,15 @@ impl PackageDeclarations {
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
-            // EN-6's item.
+            // EN-6's item. EN-6's refinement product reads only a dense
+            // concrete subject, so a `tick` refinement is not marked and
+            // goes to the explicit-state engines.
             let dense = self.time_sources.iter().any(|source| {
                 source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(
-                if dense {
-                    wanted.over_dense_time()
-                } else {
-                    wanted
-                },
+                if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
                 claims::wire(boolean),
                 references::ModelReferences::new(Default::default(), [], None),
@@ -5427,6 +5441,24 @@ impl PackageDeclarations {
             abstractions: self.abstractions,
             model_names,
             protocols: checked_protocols,
+            protocol_node_keys: lowered_protocol_members
+                .into_iter()
+                .map(|(name, members)| {
+                    (
+                        name,
+                        CheckedProtocolNodeKeys {
+                            clause: Some(members.clause),
+                            nodes: members.nodes,
+                            channels: members.channels,
+                            roles: members.roles,
+                            compensations: members.compensations,
+                            terminal: members.terminal,
+                            binders: members.binders,
+                            expressions: members.expressions,
+                        },
+                    )
+                })
+                .collect(),
             temporal_clauses,
             hyper_nodes,
             state_graph_claims: state_graph_nodes,
@@ -5787,6 +5819,23 @@ impl CheckedGraph {
         &self.model_selections
     }
 
+    /// The identity of the domain package the model `model` selects, where
+    /// `model` names it as [`ModelTimeSource::model`] and
+    /// [`CheckedTerminal::model`] do: the alias of the `model` declaration
+    /// that selects it, or the package identity when no alias names it.
+    /// `None` for a name no selection carries.
+    pub fn model_package_identity(&self, model: &str) -> Option<&str> {
+        self.model_names
+            .get(model)
+            .map(abstraction::ModelNames::package)
+            .or_else(|| {
+                self.model_selections
+                    .iter()
+                    .find(|selection| selection.identity == model)
+                    .map(|selection| selection.identity.as_str())
+            })
+    }
+
     /// QSpec FR-322: each selection with its `model_root` node key, in
     /// `model_selections` order.
     pub fn model_roots(&self) -> impl Iterator<Item = (&DomainPackageRef, quire_exact::NodeKey)> {
@@ -6067,6 +6116,13 @@ impl CheckedGraph {
     /// FR-113: the checked protocol declared `name`, or `None`.
     pub fn protocol(&self, name: &str) -> Option<&CheckedProtocol> {
         self.protocols.iter().find(|protocol| protocol.name == name)
+    }
+
+    /// FR-390's keyed protocol member identities, read by the selected
+    /// protocol's declaration name. The mapping contains no expression
+    /// bodies; evaluation resolves those from this graph's checked protocol.
+    pub fn protocol_node_keys(&self, name: &str) -> Option<&CheckedProtocolNodeKeys> {
+        self.protocol_node_keys.get(name)
     }
 
     /// FR-115 (ADR-017 PF-3): the operation `model::object::operation`

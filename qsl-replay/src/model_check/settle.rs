@@ -13,7 +13,6 @@
 //! `Inconclusive(CertificateRejected{rule, at})`, and a stopped check is
 //! `Incomplete` with its exact limit or cancellation source.
 
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
@@ -37,8 +36,8 @@ use crate::model_check::replay::{
 };
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
-    MemoryBoundMember, ProofBasis, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    MemoryBoundMember, ProofBasis, SettlementBasis, StaleIdentity, StatedInstanceBound,
+    StatedMemoryBound, TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
     WeakAccessFailure as OutcomeWeakAccessFailure,
 };
 use qsl_eval::model_subject::ProtocolSubject;
@@ -662,18 +661,20 @@ impl Row {
         }
     }
 
-    /// Evidence settled against another package than the run's:
-    /// `ReplayRefused(stale_dependency)`.
-    pub(super) fn stale() -> Self {
-        Self::inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+    /// A refinement certificate names another refinement than its request.
+    pub(super) fn stale_refinement(requested: String, recompiled: String) -> Self {
+        Self::inconclusive(InconclusiveCause::StaleDependency {
+            requested: StaleIdentity::Refinement(requested),
+            recompiled: StaleIdentity::Refinement(recompiled),
+        })
     }
 
     /// A package identity mismatch whose two sides are known (FR-282,
     /// FR-331).
     pub(super) fn stale_dependency(requested: DigestRecord, recompiled: DigestRecord) -> Self {
         Self::inconclusive(InconclusiveCause::StaleDependency {
-            requested,
-            recompiled,
+            requested: StaleIdentity::Package(requested),
+            recompiled: StaleIdentity::Package(recompiled),
         })
     }
 

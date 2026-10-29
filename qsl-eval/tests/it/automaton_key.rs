@@ -1329,9 +1329,21 @@ fn property_automaton_keys_are_independent_of_state_numbering() {
         let mut automaton =
             qsl_eval::automaton::translate(&fixture.clause, 256).expect("the clause translates");
         let initial = automaton.initial().expect("initial state fits");
+        let initial_key = automaton
+            .state_key(initial, 1 << 20)
+            .expect("the initial state's key fits");
+        let exact_bound = u64::try_from(initial_key.as_bytes().len()).expect("key length fits");
         assert_eq!(
-            automaton.state_key(initial, 0),
-            Err(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { limit: 0 })
+            automaton.state_key(initial, exact_bound),
+            Ok(initial_key),
+            "the exact byte bound admits the key"
+        );
+        assert_eq!(
+            automaton.state_key(initial, exact_bound - 1),
+            Err(qsl_eval::automaton::AutomatonError::KeyEncodingLimit {
+                limit: exact_bound - 1,
+            }),
+            "one byte below the key length refuses"
         );
         let mut pending = vec![initial];
         let mut reached = BTreeSet::new();
@@ -1343,7 +1355,11 @@ fn property_automaton_keys_are_independent_of_state_numbering() {
             let key = automaton
                 .state_key(state, 1 << 20)
                 .expect("a reached state has a canonical key");
-            keys.insert(key.as_bytes().to_vec(), state.index());
+            assert!(
+                keys.insert(key.as_bytes().to_vec(), state.index())
+                    .is_none(),
+                "distinct states of one automaton have distinct keys"
+            );
             let atom_count = automaton.atoms().len() + usize::from(automaton.uncounted().is_some());
             let letters: Box<dyn Iterator<Item = u64>> = if reverse {
                 Box::new((0..(1_u64 << atom_count)).rev())
@@ -1393,6 +1409,24 @@ fn property_automaton_keys_are_independent_of_state_numbering() {
     assert!(forward
         .iter()
         .any(|(key, first)| { reverse.get(key).is_some_and(|second| second != first) }));
+
+    let bounded = reached_keys("eventually[0,2] holds(c.level = 1)", EVENT, false);
+    let safety = reached_keys("always holds(c.level = 1)", INFINITE, false);
+    let liveness = reached_keys(
+        "always eventually (holds(c.level = 1) and once[1,1] holds(c.level = 2))",
+        INFINITE,
+        false,
+    );
+    for (left_name, left, right_name, right) in [
+        ("bounded", &bounded, "safety", &safety),
+        ("bounded", &bounded, "liveness", &liveness),
+        ("safety", &safety, "liveness", &liveness),
+    ] {
+        assert!(
+            left.keys().all(|key| !right.contains_key(key)),
+            "{left_name} and {right_name} automaton keys are distinct across kinds/formulas"
+        );
+    }
 }
 
 /// FR-338 TP-4: each reached PropertyAutomaton StateId resolves to a

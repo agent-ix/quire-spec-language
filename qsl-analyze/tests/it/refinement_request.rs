@@ -11,15 +11,16 @@ use qsl_replay::{
     open_systems, replay_refinement_trace, settle_refinement_safety, ModelCheckLimits,
     RefinementFailure, SafetyOutcome, SimulationCertificateRequest, SubjectIdentity, TerminalValue,
 };
-use qsl_route::deadlock::{deadlock_freedom_items, ModelRefinementItem, ObligationKind};
+use qsl_route::deadlock::{ModelRefinementItem, ObligationKind};
 use qsl_route::model_request::ModelRequest;
-use qsl_route::request::items_from_requirements;
+use qsl_route::request::{items_from_requirements, ItemKind};
 use qsl_route::{CandidateOutcome, ManifestDigest, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, RequirementRecord};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::PropertyForm;
 
+use crate::derived_request::derived_items;
 use crate::refinement_fixture::{cas_refines_counter, mutated, World, UNLIMITED};
 
 const ENSURE: &str = "ensure fair weak each Spec::Counter::inc;\n";
@@ -115,11 +116,6 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
     }
 }
 
-/// The concrete subject ranges over the one model `Impl`.
-fn over_impl<S>(_: &S) -> Vec<String> {
-    vec!["Impl".to_owned()]
-}
-
 /// The deadlock-freedom items of a request holding `CasRefinesCounter` over
 /// its concrete subject, in a unit that also declares `terminal`.
 fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
@@ -133,9 +129,10 @@ fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
         abstract_initial: &initial,
         package: world.package().graph(),
     };
-    let derived = deadlock_freedom_items(&[], &[item], &[], over_impl)
-        .iter()
-        .map(|item| item.subject().clone())
+    let derived = derived_items(&[], &[item], &[], &[])
+        .into_iter()
+        .filter(|(item, _)| item.item_kind() == Some(ItemKind::DeadlockFreedom))
+        .map(|(_, obligation)| obligation.subject)
         .collect();
     (identity, derived)
 }
@@ -187,23 +184,29 @@ fn a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item() {
             abstract_initial: &initial,
             package: graph,
         }];
+        // The concrete subject reads the one model `Impl`'s selection.
+        let over_impl = [world
+            .refinement()
+            .concrete_model_selection()
+            .identity
+            .as_str()];
         for (name, derived) in [
-            (
-                "temporal",
-                deadlock_freedom_items(&temporal, &[], &[], over_impl),
-            ),
+            ("temporal", derived_items(&temporal, &[], &[], &over_impl)),
             (
                 "refinement",
-                deadlock_freedom_items(&[], &refinement, &[], over_impl),
+                derived_items(&[], &refinement, &[], &over_impl),
             ),
             (
                 "both",
-                deadlock_freedom_items(&temporal, &refinement, &[], over_impl),
+                derived_items(&temporal, &refinement, &[], &over_impl),
             ),
         ] {
             assert_eq!(derived.len(), expected, "{terminal:?} {name}");
             assert!(
-                derived.iter().all(|item| *item.subject() == identity),
+                derived.iter().all(|(item, obligation)| {
+                    obligation.subject == identity
+                        && item.item_kind() == Some(ItemKind::DeadlockFreedom)
+                }),
                 "{terminal:?} {name}"
             );
         }
@@ -215,6 +218,8 @@ fn a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item() {
 /// `value` 1) have different obligation identities, and the second settles
 /// `refuted` with `InitialNotAbstract`.
 #[trace("TC-549", "FR-144-AC-5")]
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-19")]
+#[trace("QSpec-TC-431", "QSpec-FR-377-AC-17")]
 #[test]
 fn the_abstract_initial_states_are_part_of_the_obligation() {
     let world = World::new(&cas_refines_counter());
@@ -224,23 +229,19 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
     assert_ne!(zero.digest, one.digest);
 
     let mut request = ModelRequest::new();
-    let first = context
-        .author_refinement(
-            &mut request,
-            world.refinement(),
-            std::slice::from_ref(&zero),
-        )
-        .expect("the record is written");
-    let again = context
-        .author_refinement(
-            &mut request,
-            world.refinement(),
-            std::slice::from_ref(&zero),
-        )
-        .expect("the record is written");
-    let second = context
-        .author_refinement(&mut request, world.refinement(), std::slice::from_ref(&one))
-        .expect("the record is written");
+    let author = |request: &mut ModelRequest<_>, initial: &DocumentRef| {
+        context
+            .author_refinement(
+                request,
+                world.refinement(),
+                world.package(),
+                std::slice::from_ref(initial),
+            )
+            .expect("the record is written")
+    };
+    let first = author(&mut request, &zero);
+    let again = author(&mut request, &zero);
+    let second = author(&mut request, &one);
     assert_eq!(first, again, "one obligation has one index");
     assert_ne!(first, second);
     let [a, b] = [first, second].map(|index| request.obligation(index).expect("written").clone());
@@ -263,6 +264,18 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
         item.property_form(),
         Some(PropertyForm::Refinement { liveness: true })
     );
+    // QSpec FR-368-AC-19, FR-377-AC-17: the refinement item carries its
+    // abstract subject, the abstract package's id and its initial states.
+    assert_eq!(item.item_kind(), Some(ItemKind::Refinement));
+    let abstract_subject = item.abstract_subject().expect("an abstract subject");
+    assert_eq!(
+        abstract_subject.package_id,
+        qsl_package::emit_checked(world.package())
+            .expect("the package emits")
+            .package()
+            .package_id()
+    );
+    assert_eq!(abstract_subject.initial_states, std::slice::from_ref(&one));
 
     assert_eq!(settle(&world, &one), TerminalValue::Refuted);
 }

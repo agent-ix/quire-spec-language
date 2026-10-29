@@ -381,14 +381,25 @@ fn a_resolving_payload_is_retained_on_its_case() {
     assert_eq!(cases[1].payload_type, None);
 }
 
-/// TC-995: a non-value payload (a unit) still refuses at the typed payload
-/// member. A `Clock` payload is admitted (FR-230 "Records, tuples and
-/// unions").
+/// TC-995: a unit or Clock payload is not an admitted variant payload and
+/// refuses at the typed payload member (QSpec FR-154-AC-25).
 #[trace("TC-995", "FR-056-AC-25")]
 #[test]
-fn a_non_value_payload_type_refuses_at_its_member() {
+fn a_unit_or_clock_payload_refuses_as_unsupported_at_its_member() {
     let mut document = payload_tiers();
     document["types"][0]["variants"][1]["payloadType"] = json!("ix://quire/unit/ms");
+    let found = refusals(&document);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].code, Code::UnsupportedConstruct);
+    assert!(matches!(
+        found[0].cause,
+        ModelRefusalCause::UnsupportedDeclarationForm { .. }
+    ));
+    assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
+    assert_eq!(member_of(&found[0]), path("Variant.payloadType"));
+
+    let mut document = payload_tiers();
+    document["types"][0]["variants"][1]["payloadType"] = json!("ix://quire/native/Clock");
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::UnsupportedConstruct);

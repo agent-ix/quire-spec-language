@@ -649,13 +649,13 @@ pub enum InconclusiveCause {
     /// ([`ReplayRefusal::code`]). A fault is never this cause: it settles
     /// [`TerminalValue::Failed`].
     ReplayRefused(Code),
-    /// The named package identity differs from the identity recomputed from
-    /// the checked package (FR-282, FR-331).
+    /// A requested package or refinement identity differs from the current
+    /// package or refinement identity (FR-149, FR-282, FR-331).
     StaleDependency {
-        /// The package identity the request or certificate names.
-        requested: DigestRecord,
-        /// The recompiled package identity.
-        recompiled: DigestRecord,
+        /// The identity the request or certificate names.
+        requested: StaleIdentity,
+        /// The identity the current package or request names.
+        recompiled: StaleIdentity,
     },
     /// `scalar_agrees`: a scalar-parity counterexample (FR-357), operator-
     /// or function-level, did not reproduce, because the exact outcome
@@ -756,6 +756,17 @@ pub enum InconclusiveCause {
         /// The instance-limited states.
         states: u64,
     },
+}
+
+/// The domain-specific identity retained by a stale-dependency result.
+/// Package IDs remain package semantic identities; refinement names remain
+/// refinement identities. They are tagged on the FR-331 result wire.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StaleIdentity {
+    /// A `quire.package.semantic/v2` package identity.
+    Package(DigestRecord),
+    /// An FR-149 refinement name.
+    Refinement(String),
 }
 
 /// The instance bound a run used (ADR-027 AE-4): the value of the request
@@ -1078,8 +1089,8 @@ impl TerminalValue {
                 requested,
                 recompiled,
             } => Self::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: *requested,
-                recompiled: recompiled.record(),
+                requested: StaleIdentity::Package(*requested),
+                recompiled: StaleIdentity::Package(recompiled.record()),
             }),
             _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }

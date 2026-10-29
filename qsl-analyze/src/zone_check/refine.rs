@@ -305,8 +305,12 @@ pub fn check_timed_refinement<S>(
                     .map(|emission| emission.package().package_id())
                     .map_err(|_| Halt::from(ZoneCheckRefusal::Fault("refinement-package-emits")))
             };
+            let refinement_node = refinement
+                .requirement_occurrence()
+                .ok_or(Halt::from(ZoneCheckRefusal::Fault("refinement-record")))?
+                .node();
             let part = RefinementPart {
-                refinement: refinement.name().to_owned(),
+                refinement_node,
                 concrete_package: package_id(request.concrete.package)?,
                 abstract_package: package_id(request.abstract_package)?,
                 positions: certified.positions,

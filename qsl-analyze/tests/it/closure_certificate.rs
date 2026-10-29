@@ -454,8 +454,8 @@ fn a_certificate_from_another_package_is_stale_before_closure_rules() {
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: foreign.record(),
-            recompiled: recompiled.record(),
+            requested: qsl_replay::StaleIdentity::Package(foreign.record()),
+            recompiled: qsl_replay::StaleIdentity::Package(recompiled.record()),
         })
     );
 }
@@ -860,8 +860,8 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     assert_eq!(
         settle_at(&outcome, &elsewhere, &Cancel::new()).value,
         TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: elsewhere,
-            recompiled: package,
+            requested: qsl_replay::StaleIdentity::Package(elsewhere),
+            recompiled: qsl_replay::StaleIdentity::Package(package),
         })
     );
 

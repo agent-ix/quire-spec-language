@@ -55,7 +55,9 @@ use types::PendingPredicateJoin;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
-    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedProtocol, CheckedProtocolBinderKey, CheckedProtocolExpressionBindings,
+    CheckedProtocolNodeKeys, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef,
+    ProtocolNodeId,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
