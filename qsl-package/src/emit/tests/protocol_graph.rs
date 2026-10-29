@@ -694,19 +694,9 @@ fn every_remaining_unwritten_construct_refuses_typed_and_writes_no_clause() {
         (
             C::ProtocolReferenceInBody,
             "QSL-1121g",
-            vec![C::ProtocolReferenceInBody, C::ReferenceCycle],
+            vec![C::ProtocolReferenceInBody],
             false,
             plain("on origin", "", main, "protocol Flow"),
-        ),
-        (
-            C::ReferenceCycle,
-            "QSL-844",
-            vec![C::ReferenceCycle; 2],
-            true,
-            format!(
-                "function back using v(): Boolean pure {{ protocol Flow }}\n{}",
-                plain("on origin", "", main, "back()")
-            ),
         ),
         (
             C::ChannelCarriesBounded,
@@ -1331,14 +1321,12 @@ fn an_out_of_order_predicate_join_binds_by_ascending_label() {
     );
 }
 
-/// The written reference makes a cycle reachable (SR-1761002 FND-001): a
-/// predicate join's function that reads its own protocol refuses
-/// `ReferenceCycle`.
+/// A predicate join's function may refer back to its protocol; the
+/// recursion-group emission and I2 readback are also exercised in
+/// `protocol_recursion`.
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
-fn a_predicate_function_reading_its_protocol_is_a_reference_cycle() {
-    use super::protocol_reference::not_emitted;
-    use qsl_semantics::check::ProtocolConstruct;
+fn a_predicate_function_reading_its_protocol_is_admitted() {
     let text = format!(
         "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b and protocol Flow }}\n{}",
         parallel_flow(
@@ -1346,11 +1334,7 @@ fn a_predicate_function_reading_its_protocol_is_a_reference_cycle() {
              join predicate(both) [a, b];"
         )
     );
-    let refusals = checked(&text, false).expect_err(&text);
-    assert!(
-        refusals
-            .iter()
-            .any(|refusal| refusal.cause == not_emitted(ProtocolConstruct::ReferenceCycle)),
-        "{refusals:?}"
-    );
+    let lowered = lower_with(model(), PROFILES, &text);
+    assert!(lowered.ir.is_ok(), "{:?}", lowered.ir.err());
+    assert!(lowered.verified, "{}", lowered.text);
 }

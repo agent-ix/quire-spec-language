@@ -408,23 +408,13 @@ fn every_unwritten_construct_refuses_the_protocol_naming_its_ticket() {
             "",
         ),
         (bare("on origin", "", "ok()"), vec![], ""),
-        // QSL-1121g, QSL-844: a protocol that refers to itself in its own
-        // body names a reference the reader refuses, and is a cyclic
-        // component; the function `back` that reads it is refused at that
-        // reference, naming the protocol's first construct.
+        // QSL-1121g: a direct protocol reference in its own body remains
+        // unsupported. Mixed function/protocol cycles are supported by
+        // FR-383 and are covered by the package emission tests.
         (
             bare("on origin", "", "protocol Bare"),
-            vec![
-                C::ProtocolReferenceInBody,
-                C::ReferenceCycle,
-                C::ProtocolReferenceInBody,
-            ],
+            vec![C::ProtocolReferenceInBody],
             "QSL-1121g",
-        ),
-        (
-            bare("on origin", "", "back()"),
-            vec![C::ReferenceCycle],
-            "QSL-844",
         ),
     ];
     for (text, expected, ticket) in cases {
