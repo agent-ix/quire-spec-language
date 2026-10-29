@@ -16,7 +16,8 @@ boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
 reader behavior. The first fourteen groups below correspond to the first fourteen
-acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer.
+acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer; step 16 covers
+FR-042-AC-16's absence of any committed handoff.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
 payment attempts A1/A2 and effect E1, refund registration and distinct refund
@@ -267,10 +268,10 @@ observations belong only to the later consumer fixture.
     tagged (`#[serde(tag = ...)]`) representation (FR-042-CON-2); the
     reader's refusal of a `correspondence`/`producer`/`interface` member
     above is the behavioral proof that mechanism actually fires, not an
-    assumption about `deny_unknown_fields` in the abstract. Regenerate both
-    existing golden directories, `artifacts/compiled-protocol-v1` and
-    `artifacts/compiled-protocol-v2`, and confirm both directories' own tests
-    still pass under the new `Model` shape, at their existing
+    assumption about `deny_unknown_fields` in the abstract. Write both handoffs
+    fresh with `write_v1` and `write_v2` into temporary directories, and
+    confirm each written handoff admits through the strict reader under the new
+    `Model` shape, at its existing
     `quire.compiled-protocol/1` and `quire.compiled-protocol/2`
     ([FR-050](../functional/FR-050-publish-authenticated-temporal-artifacts.md))
     wire identities unchanged; `quire.compiled-protocol/3`
@@ -336,6 +337,13 @@ observations belong only to the later consumer fixture.
     itself, because a test in this crate's own `tests/` always builds inside
     its dev-dependency closure. That `cargo check` line is what actually
     resolves `write_v1`'s dependency graph with no dev-dependency in it.
+
+16. List the repository's tracked files and require none under
+    `artifacts/compiled-protocol-v1`, and none that is a checksum manifest or
+    a frozen digest or count of `/1` handoff files. Require the crate's public
+    handoff module to export no `PUBLISHED_V1_HANDOFF`, and require every
+    `/1` handoff file the other steps read to be one that `write_v1` wrote
+    into a temporary directory in the same test.
 
 ## Expected Results
 
