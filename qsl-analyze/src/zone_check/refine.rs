@@ -73,7 +73,7 @@ use super::concretise::{concretise, Stage, Target};
 use super::divergence::{Escape, EscapeWitness};
 use super::search::{
     not_simulated, widen, Arrival, Halt, Inserted, Judged, Run, Searched, ZoneCheckLimits,
-    ZoneCheckRefusal, ZoneReduction, ZoneStats, ZoneStop, ZoneUndecided,
+    ZoneCheckRefusal, ZoneStats, ZoneStop, ZoneUndecided,
 };
 use super::Dbm;
 
@@ -190,9 +190,7 @@ pub enum TimedLivenessOutcome {
     /// product's own, not the safety half's. It has no certificate, since the core
     /// has no checker for it (ADR-020 CT-4), so its `proved` is
     /// `Uncertified`.
-    HoldsReduced {
-        /// The reductions the run applied: none.
-        reductions: Vec<ZoneReduction>,
+    Holds {
         /// The run's counts.
         stats: ZoneStats,
     },
@@ -388,10 +386,7 @@ fn liveness(
 ) -> Result<TimedLivenessOutcome, TimedRefinementRefusal> {
     let (decided, stats) = product.liveness(run);
     Ok(match decided {
-        Ok(live::Lived::Holds) => TimedLivenessOutcome::HoldsReduced {
-            reductions: Vec::new(),
-            stats,
-        },
+        Ok(live::Lived::Holds) => TimedLivenessOutcome::Holds { stats },
         Ok(live::Lived::Violated(counterexample)) => TimedLivenessOutcome::Violated {
             counterexample,
             stats,

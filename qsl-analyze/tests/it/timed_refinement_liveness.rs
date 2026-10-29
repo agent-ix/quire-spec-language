@@ -165,18 +165,22 @@ fn a_refinement_lasso_with_no_loop_delay_is_refused_at_replay() {
 /// the `poll` loop at `sent = false` has total delay 0, so it does not
 /// refute; the subject still admits a time-divergent behaviour (`send` at
 /// once, then the idle tail), and the liveness half returns
-/// `Checked(HoldsReduced{reductions: []})` beside safety `Holds`.
+/// `Checked(Holds)` beside safety `Holds`.
 #[trace("TC-1170", "FR-430-AC-5")]
 #[test]
 fn a_zero_delay_loop_does_not_refute() {
     let outcome = check(&polling(false, true));
     assert!(matches!(outcome.safety, TimedSafetyOutcome::Holds { .. }));
-    let Some(TimedLivenessHalf::Checked(TimedLivenessOutcome::HoldsReduced { reductions, .. })) =
+    assert!(
+        matches!(
+            outcome.liveness,
+            Some(TimedLivenessHalf::Checked(
+                TimedLivenessOutcome::Holds { .. }
+            ))
+        ),
+        "the liveness half holds: {:?}",
         outcome.liveness
-    else {
-        panic!("the liveness half holds: {:?}", outcome.liveness);
-    };
-    assert!(reductions.is_empty());
+    );
 }
 
 /// ADR-026 TD-6 beside FR-430-AC-5: with `send` guarded `x >= 1` and the
@@ -312,7 +316,7 @@ fn a_loop_unfair_to_a_concrete_constraint_does_not_refute() {
         matches!(
             outcome.liveness,
             Some(TimedLivenessHalf::Checked(
-                TimedLivenessOutcome::HoldsReduced { .. }
+                TimedLivenessOutcome::Holds { .. }
             ))
         ),
         "{:?}",
@@ -620,5 +624,68 @@ fn the_item_settles_from_its_liveness_half_once_safety_is_proved() {
             basis: ProofBasis::Exhaustive,
             certification: Certification::Uncertified,
         }
+    );
+}
+
+/// FR-144's settlement of the item from both halves (TC-1170), over the
+/// `poll` world's outcome with its halves replaced: an `Unsupported`
+/// liveness half after a proved safety half settles V-8 with its cause
+/// (ADR-020 AX-5); a safety certificate the checker rejects keeps the
+/// safety half's `CertificateRejected` record whatever the liveness half
+/// is, and no lasso is replayed.
+#[trace("TC-1170", "FR-430-AC-5")]
+#[test]
+fn the_item_keeps_the_safety_record_unless_safety_is_proved() {
+    use qsl_analyze::zone_check::settle_timed_refinement;
+    use qsl_replay::{
+        CertificateLocus, CertificateRejection, CertificateRule, InconclusiveCause, TerminalValue,
+        ZoneCertificateVerdict,
+    };
+
+    let outcome = check(&polling(false, false));
+    assert!(matches!(
+        outcome.liveness,
+        Some(TimedLivenessHalf::Checked(
+            TimedLivenessOutcome::Violated { .. }
+        ))
+    ));
+    let no_replay =
+        |_: &TemporalCounterexample| -> Result<RefinementTraceSettlement, ReplayRefusal> {
+            panic!("no lasso is replayed")
+        };
+
+    let unsupported = TimedRefinementOutcome {
+        safety: outcome.safety.clone(),
+        liveness: Some(TimedLivenessHalf::Unsupported(
+            UnavailabilityCause::StrongAbstractFairness,
+        )),
+    };
+    let record = settle_timed_refinement(
+        &unsupported,
+        &Cancel::new(),
+        |_| Ok(ZoneCertificateVerdict::Accepted),
+        no_replay,
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Unsupported(UnavailabilityCause::StrongAbstractFairness)
+    );
+
+    let rejection = CertificateRejection {
+        rule: CertificateRule::BadState,
+        at: CertificateLocus::ZoneNode { node: 0 },
+    };
+    let record = settle_timed_refinement(
+        &outcome,
+        &Cancel::new(),
+        |_| Ok(ZoneCertificateVerdict::Rejected(rejection.clone())),
+        no_replay,
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: rejection.rule,
+            at: rejection.at.clone(),
+        })
     );
 }

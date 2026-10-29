@@ -400,18 +400,16 @@ pub fn settle_timed_refinement<S>(
             Truth::Unavailable,
         ),
         // No core checker covers the liveness half (ADR-020 CT-4).
-        TimedLivenessHalf::Checked(TimedLivenessOutcome::HoldsReduced { .. }) => {
-            ZoneCheckRecord::row(
-                TerminalValue::Proved {
-                    basis: ProofBasis::Exhaustive,
-                    certification: Certification::Uncertified,
-                },
-                ResultLabel::Proved,
-                SettlementBasis::ClosedScope,
-                Execution::Completed,
-                Truth::Satisfied,
-            )
-        }
+        TimedLivenessHalf::Checked(TimedLivenessOutcome::Holds { .. }) => ZoneCheckRecord::row(
+            TerminalValue::Proved {
+                basis: ProofBasis::Exhaustive,
+                certification: Certification::Uncertified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
         TimedLivenessHalf::Checked(TimedLivenessOutcome::Violated { counterexample, .. }) => {
             violated(counterexample, replay)
         }
