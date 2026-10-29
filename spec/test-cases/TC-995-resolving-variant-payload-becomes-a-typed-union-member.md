@@ -12,7 +12,8 @@ relationships:
 
 Verify that a resolving admitted payload type is retained as one typed union
 position, a payload-free case remains nullary, and a Clock payload refused by
-the FCD reader surfaces at QSL intake according to QSpec FR-154. Scope:
+the FCD reader surfaces at QSL intake as `unsupported_construct`/`declaration-form`
+at `Variant.payloadType` according to QSpec FR-154-AC-25. Scope:
 FR-056-AC-25.
 
 ## Test Procedure
@@ -30,7 +31,7 @@ FR-056-AC-25.
   Boolean payload position. The model type assembles as a union composite with
   one member per case.
 - Step 2 admits as TC-994 step 1, with both cases nullary.
-- Step 3 refuses `invalid_model_binding`/`malformed-declaration` at node
+- Step 3 refuses `unsupported_construct`/`declaration-form` at node
   `ix://<package identity>/variant/Tier-Gold`, path `Variant.payloadType`, per
-  QSpec FR-154; it admits no declaration of the package.
+  QSpec FR-154-AC-25 and FR-208-AC-15; it admits no declaration of the package.
 - Assertions compare typed code, cause, node identity and path.
