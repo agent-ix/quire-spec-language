@@ -18,7 +18,8 @@ use qsl_replay::{
     ConcreteStep, DigestRecord, FailedStep, HistoryValues, IncompleteCause, InconclusiveCause,
     ModelCheckLimit, ModelCheckLimits, ProofBasis, RefinementFailure, RefinementPosition,
     SafetyOutcome, SettlementBasis, SimulationCertificate, SimulationCertificateRequest,
-    SimulationRefusal, StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
+    SimulationRefusal, StaleIdentity, StepRejection, StepVerdict, Taken, TemporalCertificateCheck,
+    TerminalValue,
 };
 use qsl_replay::{EvalFailure, MappingRowRef, MappingUndetermined, Undetermined, UndeterminedStep};
 use qsl_semantics::model::state::ModelState;
@@ -614,9 +615,9 @@ fn a_rejected_certificate_settles_inconclusive() {
 }
 
 /// FR-144 Settlement (TC-556): a certificate for another refinement settles
-/// `ReplayRefused(stale_dependency)`, and a check that a limit stops settles
-/// V-7 naming the limit.
-#[trace("TC-556")]
+/// `StaleDependency` with both refinement names, and a check that a limit
+/// stops settles V-7 naming the limit.
+#[trace("TC-556", "FR-149-AC-4", "FR-127-AC-18")]
 #[test]
 fn a_stale_or_stopped_check_settles_without_a_proof() {
     let world = safety_only();
@@ -656,9 +657,10 @@ fn a_stale_or_stopped_check_settles_without_a_proof() {
     );
     assert_eq!(
         stale.value,
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
-            qsl_replay::Code::StaleDependency
-        ))
+        TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+            requested: StaleIdentity::Refinement("OtherRefinement".to_owned()),
+            recompiled: StaleIdentity::Refinement("CasRefinesCounter".to_owned()),
+        })
     );
 }
 
