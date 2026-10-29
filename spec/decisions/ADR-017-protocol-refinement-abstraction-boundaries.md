@@ -308,9 +308,7 @@ FR-088-AC-2). TK-3 fixes it (§6).
 
 #### PF-6 Document identity
 
-| Input | Identity carrier | Check | Effect of a mismatch |
-| --- | --- | --- | --- |
-| Snapshots and invocation | Document `identity` label (FR-106) | byte provision keyed by that identity, checked at admission | `invalid-request` |
+**RETIRED (document-label mismatch withdrawn).** A missing label is already `Incomplete` (FR-106 read check); no mismatch refusal exists. PF-6 is kept so no other PF id renumbers.
 
 #### PF-7 No protocol-internal redesign
 
@@ -716,7 +714,7 @@ There is no totality check.
 
 | Mapping | Types and owners | Conversions | Version effect | Failure oracle | Tests | Tickets |
 | --- | --- | --- | --- | --- | --- | --- |
-| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
+| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | none (PF-6 withdrawn) | `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
 | Refinement | `xtask refinement`; spine `run_clause` and `compile`; `ClauseDisposition`, `CompileRefusal` | disposition → class and compile result → class (RF-2) | RF-6 | RF-2 and RF-3 tables; RF-5 seed and controls | RF-5 | #191; #192 |
 | Abstraction relation | AR-2, AR-3; `check` core; layer-4 export | checked relation → v2 node (Q-2); export → driver → CG | AR-4 relation revision | AR-3 and AR-4 refusals | AR-7 | #198 slices; Q-1, Q-2 |
 

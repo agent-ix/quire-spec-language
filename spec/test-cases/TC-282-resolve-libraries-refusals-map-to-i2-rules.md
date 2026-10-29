@@ -17,7 +17,8 @@ return classifies to exactly one of: an ADR-011 I2 "Package import graph
 rule" (`:203-210`), the §4 binding's condition 2 (preimage
 admission, `verify_package`), or E3 name resolution — except
 `DuplicatePackageId`, the one stated exception, which lies outside all
-three. Scope: FR-087-AC-12.
+three. Condition 2 rests on the QSpec `package_id` member: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan): package_id.
+Scope: FR-087-AC-12.
 
 ## Test Procedure
 

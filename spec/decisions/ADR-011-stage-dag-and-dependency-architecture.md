@@ -582,7 +582,7 @@ re-walks them against the scenarios.
   1. its schema version is a supported v2 version;
   2. its FR-322 `package_id` member (QSpec-owned) names the package's own
      identity and version, equal to those in the `identity_preimage` read
-     (ADR-013 T-2).
+     (ADR-013 T-2). BLOCKED-BY STD-583 (owner: planner titan:QSL:plan): package_id.
 
   Otherwise the reader refuses with a named cause and yields nothing. The
   source never substitutes.

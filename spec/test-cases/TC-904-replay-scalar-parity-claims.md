@@ -14,7 +14,7 @@ Verify `qsl_replay::replay_operator_parity` and
 `qsl_replay::replay_value_parity` settle each outcome of FR-357, and that the
 predicate arm of `replay` still refuses a non-`Boolean` function.
 
-Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-15, FR-357-AC-17, FR-357-AC-19, FR-357-AC-20.
+Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-15, FR-357-AC-19, FR-357-AC-20.
 
 ## Test Procedure
 
@@ -47,8 +47,9 @@ over operands drawn from `[0, 100]` with result range `[-200, 200]`:
 9. An operand of 101; a literal operand with its singleton range.
 10. The terminal value of an agreement and of a divergence.
 11. An `add` claim with a node the package does not
-    hold, a `mul` node under `inc`, a `mul` claim on the `+` node, and an
-    undeclared enclosing function.
+    hold, a `mul` node under `inc`, a `mul` claim on the `+` node, an
+    occurrence key the node does not have, and an undeclared enclosing
+    function.
 
 Claim identity, at both levels:
 
@@ -62,11 +63,7 @@ Claim identity, at both levels:
     over two inline literals at different positions of one application, and
     compare by equality with the preimage tuple written out by hand.
 15. (Retired with FR-357-AC-16.)
-16. Replay claims with a node or operator the package lacks, an occurrence
-    key the node does not have, a graph child that is not the node's argument,
-    and an inline literal the node does not have; check an application with
-    a graph child and an inline literal by hand, with a wrong literal value,
-    a wide literal range and a wrong operand count.
+16. (Retired with FR-357-AC-17.)
 17. (Retired with FR-357-AC-18.)
 18. Build ADR-013 O-09's worked example (the argument entry and the whole
     preimage) through `parity_obligation`, and order and refuse harness
@@ -94,7 +91,7 @@ the encoded-size bound.
   `Refuted`. The envelope round-trips the agreement and refuses the oversized
   one.
 - Step 11: `ScalarIdentity`
-  (`invalid-request`) with cause `Node`, `Function` and `Operator`;
+  (`invalid-request`) with cause `Node`, `Function`, `Operator` and `Occurrence`;
   `UnknownFunction` (`missing-name`); each carries the obligation identity.
 
 - Step 12: `claim()` equals the claim sent on every outcome; a claim differing
@@ -102,7 +99,7 @@ the encoded-size bound.
 - Step 13: none; retired.
 - Step 14: the built identities equal the hand-written tuples; the two literals differ.
 - Step 15: none; retired.
-- Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
+- Step 16: none; retired.
 - Step 17: none; retired.
 - Step 18: the identity of the entry equals its worked-example tuple; the whole preimage equals its worked-example tuple; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
 - Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

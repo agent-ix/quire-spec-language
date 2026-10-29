@@ -17,7 +17,8 @@ is admitted (exercised by TC-282's `InvalidPreimage` and `UndeclaredExport`
 fixtures), and (3) that identity is listed in the consumer's requested set —
 and that a failure of condition 1 or 3 refuses independently, with a named
 cause and no partial output, never falling back to the file bytes or the
-source. Scope: FR-087-AC-3.
+source. Condition 2 rests on the QSpec `package_id` member: BLOCKED-BY STD-583 (owner: planner titan:QSL:plan): package_id.
+Scope: FR-087-AC-3.
 
 ## Test Procedure
 

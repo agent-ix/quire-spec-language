@@ -41,8 +41,8 @@ public entries; `sample` and `Sampler` are `pub(crate)` (FR-101).
    and with a trace from `sample_request` with an empty `domains` set and the `quire.simulation.sampler/v1` `DefinitionRef` through a state with two successors that share
    a transition identity. Replay a trace from step 6 that starts at a
    non-first initial state. Then replay the step 5 trace with its initial
-   state key, one step's transition, and one step's recorded state key altered in
-   turn.
+   state key and one step's transition altered in turn. (The altered recorded
+   state key is retired with the `KeyMismatch` refusal of FR-101-AC-5.)
 8. Call `sample_request` with an empty `domains` set and a `DefinitionRef`
    whose identity is `quire.simulation.sampler/v2`, on a system that records
    every method call.
@@ -68,8 +68,8 @@ public entries; `sample` and `Sampler` are `pub(crate)` (FR-101).
   states 0, 1, 2 and 0.
 - Step 7: the unaltered traces replay, the shared-identity step takes the
   successor whose state key matches, and the non-first start is found by its
-  state key; the altered ones refuse with `UnknownInitial`, `MissingTransition`
-  and `KeyMismatch`, each at the altered step and each carrying state keys.
+  state key; the altered ones refuse with `UnknownInitial` and
+  `MissingTransition`, each at the altered step and each carrying state keys.
 - Step 8: it returns `NotSimulated::GeneratorMismatch` with the supplied
   `DefinitionRef`, whose catalog code is `invalid_runtime_input`/
   `invalid-value`, and no `TransitionSystem` method and no draw runs.

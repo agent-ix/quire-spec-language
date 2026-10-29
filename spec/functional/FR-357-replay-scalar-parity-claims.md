@@ -99,18 +99,13 @@ request the default refuses (TC-904).
   FR-255 Behavior 10), never either member alone, the effective
   `limits.supplied` ceilings (FR-484) and the generated outcome. A
   `ScalarAgrees` claim identity is the report's `claim()`.
-- When the operator entry settles a claim, it SHALL check the claim's preimage
-  against the recompiled package, after the node, operator and function-body
-  checks. The occurrence key SHALL be one of
-  the node's occurrences. The claim SHALL name as many operands as the node
-  has arguments. A `GraphChild` operand SHALL be the node's argument at its
-  position, a reference to that node. An `InlineLiteral` operand SHALL be an
-  inline integer literal at its position, whose value is the operand's value
-  and whose singleton range is the operand's range. Each mismatch refuses
-  `ReplayRefusal::ScalarIdentity` (`invalid-request`)
-  with its own typed cause (`Occurrence`, `OperandCount`, `OperandChild`,
-  `NotInlineLiteral`, `LiteralValue`), so an invented
-  preimage never passes.
+- When the operator entry settles a claim, it SHALL check the claim's
+  occurrence key against the recompiled package, after the node, operator and
+  function-body checks: the occurrence key SHALL be one of the node's
+  occurrences, and a mismatch refuses `ReplayRefusal::ScalarIdentity`
+  (`invalid-request`) with the typed cause `Occurrence`. The operands, their
+  ranges and the result range are the claim's own; the replay does not
+  compare them with the package.
 - A consumer of a report SHALL verify `report.claim()` equals the claim it
   sent before it acts on the result: a report for the same obligation with
   other operands, ranges, limits, bindings or outcome is a
@@ -180,13 +175,13 @@ request the default refuses (TC-904).
 | FR-357-AC-8 | Operator level: a native `Incomplete` or `ExecutionFault` settles `Failed` as a generated-artifact fault without a comparison, even under starved limits. | Test (TC-904) |
 | FR-357-AC-9 | Operator level: an operand outside its own range settles `Inconclusive(ReplayRefused(invalid_runtime_input))` with nothing evaluated; a literal's range is the singleton `(value, value)`. | Test (TC-904) |
 | FR-357-AC-10 | Function and operator level: an agreement settles `Inconclusive(ScalarAgrees)` naming the claim and the outcome, a divergence settles `Failed`, an exact evaluation that reaches its limits (function arm and operator arm each) settles `Incomplete`, and no scalar result settles `Refuted`; a `ScalarAgrees` cause is counted by the envelope's encoded-size bound and round-trips through the envelope. | Test (TC-904, TC-177, TC-178, TC-179) |
-| FR-357-AC-11 | Operator level: the call site of a non-`Boolean` function recompiles, its scalar node is found in the selected function's body as an application of the operator, and an agreement, a divergence and a refused operand each settle with the request's obligation identity carried unchanged. A node the package does not hold, a node outside the selected function's body and an operator the node is not an application of each refuse `ScalarIdentity` (`invalid-request`) with their own cause; an undeclared enclosing function refuses `UnknownFunction` (`missing-name`). Each settles `Inconclusive(ReplayRefused(code))` with the obligation identity carried. | Test (TC-904) |
+| FR-357-AC-11 | Operator level: the call site of a non-`Boolean` function recompiles, its scalar node is found in the selected function's body as an application of the operator, and an agreement, a divergence and a refused operand each settle with the request's obligation identity carried unchanged. A node the package does not hold, a node outside the selected function's body, an operator the node is not an application of and an occurrence key the node does not have each refuse `ScalarIdentity` (`invalid-request`) with their own cause; an undeclared enclosing function refuses `UnknownFunction` (`missing-name`). Each settles `Inconclusive(ReplayRefused(code))` with the obligation identity carried. | Test (TC-904) |
 | FR-357-AC-12 | The outcome document writes a `ScalarAgrees` cause as `{"kind": "scalar-agrees"}`, the kind only (FR-286). | Test (TC-770) |
 | FR-357-AC-13 | Function and operator level: `report.claim()` equals the claim the caller sent on every outcome: diverged, agrees, refused input or operand, generated fault, incomplete, an identity refusal, an undecodable request and a function the entry refuses; claims that differ in any member are not equal, and an agreement's claim is the report's `claim()`. | Test (TC-904) |
 | FR-357-AC-14 | **RETIRED (observation field removed).** The operator claim carries no such field, so no QSL check could fail on it; the driver's byte comparison of the artifact it ran is the only artifact check. The criterion has no subject; the remaining claim-identity members are covered by AC-13. | Test (TC-904), retired |
 | FR-357-AC-15 | Operator level: the obligation identity `parity_obligation` returns equals the preimage tuple, written out independently, for `GraphChild` operands and for `InlineLiteral` operands, with a negative range bound among them; two literals at different positions of one application get distinct identities. | Test (TC-904) |
 | FR-357-AC-16 | **RETIRED (staleness check withdrawn).** The operator entry no longer recomputes the claim's obligation identity and compares it with the request's `obligation_identity`; no QSL check could fail on it. A difference in the native outcome alone is detected as `report.claim()` differing from the claim sent (AC-13). | Test (TC-904), retired |
-| FR-357-AC-17 | Operator level: each check of the preimage against the package refuses `ScalarIdentity` (`invalid-request`) with its own cause: a node the package does not hold (`Node`) or an operator it does not apply (`Operator`); an occurrence key the node does not have (`Occurrence`); a `GraphChild` that is not the node's argument at its position (`OperandChild`); an `InlineLiteral` that is not an inline integer literal there (`NotInlineLiteral`) or whose value or singleton range is not the literal's (`LiteralValue`); a different number of operands (`OperandCount`). A claim of a graph child and an inline literal together passes. | Test (TC-904) |
+| FR-357-AC-17 | **RETIRED (staleness check withdrawn).** The operator entry no longer compares the claim's operands, literal values or operand count with the recompiled package; no QSL check could fail on it. The selector lookups (`Node`, `Operator`, `Occurrence`, `Function`) remain and are covered by AC-11. | Test (TC-904), retired |
 | FR-357-AC-18 | **RETIRED (staleness check withdrawn).** The replay no longer recomputes the obligation identity, so neither the `Encoding` nor the `Obligation` refusal exists at replay; `parity_obligation`'s own encoder refusals are covered by AC-19. | Test (TC-904), retired |
 | FR-357-AC-19 | `parity_obligation`, the one preimage encoder both parity arms call, gives for ADR-013 O-09's worked example (a record with one `Sequence` field, bounds on the sequence and its element) the preimage tuple the ADR states, for the argument entry and for the whole preimage, and orders harness bounds by the bytes of each key's RFC 8785 encoding and refuses a repeated key. | Test (TC-904) |
 | FR-357-AC-20 | Function and operator level: `replay_value_parity` and `replay_operator_parity` each refuse a request whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) or `state_clause` (`VersionUnchanged`) `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` or `/replay/state_clause`, naming the target, the entry and the member `function`, before the recompile; the function claim holds no `function`. | Test (TC-904) |

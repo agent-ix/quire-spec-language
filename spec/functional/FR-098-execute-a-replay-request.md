@@ -479,16 +479,13 @@ as ADR-013 C-12 copies it: the scalar node's occurrence for an operator
 claim, and the function's `declaration` occurrence for a value-parity claim.
 The operator entry does not read it and takes its claim from its own
 inputs; the value-parity entry requires it to be the selected function's
-`declaration` occurrence and recomputes the request's obligation identity
-from the recompiled package (FR-484).
+`declaration` occurrence.
 
 The executor SHALL carry the request's `obligation_identity` unchanged and
 SHALL NOT check it against the selected claim. The identity is provenance:
 a decode refusal names it (FR-070), and its preimage form is its producer's
 (ADR-013 O-09's function-contract or application form, or FR-290's
-`process-provider` form), which the request does not carry. This rule is
-the executor's: the FR-357 entries check the identity of their own claims
-(FR-357, FR-484). The occurrence
+`process-provider` form), which the request does not carry. The occurrence
 key, not the identity, selects the claim.
 
 **Predicate claim.** The call settles by the Boolean the function
