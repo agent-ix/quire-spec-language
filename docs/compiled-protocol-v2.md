@@ -165,7 +165,7 @@ A consumer handoff names the final published compiler implementation
 that retains this contract and names the exact public surface it consumes:
 
 - `protocol_artifact::handoff::{PUBLISHED_OFFER_FILE,
-  PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_SELECTION_FILE,
+  PUBLISHED_SELECTION_FILE,
   PUBLISHED_MUTATION_MANIFEST_FILE,
   MUTATION_MANIFEST_FORMAT}`;
 - `protocol_artifact::v2::{Expected, ExpectedDefinition, ExpectedTemporal,
@@ -202,7 +202,7 @@ The executable recipe is
 [`tests/support/native_protocol/mod.rs`](../tests/support/native_protocol/mod.rs).
 It starts with real native compilation, reconstructs reader expectations from
 the original inputs rather than emitted wire, and covers cross-version offers,
-selection/configuration substitutions, raw digest-domain crossings,
+selection/configuration substitutions,
 same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
 These fixtures demonstrate A's producer and reader boundary only; they do not
 claim that B admitted the artifact or completed an ecosystem acceptance run.
@@ -255,7 +255,7 @@ The directory contains:
   every generated case through `v2::read` and refuses to publish the directory
   if any actual code differs;
 - `mutations/*.json` and `mutations/*.bin`: header,
-  binding-index/inventory, declaration, definition identity/revision/artifact/digest-domain,
+  binding-index/inventory, declaration, definition identity/revision/artifact reference,
   every clock-alternative/member, malformed-member and original-definition-byte
   substitutions;
 - the four original `.native` files and `model-source.json`; and
@@ -277,6 +277,6 @@ The focused release-recipe control is the test
 [`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
 The non-release mutation controls remain in
 [`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), including
-cross-version, every temporal selection family, artifact/digest-domain and
+cross-version, every temporal selection family, artifact-reference and
 same-meaning recanonicalized-input substitutions. These controls qualify A's
 handoff only and do not assert B or campaign acceptance.

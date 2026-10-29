@@ -59,9 +59,9 @@ observations belong only to the later consumer fixture.
    accepted selection. Include native versus formal source revisions, rule
    bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
-   optional feature. Substitute source, domain package `sha256-jcs`, IR and
-   result-JCS digests in fields that carry those distinct identities; require
-   typed refusal without treating any digest as an external ArtifactRef member.
+   optional feature. Change the domain package `sha256-jcs` value in the
+   compiled `Model` while retaining the independently selected package; require
+   typed refusal. Do not use a digest as an external ArtifactRef member.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
    representations and immutable capture origins. Individually break a reference
