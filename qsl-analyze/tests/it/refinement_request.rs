@@ -79,14 +79,17 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
             .filter(|key| key.node() == occurrence.node())
             .map(|key| key.origin().role().as_str())
             .collect();
-        // The refinement record, and FR-146's eight per-step simulation
-        // records at their `generated` occurrences.
+        // The refinement record, and FR-146's per-step simulation records
+        // (an `Initial` and one `Step` per row) at their `generated`
+        // occurrences.
         assert_eq!(
             roles.iter().filter(|role| **role == "declaration").count(),
             1,
             "one refinement record at the refinement's node"
         );
-        assert_eq!(roles.iter().filter(|role| **role == "generated").count(), 8);
+        let generated = roles.iter().filter(|role| **role == "generated").count();
+        assert_eq!(generated, world.refinement().steps().len() + 1);
+        assert_eq!(generated, world.refinement().step_simulations().len());
 
         let mut registry = Registry::new();
         registry

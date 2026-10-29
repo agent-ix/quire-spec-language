@@ -5171,8 +5171,9 @@ impl PackageDeclarations {
             checked.requirement = Some(occurrence);
             // FR-146: the per-step simulation records beside it, each keyed
             // by its O-07 `generated` occurrence at the refinement node.
-            let object_node =
-                |object: quire_exact::EffectiveId| object_node_of(&object_types, &object_nodes, object);
+            let object_node = |object: quire_exact::EffectiveId| {
+                object_node_of(&object_types, &object_nodes, object)
+            };
             let inputs = step_simulation::ExtentInputs {
                 node: emission.identity,
                 step_sources: &emission.step_sources,
@@ -5748,11 +5749,11 @@ fn population_domain_key(
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
     let node = object_node_of(object_types, object_nodes, domain.object).ok_or_else(|| {
-            quire_semantic_value::catalog::InternalFault::new(
-                "check.population-domain",
-                "member-type-has-a-model-node",
-            )
-        })?;
+        quire_semantic_value::catalog::InternalFault::new(
+            "check.population-domain",
+            "member-type-has-a-model-node",
+        )
+    })?;
     state_clause::population_key(&domain, node)
 }
 
