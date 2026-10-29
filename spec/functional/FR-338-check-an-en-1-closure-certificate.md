@@ -156,9 +156,9 @@ QSpec FR-331 carries a `CertificateRejection` as `certificate-rejected{rule,
 at}`, and its Certification table owns every spelling: each locus form, its
 `at` spelling, and the rules admitted at that form. QSL SHALL write a
 rejection with exactly those spellings and SHALL add none of its own. A
-`CertificateRule` variant is written as FR-331's kebab-case rule name, so
-`InitialMissing` is `initial-missing` and `ProofStepInvalid` is
-`proof-step-invalid`.
+QSL's outcome writer SHALL serialize its typed rule and locus variants using
+the forms FR-331 defines; this table records which QSL checker supplies each
+form.
 
 Each `CertificateLocus` alternative is one FR-331 locus form, and only the
 checker named beside it returns that alternative:

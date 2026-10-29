@@ -10,11 +10,9 @@ relationships:
 
 ## Description
 
-Verify that `check` builds each `Value`-family type node in the FR-092 shape
-and keys it by the `quire.structural-node/v1` preimage, byte for byte, that
-builtin and anonymous type nodes carry no owner while a declared record
-carries its unit's owner, that an alias adds no node, that the preimage walk
-is bounded, and that nominal enum nodes keep QSpec's own preimage.
+Verify QSL's checked-type-to-node mapping and owner selection in FR-092,
+byte-for-byte keys for FR-092's QSL-owned vectors, bounded preimage walks,
+and in-place conformance to QSpec's nominal enum vectors.
 
 This catches a preimage that drifts from the authored bytes, an owner leaking
 into an anonymous type (which splits `Int[0, 9]` per package), an owner

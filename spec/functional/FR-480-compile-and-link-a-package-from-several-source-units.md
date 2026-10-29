@@ -39,13 +39,13 @@ relationships:
 ## Description
 
 QSL SHALL compile one checked package from an ordered, non-empty list of
-complete-V1 source units, the package's **unit list**, and link their
-declarations into one package namespace, as QSpec FR-151 and FR-322 define a
-package of linked source units. Each unit is read once and parsed once with
-the one grammar (ADR-033, FR-362). Its declarations are owned by that unit's
-`SourceOwner`. A declaration of any unit is visible by name in every unit,
-and the unit's `model` and `import` aliases stay local to it. A unit list of
-one source is the one-unit compile every other requirement describes.
+complete-V1 source units, the package's **unit list**. QSpec FR-151 defines
+the linked-source-unit language rules; QSpec FR-322 defines the corresponding
+package representation. This requirement specifies QSL's compile order,
+cross-unit stage behavior, source ownership and emitted package obligations.
+Each unit is read once and parsed once with the one grammar (ADR-033,
+FR-362). A unit list of one source is the one-unit compile every other
+requirement describes.
 
 ## Use case
 

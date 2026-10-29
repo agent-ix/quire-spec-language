@@ -44,9 +44,9 @@ checked protocol (FR-218, FR-381) as a family of
 `protocol_clause` node, one node for each role, channel, queue, obligation,
 control and compensation template, and the `value`/`parameter` and
 `expression` nodes they reference. QSL's I2 reader SHALL read them back. This
-is the compiler side of QSpec FR-464, FR-465 and FR-466: QSpec owns every
-body, the operation identity, the operator catalog, the member kinds and the
-reader's refusals; QSL emits them from its checked clause and reads them
+is the compiler side of QSpec FR-464, FR-465 and FR-466: those requirements
+own the body forms, operation identity, operator catalog, member kinds and
+reader refusals; QSL emits them from its checked clause and reads them
 through its I2 reader. The nodes are the only carrier of the protocol. S4
 writes no separate protocol document.
 
@@ -105,16 +105,10 @@ requirements that S4 derives from these nodes.
 
 ## Outputs
 
-One node for each row below, for every checked protocol. Every node has
-`node_tag` `protocol` and the Boolean scalar type node as `semantic_type`.
-Under the approved Option A cycle decision below, a node outside a cyclic
-reference component has `recursion` `null`; every node in a cyclic component
-uses FR-322's existing recursion-group encoding. Every body is one
-`quire.op.protocol.control`
-application whose `protocol_profile` law equals the lock's row, whose member
-is `{kind: "profile_operator", operator}` and whose arguments are the
-operator's bindings in the order QSpec FR-464, FR-465 or FR-466 fixes. `P` is
-the protocol's qualified name.
+S4 emits one node for each row below, for every checked protocol. The closed
+body and key shapes are those QSpec FR-464, FR-465 and FR-466 define; the
+table records QSL's mapping from checked protocol facts to their published
+arguments. `P` is the protocol's qualified name.
 
 | Operator | `semantic_form` | `declaration.qualified_name` | Arguments, in order, written from |
 | --- | --- | --- | --- |
