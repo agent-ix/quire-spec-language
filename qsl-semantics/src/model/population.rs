@@ -2931,13 +2931,12 @@ mod tests {
         );
     }
 
-    /// Golden vector: the seven-field `quire.population/v1` preimage's RFC
-    /// 8785 text, written out independently, and its SHA-256.
+    /// The seven-field `quire.population/v1` preimage's RFC 8785 text, written
+    /// out independently; the identity is its SHA-256.
     #[trace("TC-291", "FR-089-AC-1", "FR-089-AC-7")]
     #[test]
-    fn population_id_matches_its_golden_vector() {
+    fn population_id_is_the_hash_of_its_hand_written_preimage() {
         const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-        const DIGEST: &str = "5724db729e0bc5d08cf4cc9d2955346daa313804c50ad49e570d29326b0a3c15";
         let package = DomainPackage::new(
             DomainPackageRef {
                 identity: "test/orders".to_owned(),
@@ -2950,7 +2949,7 @@ mod tests {
             package: "test/orders".to_owned(),
             node: "ix://test/orders/P1".to_owned(),
         };
-        assert_eq!(hex(&Sha256::digest(TEXT.as_bytes())), DIGEST);
+        let digest = hex(&Sha256::digest(TEXT.as_bytes()));
         let id = mint_population_id(
             &package,
             &key,
@@ -2960,7 +2959,7 @@ mod tests {
             population_id_byte_bound(&package, &key, &BTreeMap::new()),
         )
         .expect("golden population identity encodes");
-        assert_eq!(hex(id.as_bytes()), DIGEST);
+        assert_eq!(hex(id.as_bytes()), digest);
         let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
     }

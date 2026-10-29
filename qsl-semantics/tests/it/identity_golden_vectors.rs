@@ -3,10 +3,13 @@
 //! mints through `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785
 //! implementation produces every RFC 8785 encoding).
 //!
-//! Each vector is the canonical text itself, written out by hand, and its
-//! SHA-256. A vector checks three things: the text hashes to the pinned
-//! digest (so the digest is the text's, not the code's); the identity the
-//! crate mints over the same preimage equals it; and the `serde_json`
+//! Each vector is the canonical text itself, written out by hand. Its digest
+//! is never stored: it is recomputed from the text with `sha2` directly, a
+//! path independent of `quire-canonical`, and a digest one text embeds (an
+//! owner, a node reference, the model selection) is spliced in from the text
+//! it names. A vector checks three things: the identity the crate mints over
+//! the preimage equals the independent SHA-256 of the hand-written text; the
+//! texts keep their domains apart (no two vectors share a digest); and the `serde_json`
 //! `Value` encoder these sites used before `quire-canonical` emitted exactly the same
 //! text, so moving to `quire-canonical` left the digest unchanged.
 //!
@@ -42,44 +45,28 @@ use quire_exact::NodeKey;
 use quire_semantic_value::quantity::{result_unit, QuantityUnit, UnitOperation};
 
 const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}"#;
-const EFFECTIVE_TYPE_DIGEST: &str =
-    "4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8";
 
-const EFFECTIVE_MEMBER: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8","domain":"quire.model.effective-declaration/v2"},"version":"quire.model.effective-declaration/v2"}"#;
-const EFFECTIVE_MEMBER_DIGEST: &str =
-    "86ed7ba6c712042c8f4440fbfd0c011656b58a062cb02b1ac3caffab928dfeaf";
+const EFFECTIVE_MEMBER_TEMPLATE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"},"version":"quire.model.effective-declaration/v2"}"#;
 
-const UNIVERSE: &str = r#"{"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders"},"root_types":[{"digest":"4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8","domain":"quire.model.effective-declaration/v2"}],"version":"quire.model.object-universe/v2"}"#;
-const UNIVERSE_DIGEST: &str = "00f7200465ac45bc1e37886e4498b80e65e09c73c2487a48da22bd454c90b755";
+const UNIVERSE_TEMPLATE: &str = r#"{"model_selection":{"digest":"@SEL@","digest_domain":"sha256-jcs","identity":"test/orders"},"root_types":[{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"}],"version":"quire.model.object-universe/v2"}"#;
 
-const VIEW: &str = r#"{"declarations":[{"effective_id":{"digest":"4531dd9eca8a53b851b4a4d3392012f572f2325dd04d3b4608a6a77f22d6bcb8","domain":"quire.model.effective-declaration/v2"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}}],"model_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders"},"rules":{"identity":"quire.model.complete.rules/v1"},"version":"quire.model.effective-view/v2"}"#;
-const VIEW_DIGEST: &str = "3576335e1feebaac47af4b4e99140fa5d294c8007473b6167805cfe2a9834e15";
+const VIEW_TEMPLATE: &str = r#"{"declarations":[{"effective_id":{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}}],"model_selection":{"digest":"@SEL@","digest_domain":"sha256-jcs","identity":"test/orders"},"rules":{"identity":"quire.model.complete.rules/v1"},"version":"quire.model.effective-view/v2"}"#;
 
 const ENUM_DECLARATION: &str = r#"{"members":["Active","Closed"],"ordered":false,"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Status"],"version":"quire.enum-declaration-node/v1"}"#;
-const ENUM_DECLARATION_DIGEST: &str =
-    "347ab6eb43f9f5769a9fcc8a62b0142d76401297a1e2f1265987e5557fe7a72d";
 
-const ENUM_MEMBER: &str = r#"{"case":"Active","declaration_node_id":{"digest":"347ab6eb43f9f5769a9fcc8a62b0142d76401297a1e2f1265987e5557fe7a72d","domain":"quire.checked-semantic-node/v1"},"version":"quire.enum-member-node/v1"}"#;
-const ENUM_MEMBER_DIGEST: &str = "f831f2a77f4edab6b089d6ab53fcc34f365423de9adffa3e9603088a979cc147";
+const ENUM_MEMBER_TEMPLATE: &str = r#"{"case":"Active","declaration_node_id":{"digest":"@DECL@","domain":"quire.checked-semantic-node/v1"},"version":"quire.enum-member-node/v1"}"#;
 
 const DIMENSION: &str = r#"{"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Length"],"terms":[],"version":"quire.dimension-node/v1"}"#;
-/// Equal to `LENGTH` in `check::lowering::model::tests`, pinned there
-/// earlier from the same preimage.
-const DIMENSION_DIGEST: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
 
-const UNIT: &str = r#"{"dimension_node_id":{"digest":"b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b","domain":"quire.checked-semantic-node/v1"},"offset":{"denominator":"1","numerator":"0"},"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Metre"],"scale":{"denominator":"1","numerator":"1"},"target_unit_node_id":null,"version":"quire.unit-node/v1"}"#;
-const UNIT_DIGEST: &str = "41564151551aa8147f616d61756eba356cbfd046d671cfbbe3e85afdc35f7454";
+const UNIT_TEMPLATE: &str = r#"{"dimension_node_id":{"digest":"@DIM@","domain":"quire.checked-semantic-node/v1"},"offset":{"denominator":"1","numerator":"0"},"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Metre"],"scale":{"denominator":"1","numerator":"1"},"target_unit_node_id":null,"version":"quire.unit-node/v1"}"#;
 
-const COMPOUND_UNIT: &str = r#"{"terms":[{"exponent":"2","unit_node_id":{"digest":"41564151551aa8147f616d61756eba356cbfd046d671cfbbe3e85afdc35f7454","domain":"quire.checked-semantic-node/v1"}}],"version":"quire.value.compound-unit/v1"}"#;
-const COMPOUND_UNIT_DIGEST: &str =
-    "23d34da2c5d4934dca8d31832eedf391f5a5fd6ced34f45d8b24a88ac7ace3b9";
+const COMPOUND_UNIT_TEMPLATE: &str = r#"{"terms":[{"exponent":"2","unit_node_id":{"digest":"@UNIT@","domain":"quire.checked-semantic-node/v1"}}],"version":"quire.value.compound-unit/v1"}"#;
 
 /// A domain-package document as a producer might write it: whitespace,
 /// members out of order, an escaped `é`.
 const DOCUMENT_RAW: &str = r#"{ "package": { "version": "1", "identity": "test/golden" }, "types": [], "note": "\u00e9" }"#;
 const DOCUMENT: &str =
     r#"{"note":"é","package":{"identity":"test/golden","version":"1"},"types":[]}"#;
-const DOCUMENT_DIGEST: &str = "846d75a8d7df96aa9445d96b5b3be3fc9bd0ac96c7bf5ad4c9fd3f12ba55cc2f";
 
 /// A document with integral numbers spelled `1.0` and `1e2`: its RFC 8785
 /// text, and the text `serde_json` printed for it before `quire-canonical`.
@@ -87,8 +74,6 @@ const FLOAT_DOCUMENT_RAW: &str =
     r#"{"package":{"identity":"test/golden","version":"1"},"n":[1.0,1e2,0.5]}"#;
 const FLOAT_DOCUMENT: &str =
     r#"{"n":[1,100,0.5],"package":{"identity":"test/golden","version":"1"}}"#;
-const FLOAT_DOCUMENT_DIGEST: &str =
-    "b44169de7f79ea5fce5adc150bf9a64235cb999482163b46e2e9e31d0e059a30";
 const FLOAT_DOCUMENT_BEFORE_QSL_194: &str =
     r#"{"n":[1.0,100.0,0.5],"package":{"identity":"test/golden","version":"1"}}"#;
 
@@ -99,15 +84,59 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// The SHA-256 of a vector's hand-written text: the expected digest.
+fn digest_of(text: &str) -> String {
+    sha256_hex(text.as_bytes())
+}
+
+fn effective_type_digest() -> String {
+    digest_of(EFFECTIVE_TYPE)
+}
+
+fn effective_member() -> String {
+    EFFECTIVE_MEMBER_TEMPLATE.replace("@TYPE@", &effective_type_digest())
+}
+
+fn selection_digest() -> String {
+    hex(&selection().digest)
+}
+
+fn universe_text() -> String {
+    UNIVERSE_TEMPLATE
+        .replace("@SEL@", &selection_digest())
+        .replace("@TYPE@", &effective_type_digest())
+}
+
+fn view_text() -> String {
+    VIEW_TEMPLATE
+        .replace("@SEL@", &selection_digest())
+        .replace("@TYPE@", &effective_type_digest())
+}
+
+fn enum_member() -> String {
+    ENUM_MEMBER_TEMPLATE.replace("@DECL@", &digest_of(ENUM_DECLARATION))
+}
+
+fn unit() -> String {
+    UNIT_TEMPLATE.replace("@DIM@", &digest_of(DIMENSION))
+}
+
+fn compound_unit() -> String {
+    COMPOUND_UNIT_TEMPLATE.replace("@UNIT@", &digest_of(&unit()))
+}
+
 fn hex(bytes: &[u8; 32]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// `text` hashes to `digest`, the crate minted `actual` over the same
-/// preimage, and the earlier `serde_json` encoder emitted `text` too.
-fn assert_golden(text: &str, digest: &str, actual: &str) {
-    assert_eq!(sha256_hex(text.as_bytes()), digest, "the vector's own text");
-    assert_eq!(actual, digest, "the identity minted over {text}");
+/// The crate minted `actual` over the preimage `text` spells, equal to the
+/// independent SHA-256 of `text`, and the earlier `serde_json` encoder emitted `text` too.
+fn assert_golden(text: &str, actual: &str) {
+    assert_eq!(
+        actual,
+        digest_of(text),
+        "the identity minted over {text} is the independent SHA-256 of the text"
+    );
     let parsed: Value = serde_json::from_str(text).expect("a vector is JSON");
     assert_eq!(
         serde_json::to_string(&parsed).expect("a Value serializes"),
@@ -152,21 +181,18 @@ fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPrei
 fn effective_declaration_identities_match_their_golden_vectors() {
     let effective_type = qualified("ix://test/orders/A", None);
     let type_id = effective_type.identity();
-    assert_golden(EFFECTIVE_TYPE, EFFECTIVE_TYPE_DIGEST, &type_id.to_string());
+    assert_golden(EFFECTIVE_TYPE, &type_id.to_string());
     assert_eq!(
         effective_type.canonical_len(),
         u64::try_from(EFFECTIVE_TYPE.len()).unwrap()
     );
 
     let member = qualified("ix://test/orders/A/x", Some(type_id));
-    assert_golden(
-        EFFECTIVE_MEMBER,
-        EFFECTIVE_MEMBER_DIGEST,
-        &member.identity().to_string(),
-    );
+    let member_text = effective_member();
+    assert_golden(&member_text, &member.identity().to_string());
     assert_eq!(
         member.canonical_len(),
-        u64::try_from(EFFECTIVE_MEMBER.len()).unwrap()
+        u64::try_from(member_text.len()).unwrap()
     );
 }
 
@@ -178,11 +204,9 @@ fn object_universe_identity_matches_its_golden_vector() {
         model_selection: selection(),
         root_types: vec![qualified("ix://test/orders/A", None).identity()],
     };
-    assert_golden(UNIVERSE, UNIVERSE_DIGEST, &universe.identity().to_string());
-    assert_eq!(
-        universe.canonical_len(),
-        u64::try_from(UNIVERSE.len()).unwrap()
-    );
+    let text = universe_text();
+    assert_golden(&text, &universe.identity().to_string());
+    assert_eq!(universe.canonical_len(), u64::try_from(text.len()).unwrap());
 }
 
 /// `quire.model.effective-view/v2`, over the view `normalize` builds for a
@@ -204,8 +228,9 @@ fn effective_view_identity_matches_its_golden_vector() {
     else {
         panic!("a one-type domain package normalizes");
     };
-    assert_golden(VIEW, VIEW_DIGEST, &view.identity().to_string());
-    assert_eq!(view.canonical_len(), u64::try_from(VIEW.len()).unwrap());
+    let text = view_text();
+    assert_golden(&text, &view.identity().to_string());
+    assert_eq!(view.canonical_len(), u64::try_from(text.len()).unwrap());
 }
 
 /// The nominal enum declaration and enum member node preimages (FR-092 rule
@@ -218,15 +243,15 @@ fn enum_node_digests_match_their_golden_vectors() {
             .unwrap();
     assert_golden(
         ENUM_DECLARATION,
-        ENUM_DECLARATION_DIGEST,
         &hex(&declaration
             .digest(qsl_foundation::IdentityLimits::default())
             .unwrap()),
     );
-    let member = EnumMemberPreimage::from_json(serde_json::from_str(ENUM_MEMBER).unwrap()).unwrap();
+    let member_text = enum_member();
+    let member =
+        EnumMemberPreimage::from_json(serde_json::from_str(&member_text).unwrap()).unwrap();
     assert_golden(
-        ENUM_MEMBER,
-        ENUM_MEMBER_DIGEST,
+        &member_text,
         &hex(&member
             .digest(qsl_foundation::IdentityLimits::default())
             .unwrap()),
@@ -241,26 +266,26 @@ fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
     let dimension = DimensionPreimage::from_json(serde_json::from_str(DIMENSION).unwrap()).unwrap();
     assert_golden(
         DIMENSION,
-        DIMENSION_DIGEST,
         &hex(&dimension
             .digest(qsl_foundation::IdentityLimits::default())
             .unwrap()),
     );
-    let unit = UnitPreimage::from_json(serde_json::from_str(UNIT).unwrap()).unwrap();
+    let unit_text = unit();
+    let unit = UnitPreimage::from_json(serde_json::from_str(&unit_text).unwrap()).unwrap();
     assert_golden(
-        UNIT,
-        UNIT_DIGEST,
+        &unit_text,
         &hex(&unit
             .digest(qsl_foundation::IdentityLimits::default())
             .unwrap()),
     );
+    let compound_text = compound_unit();
     let compound =
-        CompoundUnitPreimage::from_json(serde_json::from_str(COMPOUND_UNIT).unwrap()).unwrap();
+        CompoundUnitPreimage::from_json(serde_json::from_str(&compound_text).unwrap()).unwrap();
     let id = compound
         .id(qsl_foundation::IdentityLimits::default())
         .unwrap();
     assert_eq!(id.domain(), quire_exact::UnitDomain::Compound);
-    assert_golden(COMPOUND_UNIT, COMPOUND_UNIT_DIGEST, &hex(id.as_bytes()));
+    assert_golden(&compound_text, &hex(id.as_bytes()));
 }
 
 /// The compound unit `metre^2` formed at runtime over the admitted golden
@@ -273,12 +298,13 @@ fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
 #[test]
 fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
     let dimension = DimensionPreimage::from_json(serde_json::from_str(DIMENSION).unwrap()).unwrap();
-    let unit = UnitPreimage::from_json(serde_json::from_str(UNIT).unwrap()).unwrap();
-    let metre = NodeKey::from_digest(digest_bytes(UNIT_DIGEST));
+    let unit_text = unit();
+    let unit = UnitPreimage::from_json(serde_json::from_str(&unit_text).unwrap()).unwrap();
+    let metre = NodeKey::from_digest(digest_bytes(&digest_of(&unit_text)));
     let graph = admit_unit_graph(
         [(
             dimension,
-            NodeKey::from_digest(digest_bytes(DIMENSION_DIGEST)),
+            NodeKey::from_digest(digest_bytes(&digest_of(DIMENSION))),
         )],
         [(unit, metre)],
         &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
@@ -288,16 +314,23 @@ fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
         qsl_foundation::IdentityLimits::default(),
     )
     .expect("the golden dimension and unit admit");
+    let compound_text = compound_unit();
     let compound =
-        CompoundUnitPreimage::from_json(serde_json::from_str(COMPOUND_UNIT).unwrap()).unwrap();
+        CompoundUnitPreimage::from_json(serde_json::from_str(&compound_text).unwrap()).unwrap();
     let built = graph
         .compound_unit(compound.terms())
         .expect("metre is a root unit");
-    assert_eq!(hex(built.id().unwrap().as_bytes()), COMPOUND_UNIT_DIGEST);
+    assert_eq!(
+        hex(built.id().unwrap().as_bytes()),
+        digest_of(&compound_text)
+    );
     let metre = QuantityUnit::Declared(Box::new(graph.unit(metre).unwrap().clone()));
     let squared = result_unit(UnitOperation::Multiply, &metre, &metre).unwrap();
     assert_eq!(squared, QuantityUnit::Compound(built));
-    assert_eq!(hex(squared.id().unwrap().as_bytes()), COMPOUND_UNIT_DIGEST);
+    assert_eq!(
+        hex(squared.id().unwrap().as_bytes()),
+        digest_of(&compound_text)
+    );
     assert_eq!(
         squared.id().unwrap().domain(),
         quire_exact::UnitDomain::Compound
@@ -364,10 +397,12 @@ fn domain_package_digest_matches_its_golden_vector() {
     let parsed: Value = serde_json::from_str(DOCUMENT_RAW).unwrap();
     assert_golden(
         DOCUMENT,
-        DOCUMENT_DIGEST,
         &sha256_hex(serde_json::to_string(&parsed).unwrap().as_bytes()),
     );
-    assert!(admit_under(DOCUMENT_RAW, digest_bytes(DOCUMENT_DIGEST)));
+    assert!(admit_under(
+        DOCUMENT_RAW,
+        digest_bytes(&digest_of(DOCUMENT))
+    ));
     assert!(!admit_under(
         DOCUMENT_RAW,
         digest_bytes(&sha256_hex(DOCUMENT_RAW.as_bytes()))
@@ -381,7 +416,6 @@ fn domain_package_digest_matches_its_golden_vector() {
 #[trace("TC-145", "FR-056-AC-2")]
 #[test]
 fn domain_package_digest_spells_numbers_as_rfc_8785_does() {
-    assert_eq!(sha256_hex(FLOAT_DOCUMENT.as_bytes()), FLOAT_DOCUMENT_DIGEST);
     let parsed: Value = serde_json::from_str(FLOAT_DOCUMENT_RAW).unwrap();
     assert_eq!(
         serde_json::to_string(&parsed).unwrap(),
@@ -390,7 +424,7 @@ fn domain_package_digest_spells_numbers_as_rfc_8785_does() {
     );
     assert!(admit_under(
         FLOAT_DOCUMENT_RAW,
-        digest_bytes(FLOAT_DOCUMENT_DIGEST)
+        digest_bytes(&digest_of(FLOAT_DOCUMENT))
     ));
     assert!(!admit_under(
         FLOAT_DOCUMENT_RAW,
@@ -399,14 +433,15 @@ fn domain_package_digest_spells_numbers_as_rfc_8785_does() {
 }
 
 /// The RFC 8785 text of the big-integer documents below, `n` being the IEEE
-/// 754 double the literal parses to, and its SHA-256, both from an
-/// independent JavaScript RFC 8785 canonicalizer (`JSON.parse`, sorted
-/// keys, `JSON.stringify`).
+/// 754 double the literal parses to, written by hand from an independent
+/// JavaScript RFC 8785 canonicalizer (`JSON.parse`, sorted keys,
+/// `JSON.stringify`); its digest is the SHA-256 of that text, recomputed.
 const BIG_INTEGER_DOCUMENT: &str =
     r#"{"n":18446744073709552000,"package":{"identity":"test/golden","version":"1"}}"#;
-const BIG_INTEGER_DIGEST: &str = "307e88eff7a1ca7eef749449cce656ffbb2ee67a65a33866cf87fd232cee79e4";
-const BEYOND_U64_DIGEST: &str = "25fd8dabded7b948d8cbf764d17f1a662fc9974d8fc80e32cb1c9a25409a7393";
-const BELOW_I53_DIGEST: &str = "bb0f6be8d14b570d7cf7a020276afd187d79a0aa03bfb0767c64a9cfad6defe4";
+const BEYOND_U64_DOCUMENT: &str =
+    r#"{"n":1.2345678901234568e+29,"package":{"identity":"test/golden","version":"1"}}"#;
+const BELOW_I53_DOCUMENT: &str =
+    r#"{"n":-9007199254740992,"package":{"identity":"test/golden","version":"1"}}"#;
 
 fn big_integer_document(literal: &str) -> String {
     format!(r#"{{"package":{{"identity":"test/golden","version":"1"}},"n":{literal}}}"#)
@@ -422,18 +457,14 @@ fn big_integer_document(literal: &str) -> String {
 #[trace("TC-145", "FR-056-AC-13")]
 #[test]
 fn big_integers_admit_under_neither_their_double_nor_their_digits() {
-    assert_eq!(
-        sha256_hex(BIG_INTEGER_DOCUMENT.as_bytes()),
-        BIG_INTEGER_DIGEST
-    );
-    for (literal, digest) in [
-        ("18446744073709551615", BIG_INTEGER_DIGEST),
-        ("18446744073709551616", BIG_INTEGER_DIGEST),
-        ("123456789012345678901234567890", BEYOND_U64_DIGEST),
-        ("-9007199254740993", BELOW_I53_DIGEST),
+    for (literal, double_text) in [
+        ("18446744073709551615", BIG_INTEGER_DOCUMENT),
+        ("18446744073709551616", BIG_INTEGER_DOCUMENT),
+        ("123456789012345678901234567890", BEYOND_U64_DOCUMENT),
+        ("-9007199254740993", BELOW_I53_DOCUMENT),
     ] {
         let raw = big_integer_document(literal);
-        assert_inexact_integer_at_n(&raw, digest_bytes(digest), literal);
+        assert_inexact_integer_at_n(&raw, digest_bytes(&digest_of(double_text)), literal);
         let exact_digits =
             format!(r#"{{"n":{literal},"package":{{"identity":"test/golden","version":"1"}}}}"#);
         assert_inexact_integer_at_n(
@@ -442,4 +473,27 @@ fn big_integers_admit_under_neither_their_double_nor_their_digits() {
             &format!("{literal} under its exact digits"),
         );
     }
+}
+
+/// Domain separation: every identity vector above digests to a different
+/// value, so no two preimage domains can be confused for one another.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
+#[test]
+fn no_two_identity_vectors_share_a_digest() {
+    let texts = [
+        EFFECTIVE_TYPE.to_owned(),
+        effective_member(),
+        universe_text(),
+        view_text(),
+        ENUM_DECLARATION.to_owned(),
+        enum_member(),
+        DIMENSION.to_owned(),
+        unit(),
+        compound_unit(),
+        DOCUMENT.to_owned(),
+        FLOAT_DOCUMENT.to_owned(),
+    ];
+    let digests: std::collections::BTreeSet<String> =
+        texts.iter().map(|text| digest_of(text)).collect();
+    assert_eq!(digests.len(), texts.len());
 }
