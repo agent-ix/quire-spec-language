@@ -10,10 +10,10 @@ use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
 use quire_exact::Cancel;
 
 use crate::timed_world::{
-    document, ident, timers_document, wire_field, world_holding, World, DENSE, PACKAGE,
+    document, ident, timers_document, wire_field, world_holding, World, DENSE,
 };
 use crate::zone_search::{
-    claim, deadlock, deadlock_result, operations, time_lock_item, violated, INFINITE,
+    claim, deadlock, deadlock_result, operations, violated, INFINITE,
 };
 
 /// `ts: Sequence<Timer>[0, max]` (`Timer { x: Clock; n: Phase }`) granted by

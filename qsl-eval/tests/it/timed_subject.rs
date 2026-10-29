@@ -5259,13 +5259,15 @@ fn the_clock_presence_frame_vectors_step_as_published() {
                  post P using v on M::Call::work {{ {} }}\n",
                 requires.expect("a requirement")
             );
-            let refusals = try_world_of(
+            let refusals = match try_world_of(
                 option_clock_document(),
                 "",
                 &only(&["work"], &body),
                 json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(json!({}))}]),
-            )
-            .expect_err("the published refusal");
+            ) {
+                Ok(_) => panic!("{id}: expected the published refusal"),
+                Err(refusals) => refusals,
+            };
             let [refusal] = refusals.as_slice() else {
                 panic!("{id}: one refusal: {refusals:?}");
             };
@@ -5306,8 +5308,8 @@ fn the_clock_presence_frame_vectors_step_as_published() {
                     .is_some_and(|clock| clock.name() == "v")
             })
             .expect("the option clock place");
-        let start = timed
-            .initial()
+        let initial = timed.initial();
+        let start = initial
             .iter()
             .find(|state| timed.live(&timed.places()[at], state.discrete()) == (vector["pre"]["present"] == true))
             .unwrap_or_else(|| panic!("{id}: the pre-state"));

@@ -2484,7 +2484,7 @@ fn another_objects_presence_is_a_guard_data_predicate() {
 #[test]
 fn an_absent_option_clock_required_present_without_a_write_refuses() {
     let document = option_clock_document();
-    let pre = format!("pre Off using v on Config::Call::bump {{ not present(self.v) }}\n");
+    let pre = "pre Off using v on Config::Call::bump { not present(self.v) }\n".to_owned();
     let (cause, text) = refused(
         &document,
         &format!(
