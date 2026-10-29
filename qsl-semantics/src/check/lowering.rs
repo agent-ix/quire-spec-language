@@ -129,7 +129,9 @@ pub(crate) use state::{
 };
 pub(crate) use state_graph::StateGraphClaimInput;
 pub(crate) use state_transition::TransitionClause;
-pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
+pub(crate) use temporal::{
+    temporal_location, temporal_site, LoweredTemporalClause, TemporalClauseInput, TemporalSite,
+};
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
@@ -707,6 +709,16 @@ pub(crate) struct Lowering<'a> {
     /// The member keys of each keyed protocol clause, by clause name: the
     /// nodes a refinement class catalog names (FR-375).
     protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    /// Attempts and compensation nodes retained for clauses delayed until
+    /// their required temporal clause keys are available.
+    protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
+    protocol_compensations: Vec<Vec<protocol::CompensationNodes>>,
+    /// Temporal clause nodes keyed before a protocol that requires them.
+    temporal_keys: BTreeMap<usize, NodeKey>,
+    /// Temporal clauses whose lowering refused: the refusal is reported at
+    /// the clause, so a protocol requiring one is left unkeyed without a
+    /// second refusal of its own.
+    refused_temporals: BTreeSet<usize>,
     /// Parameter nodes minted while lowering one protocol's expression
     /// bodies, by enclosing protocol declaration.
     protocol_binder_keys:
@@ -1638,6 +1650,10 @@ impl<'a> Lowering<'a> {
             bound_sites: BTreeSet::new(),
             protocol_keys: Vec::new(),
             protocol_members: BTreeMap::new(),
+            protocol_attempts: Vec::new(),
+            protocol_compensations: Vec::new(),
+            temporal_keys: BTreeMap::new(),
+            refused_temporals: BTreeSet::new(),
             protocol_binder_keys: BTreeMap::new(),
             protocol_expression_binders: BTreeMap::new(),
             active_protocol: None,
@@ -4820,6 +4836,9 @@ pub(crate) enum LoweringStep {
     /// The `index`-th protocol, whose callees and referenced protocols are
     /// all keyed before it.
     Protocol(usize),
+    /// The `index`-th checked temporal clause, whose formula callees and
+    /// protocol references are keyed before its node.
+    Temporal(usize),
     /// A cyclic component of function calls and protocol references that
     /// holds a protocol (QSL-844): its protocols have no node, then its
     /// functions are lowered in their own order.
@@ -4828,6 +4847,8 @@ pub(crate) enum LoweringStep {
         protocols: Vec<usize>,
         /// The component's functions, each callee's group first.
         functions: Vec<FunctionGroup>,
+        /// Temporal clauses in the component, ascending.
+        temporals: Vec<usize>,
     },
 }
 
@@ -4838,13 +4859,14 @@ pub(crate) enum LoweringStep {
 /// bodies call and the protocols they refer to.
 pub(crate) fn dependency_order(
     function_edges: &[(Vec<usize>, Vec<usize>)],
-    protocol_edges: &[(Vec<usize>, Vec<usize>)],
+    protocol_edges: &[(Vec<usize>, Vec<usize>, Vec<usize>)],
+    temporal_edges: &[(Vec<usize>, Vec<usize>)],
 ) -> Vec<LoweringStep> {
     let functions = function_edges.len();
     let protocols = protocol_edges.len();
+    let temporals = temporal_edges.len();
     let edges: Vec<Vec<usize>> = function_edges
         .iter()
-        .chain(protocol_edges)
         .map(|(called, referenced)| {
             called
                 .iter()
@@ -4859,13 +4881,98 @@ pub(crate) fn dependency_order(
                 )
                 .collect()
         })
+        .chain(protocol_edges.iter().map(|(called, referenced, required)| {
+            called
+                .iter()
+                .copied()
+                .filter(|callee| *callee < functions)
+                .chain(
+                    referenced
+                        .iter()
+                        .copied()
+                        .filter(|protocol| *protocol < protocols)
+                        .map(|protocol| functions + protocol),
+                )
+                .chain(
+                    required
+                        .iter()
+                        .copied()
+                        .filter(|temporal| *temporal < temporals)
+                        .map(|temporal| functions + protocols + temporal),
+                )
+                .collect()
+        }))
+        .chain(temporal_edges.iter().map(|(called, referenced)| {
+            called
+                .iter()
+                .copied()
+                .filter(|callee| *callee < functions)
+                .chain(
+                    referenced
+                        .iter()
+                        .copied()
+                        .filter(|protocol| *protocol < protocols)
+                        .map(|protocol| functions + protocol),
+                )
+                .collect()
+        }))
         .collect();
     let mut steps = Vec::new();
     for mut members in strongly_connected(&edges) {
         members.sort_unstable();
-        let (members_functions, members_protocols): (Vec<usize>, Vec<usize>) =
+        let (members_functions, members_non_functions): (Vec<usize>, Vec<usize>) =
             members.iter().partition(|member| **member < functions);
+        let (members_protocols, members_temporals): (Vec<usize>, Vec<usize>) =
+            members_non_functions
+                .into_iter()
+                .partition(|member| *member < functions + protocols);
+        let protocol_indices: Vec<usize> = members_protocols
+            .iter()
+            .map(|member| member - functions)
+            .collect();
+        let temporal_indices: Vec<usize> = members_temporals
+            .iter()
+            .map(|member| member - functions - protocols)
+            .collect();
         if members_protocols.is_empty() {
+            if members_functions.is_empty()
+                && temporal_indices.len() == 1
+                && members
+                    .first()
+                    .is_some_and(|member| !edges[*member].contains(member))
+            {
+                steps.push(LoweringStep::Temporal(temporal_indices[0]));
+                continue;
+            }
+            if !temporal_indices.is_empty() {
+                let local: Vec<Vec<usize>> = members_functions
+                    .iter()
+                    .map(|member| {
+                        function_edges[*member]
+                            .0
+                            .iter()
+                            .filter_map(|callee| members_functions.iter().position(|m| m == callee))
+                            .collect()
+                    })
+                    .collect();
+                let groups = lowering_order(&local)
+                    .into_iter()
+                    .map(|group| FunctionGroup {
+                        members: group
+                            .members
+                            .into_iter()
+                            .map(|member| members_functions[member])
+                            .collect(),
+                        recursive: group.recursive,
+                    })
+                    .collect();
+                steps.push(LoweringStep::Cycle {
+                    protocols: Vec::new(),
+                    functions: groups,
+                    temporals: temporal_indices,
+                });
+                continue;
+            }
             let recursive = members_functions.len() > 1
                 || members_functions
                     .first()
@@ -4876,10 +4983,6 @@ pub(crate) fn dependency_order(
             }));
             continue;
         }
-        let protocol_indices: Vec<usize> = members_protocols
-            .iter()
-            .map(|member| member - functions)
-            .collect();
         let cyclic = members.len() > 1
             || members
                 .first()
@@ -4913,6 +5016,7 @@ pub(crate) fn dependency_order(
         steps.push(LoweringStep::Cycle {
             protocols: protocol_indices,
             functions: groups,
+            temporals: temporal_indices,
         });
     }
     steps
