@@ -1258,7 +1258,9 @@ impl TimedModel {
             .zip(&self.urgency_predicates)
             .enumerate()
             .filter_map(|(index, (urgency, predicate))| {
-                predicate.as_ref().map(|predicate| (index, urgency, predicate))
+                predicate
+                    .as_ref()
+                    .map(|predicate| (index, urgency, predicate))
             })
     }
 

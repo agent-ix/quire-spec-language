@@ -21,7 +21,6 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Value, ValueType};
 use quire_semantic_value::location::Location;
 
 use super::{Binder, Binders, Lowering, PlaceStep};
-use crate::value::member::Member;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::{CheckedLiteral, NodeKind};
 use crate::check::node_key::{
@@ -35,6 +34,7 @@ use crate::check::timed_model::{
     ConstraintTargetNodes, GuardNodes, InvariantNodes, PartNodes, ResetNodes, ResetTargetNodes,
     StateAlternative, TimedClauseNodes, TimedModel,
 };
+use crate::value::member::Member;
 
 /// What [`Lowering::timed_clauses`] reads beside the model.
 pub(crate) struct TimedClauseInput<'a> {
@@ -532,7 +532,10 @@ impl Lowering<'_> {
                         "member_identity",
                         self.text_literal(&row.member_identity, location)?,
                     ),
-                    ("member_type", self.text_literal(&row.member_type, location)?),
+                    (
+                        "member_type",
+                        self.text_literal(&row.member_type, location)?,
+                    ),
                     (
                         "collection_kind",
                         self.text_literal(&row.collection_kind, location)?,
@@ -639,7 +642,8 @@ impl Lowering<'_> {
     ) -> Result<NodeKey, CheckRefusal> {
         let mut disjuncts = Vec::with_capacity(alternatives.len());
         for (alternative, site) in alternatives.iter().zip(sites) {
-            let mut conjuncts = self.self_presences(clocks, alternative.presences(), context, site)?;
+            let mut conjuncts =
+                self.self_presences(clocks, alternative.presences(), context, site)?;
             let data = alternative.predicate();
             let trivial = matches!(
                 data.checked_body().root().kind(),

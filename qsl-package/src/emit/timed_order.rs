@@ -598,40 +598,6 @@ mod tests {
         .expect("published JSON")
     }
 
-    /// The token of a JSON pointer step.
-    fn unescape(step: &str) -> String {
-        step.replace("~1", "/").replace("~0", "~")
-    }
-
-    /// Apply the RFC 6902 `add`, `remove` and `replace` operations of
-    /// `patch` to `document`.
-    fn apply(document: &mut Value, patch: &Value) {
-        for operation in patch.as_array().expect("a patch") {
-            let path = operation["path"].as_str().expect("a path");
-            let (parent, last) = path.rsplit_once('/').expect("a nonroot path");
-            let last = unescape(last);
-            let container = document
-                .pointer_mut(parent)
-                .unwrap_or_else(|| panic!("{parent} resolves"));
-            let value = operation["value"].clone();
-            match (operation["op"].as_str().expect("an op"), container) {
-                ("add", Value::Array(items)) if last == "-" => items.push(value),
-                ("add", Value::Array(items)) => items.insert(last.parse().unwrap(), value),
-                ("add" | "replace", Value::Object(fields)) => {
-                    fields.insert(last, value);
-                }
-                ("replace", Value::Array(items)) => items[last.parse::<usize>().unwrap()] = value,
-                ("remove", Value::Array(items)) => {
-                    items.remove(last.parse().unwrap());
-                }
-                ("remove", Value::Object(fields)) => {
-                    fields.remove(&last);
-                }
-                (op, _) => panic!("unsupported patch operation {op} at {path}"),
-            }
-        }
-    }
-
     fn graph(package: &Value) -> (Vec<CheckedSemanticNodeV2>, Vec<CheckedSourceMapEntry>) {
         (
             serde_json::from_value(package["semantic_graph"]["nodes"].clone()).expect("nodes"),
@@ -647,7 +613,7 @@ mod tests {
             let id = &case["id"];
             let mut package = read(&directory.join(case["fixture"].as_str().expect("a fixture")));
             if let Some(patch) = case.get("patch") {
-                apply(&mut package, patch);
+                crate::checked_v2::tests::apply_json_patch(&mut package, patch);
             }
             let (nodes, source_map) = graph(&package);
             let found = first_out_of_order(&nodes, &source_map)

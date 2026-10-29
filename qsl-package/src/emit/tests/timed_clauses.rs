@@ -470,7 +470,10 @@ fn two_guarded_preconditions_are_one_guard_of_their_conjunction() {
         .iter()
         .map(|argument| located(&wire, target(&wire, argument), &unit))
         .collect();
-    assert_eq!(operands, ["self.versionNumber > 0", "self.versionNumber < 9"]);
+    assert_eq!(
+        operands,
+        ["self.versionNumber > 0", "self.versionNumber < 9"]
+    );
     assert_eq!(part["members"].as_array().map(Vec::len), Some(3));
     assert_declared_order(&wire);
 }
@@ -519,7 +522,10 @@ fn a_constraint_on_another_objects_clock_names_its_owner_term() {
         member(&constraint["body"], "place")["target"],
         place["node_id"]
     );
-    assert_eq!(located(&wire, constraint, &unit), "peer_clock(self) <= 2 ms");
+    assert_eq!(
+        located(&wire, constraint, &unit),
+        "peer_clock(self) <= 2 ms"
+    );
     let owner = target(&wire, member(&constraint["body"], "owner"));
     assert_eq!(owner["node_tag"], "expression");
     assert_eq!(
@@ -527,7 +533,10 @@ fn a_constraint_on_another_objects_clock_names_its_owner_term() {
         "quire.op.record.project"
     );
     assert_eq!(owner["body"]["operation"]["member"]["name"], "peer");
-    let [dereferenced] = owner["body"]["arguments"].as_array().expect("arguments").as_slice()
+    let [dereferenced] = owner["body"]["arguments"]
+        .as_array()
+        .expect("arguments")
+        .as_slice()
     else {
         panic!("one argument");
     };
@@ -578,7 +587,10 @@ fn assert_presence<'w>(wire: &'w Value, read: &Value, place: &Value) -> &'w Valu
         target(wire, &json!({"target": read["body"]["result_type"]}))["semantic_form"],
         "boolean"
     );
-    let [template, owner] = read["body"]["arguments"].as_array().expect("arguments").as_slice()
+    let [template, owner] = read["body"]["arguments"]
+        .as_array()
+        .expect("arguments")
+        .as_slice()
     else {
         panic!("a place and an owner term: {read}");
     };
@@ -635,7 +647,10 @@ fn a_presence_reads_the_place_template_at_its_owner() {
     };
     let part = &member(&guard["body"], "parts")["members"][0]["members"];
     let read = target(&wire, &part[0]["value"]);
-    assert_self(&wire, &json!({"target": assert_presence(&wire, read, v)["node_id"]}));
+    assert_self(
+        &wire,
+        &json!({"target": assert_presence(&wire, read, v)["node_id"]}),
+    );
     let constraint = target(&wire, &part[1]);
     assert_eq!(member(&constraint["body"], "place")["target"], v["node_id"]);
     assert_eq!(literal(&constraint["body"], "comparison"), "ge");

@@ -2285,7 +2285,8 @@ fn emit_package_inner(
                     let written = nodes.iter().find(|node| node.node_id == id).ok_or(
                         EmitRefusal::TimedModelWriterInvariant("a clock place S3 wrote is emitted"),
                     )?;
-                    CheckedClockPlace::project(written).map_err(EmitRefusal::TimedModelWriterInvariant)
+                    CheckedClockPlace::project(written)
+                        .map_err(EmitRefusal::TimedModelWriterInvariant)
                 })
                 .collect::<Result<_, _>>()?;
             // QSpec FR-322 "Timed-model nodes": one `urgency` node for each

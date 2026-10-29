@@ -2614,8 +2614,8 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 /// timed-model, then protocol; QSpec pins that order in TC-233.
 /// FR-230-AC-31 and FR-230-AC-34 (TC-685 steps 26 and 27): I2 refuses a
 /// missing root (`missing-timed-model`), a dangling or wrong-kind edge
-/// (`timed-node-reference`), a duplicate place (`duplicate-clock-place`), a
-/// repeated place reference (`invalid_semantic_graph`, no cause, QSpec
+/// (`timed-node-reference`), a second place of one path whose forged row
+/// refuses `malformed-clock-place`, a repeated place reference (`invalid_semantic_graph`, no cause, QSpec
 /// FR-322-AC-260's order refusal, TM-30), a
 /// noncanonical path (`malformed-clock-place`) and a non-time unit or
 /// malformed quantity (`invalid-time-quantity`), each at the first failing
@@ -2702,14 +2702,16 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 source["body"]["members"][3]["value"]["target"] = target.clone();
                 replace_dependency(&mut source["dependencies"], &old, &target);
             }
-            "duplicate-clock-place" => {
-                // QSpec FR-322-AC-260, TM-12: a distinct second place of the
-                // same path (only its derived `resolved_path` differs), listed
-                // after the first and located after every published place,
-                // so the root is in declared order and only the repeated path
-                // refuses. A repeated reference would repeat its order key
-                // and refuse as an order defect first. `rekey_stale` gives
-                // the placeholder identity its key.
+            "second-place-forged-row" => {
+                // QSpec TM-12 (STD-559): a distinct second place of the same
+                // path, listed after the first and located after every
+                // published place, so the root is in declared order. Only its
+                // derived `resolved_path` can differ, so its last row names a
+                // member the selected declaration lacks, and the row join,
+                // which precedes the root's aggregates, refuses it there. A
+                // repeated reference would repeat its order key and refuse as
+                // an order defect first (TM-30). `rekey_stale` gives the
+                // placeholder identity its key.
                 let mut second = candidate["semantic_graph"]["nodes"][45].clone();
                 let original = second["node_id"].clone();
                 let rows = second["body"]["members"][2]["value"]["members"]
@@ -2924,6 +2926,110 @@ fn assert_timed_refusal(
         ),
         "{id}: refusal locus, got {locus:?}"
     );
+}
+
+/// QSpec FR-322 "Clause nodes" (TC-367 CK-36): each clause vector of
+/// `timed-clause-node-vectors.json`, its RFC 6902 patch applied to the
+/// published clause package, reaches QSL's I2 read with its published
+/// outcome: an admitted case is verified, a schema case refuses
+/// `malformed_wire` within its node, and each other case refuses with its
+/// code and cause at its locus. `CL-25` (STD-558) is a reset naming the
+/// anchor of another model whose frame is that model's, refused by the
+/// timed-model join; `CL-54` is the same reset whose frame stays on the
+/// first model, refused `invalid_model_binding` in the state step first.
+#[trace("TC-685", "FR-230-AC-34")]
+#[trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-262", "QSpec-FR-322-AC-263")]
+#[test]
+fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let proposals = directory.parent().expect("the proposal directory");
+    let vectors = read_fixture(&proposals.join("timed-clause-node-vectors.json"));
+    let mut replayed = 0_usize;
+    for case in vectors["cases"].as_array().expect("CL cases") {
+        let id = &case["id"];
+        let mut package =
+            read_fixture(&proposals.join(case["fixture"].as_str().expect("a fixture")));
+        if let Some(patch) = case.get("patch") {
+            apply_json_patch(&mut package, patch);
+        }
+        let (_, outcome) = read_fixture_wire(&package);
+        let locus = case["locus"].as_str().unwrap_or_default();
+        match case["expected"].as_str().expect("an outcome") {
+            "admitted" => assert!(
+                matches!(outcome, Read::Verified { .. }),
+                "{id}: expected admitted, got {outcome:?}"
+            ),
+            "refused-by-schema" => {
+                let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &outcome else {
+                    panic!("{id}: expected malformed_wire, got {outcome:?}");
+                };
+                assert_eq!(
+                    refusal.code,
+                    CheckedPackageRefusalCode::MalformedWire,
+                    "{id}"
+                );
+                let pointer = refusal
+                    .path
+                    .as_ref()
+                    .map(|path| path.as_str())
+                    .unwrap_or("");
+                assert!(pointer.starts_with(locus), "{id}: {pointer} within {locus}");
+            }
+            "refused" => {
+                let cause = case["expected_cause"].as_str().map(|cause| {
+                    serde_json::from_value::<CheckedPackageRefusalCause>(json!(cause))
+                        .unwrap_or_else(|_| panic!("{id}: unrecognized cause {cause}"))
+                });
+                assert_timed_refusal(
+                    &outcome,
+                    case["expected_code"].as_str().expect("a code"),
+                    cause,
+                    locus,
+                    id,
+                );
+            }
+            other => panic!("{id}: unknown outcome {other}"),
+        }
+        replayed += 1;
+    }
+    assert!(replayed > 0, "the clause vectors replay");
+}
+
+/// The token of a JSON pointer step.
+fn unescape(step: &str) -> String {
+    step.replace("~1", "/").replace("~0", "~")
+}
+
+/// Apply the RFC 6902 `add`, `remove` and `replace` operations of
+/// `patch` to `document`.
+pub(crate) fn apply_json_patch(document: &mut Value, patch: &Value) {
+    for operation in patch.as_array().expect("a patch") {
+        let path = operation["path"].as_str().expect("a path");
+        let (parent, last) = path.rsplit_once('/').expect("a nonroot path");
+        let last = unescape(last);
+        let container = document
+            .pointer_mut(parent)
+            .unwrap_or_else(|| panic!("{parent} resolves"));
+        let value = operation["value"].clone();
+        match (operation["op"].as_str().expect("an op"), container) {
+            ("add", Value::Array(items)) if last == "-" => items.push(value),
+            ("add", Value::Array(items)) => items.insert(last.parse().unwrap(), value),
+            ("add" | "replace", Value::Object(fields)) => {
+                fields.insert(last, value);
+            }
+            ("replace", Value::Array(items)) => items[last.parse::<usize>().unwrap()] = value,
+            ("remove", Value::Array(items)) => {
+                items.remove(last.parse().unwrap());
+            }
+            ("remove", Value::Object(fields)) => {
+                fields.remove(&last);
+            }
+            (op, _) => panic!("unsupported patch operation {op} at {path}"),
+        }
+    }
 }
 
 fn replace_dependency(dependencies: &mut Value, old: &Value, replacement: &Value) {
