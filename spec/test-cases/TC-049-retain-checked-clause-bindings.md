@@ -15,9 +15,9 @@ must use the qualified source-derived Rust producer and actual public IR APIs.
 
 ## Test Procedure
 
-Supply complete explicit clause-name/RequirementRef/ClauseId/ExecutionPoint mappings to check. Independently remove, duplicate or add a binding, change native source labels or path (a bytes-only change under equal labels and path is not a defect: positions come from the linked unit's own bytes), collide with a model source identity, or supply a mismatched invariant/operation anchor. Include multiple requirements reusing a local ClauseId and an actual duplicate qualified clause identity; verify binding-set defects are located at the exact source-start region and point mismatches at the authored clause span.
+Supply complete explicit clause-name/RequirementRef/ClauseId/ExecutionPoint mappings to check. Independently remove, duplicate or add a binding, collide with a model source identity, or supply a mismatched invariant/operation anchor. Include multiple requirements reusing a local ClauseId and an actual duplicate qualified clause identity; verify binding-set defects are located at the exact source-start region and point mismatches at the authored clause span.
 
 ## Expected Results
 
-Only the complete exact mapping succeeds. The result owns the original parsed/linked AST, all ExprIds/source spans, requirement and clause IDs, selected execution points and model identities. Foreign/duplicate/missing mappings refuse without a checked package at the source-start region; an inapplicable or mismatched point refuses at the authored clause span. A qualified duplicate is distinguished from the same local ClauseId under another RequirementRef. No IDs are minted from native names.
+Only the complete exact mapping succeeds. The result owns the original parsed/linked AST, all ExprIds/source spans, requirement and clause IDs, selected execution points and model identities. Foreign/duplicate/missing clause mappings refuse without a checked package at the source-start region; an inapplicable or mismatched point refuses at the authored clause span. A qualified duplicate is distinguished from the same local ClauseId under another RequirementRef. No IDs are minted from native names.
 
