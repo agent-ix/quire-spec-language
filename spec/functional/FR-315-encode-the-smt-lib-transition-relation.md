@@ -840,32 +840,118 @@ SmtEncodingRefusal>`, `request` FR-314's `RefinementCertificateRequest` (the
 recompiled package, the refinement node and the concrete and abstract
 subjects), with `kind` either `Initial` or `Step { row }`, `row` the zero-based position in the refinement node's `steps`
 array. Both use this requirement's state-copy declarations, sorts, canonical
-printing and refusals.
+printing and refusals. FR-314's checker compares a certificate's carried query
+with this encoding byte for byte, so the order below is normative: a producer
+that prints the same assertions in another order writes a script the checker
+rejects `QueryMismatch`.
 
-- The `Initial` query SHALL declare one concrete state copy `s0`, assert the
-  concrete subject's initial-state predicate on it and every hypothesis (the
-  invariant clauses whose context is an object type of the concrete model,
-  FR-146) on it, and assert the negation of: `map(s0)` equals an abstract
-  initial state by state key. Every mapping row, receiver and argument the
-  query reads SHALL also carry its definedness condition, and the negation
-  SHALL hold when one fails (UE-1, UE-4, UE-6).
-- The `Step { row }` query SHALL declare concrete copies `s0` and `s1`, assert
-  every hypothesis on `s0`, the row's operation precondition on `s0`, its frame
-  and postcondition relating `s0` and `s1`, and the negation of the row's rule
-  over (`map(s0)`, `map(s1)`): for `stutter`, the mapped state is unchanged by
-  state key; for an abstract operation, that abstract transition's
-  precondition, frame and postcondition, encoded as this requirement encodes a
-  transition, hold over the mapped pair with the row's receiver and arguments
-  evaluated at `s0`; a row with a `_` argument leaves that argument open, which
-  the negation would have to quantify universally, and the `QF_LIA` scripts
-  carry no quantifier, so the call refuses `SmtEncodingRefusal`
-  `refinement-open-argument` naming the row and the argument; for `any`, no
-  query is encoded and the call refuses `SmtEncodingRefusal`
-  `refinement-any-row` naming the row, because a declaration with an `any`
-  row has no per-step query (FR-146).
-- A mapping row, receiver or argument outside the `QF_LIA` fragment this
-  requirement prints SHALL refuse `SmtEncodingRefusal` `out-of-fragment`
-  naming it, with its locus, and write no script.
+**Terms.** `H` is the *hypothesis list* of a query: the assertions, one per
+(invariant clause, object) pair, for every invariant clause whose context is an
+object type of the concrete model (FR-146), in ascending clause-name order
+(ties, which only clauses of different contexts can make, in ascending
+declaration identity text, FR-120 "Identities". FR-120 itself orders invariant
+clauses by name alone and nothing there makes names unique per package, so the
+tie-break is chosen here), and within a clause for each object of the copy whose
+most-specific type conforms to the clause's context type, in ascending
+reference-key order; this is FR-120's "Invariants" order, and an invariant of
+the abstract model is no hypothesis. Each assertion states the clause with
+`self` bound to that object, on copy `s0`, printed as a clause is printed in
+Step relation (its definedness condition conjoined with its value). `H` is
+structural: it is never ordered by a node-key digest. (The
+`hypotheses` list of FR-146's record holds the same set and differs in order
+only: it is ordered by node-key digest for the record's identity, and the
+script order is FR-120's.) `D` is the *definedness condition* of the query: the
+conjunction of the definedness conditions of every mapping row, receiver and
+argument the query reads, in the order the receiver, then the arguments as
+written, then the mapping rows over `s0`, then, for `Step`, the mapping rows
+over `s1`, each group of mapping rows in ascending (abstract object key, field
+name) order; it prints `true` when the query reads nothing that can be
+undefined. No earlier text orders these reads for a script, so this order, and
+the order inside `R` (ascending abstract object key, then field name), are
+chosen in this requirement. `R` is the *rule* the query negates, as follows.
+
+**`Initial`.** The script SHALL be, in this order:
+1. `(set-logic QF_LIA)`;
+2. the `declare-const` commands of copy `s0` (Canonical printing, step 2);
+3. the range assertions of copy `s0` (step 3);
+4. the initial-state predicate on `s0` (step 4);
+5. one assertion per element of `H`, in `H`'s order;
+6. one assertion `(or (not D) (not R))`, `R` the disjunction over the abstract
+   subject's initial states in their list order of the conjunction of the
+   field equalities of `map(s0)` with that initial state, in ascending
+   (abstract object key, field name) order, an absent optional field as in
+   step 4;
+7. `(check-sat)`.
+
+**`Step { row }`.** The script SHALL be, in this order:
+1. `(set-logic QF_LIA)`;
+2. the `declare-const` commands of copy `s0`, then of copy `s1`;
+3. the range assertions of copy `s0`, then of copy `s1`;
+4. one assertion per element of `H`, in `H`'s order, on `s0` only;
+5. one assertion, the *row disjunction*: the disjunction over the row's
+   *applications* of the application's conjunction, defined next;
+6. `(check-sat)`.
+
+The initial-state predicate is not asserted in a `Step` query, because the
+obligation holds for every pair of states of the declared types.
+
+The row index in `Step { row }` comes from FR-375's `steps` order, which is
+digest-sorted; it selects the row and plays no part in any assertion order.
+
+**Applications.** The applications of a row are those of its concrete
+operation, one per receiver and argument vector as Step relation defines an
+operation disjunct, in that order: ascending receiver key, then argument vector
+in FR-120's domain order. The row's target (`stutter` or an abstract
+operation) is read once per application, with `self` bound to the application's receiver and the
+concrete step's parameters bound to its argument vector as literals. An
+application's conjunction SHALL be the operation disjunct of Step relation
+between `s0` and `s1` (precondition clauses, postcondition part, frame
+equalities, in that order), followed by one last conjunct
+`(or (not D_a) (not R_a))`, `D_a` and `R_a` the query's `D` and `R` for that
+application: for `stutter`, `R_a` is every field equality of `map(s1)` with
+`map(s0)` by state key, in ascending (abstract object key, field name) order;
+for an abstract operation, the abstract transition's precondition clauses on
+`map(s0)`, its postcondition part relating `map(s0)` and `map(s1)` and its
+frame equalities, printed as the operation disjunct is, with the row's
+receiver and arguments evaluated at `s0` for that application. A disjunct
+equal to an earlier one is printed once, at its first place. A row with no
+application prints `false`. This is the negation of "for every application
+that is enabled, within its frame and satisfies its postcondition, the row's
+rule holds": a model of the script is an application at which all three hold
+and the rule fails or is undefined. A script that negates the disjunction of
+the applications' rules, or that asserts the applications' negated rules
+conjunctively or beside a separate disjunction of the applications, is not
+this encoding.
+
+**Refusals.** `encode_refinement_query` SHALL check the refusals 1 to 5 below
+first, in this order, then the table's rows 4 to 14 and 16 as they apply to the
+concrete subject, with row 15's `out-of-fragment` check (refusal 6) read over the
+terms of the query; it refuses on the first that applies, with the code and
+locus named. This precedence is chosen here, because STD-556 asks for a
+normative statement and no earlier text orders these refusals; a request with a
+single defect refuses the same whatever the precedence. Refusals 2 to 5 apply
+to `Step { row }` only, for its own row:
+1. a refinement with a hidden field or a history field: `out-of-fragment`,
+   naming the field. FR-146 writes no record and FR-468 states no per-step query
+   for such a refinement, so this is a backstop for a direct call of the API
+   that FR-314 never reaches;
+2. `Step { row }` whose row is `any`: `refinement-any-row` naming the row, because a
+   declaration with an `any` row has no per-step query (FR-146);
+3. `Step { row }` whose row names a protocol step class (a delivery, `memory`
+   or `activate` row), which has no model-subject application: `out-of-fragment`
+   naming the row;
+4. `Step { row }` whose row records `binds_result: true` (FR-136), because the
+   rule would couple the concrete result to the abstract one across the result
+   disjunctions: `out-of-fragment` naming the row;
+5. `Step { row }` whose row has a `_` argument, the first in written order:
+   `refinement-open-argument` naming the row and the argument, because the
+   negation would have to quantify universally and the `QF_LIA` scripts carry
+   no quantifier;
+6. a mapping row, receiver or argument outside the `QF_LIA` fragment this
+   requirement prints: `out-of-fragment` naming it, with its locus, and no script.
+
+A row refused by 2 to 6 has no expected query, so FR-314 settles its part
+`Unencodable` and every record of the refinement `Uncertified` (FR-146).
 
 ### Hyper self-composition queries
 
@@ -1281,6 +1367,9 @@ impl HyperProductIdentity {
 | FR-315-AC-50 | For the TP-3 item of FR-315-AC-45 and for `NonInterference` with the body `always (holds(v.h @ a = v.h @ b) implies always holds(v.l @ a = v.l @ b))`, the `MonitorTable` constructor over the body's `CheckedFormula` and profile gives tables with equal state counts, initial state, rejecting state and numbered moves, and `MonitorTable::of` over the TP-3 item gives that item's table through the constructor. FR-315-AC-45's scripts are byte-equal to golden bytes recorded from `main` before `MonitorTable::of` delegates to the constructor, the golden files being added in the refactor's first commit. FR-315-AC-43's hyper scripts are byte-equal to golden bytes recorded from `encode_hyper_query` itself when it was introduced, so they pin its output against change and are not evidence of equality with `main`. | Test (TC-1264) |
 | FR-315-AC-51 | Over ADR-023 §8's secure vault, `encode_hyper_query` for `NonInterference` at instance `v` over a subject that FR-120 does not admit (its `snapshots` provision lacks the document an initial state names) is refused `SmtEncodingRefusal` `subject-binding` at alias `V`, with no script, after `HyperProductIdentity::of` has returned the identity for the same request. | Test (TC-1190) |
 | FR-315-AC-52 | Inside `qsl-replay`'s tests, with the request's checked clause altered after S3 so that an object parameter names an alias the clause does not hold, `HyperProductIdentity::of` returns `Fault` and not `instance-binding`, and `encode_hyper_query` returns the same `Fault`. | Test (TC-1190) |
+| FR-315-AC-53 | Layout of the refinement queries, over `CasRefinesCounter2` (TC-900 "Fixtures"), `CasRefinesCounter` whose population `counters` holds two counters `c0` < `c1`, with `AaInv` and `CasInv` on `Impl::Counter` and `AbsInv` on `Spec::Counter`. The `Initial` query's commands are, in order and by their head: `set-logic`; the `declare-const` commands of `s0` in (object key, field name) order; the range assertions of `s0`; one assertion of the initial-state predicate; four hypothesis assertions in the order `AaInv` on `c0`, `AaInv` on `c1`, `CasInv` on `c0`, `CasInv` on `c1` (no `AbsInv`, no digest-derived order: renaming `AaInv` to `ZzInv` moves its two assertions after `CasInv`'s, and writing the clauses in the opposite source order changes no byte); one assertion `(or (not D) (not R))`; `check-sat`. The `Step { row }` query of the `commitA` row has the same four hypothesis assertions on `s0` only, no initial-state predicate, `s0`'s then `s1`'s declarations and ranges, and exactly one row assertion that is a two-way disjunction, the application on `c0` first and the application on `c1` second, each `(and <precondition clauses> <postcondition part> <frame equalities> (or (not D_a) (not R_a)))` with `R_a` the abstract `inc` transition over `map(s0)`, `map(s1)` for that application's receiver. Encoding either twice gives byte-equal scripts. Each of these mutations changes the script and makes FR-314's checker reject a certificate carried over the unmutated query `QueryMismatch`: the two applications swapped, `AaInv` and `CasInv` swapped, a hypothesis asserted on `s1`, the initial-state predicate added to a `Step` query, a `Step` query with one assertion per application, and the row assertion printed as `(not (or R_c0 R_c1))` beside a separate disjunction of the applications. | Test (TC-900) |
+| FR-315-AC-54 | Multi-application row against the negated rule, over the lost-update variant of `CasRefinesCounter2` and its `commitB` `Step` query, solved with the exact `s0` tuples of TC-900 "Fixtures" added as equalities: with `c0` at `(0, 0, f, 0, f)` (`commitB` not enabled) and `c1` at `(1, 0, f, 0, t)` (FR-146-AC-4) the script is satisfiable, because the row assertion is a disjunction over the applications and `c1`'s application is enabled and breaks the rule; with `c0` at `(0, 0, f, 0, t)` (`commitB` enabled, the rule holds) and `c1` at `(0, 0, f, 0, f)` (not enabled), the script is unsatisfiable, because an application that obeys the rule adds no model and no other application's rule is negated. A row with one application prints the row assertion as that application's conjunction alone, and a row with no application prints `(assert false)`. Two applications whose conjunctions print equal are printed once, at the first place. | Test (TC-900) |
+| FR-315-AC-55 | Refusals of the refinement queries, each case refusing as stated: (1) with the refinement's concrete model given a hidden field or a history field, a direct call of `Initial` and of every `Step` refuses `out-of-fragment` naming the field (FR-314 never reaches this case, since FR-146 writes no record); (2) an `any` row refuses `refinement-any-row` naming the row, before a `_` argument of the same row is read; (3) a protocol-subject refinement's delivery, `memory` or `activate` row refuses `out-of-fragment` naming the row; (4) `RingIsQueue`'s `put` and `take` rows (FR-136-AC-1, `binds_result: true`) refuse `out-of-fragment` naming the row; (5) a row with two `_` arguments refuses `refinement-open-argument` naming the first in written order. For cases 2 to 5 FR-314 settles that row's part `Unencodable` and every record of the refinement `Uncertified`. | Test (TC-900) |
 
 ## Dependencies
 
