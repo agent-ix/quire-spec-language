@@ -20,8 +20,9 @@ use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimu
 use serde_json::Value;
 
 use super::refinement_declarations::{
-    cas_refines_counter, check_with, checked_counter, counter_cas_with, counter_spec, mutated,
-    object_type, only_refinement, operation, population, Refused, CAS, INTEGER, SPEC,
+    cas_refines_counter, check_with, checked_counter, counter_cas_with, counter_spec,
+    counter_spec_with, mutated, node, object_type, only_refinement, operation, population, Refused,
+    CAS, INTEGER, SPEC,
 };
 
 /// The refinement's V2 node, which keys its records.
@@ -51,7 +52,10 @@ fn checked_variant(
     populations: Vec<Value>,
     extra: &str,
 ) -> CheckedGraph {
-    let (spec, cas) = (counter_spec(), counter_cas_with(peek, types, populations));
+    let (spec, cas) = (
+        counter_spec(),
+        counter_cas_with(peek, &[], types, populations),
+    );
     let body = format!("{}\n{extra}", cas_refines_counter());
     check_with("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &body).unwrap_or_else(
         |refusals| {
@@ -403,6 +407,7 @@ fn a_receiver_two_populations_cover_refuses_at_its_row() {
         counter_spec(),
         counter_cas_with(
             plain_peek(),
+            &[],
             Vec::new(),
             vec![population(CAS, "spare", "Counter")],
         ),
@@ -430,4 +435,126 @@ fn a_receiver_two_populations_cover_refuses_at_its_row() {
         let spare = message.find("spare").expect("names spare");
         assert!(counters < spare, "{message}");
     }
+}
+
+/// `CasRefinesCounter` over a concrete package whose `Counter` has a `log`
+/// into `Audit`s (population `audits`, a `next` edge) and a `mark` into
+/// `Tag`s (population `tags`, a `next` edge), with a `Note` population
+/// `notes`. `peek`'s precondition walks `audits` by `reaches` and its
+/// postcondition names `notes` (FR-391); the state mapping walks `tags`.
+fn walked() -> CheckedGraph {
+    let linked = |name: &str| object_type(CAS, name, &[("next", &node(CAS, name))], Vec::new());
+    let cas = counter_cas_with(
+        plain_peek(),
+        &[("log", &node(CAS, "Audit")), ("mark", &node(CAS, "Tag"))],
+        vec![
+            linked("Audit"),
+            linked("Tag"),
+            object_type(CAS, "Note", &[("seen", INTEGER)], Vec::new()),
+        ],
+        vec![
+            population(CAS, "audits", "Audit"),
+            population(CAS, "tags", "Tag"),
+            population(CAS, "notes", "Note"),
+        ],
+    );
+    let body = mutated(
+        &cas_refines_counter(),
+        "value = self.value;",
+        "value = if reaches(self.mark, self.mark, next) then self.value else self.value;",
+    );
+    let clauses = "pre PeekLog using inf on Impl::Counter::peek { \
+                   reaches(self.log, self.log, next) }\n\
+                   post PeekNotes using inf on Impl::Counter::peek { \
+                   forall(o in allInstances<Impl::Note>(Impl::notes) : o.seen >= 0) }\n";
+    let body = format!("{body}\n{clauses}");
+    check_with(
+        "",
+        &[("Spec", SPEC, &counter_spec()), ("Impl", CAS, &cas)],
+        &body,
+    )
+    .unwrap_or_else(|refusals| {
+        panic!(
+            "{body}: {:?}",
+            refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        )
+    })
+}
+
+/// FR-146 "Claim extent" (TC-551): a population a `reaches` in an
+/// operation's contract clauses walks (`audits`) and one its contract
+/// clauses name (`notes`, FR-391) enter that operation's `Step` record only;
+/// a population a `reaches` in the state mapping walks (`tags`) enters every
+/// record, the `Initial` one included, since each obligation evaluates the
+/// mapping.
+#[trace("TC-551", "FR-146-AC-10")]
+#[test]
+fn contract_and_mapping_populations_enter_the_records() {
+    let graph = walked();
+    let key = |population: &str| population_key(&graph, "Impl", population);
+    let peek_row = row_refs_by_operation(&graph)
+        .into_iter()
+        .find(|(operation, _)| operation.ends_with("/peek"))
+        .map(|(_, reference)| reference)
+        .expect("the peek row");
+    let found = domains(&graph);
+    assert_eq!(found.len(), 8);
+    for (obligation, domains) in found {
+        let keys: Vec<DomainKey> = domains.into_iter().map(|(key, _)| key).collect();
+        let mut expected = vec![key("counters"), key("tags")];
+        if obligation == (StepObligation::Step { row: peek_row }) {
+            expected.extend([key("audits"), key("notes")]);
+        }
+        let (mut keys, mut expected) = (keys, expected);
+        keys.sort();
+        expected.sort();
+        assert_eq!(keys, expected, "{obligation:?}");
+    }
+}
+
+/// FR-146 "Claim extent" (TC-551): a mapped concrete type with no operation
+/// row that two concrete populations cover gives the `Initial` record no
+/// single population, so the refinement is refused
+/// `ambiguous_declaration`/`ambiguous-name` at its name, naming both
+/// populations in ascending `DeclarationKey` order.
+#[trace("TC-551")]
+#[test]
+fn a_mapped_type_two_populations_cover_refuses_at_the_refinement() {
+    let spec = counter_spec_with(
+        vec![object_type(SPEC, "Box", &[("size", INTEGER)], Vec::new())],
+        vec![population(SPEC, "boxes", "Box")],
+    );
+    let cas = counter_cas_with(
+        plain_peek(),
+        &[],
+        vec![object_type(CAS, "Crate", &[("size", INTEGER)], Vec::new())],
+        vec![
+            population(CAS, "crates", "Crate"),
+            population(CAS, "spares", "Crate"),
+        ],
+    );
+    let body = mutated(
+        &cas_refines_counter(),
+        "object Spec::Counter from Impl::Counter { value = self.value; }",
+        "object Spec::Counter from Impl::Counter { value = self.value; }\n\
+         population Spec::boxes from Impl::crates;\n\
+         object Spec::Box from Impl::Crate { size = self.size; }",
+    );
+    let found: Vec<Refused> = check_with("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &body)
+        .expect_err("the refinement refuses");
+    let [refused] = &found[..] else {
+        panic!(
+            "one refusal: {:?}",
+            found.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        );
+    };
+    assert_eq!(
+        refused.code_and_cause(),
+        (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+    );
+    assert_eq!(refused.at, "CasRefinesCounter");
+    let message = format!("{:?}", refused.refinement());
+    let crates = message.find("crates").expect("names crates");
+    let spares = message.find("spares").expect("names spares");
+    assert!(crates < spares, "{message}");
 }
