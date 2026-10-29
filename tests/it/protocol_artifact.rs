@@ -162,10 +162,9 @@ fn resealing_a_tampered_candidate_cannot_replace_the_original_expected_seal() {
 #[trace("TC-121", "FR-042-AC-3")]
 fn independent_header_and_source_selections_refuse_single_axis_substitution() {
     let fixture = Fixture::new();
-    let mutations: [fn(&mut w::Package); 11] = [
+    let mutations: [fn(&mut w::Package); 10] = [
         |p| p.producer.implementation.push_str("-other"),
         |p| p.producer.revision.namespace.push_str("-other"),
-        |p| p.producer.binary.digest = ByteDigest::of(b"other binary"),
         |p| p.baseline.revision.value.push_str("-other"),
         |p| p.contract.identity.push_str("-other"),
         |p| p.language.edition.push_str("-other"),
@@ -1446,9 +1445,8 @@ fn result_jcs_digest() -> ByteDigest {
 }
 
 /// Every producer-owned digest domain the artifact retains: raw model package
-/// bytes, the model's canonical IR object, original native source text and the
-/// selected producer implementation artifact.
-fn producer_digests(fixture: &Fixture) -> [ByteDigest; 4] {
+/// bytes, the model's canonical IR object and original native source text.
+fn producer_digests(fixture: &Fixture) -> [ByteDigest; 3] {
     let canonical = fixture
         .model
         .environment()
@@ -1458,7 +1456,6 @@ fn producer_digests(fixture: &Fixture) -> [ByteDigest; 4] {
         fixture.model.digest(),
         ByteDigest::of(canonical.bytes().as_slice()),
         fixture.package.sources[0].artifact.digest,
-        fixture.package.producer.binary.digest,
     ]
 }
 
@@ -1497,16 +1494,8 @@ fn a_producer_source_model_or_config_digest_is_never_reinterpreted_as_the_compil
 
 #[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
-fn a_protocol_result_jcs_digest_is_never_accepted_in_a_producer_owned_reference() {
+fn a_protocol_result_jcs_digest_is_never_accepted_as_a_model_package_digest() {
     let jcs = result_jcs_digest();
-    // The selected producer implementation artifact keeps its own byte identity.
-    let fixture = Fixture::new();
-    let mut offered = fixture.package.clone();
-    offered.producer.binary.digest = jcs;
-    failure(
-        &fixture.offered(&offered),
-        Error::Invalid(Invalid::Selection),
-    );
     // The model package byte authority refuses even when the offered bytes are
     // the result document itself, so its own seal cause cannot mask the model
     // cause: the admitted native model's raw-byte digest remains the authority.

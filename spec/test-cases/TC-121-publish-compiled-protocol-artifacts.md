@@ -16,8 +16,9 @@ boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
 reader behavior. The first fourteen groups below correspond to the first fourteen
-acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer; step 16 covers
-FR-042-AC-16 and FR-042-AC-17's absence of any committed `/1` handoff.
+acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer; step 16 requires the
+`/1` handoff the other steps read to be one `write_v1` wrote. FR-042-AC-16 and
+FR-042-AC-17 are withdrawn.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
 payment attempts A1/A2 and effect E1, refund registration and distinct refund
@@ -58,8 +59,8 @@ observations belong only to the later consumer fixture.
    accepted selection. Include native versus formal source revisions, rule
    bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
-   optional feature. Substitute a different source, domain package, IR and
-   result identity into the external package and source reference slots; require
+   optional feature. Substitute source, domain package `sha256-jcs`, IR and
+   result-JCS digests into the external package and source byte slots; require
    typed refusal.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
@@ -209,8 +210,10 @@ observations belong only to the later consumer fixture.
 7. Give exact emitted bytes and external reference to the bounded public reader
    without invoking native parsing. Mutate every closed object/tag/member,
    duplicate equal entries, introduce invalid indices/cycles/noncanonical bytes,
-   then change graph/literal/profile claims. Under the
-   original expected selection all mutants refuse. Compare typed causes/loci, never English messages.
+   then change graph/literal/profile claims and recompute a new seal. Under the
+   original expected selection all resealed mutants refuse. Separately show
+   that an attacker-supplied replacement seal is not accepted inventory or
+   source-compilation proof. Compare typed causes/loci, never English messages.
 8. Refuse one required family/export beside an independent valid declaration;
    retain both compilation dispositions but no full-package artifact. Keep
    unsupported reader/version/canonical-domain, known input refusal and resource
@@ -232,9 +235,8 @@ observations belong only to the later consumer fixture.
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001) through the public
     Rust interfaces, preserving exact selectors and finite graph/source links.
     In B's Rust integration harness, independently select the supplied original
-    sources, admitted domain packages, registry/contract and compiler source
-    identity (an identity label on `Producer.binary` naming the producer's own
-    source file, not a dependency's retained bytes) to construct the reader's
+    sources, admitted domain packages, registry/contract and producer
+    implementation name and revision to construct the reader's
     accepted inventory. Compare the offered package against that inventory;
     neither the payload nor the fixture's `expected.json` authorizes its own
     selections.
@@ -252,7 +254,7 @@ observations belong only to the later consumer fixture.
     its domain package through the real FR-056 intake seam (parts, interfaces,
     ports and a connection between two ports, as IT-012 exercises), link a
     native package that references it, and emit the compiled-protocol package.
-    Decode the emitted `Model` and confirm its identity and version,
+    Decode the emitted `Model` and confirm its identity, version and digest,
     read directly from the `Model` record, equal the `DomainPackageRef` the
     intake seam admitted, with no `correspondence`, `producer` or `interface`
     member present. Separately, hand-construct a decoder input whose `Model`
@@ -292,7 +294,7 @@ observations belong only to the later consumer fixture.
     requirement naming `population` export `[Pump, <population>]`, the
     operation is named by its `operation` export `[Pump, run]` with `Pump` as
     context, and the strict reader reads the bytes back unchanged. Require a
-    changed package identity, an undeclared population or operation export, a
+    changed package digest, an undeclared population or operation export, a
     population pair keyed to `Sys` and a precondition context of `Sys` each to
     refuse, and a `Pump` covered by no population declaration, or by two, to
     refuse emission as `Unsupported::Export`. Drop the population pair of a
@@ -322,7 +324,7 @@ observations belong only to the later consumer fixture.
     exactly as a downstream crate would, never an example, a private helper or
     a dev-dependency-only type. Confirm the two written trees are
     byte-identical, that the written `expected.json` selection's artifact
-    reference matches the written offer and reference files, and that
+    reference and digest match the written offer and reference files, and that
     the strict public reader (used in step 7 and by
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the
     written offer against that written selection with no other input. Call
@@ -336,12 +338,8 @@ observations belong only to the later consumer fixture.
     its dev-dependency closure. That `cargo check` line is what actually
     resolves `write_v1`'s dependency graph with no dev-dependency in it.
 
-16. In a git checkout (CI only; not in a crate tarball or git dependency),
-    run `git ls-files artifacts/compiled-protocol-v1` and require empty output
-    (FR-042-AC-16). Require the public handoff module to export no
-    `PUBLISHED_V1_HANDOFF` (FR-042-AC-17), and require every `/1` handoff file
-    the other steps read to be one `write_v1` wrote into a temporary directory
-    in the same test.
+16. Require every `/1` handoff file the other steps read to be one `write_v1`
+    wrote into a temporary directory in the same test.
 
 ## Expected Results
 

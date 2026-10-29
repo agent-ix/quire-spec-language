@@ -7,8 +7,8 @@ through the public model frontend, namespace, binding, type, definedness and
 family-admission APIs. It emits through
 `protocol_artifact::native::emit` and checks the unchanged bytes with
 `protocol_artifact::read` against selections derived from the original inputs.
-The output reference is selected by the producer after emission; this local reader
-check does not independently authenticate that reference or exercise tamper controls.
+The output seal is selected by the producer after emission; this local reader
+check does not independently authenticate that seal or exercise tamper controls.
 The units retain cross-unit calls, bounded `sum`/`size` queries, exact rational types and
 object/reference population requirements. The `Wide` and `Exact` scalars declare the
 full signed-64 integer domain and the exact-rational domain at the denominator
@@ -18,12 +18,12 @@ literalises `-9223372036854775808`, `9223372036854775807` and
 `rational(-9223372036854775808, 9223372036854775807)` so a consumer sees those
 endpoints as emitted `M::Wide`/`M::Exact` values rather than inferring them.
 The second rational exercises the actual denominator ceiling `i64::MAX`, which
-the selected Contract IR `RationalType::new` accepts; the first exercises the
+the pinned Contract IR `RationalType::new` accepts; the first exercises the
 maximum numerator without reduction collapsing the pair. The negative pair
 also exercises the minimum numerator. No declared domain or compiler limit is
 weakened to admit these values.
 Adding those two scalars renumbers the name-ordered model export table; consumers
-must re-derive every `"export"` index rather than reuse a stale one. Two `Notice` records received by
+must re-derive every `"export"` index rather than reuse a frozen one. Two `Notice` records received by
 `Service` on the `Decisions` channel become available after the explicit
 all-branch join. `Outcome` selects complementary Boolean guards over their
 distinct `ready` facts, retaining both authored event branches and original
@@ -63,11 +63,7 @@ This test uses a fresh temporary output directory and checks original source and
 declaration owners, joined receive/choice provenance and Full/Partial compensation records after the producer's
 independent reader succeeds. It does not exercise B's acceptance interface.
 
-The producer identifies itself by an identity and revision label naming its own
-source file (`src/protocol_artifact/handoff/writer.rs`) and records only that
-reference as `Producer.binary` -- the bytes are never retained, written to a
-fixture file, or supplied as a dependency's exact-byte content, so no size
-ceiling applies to them. All compiler
+All compiler
 stages retain their own default limits; no limit is disabled to accommodate a
 build. Existing
 output directories are refused. Publication is not atomic: an I/O failure may
@@ -77,21 +73,19 @@ incomplete output before reusing its path.
 The output directory contains:
 
 - `compiled-protocol.json`: exact canonical bytes from native emission.
-- `compiled-protocol.ref.json`: the existing `ix.artifact-ref/3-draft` external reference.
+- `compiled-protocol.ref.json`: the existing `ix.artifact-ref/3-draft` external seal.
 - `expected.json`: this example's independent selections, using the existing
   wire records and `Expected` fields, plus relative dependency/model filenames.
 - `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and
   `model-source.json`: the complete original sources.
 - `dependencies/`: exact selected model, contract, definition and rule bytes;
-  `expected.json` maps each reference to its file and direct prerequisites. The
-  producer's own binary is not among them: `expected.json`'s `producer.binary`
-  records its identity as a reference label.
+  `expected.json` maps each reference to its file and direct prerequisites.
 
 No handoff copy is checked in. A consumer that must admit a handoff calls
 `write_v1`/`write_v2` (feature `handoff-writer`) from its own build or test
 into a directory it chooses; the version-explicit member constants in
 `protocol_artifact::handoff` prevent consumers from guessing filenames, and the
-written tree includes `dependencies/`. Selecting the crate and the
+written tree includes `dependencies/`. Selecting the pinned crate and the
 directory it wrote is separate from offering the package bytes:
 decoding `Selection` remains inert until the caller constructs and invokes the
 strict public reader.

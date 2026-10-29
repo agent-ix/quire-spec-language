@@ -29,11 +29,11 @@ add, omit and rename a parameter-map key independently.
 
 Remove, duplicate, reorder and append one binding; cross its declaration and
 definition indices; substitute each definition identity, revision, artifact
-reference and raw bytes; cross every pair of clock alternatives;
+reference, raw byte digest and raw bytes; cross every pair of clock alternatives;
 and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
 component-overflow periods plus a changed epoch or unit. Re-seal each mutated
 candidate so the test reaches the owning validation rather than passing on an
-earlier structural mismatch.
+earlier digest mismatch.
 
 Exercise `mapping_support_v2` without a trace and require its admitted
 definition/profile binding before formula classification. For progress, attempt
@@ -45,7 +45,7 @@ reader `ExpectedTemporal`; substitute its source, declaration span, definition
 or one clock field without changing the compiled source.
 
 Run the `/1` emitter and strict reader over the pre-extension fixture and
-compare its bytes to the expected `/1` artifact. Offer `/1` to the `/2` reader
+compare its bytes to the frozen expected artifact. Offer `/1` to the `/2` reader
 and `/2` to the `/1` reader. For every added work dimension, take the successful `/2` run's measured
 amount (its byte work is at least the emitted bytes) and retry with exact,
 one-short and raised-above-default limits.
@@ -62,7 +62,7 @@ Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
 that public function -- exactly as a downstream crate would. Confirm the two
 written trees are byte-identical, that each written clock
-input is the one its selection entry names, and that the strict `/2`
+input's bytes match its selection entry's digest, and that the strict `/2`
 reader admits the written offer against the written selection with no other
 input. Decode the written mutation manifest, confirm every case's referenced
 file(s) exist, and replay one case's exact bytes through the strict `/2`
@@ -71,22 +71,12 @@ third time into an already-existing directory and require refusal, and confirm
 that directory's contents, including a sentinel file already there, are
 unchanged.
 
-Require `protocol_artifact::handoff::SOURCE_ROOT` to name the crate's manifest
-directory, with the authored sources the writers read beneath it (FR-050-AC-11).
-Require the handoff module to export neither `PUBLISHED_HANDOFF`
-nor `PUBLISHED_V1_HANDOFF`, asserting each name
-separately (FR-050-AC-12).
-
 Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
 quire-spec-language --lib --no-default-features --features handoff-writer`:
 the no-dev-dependency acceptance this step's test cannot demonstrate by
 itself, because a test in this crate's own `tests/` always builds inside its
 dev-dependency closure. That `cargo check` line is what actually resolves
 `write_v2`'s dependency graph with no dev-dependency in it.
-
-Tracked-files step: in a git checkout (CI only; not in a crate tarball or git
-dependency), run `git ls-files artifacts/compiled-protocol-v2` and require empty
-output (FR-050-AC-9). (Retired with FR-050-AC-10: no manifest assertion.)
 
 ## Expected Results
 
@@ -99,7 +89,7 @@ position is visited.
 Every one-axis structural, identity, numeric, profile and byte substitution
 returns its typed cause without an admitted partial package. Exact work succeeds,
 one-short work exhausts before the next operation and a sufficient retry
-reproduces the original bytes with fresh usage. The `/1` bytes remain unchanged;
+reproduces the original bytes with fresh usage. The `/1` bytes remain frozen;
 cross-version reads refuse, and neither path inserts, removes or infers a clock
 selection.
 
@@ -109,5 +99,5 @@ v2 admitted type; trace evaluation retains the artifact-authenticated parameter
 map, mapping classification claims none, and progress does not cross an artifact
 or clock-configuration identity. Every published member name resolves its
 member in a freshly written handoff, and the decoded mutation manifest repeats
-exactly the published base-member and format identities. No handoff tree
-or count is committed.
+exactly the published base-member and format identities. No handoff tree,
+checksum manifest, digest or count is committed.

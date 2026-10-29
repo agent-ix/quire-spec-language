@@ -3,20 +3,15 @@
 
 use crate::support::native_protocol as setup;
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
-    self as artifact,
-    handoff::{
-        MUTATION_MANIFEST_FORMAT, PUBLISHED_HANDOFF, PUBLISHED_MUTATION_MANIFEST_FILE,
-        PUBLISHED_SELECTION_FILE,
-    },
-    native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid, Limits, NumberComponent,
-    NumberError, NumberWire, Unsupported,
+    self as artifact, native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid,
+    Limits, NumberComponent, NumberError, NumberWire, Unsupported,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
@@ -27,12 +22,20 @@ const DECLARATIONS: [(&str, R); 3] = [
     ("ByTimestamp", R::TimestampedWindow),
 ];
 
+#[cfg(feature = "handoff-writer")]
 #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
 #[test]
-fn committed_handoff_interchange_records_are_complete() {
-    let root = Path::new(PUBLISHED_HANDOFF);
+fn written_handoff_interchange_records_are_complete() {
+    use artifact::handoff::{
+        MUTATION_MANIFEST_FORMAT, PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
+    };
+    use std::fs;
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let root = directory.path().join("handoff");
+    artifact::handoff::write_v2(&root).expect("write_v2 emits a complete handoff");
+    let root = root.as_path();
     let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("committed reader selection"),
+        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("written reader selection"),
     )
     .expect("decode expected-v2.json with the published type");
     assert_eq!(selection.temporal.len(), DECLARATIONS.len());
@@ -44,12 +47,29 @@ fn committed_handoff_interchange_records_are_complete() {
     );
 
     let manifest: artifact::handoff::MutationManifest = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE))
-            .expect("committed mutation manifest"),
+        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE)).expect("written mutation manifest"),
     )
     .expect("decode mutations/manifest.json with the published type");
     assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
-    assert_eq!(manifest.cases.len(), 29);
+    assert!(!manifest.cases.is_empty(), "the adverse corpus has cases");
+    let mut case_ids = manifest
+        .cases
+        .iter()
+        .map(|case| case.identity.as_str())
+        .collect::<Vec<_>>();
+    case_ids.sort();
+    case_ids.dedup();
+    assert_eq!(case_ids.len(), manifest.cases.len(), "no duplicate case");
+    let case_files = fs::read_dir(root.join("mutations"))
+        .expect("written mutations directory")
+        .map(|entry| entry.expect("mutation entry").file_name())
+        .filter(|name| name.to_str() != Some("manifest.json"))
+        .count();
+    assert_eq!(
+        case_files,
+        manifest.cases.len(),
+        "one written case file per manifest case"
+    );
     let manifest_bytes =
         serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
     assert_eq!(

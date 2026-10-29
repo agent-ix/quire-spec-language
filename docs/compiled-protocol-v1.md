@@ -76,7 +76,7 @@ Span = {start:U,end:U}
 Locus = {source:U,span:Span}
 ForeignLocus = {source:Ref,formal:Formal,span:Span}
 Handle = {declaration:U,index:U}
-Producer = {implementation:Name,revision:Revision,binary:Ref}
+Producer = {implementation:Name,revision:Revision}
 Dependency = {artifact:Ref,requires:[U]}
 Definition = {identity:Name,revision:Revision,artifact:U,rules:[U],requires:[U]}
 DomainPackage = {identity:Name,version:Name}
@@ -99,7 +99,7 @@ package-private vocabulary. The shared vocabulary includes distinct
 `population` and `window` assessment-document kinds; neither is the
 `linked-package` kind of this artifact, and neither makes a runtime assessment
 document package content. The external package reference is not copied inside
-the payload. `contract`, `baseline`, producer `binary` and each dependency must match
+the payload. `contract`, `baseline`, `producer` and each dependency must match
 their individually expected role/reference, including wire and revision namespace.
 Definition artifact/rule indices select source-kind dependency bytes; model
 artifacts select model-package-kind dependencies. An export kind is exactly

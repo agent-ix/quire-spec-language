@@ -39,7 +39,7 @@ pub struct Selections<'a> {
     pub contract: &'a wire::ArtifactRef,
     /// Exact accepted semantic baseline dependency.
     pub baseline: &'a wire::ArtifactRef,
-    /// Explicit implementation, revision and immutable binary selection.
+    /// Explicit implementation and revision selection.
     pub producer: &'a wire::Producer,
     /// Complete original source inventory; authored owners must match discharge.
     pub sources: &'a [SourceSelection<'a>],
