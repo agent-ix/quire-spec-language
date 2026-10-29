@@ -130,6 +130,16 @@ impl<S: Clone> ModelRefinementItem<'_, S> {
 pub enum ObligationKind {
     /// An authored claim, by its occurrence.
     Authored(OccurrenceKey),
+    /// An authored claim over a protocol subject, by its occurrence and the
+    /// subject's resolved models, which are part of the protocol subject
+    /// (QSpec FR-425) and so of its identity.
+    ProtocolAuthored {
+        /// The claim's occurrence.
+        occurrence: OccurrenceKey,
+        /// The resolved model of each outermost `parallel`, by its scoped
+        /// path, in ascending path order.
+        models: Vec<(String, MemoryModelName)>,
+    },
     /// A refinement (FR-144), by its record's occurrence and the abstract
     /// subject's initial snapshots, in ascending order.
     Refinement {
@@ -392,11 +402,16 @@ impl<S> Clone for ProtocolTemporalItem<'_, S> {
 impl<S> Copy for ProtocolTemporalItem<'_, S> {}
 
 impl<S: Clone> ProtocolTemporalItem<'_, S> {
-    /// The item's obligation identity: its subject and its occurrence.
+    /// The item's obligation identity: its subject, its resolved models,
+    /// which are part of the protocol subject (QSpec FR-425), and its
+    /// occurrence.
     pub fn obligation(&self) -> ItemObligation<S> {
         ItemObligation {
             subject: self.subject.clone(),
-            kind: ObligationKind::Authored(self.occurrence.clone()),
+            kind: ObligationKind::ProtocolAuthored {
+                occurrence: self.occurrence.clone(),
+                models: self.models.to_vec(),
+            },
             reductions: ObligationReductions::default(),
         }
     }

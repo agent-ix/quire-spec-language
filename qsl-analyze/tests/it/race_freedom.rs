@@ -1619,6 +1619,82 @@ fn each_set_of_resolved_models_of_one_subject_gets_its_derived_items() {
     assert!(written.unanchored().is_empty());
 }
 
+/// QSpec FR-425 for authored items: the resolved models are part of the
+/// protocol subject and so of the authored obligation identity, so one
+/// clause over `SB` under `ra` and under `tso` is two request items, each
+/// subject's derived items following in the order each first occurs; the
+/// same clause under `ra` again is the first item.
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
+#[test]
+fn one_clause_under_two_sets_of_resolved_models_is_two_items() {
+    let case = two_plain_stores();
+    let under_ra = case.subject(&ra());
+    let under_tso = case.subject(&tso());
+    let (ra_models, tso_models) = (models_of(&under_ra), models_of(&under_tso));
+    let graph = case.checked().graph();
+    let protocol = graph.protocol("SB").expect("SB");
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let sb = under_ra.protocol.clone();
+    let item = |models| ProtocolTemporalItem {
+        occurrence: &clause,
+        subject: &sb,
+        protocol,
+        models,
+        non_atomic_access: true,
+    };
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let mut request = ModelRequest::new();
+    let first = request.protocol(&item(&ra_models), &record);
+    let second = request.protocol(&item(&tso_models), &record);
+    assert_eq!(request.protocol(&item(&ra_models), &record), first);
+    assert_ne!(first, second);
+    let written = request.derived(&registry(), None, &DerivedLimits::default());
+    let items: Vec<_> = written
+        .items()
+        .iter()
+        .map(|item| {
+            let obligation = written.obligation(item.index()).expect("its obligation");
+            (item.item_kind(), obligation.kind.clone())
+        })
+        .collect();
+    let authored = |models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::Formula),
+            ObligationKind::ProtocolAuthored {
+                occurrence: clause.clone(),
+                models: models.to_vec(),
+            },
+        )
+    };
+    let deadlock = |models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::DeadlockFreedom),
+            ObligationKind::ProtocolDeadlockFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
+    let race = |models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::RaceFreedom),
+            ObligationKind::RaceFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
+    assert_eq!(
+        items,
+        [
+            authored(&ra_models),
+            authored(&tso_models),
+            deadlock(&ra_models),
+            race(&ra_models),
+            deadlock(&tso_models),
+            race(&tso_models),
+        ]
+    );
+}
+
 /// QSpec FR-368-AC-24 and AC-25: a protocol subject of a unit that selects
 /// no protocol profile, whose checked clause has no node (FR-322
 /// "Properties"), has no anchor. Its deadlock-freedom item, and its

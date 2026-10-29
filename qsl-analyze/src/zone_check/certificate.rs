@@ -42,9 +42,9 @@ pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_
             abstract_initial,
         },
         // A protocol subject is never timed, so EN-6 decides neither.
-        ObligationKind::ProtocolDeadlockFreedom { .. } | ObligationKind::RaceFreedom { .. } => {
-            CertificateItem::Other
-        }
+        ObligationKind::ProtocolAuthored { .. }
+        | ObligationKind::ProtocolDeadlockFreedom { .. }
+        | ObligationKind::RaceFreedom { .. } => CertificateItem::Other,
     }
 }
 
