@@ -56,9 +56,7 @@ names; the selected L5 temporal declarations; F-owned observation-role
 definitions; and finite compiler admission/emission limits.
 
 Static compilation consumes each declaration by its declaration key (domain
-package identity, IR node identity, `sha256-jcs`). The domain package digest
-stays separate from the native source raw-byte digest and the compiled-artifact
-seal. Snapshot, window, member, relationship-instance and closure identities are
+package identity, IR node identity, `sha256-jcs`). Snapshot, window, member, relationship-instance and closure identities are
 assessment selections, not static compiler inputs.
 
 F owns concrete record admission, mapping a record to its exact workflow/node/
@@ -156,7 +154,7 @@ The compiler SHALL retain the selected temporal declaration/clock/activation
 interface without evaluating temporal settlement inside choreography admission.
 
 For a timed choreography, the `/2` artifact SHALL carry each selected temporal
-definition's identity, revision, raw-byte digest and immutable artifact reference,
+definition's identity, revision and immutable artifact reference,
 plus exactly one tagged clock configuration for that selection. Missing,
 duplicate, untagged or profile-incompatible clock configuration refuses the
 timed family. The strict `/1` reader SHALL continue to reject `/2`, and the
@@ -195,8 +193,8 @@ resource incompleteness and emits no static subject.
 | FR-048-AC-5 | A repeat with a feasible false guard contributes no guaranteed enclosing progress; an infeasible false valuation permits the entered body's proven progress; zero/exact/one-short proof budgets retain charge order and typed outcomes. | Test (TC-133) |
 | FR-048-AC-6 | Split shipments, one authored payment attempt under distinct supplied repeat ordinals, and refund paths preserve separate static subjects and required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation or minting another static attempt. | Test (TC-134) |
 | FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
-| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
-| FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/artifact/result digest substitution or recanonicalization refuses. | Test (TC-135) |
+| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
+| FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/result digest substitution or recanonicalization refuses. | Test (TC-135) |
 | FR-048-AC-10 | A's release compiler contributes the exact source-derived artifact, selection and static binding requirements to the separately owned campaign run. The contribution is byte-identical at B's intake and retains every required domain-package, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
 
 ## Dependencies
@@ -213,7 +211,7 @@ comprising FR-043/044/045 and
 `temporal::evaluate`, `temporal::evaluate_with_progress` and
 `temporal::mapping_support`. That baseline records its narrow A-owned prerequisite:
 `quire.compiled-protocol/2` must extend `/1` with each selected temporal
-definition identity/revision/raw-byte digest/artifact and exactly one tagged
+definition identity/revision/artifact and exactly one tagged
 clock configuration, while strict `/1` readers remain unchanged. This
 FR consumes that requirement but does not invent its schema or treat the L5
 evaluator alone as an authenticated compiler seam;

@@ -1288,27 +1288,36 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
-/// Supplies, as domain package evidence, QSpec's selected `acme/orders`
-/// semantic IR document (`domain-package-acme-orders.json` under `the QSpec checkout`)
-/// when one of `envelope`'s `model_selections` rows selects its digest
-/// (QSpec FR-322 "Model-owned members" step 1).
+/// Supplies, as domain package evidence, each QSpec semantic IR document
+/// (`domain-package-*.json` under the QSpec checkout) whose digest one of
+/// `envelope`'s `model_selections` rows selects (QSpec FR-322 "Model-owned
+/// members" step 1).
 fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
     let Some(qspec) = qspec_directory() else {
         return;
     };
-    let document = read_fixture(
-        &std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/domain-package-acme-orders.json"),
-    );
-    let bytes = jcs(&document);
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    let selected = envelope["lock"]["model_selections"]
-        .as_array()
-        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
-    if selected {
-        evidence
-            .insert_domain_package_document(digest.as_str(), &bytes[..])
-            .expect("a fresh evidence key");
+    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2");
+    let mut paths: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("domain-package-") && name.ends_with(".json"))
+        })
+        .collect();
+    paths.sort();
+    for path in paths {
+        let bytes = jcs(&read_fixture(&path));
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let selected = envelope["lock"]["model_selections"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
+        if selected {
+            evidence
+                .insert_domain_package_document(digest.as_str(), &bytes[..])
+                .expect("a fresh evidence key");
+        }
     }
 }
 
@@ -2004,10 +2013,13 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     assert_eq!(timed.guards.len(), 1);
     assert_eq!(timed.invariants.len(), 1);
     assert_eq!(timed.urgencies.len(), 2);
-    assert_eq!(timed.normalized_constraints.len(), 1);
-    assert_eq!(timed.normalized_constraints[0].bound, "3/1");
-    assert_eq!(timed.normalized_constraints[0].comparison, "le");
-    assert_eq!(timed.normalized_constraints[0].unit, timed.source.unit);
+    assert_eq!(timed.constraints.len(), 1);
+    assert_eq!(timed.constraints[0].bound, "3/1");
+    assert_eq!(
+        timed.constraints[0].comparison,
+        super::timed_model::ClockComparison::Le
+    );
+    assert_eq!(timed.constraints[0].bound_type, timed.source.unit);
 }
 
 #[trace("TC-1187", "FR-415-AC-17", "FR-447-AC-13")]
@@ -2042,7 +2054,7 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
     assert!(timed.guards.is_empty());
     assert!(timed.invariants.is_empty());
     assert!(timed.urgencies.is_empty());
-    assert!(timed.normalized_constraints.is_empty());
+    assert!(timed.constraints.is_empty());
     let source = &envelope["semantic_graph"]["nodes"][44];
     let operation_id = &source["body"]["members"][3]["value"]["target"];
     let operation = envelope["semantic_graph"]["nodes"]
@@ -2331,8 +2343,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     for reset in &mut changed_unit.resets {
         reset.value_type = changed_unit.source.unit.clone();
     }
-    for constraint in &mut changed_unit.normalized_constraints {
-        constraint.unit = changed_unit.source.unit.clone();
+    for constraint in &mut changed_unit.constraints {
         constraint.bound_type = changed_unit.source.unit.clone();
     }
     cases.push(("unit", changed_unit));
@@ -2361,11 +2372,11 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     cases.push(("path", changed_path));
 
     let mut changed_bound = original.clone();
-    changed_bound.normalized_constraints[0].bound = "7/2".to_owned();
+    changed_bound.constraints[0].bound = "7/2".to_owned();
     cases.push(("bound", changed_bound));
 
     let mut changed_comparison = original.clone();
-    changed_comparison.normalized_constraints[0].comparison = "lt".to_owned();
+    changed_comparison.constraints[0].comparison = super::timed_model::ClockComparison::Lt;
     cases.push(("comparison", changed_comparison));
 
     let mut changed_reset = original.clone();
@@ -2456,15 +2467,19 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         for (expected, actual) in expected.clock_places.iter_mut().zip(&actual.clock_places) {
             expected.metadata = actual.metadata.clone();
         }
+        // The referenced timed nodes are rekeyed; each reference is
+        // taken from the read-back model.
         for (expected, actual) in expected.resets.iter_mut().zip(&actual.resets) {
             expected.metadata = actual.metadata.clone();
-            expected.place = actual.place.clone();
+            expected.target = actual.target.clone();
         }
         for (expected, actual) in expected.guards.iter_mut().zip(&actual.guards) {
             expected.metadata = actual.metadata.clone();
+            expected.parts = actual.parts.clone();
         }
         for (expected, actual) in expected.invariants.iter_mut().zip(&actual.invariants) {
             expected.metadata = actual.metadata.clone();
+            expected.bounds = actual.bounds.clone();
         }
         for (expected, actual) in expected.urgencies.iter_mut().zip(&actual.urgencies) {
             match (expected, actual) {
@@ -2483,13 +2498,9 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
                 _ => panic!("urgency form is unchanged"),
             }
         }
-        for (expected, actual) in expected
-            .normalized_constraints
-            .iter_mut()
-            .zip(&actual.normalized_constraints)
-        {
+        for (expected, actual) in expected.constraints.iter_mut().zip(&actual.constraints) {
             expected.metadata = actual.metadata.clone();
-            expected.place = actual.place.clone();
+            expected.target = actual.target.clone();
         }
         assert_eq!(actual, &expected, "{case} typed content reads back exactly");
     }
@@ -2600,7 +2611,9 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 /// timed-model, then protocol; QSpec pins that order in TC-233.
 /// FR-230-AC-31 and FR-230-AC-34 (TC-685 steps 26 and 27): I2 refuses a
 /// missing root (`missing-timed-model`), a dangling or wrong-kind edge
-/// (`timed-node-reference`), a duplicate place (`duplicate-clock-place`), a
+/// (`timed-node-reference`), a second place of one path whose forged row
+/// refuses `malformed-clock-place`, a repeated place reference (`invalid_semantic_graph`, no cause, QSpec
+/// FR-322-AC-260's order refusal, TM-30), a
 /// noncanonical path (`malformed-clock-place`) and a non-time unit or
 /// malformed quantity (`invalid-time-quantity`), each at the first failing
 /// timed node's locus; a `resolved_path` row missing, extra or mismatched in
@@ -2609,6 +2622,7 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 /// those criteria state.
 #[trace("TC-1187", "FR-447-AC-13")]
 #[trace("TC-685", "FR-230-AC-31", "FR-230-AC-34")]
+#[trace("QSpec-FR-322-AC-260")]
 #[test]
 fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -2685,13 +2699,60 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 source["body"]["members"][3]["value"]["target"] = target.clone();
                 replace_dependency(&mut source["dependencies"], &old, &target);
             }
-            "duplicate-clock-place" => {
+            "second-place-forged-row" => {
+                // QSpec TM-12 (STD-559): a distinct second place of the same
+                // path, listed after the first and located after every
+                // published place, so the root is in declared order. Only its
+                // derived `resolved_path` can differ, so its last row names a
+                // member the selected declaration lacks, and the row join,
+                // which precedes the root's aggregates, refuses it there. A
+                // repeated reference would repeat its order key and refuse as
+                // an order defect first (TM-30). `rekey_stale` gives the
+                // placeholder identity its key.
+                let mut second = candidate["semantic_graph"]["nodes"][45].clone();
+                let original = second["node_id"].clone();
+                let rows = second["body"]["members"][2]["value"]["members"]
+                    .as_array_mut()
+                    .unwrap();
+                let identity = &mut rows.last_mut().unwrap()["members"][2]["value"]["value"];
+                *identity = json!(format!("{}#again", identity.as_str().unwrap()));
+                let placeholder = json!({"domain": NODE_DOMAIN, "digest": "f".repeat(64)});
+                second["node_id"] = placeholder.clone();
+                second["semantic_type"] = placeholder.clone();
+                let mut entry = candidate["source_map"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|entry| entry["node_id"] == original)
+                    .unwrap()
+                    .clone();
+                entry["node_id"] = placeholder.clone();
+                entry["regions"][0]["start"] = json!(9000);
+                entry["regions"][0]["end"] = json!(9001);
+                candidate["source_map"].as_array_mut().unwrap().push(entry);
+                let nodes = candidate["semantic_graph"]["nodes"].as_array_mut().unwrap();
+                let at = nodes.len() - 1;
+                nodes.insert(at, second);
+                let root = &mut nodes[52];
+                root["body"]["members"][3]["value"]["members"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"term": "reference", "target": placeholder.clone()}));
+                root["dependencies"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(placeholder);
+            }
+            "repeated-clock-place-reference" => {
+                // QSpec FR-322-AC-260, TM-30: the first place's reference
+                // listed again repeats its predecessor's order key, the
+                // order refusal with no cause at the repeated member.
                 let places = candidate["semantic_graph"]["nodes"][52]["body"]["members"][3]
                     ["value"]["members"]
                     .as_array_mut()
                     .unwrap();
-                let duplicate = places[0].clone();
-                places.push(duplicate);
+                let first = places[0].clone();
+                places.push(first);
             }
             "noncanonical-place-path" => {
                 candidate["semantic_graph"]["nodes"][45]["body"]["members"][1]["value"]["members"]
@@ -2862,6 +2923,110 @@ fn assert_timed_refusal(
         ),
         "{id}: refusal locus, got {locus:?}"
     );
+}
+
+/// QSpec FR-322 "Clause nodes" (TC-367 CK-36): each clause vector of
+/// `timed-clause-node-vectors.json`, its RFC 6902 patch applied to the
+/// published clause package, reaches QSL's I2 read with its published
+/// outcome: an admitted case is verified, a schema case refuses
+/// `malformed_wire` within its node, and each other case refuses with its
+/// code and cause at its locus. `CL-25` (STD-558) is a reset naming the
+/// anchor of another model whose frame is that model's, refused by the
+/// timed-model join; `CL-54` is the same reset whose frame stays on the
+/// first model, refused `invalid_model_binding` in the state step first.
+#[trace("TC-685", "FR-230-AC-34")]
+#[trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-262", "QSpec-FR-322-AC-263")]
+#[test]
+fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let proposals = directory.parent().expect("the proposal directory");
+    let vectors = read_fixture(&proposals.join("timed-clause-node-vectors.json"));
+    let mut replayed = 0_usize;
+    for case in vectors["cases"].as_array().expect("CL cases") {
+        let id = &case["id"];
+        let mut package =
+            read_fixture(&proposals.join(case["fixture"].as_str().expect("a fixture")));
+        if let Some(patch) = case.get("patch") {
+            apply_json_patch(&mut package, patch);
+        }
+        let (_, outcome) = read_fixture_wire(&package);
+        let locus = case["locus"].as_str().unwrap_or_default();
+        match case["expected"].as_str().expect("an outcome") {
+            "admitted" => assert!(
+                matches!(outcome, Read::Verified { .. }),
+                "{id}: expected admitted, got {outcome:?}"
+            ),
+            "refused-by-schema" => {
+                let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &outcome else {
+                    panic!("{id}: expected malformed_wire, got {outcome:?}");
+                };
+                assert_eq!(
+                    refusal.code,
+                    CheckedPackageRefusalCode::MalformedWire,
+                    "{id}"
+                );
+                let pointer = refusal
+                    .path
+                    .as_ref()
+                    .map(|path| path.as_str())
+                    .unwrap_or("");
+                assert!(pointer.starts_with(locus), "{id}: {pointer} within {locus}");
+            }
+            "refused" => {
+                let cause = case["expected_cause"].as_str().map(|cause| {
+                    serde_json::from_value::<CheckedPackageRefusalCause>(json!(cause))
+                        .unwrap_or_else(|_| panic!("{id}: unrecognized cause {cause}"))
+                });
+                assert_timed_refusal(
+                    &outcome,
+                    case["expected_code"].as_str().expect("a code"),
+                    cause,
+                    locus,
+                    id,
+                );
+            }
+            other => panic!("{id}: unknown outcome {other}"),
+        }
+        replayed += 1;
+    }
+    assert!(replayed > 0, "the clause vectors replay");
+}
+
+/// The token of a JSON pointer step.
+fn unescape(step: &str) -> String {
+    step.replace("~1", "/").replace("~0", "~")
+}
+
+/// Apply the RFC 6902 `add`, `remove` and `replace` operations of
+/// `patch` to `document`.
+pub(crate) fn apply_json_patch(document: &mut Value, patch: &Value) {
+    for operation in patch.as_array().expect("a patch") {
+        let path = operation["path"].as_str().expect("a path");
+        let (parent, last) = path.rsplit_once('/').expect("a nonroot path");
+        let last = unescape(last);
+        let container = document
+            .pointer_mut(parent)
+            .unwrap_or_else(|| panic!("{parent} resolves"));
+        let value = operation["value"].clone();
+        match (operation["op"].as_str().expect("an op"), container) {
+            ("add", Value::Array(items)) if last == "-" => items.push(value),
+            ("add", Value::Array(items)) => items.insert(last.parse().unwrap(), value),
+            ("add" | "replace", Value::Object(fields)) => {
+                fields.insert(last, value);
+            }
+            ("replace", Value::Array(items)) => items[last.parse::<usize>().unwrap()] = value,
+            ("remove", Value::Array(items)) => {
+                items.remove(last.parse().unwrap());
+            }
+            ("remove", Value::Object(fields)) => {
+                fields.remove(&last);
+            }
+            (op, _) => panic!("unsupported patch operation {op} at {path}"),
+        }
+    }
 }
 
 fn replace_dependency(dependencies: &mut Value, old: &Value, replacement: &Value) {

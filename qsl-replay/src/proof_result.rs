@@ -484,6 +484,14 @@ pub enum UnavailabilityCause {
         /// The reason.
         reason: ValueCheckUnsupported,
     },
+    /// QSpec FR-483 arm outcome `unsupported`: the operation-contract arm
+    /// does not decide the claim's form or an element it reads.
+    ContractCheck {
+        /// The claim form.
+        form: crate::contract_check::ContractForm,
+        /// The reason.
+        reason: crate::contract_check::ContractCheckUnsupported,
+    },
 }
 
 /// One wire failure in FR-220's `WeakAccessShape.failures` list.
@@ -565,7 +573,9 @@ impl UnavailabilityCause {
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::RecoveryView { .. } => "recovery-view",
             Self::PunctualInterval { .. } => "punctual-interval",
-            Self::ValueCheck { .. } => "unsupported-requested-capability",
+            Self::ValueCheck { .. } | Self::ContractCheck { .. } => {
+                "unsupported-requested-capability"
+            }
         }
     }
 
@@ -589,7 +599,8 @@ impl UnavailabilityCause {
             | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_)
-            | Self::ValueCheck { .. } => Some("unsupported_projection"),
+            | Self::ValueCheck { .. }
+            | Self::ContractCheck { .. } => Some("unsupported_projection"),
         }
     }
 
@@ -1298,6 +1309,16 @@ impl TerminalRecord {
         request_index: RequestIndex,
         backend: BackendId,
         _reproduced: &crate::value_check::ReproducedViolation,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Refuted)
+    }
+
+    /// QSpec FR-483: a `refuted` record whose `contract-counterexample` the
+    /// native replay reproduced. The token is the only evidence accepted.
+    pub fn refuted_by_contract(
+        request_index: RequestIndex,
+        backend: BackendId,
+        _reproduced: &crate::contract_check::ReproducedContractViolation,
     ) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Refuted)
     }

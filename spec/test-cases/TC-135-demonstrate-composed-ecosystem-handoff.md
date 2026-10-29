@@ -26,7 +26,7 @@ without making A's local evidence claim B/F semantics.
    PR #70's
    FR-043/044/045 Rust-interface baseline. Require the reviewed
    `quire.compiled-protocol/2` extension carrying every selected temporal
-   definition identity/revision/raw-byte digest/artifact and exactly one tagged
+   definition identity/revision/artifact and exactly one tagged
    clock configuration; do not pass the timed subject through `/1`.
 2. Record A's exact source/domain-package/profile/configuration selections,
    canonical artifact bytes/reference and required relationship, population,

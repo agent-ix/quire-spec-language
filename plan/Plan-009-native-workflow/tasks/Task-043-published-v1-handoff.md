@@ -28,10 +28,9 @@ the existing `/2` corpus unchanged.
 
 ## Delivery
 
-`PUBLISHED_V1_HANDOFF` and its member constants address one immutable
-four-source handoff from the pinned crate. The producer writes the complete
-checksum inventory in Rust. TC-121 validates its closed inventory and replays
-the committed offer through the public strict reader; the independently selected
+The `/1` member-name constants address one four-source handoff that
+`write_v1` generates. TC-121 validates its closed inventory and replays
+the generated offer through the public strict reader; the independently selected
 Protocol intake and historical two-revision comparison remain in Protocol #11.
 The first Protocol static-link execution exposed duplicate role authorities in
 the published corpus; Task-044/#114 owns and completes that corpus correction

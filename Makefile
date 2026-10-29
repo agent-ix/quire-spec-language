@@ -429,9 +429,10 @@ arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-quali
 # criterion bench per axis, each runnable by name. `make bench` runs all
 # six; `make bench-probe` prints the counts, refusal boundaries and one-shot
 # large-input timings (with peak RSS) the criterion benches do not record.
-# The recorded baseline, with its variance, is `qsl-bench/BASELINE.md`.
-# Pass criterion options through BENCH_ARGS, e.g.
-# `make bench-model BENCH_ARGS='--save-baseline before'`. Not part of `ci:`
+# Compare a candidate with current main in one interleaved session; see
+# `qsl-bench/BENCHMARKING.md` for the live-run method. No stored baseline is used.
+# Pass criterion options through BENCH_ARGS, e.g. `BENCH_ARGS='--noplot'`.
+# Not part of `ci:`
 # -- timing is not a pass/fail gate.
 BENCH_ARGS ?=
 BENCH_AXES := parser checker cst model evaluator text_cluster

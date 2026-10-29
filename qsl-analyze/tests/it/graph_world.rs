@@ -228,11 +228,22 @@ impl World {
     /// initial snapshot per entry of `starts`, each `(key, [(field,
     /// value)])` per object.
     pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
+        Self::with_profiles(model, "", body, starts)
+    }
+
+    /// As [`Self::new`], with `profiles` (header `profile` lines) after the
+    /// value profile.
+    pub(crate) fn with_profiles(
+        model: Model,
+        profiles: &str,
+        body: &str,
+        starts: &[&[Object<'_>]],
+    ) -> Self {
         let document = model.document();
         let packages = package_input([document.as_slice()]);
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
+             profile v = \"quire.value.complete/v1\";\n{profiles}\
              model {} = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
             model.alias,
             model.package,

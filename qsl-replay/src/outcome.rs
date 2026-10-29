@@ -739,6 +739,9 @@ impl OutcomeItem {
                     UnavailabilityCause::ValueCheck { reason, .. } => {
                         item.refusal = Some(reason.as_str());
                     }
+                    UnavailabilityCause::ContractCheck { reason, .. } => {
+                        item.refusal = Some(reason.as_str());
+                    }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent

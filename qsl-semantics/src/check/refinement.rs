@@ -1204,6 +1204,16 @@ pub struct StepRow {
     pub(crate) roots: Option<RowRoots>,
 }
 
+impl StepRow {
+    /// The concrete operation of an operation row, as a record references
+    /// it: its declaring type and name; `None` for a protocol row.
+    pub fn concrete_operation(&self) -> Option<(EffectiveId, &str)> {
+        self.roots
+            .as_ref()
+            .map(|roots| (roots.operation.0, roots.operation.1.as_str()))
+    }
+}
+
 /// FR-146 "Claim extent": what an operation row's `Step` record ranges over
 /// besides the populations its contract clauses and the state mapping walk.
 #[derive(Clone)]
