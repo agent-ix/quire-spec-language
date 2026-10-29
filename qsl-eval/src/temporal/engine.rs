@@ -45,10 +45,10 @@ use super::position::TemporalPosition;
 use super::steps::{LoopShape, ReadStop, Steps};
 use super::window::{WindowLimitReached, WindowRefusal};
 
-/// The named point every visit charges, one work unit each. `quire-exact`
-/// names no temporal point; a node visit of the formula's position graph is
-/// the nearest `graph.expand`.
-const VISIT: ChargePoint = ChargePoint::GraphExpand;
+/// The named point every visit charges, one work unit each: `temporal.visit`
+/// (`quire.value.accounting/v1`), charged once per visit this evaluator makes.
+/// `graph.expand` is reserved for `reaches` and is never charged here.
+const VISIT: ChargePoint = ChargePoint::TemporalVisit;
 
 /// What a trace's positions past its represented ones are, and how a clause
 /// settles on it.
