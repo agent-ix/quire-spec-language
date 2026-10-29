@@ -549,6 +549,8 @@ pub(crate) struct Query {
     assertions: HashSet<Rc<Term>>,
     /// The constants declared `Int`, for `la_generic`'s strengthening.
     integers: HashSet<Rc<str>>,
+    /// Every declared constant's sort.
+    sorts: HashMap<Rc<str>, Sort>,
     /// The query's `:named` proxies, which stay valid in the proof.
     names: HashMap<Rc<str>, Rc<Term>>,
 }
@@ -560,6 +562,7 @@ pub(crate) fn read_query(bytes: &[u8]) -> Option<Query> {
     let mut names = Names::default();
     let mut assertions = HashSet::new();
     let mut integers = HashSet::new();
+    let mut sorts = HashMap::new();
     for command in read_sexprs(text)? {
         let Sexpr::List(items) = &command else {
             return None;
@@ -572,6 +575,7 @@ pub(crate) fn read_query(bytes: &[u8]) -> Option<Query> {
                 if &**sort == "Int" {
                     integers.insert(name.clone());
                 }
+                sorts.insert(name.clone(), Sort::named(sort));
             }
             ("assert", [term]) => {
                 assertions.insert(names.term(term)?);
@@ -582,8 +586,206 @@ pub(crate) fn read_query(bytes: &[u8]) -> Option<Query> {
     Some(Query {
         assertions,
         integers,
+        sorts,
         names: names.terms,
     })
+}
+
+/// A term's sort, as far as the checker types terms.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Sort {
+    Bool,
+    Int,
+    Real,
+    /// Any other sort, by its text.
+    Named(Rc<str>),
+}
+
+impl Sort {
+    fn named(text: &str) -> Self {
+        match text {
+            "Bool" => Self::Bool,
+            "Int" => Self::Int,
+            "Real" => Self::Real,
+            other => Self::Named(other.into()),
+        }
+    }
+
+    fn is_numeric(&self) -> bool {
+        matches!(self, Self::Int | Self::Real)
+    }
+}
+
+/// Why a term has no sort.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Unsorted {
+    /// An operand has a sort its operator does not take: the term is
+    /// ill-sorted, so no rule may read it.
+    IllSorted,
+    /// A symbol or operator the checker does not type.
+    Unknown,
+}
+
+/// The sort of `term` over `query`'s declarations and the variables of
+/// `scope`, innermost last.
+fn sort_of(term: &Term, query: &Query, scope: &mut Vec<(Rc<str>, Sort)>) -> Result<Sort, Unsorted> {
+    match term {
+        Term::Symbol(name) => {
+            if let Some((_, sort)) = scope.iter().rev().find(|(bound, _)| bound == name) {
+                return Ok(sort.clone());
+            }
+            match &**name {
+                "true" | "false" => Ok(Sort::Bool),
+                _ => query.sorts.get(name).cloned().ok_or(Unsorted::Unknown),
+            }
+        }
+        Term::Number { real, .. } => Ok(if *real { Sort::Real } else { Sort::Int }),
+        Term::App(head, args) => {
+            let sorts = args
+                .iter()
+                .map(|arg| sort_of(arg, query, scope))
+                .collect::<Result<Vec<_>, _>>()?;
+            application_sort(head, &sorts)
+        }
+        Term::Binder {
+            quantifier,
+            vars,
+            body,
+        } => {
+            let depth = scope.len();
+            scope.extend(
+                vars.iter()
+                    .map(|(name, sort)| (name.clone(), Sort::named(sort))),
+            );
+            let body = sort_of(body, query, scope);
+            scope.truncate(depth);
+            let body = body?;
+            match &**quantifier {
+                "forall" | "exists" if body == Sort::Bool => Ok(Sort::Bool),
+                "forall" | "exists" => Err(Unsorted::IllSorted),
+                "choice" => match vars.as_slice() {
+                    [(_, sort)] if body == Sort::Bool => Ok(Sort::named(sort)),
+                    [_] => Err(Unsorted::IllSorted),
+                    _ => Err(Unsorted::Unknown),
+                },
+                _ => Err(Unsorted::Unknown),
+            }
+        }
+        Term::Other(_) => Err(Unsorted::Unknown),
+    }
+}
+
+/// The sort of `head` applied to operands of `sorts`.
+fn application_sort(head: &str, sorts: &[Sort]) -> Result<Sort, Unsorted> {
+    let all = |wanted: &dyn Fn(&Sort) -> bool| sorts.iter().all(wanted);
+    let numeric = || {
+        if sorts.contains(&Sort::Real) {
+            Sort::Real
+        } else {
+            Sort::Int
+        }
+    };
+    let ill = Err(Unsorted::IllSorted);
+    match head {
+        "not" => match sorts {
+            [Sort::Bool] => Ok(Sort::Bool),
+            _ => ill,
+        },
+        "and" | "or" | "=>" | "xor" => {
+            if all(&|sort| *sort == Sort::Bool) {
+                Ok(Sort::Bool)
+            } else {
+                ill
+            }
+        }
+        "=" | "distinct" => match sorts {
+            [first, rest @ ..] if !rest.is_empty() => {
+                let agree = rest
+                    .iter()
+                    .all(|sort| sort == first || (sort.is_numeric() && first.is_numeric()));
+                if agree {
+                    Ok(Sort::Bool)
+                } else {
+                    ill
+                }
+            }
+            _ => ill,
+        },
+        "<" | "<=" | ">" | ">=" => {
+            if sorts.len() >= 2 && all(&Sort::is_numeric) {
+                Ok(Sort::Bool)
+            } else {
+                ill
+            }
+        }
+        "+" | "*" | "-" => {
+            if !sorts.is_empty() && all(&Sort::is_numeric) {
+                Ok(numeric())
+            } else {
+                ill
+            }
+        }
+        "/" => {
+            if sorts.len() >= 2 && all(&Sort::is_numeric) {
+                Ok(Sort::Real)
+            } else {
+                ill
+            }
+        }
+        "div" | "mod" => {
+            if sorts.len() >= 2 && all(&|sort| *sort == Sort::Int) {
+                Ok(Sort::Int)
+            } else {
+                ill
+            }
+        }
+        "abs" => match sorts {
+            [Sort::Int] => Ok(Sort::Int),
+            _ => ill,
+        },
+        "to_real" => match sorts {
+            [Sort::Int] => Ok(Sort::Real),
+            _ => ill,
+        },
+        "to_int" => match sorts {
+            [Sort::Real] => Ok(Sort::Int),
+            _ => ill,
+        },
+        "is_int" => match sorts {
+            [Sort::Real] => Ok(Sort::Bool),
+            _ => ill,
+        },
+        "ite" => match sorts {
+            [Sort::Bool, then, otherwise] if then == otherwise => Ok(then.clone()),
+            [Sort::Bool, then, otherwise] if then.is_numeric() && otherwise.is_numeric() => {
+                Ok(Sort::Real)
+            }
+            _ => ill,
+        },
+        _ => Err(Unsorted::Unknown),
+    }
+}
+
+/// FR-314's sort test of the formulas a command states: each is
+/// `Bool`-sorted, `Fails` when one is ill-sorted or not `Bool` and
+/// `Undecided` when one has a symbol or operator the checker does not type.
+fn formulas_sorted<'t>(
+    formulas: impl IntoIterator<Item = &'t Rc<Term>>,
+    query: &Query,
+    context: &[Entry],
+) -> Check {
+    let mut scope: Vec<_> = context
+        .iter()
+        .map(|entry| (entry.name.clone(), Sort::named(&entry.sort)))
+        .collect();
+    for formula in formulas {
+        match sort_of(formula, query, &mut scope) {
+            Ok(Sort::Bool) => {}
+            Ok(_) | Err(Unsorted::IllSorted) => return Check::Fails,
+            Err(Unsorted::Unknown) => return Check::Undecided,
+        }
+    }
+    Check::Holds
 }
 
 /// A checked or unchecked Alethe rule.
@@ -1276,10 +1478,22 @@ impl Command {
         }
         match &self.kind {
             CommandKind::Assume { term, local } => {
-                (*local || query.assertions.contains(term)).into()
+                if !(*local || query.assertions.contains(term)) {
+                    return Check::Fails;
+                }
+                formulas_sorted([term], query, &self.context)
             }
             CommandKind::Anchor | CommandKind::Define => Check::Holds,
-            CommandKind::Step(step) => step.check(&self.context, query),
+            // A formula the checker cannot type leaves the step at most
+            // `Undecided`, still `Fails` when its rule shows it wrong.
+            CommandKind::Step(step) => match formulas_sorted(&step.clause, query, &self.context) {
+                Check::Holds => step.check(&self.context, query),
+                Check::Undecided => match step.check(&self.context, query) {
+                    Check::Fails => Check::Fails,
+                    Check::Holds | Check::Undecided => Check::Undecided,
+                },
+                Check::Fails => Check::Fails,
+            },
         }
     }
 }
@@ -2231,11 +2445,16 @@ fn comparison(term: &Rc<Term>) -> Option<(&str, [&Rc<Term>; 2])> {
     }
 }
 
-/// Whether every atom of `s` is an integer-sorted constant of `query`.
+/// Whether `s` takes only integer values: every atom an integer-sorted
+/// constant of `query` with an integer coefficient, so integer strengthening
+/// (Alethe `la_generic` step 4) is sound for it.
 fn integer_sorted(s: &Linear, query: &Query) -> bool {
-    s.terms.keys().all(|atom| match &**atom {
-        Term::Symbol(name) => query.integers.contains(name),
-        _ => false,
+    s.terms.iter().all(|(atom, coefficient)| {
+        coefficient.is_integer()
+            && match &**atom {
+                Term::Symbol(name) => query.integers.contains(name),
+                _ => false,
+            }
     })
 }
 
@@ -2606,6 +2825,89 @@ mod tests {
         assert_eq!(
             verdict(&context_free),
             Ok(ProofOutcome::Unverifiable { step: 2 })
+        );
+    }
+
+    /// The numerals' forgery: `0`, `1` and `2` read as Booleans through
+    /// `equiv_neg1` and `equiv_neg2`, with `la_tautology`'s disequalities,
+    /// would refute any query from no assumption.
+    pub(super) fn numeral_forgery() -> String {
+        let mut proof = String::new();
+        for (a, b, id) in [("0", "1", "p"), ("0", "2", "q"), ("1", "2", "r")] {
+            proof.push_str(&format!(
+                "(step {id}d (cl (not (= {a} {b}))) :rule la_tautology)\n\
+                 (step {id}n (cl (= {a} {b}) (not {a}) (not {b})) :rule equiv_neg1)\n\
+                 (step {id}p (cl (= {a} {b}) {a} {b}) :rule equiv_neg2)\n\
+                 (step {id}1 (cl (not {a}) (not {b})) :rule resolution :premises ({id}n {id}d))\n\
+                 (step {id}2 (cl {a} {b}) :rule resolution :premises ({id}p {id}d))\n"
+            ));
+        }
+        proof.push_str(
+            "(step s1 (cl 0 (not 2)) :rule resolution :premises (p2 r1))\n\
+             (step s2 (cl 0) :rule resolution :premises (q2 s1))\n\
+             (step s3 (cl 2 (not 0)) :rule resolution :premises (r2 p1))\n\
+             (step s4 (cl (not 0)) :rule resolution :premises (q1 s3))\n\
+             (step s5 (cl) :rule resolution :premises (s2 s4))\n",
+        );
+        proof
+    }
+
+    /// SR-1788001 FND-001: a literal or formula operand that is not
+    /// `Bool`-sorted is `ProofStepInvalid`, so the numerals' forgery fails at
+    /// its first `equiv_neg1`, and the other propositional shapes over an
+    /// `Int` term fail too.
+    #[trace("TC-893")]
+    #[test]
+    fn an_ill_sorted_literal_is_invalid() {
+        assert_eq!(verdict(&numeral_forgery()), Err("invalid 1".to_owned()));
+        for step in [
+            "(step t0 (cl (= 0 1) (not 0) (not 1)) :rule equiv_neg1)",
+            "(step t0 (cl (= 0 1) 0 1) :rule equiv_neg2)",
+            "(step t0 (cl (not (not (not x))) x) :rule not_not)",
+            "(step t0 (cl (not (ite (> x 0) x y)) (> x 0) y) :rule ite1)",
+            "(step t0 (cl (not (and x y)) x) :rule and :args (0))",
+            "(step t0 (cl (not (= x y)) (not x) y) :rule eq_congruent_pred)",
+        ] {
+            assert_eq!(verdict(step), Err("invalid 0".to_owned()), "{step}");
+        }
+    }
+
+    /// SR-1788001 FND-002: integer strengthening needs integral
+    /// coefficients, so `(* (/ 1 2) x) > 0` is not strengthened to `≥ 1`
+    /// and the refutation of the satisfiable `x > 0 ∧ x < 2` fails at it.
+    #[trace("TC-893")]
+    #[test]
+    fn strengthening_needs_integral_coefficients() {
+        let query = read_query(
+            b"(set-logic QF_LIA)\n(declare-const x Int)\n\
+              (assert (> x 0))\n(assert (< x 2))\n(check-sat)\n",
+        )
+        .expect("the query reads");
+        let invalid = |proof: &str| {
+            let Reading::Read(proof) = read_proof(proof.as_bytes(), &query, &mut |_| true) else {
+                panic!("the proof reads");
+            };
+            proof.invalid_step(&query)
+        };
+        assert_eq!(
+            invalid(
+                "(assume a0 (> x 0))\n(assume a1 (< x 2))\n\
+                 (step t0 (cl (not (> x 0)) (> (* (/ 1 2) x) 0)) :rule la_generic :args (1 2))\n\
+                 (step t1 (cl (not (> (* (/ 1 2) x) 0)) (not (< x 2))) :rule la_generic :args (2 1))\n\
+                 (step t2 (cl) :rule resolution :premises (a0 t0 t1 a1))\n"
+            ),
+            Some(3)
+        );
+        assert_eq!(
+            invalid("(step t0 (cl (not (> (* (/ 1 2) x) 0)) (not (< x 2))) :rule la_tautology)\n"),
+            Some(0)
+        );
+        // An integral coefficient is still strengthened.
+        assert_eq!(
+            invalid(
+                "(step t0 (cl (not (> (* 2 x) 0)) (not (< x 1))) :rule la_generic :args (1 2))\n"
+            ),
+            None
         );
     }
 }
