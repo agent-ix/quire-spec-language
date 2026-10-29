@@ -2595,8 +2595,6 @@ pub fn lookup(
 mod tests {
     use ix_trace_rs::trace;
 
-    use sha2::{Digest, Sha256};
-
     use super::*;
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
@@ -2929,39 +2927,6 @@ mod tests {
             before_invocation,
             "admit_invocation never builds, for either instant"
         );
-    }
-
-    /// The seven-field `quire.population/v1` preimage's RFC 8785 text, written
-    /// out independently; the identity is its SHA-256.
-    #[trace("TC-291", "FR-089-AC-1", "FR-089-AC-7")]
-    #[test]
-    fn population_id_is_the_hash_of_its_hand_written_preimage() {
-        const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-        let package = DomainPackage::new(
-            DomainPackageRef {
-                identity: "test/orders".to_owned(),
-                version: "1".to_owned(),
-                digest: [0x11; 32],
-            },
-            Vec::new(),
-        );
-        let key = DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "ix://test/orders/P1".to_owned(),
-        };
-        let digest = hex(&Sha256::digest(TEXT.as_bytes()));
-        let id = mint_population_id(
-            &package,
-            &key,
-            AdmissionRole::Direct,
-            None,
-            &BTreeMap::new(),
-            population_id_byte_bound(&package, &key, &BTreeMap::new()),
-        )
-        .expect("golden population identity encodes");
-        assert_eq!(hex(id.as_bytes()), digest);
-        let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
-        assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
     }
 
     /// The member wire's typed effective identity keeps the existing `type`

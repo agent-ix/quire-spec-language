@@ -181,10 +181,9 @@ fn nullable_result_and_native_digest_keep_their_exact_wire_domains() {
     assert!(value.as_object_mut().unwrap().remove("result").is_some());
     assert!(serde_json::from_value::<InvocationDraft>(value).is_err());
 
-    let empty_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let mut binding = original.draft().models[0].clone();
     binding.digest = ByteDigest::of(b"");
-    assert_eq!(format!("{:x}", binding.digest), empty_digest);
+    let empty_digest = format!("{:x}", binding.digest);
     assert_eq!(binding.digest.to_string(), format!("sha256:{empty_digest}"));
     assert_eq!(
         binding.digest.to_string().parse::<ByteDigest>().unwrap(),

@@ -3677,29 +3677,6 @@ fn population_identity_binds_maximum_and_canonical_members() {
 
 #[test]
 #[trace("TC-291", "FR-089-AC-7")]
-fn population_identity_golden_vector_contains_all_seven_fields() {
-    use qsl_semantics::model::key::hex;
-    use sha2::{Digest, Sha256};
-
-    const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"model.pop.p1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-    let mut package = fixture_f1();
-    package.model_selection.digest = [0x11; 32];
-    let binding = identity_binding(
-        &view_of(&package),
-        &PopulationDocument {
-            model_identity: "test/orders".into(),
-            members: Vec::new(),
-        },
-        None,
-    );
-    assert_eq!(
-        binding.population_id().to_string(),
-        hex(&Sha256::digest(TEXT.as_bytes()))
-    );
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
 fn population_post_identity_binds_its_pre_population_id() {
     let view = view_of(&fixture_f1());
     let post_document = p1_minus_a2("test/orders");

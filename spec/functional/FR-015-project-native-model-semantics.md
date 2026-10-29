@@ -78,8 +78,8 @@ PureFunctionDeclaration signatures are not reinterpreted as operations. The
 complete supplied environment is validated, including unused declarations.
 
 The artifact includes existing canonical IR declaration bytes, sorted declaration
-loci, the native roles and the exact model source binding. Changes to units,
-nominal identities, frames, model source bytes/revision or any declaration affect
+loci, the native roles and the model source identity and revision. Changes to units,
+nominal identities, frames, model source identity/revision or any declaration affect
 the selected artifact. The raw SHA-256 ByteDigest is distinct from IR semantic
 CanonicalDigest and the original native-formal-environment/1 artifact. Existing link
 keeps its original digest and refusal behavior; new semantics require link_native.
