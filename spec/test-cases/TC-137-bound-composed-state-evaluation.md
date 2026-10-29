@@ -1,40 +1,45 @@
 ---
 id: TC-137
-title: "Bound composed evaluation and retry immutable inputs"
+title: "Bound checked-term evaluation and retry immutable inputs"
 type: TC
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-049, type: verifies }
   - { target: ix://agent-ix/quire-spec-language/NFR-009, type: verifies }
 ---
-# TC-137: Bound composed evaluation and retry immutable inputs
+# TC-137: Bound checked-term evaluation and retry immutable inputs
 
 ## Description
 
-Verify every `quire.state.evaluation-work/1` counter and its charge-before-work
-boundary through the public evaluator.
+Scope: FR-049-AC-7 to FR-049-AC-8.
+
+Verify caller-owned accounting across the checked-term replacement entries,
+including zero/no-work, exact and one-short boundaries, charge-before-work,
+no partial result and a fresh-meter retry. Protocol-slot shared-meter
+accumulation is exercised in TC-1073.
 
 ## Test Procedure
 
-Independently count fixed valid fixtures exercising input nodes/entries/text;
-expression work; sequence occurrences; retained outputs; scalar/key comparison
-pairs and equal-length text comparison bytes; and graph objects/edges. On a
-thread with a 512 KiB stack, evaluate an input nested 100,000 records deep, a
-chain of 10,000 nested predicate calls and a 10,000-object graph chain under
-limits sized for them.
-Use nested record/option/sequence inputs, grouped/branched expressions, nested
-calls, supported scalar/enum/reference/object-identity comparisons and a graph
-chain so each selected dimension has a distinct oracle. Run each dimension at
-zero when no work is required,
-exact, one-short and raised above its default while other limits remain sufficient.
-After every exhausted run, repeat with sufficient limits over the same borrowed
-package and state view. Mutation controls remove one charge site at a time.
+Use public checked-term/family entry points over admitted checked packages and
+immutable inputs. Select fixtures that perform input admission, expression
+nodes, sequence occurrences, retained outputs, scalar/key comparisons and
+model graph navigation. Derive usage from each fixture's successful run under
+a sufficient `quire-exact::Meter`; use the accounting counters defined by
+NFR-009 and FR-255. For every charged counter, run at zero when the fixture
+requires work, at its measured usage, and one below while holding other
+counters sufficient. Include a no-work case at zero and raise a caller-set
+counter above its default to complete work that exceeds the default. After each
+resource stop, retry the same immutable checked package and inputs using a
+fresh sufficient meter. On a 512 KiB stack, evaluate a 100,000-record-deep
+input, a 10,000-call nested predicate chain and a 10,000-object graph chain.
 
 ## Expected Results
 
-Exact capacities complete and report the independent counts. One-short, overflow
-stop before the next operation with the exact dimension and no completed
-partial value. A limit raised above its default admits input past the
-default. Every sufficient retry
-starts from zero usage, returns the same value and leaves all input identities
-and contents unchanged. Removing a required charge makes its mutation control
-fail.
+No-work at zero and each exact-usage run complete. A one-short run stops before
+the denied operation, identifies the counter, and returns no partial completed
+value. Fresh-meter retries complete with the same value and leave checked
+packages and runtime inputs unchanged. The deep-body and graph cases complete
+without native-stack overflow. Raising a caller-set counter above its default
+allows the fixture to complete work beyond that default. Each charged counter
+and charge point has an independent oracle; omitting one charge makes its
+corresponding mutation control fail. TC-1073 separately proves accumulation
+across sequential protocol-slot calls on one shared meter.

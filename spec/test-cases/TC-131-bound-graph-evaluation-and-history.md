@@ -15,13 +15,14 @@ ConfigVersion compatibility.
 ## Test Procedure
 
 Measure successful true and false depth-first traversals under
-`quire.state.evaluation-work/1`, then rerun each with zero, exact and one-step-
-insufficient graph-expansion, graph-edge and comparison limits
-while keeping other dimensions sufficient. Raise each graph limit above its
-NFR-009 default and run input past the default. Exercise a self-loop, a chain of
-10,000 objects on a thread with a 512 KiB stack, a duplicate edge, and an exhaustion that
-occurs immediately before the next expansion and immediately before the next
-edge inspection. Retry from the unchanged package and environment.
+`quire.value.accounting/v1`, then rerun each with zero, exact and one-step-
+insufficient `accounting.value_occurrences` (graph expansion),
+`accounting.work_units` (edge inspection) and `accounting.result_units` (result)
+while keeping other counters sufficient. Raise each setting above its FR-255
+default and run work past the default. Exercise a self-loop, a chain of 10,000
+objects on a thread with a 512 KiB stack, a duplicate edge, and exhaustion
+immediately before the next expansion, edge inspection and result retention.
+Retry from the unchanged package and environment.
 
 Using otherwise identical offered objects, compare a target absent from a
 declared-complete domain with the same absence under unavailable membership or
@@ -34,8 +35,8 @@ relation.
 
 ## Expected Results
 
-Exact and raised capacities complete; one-short capacities return
-typed exhaustion before the next operation and no Boolean. Retrying starts fresh
+Exact and raised capacities complete; one-short capacities return the owning
+typed incomplete/resource-limit outcome before the next operation and no Boolean. Retrying starts fresh
 and repeats the same Boolean and deterministic usage; no run reports a path
 witness. The complete-domain absence refuses as dangling, unavailable membership
 or closure remains incomplete, and the independently known foreign target

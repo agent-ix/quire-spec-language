@@ -183,6 +183,7 @@ pub(super) fn apply(
         successors,
         mut enabled,
         mut enabled_transitions,
+        selected_transitions,
     } = outputs;
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
@@ -196,6 +197,9 @@ pub(super) fn apply(
         // precondition would otherwise let one expansion run unbounded.
         budget.charge()?;
         let transition = transition_of(row, application, &args, walk.system.typing())?;
+        if selected_transitions.is_some_and(|selected| !selected.contains(&transition)) {
+            continue;
+        }
         let transition_bytes =
             quire_canonical::to_vec(&transition, text_limits()).map_err(|_| stop(BROKEN))?;
         let footprint = walk
@@ -379,6 +383,9 @@ pub(super) struct Outputs<'o> {
     /// Enabled transition identities when the caller needs access
     /// classification without enumerating every candidate post-state.
     pub(super) enabled_transitions: Option<&'o mut Vec<ModelTransition>>,
+    /// An exact set of candidate transition identities to check. Candidate
+    /// enumeration and its budget charges still cover the full domain.
+    pub(super) selected_transitions: Option<&'o std::collections::BTreeSet<ModelTransition>>,
 }
 
 /// One argument vector of an application whose effective precondition holds
