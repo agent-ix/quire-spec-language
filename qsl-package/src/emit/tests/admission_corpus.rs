@@ -756,6 +756,7 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
+        (K::Claim(ClaimForm::StepRelation), NO_TAG),
         (K::Correspondence(CorrespondenceForm::SourceLocus), NO_TAG),
         (
             K::Correspondence(CorrespondenceForm::ModelCorrespondence),
