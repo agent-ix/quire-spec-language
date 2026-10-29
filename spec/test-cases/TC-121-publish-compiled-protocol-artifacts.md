@@ -34,7 +34,7 @@ observations belong only to the later consumer fixture.
 1. Admit the complete source inventory through the real edition parser,
    namespace/definition/model/scope binding, value types, actual definedness and
    family admission. Emit through the production Rust entry point. Check the
-   exact selectors and external SHA-256 over the emitted bytes. Attempt emission
+   exact selectors and external ArtifactRef identity. Attempt emission
    with type-only/unfinished evidence and a decoded wire value; no accepted
    artifact can result.
    The [native producer recipe](../../examples/protocol-handoff/README.md)
@@ -60,8 +60,8 @@ observations belong only to the later consumer fixture.
    bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
    optional feature. Substitute source, domain package `sha256-jcs`, IR and
-   result-JCS digests into the external package and source byte slots; require
-   typed refusal.
+   result-JCS digests in fields that carry those distinct identities; require
+   typed refusal without treating any digest as an external ArtifactRef member.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
    representations and immutable capture origins. Individually break a reference
@@ -210,10 +210,9 @@ observations belong only to the later consumer fixture.
 7. Give exact emitted bytes and external reference to the bounded public reader
    without invoking native parsing. Mutate every closed object/tag/member,
    duplicate equal entries, introduce invalid indices/cycles/noncanonical bytes,
-   then change graph/literal/profile claims and recompute a new seal. Under the
-   original expected selection all resealed mutants refuse. Separately show
-   that an attacker-supplied replacement seal is not accepted inventory or
-   source-compilation proof. Compare typed causes/loci, never English messages.
+   then change graph/literal/profile claims. Under the original expected
+   selection all semantically invalid mutants refuse. Compare typed
+   causes/loci, never English messages.
 8. Refuse one required family/export beside an independent valid declaration;
    retain both compilation dispositions but no full-package artifact. Keep
    unsupported reader/version/canonical-domain, known input refusal and resource
@@ -323,9 +322,9 @@ observations belong only to the later consumer fixture.
     temporary directory, from a test that calls only that public function --
     exactly as a downstream crate would, never an example, a private helper or
     a dev-dependency-only type. Confirm the two written trees are
-    byte-identical, that the written `expected.json` selection's artifact
-    reference and digest match the written offer and reference files, and that
-    the strict public reader (used in step 7 and by
+    byte-identical. Confirm that the written `expected.json` selection contains
+    the selected artifact identity and that the strict public reader (used in
+    step 7 and by
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the
     written offer against that written selection with no other input. Call
     `write_v1` a third time into an already-existing directory and require
