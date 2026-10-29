@@ -463,6 +463,11 @@ pub enum ModelTraceRefusal {
     /// or the classification stopped at a limit.
     #[error("the subject is not simulated: {0}")]
     NotSimulated(Box<NotSimulated>),
+    /// FR-181's product automaton state key could not be written or resolved.
+    /// Keep the evaluator's typed cause through replay instead of converting
+    /// it to a generic canonical-serialization refusal.
+    #[error("the product automaton state key failed: {0}")]
+    Automaton(#[from] qsl_eval::automaton::AutomatonError),
 }
 
 impl ModelTraceRefusal {
@@ -478,6 +483,23 @@ impl ModelTraceRefusal {
             Self::HyperProjected => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
+            Self::Automaton(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::StateLimit { .. }) => {
+                Code::ResourceExhausted
+            }
+            Self::Automaton(qsl_eval::automaton::AutomatonError::UnknownState { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::AtomOutOfRange { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::NotSafetyAutomaton { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::InvertedInterval { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::PastOverFuture)
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::RepeatedPunctualInterval)
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::ClockLimit { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::ProfileNotTranslated {
+                ..
+            })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::Invariant { .. }) => {
+                Code::RuntimeInvariant
+            }
             Self::InitialState { .. }
             | Self::UntimedDelay { .. }
             | Self::MissingDelay { .. }
@@ -523,6 +545,11 @@ impl ModelTraceRefusal {
                 Some(code) => code.cause(),
                 None => "invalid-value",
             },
+            Self::Automaton(qsl_eval::automaton::AutomatonError::KeyEncodingLimit { .. })
+            | Self::Automaton(qsl_eval::automaton::AutomatonError::StateLimit { .. }) => {
+                "insufficient-next-charge"
+            }
+            Self::Automaton(_) => "established-invariant-broken",
             Self::InitialState { .. }
             | Self::UntimedDelay { .. }
             | Self::MissingDelay { .. }
@@ -2259,5 +2286,25 @@ impl<State> Constraints<State> for NoConstraints {
         _name: &str,
     ) -> Result<ConstraintValue, ExpansionStop> {
         Ok(ConstraintValue::Holds)
+    }
+}
+
+#[cfg(test)]
+mod automaton_refusal_tests {
+    use super::ModelTraceRefusal;
+    use qsl_eval::automaton::AutomatonError;
+    use qsl_foundation::diagnostic::Code;
+
+    #[test]
+    fn typed_automaton_failures_keep_their_refusal_classification() {
+        let limit = ModelTraceRefusal::Automaton(AutomatonError::KeyEncodingLimit { limit: 7 });
+        assert_eq!(limit.code(), Code::ResourceExhausted);
+        assert_eq!(limit.cause(), "insufficient-next-charge");
+
+        let invariant = ModelTraceRefusal::Automaton(AutomatonError::Invariant {
+            invariant: "property-automaton-key-canonical-encoding",
+        });
+        assert_eq!(invariant.code(), Code::RuntimeInvariant);
+        assert_eq!(invariant.cause(), "established-invariant-broken");
     }
 }

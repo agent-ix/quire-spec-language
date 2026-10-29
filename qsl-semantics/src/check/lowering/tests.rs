@@ -50,7 +50,7 @@ fn vectors() -> BTreeMap<String, (String, String)> {
 
 /// The golden vectors the `tag` spec publishes by name: `(key, preimage)`.
 fn spec_vectors(tag: &str) -> BTreeMap<String, (String, String)> {
-    super::spec_vectors::vectors(tag)
+    crate::check::spec_vectors::vectors(tag)
 }
 
 /// The heading text after `**name**: ` of each golden vector `spec`
@@ -107,7 +107,7 @@ fn assert_published_tables_agree(tag: &str, spec: &str) {
         );
     }
     let recursion = |name: &str| -> Json {
-        serde_json::from_str::<Json>(&super::spec_vectors::raw_preimage(tag, name))
+        serde_json::from_str::<Json>(&crate::check::spec_vectors::raw_preimage(tag, name))
             .expect("a preimage is JSON")["recursion"]
             .clone()
     };
@@ -129,7 +129,7 @@ fn assert_published_tables_agree(tag: &str, spec: &str) {
         }
     }
     let mut in_tables = std::collections::BTreeSet::new();
-    for (first, members) in super::spec_vectors::group_tables(tag) {
+    for (first, members) in crate::check::spec_vectors::group_tables(tag) {
         for (ordinal, name) in members.into_iter().enumerate() {
             let recursion = recursion(&name);
             assert_eq!(

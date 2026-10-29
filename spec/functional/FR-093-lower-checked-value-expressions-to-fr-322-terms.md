@@ -26,15 +26,15 @@ relationships:
 
 ## Description
 
-A node's FR-322 key hashes its body: the `quire.application-node/v1` key hashes
-the application's operator, catalogued operation, result type and arguments.
-`check` mints node keys at E3 (ADR-011 §2.2, FB-13), so `check` lowers each
-checked expression into its FR-322 node before it can key it. This
-requirement fixes that lowering: which nodes a checked expression becomes,
-and the operator, operation identity, laws, mode, member and arguments of
-each application. [FR-092](FR-092-key-type-parameter-and-declared-nodes.md)
-fixes the type, parameter and function nodes the lowering references and the
-preimage of every node that holds no application.
+QSpec FR-322 defines the checked-package/v2 node contract and application
+identity rules (FR-322-AC-10, AC-17 and AC-18). `check` mints node keys at E3
+(ADR-011 §2.2, FB-13), so `check` lowers each checked expression into its
+FR-322 node before it can key it. This requirement fixes QSL's lowering:
+which nodes a checked expression becomes, and the operator, operation
+identity, laws, mode, member and arguments of each application.
+[FR-092](FR-092-key-type-parameter-and-declared-nodes.md) fixes the type,
+parameter and function nodes the lowering references and the preimage of
+every node that holds no application.
 
 The source is the checked tree (`check::ir::Node`), not the parsed
 `Expression`: each checked node carries its checked type, and FR-322 takes
@@ -105,14 +105,10 @@ occurrence in the whole shared sequence is.
   by declaration index (a protocol attempt by its protocol's index, then its
   own); source order plays no part.
 
-An application node has `node_tag` `expression`, `semantic_type` equal to its
-`result_type`, and the `semantic_form` its operator class fixes: `call`,
-`unary`, `binary`, `conditional`, `let`, `quantify`, `collection`, `query`,
-`conversion` for `convert`, `pre_read` for `pre`, `presence_read` for
-`present`, `value_read` for `value`, `deref`, and `reachability` for
-`reaches`. Its `result_type` is the type node (FR-092) of the checked node's
-`value_type`. A literal's `type` is the type node of the literal's checked
-type.
+QSL lowers each checked application to the QSpec FR-322 catalog operation
+selected by the application table below. QSpec FR-322 owns the emitted node
+fields and reader rules; QSL selects `result_type` and literal type from the
+checked type, using the type nodes of FR-092.
 
 ### Nesting depth
 

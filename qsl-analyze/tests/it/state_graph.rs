@@ -31,8 +31,8 @@ use quire_exact::{Cancel, CancelCause, ObjectReference};
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
     config_version, config_world, config_world_over, detour_world, fork_world, game_world,
-    job_world, ladder_world, Field, Model, Operation, World, CAN_STILL_WIN, DIVIDES, REACHES_THREE,
-    REACHES_TWO,
+    job_world, job_world_with_claims, ladder_world, Field, Model, Operation, World, CAN_STILL_WIN,
+    DIVIDES, REACHES_THREE, REACHES_TWO,
 };
 
 pub(crate) const AB: &[&str] = &["a", "b"];
@@ -89,6 +89,119 @@ fn game_and_job_state_graph_claims_check_at_s3() {
         StateGraphForm::UniquePath { from, to }
             if from.body().is_some_and(|body| body.value_type() == &quire_exact::ValueType::Boolean)
                 && to.body().is_some_and(|body| body.value_type() == &quire_exact::ValueType::Boolean)
+    ));
+}
+
+/// FR-167-AC-4 (TC-592): the engine rejects partial-order reduction for a
+/// unique-path claim before it expands the subject.
+#[trace("TC-592", "FR-167-AC-4")]
+#[test]
+fn partial_order_reduction_refuses_unique_path_before_expansion() {
+    let job = job_world(false, false);
+    let mut request = job.request(&["j"], vec![job.item("InOneWay")], no_samples());
+    request.reductions.partial_order = true;
+
+    let result = run(request);
+    assert!(
+        result.graph.nodes.is_empty(),
+        "the refusal precedes expansion"
+    );
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::ReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::PartialOrder,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        }
+    ));
+}
+
+/// FR-167-AC-4 (TC-592): the symmetry row also rejects a unique-path claim
+/// before expansion.
+#[trace("TC-592", "FR-167-AC-4")]
+#[test]
+fn symmetry_reduction_refuses_unique_path_before_expansion() {
+    let job = job_world(false, false);
+    let mut request = job.request(&["j"], vec![job.item("InOneWay")], no_samples());
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey::fixture("jobs"),
+            classes: Vec::new(),
+        });
+
+    let result = run(request);
+    assert!(
+        result.graph.nodes.is_empty(),
+        "the refusal precedes expansion"
+    );
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::ReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::Symmetry,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        }
+    ));
+}
+
+/// FR-167-AC-4 (TC-592): a rejected item is settled before expansion while a
+/// possible item whose row admits POR still uses the one shared exploration.
+#[trace("TC-592", "FR-167-AC-4")]
+#[test]
+fn partial_order_reduction_filters_claims_before_shared_exploration() {
+    let job = job_world_with_claims(
+        false,
+        false,
+        "possible CanFinish using v over (j: M::Job) { j.done = 1 }\n",
+    );
+    let mut request = job.request(
+        &["j"],
+        vec![job.item("InOneWay"), job.item("CanFinish")],
+        no_samples(),
+    );
+    request.reductions.partial_order = true;
+
+    let result = run(request);
+    assert!(
+        !result.graph.nodes.is_empty(),
+        "the admitted claim explores"
+    );
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::ReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::PartialOrder,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        }
+    ));
+    assert!(matches!(
+        result.items[1][0].outcome,
+        StateGraphOutcome::Witnessed { .. }
+    ));
+}
+
+/// FR-167 (TC-592): the real shared explorer applies an ample set and reports
+/// the deadlock-freedom proof as reduced after the breadth-first revisit
+/// proviso has completed the graph.
+#[trace("TC-592", "FR-167-AC-4")]
+#[test]
+fn partial_order_reduction_is_applied_by_the_state_graph_engine() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let mut request = world.request(AB, Vec::new(), no_samples());
+    request.deadlock_freedom = true;
+    request.reductions.partial_order = true;
+    let reduced = run(request);
+
+    let mut exhaustive = world.request(AB, Vec::new(), no_samples());
+    exhaustive.deadlock_freedom = true;
+    let exhaustive = run(exhaustive);
+
+    assert!(reduced.graph.edges.len() < exhaustive.graph.edges.len());
+    assert!(matches!(
+        reduced.deadlock,
+        Some(ModelCheckOutcome::HoldsReduced { ref reductions, .. })
+            if matches!(reductions.as_slice(), [qsl_replay::AppliedReduction::PartialOrder {
+                proviso: qsl_replay::Proviso::BreadthFirstRevisit
+            }])
     ));
 }
 

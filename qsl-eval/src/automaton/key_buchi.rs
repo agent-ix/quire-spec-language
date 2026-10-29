@@ -13,12 +13,12 @@
 
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{Activation, CheckedTemporalClause, TemporalProfile};
-use quire_canonical::{Limits, Node, NodeRef};
+use quire_canonical::{Node, NodeRef};
 use quire_semantic_value::fairness::PropertyForm;
 
 use super::key::{
-    admit_envelope, exactly, AutomatonStateKey, ContextActivation, KeyRefusal, NotTranslated,
-    StateContext, SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
+    admit_envelope, canonical_state_key, exactly, AutomatonStateKey, ContextActivation, KeyRefusal,
+    NotTranslated, StateContext, SubjectKind, TranslationRefusal,
 };
 use super::key_state::{normal, Configuration, FormulaShape, Polarity, Reader};
 use crate::simulation::model::encode::Enc;
@@ -174,13 +174,7 @@ impl BuchiStates {
         let mut members = vec![Enc::text(tag)];
         members.extend(phase.map(|phase| Enc::text(phase.as_str())));
         members.push(branch);
-        let key = Enc::Array(vec![
-            Enc::text(AUTOMATON_STATE_KEY_V1),
-            self.context.clone(),
-            Enc::Array(members),
-        ]);
-        let key = quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
-            .map(AutomatonStateKey)
+        let key = canonical_state_key(&self.context, Enc::Array(members), self.max_bytes)
             .map_err(|_| KeyRefusal::Encoding)?;
         // A key is written only if this context would admit it back.
         self.admit(key.as_bytes())?;

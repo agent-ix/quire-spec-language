@@ -86,9 +86,11 @@ impl Run<'_, '_> {
                 .map(|state| &state.state)
                 .ok_or_else(|| fault("a-path-runs-through-retained-states"))
         };
-        let reorder = |state: &HyperState, positions: &[usize]| HyperState {
-            components: through(&state.components, positions),
-            property: state.property.clone(),
+        let reorder = |state: &HyperState, positions: &[usize]| {
+            HyperState::new(
+                through(&state.components, positions),
+                state.property.clone(),
+            )
         };
         let root_state = stored(root)?;
         let mut positions: Vec<usize> = (0..root_state.components.len()).collect();

@@ -84,11 +84,6 @@ impl std::fmt::Debug for AutomatonStateKey {
 }
 
 impl AutomatonStateKey {
-    /// A key written by one of the automaton's canonical encoders.
-    pub(crate) fn canonical(octets: Vec<u8>) -> Self {
-        Self(octets)
-    }
-
     /// The octets of a key as a certificate carried them, not yet admitted.
     pub fn imported(octets: Vec<u8>) -> Self {
         Self(octets)
@@ -98,6 +93,35 @@ impl AutomatonStateKey {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+/// The one FR-338 envelope writer used by every automaton representation.
+/// Form-specific translators only supply their checked context and typed
+/// state algebra; they do not define another byte-key scheme.
+pub(crate) fn canonical_state_key(
+    context: &Enc,
+    state: Enc,
+    max_bytes: u64,
+) -> Result<AutomatonStateKey, quire_canonical::Error> {
+    canonical_key_value(&canonical_state_key_value(context, state), max_bytes)
+}
+
+/// The FR-338 envelope value, shared by the writer and product-key callers.
+pub(crate) fn canonical_state_key_value(context: &Enc, state: Enc) -> Enc {
+    Enc::Array(vec![
+        Enc::text(AUTOMATON_STATE_KEY_V1),
+        context.clone(),
+        state,
+    ])
+}
+
+/// Encode an already assembled FR-338 key value with the shared bounded
+/// canonical writer.
+pub(crate) fn canonical_key_value(
+    value: &Enc,
+    max_bytes: u64,
+) -> Result<AutomatonStateKey, quire_canonical::Error> {
+    quire_canonical::to_vec(value, Limits::new(max_bytes)).map(AutomatonStateKey)
 }
 
 /// The root of a [`StateContext`].
@@ -464,13 +488,7 @@ impl SafetyTranslation {
     /// [`KeyRefusal::Encoding`] when the key exceeds the identity byte
     /// budget; no truncated key is produced.
     pub fn key(&self, state: SafetyState) -> Result<AutomatonStateKey, KeyRefusal> {
-        let key = Enc::Array(vec![
-            Enc::text(AUTOMATON_STATE_KEY_V1),
-            self.context.clone(),
-            state.enc(),
-        ]);
-        quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
-            .map(AutomatonStateKey)
+        canonical_state_key(&self.context, state.enc(), self.max_bytes)
             .map_err(|_| KeyRefusal::Encoding)
     }
 
@@ -725,14 +743,12 @@ impl SafetyStates {
     /// obligation-free-subsumption normalization, are a state this context
     /// would refuse.
     pub fn key(&self, branches: &[Configuration]) -> Result<AutomatonStateKey, KeyRefusal> {
-        let key = Enc::Array(vec![
-            Enc::text(AUTOMATON_STATE_KEY_V1),
-            self.context.clone(),
+        let key = canonical_state_key(
+            &self.context,
             safety_enc(branches, self.max_bytes)?,
-        ]);
-        let key = quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
-            .map(AutomatonStateKey)
-            .map_err(|_| KeyRefusal::Encoding)?;
+            self.max_bytes,
+        )
+        .map_err(|_| KeyRefusal::Encoding)?;
         // A key is written only if this context would admit it back.
         self.admit(key.as_bytes())?;
         Ok(key)

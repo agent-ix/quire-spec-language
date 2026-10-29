@@ -93,6 +93,12 @@ names no limit, and an FR-120 expansion stop that names no limit and is not an
 internal failure is `IncompleteCause::ResourceExhausted`. An internal failure
 is a fault of the checker, not a `Stopped` and not a rejection.
 
+When the certificate refinement differs from the requested refinement, the
+check returns the named `Stale` refusal. FR-127 settles it as
+`StaleDependency` with `requested` the certificate's refinement name and
+`recompiled` the request's refinement name. Both remain refinement identities;
+neither is represented as a package ID or digest.
+
 The checker uses FR-338's `CertificateRejection{rule, at}`. It uses FR-338's
 `BadState` and FR-163's `Malformed`, and FR-338's `CertificateRule` gains
 `InitialMismatch`, `SuccessorsDiffer`, `StepFails` and `PostDiffers`. FR-338's
@@ -136,7 +142,10 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 
 - **Identity.** The checker SHALL refuse with `stale_dependency`/
   `content-mismatch`, naming both values, a certificate whose refinement
-  node differs from the item's.
+  node differs from the item's. FR-127 SHALL use the tagged stale-identity
+  union defined by QSpec FR-331. For this refinement mismatch, `requested` is
+  the certificate's identity and `recompiled` is the identity in the request;
+  FR-331 owns the union members and wire form.
 - **Package identity.** FR-144 "Certificate identity" owns the refusal of a
   certificate whose `concrete_package`, `abstract_package` or `obligation`
   differs from the item's recompile; the checker reads the refinement node only.
@@ -233,7 +242,7 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 | FR-149-AC-1 | ADR-020 §8's `CasRefinesCounter` without its `ensure` row: the engine's certificate holds one position per stored product state, and the checker returns `Accepted`. | Test (TC-556) |
 | FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected` with rule `PostDiffers` at that position and edge; with that edge's post index pointing at the initial position, rule `PostDiffers`; with one listed edge removed, rule `SuccessorsDiffer` at that position. Each settles `inconclusive`, `CertificateRejected{rule, at}`. | Test (TC-556) |
 | FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected` with rule `StepFails` and verdict `AbstractStepRejected{transition: inc(c), cause: Postcondition}` in its locus, so a false relation is never accepted. | Test (TC-556) |
-| FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(LimitReached{MaxTransitions, 1})`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
+| FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(LimitReached{MaxTransitions, 1})`; a certificate naming `OtherRefinement` for a request of `CasRefinesCounter` is refused `stale_dependency`/`content-mismatch` and settles with the QSpec FR-331 tagged stale-identity cause, `requested` the certificate's identity and `recompiled` the identity in the request. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
 | FR-149-AC-5 | A valid certificate is never rejected for a meter it ran out of, in each of four places, each returning `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`: (a) the unmetered certificate of the light ring fixture (`RingIsQueue`) checked under a meter B that runs out in the initial states' mapping rows; (b) the same certificate under a larger B that runs out in a step's mapping row; (c) a certificate of a model whose concrete contract costs more than B, which stops the position's successor expansion; (d) a `HeavyEnq` certificate (FR-141-AC-9), built under a larger meter, checked under B, where the abstract side runs out. | Test (TC-556) |
 | FR-149-AC-6 | In a certificate for a model whose chain of enabled operations ends in a terminal state (`CasRefinesCounter` without its `ensure` row, with `peek` and the second thread's `begin` given preconditions that are never enabled, so the states form a chain that ends in a terminal state), the terminal state's position lists one edge whose `transition` is `None` and which returns to the position; the checker accepts it, and the same certificate with that edge removed returns `Rejected` with rule `SuccessorsDiffer` at the position. | Test (TC-556) |
 | FR-149-AC-7 | A certificate whose `successors` list is one shorter than `positions` is rejected `Malformed` at the shorter length; one whose `initial` omits a concrete initial state, at `len(initial)`; one with a position that only an edge listed at a higher-indexed position reaches, at that position; each before any recomputation. A position at which a concrete contract is undefined or refused (not out of meter) returns `Rejected` with rule `BadState`; the fixture is a concrete model with a precondition `6 mod (2 - self.value) >= 0`, which is undefined at value 2. | Test (TC-556) |
