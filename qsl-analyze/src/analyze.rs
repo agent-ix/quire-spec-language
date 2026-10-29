@@ -76,7 +76,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse EN-1's own manifest.
     pub fn model_check() -> Result<Self, RegistrationRefusal> {
-        model_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        model_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// EN-6, the zone engine, which decides items over a `time dense`
@@ -86,7 +86,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse EN-6's own manifest.
     pub fn zone_check() -> Result<Self, RegistrationRefusal> {
-        zone_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        zone_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// EN-4, the statistical engine.
@@ -95,7 +95,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse EN-4's own manifest.
     pub fn statistical() -> Result<Self, RegistrationRefusal> {
-        statistical::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        statistical::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// The value-validity check arm (QSpec FR-483, FR-484).
@@ -104,7 +104,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse the arm's own manifest.
     pub fn value_check() -> Result<Self, RegistrationRefusal> {
-        value_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        value_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// The value-validity arm publishing `max_cases` as its default case
@@ -116,8 +116,7 @@ impl Engine {
     pub fn value_check_with_max_cases(
         max_cases: std::num::NonZeroU64,
     ) -> Result<Self, RegistrationRefusal> {
-        value_check::manifest::descriptor_with(ProviderOrigin::Linked, linked_digest(), max_cases)
-            .map(Self::new)
+        value_check::manifest::descriptor_with(ProviderOrigin::Linked, max_cases).map(Self::new)
     }
 
     /// The default `max_cases` this engine's descriptor publishes.
@@ -137,12 +136,6 @@ impl Engine {
             .filter_map(|(advertised, mode)| (advertised == kind).then_some(mode))
             .collect()
     }
-}
-
-/// A linked engine publishes its manifest as data of its own module and has
-/// no separate manifest bytes to digest.
-fn linked_digest() -> qsl_route::ManifestDigest {
-    qsl_route::ManifestDigest::from_digest([0; 32])
 }
 
 /// `Engines::with` was given an engine whose `BackendId` the set holds
@@ -730,7 +723,7 @@ fn settle(
 mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::bound::DomainKind;
-    use qsl_route::{descriptor_from_manifest, ManifestDigest};
+    use qsl_route::descriptor_from_manifest;
 
     use super::*;
 
@@ -739,7 +732,6 @@ mod tests {
             descriptor_from_manifest(
                 Candidate::new(BackendId::new(id)),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([9; 32]),
                 [(Some(kind.to_wire()), Some(Mode::Bounded.to_wire()))],
                 qsl_route::ManifestMembers {
                     domains: Some(&[DomainKind::Population.to_wire()]),

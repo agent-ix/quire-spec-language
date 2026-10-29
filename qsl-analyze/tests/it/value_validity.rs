@@ -1238,8 +1238,8 @@ fn the_production_registry_holds_the_arm_and_an_absent_provider_is_refused() {
 #[test]
 fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
     use qsl_route::{
-        descriptor_from_manifest_with_max_cases, Candidate, ManifestDigest, ManifestMembers,
-        MaxCasesMember, ProviderOrigin,
+        descriptor_from_manifest_with_max_cases, Candidate, ManifestMembers, MaxCasesMember,
+        ProviderOrigin,
     };
     let member = |bounds: &Json| match bounds {
         Json::Null => MaxCasesMember::Absent,
@@ -1258,7 +1258,6 @@ fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
             let admitted = descriptor_from_manifest_with_max_cases(
                 Candidate::new(qsl_foundation::BackendId::new("arm")),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([1; 32]),
                 [(Some(kind), Some("bounded"))],
                 ManifestMembers {
                     domains: Some(&["integer"]),
@@ -1284,7 +1283,6 @@ fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
     assert!(descriptor_from_manifest_with_max_cases(
         Candidate::new(qsl_foundation::BackendId::new("other")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([2; 32]),
         [(Some("refinement"), Some("bounded"))],
         ManifestMembers {
             domains: Some(&["integer"]),

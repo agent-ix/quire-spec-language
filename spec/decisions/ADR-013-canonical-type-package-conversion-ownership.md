@@ -874,7 +874,7 @@ The counterexample packet and the replay request carry this `backend` member
 unchanged (QC-8). Two backend identities are equal iff their strings are
 equal. The Rust `BackendId` converts to and from this member totally (C-27).
 
-The `backend` member is the identity string alone, in every proof-result envelope, witness envelope and replay request: no manifest digest travels in it. QSL keeps `ManifestDigest` in `qsl-route` only, on the `BackendDescriptor` and on each `duplicate-backend` refusal, as the key for one refusal per distinct manifest (QSpec FR-290); `Candidate` is the identity alone, and `qsl_replay::Backend` has no digest.
+The `backend` member is the identity string alone, in every proof-result envelope, witness envelope and replay request: no manifest digest travels in it. `BackendDescriptor`, the `duplicate-backend` refusal and `Candidate` are keyed by the identity alone, and `qsl_replay::Backend` has no digest.
 
 `BackendId` uniqueness within the `#185` registry is the identity alone (agent-ix/quire-specification#134,
 FR-290 "Candidate set and negotiation": "a backend identity is unique within

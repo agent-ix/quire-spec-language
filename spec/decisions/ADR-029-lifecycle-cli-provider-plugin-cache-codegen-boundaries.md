@@ -418,8 +418,8 @@ The descriptor carries a typed origin, `ProviderOrigin::Linked` or
 `ProviderOrigin::Process`, owned by layer R. The conversion sets it:
 `Linked` for a compile-time provider, `Process` for a plugin `hello`. Two
 descriptors of one `BackendId` that differ in origin differ in a member, so
-they conflict under the registration rule: both are withdrawn, `duplicate-backend`
-is recorded for each conflicting manifest digest, and the identity stays
+they conflict under the registration rule: both are withdrawn, one `duplicate-backend`
+refusal keyed by the `BackendId` is recorded, and the identity stays
 unregistered for the run (FR-288). The origin is a driver-supplied fact held in
 the registry. A manifest never states it, so a plugin cannot claim to be
 linked. A byte-identical registration stays idempotent, and the outcome does

@@ -11,11 +11,10 @@ use std::path::{Path, PathBuf};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::BackendId;
 use qsl_replay::spine::RefinementClass;
 use qsl_route::routing::Disposition;
-use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
 use qsl_semantics::check::{Capability, CheckedStateClause};
 use qsl_semantics::value::{HeaderLayer, WitnessKind, WitnessRequest};
 use xtask::refinement::compare::CaseResult;
@@ -45,7 +44,6 @@ fn backend(name: &str, capabilities: &[Capability]) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new(name)),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(name.as_bytes()).as_bytes()),
         capabilities
             .iter()
             .map(|capability| (*capability, Mode::Bounded)),

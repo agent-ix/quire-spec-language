@@ -15,10 +15,10 @@ FR-075-AC-7 and FR-075-AC-14.
 
 ## Test Procedure
 
-1. Register backend `p` with a fixed origin and manifest digest, advertising
+1. Register backend `p` with a fixed origin, advertising
    `probabilistic-satisfaction` with `{statistical}` and a fixed valid
    `domains` value.
-2. Repeat the same identity, origin, digest, advertised pair, and `domains`,
+2. Repeat the same identity, origin, advertised pair, and `domains`,
    changing only the evidence-kind set to `{exact}`.
 3. Inspect the registry, its duplicate-backend refusal, and candidates for
    probabilistic items naming `statistical` and `exact`.

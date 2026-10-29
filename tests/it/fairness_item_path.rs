@@ -4,12 +4,11 @@
 //! manifests.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_route::request::items_from_requirements;
 use qsl_route::{
     descriptor_from_manifest, Candidate, CandidateOutcome, FairnessKindsMember, FairnessLabel,
-    ManifestDigest, ManifestMembers, ProviderOrigin, Registry,
+    ManifestMembers, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -54,20 +53,16 @@ pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
 /// `weak` and `strong`, `weak-only` advertises `weak`.
 fn registry() -> Registry {
     let mut registry = Registry::new();
-    for (index, (id, labels)) in [
+    for (id, labels) in [
         (
             "both",
             &[FairnessLabel::Text("weak"), FairnessLabel::Text("strong")][..],
         ),
         ("weak-only", &[FairnessLabel::Text("weak")][..]),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let descriptor = descriptor_from_manifest(
             Candidate::new(BackendId::new(id)),
             ProviderOrigin::Process,
-            ManifestDigest::from_digest(ByteDigest::of(&[index as u8]).as_bytes()),
             [(Some("temporal-satisfaction"), Some("unbounded"))],
             ManifestMembers {
                 domains: None,

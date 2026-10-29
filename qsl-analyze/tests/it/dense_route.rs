@@ -12,7 +12,7 @@ use qsl_replay::node_occurrence;
 use qsl_route::deadlock::ModelTemporalItem;
 use qsl_route::request::items_from_requirements;
 use qsl_route::request::ItemKind;
-use qsl_route::{CandidateOutcome, ManifestDigest, ProviderOrigin, Registry};
+use qsl_route::{CandidateOutcome, ProviderOrigin, Registry};
 use qsl_semantics::check::TimedPropertyForm;
 
 use crate::derived_request::derived_items;
@@ -23,16 +23,10 @@ use crate::zone_search::{rpc_claim, INFINITE, TIMED};
 pub(crate) fn registry() -> Registry {
     let mut registry = Registry::new();
     registry
-        .register(
-            en1::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([1; 32]))
-                .expect("EN-1 admits"),
-        )
+        .register(en1::descriptor(ProviderOrigin::Linked).expect("EN-1 admits"))
         .expect("registered");
     registry
-        .register(
-            en6::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([6; 32]))
-                .expect("EN-6 admits"),
-        )
+        .register(en6::descriptor(ProviderOrigin::Linked).expect("EN-6 admits"))
         .expect("registered");
     registry
 }

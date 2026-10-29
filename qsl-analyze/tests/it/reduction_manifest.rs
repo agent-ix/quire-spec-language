@@ -19,29 +19,22 @@ use qsl_route::reductions::Reductions;
 use qsl_route::request::{items_with_reductions, EvidenceSelection};
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, FairnessKindsMember,
-    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, ReductionsDefect, RegistrationCause,
-    Registry,
+    ManifestMembers, Mode, ProviderOrigin, ReductionsDefect, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use serde_json::{json, Value as Json};
 
 use ReductionKind::{PartialOrder, StateConstraint, Symmetry};
 
-fn digest(seed: u8) -> ManifestDigest {
-    ManifestDigest::from_digest([seed; 32])
-}
-
 /// A temporal backend `id` advertising `reductions` as its manifest spells
 /// them.
 fn temporal(
     id: &str,
-    seed: u8,
     reductions: Option<&[&str]>,
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(BackendId::new(id)),
         ProviderOrigin::Linked,
-        digest(seed),
         [(
             Some(Capability::TemporalSatisfaction.to_wire()),
             Some(Mode::Bounded.to_wire()),
@@ -98,7 +91,7 @@ fn settled(missing: Option<ReductionKind>) -> &'static str {
 fn a_reduction_no_candidate_advertises_settles_unsupported() {
     let mut registry = Registry::new();
     registry
-        .register(temporal("sym-only", 1, Some(&["symmetry"])).expect("admitted"))
+        .register(temporal("sym-only", Some(&["symmetry"])).expect("admitted"))
         .expect("registered");
     let (candidates, missing) = routed(&registry, &[PartialOrder]);
     assert!(candidates.is_empty());
@@ -119,7 +112,7 @@ fn a_reduction_no_candidate_advertises_settles_unsupported() {
 #[trace("TC-583", "FR-159-AC-5")]
 #[test]
 fn en1_advertises_every_reduction_and_takes_the_constraint() {
-    let en1 = en1::descriptor(ProviderOrigin::Linked, digest(2)).expect("EN-1 admits");
+    let en1 = en1::descriptor(ProviderOrigin::Linked).expect("EN-1 admits");
     assert_eq!(
         en1.reductions(),
         &BTreeSet::from([Symmetry, PartialOrder, StateConstraint])
@@ -127,7 +120,7 @@ fn en1_advertises_every_reduction_and_takes_the_constraint() {
     assert_eq!(en1::REDUCTIONS, ["symmetry", "partial-order", "constraint"]);
     let mut registry = Registry::new();
     registry
-        .register(temporal("sym-por", 3, Some(&["symmetry", "partial-order"])).expect("admitted"))
+        .register(temporal("sym-por", Some(&["symmetry", "partial-order"])).expect("admitted"))
         .expect("registered");
     let (candidates, missing) = routed(&registry, &[StateConstraint]);
     assert!(candidates.is_empty());
@@ -147,7 +140,7 @@ fn en1_advertises_every_reduction_and_takes_the_constraint() {
 #[trace("TC-1170", "FR-430-AC-3")]
 #[test]
 fn en6_advertises_symmetry_alone() {
-    let en6 = en6::descriptor(ProviderOrigin::Linked, digest(4)).expect("EN-6 admits");
+    let en6 = en6::descriptor(ProviderOrigin::Linked).expect("EN-6 admits");
     assert_eq!(en6.reductions(), &BTreeSet::from([Symmetry]));
     let mut registry = Registry::new();
     registry.register(en6).expect("registered");
@@ -184,13 +177,13 @@ fn a_defective_reductions_member_refuses_the_registration() {
             ReductionsDefect::DuplicateLabel("symmetry".to_owned()),
         ),
     ] {
-        let refusal = temporal("bad", 5, Some(member)).expect_err("refused");
+        let refusal = temporal("bad", Some(member)).expect_err("refused");
         assert_eq!(
             refusal.cause(),
             &RegistrationCause::InvalidReductions(defect)
         );
     }
-    let none = temporal("none", 6, None).expect("admitted");
+    let none = temporal("none", None).expect("admitted");
     assert!(none.reductions().is_empty());
 }
 
@@ -308,14 +301,14 @@ fn the_request_writer_restricts_each_item_by_its_reductions() {
     };
     let mut registry = Registry::new();
     registry
-        .register(en6::descriptor(ProviderOrigin::Linked, digest(7)).expect("EN-6 admits"))
+        .register(en6::descriptor(ProviderOrigin::Linked).expect("EN-6 admits"))
         .expect("registered");
     let (candidates, missing) = items(&registry, por.clone());
     assert!(candidates.is_empty());
     assert_eq!(missing, Some(PartialOrder));
     assert_eq!(settled(missing), "unsupported-requested-capability");
     registry
-        .register(en1::descriptor(ProviderOrigin::Linked, digest(8)).expect("EN-1 admits"))
+        .register(en1::descriptor(ProviderOrigin::Linked).expect("EN-1 admits"))
         .expect("registered");
     assert_eq!(
         items(&registry, por),

@@ -7,13 +7,12 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::{settle_hybrid_candidates, TerminalValue, UnavailabilityCause};
 use qsl_route::request::items_from_requirements;
 use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, DynamicsKind, ManifestDigest, Mode,
-    ProviderOrigin, Registry, SolverBounds,
+    BackendDescriptor, Candidate, CandidateOutcome, DynamicsKind, Mode, ProviderOrigin, Registry,
+    SolverBounds,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -66,7 +65,6 @@ fn discrete() -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new("qsl-model-check")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(b"discrete").as_bytes()),
         [(Capability::TemporalSatisfaction, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,
@@ -78,7 +76,6 @@ fn hybrid() -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new("hybrid-fixture")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(b"hybrid").as_bytes()),
         [(Capability::TemporalSatisfaction, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
         None,

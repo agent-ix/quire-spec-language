@@ -15,7 +15,7 @@ use qsl_foundation::BackendId;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, DomainsDefect,
-    ManifestDigest, ManifestMembers, Mode, ProviderOrigin, RegistrationCause, Registry,
+    ManifestMembers, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -26,13 +26,11 @@ fn candidate(id: &str) -> Candidate {
 
 fn admit(
     id: &str,
-    digest_byte: u8,
     advertised: &[(Option<&str>, &str)],
 ) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
     descriptor_from_manifest(
         candidate(id),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         ManifestMembers {
             domains: Some(&["collection", "integer"]),
@@ -59,12 +57,10 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
 #[trace("TC-772", "FR-288-AC-5")]
 fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
     let backend = candidate("shared");
-    let digest = ManifestDigest::from_digest([9; 32]);
     let advertised = [(Some("value-validity"), Some("unbounded"))];
     let linked = descriptor_from_manifest(
         backend.clone(),
         ProviderOrigin::Linked,
-        digest,
         advertised,
         ManifestMembers {
             domains: None,
@@ -78,7 +74,6 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
     let process = descriptor_from_manifest(
         backend,
         ProviderOrigin::Process,
-        digest,
         advertised,
         ManifestMembers {
             domains: None,
@@ -91,7 +86,6 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
     .expect("the same manifest is valid for a process provider");
 
     assert_eq!(linked.id(), process.id());
-    assert_eq!(linked.manifest_digest(), process.manifest_digest());
     assert_eq!(
         linked
             .advertises()
@@ -106,18 +100,18 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
 /// refuse with their `invalid_capability` cause, keyed by backend identity,
 /// and the refused registration contributes nothing. A second, unequal
 /// descriptor under an already-held identity conflicts (FR-290 "Candidate
-/// set and negotiation"): both registrations are refused and the identity
-/// is withdrawn (FR-290-AC-10).
+/// set and negotiation"): the identity is refused and withdrawn
+/// (FR-290-AC-10).
 #[test]
 #[trace("TC-155", "FR-057-AC-8")]
 fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
     let mut registry = Registry::new();
-    let held = admit("held", 1, &[(Some("global-conformance"), "bounded")])
+    let held = admit("held", &[(Some("global-conformance"), "bounded")])
         .expect("an exact FR-290 label and mode admit");
     registry.register(held.clone()).unwrap();
 
     // `GlobalConformance` is the Rust variant name, not the FR-290 label.
-    let unknown_kind = admit("unknown-kind", 2, &[(Some("GlobalConformance"), "bounded")])
+    let unknown_kind = admit("unknown-kind", &[(Some("GlobalConformance"), "bounded")])
         .expect_err("a Rust variant name is not an FR-290 label");
     assert_eq!(unknown_kind.identity().as_str(), "unknown-kind");
     assert_eq!(
@@ -129,7 +123,6 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
 
     let absent_kind = admit(
         "absent-kind",
-        3,
         &[(Some("value-validity"), "bounded"), (None, "bounded")],
     )
     .expect_err("an absent kind is never defaulted");
@@ -137,7 +130,7 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
     assert_eq!(absent_kind.cause(), &RegistrationCause::AbsentKind);
     assert_eq!(absent_kind.catalog_code().cause(), "absent-kind");
 
-    let unknown_mode = admit("unknown-mode", 4, &[(Some("value-validity"), "finite")])
+    let unknown_mode = admit("unknown-mode", &[(Some("value-validity"), "finite")])
         .expect_err("`finite` is not an FR-290 mode");
     assert_eq!(unknown_mode.identity().as_str(), "unknown-mode");
     assert_eq!(
@@ -146,21 +139,17 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
     );
     assert_eq!(unknown_mode.catalog_code().cause(), "unknown-mode");
 
-    // A second registration under "held" with a different manifest digest
-    // is a conflict (FR-290 "Candidate set and negotiation"): both
-    // registrations are refused and the identity is withdrawn from the
-    // registry entirely.
-    let conflicting = admit("held", 5, &[(Some("value-validity"), "unbounded")])
+    // A second, unequal registration under "held" is a conflict (FR-290
+    // "Candidate set and negotiation"): the identity is refused and
+    // withdrawn from the registry entirely.
+    let conflicting = admit("held", &[(Some("value-validity"), "unbounded")])
         .expect("the labels themselves are admitted");
-    let duplicates = registry
+    let duplicate = registry
         .register(conflicting)
-        .expect_err("a conflicting descriptor under a held identity refuses both");
-    assert_eq!(duplicates.len(), 2);
-    for duplicate in &duplicates {
-        assert_eq!(duplicate.identity().as_str(), "held");
-        assert_eq!(duplicate.cause(), &RegistrationCause::DuplicateBackend);
-        assert_eq!(duplicate.catalog_code().cause(), "duplicate-backend");
-    }
+        .expect_err("a conflicting descriptor under a held identity is refused");
+    assert_eq!(duplicate.identity().as_str(), "held");
+    assert_eq!(duplicate.cause(), &RegistrationCause::DuplicateBackend);
+    assert_eq!(duplicate.catalog_code().cause(), "duplicate-backend");
 
     // "held" is now unregistered: its earlier registration is withdrawn,
     // and it contributes no candidate for any kind.
@@ -186,7 +175,6 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
     let absent_mode = descriptor_from_manifest(
         candidate("absent-mode"),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
         ManifestMembers {
             domains: Some(&["collection"]),
@@ -200,7 +188,7 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
     assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
     assert_eq!(absent_mode.catalog_code().cause(), "unknown-mode");
 
-    let both_bad = admit("both-bad", 2, &[(Some("Refinement"), "finite")])
+    let both_bad = admit("both-bad", &[(Some("Refinement"), "finite")])
         .expect_err("neither label is admitted");
     assert_eq!(
         both_bad.cause(),
@@ -208,41 +196,14 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
     );
 }
 
-/// FR-290 "Candidate set and negotiation": registration causes are reported
-/// ordered bytewise by backend identity, then manifest digest. Two refusals
-/// under one identity with different digests stay distinct and order by
-/// digest; a smaller identity orders first whatever its digest.
-#[test]
-#[trace("TC-155", "FR-057-AC-8")]
-fn refusals_order_by_identity_then_manifest_digest() {
-    let later_digest = admit("same", 9, &[(None, "bounded")]).unwrap_err();
-    let earlier_digest = admit("same", 1, &[(None, "bounded")]).unwrap_err();
-    let other_identity = admit("earlier", 200, &[(None, "bounded")]).unwrap_err();
-    assert_ne!(later_digest, earlier_digest);
-    assert_eq!(later_digest.identity(), earlier_digest.identity());
-    assert_eq!(earlier_digest.backend(), &candidate("same"));
-    assert_eq!(
-        earlier_digest.manifest_digest(),
-        ManifestDigest::from_digest([1; 32])
-    );
-
-    let mut refusals = vec![
-        later_digest.clone(),
-        earlier_digest.clone(),
-        other_identity.clone(),
-    ];
-    refusals.sort();
-    assert_eq!(refusals, [other_identity, earlier_digest, later_digest]);
-}
-
 /// The TC-155 step 4 registry: two backends advertising
 /// (`operation-contract`, `bounded`) and one advertising only
 /// `global-conformance`, registered in `order`.
 fn step_4_registry(order: &[usize]) -> Registry {
     let pool = [
-        admit("backend-b", 2, &[(Some("operation-contract"), "bounded")]).unwrap(),
-        admit("backend-a", 1, &[(Some("operation-contract"), "bounded")]).unwrap(),
-        admit("protocol", 3, &[(Some("global-conformance"), "bounded")]).unwrap(),
+        admit("backend-b", &[(Some("operation-contract"), "bounded")]).unwrap(),
+        admit("backend-a", &[(Some("operation-contract"), "bounded")]).unwrap(),
+        admit("protocol", &[(Some("global-conformance"), "bounded")]).unwrap(),
     ];
     let mut registry = Registry::new();
     for &index in order {
@@ -252,7 +213,7 @@ fn step_4_registry(order: &[usize]) -> Registry {
 }
 
 /// TC-155 steps 4 and 6: the unnamed request carries both capable backends,
-/// ordered by identity then digest, and chooses neither; a named request
+/// ordered by identity, and chooses neither; a named request
 /// carries exactly that backend; a named backend lacking the kind gives an
 /// empty set; an unregistered name gives the unknown-backend mark. The same
 /// holds with the backends registered in reverse order.
@@ -356,7 +317,6 @@ fn admit_domains(
     descriptor_from_manifest(
         candidate("plug"),
         ProviderOrigin::Process,
-        ManifestDigest::from_digest([4; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         ManifestMembers {
             domains,
@@ -488,7 +448,6 @@ fn the_typed_constructor_applies_the_same_domains_rules() {
         BackendDescriptor::new(
             candidate("plug"),
             ProviderOrigin::Process,
-            ManifestDigest::from_digest([4; 32]),
             [(Capability::ValueValidity, advertises)],
             domains,
             None,
