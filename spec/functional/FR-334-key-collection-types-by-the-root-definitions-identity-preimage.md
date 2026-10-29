@@ -25,11 +25,11 @@ relationships:
 ## Description
 
 QSL's S4 emitter SHALL emit collection and population type nodes whose
-identity conforms to QSpec's root definitions for complete value and model
-types (FR-144-AC-9 and AC-13; FR-153-AC-9). The emitter computes node keys
-with QSL's own code. QSL's conformance tests compare those keys with the
-published QSpec vectors. Every package with a collection type gets the node
-ids and `package_id` determined by those keys.
+identity conforms to QSpec's complete value and model type rules (FR-144-AC-9
+and AC-13; FR-153-AC-9). The emitter computes node keys with QSL's own code.
+QSL's conformance tests compare those keys with QSpec's published node
+identity vectors in FR-322. Every package with a collection type gets the
+node ids and `package_id` determined by those keys.
 
 ## Use case
 
@@ -49,10 +49,18 @@ its content under the one rule QSpec publishes.
 
 ## Behavior
 
-- The S4 emitter SHALL emit collection and population nodes in conformance
-  with QSpec's root definitions (FR-144-AC-9 and AC-13; FR-153-AC-9),
-  computing each node key with QSL's own code. The emitter's bound-sensitive
-  and population-node behavior is specified by FR-334-AC-1 and AC-2.
+- An unbounded collection type SHALL lower to its composite collection node
+  alone; a bounded collection type SHALL lower to its composite node with a
+  `collection_bounds` member holding `min` and `max`. The two SHALL have
+  different node keys for every collection kind and element type (QSpec
+  FR-144-AC-9 and AC-13; FR-322).
+- A population type with no maximum SHALL lower to its own population node
+  with no maximum member, and a population with maximum `N` to its own
+  population node carrying `N`. Each SHALL have a node key distinct from
+  every bounded or unbounded `Set<Reference<T>>` node (FR-097-AC-8; QSpec
+  FR-153-AC-9; FR-322).
+- QSL SHALL compute the node keys using its own code, conforming to QSpec
+  FR-322.
 - A package's `package_id` SHALL follow from these node keys, so changing
   only a bound's presence or value changes the `package_id`.
 - The emitter SHALL preserve a bounded corpus's source spelling and meaning;
@@ -65,7 +73,7 @@ its content under the one rule QSpec publishes.
 | FR-334-AC-1 | A unit whose only difference from another is `s: Set<Integer>` against `s: Set<Integer>[0, 18446744073709551615]` emits a different node key for `s`'s type and a different `package_id`; the unbounded node has no `collection_bounds` member and the bounded node has one with `min` 0 and `max` 18446744073709551615. | Test (TC-844) |
 | FR-334-AC-2 | `p: Population<Account>` lowers to a population node with no maximum, whose node key differs from those of `Population<Account>[4]` and of an unbounded `Set<Reference<Account>>`; it lowers with no refusal. | Test (TC-844) |
 | FR-334-AC-3 | Compiling the same bounded unit twice gives the same node keys and `package_id`. | Test (TC-844) |
-| FR-334-AC-4 | Conformance: for each collection and population type vector published by QSpec under FR-144-AC-9, AC-13 and FR-153-AC-9, QSL's node key equals the vector's expected key. | Test (TC-844) |
+| FR-334-AC-4 | Conformance: for each collection and population type vector in QSpec FR-322, read in place from the QSpec repository by the test, QSL's node key equals the vector's expected key; the vectors exercise collection and population types covered by FR-144-AC-9, AC-13 and FR-153-AC-9. | Test (TC-844) |
 
 ## Dependencies
 
@@ -73,6 +81,8 @@ its content under the one rule QSpec publishes.
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md) (node keys),
   [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md) AC-7
   and AC-8, [FR-333](FR-333-read-an-optional-collection-bound-and-population-maximum.md).
+- QSpec FR-322 defines the node identity vectors and node-key preimage used
+  by QSL's conformance checks.
 - QSpec FR-144-AC-9 and AC-13, FR-153-AC-9, and the root definitions.
 
 ## References
