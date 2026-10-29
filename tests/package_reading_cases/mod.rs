@@ -200,10 +200,10 @@ fn every_closed_record_rejects_extra_missing_and_wrong_typed_members() {
 #[trace("FR-021-AC-2", "FR-021-AC-5")]
 fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases();
+    let [vector, _, _] = package_vector_setup::cases(&models[0]);
     let checked = package_vector_setup::checked(&vector, &models);
     let bindings = checked.bindings().clone();
-    let original: Value = serde_json::from_slice(vector.artifact).unwrap();
+    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
     let selections = [
         ("/semantics/language", Code::UnknownLanguage),
         ("/semantics/edition", Code::UnknownEdition),
@@ -249,10 +249,10 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     .unwrap();
     assert_eq!(package.bytes(), raw);
     assert_ne!(package.bytes(), vector.artifact);
-    assert_ne!(package.digest(), ByteDigest::of(vector.artifact));
+    assert_ne!(package.digest(), ByteDigest::of(&vector.artifact));
     assert_eq!(
         package.canonical_identity().to_string(),
-        vector.digest.trim_end()
+        vector.digest.as_str()
     );
     for (feature, expected) in [
         ("boolean", Code::InvalidPackage),
@@ -271,8 +271,8 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     let mut support = PackageSupport::default();
     support.features.remove("boolean");
     let error = NativePackage::read_verified(
-        vector.artifact,
-        NativePackageRef::new(ByteDigest::of(vector.artifact)),
+        &vector.artifact,
+        NativePackageRef::new(ByteDigest::of(&vector.artifact)),
         bindings,
         &models,
         &support,

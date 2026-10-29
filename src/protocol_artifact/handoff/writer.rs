@@ -319,7 +319,7 @@ const UNITS_V2: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow",
         document: "ProtocolHandoffWorkflow",
         requirement: "HandoffWorkflow",
-        body: include_str!("../../../examples/protocol-handoff/workflow-v2-frozen.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/workflow.body.native"),
         clauses: &[AuthoredClause {
             name: "Flow",
             clause: "flow",
@@ -974,7 +974,7 @@ impl Inputs {
         Self::new_with(
             UNITS_V2,
             &[R::EventPosition, R::FixedSample, R::TimestampedWindow],
-            include_bytes!("../../../examples/protocol-handoff/model-v2-frozen.json"),
+            include_bytes!("../../../examples/protocol-handoff/model.json"),
         )
     }
 

@@ -165,7 +165,13 @@ fn exact_container_ceiling_is_owned_by_meter_and_retry_is_fresh() {
 #[test]
 #[trace("TC-088", "FR-020-AC-9")]
 fn typed_pass_limits_are_isolated_without_claiming_public_reachability() {
-    let raw = include_bytes!("../../../tests/fixtures/native-package/minimal.package.json");
+    let models = [crate::runtime_test_setup::native_rule_model::parts().model()];
+    let package = super::super::NativePackage::new(
+        crate::runtime_test_setup::checked(&models, "self.n = 1"),
+        PackageLimits::default(),
+    )
+    .unwrap();
+    let raw = package.bytes();
     let (_, expected) =
         decode_wire::<super::super::wire::Manifest>(raw, PackageLimits::default()).unwrap();
     for limits in [

@@ -106,9 +106,7 @@ strict public reader.
 
 The version-1 `Flow` uses distinct admitted object authorities for its `Service`
 and `Provider` roles; only `Service` owns `Workflow::apply`. The version-2
-handoff predates this consumer-corpus correction, so its producer recipe reads
-the historical model and workflow inputs from `model-v2-frozen.json` and
-`workflow-v2-frozen.body.native` rather than the corrected `/1` inputs.
+producer recipe reads the same model and workflow inputs.
 
 The baseline is the accepted registered Edition artifact, identity `ix:native`,
 semantic revision `1-draft.2`, from [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15).

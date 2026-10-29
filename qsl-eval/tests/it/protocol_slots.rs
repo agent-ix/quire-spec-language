@@ -21,16 +21,24 @@ const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semanti
 )]
 mod compensation_model;
 
-const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+/// The unit selecting `MODEL` as `M` by its `sha256-jcs` digest, computed
+/// from the fixture.
+fn unit() -> String {
+    let packages = qsl_semantics::model::intake::package_input([MODEL]);
+    let digest = qsl_semantics::model::key::hex(packages.keys().next().expect("one model"));
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
     model M = \"acme/orders\" version \"1.0.0\" digest \
-    \"sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114\";\n\
-    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {\n\
+    \"sha256-jcs:{digest}\";\n\
+    protocol P using v over (input: M::Gadget) on each (opened: Boolean) when ((1 + 2 = 3) and opened) {{\n\
       role R on M::Gadget;\n\
-      run sequence Main { check Ready using p { true }; }\n\
-      finish End as (outcome: Boolean) { true };\n\
-    }\n";
+      run sequence Main {{ check Ready using p {{ true }}; }}\n\
+      finish End as (outcome: Boolean) {{ true }};\n\
+    }}\n"
+    )
+}
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -49,7 +57,7 @@ fn package() -> CheckedPackage {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
-        UNIT.as_bytes(),
+        unit().as_bytes(),
         qsl_cst::Limits::default(),
     )
     .expect("S1 reads the unit");
