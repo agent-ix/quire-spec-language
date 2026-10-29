@@ -160,9 +160,8 @@ Measured on main when this was written.
   binding. A test that asserts the composed grammar's own shape
   (`composed_syntax`, `parser_differential`) is deleted with the parser it
   tests.
-- *Fixtures and snapshots:* the handoff snapshots under `artifacts/` and the
-  `native_*_emission` snapshots belong to the protocol-artifact lane that is
-  deleted; they are not regenerated.
+- *Fixtures and snapshots:* the `native_*_emission` snapshots belong to the
+  protocol-artifact lane that is deleted; they are not regenerated.
 - *Source reference:* the checked unit carries the `Source`'s single
   `RawSourceRef`. The graph and type report do not carry separate unit-level
   source reference fields; their source locations resolve through the checked

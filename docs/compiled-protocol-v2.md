@@ -166,7 +166,7 @@ progress.
 A consumer handoff names the final published compiler implementation
 that retains this contract and names the exact public surface it consumes:
 
-- `protocol_artifact::handoff::{SOURCE_ROOT, PUBLISHED_OFFER_FILE,
+- `protocol_artifact::handoff::{PUBLISHED_OFFER_FILE,
   PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_SELECTION_FILE,
   PUBLISHED_MUTATION_MANIFEST_FILE,
   MUTATION_MANIFEST_FORMAT}`;

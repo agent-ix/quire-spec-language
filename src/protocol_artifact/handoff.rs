@@ -23,15 +23,6 @@ pub mod writer;
 #[cfg(feature = "handoff-writer")]
 pub use writer::{write_v1, write_v2};
 
-/// The crate's manifest directory: the root under which the authored sources
-/// the writers read (`examples/protocol-handoff/`, `docs/`) live.
-///
-/// A consumer that needs those authored sources, for example to locate the
-/// repository root, uses this constant. No handoff is committed anywhere
-/// beneath it: a consumer generates one into a directory it chooses with the
-/// `handoff-writer` feature's `write_v1`/`write_v2`.
-pub const SOURCE_ROOT: &str = env!("CARGO_MANIFEST_DIR");
-
 /// Handoff-relative file containing the canonical version-1 package bytes.
 pub const PUBLISHED_V1_OFFER_FILE: &str = "compiled-protocol.json";
 

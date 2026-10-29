@@ -76,11 +76,7 @@ member-name constants `PUBLISHED_OFFER_FILE`,
 `expected-v2.json`, `mutations/manifest.json` and
 `quire.protocol.v2-mutations/1`. A consumer SHALL NOT require an environment
 variable or redeclare those producer-owned values to address the handoff.
-Where a consumer must compare the written sources with their authored
-originals, the compiler crate SHALL publish
-`protocol_artifact::handoff::SOURCE_ROOT`, the crate's manifest directory
-(`CARGO_MANIFEST_DIR`), beneath which the authored sources live. No constant names a committed
-handoff directory.
+No constant names a committed handoff directory.
 
 The producer's `temporal` input SHALL be a complete table of
 `native::TemporalSelection` records keyed by exact source `ArtifactRef` and
