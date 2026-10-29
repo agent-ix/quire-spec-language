@@ -113,9 +113,6 @@ node ceiling, and the leaves' key bytes together are at most the work
 ceiling.
 
 Every existing fixture and conformance vector checks within these defaults.
-The largest recorded checker input by node units is FR-093's eight-record
-cluster (95904 units, 96% of the node ceiling). The largest by work is an
-8000-function call chain (160000 units, 1% of the work ceiling).
 
 ## Cost at the defaults
 
@@ -127,23 +124,11 @@ no leaf path until the walk completes. A refused walk therefore holds its
 path tree, not one path per leaf.
 
 The enforced bound is on counts: at most 100000 leaves, and at most
-16777216 key bytes across all of them. Memory follows from these counts.
-`qsl-bench/BASELINE.md` records the measurements behind the figures below:
-
-- Every Text-reachable cluster from 9 to 12 records refuses on the node
-  ceiling in about 15 ms, with peak RSS about 18 MB.
-- The review's deep-and-wide shape is a 46-record chain into a
-  17-level binary tree, with 65536 leaves. With 1-, 64- and 256-byte field
-  names it refuses on the work ceiling in at most 17 ms, with peak RSS at
-  most 11.5 MB.
-- The largest admitted packages sit near a ceiling:
-  - The eight-record cluster (95904 leaves) peaks at 327 MB.
-  - A 4-record chain into the same tree charges 16.2 million key bytes and
-    peaks at 674 MB.
-- The measured rate is about 41 bytes of memory per charged key byte, plus
-  about 3.4 KB per leaf. From that rate, memory at the defaults is
-  estimated at about 1 GB. This is an estimate, not a bound the limits
-  enforce.
+16777216 key bytes across all of them. These limits do not assert a peak-memory
+or wall-time value. A performance characterization compares a current-main
+run with a candidate in one interleaved session as specified by
+`qsl-bench/BENCHMARKING.md`; no recorded measurement is a threshold or input
+to this requirement.
 
 ## Verification
 

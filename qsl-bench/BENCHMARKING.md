@@ -1,9 +1,9 @@
-# Performance baseline
+# Benchmarking and historical comparisons
 
-This file records the benchmark set, its noise floor, and the rule that a
-performance change uses to claim an improvement. Every figure below comes from a run of
-the benchmarks in this crate. Nothing is estimated or carried over from the
-architecture evaluation.
+This guide defines live benchmark comparison. The repository stores no
+single-revision benchmark baseline and no past measurement supplies a future
+comparison threshold. Historical experiment notes below are records of those
+runs only.
 
 ## Running the benchmarks
 
@@ -19,317 +19,40 @@ architecture evaluation.
 
 `make bench` runs all six criterion suites. Each target runs
 `cargo bench --locked -p qsl-bench --bench <axis>`, and criterion options go
-through `BENCH_ARGS`.
+through `BENCH_ARGS`. Run benches with `-p qsl-bench`, never `--workspace`;
+other crates' dev-dependencies can enable `quire-exact/test-support` and make
+the meter log every charge.
 
-Run benches with `-p qsl-bench`, never `--workspace`. A workspace build turns
-on `quire-exact/test-support` through other crates' dev-dependencies, and the
-meter then logs every charge.
+Each input is built through the layers' public API. A change behind that API
+needs no benchmark change; an API change requires updating its generator. Each
+generator has a smallest-size test so invalid inputs fail in `make ci` before
+benchmark time.
 
-Every input is built through the layers' public API. So a rewrite behind that
-API needs no bench change. A change to the API itself does, the way the intake
-single-parse change's new `intake::admit` return type did. All model-intake calls go through
-`src/model.rs`, so such a change is one edit there. Each generator has a
-smallest-size `#[test]`, so a generator that stops building its input fails in
-`make ci` rather than at bench time.
+## Comparing a candidate with current main
 
-## How to claim an improvement
+1. Build current `origin/main` (A) and the candidate (B) in separate worktrees
+   with separate target directories.
+2. In one session, alternate A and B for five rounds each on the same machine;
+   record load average before and after every round.
+3. For each benchmark, calculate each side's median of its five point estimates.
+4. Calculate the session noise from those ten live observations: the largest
+   of A's and B's MAD/median and, for criterion runs, the widest 95%
+   confidence-interval half-width divided by its estimate. Probe runs use the
+   two sides' MAD/median because they do not report criterion intervals.
+5. B is faster only if its median is below A's median by more than that session
+   noise. A smaller difference is no change.
+6. Record every round for both sides. Do not select favorable rounds or reuse
+   measurements from an earlier session as a threshold.
 
-**The absolute tables below are informational.** On this shared machine the
-same code measured in two different sessions differs by up to half. For
-example, `model/object_universe_of/4000` on unchanged code measured 454 ms in
-the first session and 311 ms in the second (a 31% "gain"). A comparison
-against these tables alone therefore proves nothing.
+The A/B runs are the comparison. No fixed table variance or earlier
+measurement collection supplies a decision threshold.
 
-A candidate revision claims an improvement on a benchmark only by winning one
-**interleaved same-session A/B run**:
+## Historical experiments
 
-1. **Build both sides.** Build the baseline revision (A) and the candidate
-   revision (B) in two worktrees, each with its own target directory.
-2. **Alternate the rounds.** Run A, B, A, B … for five rounds each, one
-   `make bench-<axis>` per round, on one machine and in one sitting. Record
-   `/proc/loadavg` before and after every round.
-3. **Take each side's median.** Per benchmark, each side's figure is the median
-   of its five criterion point estimates.
-4. **Take the session's noise.** The session's noise is the larger of the two
-   sides' MAD/median, where MAD is the median absolute deviation of the five
-   point estimates.
-5. **Apply the claim.** B improves on the benchmark only when B's median is
-   below A's median by more than **max(the stated variance in the tables below,
-   the session's noise)**. Anything smaller is recorded as no change.
-6. **Record every round** of the session, both sides. Do not rerun a session
-   until it passes.
-
-Criterion's own `--save-baseline` / `--baseline` compares one run against one
-run, not five interleaved rounds. It does not meet this rule.
-
-## Where and when this was measured
-
-| Item | Value |
-| --- | --- |
-| Machine | Intel Core i9-10900K @ 3.70 GHz, 20 logical CPUs (`nproc`), 62 GiB RAM, WSL2 Linux 6.18.33.2-microsoft-standard-WSL2 |
-| Toolchain | `bench` profile (release) |
-| Harness | criterion, default features off. Defaults apply unless a bench overrides them: 3 s warm-up, 100 samples, 5 s measurement. |
-| Checker and evaluator axes | 5 runs, 2026-09-23 17:22 to 18:23 (UTC-7). That revision's checker, evaluator, package, forms and kernel sources are identical to this branch's base. Load average ranged from 3.3 to 26.6, with two other QSL builds running. |
-| Parser, CST and model axes | 5 runs, 2026-09-23 19:39 to 20:40 (UTC-7). This is rebased on the intake single-parse change and includes the qsl-cst identity-byte counter the CST axis reads. Load average ranged from 4.2 to 11.6. |
-
-These three axes were re-measured because each changed what it measures:
-
-- **Parser:** benchmark IDs now carry the parse outcome.
-- **CST:** qsl-cst's parse path now counts the bytes it hashes.
-- **Model:** the intake single-parse change changed intake, and new benchmarks were added.
-
-## How the figures and the variance are computed
-
-- **Figure.** The median of five point estimates, one per complete run. Each
-  point estimate is criterion's estimate of wall time per iteration.
-- **Range.** The fastest and slowest of the five point estimates.
-- **Stated variance.** The larger of two measures:
-  - the MAD of the five point estimates, divided by their median;
-  - the widest criterion 95% confidence-interval half-width in any run, divided
-    by that run's estimate.
-
-  This is the table variance that the claim rule above uses.
-
-## Baseline tables
-
-Each row gives the unit (wall time per call), the input size in the unit that
-layer counts, and the comparison point. The comparison point is the row the
-figure is read against.
-
-### Parser: one `qsl_cst::parse` call (`benches/parser.rs`)
-
-Inputs, both parsed at default `Limits`:
-
-- `parser/depth/<outcome>/d`: one function whose body nests *d* parenthesis
-  pairs, such as `((x + x) + x)` for *d* = 2.
-- `parser/volume/<outcome>/n`: *n* one-line functions,
-  `function fI using Complete (x: Integer): Integer pure { x }`.
-
-`<outcome>` (`admitted`, `recovered` or `refused`) is the input's parse outcome,
-decided once at setup. When a parser change turns a refusal into a parse, the benchmark
-gets a new ID (`parser/depth/admitted/5`). It is not compared against the time
-it took to refuse.
-
-| Benchmark | Input size | Median | Range (5 runs) | Stated variance | Comparison point |
-| --- | --- | --- | --- | --- | --- |
-| `parser/depth/admitted/0` | 243 B, 52 tokens, 21 nodes | 270 µs | 256 µs – 292 µs | 3% | Floor for the depth rows |
-| `parser/depth/admitted/1` | 249 B | 388 µs | 369 µs – 398 µs | 3% | depth 0 |
-| `parser/depth/admitted/2` | 255 B | 547 µs | 533 µs – 602 µs | 3% | depth 0 |
-| `parser/depth/admitted/3` | 261 B | 636 µs | 621 µs – 841 µs | 3% | depth 0 |
-| `parser/depth/admitted/4` | 267 B, 76 tokens, 81 nodes (deepest that parses) | 832 µs | 781 µs – 1.06 ms | 6% | depth 0: 3.1 times the time for 10% more bytes |
-| `parser/depth/refused/5` | 273 B; `resource_exhausted` / `insufficient-next-charge` | 310 µs | 287 µs – 352 µs | 8% | depth 4. Time to reach the refusal. |
-| `parser/depth/refused/8` | 291 B; same cause | 312 µs | 285 µs – 372 µs | 9% | refused/5 |
-| `parser/volume/admitted/100` | 100 functions, 6,269 B | 8.44 ms | 8.31 ms – 11.9 ms | 3% | volume/1000 |
-| `parser/volume/admitted/500` | 500 functions, 31,069 B | 44.1 ms | 42.9 ms – 65.4 ms | 6% | volume/100: 5.2 times, linear |
-| `parser/volume/admitted/1000` | 1,000 functions, 62,069 B, 26,026 tokens, 18,003 nodes | 107 ms | 87.1 ms – 156 ms | 14% | volume/500: 2.4 times for 2 times. About 107 µs per function, or 0.58 MB/s. |
-| `parser/volume/admitted/2000` | 2,000 functions, 125,069 B, 36,003 nodes (largest that parses) | 194 ms | 182 ms – 261 ms | 9% | volume/1000: 1.8 times, linear |
-| `parser/volume/refused/3000` | 3,000 functions, 188,069 B; `resource_exhausted`, "complete grammar work or nesting budget exhausted" | 134 ms | 117 ms – 149 ms | 11% | volume/2000. Time to reach the refusal. The bracket-pair nesting change requires this input to parse. |
-
-Refusal boundary before per-node hashing was removed, from `qsl-bench-probe parse`, which tries depths
-0 to 64: depth 4 is the deepest nesting that parses, and every depth from 5 to
-64 is refused. 4,000 functions is refused with "CST leaf budget exhausted".
-
-Nesting now counts bracket pairs, so every depth from 0 to 63 in the
-function body parses (the body's `{` is the 64th pair) and the depth rows
-become `parser/depth/admitted/<d>`. `volume/3000` is still refused, now by the
-syntax-node ceiling (54,003 nodes against 50,000): "syntax node ceiling of
-50000 nodes exhausted". 4,000 functions is refused with "token ceiling of
-100000 tokens exhausted".
-
-### Checker: one `PackageDeclarations::check` over the whole package (`benches/checker.rs`)
-
-Inputs:
-
-- `checker/chain/n`: an *n*-function call chain, `f0(x) = f1(x) … f{n-1}(x) = x`.
-- `checker/independent/n`: *n* functions `fI(x) = x + 1` with no calls between
-  them.
-
-Each input is checked once at setup and must succeed. Building the declarations
-is excluded from the timing.
-
-| Benchmark | Input size | Median | Range (5 runs) | Stated variance | Comparison point |
-| --- | --- | --- | --- | --- | --- |
-| `checker/chain/250` | 250 declarations, 249 calls | 5.97 ms | 4.45 ms – 7.39 ms | 12% | independent/1000 |
-| `checker/chain/1000` | 1,000 declarations | 104 ms | 90.0 ms – 118 ms | 13% | chain/250: 17 times the time for 4 times the size |
-| `checker/chain/2000` | 2,000 declarations | 564 ms | 453 ms – 592 ms | 12% | chain/1000: 5.4 times the time for 2 times the size |
-| `checker/independent/1000` | 1,000 declarations, no calls | 12.0 ms | 8.87 ms – 13.1 ms | 15% | chain/1000: 8.7 times faster at the same size |
-| `checker/independent/5000` | 5,000 declarations, no calls | 227 ms | 175 ms – 274 ms | 21% | independent/1000: 19 times the time for 5 times the size, so quadratic |
-
-Chains too slow to sample repeatedly were measured with
-`qsl-bench-probe check chain <n>`. Each size ran three times, in three separate
-processes (same checker code as above).
-
-- **Wall time** is one `check`.
-- **Peak RSS** is `VmHWM` of a process that built and checked only that chain.
-- **Stated variance** is MAD/median over the three runs.
-
-| Input size | Wall time, 3 runs | Median | Stated variance | Peak RSS, 3 runs | Median RSS | RSS variance | Comparison point |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| chain of 4,000 | 6,782 ms, 4,956 ms, 8,580 ms | 6.78 s | 27% | 179,140, 179,128, 179,184 KiB | 179 MB | 0.01% | The Tarjan termination change's evaluation reports 7.4 s and 178 MB, within this variance |
-| chain of 8,000 | 38,165 ms, 29,812 ms, 33,564 ms | 33.6 s | 11% | 681,784, 681,716, 681,884 KiB | 682 MB | 0.01% | chain of 4,000: 5.0 times the time and 3.8 times the memory for 2 times the size |
-
-The smaller sizes were measured once each by the probe:
-
-| Input | Wall time | Peak RSS |
-| --- | --- | --- |
-| chain of 250 | 6.5 ms | 5.4 MB |
-| chain of 1,000 | 134 ms | 17 MB |
-| chain of 2,000 | 661 ms | 51 MB |
-| independent 1,000 | 18 ms | 7.2 MB |
-| independent 5,000 | 266 ms | 21 MB |
-
-### CST identity hashing (`benches/cst.rs`)
-
-**Per-node hashing is gone.** A parse no longer hashes per-node data. A node's
-identity is the revision digest, its span and its arena index; the structural
-path is derived from parent links on request, and reuse is a one-to-one span
-mapping over typed productions (`LosslessCst::reuse_map`). A parse computes
-one identity digest, over the document-revision labels, whatever its node
-count; qsl-cst's own unit test counts the digest calls.
-
-- `cst/parse/<input>` times the whole parse. Throughput is source bytes.
-- The `cst/sha256/<input>` rows timed the per-node digests that were removed and
-  are gone with them. `qsl-bench-probe cst` now prints node counts only.
-
-The tables below were measured before per-node hashing was removed, when every node
-carried a SHA-256 `StableNodeId` over its whole source slice and every
-ancestor's production name. They are kept as the record of what that change
-removed; the PR #380 A/B run is the comparison against them.
-
-| Input | Source bytes | CST nodes | Bytes hashed | Hashed per source byte | Of which: source slices / ancestor names |
-| --- | --- | --- | --- | --- | --- |
-| nested-0 | 243 | 21 | 3,369 | 13.9 | 593 / 1,442 |
-| nested-1 | 249 | 36 | 7,405 | 29.7 | 716 / 4,529 |
-| nested-2 | 255 | 51 | 12,881 | 50.5 | 899 / 8,996 |
-| nested-3 | 261 | 66 | 19,797 | 75.9 | 1,142 / 14,843 |
-| nested-4 | 267 | 81 | 28,153 | 105.4 | 1,445 / 22,070 |
-| volume-1000 | 62,069 | 18,003 | 2,671,362 | 43.0 | 231,026 / 1,416,026 |
-
-Hashed bytes per source byte grow about quadratically with nesting depth. The
-ancestor-name paths dominate: 78% of the hashed bytes at depth 4.
-
-| Benchmark | Median | Range (5 runs) | Stated variance | Comparison point |
-| --- | --- | --- | --- | --- |
-| `cst/parse/nested-0` | 269 µs | 260 µs – 289 µs | 3% | `cst/sha256/nested-0` |
-| `cst/sha256/nested-0` | 15.3 µs | 14.9 µs – 18.9 µs | 3% | 5.7% of `cst/parse/nested-0` |
-| `cst/parse/nested-1` | 377 µs | 371 µs – 414 µs | 4% | `cst/sha256/nested-1` |
-| `cst/sha256/nested-1` | 34.4 µs | 34.3 µs – 41.1 µs | 3% | 9.1% of the parse |
-| `cst/parse/nested-2` | 496 µs | 486 µs – 559 µs | 3% | `cst/sha256/nested-2` |
-| `cst/sha256/nested-2` | 62.0 µs | 61.8 µs – 73.7 µs | 2% | 12.5% of the parse |
-| `cst/parse/nested-3` | 622 µs | 600 µs – 712 µs | 4% | `cst/sha256/nested-3` |
-| `cst/sha256/nested-3` | 80.3 µs | 80.0 µs – 85.6 µs | 2% | 12.9% of the parse |
-| `cst/parse/nested-4` | 802 µs | 739 µs – 924 µs | 3% | `cst/sha256/nested-4`; nested-0: 3.0 times |
-| `cst/sha256/nested-4` | 120 µs | 116 µs – 121 µs | 3% | 15.0% of the parse |
-| `cst/parse/volume-1000` | 112 ms | 95.3 ms – 146 ms | 14% | `cst/sha256/volume-1000` |
-| `cst/sha256/volume-1000` | 12.9 ms | 12.6 ms – 13.3 ms | 2% | 11.5% of the parse |
-
-SHA-256 over the identity preimages accounts for 6% to 15% of parse time on
-these inputs. At depth 4 the parse costs 533 µs more than at depth 0. The
-SHA-256 share of that increase is 105 µs.
-
-### Model layer (`benches/model.rs`)
-
-Input: a Semantic IR 2.0.0 document carried through FR-154 intake
-(`intake::admit`, then `intake::read_records`, then `DomainPackage::new`).
-
-- **Types.** *n* object types, each with one native `Boolean` field.
-- **Supertype chain.** `C0 <- C1 <- … <- C{depth}`.
-- **Filler types.** Each has supertype `C0`, so the package is one object
-  universe.
-- **Population.** One closed population `Pop`, whose member type is `C0`.
-
-The size sweep uses depth 4. Record counts, from `qsl-bench-probe model`:
-
-| *n* | Document bytes | Records | Effective declarations |
-| --- | --- | --- | --- |
-| 250 | 186,790 | 501 | 755 |
-| 1,000 | 745,540 | 2,001 | 3,005 |
-| 4,000 | 3,001,505 | 8,001 | 12,005 |
-
-Stage inputs are prepared outside the timing. Admission uses a 100-member
-population of type `C4`.
-
-Intake and admission, by package size:
-
-| Benchmark | Input size | Median | Range (5 runs) | Stated variance | Comparison point |
-| --- | --- | --- | --- | --- | --- |
-| `model/intake/parse/250` | 186,790 B | 2.59 ms | 2.28 ms – 3.38 ms | 12% | intake/admit/250: the parse is 62% of admission |
-| `model/intake/admit/250` | 250 types | 3.83 ms | 3.31 ms – 6.34 ms | 13% | intake/parse/250 |
-| `model/intake/read_records/250` | 250 types, parsed | 8.01 ms | 7.27 ms – 15.0 ms | 9% | intake/parse/250: 3.1 times |
-| `model/intake/parse/1000` | 745,540 B | 15.6 ms | 13.6 ms – 19.9 ms | 12% | intake/parse/250: 6.0 times for 4 times |
-| `model/intake/admit/1000` | 1,000 types | 19.6 ms | 19.5 ms – 28.3 ms | 7% | intake/parse/1000 |
-| `model/intake/read_records/1000` | 1,000 types | 66.4 ms | 59.7 ms – 70.3 ms | 6% | read_records/250: 8.3 times for 4 times |
-| `model/intake/parse/4000` | 3,001,505 B | 65.1 ms | 58.8 ms – 75.9 ms | 10% | intake/admit/4000 |
-| `model/intake/admit/4000` | 4,000 types | 90.6 ms | 75.8 ms – 111 ms | 6% | intake/parse/4000 |
-| `model/intake/read_records/4000` | 4,000 types | 2.48 s | 1.05 s – 4.18 s | 51% | read_records/1000: 37 times for 4 times, so quadratic |
-| `model/normalize/250` | 501 records | 18.9 ms | 14.3 ms – 30.3 ms | 25% | normalize/1000 |
-| `model/object_universe_of/250` | 501 records | 8.20 ms | 7.58 ms – 14.3 ms | 19% | admit_binding/250 (F5) |
-| `model/admit_binding/250` | 501 records, 100 members | 8.34 ms | 7.97 ms – 9.89 ms | 6% | object_universe_of/250 |
-| `model/admit_invocation/250` | Same, pre and post | 18.6 ms | 16.0 ms – 19.6 ms | 8% | admit_binding/250: 2.2 times |
-| `model/conformance/resolve_redefinition_target/250` | 501 records | 321 µs | 317 µs – 335 µs | 14% | resolve_redefinition_target/1000 |
-| `model/normalize/1000` | 2,001 records | 81.8 ms | 74.5 ms – 99.5 ms | 12% | normalize/250: 4.3 times for 4 times |
-| `model/object_universe_of/1000` | 2,001 records | 51.8 ms | 46.6 ms – 89.0 ms | 13% | admit_binding/1000 |
-| `model/admit_binding/1000` | 2,001 records, 100 members | 48.4 ms | 46.0 ms – 72.8 ms | 18% | object_universe_of/1000 |
-| `model/admit_invocation/1000` | Same, pre and post | 90.2 ms | 83.4 ms – 120 ms | 8% | admit_binding/1000: 1.9 times |
-| `model/conformance/resolve_redefinition_target/1000` | 2,001 records | 1.77 ms | 1.33 ms – 4.02 ms | 28% | resolve_redefinition_target/250: 5.5 times for 4 times |
-| `model/normalize/4000` | 8,001 records | 490 ms | 483 ms – 820 ms | 12% | normalize/1000: 6.0 times for 4 times |
-| `model/object_universe_of/4000` | 8,001 records | 311 ms | 297 ms – 464 ms | 5% | normalize/4000: 63% |
-| `model/admit_binding/4000` | 8,001 records, 100 members | 343 ms | 316 ms – 498 ms | 5% | object_universe_of/4000 |
-| `model/admit_invocation/4000` | Same, pre and post | 604 ms | 575 ms – 859 ms | 16% | admit_binding/4000: 1.8 times |
-| `model/conformance/resolve_redefinition_target/4000` | 8,001 records | 16.4 ms | 15.8 ms – 24.1 ms | 14% | resolve_redefinition_target/1000: 9.3 times for 4 times |
-
-`allInstances` walks the supertype chain once per member. Two sweeps measure it,
-over a package of 1,000 types (2,001 records):
-
-- **Ancestor sweep** (`model/all_instances/<target>/<depth>`): 1,000 members,
-  each of type `C{depth}`. The `root` target queries `C0`, which walks *depth*
-  generalization steps per member. The `own` target queries `C{depth}` itself,
-  which needs no walk.
-- **Member sweep** (`model/all_instances/members/<m>`): *m* members of an
-  8-ancestor type, querying `C0`. The same query also runs through the
-  evaluator's bridge (`model/query/evaluate_all_instances/<m>`), which rebuilds
-  a reverse catalog of the binding's 1,000 types on every query (fixed by the `ModelIndex` change).
-
-| Benchmark | Input size | Median | Range (5 runs) | Stated variance | Comparison point |
-| --- | --- | --- | --- | --- | --- |
-| `model/all_instances/root/1` | 1,000 members, 1 ancestor | 549 µs | 535 µs – 654 µs | 6% | own/1 |
-| `model/all_instances/own/1` | 1,000 members, 0 walked | 391 µs | 327 µs – 515 µs | 16% | root/1 |
-| `model/all_instances/root/8` | 8 ancestors | 2.11 ms | 2.03 ms – 2.41 ms | 4% | own/8 |
-| `model/all_instances/own/8` | 0 walked | 326 µs | 318 µs – 351 µs | 3% | root/8 |
-| `model/all_instances/root/32` | 32 ancestors | 9.00 ms | 8.53 ms – 9.95 ms | 5% | own/32 |
-| `model/all_instances/own/32` | 0 walked | 377 µs | 320 µs – 543 µs | 11% | root/32 |
-| `model/all_instances/root/120` | 120 ancestors | 32.6 ms | 31.9 ms – 42.9 ms | 4% | own/120: 87 times |
-| `model/all_instances/own/120` | 0 walked | 376 µs | 332 µs – 459 µs | 8% | root/120 |
-| `model/all_instances/members/250` | 250 members, 8 ancestors | 512 µs | 488 µs – 670 µs | 3% | members/1000 |
-| `model/query/evaluate_all_instances/250` | Same, via `value::model_query` | 678 µs | 653 µs – 1.05 ms | 5% | members/250: +166 µs |
-| `model/all_instances/members/1000` | 1,000 members | 2.48 ms | 2.00 ms – 3.17 ms | 18% | members/250: 4.8 times for 4 times |
-| `model/query/evaluate_all_instances/1000` | Same, via `value::model_query` | 2.93 ms | 2.35 ms – 3.55 ms | 14% | members/1000: +450 µs |
-| `model/all_instances/members/4000` | 4,000 members | 9.62 ms | 9.59 ms – 15.8 ms | 4% | members/1000: 3.9 times for 4 times |
-| `model/query/evaluate_all_instances/4000` | Same, via `value::model_query` | 10.1 ms | 8.87 ms – 11.5 ms | 4% | members/4000: difference within variance |
-
-### Evaluator: one `CheckedPackage::call` of `f0(5)` on a checked, linked *n*-function chain (`benches/evaluator.rs`)
-
-A call on a chain of *n* functions pushes *n* call frames. Checking and linking
-happen outside the timing.
-
-| Benchmark | Call frames | Median | Range (5 runs) | Stated variance | Comparison point |
-| --- | --- | --- | --- | --- | --- |
-| `evaluator/call_chain/1` | 1 | 500 ns | 318 ns – 900 ns | 16% | Fixed cost of one call |
-| `evaluator/call_chain/10` | 10 | 3.58 µs | 2.52 µs – 5.82 µs | 11% | call_chain/1 |
-| `evaluator/call_chain/100` | 100 | 35.3 µs | 24.2 µs – 42.1 µs | 16% | call_chain/10 |
-| `evaluator/call_chain/1000` | 1,000 | 439 µs | 246 µs – 1.03 ms | 33% | call_chain/100 |
-
-Cost per call frame is the slope between two sizes, which removes the fixed
-cost of the call:
-
-| Slope between | Cost per call frame |
-| --- | --- |
-| 1 and 10 frames | 342 ns |
-| 10 and 100 frames | 352 ns |
-| 100 and 1,000 frames | 449 ns |
-
-The three slopes differ by less than the rows' 16% to 33% stated variance. This
-baseline does not show the per-frame cost changing with depth.
+The following sections preserve reports from earlier paired investigations.
+Their figures and verdicts describe those sessions; they are not inputs to a
+current comparison. A new claim uses current main and the candidate under the
+procedure above.
 
 ## F5, F6, F7 and F13: the four findings the evaluation did not time
 
@@ -464,7 +187,7 @@ What each figure counts:
   process.
 - **Peak RSS** is `VmHWM` of the probe process, which builds and checks only
   that chain.
-- **Margin** is max(the stated variance, the session's MAD/median).
+- **Margin** is the margin recorded for that historical experiment; it is not a threshold for a current comparison..
 
 | Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -565,8 +288,8 @@ to 23:56 (UTC-7):
   `Cargo.toml` are byte-identical on both sides.
 
 Each figure is a criterion point estimate of one `CheckedPackage::call` of
-`f0(5)` on an *n*-function chain. **Margin** is max(the stated variance in the
-evaluator table above, the session's MAD/median).
+`f0(5)` on an *n*-function chain. The margin and verdict columns are historical
+outputs of this experiment, not thresholds for a current comparison.
 
 | Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -628,8 +351,8 @@ What each figure counts:
   process.
 - **Calls per declaration.** A chain of *n* has *n* − 1 calls, one per
   declaration but the last. An independent package has none.
-- **Margin** is max(the stated variance, the session's MAD/median). Probe rows
-  have no stated variance, so their margin is the session's.
+- **Margin** is the margin recorded for that historical experiment; it is not
+  a threshold for a current comparison. Probe rows lack criterion intervals.
 
 | Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -746,7 +469,7 @@ to 03:47 (UTC-7):
   benchmark calls the same `src/model.rs` functions on both sides.
 
 Each figure is a criterion point estimate of one call. **Margin** is max(the
-stated variance in the model table above, the session's MAD/median).
+session noise for that historical experiment).
 
 | Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -950,9 +673,9 @@ one per axis, at definition version `-v2`:
 - `spec/assurance/MP-004-model-wall-time.md`
 - `spec/assurance/MP-005-evaluator-wall-time.md`
 
-The Tarjan termination change added `spec/assurance/MP-006-probe-check-wall-time-and-rss.md`, at
-`-v1`. It covers the probe's one-shot `check` runs, with wall time and peak
-RSS per input.
+The Tarjan termination change added
+`spec/assurance/MP-006-probe-check-wall-time-and-rss.md`, at `-v1`. It covers
+the probe's one-shot `check` runs, with wall time and peak RSS per input.
 
 MP-002 and MP-004 measure QSpec requirements that live in
 `agent-ix/quire-specification`, so they target
@@ -961,18 +684,10 @@ already uses. Plain `quire validate` passes. `quire validate --okf` reports
 both as `dangling reference`, because it resolves a cross-repo target by bare
 ID inside this bundle. That is a known quire bug, and the targets are correct.
 
-Each plan's decision rule is the same-session A/B rule above. The rule's
-reference, `prior-collection`, is the baseline revision's collection from the
-same session.
+Each plan's `prior-collection` is the current-main side of that plan's paired
+session; it is not an earlier saved collection.
 
-The five-run medians are stored, to four significant figures, as quoin
-measurement collections under
-`spec/evidence/measurements/qsl196-baseline-<axis>-v2.json`, and
-`quoin report --repo .` shows them. Parser observations carry an `outcome`
-dimension. This file remains the source of truth for the stated variance and
-the findings.
-
-## What this baseline does not cover
+## Scope of the historical reports
 
 - **Memory.** Peak RSS is recorded only for the one-shot probe runs. The
   criterion suites time wall clock and nothing else.
