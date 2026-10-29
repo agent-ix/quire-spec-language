@@ -52,7 +52,7 @@ post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {
   `quire.value.complete/v1` covers values, records and expressions. The line
   binds it to the name `v`, and each rule says `using v`.
 - **`model`** imports the domain model by identity.
-  A rule is always checked against that exact model.
+  A rule is checked against the model with that identity.
 - **`invariant … at current`** must hold for every `ConfigVersion` in the data.
   `ParentOrder`: a parent, when present, has a lower version number.
   `self.parent` is an optional reference; `present` tests it, `value` unwraps
@@ -340,7 +340,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
-| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785), hashed while it is written. | QSL depends on it. |
+| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785). | QSL depends on it. |
 | [quire-contract-ir](https://github.com/agent-ix/quire-contract-ir) | The target-neutral contract model that backends use. | QSL depends on its model crate; IR reads QSL's checked packages. |
 | [quire-contract-codegen](https://github.com/agent-ix/quire-contract-codegen) | Generates Rust, property tests, bounded proofs and evidence from contracts. | Depends on QSL to replay counterexamples. |
 | [quire-contract-runtime](https://github.com/agent-ix/quire-contract-runtime) | The `no_std` runtime for generated checks. | Used by codegen's output. |

@@ -62,9 +62,8 @@ public entries; `explore` is `pub(crate)` (FR-101).
   duplicate is one state.
 - Step 5: `Cancelled`, frontier 3's key then 4's: level-2 parents keep
   the FIFO order 1, 2.
-- Step 6: the four keys are
-  each state's JCS key bytes, compared directly as the state key; each exploration
-  counts two states.
+- Step 6: the four keys are each state's JCS key bytes, compared directly as
+  the state key; each exploration counts two states.
 - Step 7: `Exhaustive` with 4 states and 4 transitions.
 - Step 8: `Bounded` at `Limit::States` with 2 states and frontier a, b, c,
   d (admitted a, b; refused c; then d), as keys; with `max_states` 0,

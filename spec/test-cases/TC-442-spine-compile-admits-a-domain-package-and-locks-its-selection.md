@@ -74,6 +74,7 @@ including its two field-access and conforming-equality cases),
 - Step 4: exit 20 and no package bytes each time; stage `check` with
   `ill_typed` at `deref(g).nope` and at `g = w`; stage `assembly` with
   `missing_declaration` at `M::Nope`; stage `intake` with `missing_import`
-  and `invalid_model_binding`/`wrong-model-selection`, each at the `model`
+  for the absent model and `stale_dependency`/`content-mismatch` for the
+  document whose version differs, each at the `model`
   declaration; `invalid_syntax` at the clause after the identity; every
   message is readable text.

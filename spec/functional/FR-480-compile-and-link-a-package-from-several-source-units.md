@@ -203,7 +203,7 @@ the package means the same whichever order the two files are listed in.
 ### Replay and import of a several-unit package
 
 - A package reference's `sources` (QSpec FR-323) names the package's
-  `lock.sources`: one or more `quire.source.bytes/v1` sources. QSpec states
+  `lock.sources`: one or more sources, each named by its authority and identity. QSpec states
   no order for that list, so the FR-098 executor SHALL accept it in any
   order and recompile it as one unit list in canonical unit order, which
   gives the package that `lock.sources` describes. A `dependencies` entry's

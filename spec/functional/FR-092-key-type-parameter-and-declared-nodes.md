@@ -447,7 +447,7 @@ reference to the same target adds an `expression` occurrence to the existing
 node and leaves the node's key, body and `dependencies` unchanged. The
 occurrences and their source-map rows enter neither the node key nor the
 package identity: removing the second occurrence and its source-map row from
-the emitted package leaves the carrier key and `package_id` unchanged. The
+the emitted package leaves the carrier key and the package's lock content unchanged. The
 emitter SHALL NOT write the node when the bound target key is not the key of
 a node it writes in the same graph (FR-218 stale target); that refusal is
 `missing_declaration`/`missing-name`, the cause the IR reader gives an absent

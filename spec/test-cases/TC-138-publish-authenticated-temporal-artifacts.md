@@ -73,8 +73,8 @@ unchanged.
 
 Require `protocol_artifact::handoff::SOURCE_ROOT` to name the crate's manifest
 directory, with the authored sources the writers read beneath it (FR-050-AC-11).
-Require the handoff module to export none of `PUBLISHED_HANDOFF`,
-`PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, asserting each name
+Require the handoff module to export neither `PUBLISHED_HANDOFF`
+nor `PUBLISHED_V1_HANDOFF`, asserting each name
 separately (FR-050-AC-12).
 
 Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
@@ -86,8 +86,7 @@ dev-dependency closure. That `cargo check` line is what actually resolves
 
 Tracked-files step: in a git checkout (CI only; not in a crate tarball or git
 dependency), run `git ls-files artifacts/compiled-protocol-v2` and require empty
-output (FR-050-AC-9), and require `git ls-files` to list no checksum manifest
-of `/1` or `/2` handoff files (FR-050-AC-10).
+output (FR-050-AC-9). (Retired with FR-050-AC-10: no manifest assertion.)
 
 ## Expected Results
 
@@ -110,5 +109,5 @@ v2 admitted type; trace evaluation retains the artifact-authenticated parameter
 map, mapping classification claims none, and progress does not cross an artifact
 or clock-configuration identity. Every published member name resolves its
 member in a freshly written handoff, and the decoded mutation manifest repeats
-exactly the published base-member and format identities. No handoff tree,
-checksum manifest, digest or count is committed.
+exactly the published base-member and format identities. No handoff tree
+or count is committed.

@@ -25,7 +25,7 @@ T12-B names `value::library` among its *allowed* callers of the kernel
 call sites as `value::enumeration`, `value::unit` and `value::model_query`,
 none of them `value::library`); the real pre-existing wire-to-`NodeKey`
 call this test scans for is `package_identity`'s `node_key` function
-(`NodeKey::from_hex` over wire-read JSON, `value/package_identity.rs:177-182`),
+(a `NodeKey` constructor over a wire-read node id, `value/package_identity.rs:177-182`),
 a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
 
 ## Test Procedure
@@ -53,11 +53,10 @@ a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
    relocated module carries `resolve_libraries` and `LibraryLock` forward
    but not `resolve_name`), and `package_identity`'s `node_key`-equivalent
    function returning a `NodeKey` (it returns a `WireNodeId` after
-   relocation, and calls no `NodeKey` constructor, including
-   `NodeKey::from_hex`).
+   relocation, and calls no `NodeKey` constructor).
 5. Search the relocated `library` module's whole source for any
    `NodeKey`-constructing call — `NodeKey::of(`, `NodeKey::from_bytes(`,
-   `NodeKey::from_hex(`, `node_key_of(`, or an equivalent construction from
+   `node_key_of(`, or an equivalent construction from
    a wire-read value — and confirm none exists; separately,
    search every type `library` defines — not only a cross-package reference
    type such as `ExportIdentity`/`PackageNodeKey`, but every type, including
@@ -75,8 +74,8 @@ a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
    longer needs to name `value::library` as a `NodeKey`-constructor caller
    (it did not name a real call site there before this requirement either;
    FR-060 Status), and that step 5's scan, not T12-B's pattern set alone,
-   is what confirms `package_identity`'s `NodeKey::from_hex` call is gone
-   (T12-B's own patterns do not match `NodeKey::from_hex(`).
+   is what confirms `package_identity`'s wire-to-`NodeKey` constructor call is gone
+   (T12-B's own patterns do not match it).
 
 ## Expected Results
 
@@ -91,7 +90,7 @@ a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
 - Step 4: `ExportIdentity` with a `node: NodeKey` field, a `resolve_name`
   function, or a `package_identity` node-reference function returning
   `NodeKey` found anywhere in the relocated module fails this step.
-- Step 5: any `NodeKey`-constructing call (including `NodeKey::from_hex`),
+- Step 5: any `NodeKey`-constructing call (including a wire-to-`NodeKey` construction),
   or any `NodeKey`-typed field anywhere in `library` whose value is read
   from wire or preimage data — including `PreimageDefect::AmbiguousDeclaration.nodes`,
   `PreimageDefect::DeclarationNominalMismatch.node`, or
@@ -99,4 +98,4 @@ a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
   `WireNodeId` — fails this step and names the call site or field.
 - Step 6: the T-12 scan's allow-list needs no `value::library` entry, and
   step 5's scan, not T12-B alone, confirms `package_identity`'s prior
-  `NodeKey::from_hex` call is gone.
+  wire-to-`NodeKey` constructor call is gone.

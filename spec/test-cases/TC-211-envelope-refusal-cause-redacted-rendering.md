@@ -18,7 +18,7 @@ transcript, byte-provision, or full concrete-value content through its own
 restriction on the *cause* type — the offending content itself is neither
 destroyed nor made unreachable in general, only kept out of the cause's
 default rendering. A wrong implementation this test would catch: a
-`stale_dependency`/`content-mismatch` cause that embeds the offending
+`invalid_package`/`conflicting-definition` cause that embeds the offending
 entry's full raw bytes as a field (rather than its identity) so that logging
 the cause reproduces the bytes; or, in the opposite direction, an
 implementation that "fixes" this by making the content generally
@@ -33,8 +33,8 @@ readable). Scope: FR-073-AC-3.
 
 ## Test Procedure
 
-1. Produce a `stale_dependency`/`content-mismatch` refusal from the
-   replay request (FR-071, TC-186 step 3's construction) whose mismatched
+1. Produce an `invalid_package`/`conflicting-definition` refusal from the
+   replay request (FR-071, TC-186 step 2's construction) whose duplicated
    entry carries several kilobytes of distinctive bytes ("entry X").
 2. Produce a malformed-transcript refusal from the witness envelope
    (FR-070, TC-181's construction) from an untrimmed transcript carrying a
@@ -46,8 +46,8 @@ readable). Scope: FR-073-AC-3.
 4. Search each captured output for entry X's raw bytes and transcript Y's
    marker string.
 5. Construct a second, validly-admitted replay request whose byte
-   provision carries entry X's exact bytes under their own correct,
-   matching identity (no mismatch), and look up that entry through the
+   provision carries entry X's exact bytes under one source label
+   pair (no duplicate), and look up that entry through the
    request's typed byte-provision accessor by identity. Separately,
    construct a second, validly-admitted witness envelope from transcript
    Y trimmed to its one well-formed assertion block, and call its typed

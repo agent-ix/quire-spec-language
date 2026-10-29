@@ -28,7 +28,7 @@ constructor that admits a request whose package reference names a source
 with no matching byte-provision entry, silently deferring the gap to
 whatever consumes the request later (#243's executor) instead of refusing
 at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-7,
-FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
+FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired).
 
 ## Test Procedure
 
@@ -37,10 +37,8 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
    typed as a path, `OsString` treated as a path, or environment-variable
    name.
 2. Attempt to construct a request with two entries under one source label
-   pair. (Retired with FR-071-AC-6/AC-11: the entry-key domain check.)
-3. (Retired with FR-071-AC-6: supply a source whose bytes differ from the
-   proving run's; the request constructs, and the edit is refused at
-   execution by the `package_id` comparison, TC-444 step 3.)
+   pair.
+3. (Retired with FR-071-AC-6.)
 4. Construct a well-formed request and confirm every recompilation input
    named by the `package` reference's sources has a
    corresponding byte-provision entry keyed by its labels.
@@ -57,13 +55,7 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
    provision; decode an entry with an empty identity.
 8. Decode a request whose semantic profile selection names
    `quire.profile.unknown/v1`.
-9. (Retired at decode with FR-071-AC-11; the same documents are now read by
-   intake at recompile and refuse there, FR-056.) A domain package entry holding a
-   repeated member name, then one longer than the request's
-   `intake.input_bytes` (4). Map an
-   allocation failure of 4096 requested bytes from intake's read of such an
-   entry. Decode entries holding `18446744073709551616` at `/package/count`
-   and `0.1000000000000000000001` at `/a~1b/0`.
+9. (Retired with FR-071-AC-11.)
 10. Round-trip a request whose package reference and `dependencies` entry carry
     `refinement_internals`, one with the member absent, and ones with the
     values `{}`, `null` and `7`.
@@ -86,12 +78,5 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-13 (AC-6 and AC-11 are retired at decode).
 - Step 8 refuses `unknown_profile`/`unsupported-selection`, keeping the selection
   (`quire.profile.unknown/v1`) and its role
   (`replay.semantic_profile_selections`).
-- Step 9 (at recompile, `ReplayRefusal::Recompile`): the repeated-name entry refuses
-  `invalid_model_binding`/`malformed-declaration`; the entry over `intake.input_bytes`
-  refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit,
-  its bound (4) and its size; the allocation failure refuses
-  `resource_exhausted`/`allocation-failed` carrying 4096; the two number
-  entries refuse `noncanonical_wire`, `inexact-integer` at
-  `/package/count` and `inexact-number` at `/a~1b/0`, each keeping its
-  `document_pointer`.
+- Step 9 is retired.
 - Step 10: each member round-trips exactly, absent stays absent, and no value is refused at decode.

@@ -31,7 +31,7 @@ request the default refuses (TC-904).
 ## Inputs
 
 - Operator level: the original proving context as an FR-071 replay request
-  (the call site's `package_id`, package reference, dependencies and byte
+  (the call site's package lock content, package reference, dependencies and byte
   provision; the enclosing function, which may be non-`Boolean`, as its
   `function` replay target (QSpec FR-323); the opaque `ObligationIdentity` the caller minted from
   the owning obligation's preimage as its `obligation_identity`, which QSL
@@ -74,7 +74,7 @@ request the default refuses (TC-904).
 ## Behavior
 
 - The operator entry SHALL recompile the context's source by FR-098's
-  rules and require the recompiled `package_id` to equal the request's; a
+  rules and require the recompiled package's lock content (identity, version, selections, source labels) to equal the request's; a
   mismatch refuses `PackageIdMismatch` (`stale_dependency`/`content-mismatch`).
   A request whose replay target is not `function` SHALL refuse as FR-098
   does. It SHALL resolve the `function` replay target in the recompiled package (a name the
@@ -93,7 +93,7 @@ request the default refuses (TC-904).
   identity, the scalar node and its occurrence key, the obligation kind, the
   operator, the operands with their identities and ranges, the result range,
   the limits and the native outcome. The function identity
-  is the obligation identity, the `package_id` as supplied, the `function`
+  is the obligation identity, the package lock content as supplied, the `function`
   replay target as the request's `function` member sent it (absent when the
   request carries no `function` member), the
   occurrence key as the request sent it (absent when it carries none), the
@@ -160,7 +160,7 @@ request the default refuses (TC-904).
   (`invalid_runtime_input`/`unknown-member`), after the replay-target check
   and before the recompile, as FR-484 states: a value-parity claim has no
   proving run, and the lock's clause-profile rows are bound through
-  `package_id`.
+  the lock content.
 - The function entry SHALL refuse a function declared `Boolean` with
   `ReplayRefusal::NotAValueFunction`, before any call.
 - The function entry SHALL then check the request's occurrence key against
@@ -197,10 +197,10 @@ request the default refuses (TC-904).
 | FR-357-AC-8 | Operator level: a native `Incomplete` or `ExecutionFault` settles `Failed` as a generated-artifact fault without a comparison, even under starved limits. | Test (TC-904) |
 | FR-357-AC-9 | Operator level: an operand outside its own range settles `Inconclusive(ReplayRefused(invalid_runtime_input))` with nothing evaluated; a literal's range is the singleton `(value, value)`. | Test (TC-904) |
 | FR-357-AC-10 | Function and operator level: an agreement settles `Inconclusive(ScalarAgrees)` naming the claim and the outcome, a divergence settles `Failed`, an exact evaluation that reaches its limits (function arm and operator arm each) settles `Incomplete`, and no scalar result settles `Refuted`; a `ScalarAgrees` cause is counted by the envelope's encoded-size bound and round-trips through the envelope. | Test (TC-904, TC-177, TC-178, TC-179) |
-| FR-357-AC-11 | Operator level: the call site of a non-`Boolean` function recompiles, its scalar node is found in the selected function's body as an application of the operator, and an agreement, a divergence and a refused operand each settle with the request's obligation identity carried unchanged. A stale `package_id` refuses `PackageIdMismatch` (`content-mismatch`); a node the package does not hold, a node outside the selected function's body and an operator the node is not an application of each refuse `ScalarIdentity` (`content-mismatch`) with their own cause; an undeclared enclosing function refuses `UnknownFunction` (`missing-name`). Each settles `Inconclusive(ReplayRefused(code))` with the obligation identity carried. | Test (TC-904) |
+| FR-357-AC-11 | Operator level: the call site of a non-`Boolean` function recompiles, its scalar node is found in the selected function's body as an application of the operator, and an agreement, a divergence and a refused operand each settle with the request's obligation identity carried unchanged. A stale lock content refuses `PackageIdMismatch` (`content-mismatch`); a node the package does not hold, a node outside the selected function's body and an operator the node is not an application of each refuse `ScalarIdentity` (`content-mismatch`) with their own cause; an undeclared enclosing function refuses `UnknownFunction` (`missing-name`). Each settles `Inconclusive(ReplayRefused(code))` with the obligation identity carried. | Test (TC-904) |
 | FR-357-AC-12 | The outcome document writes a `ScalarAgrees` cause as `{"kind": "scalar-agrees"}`, the kind only (FR-286). | Test (TC-770) |
 | FR-357-AC-13 | Function and operator level: `report.claim()` equals the claim the caller sent on every outcome: diverged, agrees, refused input or operand, generated fault, incomplete, an identity refusal, a stale package, an undecodable request and a function the entry refuses; claims that differ in any member are not equal, and an agreement's claim is the report's `claim()`. | Test (TC-904) |
-| FR-357-AC-14 | **RETIRED (observation digest removed).** The operator claim carries no observation digest; QSL neither recomputed nor authenticated it, so no QSL check could fail on it, and the driver's byte comparison of the artifact it ran is the only artifact check. The criterion's claim (a digest is carried unchanged, claims differing only in it are different claims) no longer has a subject; the remaining claim-identity members are covered by AC-13. | Test (TC-904), retired |
+| FR-357-AC-14 | **RETIRED (observation field removed).** The operator claim carries no such field, so no QSL check could fail on it; the driver's byte comparison of the artifact it ran is the only artifact check. The criterion has no subject; the remaining claim-identity members are covered by AC-13. | Test (TC-904), retired |
 | FR-357-AC-15 | Operator level: the recomputed obligation identity equals the preimage tuple, written out independently, for `GraphChild` operands and for `InlineLiteral` operands, with a negative range bound among them; two literals at different positions of one application get distinct identities. | Test (TC-904) |
 | FR-357-AC-16 | Operator level: a request whose `obligation_identity` was minted over another claim, one whose range, operand identity, occurrence key or obligation kind differs, refuses `ScalarIdentity` (`stale_dependency`/`content-mismatch`) with the cause `Obligation` naming both identities and settles `Inconclusive(ReplayRefused(stale_dependency))`, with the claim identity carried. A difference in the native outcome alone leaves the obligation identity unchanged and is detected as `report.claim()` differing from the claim sent. | Test (TC-904) |
 | FR-357-AC-17 | Operator level: each check of the preimage against the package refuses `ScalarIdentity` (`content-mismatch`) under a correctly minted identity, with its own cause: a node the package does not hold (`Node`) or an operator it does not apply (`Operator`); an occurrence key the node does not have (`Occurrence`); a `GraphChild` that is not the node's argument at its position (`OperandChild`); an `InlineLiteral` that is not an inline integer literal there (`NotInlineLiteral`) or whose value or singleton range is not the literal's (`LiteralValue`); a different number of operands (`OperandCount`). A claim of a graph child and an inline literal together passes. | Test (TC-904) |

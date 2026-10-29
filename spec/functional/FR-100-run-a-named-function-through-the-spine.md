@@ -269,7 +269,7 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
 The public entry SHALL admit declared Boolean, Integer/Int and Reference
 results. Other result kinds retain `unsupported_construct` before a call.
 A completed Reference SHALL retain the actual returned identity triple in
-`CallValue::Reference`, without dereferencing, re-hashing or narrowing it.
+`CallValue::Reference`, without dereferencing or narrowing it.
 An unexpected completed kind remains an internal invariant failure.
 
 Where a completed Reference is serialized in the existing function outcome

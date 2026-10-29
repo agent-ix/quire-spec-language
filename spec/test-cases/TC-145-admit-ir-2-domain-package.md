@@ -12,8 +12,7 @@ relationships:
 Verify FR-154 admission, reader refusal, artifact-id identity, relationship
 exports and all-or-nothing declaration refusal through the intake seam. Scope:
 FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7,
-FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44,
-FR-056-CON-4.
+FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
 
 ## Test Procedure
 
@@ -23,7 +22,8 @@ FR-056-CON-4.
    declared name; one value type; one variant type; and one population.
    Pass the lifted bytes and a ModelSelection naming their identity and version to the intake seam.
 2. Offer, one at a time: a package input with no bytes under the selected
-   identity; bytes whose own identity or version differs from the selection.
+   identity; bytes whose own identity differs from the selection; bytes
+   whose own `version` differs from the selection's.
 3. Offer bytes `agent-ix-semantic-ir` refuses. Then parse documents carrying
    a lone high surrogate escape, a lone low surrogate escape, a reversed pair,
    a lone surrogate in a member name. Parse documents carrying `1e400`,
@@ -80,9 +80,10 @@ FR-056-CON-4.
   one `operation` and one `relationship` carrying the declared name and span;
   one `scalar` naming the value type and its native value type; one `enum` with
   its `variant` records; and one `population`.
-- Step 2 refuses with `missing_import`/`missing-selection` and
-  `invalid_model_binding`/`wrong-model-selection` respectively, with no
-  declaration.
+- Step 2 refuses with `missing_import`/`missing-selection`,
+  `invalid_model_binding`/`wrong-model-selection` and
+  `stale_dependency`/`content-mismatch` (naming both versions) respectively,
+  with no declaration.
 - Step 3 admits no declaration and retains every reader diagnostic with its IR
   node, artifact id and span. The parse refuses each surrogate case. It refuses `1e400` and `-1e400`
   `noncanonical_wire`/`inexact-integer` and `1e-400`

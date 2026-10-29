@@ -40,8 +40,8 @@ anywhere to be fed by a `PackageNodeKey`'s `WireNodeId`. Scope: FR-087-AC-6.
 1. Search `library`'s whole source, `package`'s E4 dependency-resolution
    code path, and `replay`'s E9 lookup for any reference to a `NodeKey`
    constructor, called or passed as a function value
-   (`NodeKey::from_hex`), any
-   `node_key_of(` call, or an equivalent construction from a hex string or
+   (a wire-id-to-`NodeKey` constructor), any
+   `node_key_of(` call, or an equivalent construction from a wire id string or
    wire-read value.
 2. Confirm none exists in any of the three: E4's dependency resolution (in
    `package`) resolves a `PackageNodeKey`'s `WireNodeId` to a `NodeKey` by

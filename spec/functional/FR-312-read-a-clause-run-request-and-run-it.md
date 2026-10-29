@@ -76,7 +76,7 @@ place of `call`. `clause` is a closed object:
 - `observations`: an object mapping each key to the file of a
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
-- `package_id`: optional, the expected `package_id`, lowercase hex;
+- `package_id`: optional, the expected package identity and version, as the replay request carries them;
 - `accounting`: optional, a closed object whose members are any subset of
   the ten `quire.value.accounting/v1` counter names, each a JSON integer
   from 0 to `u64::MAX`, with the same defaults as FR-100's

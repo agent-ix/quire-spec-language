@@ -112,7 +112,7 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   `encode_hyper_query`; the altered clause gets the same `Fault` from both.
 - Step 4: the crate compiles; all three compile-fail cases fail to compile.
 - Step 5: the two identities are equal; the reversed listings give an
-  equal identity with an equal hash; the subject with no emission is
+  equal identity; the subject with no emission is
   refused `SubjectIdentityRefusal::Package`.
 - Step 6: `proved`, `decisive-witness`, `Uncertified`, method `k-induction`
   with the matched witness; `inconclusive`, `VacuousMatch` with the

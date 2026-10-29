@@ -40,8 +40,7 @@ def config_version_unit():
     body = source.split("format!(\n", 1)[1].split('",\n    )', 1)[0]
     text = body.replace("\\\n", "").replace('\\"', '"').replace("{{", "{").replace("}}", "}")
     text = text.replace("{PACKAGE_IDENTITY:?}", '"example/config-version"')
-    text = text.replace("{PACKAGE_VERSION:?}", '"1.0.0"').replace("{model_digest_hex}", "…")
-    text = re.sub(r'(model \w+ = "[^"]*") version "[^"]*" digest "[^"]*"', r"\1", text)
+    text = text.replace("{PACKAGE_VERSION:?}", '"1.0.0"')
     lines = []
     for raw in text.split("\\n"):
         raw = " ".join(raw.split()).lstrip('"')

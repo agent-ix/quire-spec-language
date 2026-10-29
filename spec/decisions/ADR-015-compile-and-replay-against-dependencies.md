@@ -25,7 +25,7 @@ relationships:
 ## Context
 
 ADR-011 §4 says E4 and the layer-6 `replay` facade check every dependency
-of a package against the `package_id` its import records, and that an
+of a package against the lock content its import records, and that an
 ordinary compile gets each dependency's source from "the S4 source
 resolution". The E4 closure exists (`CheckedPackage::link_with`,
 FR-087-AC-14). Five questions were still open, so E3 refused every
@@ -33,11 +33,10 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 
 1. How spine `compile`, the CLI and `replay` are given dependency sources,
    and the four FR-001 labels that name them. The labels fix each
-   dependency's `SourceOwner` and so its `package_id`.
+   dependency's `SourceOwner` and so its lock `sources` row.
 2. How an import names its library. An import names the library by
-   identity alone; the library's content is bound by the `package_id` the
-   compile recomputes, and ADR-013 O-02 forbids a `PackageId` built from
-   caller hex.
+   identity alone; the library is bound by the identity, version and lock rows
+   its compile yields, and ADR-013 O-02 forbids taking them from the caller.
 3. What a library identity is. `library::LibraryName` accepts identifier
    segments only; FR-322 admits any non-empty string, and QSpec's vectors
    use `test/geometry`.
@@ -64,7 +63,7 @@ A compile takes a **dependency input**: a set of **supplied libraries**
 `{identity, source}`, where `identity` is a `LibraryName` (D-3) and
 `source` a source unit: its
 FR-001 `SourceIdentity` (two labels), a display path and its bytes. It
-carries no `package_id`: a library's `package_id` is the one its own
+carries no package reference: a library's selection is the one its own
 compile yields (ADR-013 O-02). Building the input refuses, naming both
 offending libraries or the empty field:
 
@@ -113,10 +112,11 @@ these steps to each import in this order:
    under the same stage limits. Each library compile is charged the full S1
    to S4 limits as its own unit, and the number of library compiles is at
    most the number of supplied libraries.
-5. **View.** The library's `package_id` is recomputed by emitting its
-   checked package and is the library's selection in the lock. The emitted
-   v2 bytes are read through the I2 reader, with a selection request holding
-   that one selection (identity, recomputed `package_id`), into a
+5. **View.** The library's identity, version and lock rows are read from its
+   emitted checked package and are the library's selection in the lock (the
+   FR-322 `package_id` member is carried as the opaque string the emit wrote).
+   The emitted v2 bytes are read through the I2 reader, with a selection
+   request holding that one selection, into a
    `VerifiedPackage` and then its `ImportView` (ADR-011 §4 verified
    binding).
 
@@ -188,7 +188,7 @@ run before the recompile:
    (`invalid_package`/`invalid-value` at `/package/dependencies`). This
    runs before any dependency input is built or source compiled.
 2. The proved package's `sources`, and each entry's `sources`, name exactly
-   one `quire.source.bytes/v1` source, else the existing `NotASource` or
+   one source, else the existing `NotASource` or
    `SourceCount`.
 3. `replay` builds the dependency input from the entries: the identity from
    the entry, the two labels from its source reference, the
@@ -205,14 +205,15 @@ run before the recompile:
    When that import is in a library, not in the proved unit, the refusal
    arrives wrapped in `CompileRefusal::Dependency` with the library's path
    (D-1).
-5. After rules 6 and 7, the recompiled `package_id` equals the request's
-   (ADR-013 O-26), else the existing `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`). An edited
-   dependency source changes the proved package's `package_id` too, so rules
+5. After rules 6 and 7, the recompiled package's lock content (identity, version,
+   selections, source labels) equals the request's
+   (ADR-013 O-26), else the existing `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled lock content). An edited
+   dependency source changes the proved package's lock content too, so rules
    6 and 7 run first and name the stale dependency.
 6. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`).
-7. Every entry's `package_id` equals the closure's selection of its
+7. Every entry's lock content equals the closure's selection of its
    identity, else `ReplayRefusal::DependencyIdentityMismatch { identity,
    requested, recompiled }` (`stale_dependency`/`content-mismatch`),
    where `requested` is the entry's package identity and `recompiled` the
@@ -310,8 +311,8 @@ stays acyclic.
 
 ## Consequences
 
-- A package can import libraries on the spine, and its `package_id` binds
-  each dependency's `package_id` twice: through `dependency_selections` and
+- A package can import libraries on the spine, and its lock content binds
+  each dependency's selection twice: through `dependency_selections` and
   through every node that references into it.
 - A compile reads each library's source every time; nothing reads a
   dependency's v2 bytes as authority. The v2 bytes a compile emits for a

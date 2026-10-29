@@ -25,7 +25,7 @@ at the first refusing profile.
 Every unit starts with `language "ix:native" edition "1-draft";`, then its
 header profiles, each `profile <alias> = "<identity>";`, then
 `function f using v(): Boolean pure { true }`. `R` is
-`DefinitionLock::pinned().entry(CatalogRole::Root)`; the test reads its
+`DefinitionLock::builtin().entry(CatalogRole::Root)`; the test reads its
 identity from the catalog, never from a literal.
 
 1. Compile the unit whose one profile is `v` with `R`'s identity. Read the
@@ -49,10 +49,7 @@ identity from the catalog, never from a literal.
    declaration calls a named predicate, then one that declares a named
    predicate; then both units with `v` naming `quire.state.queries/v1`.
 
-8. Under `make conformance`, read QSpec's `complete-value-lock.json` and
-   `complete-value-selection-vectors.json` from `QSPEC_DIR`. Compare the
-   lock with `DefinitionLock::pinned()`, and admit each selection vector
-   through it.
+8. (Retired with FR-110-AC-9: no comparison of the built-in catalog with QSpec's lock.)
 9. For each layer FR-110-AC-10 names, compile a unit whose profile `v`
    names the layer and whose declaration holds one equality of each
    FR-110-AC-10 operand family, then the `r = 1` unit under
@@ -63,7 +60,7 @@ identity from the catalog, never from a literal.
     `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with
     a `Reference<Order>` field (FR-110-AC-11).
 11. Build `complete::header_profile_catalog()`. Call `contains` with each
-    identity of `DefinitionLock::pinned().layers()`, with
+    identity of `DefinitionLock::builtin().layers()`, with
     `test:unknown-profile` and with each `qualification_catalog` row's
     identity. For each layer step 6 names, run `complete::parse_with_catalog`
     with that catalog over the unit whose one profile `v` names the layer;
@@ -112,10 +109,7 @@ criteria each step backs.
   `unsupported_construct`/`declaration-form` at the declaration's span,
   each naming `quire.state.core/v1`, with no package; both
   `quire.state.queries/v1` units compile.
-- Step 8: the catalog's (role, authority, identity) rows equal QSpec's
-  `qualification_catalog` rows in order; its selection rules, trigger
-  vocabulary and refusal codes equal QSpec's; QSpec's selection vectors give
-  their recorded outcomes (FR-110-AC-9).
+- Step 8: retired.
 - Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
 - Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every `qualification_catalog` identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).

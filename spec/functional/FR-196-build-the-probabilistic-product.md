@@ -136,7 +136,7 @@ pub struct UndefinedPath {
     pub steps: Vec<PathStep>,            // the model steps from the initial state, in order
     pub probability: Rational,           // the product of the steps' probabilities
     pub position: u64,                   // the trace position of the state: the number of steps
-    pub state_key: Vec<u8>,              // the quire.simulation.state-key/v1 canonical byte string of the model state
+    pub state_key: StateKey,             // the quire.simulation.state-key/v1 canonical byte string of the model state
     pub key: ProbKey,                    // the complete pre-read product key at the undefined read (ADR-028 WS-1)
     pub read: UndefinedRead,             // the event atom or the state predicate (From, Until, Target) that has no value
     pub cause: UndefinedCause,

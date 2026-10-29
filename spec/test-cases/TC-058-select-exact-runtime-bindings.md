@@ -19,4 +19,4 @@ Use a successfully checked source with two authored clauses and exact native mod
 
 ## Expected Results
 
-Valid selection retains exact bindings. Foreign model/clause bindings receive invalid_model_binding, stale bytes receive stale_dependency, inventory conflicts receive invalid_runtime_input and invocation/role mismatches receive wrong_snapshot. No first-match or latest-revision selection and no predicate evaluation occurs.
+Valid selection retains exact bindings. Foreign model/clause bindings receive invalid_model_binding, a stale lock selection receives stale_dependency, inventory conflicts receive invalid_runtime_input and invocation/role mismatches receive wrong_snapshot. No first-match or latest-revision selection and no predicate evaluation occurs.

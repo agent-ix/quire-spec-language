@@ -258,7 +258,7 @@ distinct nominal type with private constructors in its stage module.
 | E1 | S0 → S1 | Source bytes, `SourceIdentity`, limits | Lossless CST | QSL `cst` |
 | E2 | S1 → S2 | A CST with no error or recovery node | Parsed forms | QSL `forms`; family form builders (ADR-012 §2) |
 | E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, each imported dependency's `CheckedGraph`, compiled from source, for typing imported declarations (ADR-015 D-5), library lock, and the package's lock evidence (§2.4) | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
-| E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its source through S1 to S4 (ADR-015 D-1), whose recomputed `package_id` equals that of the verified view E3 resolved against (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
+| E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its source through S1 to S4 (ADR-015 D-1), whose recompiled lock content (identity, version, selections, source labels) equals that of the verified view E3 resolved against (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
 | E5 | S4 → S5 | `quire.checked-package/v2` bytes only, and beside them the expected `package_id` the driver received in E4's `EmittedPackage`. IR's reader enforces conditions 1 and 2 of the §4 verified binding (supported version; the declared `package_id` member names the package's identity and version) under FR-322 (IR TC-048), and the driver compares the read `package_id` with that expected `package_id` | IR `CheckedPackageV2`, then IR nodes | IR reader. The wire contract is QSpec's. |
 | E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` carrying a `FamilyOutcome` | QSL `value::expression`, behind the layer-E `quire-eval` interface that defines `Evaluation` (FR-401) |
 | E7 | S5 → S6b | IR nodes; the per-item requirement records (keyed by occurrence key, ADR-012 §13.5; an operation-application record also holds its result bound and path condition, FR-062), which the driver passes from the in-process `CheckedPackage`, with each routed item's occurrence key and result bound (FR-075); bounds, and the `route` candidate sets, passed by the orchestrating driver (T-13) | `ObligationRecord` per requested item. For `supported` items: oracle, harness and one `KaniOutcome`. | CG, with RT ops and IR outcome (AD-016 arrows 3 to 6) |
@@ -498,7 +498,7 @@ A caller-supplied lock file never enters `package_id`.
 | `profile_selections` | The clause profile rows FR-322 defines (`temporal_profile`, `protocol_profile`), one per header `profile` that selects a clause profile; the clause family owning that role resolves it in its catalog and writes the row (ADR-012 §2; `TemporalTrace`, `ProtocolClause`, #218). A header `profile` the `Value` family resolves selects the `DefinitionLock` catalog's `root` row (`quire.value.complete/v1`) by identity alone, matching QSpec's `profile v = "<id>";` header grammar, or refuses, and writes no row: `root` is an always-selected `definition_selections` entry (FR-110, amended 2026-09-26). |
 | `definition_selections` and each law `DefinitionRef` | The definition identity of each `DefinitionLock` catalog row the package selects: the definition the QSL build implements, named by its authority and identity. |
 | `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1, each by identity and version (the lock row). Spine `compile` (§5) runs I1 over the unit's `model` declarations (amended 2026-09-25). |
-| `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
+| `sources` | `RawSourceRef` (authority and identity) of the sources E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
 | `dependency_selections` | One `{identity, package_id}` entry per directly imported library identity: the identity each import names and the dependency's own `package_id`; a selection binds by identity and carries no version (QSpec FR-322-AC-35) |
 
@@ -608,9 +608,9 @@ re-walks them against the scenarios.
   mapping, multi-entry request or export listing that this consumer
   does not call.
 - **Dependency binding (E4, E9).** Each dependency in the S4 closure is
-  compiled from source through S1 to S4, and its recomputed `package_id`
+  compiled from source through S1 to S4, and its recompiled lock content
   equals the `package_id` of the verified view that E3 resolved against.
-  E4 records that recomputed `package_id` as the dependency's selection. The
+  E4 records that recompiled lock content as the dependency's selection. The
   layer-6 `replay` facade at E9 checks it against each request entry and
   otherwise refuses with `DependencyIdentityMismatch`, catalog code
   `stale_dependency` (ADR-013 O-26, C-13), yielding no verdict. The dependency source bytes, and the view each check compares

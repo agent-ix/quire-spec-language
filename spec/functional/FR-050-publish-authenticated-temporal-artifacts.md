@@ -57,8 +57,7 @@ The public Rust producer entry point SHALL be
 `protocol_artifact::native::admit_v2(proofs, selected, temporal, limits) -> Report<AdmissionV2>`.
 
 The `/2` handoff is generated, never committed. The repository SHALL commit no
-tree under `artifacts/compiled-protocol-v2`, and no checksum manifest, frozen
-digest or file count of handoff files. The only producer of the handoff is
+tree under `artifacts/compiled-protocol-v2`, and no file count of handoff files. The only producer of the handoff is
 `protocol_artifact::handoff::write_v2(directory)` (behind the `handoff-writer`
 feature), which a consumer's build or test calls to write the handoff into a
 directory the consumer chooses, under its own build output. That call is the
@@ -224,9 +223,9 @@ extension.
 | FR-050-AC-7 | The four member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, artifact reference, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
 | FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, artifact reference, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138) |
 | FR-050-AC-9 | In a git checkout, `git ls-files` lists no file under `artifacts/compiled-protocol-v2`. | Test (TC-138) |
-| FR-050-AC-10 | In a git checkout, `git ls-files` lists no checksum manifest of `/1` or `/2` handoff files. | Test (TC-138) |
+| FR-050-AC-10 | **RETIRED (no checksum-manifest assertion).** Nothing is asserted about a manifest of handoff files. | Test (TC-138), retired |
 | FR-050-AC-11 | `protocol_artifact::handoff::SOURCE_ROOT` names the crate's manifest directory, and the authored sources the writers read exist beneath it. | Test (TC-138) |
-| FR-050-AC-12 | `protocol_artifact::handoff` exports none of `PUBLISHED_HANDOFF`, `PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, each asserted by name. | Test (TC-138) |
+| FR-050-AC-12 | `protocol_artifact::handoff` exports neither `PUBLISHED_HANDOFF` nor `PUBLISHED_V1_HANDOFF`, each asserted by name. | Test (TC-138) |
 
 ## Dependencies
 

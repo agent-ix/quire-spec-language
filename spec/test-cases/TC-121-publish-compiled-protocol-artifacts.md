@@ -209,10 +209,8 @@ observations belong only to the later consumer fixture.
 7. Give exact emitted bytes and external reference to the bounded public reader
    without invoking native parsing. Mutate every closed object/tag/member,
    duplicate equal entries, introduce invalid indices/cycles/noncanonical bytes,
-   then change graph/literal/profile claims and recompute a new seal. Under the
-   original expected selection all resealed mutants refuse. Separately show
-   that an attacker-supplied replacement seal is not accepted inventory or
-   source-compilation proof. Compare typed causes/loci, never English messages.
+   then change graph/literal/profile claims. Under the
+   original expected selection all mutants refuse. Compare typed causes/loci, never English messages.
 8. Refuse one required family/export beside an independent valid declaration;
    retain both compilation dispositions but no full-package artifact. Keep
    unsupported reader/version/canonical-domain, known input refusal and resource
