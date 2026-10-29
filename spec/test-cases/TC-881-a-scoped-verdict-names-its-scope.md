@@ -23,9 +23,13 @@ Every step runs `cargo run --package xtask -- qualify --corpus <dir>`, adding th
 3. Run the gate over one corpus that QSpec FR-336 rejects for its
    contract version, then another corpus QSpec FR-336 rejects for a missing
    required member.
-4. Run over TC-880 step 1's corpus with `--capability CAP-Z`, an id the corpus does not list.
-5. Use three corpus cases rejected by QSpec FR-336's validation suite, each
-   for a distinct validation failure. Run each through the QSL gate.
+4. Run over TC-880 step 1's corpus with `--capability CAP-Z`, an id the corpus does not declare.
+5. Starting from the valid corpus in TC-880, create four invalid corpora:
+   duplicate the root `contract_version` member in raw JSON; set a
+   `coverage.primary` entry's `applicability.consumer_types` member to an
+   out-of-domain value; remove the `expected.disposition` member from one
+   vector; and serialize the otherwise valid corpus with non-canonical JSON
+   whitespace. Run each through the QSL gate.
 6. Over the valid corpus, run separately with `--limit s9.nodes=1`,
    `--limit s3.nodes=ten`, `--limit s3.nodes=-1`, and two occurrences of
    `--limit s3.nodes=5`. Observe the subject invocation boundary in every
@@ -44,10 +48,13 @@ Tag the tests `#[trace("TC-881", "FR-353-AC-n")]`.
 
 - Step 1: `qualified` for the named scope, no `complete-v1: qualified` line, exit 0.
 - Step 2: the I/O refusal, no verdict, exit 2.
-- Step 3: the owning QSpec FR-336 refusal for each corpus, propagated with its cause and locus; no verdict, no vector executes, exit 2 each.
+- Step 3: the QSL preflight refuses each corpus before vector execution, gives no verdict and exits 2; the schema diagnostic for the unsupported version includes `/contract_version`, and the missing-member diagnostic includes the validator's instance path.
 - Step 4: `unknown_required_feature`/`unknown-feature` naming `CAP-Z`, no verdict, no vector executed, exit 2.
-- Step 5: each QSpec FR-336 validation refusal is propagated with its cause
-  and locus; no verdict, no vector executes, exit 2.
+- Step 5: each corpus is refused before vector execution, with no verdict and
+  exit 2. The duplicate-key diagnostic identifies `contract_version`; the
+  out-of-domain and missing-disposition schema diagnostics include their
+  validator instance paths; the non-canonical encoding diagnostic identifies
+  that the corpus bytes are not canonical JSON.
 - Step 6: usage refusal naming the offending operand; no verdict, no
   vector executed, exit 2. A valid earlier operand starts no stage.
 - Step 7: cause `empty-scope`, locus the resolved qualification scope,
