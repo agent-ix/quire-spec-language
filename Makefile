@@ -302,6 +302,7 @@ ci-clean-build:
 # outside `#[cfg(feature = "std")]` fails here. Own target dir, so no other
 # lane's artifacts are reused (NFR-013).
 build-no-std:
+	rustup target add thumbv7em-none-eabi
 	cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 	cargo clippy --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
 	cargo test --locked -p qsl-foundation --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
@@ -319,7 +320,7 @@ ci-docs:
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
 # Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored), and builds on the toolchain `rust-toolchain.toml` selects, with no sanitizer:
+# gitignored), and builds on the default toolchain, with no sanitizer:
 # QSL's crates forbid `unsafe`, so the run checks panics, aborts
 # and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000
