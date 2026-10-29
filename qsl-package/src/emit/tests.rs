@@ -280,6 +280,14 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
+/// The emission path mints the identity preimage under the FR-322 version
+/// label, written out here rather than read from the constant it pins.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn the_emission_identity_preimage_carries_its_literal_version() {
+    assert_eq!(IDENTITY_PREIMAGE_V2, "quire.checked-package-id/v2");
+}
+
 /// The small checked producer's envelope is canonical, carries the identity
 /// the emitter minted, is deterministic, and is admitted by the independent
 /// V2 reader. Two different packages never share an identity.
@@ -2975,7 +2983,7 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
     let entry = |identity: &str| {
         json!({
             "identity": identity,
-            "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": d.hex()},
+            "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": d.hex()},
         })
     };
     let expected = json!([entry("test/geometry"), entry("test/units")]);

@@ -1037,13 +1037,11 @@ mod tests {
     fn resolved_graph_identity_is_the_hash_of_its_hand_written_preimage() {
         const TEXT: &str =
             r#"{"capabilities":["V1-SRC-001","V1-TYPE-002"],"definitions":[],"models":[]}"#;
+        // FR-111's domain label, written out; not the production constant.
+        const DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
         let mut hasher = Sha256::new();
-        hasher.update(
-            u64::try_from(RESOLVED_GRAPH_DOMAIN.len())
-                .unwrap()
-                .to_be_bytes(),
-        );
-        hasher.update(RESOLVED_GRAPH_DOMAIN);
+        hasher.update(u64::try_from(DOMAIN.len()).unwrap().to_be_bytes());
+        hasher.update(DOMAIN);
         hasher.update(TEXT.as_bytes());
         let digest = format!("{:x}", hasher.finalize());
 
