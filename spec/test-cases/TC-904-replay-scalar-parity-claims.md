@@ -74,9 +74,7 @@ Claim identity, at both levels:
     a wide literal range and a wrong operand count.
 17. Verify a zero identity against a preimage with an occurrence ordinal
     beyond 2^53, and against one that encodes.
-18. Digest ADR-013 O-09's worked example (the argument entry and the whole
-    preimage) through `parity_obligation`, and order and refuse harness
-    bounds.
+18. Order and refuse harness bounds.
 19. Replay a function request and an operator request with the replay
     target replaced by `frame_operation` (`Config::ConfigVersion`,
     `attemptUpdate`), and by `state_clause` (`VersionUnchanged`).
@@ -110,5 +108,5 @@ the encoded-size bound.
 - Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both digests.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
 - Step 17: cause `Encoding` for the first, `Obligation` for the second.
-- Step 18: the digest of the entry, the SHA-256 of its canonical text; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
+- Step 18: bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
 - Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

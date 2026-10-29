@@ -75,8 +75,14 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
     assert!(Source::read_verified(id, "x", b"abc", digest, 2)
         .unwrap_err()
         .is_incomplete());
-    for invalid in ["", "sha256:abc"] {
-        assert!(invalid.parse::<ByteDigest>().is_err());
+    let hex = format!("{digest:x}");
+    for invalid in [
+        String::new(),
+        "sha256:abc".to_owned(),
+        format!("SHA256:{hex}"),
+        format!("sha256:{}", hex.to_ascii_uppercase()),
+    ] {
+        assert!(invalid.parse::<ByteDigest>().is_err(), "{invalid}");
     }
 }
 
