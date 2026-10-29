@@ -377,6 +377,7 @@ fn a_reduced_holds_outcome_settles_uncertified_with_its_reductions() {
     let reduced = StateGraphInstanceOutcome {
         outcome: StateGraphOutcome::HoldsReduced {
             reductions: reductions.clone(),
+            witnesses: None,
         },
         ..instance.clone()
     };

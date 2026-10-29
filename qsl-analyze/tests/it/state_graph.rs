@@ -205,6 +205,100 @@ fn partial_order_reduction_is_applied_by_the_state_graph_engine() {
     ));
 }
 
+/// FR-168-AC-14 (TC-593): a completed POR proof of `possible` is reported as
+/// reduced and retains one concrete witness per initial state.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn possible_under_por_returns_holds_reduced_with_witnesses() {
+    let world = crate::graph_world::config_world_over(
+        "pre CanAdvance using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 2 }\n",
+        "possible Anything using v { true }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples());
+    request.reductions.partial_order = true;
+
+    let result = run(request);
+    let plain = run(world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples()));
+    assert_eq!((plain.graph.stats.nodes, plain.graph.stats.edges), (27, 54));
+    assert_eq!((result.graph.stats.nodes, result.graph.stats.edges), (7, 6));
+    assert!(
+        matches!(
+            result.items[0][0].outcome,
+            StateGraphOutcome::HoldsReduced { ref reductions, witnesses: Some(ref paths) }
+                if !reductions.is_empty() && paths.len() == 1
+        ),
+        "reduced possible outcome: {:?}; graph stats: {:?}",
+        result.items[0][0].outcome,
+        result.graph.stats
+    );
+}
+
+/// FR-167-AC-6 (TC-592): state-graph exploration canonicalises roots and
+/// successors under the selected symmetric population group.
+#[trace("TC-592", "FR-167-AC-6")]
+#[test]
+fn symmetry_reduction_quotients_state_graph_and_marks_the_proof_reduced() {
+    let world = crate::graph_world::symmetric_config_world_over(
+        "",
+        REACHES_TWO,
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(
+        &["a", "b", "c"],
+        vec![world.item("ReachesTwo")],
+        no_samples(),
+    );
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let reduced = run(request);
+    let plain = run(world.request(
+        &["a", "b", "c"],
+        vec![world.item("ReachesTwo")],
+        no_samples(),
+    ));
+    assert_eq!(reduced.graph.stats.nodes, 18);
+    assert_eq!(plain.graph.stats.nodes, 27);
+    assert!(reduced.graph.stats.nodes < plain.graph.stats.nodes);
+    assert!(reduced
+        .graph
+        .edges
+        .iter()
+        .any(|edge| edge.permutation != qsl_eval::simulation::Permutation::identity()));
+    assert!(matches!(
+        reduced.items[0][0].outcome,
+        StateGraphOutcome::HoldsReduced { ref reductions, witnesses: Some(ref paths) }
+            if matches!(reductions.as_slice(), [qsl_replay::AppliedReduction::Symmetry { stabiliser, .. }] if stabiliser.len() == 1 && stabiliser[0].keys == ["b", "c"])
+                && paths.len() == 1
+    ));
+    let StateGraphOutcome::HoldsReduced {
+        witnesses: Some(paths),
+        ..
+    } = &reduced.items[0][0].outcome
+    else {
+        unreachable!("the completed possible item has a reduced witness")
+    };
+    assert_eq!(
+        world.value(
+            &positions(&world, &["a", "b", "c"], &paths[0].path)[2],
+            "a",
+            "versionNumber"
+        ),
+        2
+    );
+}
+
 /// The state at each position of `path`, re-executed from its initial
 /// state: each step's post-state is the successor of its transition whose
 /// digest it records.
@@ -594,6 +688,7 @@ fn the_deadlock_item_and_the_subject_refusals() {
         alias: "O",
         object: "Counter",
         population: "counters",
+        symmetric: false,
         fields: vec![Field {
             name: "value",
             range: None,

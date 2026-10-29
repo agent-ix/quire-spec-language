@@ -31,7 +31,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateReading};
-use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
+use qsl_eval::simulation::{
+    ExpansionLimit, ExpansionStop, NotSimulated, Permutation, SymmetryGroup,
+};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::ReplayRefusal;
@@ -127,6 +129,9 @@ pub struct GraphEdge {
     pub transition: ModelTransition,
     /// The post-state's node.
     pub target: NodeIndex,
+    /// The permutation that maps the concrete successor to its canonical
+    /// target; the identity when symmetry is not selected.
+    pub permutation: Permutation,
 }
 
 /// The counts of one exploration.
@@ -234,6 +239,8 @@ struct InstanceView<'a> {
     instance: usize,
     over: Option<ObjectReference>,
     model_instance: Option<ModelInstance>,
+    /// The instance's orbit under the declared symmetry group.
+    orbit: Vec<String>,
     predicates: Vec<(PredicateRole, Option<&'a CheckedPredicateBody>)>,
 }
 
@@ -280,11 +287,77 @@ fn instances<'a>(
                     instance,
                     over,
                     model_instance,
+                    orbit: Vec::new(),
                     predicates: bodies.clone(),
                 })
                 .collect())
         })
         .collect()
+}
+
+/// Collapse symmetry-equivalent claim instances to their least binding.
+fn symmetry_instances<'a>(
+    views: Vec<Vec<InstanceView<'a>>>,
+    declared: &SymmetryGroup,
+) -> Result<Vec<Vec<InstanceView<'a>>>, ModelCheckRefusal> {
+    views
+        .into_iter()
+        .map(|instances| {
+            let mut result = Vec::new();
+            for view in instances {
+                let Some(binding) = view.model_instance.clone() else {
+                    let mut view = view;
+                    view.instance = result.len();
+                    result.push(view);
+                    continue;
+                };
+                let orbit = declared
+                    .class_of(&binding.population, &binding.key)
+                    .map_or_else(|| vec![binding.key.clone()], |class| class.keys.clone());
+                let representative = orbit
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| fault("a-symmetry-orbit-has-a-representative"))?;
+                if binding.key != representative {
+                    continue;
+                }
+                let mut view = view;
+                view.instance = result.len();
+                view.orbit = orbit;
+                result.push(view);
+            }
+            // Ensure identity-bound predicates remain invariant for every
+            // representative in the shared exploration: retain only the
+            // symmetry transformations that fix all representatives.
+            Ok(result)
+        })
+        .collect()
+}
+
+/// The common subgroup that preserves every retained instance label.
+fn common_stabiliser(views: &[Vec<InstanceView<'_>>], declared: &SymmetryGroup) -> SymmetryGroup {
+    let fixed: BTreeSet<_> = views
+        .iter()
+        .flatten()
+        .filter_map(|view| {
+            view.model_instance
+                .as_ref()
+                .map(|binding| (binding.population.clone(), binding.key.clone()))
+        })
+        .collect();
+    SymmetryGroup {
+        classes: declared
+            .classes
+            .iter()
+            .filter_map(|class| {
+                let mut class = class.clone();
+                class
+                    .keys
+                    .retain(|key| !fixed.contains(&(class.population.clone(), key.clone())));
+                (class.keys.len() >= 2).then_some(class)
+            })
+            .collect(),
+    }
 }
 
 /// The refusal of an unbounded or unclassifiable subject.
@@ -501,6 +574,26 @@ pub fn check_state_graph(
             seed,
         });
     }
+    let declared_symmetry = super::reduce::admit(&system, &request.reductions.symmetry)
+        .map_err(ModelCheckRefusal::Symmetry)?;
+    if !declared_symmetry.is_trivial() {
+        let closed =
+            super::reduce::closure(&system, &declared_symmetry).map_err(
+                |refusal| match refusal {
+                    super::reduce::ClosureRefusal::Encoding(refusal) => {
+                        ModelCheckRefusal::Encoding(refusal)
+                    }
+                    super::reduce::ClosureRefusal::Unordered => {
+                        fault("a-permuted-collection-is-ordered")
+                    }
+                },
+            )?;
+        if closed.is_some() {
+            return Err(fault("state-graph-symmetry-initial-closure"));
+        }
+    }
+    let views = symmetry_instances(views, &declared_symmetry)?;
+    let symmetry_group = common_stabiliser(&views, &declared_symmetry);
     let possible: Vec<&InstanceView<'_>> = views
         .iter()
         .zip(&request.items)
@@ -569,6 +662,7 @@ pub fn check_state_graph(
         views: &views,
         deadlock_freedom: request.deadlock_freedom,
         por: por.as_ref(),
+        symmetry: &symmetry_group,
     }
     .run()?;
     let items = views
@@ -601,14 +695,29 @@ pub fn check_state_graph(
                         view,
                         sampled.witnesses(view),
                     )?;
-                    let outcome =
-                        if explored.reduced && matches!(outcome, StateGraphOutcome::Holds { .. }) {
-                            StateGraphOutcome::HoldsReduced {
-                                reductions: applied_reductions(explored.partial_order_reduced),
+                    let outcome = if explored.reduced {
+                        let reductions = applied_reductions(
+                            explored.partial_order_reduced,
+                            &declared_symmetry,
+                            &symmetry_group,
+                            &view.orbit,
+                        );
+                        match outcome {
+                            StateGraphOutcome::Holds { .. } => StateGraphOutcome::HoldsReduced {
+                                reductions,
+                                witnesses: None,
+                            },
+                            StateGraphOutcome::Witnessed { paths, .. } => {
+                                StateGraphOutcome::HoldsReduced {
+                                    reductions,
+                                    witnesses: Some(paths),
+                                }
                             }
-                        } else {
-                            outcome
-                        };
+                            other => other,
+                        }
+                    } else {
+                        outcome
+                    };
                     Ok(StateGraphInstanceOutcome {
                         over: view.over.clone(),
                         outcome,
@@ -627,14 +736,26 @@ pub fn check_state_graph(
     })
 }
 
-fn applied_reductions(partial_order: bool) -> Vec<AppliedReduction> {
-    if partial_order {
-        vec![AppliedReduction::PartialOrder {
-            proviso: Proviso::BreadthFirstRevisit,
-        }]
-    } else {
-        Vec::new()
+fn applied_reductions(
+    partial_order: bool,
+    declared: &SymmetryGroup,
+    applied: &SymmetryGroup,
+    orbit: &[String],
+) -> Vec<AppliedReduction> {
+    let mut reductions = Vec::new();
+    if !applied.is_trivial() {
+        reductions.push(AppliedReduction::Symmetry {
+            groups: declared.classes.clone(),
+            orbit: orbit.to_vec(),
+            stabiliser: applied.classes.clone(),
+        });
     }
+    if partial_order {
+        reductions.push(AppliedReduction::PartialOrder {
+            proviso: Proviso::BreadthFirstRevisit,
+        });
+    }
+    reductions
 }
 
 /// ADR-022 GR-1: selected state-space reductions are rejected by the form's

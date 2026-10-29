@@ -176,6 +176,10 @@ pub fn settle_state_graph(
         {
             Row::failed()
         }
+        StateGraphOutcome::HoldsReduced {
+            witnesses: Some(paths),
+            ..
+        } if !one_per_initial(paths, initial) => Row::failed(),
         StateGraphOutcome::Witnessed { paths, certificate } => check.row(certificate, || {
             replayed(replay(instance), package_id, || {
                 Row::proved(
@@ -189,7 +193,7 @@ pub fn settle_state_graph(
         StateGraphOutcome::Holds { certificate } => check.row(certificate, || {
             Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
         }),
-        StateGraphOutcome::HoldsReduced { reductions } => Row::proof(
+        StateGraphOutcome::HoldsReduced { reductions, .. } => Row::proof(
             ProofBasis::Reduced {
                 reductions: reductions.clone(),
             },

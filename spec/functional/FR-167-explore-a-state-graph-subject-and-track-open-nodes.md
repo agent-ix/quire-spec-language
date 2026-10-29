@@ -114,8 +114,13 @@ pub enum RunEnd {
   SHALL canonicalise each initial and successor state with the declaration's
   group or the instance binding's stabiliser (ADR-021 SYM-6, SYM-7), coalesce
   equal canonical states, and retain the permutation that maps each concrete
-  successor to its canonical target on the edge. Predicate labels SHALL be
-  evaluated for each item instance under its binding, using the symmetric
+  successor to its canonical target on the edge. For an item whose `over`
+  bindings form one or more symmetry orbits, the engine SHALL decide one
+  instance per orbit, bound to its least key, and use that binding's
+  stabiliser. Because the graph is shared, it SHALL use the intersection of
+  the stabilisers of all retained instances; this group fixes every binding
+  whose predicate labels are stored in the graph. Predicate labels SHALL be
+  evaluated for each retained instance under its binding, using the symmetric
   predicates admitted by ADR-021 SYM-3. The graph SHALL retain enough edge
   information for FR-168 witnesses and FR-170 replay to recover concrete
   transitions.

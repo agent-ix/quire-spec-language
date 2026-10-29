@@ -61,6 +61,8 @@ pub(crate) struct Model {
     pub(crate) object: &'static str,
     /// The population of the type.
     pub(crate) population: &'static str,
+    /// Whether the population is declared symmetric.
+    pub(crate) symmetric: bool,
     pub(crate) fields: Vec<Field>,
     pub(crate) operations: Vec<Operation>,
 }
@@ -198,6 +200,7 @@ impl Model {
                 "identity": population, "displayName": population,
                 "kind": {"module": self.package, "name": "population"},
                 "members": [object], "extent": "closed", "origin": Self::origin(&population),
+            "symmetric": self.symmetric,
             }],
         })
         .to_string()
@@ -436,6 +439,7 @@ pub(crate) fn config_version() -> Model {
         alias: "Config",
         object: "ConfigVersion",
         population: "config_history",
+        symmetric: false,
         fields: vec![Field {
             name: "versionNumber",
             range: Some((0, 3)),
@@ -444,6 +448,13 @@ pub(crate) fn config_version() -> Model {
             name: "attemptUpdate",
             modifies: &["versionNumber"],
         }],
+    }
+}
+
+pub(crate) fn symmetric_config_version() -> Model {
+    Model {
+        symmetric: true,
+        ..config_version()
     }
 }
 
@@ -478,6 +489,25 @@ pub(crate) fn config_world_over(
     keys: &[&str],
     starts: &[Vec<i64>],
 ) -> World {
+    config_world_over_model(config_version(), extra, claims, keys, starts)
+}
+
+pub(crate) fn symmetric_config_world_over(
+    extra: &str,
+    claims: &str,
+    keys: &[&str],
+    starts: &[Vec<i64>],
+) -> World {
+    config_world_over_model(symmetric_config_version(), extra, claims, keys, starts)
+}
+
+fn config_world_over_model(
+    model: Model,
+    extra: &str,
+    claims: &str,
+    keys: &[&str],
+    starts: &[Vec<i64>],
+) -> World {
     let fields: Vec<Vec<[(&str, i64); 1]>> = starts
         .iter()
         .map(|values| {
@@ -497,11 +527,7 @@ pub(crate) fn config_world_over(
         })
         .collect();
     let starts: Vec<&[Object<'_>]> = objects.iter().map(Vec::as_slice).collect();
-    World::new(
-        config_version(),
-        &format!("{CONFIG_CONTRACT}{extra}{claims}"),
-        &starts,
-    )
+    World::new(model, &format!("{CONFIG_CONTRACT}{extra}{claims}"), &starts)
 }
 
 /// §7.2's game: `phase` is `Start` 0, `Mid` 1, `Lost` 2 or `Won` 3, so
@@ -548,6 +574,7 @@ pub(crate) fn game(count: bool, restart: bool) -> Model {
         alias: "G",
         object: "Game",
         population: "games",
+        symmetric: false,
         fields,
         operations,
     }
@@ -629,6 +656,7 @@ pub(crate) fn job(reset: bool) -> Model {
         alias: "M",
         object: "Job",
         population: "jobs",
+        symmetric: false,
         fields: vec![flag("a"), flag("b"), flag("done")],
         operations,
     }
@@ -744,6 +772,7 @@ fn moves_world(
         alias,
         object,
         population,
+        symmetric: false,
         fields: vec![Field {
             name: "pos",
             range: Some((0, high)),
