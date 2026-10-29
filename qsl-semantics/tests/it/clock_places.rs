@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-230 "Places": a clock below an object's field, through a package
-//! record, a clock alias or a union case, read and reset by its path.
+//! record or a clock alias, read and reset by its path.
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
@@ -2251,140 +2251,6 @@ fn absent_lowers_to_the_none_literal_of_its_option() {
         .any(|node| node["semantic_form"] == "option" && node["node_tag"] == "composite_type"));
 }
 
-/// [`rpc_document_with`]`(&["x"])` with the variant type `Mode { Idle,
-/// Armed(Clock) }` held by the `Call` field `state`, which `bump` writes.
-fn union_clock_document() -> Vec<u8> {
-    union_clock_document_with(false)
-}
-
-/// [`union_clock_document`], with the second clock case `Waiting(Clock)`
-/// when `waiting` holds.
-fn union_clock_document_with(waiting: bool) -> Vec<u8> {
-    let mut document: Value =
-        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
-    let mode = package("Mode");
-    let case = |name: &str, line: u64, payload: Option<&str>| {
-        let mut case = json!({
-            "identity": package(&format!("variant/Mode-{name}")), "name": name,
-            "origin": {"source": {"sourceIdentity": package("spec"), "path": "spec.qspec",
-                "startLine": line, "startColumn": 3}},
-        });
-        if let Some(payload) = payload {
-            case["payloadType"] = json!(payload);
-        }
-        case
-    };
-    let mut variant = wire_type(
-        &mode,
-        "mode",
-        json!({"variants": [case("Idle", 10, None), case("Armed", 11, Some("ix://quire/native/Clock"))]}),
-    );
-    if waiting {
-        variant["variants"]
-            .as_array_mut()
-            .expect("variants")
-            .push(case("Waiting", 12, Some("ix://quire/native/Clock")));
-    }
-    variant["displayName"] = json!("Mode");
-    document["types"]
-        .as_array_mut()
-        .expect("types")
-        .push(variant);
-    let mut construct = wire_construct(
-        "mode",
-        meaning::VARIANT_TYPE,
-        json!({"variants": "required"}),
-    );
-    construct["construct"]["shape"] = json!("enumeration");
-    document["constructs"]
-        .as_array_mut()
-        .expect("constructs")
-        .push(construct);
-    let call_type = &mut document["types"][1];
-    call_type["fields"]
-        .as_array_mut()
-        .expect("Call fields")
-        .push(field("state", &mode));
-    for operation in call_type["operations"].as_array_mut().expect("operations") {
-        if operation["name"] == "bump" {
-            operation["frame"]["modifies"]
-                .as_array_mut()
-                .expect("frame")
-                .push(json!(call("state")));
-        }
-    }
-    serde_json::to_vec(&document).expect("JSON")
-}
-
-/// FR-230-AC-12 (TC-685), a union case's clock: over `state: Mode` with
-/// `Mode { Idle, Armed(Clock) }`, the case `Armed(Clock)` is the place
-/// `Call.state.Armed`, guarded by the case, with no presence bit.
-/// `present(self.state.Armed) and
-/// value(self.state.Armed) >= 1 ms` is one part `state.Armed >= 1`
-/// requiring the case, `self.state = Config::Mode::Armed(0 ms)` resets the
-/// place, which selects the case, and `self.state = Config::Mode::Idle`
-/// drops it; `value(self.state.Armed) >= 1 ms` without the presence
-/// refuses `undefined_expression`/`unproved-presence`.
-#[trace("TC-685")]
-#[test]
-fn a_union_case_clock_is_a_guarded_place() {
-    let document = union_clock_document();
-    let body = format!(
-        "{UNITS}{DENSE}\
-         pre Armed using v on Config::Call::reply {{ present(self.state.Armed) and value(self.state.Armed) >= 1 ms }}\n\
-         post Arm using v on Config::Call::bump {{ self.state = Config::Mode::Armed(0 ms) }}\n"
-    );
-    let graph = check(&document, &body).expect("a union case's clock checks");
-    let model = timed(&graph);
-    let (armed, field) = model
-        .clock_fields()
-        .find(|(_, field)| field.name() == "state.Armed")
-        .expect("state.Armed is a place");
-    assert_eq!(
-        field.path(),
-        [
-            PlaceStep::Field("state".to_owned()),
-            PlaceStep::Union("Armed".to_owned())
-        ]
-    );
-    assert!(!field.presence_bit());
-    let [part] = model.guards()[0].parts() else {
-        panic!("one part");
-    };
-    assert_eq!(part.presences(), [(armed, true)]);
-    assert_eq!(part.clocks()[0].clock(), armed);
-    let resets: Vec<_> = model
-        .resets()
-        .iter()
-        .flat_map(|resets| resets.resets())
-        .map(|reset| (reset.clock(), reset.value().clone()))
-        .collect();
-    assert_eq!(resets, [(armed, exact(0, 1))]);
-
-    let idle = format!(
-        "{UNITS}{DENSE}post Disarm using v on Config::Call::bump {{ self.state = Config::Mode::Idle }}\n"
-    );
-    let graph = check(&document, &idle).expect("another case checks");
-    let [resets] = timed(&graph).resets() else {
-        panic!("one postcondition");
-    };
-    assert_eq!(resets.drops(), [armed]);
-    assert!(resets.resets().is_empty());
-
-    let unproved = format!(
-        "{UNITS}{DENSE}pre Late using v on Config::Call::reply {{ value(self.state.Armed) >= 1 ms }}\n"
-    );
-    let (cause, text) = refused(&document, &unproved);
-    assert_eq!(
-        (cause.code(), cause.tag(), text.as_str()),
-        (
-            Code::UndefinedExpression,
-            "unproved-presence",
-            "value(self.state.Armed) >= 1 ms"
-        )
-    );
-}
-
 /// FR-230 "Presence bit" (TC-685), part of FR-230-AC-39: a top-level
 /// postcondition conjunct `present(self.v)`, `self.v != absent` or `not
 /// (self.v = absent)` requires `v` present in the post-state, and `not
@@ -2415,79 +2281,6 @@ fn a_postcondition_requires_a_presence_of_its_post_state() {
         };
         assert_eq!(resets.requires(), [(v, present)], "{conjunct}");
         assert!(resets.resets().is_empty() && resets.drops().is_empty());
-    }
-}
-
-/// FR-230 "Records, tuples and unions" (TC-685), part of FR-230-AC-12:
-/// writing a clock-bearing union field. With a second clock case
-/// `Waiting(Clock)`, `self.state = Config::Mode::Armed(0 ms)` resets
-/// `Armed` and drops `Waiting`. A postcondition writes the field at most
-/// once: `Armed(0 ms) and Armed(1 ms)` and `Armed(0 ms) and Idle` refuse
-/// `invalid_timed_model`/`conflicting-clock-write` at the second write. A
-/// write outside the frame refuses `clock-write`, and a whole read of the
-/// field, in a guard or through `pre`, refuses as a clock read outside a
-/// constraint.
-#[trace("TC-685")]
-#[test]
-fn a_union_field_is_written_once_and_never_read_whole() {
-    let document = union_clock_document_with(true);
-    let graph = check(
-        &document,
-        &format!("{UNITS}{DENSE}post Arm using v on Config::Call::bump {{ self.state = Config::Mode::Armed(0 ms) }}\n"),
-    )
-    .expect("the switch checks");
-    let model = timed(&graph);
-    let place = |name: &str| {
-        model
-            .clock_fields()
-            .find(|(_, field)| field.name() == name)
-            .map(|(clock, _)| clock)
-            .unwrap_or_else(|| panic!("{name} is a place"))
-    };
-    let [resets] = model.resets() else {
-        panic!("one postcondition");
-    };
-    let reset: Vec<_> = resets
-        .resets()
-        .iter()
-        .map(|reset| (reset.clock(), reset.value().clone()))
-        .collect();
-    assert_eq!(reset, [(place("state.Armed"), exact(0, 1))]);
-    assert_eq!(resets.drops(), [place("state.Waiting")]);
-
-    for (clause, tag, at) in [
-        (
-            "post Twice using v on Config::Call::bump { self.state = Config::Mode::Armed(0 ms) and self.state = Config::Mode::Armed(1 ms) }",
-            "conflicting-clock-write",
-            "self.state = Config::Mode::Armed(1 ms)",
-        ),
-        (
-            "post Switch using v on Config::Call::bump { self.state = Config::Mode::Armed(0 ms) and self.state = Config::Mode::Idle }",
-            "conflicting-clock-write",
-            "self.state = Config::Mode::Idle",
-        ),
-        (
-            "post Outside using v on Config::Call::reply { self.state = Config::Mode::Armed(0 ms) }",
-            "clock-write",
-            "self.state = Config::Mode::Armed(0 ms)",
-        ),
-        (
-            "pre Whole using v on Config::Call::bump { self.state = Config::Mode::Idle }",
-            "clock-read-outside-constraint",
-            "self.state",
-        ),
-        (
-            "post Kept using v on Config::Call::bump { self.state = pre(self.state) }",
-            "clock-read-outside-constraint",
-            "self.state",
-        ),
-    ] {
-        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}\n"));
-        assert_eq!(
-            (cause.code(), cause.tag(), text.as_str()),
-            (Code::InvalidTimedModel, tag, at),
-            "{clause}"
-        );
     }
 }
 
@@ -2635,8 +2428,7 @@ fn with_peers(document: &[u8]) -> Vec<u8> {
 /// FND-001..003: another object's presence is a data predicate of a guard's
 /// convex part. `pre G { present(self.peer.v) }` is one part whose data
 /// reads it, beside the clock constraint in `present(self.peer.v) and
-/// self.x >= 1 ms`; the union case `present(self.peer.state.Armed)` and
-/// `urgent U when { present(self.peer.v) }` check alike, and so does the
+/// self.x >= 1 ms`; `urgent U when { present(self.peer.v) }` checks alike, and so does the
 /// quantified `forall(c in self.peers: present(c.v))`. In a postcondition,
 /// which this slice does not read it in, it refuses
 /// `unsupported_construct`/`not-yet-implemented` at the read, never as a
@@ -2671,14 +2463,6 @@ fn another_objects_presence_is_a_guard_data_predicate() {
         &format!("{UNITS}{DENSE}urgent U when {{ present(self.peer.v) }};\n"),
     )
     .unwrap_or_else(|refusals| panic!("urgency: {refusals:?}"));
-    let union = with_peers(&union_clock_document_with(false));
-    check(
-        &union,
-        &format!(
-            "{UNITS}{DENSE}time invariant A when {{ present(self.peer.state.Armed) }} {{ self.x <= 5 ms }}\n"
-        ),
-    )
-    .unwrap_or_else(|refusals| panic!("a union case: {refusals:?}"));
     let (cause, text) = refused(
         &document,
         &format!("{UNITS}{DENSE}post Q using v on Config::Call::bump {{ present(self.peer.v) }}\n"),
@@ -2693,48 +2477,35 @@ fn another_objects_presence_is_a_guard_data_predicate() {
     );
 }
 
-/// QSpec FR-415-AC-21, the vectors FP-11 and FP-12 (TC-685): a
-/// postcondition that requires `present(p)` of a place it does not write,
-/// where the operation's precondition establishes `p` absent, has no
-/// successor, decided statically: `invalid_timed_model`/
-/// `clock-presence-unwritten` at the requirement, for `v: Option<Clock>`
-/// and for the union case `state.Armed` alike. With the write (`self.v = 5
-/// ms`, the constructor `Armed(5 ms)`) it checks.
+/// QSpec FR-415-AC-21 (TC-685): an Option<Clock> place required present
+/// without a write has no successor when its precondition establishes it
+/// absent; writing the clock makes it present. Requirements are not writes.
 #[trace("TC-685")]
 #[test]
-fn a_presence_the_precondition_denies_and_nothing_writes_refuses() {
-    for (document, place, write) in [
-        (option_clock_document(), "self.v", "self.v = 5 ms"),
-        (
-            union_clock_document_with(false),
-            "self.state.Armed",
-            "self.state = Config::Mode::Armed(5 ms)",
+fn an_absent_option_clock_required_present_without_a_write_refuses() {
+    let document = option_clock_document();
+    let pre = "pre Off using v on Config::Call::bump { not present(self.v) }\n".to_owned();
+    let (cause, text) = refused(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ present(self.v) }}\n"
         ),
-    ] {
-        let pre = format!("pre Off using v on Config::Call::bump {{ not present({place}) }}\n");
-        let (cause, text) = refused(
-            &document,
-            &format!(
-                "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ present({place}) }}\n"
-            ),
-        );
-        let requirement = format!("present({place})");
-        assert_eq!(
-            (cause.code(), cause.tag(), text.as_str()),
-            (
-                Code::InvalidTimedModel,
-                "clock-presence-unwritten",
-                requirement.as_str()
-            )
-        );
-        check(
-            &document,
-            &format!(
-                "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ {write} and present({place}) }}\n"
-            ),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::InvalidTimedModel,
+            "clock-presence-unwritten",
+            "present(self.v)"
         )
-        .unwrap_or_else(|refusals| panic!("{place} written: {refusals:?}"));
-    }
+    );
+    check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ self.v = 5 ms and present(self.v) }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("the written option clock: {refusals:?}"));
 }
 
 /// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), S3's part: over

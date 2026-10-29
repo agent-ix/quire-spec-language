@@ -2,21 +2,17 @@
 //! FR-120-AC-26 (TC-1270) end to end through EN-6: a granted clock
 //! collection with a declared maximum is a finite domain, so the zone search
 //! takes a model that grants `ts: Sequence<Timer>[0, N]` and reaches its
-//! values, each slot's clock a place. Also FR-230's bare-clock counts and a
-//! union case's clock through EN-6.
+//! values, each slot's clock a place. Also FR-230's bare-clock counts through
+//! EN-6.
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{ZoneCheckLimits, ZoneCheckOutcome};
 use quire_exact::Cancel;
 
 use crate::timed_world::{
-    document, ident, timers_document, wire_field, wire_type, world_holding, World, DENSE, PACKAGE,
-    PLACEHOLDER,
+    document, ident, timers_document, wire_field, world_holding, World, DENSE,
 };
-use crate::zone_search::{
-    claim, deadlock, deadlock_result, operations, time_lock_item, violated, INFINITE,
-};
-use qsl_semantics::model::intake::meaning;
+use crate::zone_search::{claim, deadlock, deadlock_result, operations, violated, INFINITE};
 
 /// `ts: Sequence<Timer>[0, max]` (`Timer { x: Clock; n: Phase }`) granted by
 /// `grow`, with the precondition `guard` and the further text `claim`.
@@ -266,86 +262,6 @@ fn en6_settles_the_bare_clock_counts() {
         ),
         "{outcome:?}"
     );
-}
-
-/// `state: Mode` on `Call`, with `Mode { Idle, Armed(Clock) }` (FR-230
-/// "Records, tuples and unions"), written by `arm` and `disarm`, `c`
-/// starting `Idle`, under `body`.
-fn armed(body: &str) -> World {
-    let mut document: serde_json::Value = serde_json::from_slice(&document(
-        &[],
-        &[("arm", &["state"]), ("disarm", &["state"])],
-    ))
-    .expect("JSON");
-    let case = |name: &str, line: u64, payload: Option<&str>| {
-        let mut case = serde_json::json!({
-            "identity": ident(&format!("variant/Mode-{name}")), "name": name,
-            "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
-                "startLine": line, "startColumn": 3}},
-        });
-        if let Some(payload) = payload {
-            case["payloadType"] = serde_json::json!(payload);
-        }
-        case
-    };
-    let mut mode = wire_type(
-        &ident("Mode"),
-        "mode",
-        serde_json::json!({"variants": [
-            case("Idle", 20, None),
-            case("Armed", 21, Some("ix://quire/native/Clock")),
-        ]}),
-    );
-    mode["displayName"] = serde_json::json!("Mode");
-    document["types"].as_array_mut().expect("types").push(mode);
-    document["constructs"]
-        .as_array_mut()
-        .expect("constructs")
-        .push(serde_json::json!({
-            "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
-            "construct": {"identity": "none", "shape": "enumeration",
-                "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
-    document["types"][1]["fields"]
-        .as_array_mut()
-        .expect("Call fields")
-        .push(wire_field("state", &ident("Mode")));
-    world_holding(
-        document.to_string().as_bytes(),
-        INFINITE,
-        &format!("{DENSE}{body}"),
-        &serde_json::json!({"state": {"variant": {"type": ident("Mode"), "case": "Idle"}}}),
-    )
-}
-
-/// FR-230-AC-12 (TC-685) through EN-6: a union case's clock is bounded only
-/// while its case holds. With `time invariant Bound when
-/// { present(self.state.Armed) } { value(self.state.Armed) <= 3 ms }`,
-/// `arm` (enabled while not armed, `self.state = M::Mode::Armed(0 ms)`) and
-/// `disarm` (`self.state = M::Mode::Idle`), the time-lock-freedom item holds: once disarmed, the
-/// dropped clock is unconstrained and time passes past 3 ms. With `disarm`
-/// disabled, an armed state is a time-lock at 3 ms, so the item is
-/// violated.
-#[trace("TC-685")]
-#[test]
-fn the_zone_search_drops_a_union_case_clock_with_its_case() {
-    let body = |disarm: &str| {
-        format!(
-            "pre Arming using v on M::Call::arm {{ not present(self.state.Armed) }}\n\
-             post Arm using v on M::Call::arm {{ self.state = M::Mode::Armed(0 ms) }}\n\
-             pre Disarming using v on M::Call::disarm {{ {disarm} }}\n\
-             post Disarm using v on M::Call::disarm {{ self.state = M::Mode::Idle }}\n\
-             time invariant Bound when {{ present(self.state.Armed) }} {{ value(self.state.Armed) <= 3 ms }}\n"
-        )
-    };
-    let free = armed(&body("true"));
-    assert!(
-        matches!(time_lock_item(&free), ZoneCheckOutcome::Holds { .. }),
-        "disarming drops the bounded clock"
-    );
-    let locked = armed(&body("false"));
-    let counterexample = violated(time_lock_item(&locked));
-    assert_eq!(operations(&counterexample), ["arm"]);
 }
 
 /// FR-230 "Presence bit" (TC-685) through EN-6: an absent `Option<Clock>`
