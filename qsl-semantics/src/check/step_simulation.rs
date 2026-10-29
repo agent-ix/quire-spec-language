@@ -30,7 +30,8 @@
 //! population, each population the operation's contract clauses walk and
 //! each population a `reaches` in the state mapping walks; an `Initial`
 //! record over the population covering each concrete object type the state
-//! mapping maps.
+//! mapping maps and, since its obligation evaluates the mapping, each
+//! population a `reaches` in the state mapping walks.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -146,7 +147,11 @@ pub(crate) fn simulation_records(
         .as_ref()
         .ok_or_else(|| fault(location))?;
     let mut written = Vec::with_capacity(inputs.step_sources.len() + 1);
-    let initial = extent_record(None, &roots.initial, None, inputs)?;
+    // The `Initial` obligation evaluates the state mapping, so it ranges
+    // over the populations a `reaches` there walks as well.
+    let mut initial_populations = roots.initial.clone();
+    initial_populations.extend(roots.mapping.iter().copied());
+    let initial = extent_record(None, &initial_populations, None, inputs)?;
     written.push((
         StepSimulationEntry::new(
             inputs.node,

@@ -32,7 +32,7 @@ pub(crate) const CAS: &str = "example/counter-cas";
 const QUEUE: &str = "example/queue-spec";
 const RING: &str = "example/ring-buffer";
 
-fn node(package: &str, path: &str) -> String {
+pub(crate) fn node(package: &str, path: &str) -> String {
     format!("ix://{package}/{path}")
 }
 
@@ -283,6 +283,12 @@ fn bounded_counter(package: &str, upper: u32) -> Vec<u8> {
 /// record value type `Try { done }`, the attempt type of a compensation
 /// template (FR-381).
 pub(crate) fn counter_spec() -> Vec<u8> {
+    counter_spec_with(Vec::new(), Vec::new())
+}
+
+/// [`counter_spec`] with `types` and `populations` added beside `Counter`
+/// and `counters`.
+pub(crate) fn counter_spec_with(types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
     let attempt = declaration(
         SPEC,
         "Try",
@@ -324,8 +330,14 @@ pub(crate) fn counter_spec() -> Vec<u8> {
             ),
             attempt,
             event,
-        ],
-        vec![population(SPEC, "counters", "Counter")],
+        ]
+        .into_iter()
+        .chain(types)
+        .collect(),
+        [population(SPEC, "counters", "Counter")]
+            .into_iter()
+            .chain(populations)
+            .collect(),
     )
 }
 
@@ -334,25 +346,33 @@ pub(crate) fn counter_spec() -> Vec<u8> {
 pub(crate) fn counter_cas() -> Vec<u8> {
     counter_cas_with(
         operation(CAS, "Counter", "peek", &[], None, &[]),
+        &[],
         Vec::new(),
         Vec::new(),
     )
 }
 
-/// [`counter_cas`] with `peek` as given, and `types` and `populations`
-/// added beside `Counter` and `counters`.
-pub(crate) fn counter_cas_with(peek: Value, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
+/// [`counter_cas`] with `peek` as given, `fields` added to `Counter`, and
+/// `types` and `populations` added beside `Counter` and `counters`.
+pub(crate) fn counter_cas_with(
+    peek: Value,
+    fields: &[(&str, &str)],
+    types: Vec<Value>,
+    populations: Vec<Value>,
+) -> Vec<u8> {
     let step = |name: &str, modifies: &[&str]| operation(CAS, "Counter", name, &[], None, modifies);
+    let mut counter_fields = vec![
+        ("value", INTEGER),
+        ("tmpA", INTEGER),
+        ("busyA", BOOLEAN),
+        ("tmpB", INTEGER),
+        ("busyB", BOOLEAN),
+    ];
+    counter_fields.extend_from_slice(fields);
     let mut all_types = vec![object_type(
         CAS,
         "Counter",
-        &[
-            ("value", INTEGER),
-            ("tmpA", INTEGER),
-            ("busyA", BOOLEAN),
-            ("tmpB", INTEGER),
-            ("busyB", BOOLEAN),
-        ],
+        &counter_fields,
         vec![
             step("beginA", &["tmpA", "busyA"]),
             step("commitA", &["value", "busyA"]),
