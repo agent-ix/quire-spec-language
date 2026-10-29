@@ -115,7 +115,9 @@ entry or empty corpus, all passed to FR-344's report.
   registry's QSpec FR-290 candidate set for the layer's `witness_request`
   kind (QSpec `header_selectable_layers` row).
 - When its caller supplies a negotiation function, the gate SHALL submit the
-  entry's one clause in one QSpec FR-331 request per candidate, each naming
+  witness unit's one `invariant` clause, the witness item (QSpec
+  FR-453-AC-8; the temporal witness also holds its guard and reset as `pre`
+  and `post` clauses), in one QSpec FR-331 request per candidate, each naming
   that candidate's backend, with the `witness_request` kind and extent, and
   read each disposition from the function's result (QSpec FR-331-AC-4).
 - With a negotiation function, the gate SHALL give each layer FR-453's
@@ -151,9 +153,18 @@ entry or empty corpus, all passed to FR-344's report.
   (`qsl_route::Candidate`) whose backend it names, the layer's
   `witness_request` kind and extent, and the witness entry's compiled clause,
   and return that request's `qsl_route::Disposition`.
-- The module SHALL expose `REAL_CORPUS`, the path of
-  `tests/fixtures/refinement/layering/` in the source tree the `xtask`
-  package is built from.
+- The real corpus is generated, not committed. Each of its units selects a
+  model by digest (FR-056), so a committed corpus would carry a frozen
+  digest. The public function `xtask::refinement::layering_corpus::generate`
+  SHALL take the repository root and an output directory, read
+  `examples/config-version/model.semantic-ir.json` from the root, build the
+  timed model the temporal entries select, compute each model's digest from
+  its bytes when it runs, and write into the output directory, for each of
+  E1 to E6, a `case` both layers refuse with a typed refusal, a `case` over
+  the edge's distinguishing form and a `distinguishing` entry, and for each
+  of the six layers one `witness` entry. It SHALL read no other file and
+  commit nothing. `xtask refinement generate-layering <dir>` calls it with
+  the workspace root.
 - The `xtask` package SHALL take no dependency, in any table, on a
   quire-contract-codegen crate (FR-280-AC-3).
 - `xtask refinement layering` SHALL pass `compare` the FR-278 composition
@@ -172,12 +183,18 @@ entry or empty corpus, all passed to FR-344's report.
   and tool-failure result.
 - Each case SHALL be named by its two units' `RawSourceRef`s and its edge's
   two layer identities, never by a display string or a directory name.
-- The `refinement-layering` make target, which `make ci` runs, SHALL invoke
-  `cargo run --package xtask -- refinement layering
-  tests/fixtures/refinement/layering/` with no negotiation function. The CLI
-  SHALL write its report and exit by FR-344. The make target SHALL pass only
-  when the CLI exits 21 and its report satisfies FR-345-AC-9; it SHALL fail
-  for every other CLI exit code or report.
+- The `refinement-layering` make target, which `make ci` runs, SHALL
+  generate the real corpus into a temporary directory with `cargo run
+  --package xtask -- refinement generate-layering <dir>`, run `cargo run
+  --package xtask -- refinement layering-check <dir>`, and remove the
+  directory when it ends. `layering-check` SHALL run the CLI `refinement
+  layering <dir>`, which passes `compare` no negotiation function, as a
+  child process, and SHALL pass only when the CLI exits 21 and its report
+  satisfies FR-345-AC-9; it SHALL fail for every other CLI exit code or
+  report. Its check of the child's exit code and report is the public
+  function `xtask::refinement::layering_check::check`, which takes the CLI
+  executable to run, so a test passes a stub executable directly and no
+  environment variable or make variable overrides it.
 
 ## Acceptance Criteria
 
@@ -191,10 +208,10 @@ entry or empty corpus, all passed to FR-344's report.
 | FR-345-AC-6 | With a test negotiation function, each of the six layers admits its witness unit and witness item; the item is requested once by backend name from each candidate, using that layer's `witness_request` kind and extent, and settles `supported` under at least one candidate. The temporal witness is a unit selecting only `quire.temporal.complete/v1` with a timed state model, a `Clock` field, a reset, a guard, a time invariant and an `invariant` clause, and its request is `operation-contract`/`bounded`. With two candidates, one supporting and one not supporting the item, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. With no negotiation function, no request is made and no unrequested witness is reported `holds`: each admitted witness with a non-empty candidate set is `unresolved (unsupported)`, reason `not-negotiated`, naming the layer and candidate backends; FR-344 gives verdict unsupported, exit 21. A refused witness or empty candidate set gives a `regression` naming the layer and compile codes or empty candidate set; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-7 | On each of E1 to E6, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
-| FR-345-AC-9 | Given `REAL_CORPUS` has one admitted witness per layer and each layer has a non-empty candidate set, `make refinement-layering` without negotiation succeeds only when the CLI exits 21 with verdict `unsupported` and all six layer results `unresolved (unsupported)` for reason `not-negotiated`. | Test (TC-868) |
-| FR-345-AC-10 | A root-package test calls `xtask::refinement::layering::compare` over `REAL_CORPUS` with the FR-278 composition, QSL's registry snapshot and a test negotiation function that settles every request `supported`, and receives verdict success with the same case, layer and edge results as the no-negotiation CLI report, except that all six negotiated witness results are `holds` rather than `unresolved (unsupported)`; each layer's witness item is requested once per candidate. The same call with no negotiation function makes no request and returns a report byte-equal to the no-negotiation CLI report, with verdict unsupported, exit 21, and no witness result `holds`. Neither call writes to stdout or stderr, and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
+| FR-345-AC-9 | Given the generated real corpus has one admitted witness per layer and each layer has a non-empty candidate set, `make refinement-layering` without negotiation succeeds only when the CLI exits 21 with verdict `unsupported` and all six layer results `unresolved (unsupported)` for reason `not-negotiated`. | Test (TC-868) |
+| FR-345-AC-10 | A root-package test calls `xtask::refinement::layering::compare` over the generated real corpus with the FR-278 composition, QSL's registry snapshot and a test negotiation function that settles every request `supported`, and receives verdict success with the same case, layer and edge results as the no-negotiation CLI report, except that all six negotiated witness results are `holds` rather than `unresolved (unsupported)`; each layer's witness item is requested once per candidate. The same call with no negotiation function makes no request and returns a report byte-equal to the no-negotiation CLI report, with verdict unsupported, exit 21, and no witness result `holds`. Neither call writes to stdout or stderr, and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
 | FR-345-AC-11 | Over a layering corpus that holds E6's `case`, `distinguishing` and `witness` entries (the temporal layer's witness is a timed state model with a clock field, a reset, a guard, a time invariant and one `invariant` clause), E6's both-refuse case holds, its `distinguishing` entry classifies `prohibited` on the parent side naming `quire.model.complete/v1` and `admitted` on the child side, and the temporal witness settles `supported` under a candidate that advertises `operation-contract` in `bounded` mode; a corpus without E6's `distinguishing` entry or without the temporal `witness` entry gives one tool-failure result for each missing item, naming E6 / `distinguishing` or `quire.temporal.complete/v1` / `witness`. | Test (TC-868) |
-| FR-345-AC-12 | Over the real backend registry, with quire-contract-codegen's `negotiate_*` as the negotiation function, `compare` over `REAL_CORPUS` gives each of the six layers a `holds` witness result: its witness unit admits and its witness item, requested once per candidate by backend name, settles `supported` under at least one candidate. The temporal witness is the timed model of AC-6 and its request is `operation-contract`/`bounded`. A seeded unsupported witness gives a `regression` naming the layer and each candidate's identity and disposition, and a removed witness entry gives a tool-failure result. | Integration test (quire-integration IT-015 / quire-integration TC-095) |
+| FR-345-AC-12 | Over the real backend registry, with quire-contract-codegen's `negotiate_*` as the negotiation function, `compare` over the generated real corpus gives each of the six layers a `holds` witness result: its witness unit admits and its witness item, requested once per candidate by backend name, settles `supported` under at least one candidate. The temporal witness is the timed model of AC-6 and its request is `operation-contract`/`bounded`. A seeded unsupported witness gives a `regression` naming the layer and each candidate's identity and disposition, and a removed witness entry gives a tool-failure result. | Integration test (quire-integration IT-015 / quire-integration TC-095) |
 | FR-345-AC-13 | The make target's test-only CLI seam rejects a child result unless its exit code is 21 and its report satisfies AC-9; it rejects a report with a missing layer result and child exit codes 0, 1 and 10. | Test (TC-868) |
 
 ## Dependencies
@@ -214,7 +231,8 @@ entry or empty corpus, all passed to FR-344's report.
 quire-integration runs the negotiation half of the gate. It takes QSL's
 `xtask` package as a dev dependency, from the same QSL source as its other
 QSL dependencies, and its test calls `xtask::refinement::layering::compare`
-over `REAL_CORPUS` with
+over the real corpus that
+`xtask::refinement::layering_corpus::generate` writes, with
 the FR-278 composition, the real backend registry and quire-contract-codegen's
 `negotiate_*` as the negotiation function, and fails unless every layer's
 witness item settles `supported` under at least one candidate. That run is

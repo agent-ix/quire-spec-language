@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
+.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning refinement-layering qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -68,6 +68,18 @@ refinement-versioning:
 	trap 'rm -rf "$$corpus"' EXIT && \
 	cargo run --package xtask -- refinement generate-versioning "$$corpus" && \
 	cargo run --package xtask -- refinement versioning "$$corpus"
+
+# FR-345: generate the real layering corpus into a temporary directory, with
+# each model digest computed then, and run the layering CLI over it with no
+# negotiation function. The target passes only the CLI's expected run: exit 21,
+# every layer `unresolved (unsupported)` for reason `not-negotiated` over a
+# non-empty candidate set, and every case and edge holding or not applicable
+# (FR-345-AC-9).
+refinement-layering:
+	@corpus=$$(mktemp -d "$${TMPDIR:-/tmp}/refinement-layering.XXXXXX") && \
+	trap 'rm -rf "$$corpus"' EXIT && \
+	cargo run --package xtask -- refinement generate-layering "$$corpus" && \
+	cargo run --package xtask -- refinement layering-check "$$corpus"
 
 # FR-353: run complete-V1 conformance qualification against the published corpus.
 qualify:

@@ -67,15 +67,17 @@ quire-contract-codegen's `negotiate_*`.
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
 7. Run step 1's corpus without the E6 `distinguishing` entry and without the temporal `witness` entry.
-8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`.
+8. Run `make refinement-layering`, which generates the real corpus into a
+   temporary directory and runs `refinement layering-check` over it.
    Capture the child CLI exit code, JSON report and Make target exit. Then run
-   the target over a copy of the corpus with one `witness` entry removed. Call
-   the target's `#[cfg(test)]` CLI-execution seam with a compiled stub CLI that
-   returns exit codes 0, 1 and 10, and with a stub returning 21 plus a report
-   missing one layer result. The seam receives the stub executable directly as
-   a test argument; it reads no environment override and adds no production
-   provider.
-9. From a root-package test, call `compare` over `REAL_CORPUS` with the
+   `refinement layering-check` over a copy of the generated corpus with one
+   `witness` entry removed. Call `layering_check::check` with a stub
+   executable that prints the expected report and exits 0, 1 and 10, and
+   check the expected report with one layer result removed. The check
+   receives the stub executable directly as a test argument; it reads no
+   environment override and adds no production provider.
+9. From a root-package test, call `compare` over the real corpus that
+   `layering_corpus::generate` writes, with the
    FR-278 composition, QSL's registry snapshot and a test negotiation
    function that settles every request `supported`; then call it without a
    negotiation function. Capture both reports and process streams, and read
