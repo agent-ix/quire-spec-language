@@ -2615,6 +2615,8 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 /// FR-230-AC-31 and FR-230-AC-34 (TC-685 steps 26 and 27): I2 refuses a
 /// missing root (`missing-timed-model`), a dangling or wrong-kind edge
 /// (`timed-node-reference`), a duplicate place (`duplicate-clock-place`), a
+/// repeated place reference (`invalid_semantic_graph`, no cause, QSpec
+/// FR-322-AC-260's order refusal, TM-30), a
 /// noncanonical path (`malformed-clock-place`) and a non-time unit or
 /// malformed quantity (`invalid-time-quantity`), each at the first failing
 /// timed node's locus; a `resolved_path` row missing, extra or mismatched in
@@ -2623,6 +2625,7 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 /// those criteria state.
 #[trace("TC-1187", "FR-447-AC-13")]
 #[trace("TC-685", "FR-230-AC-31", "FR-230-AC-34")]
+#[trace("QSpec-FR-322-AC-260")]
 #[test]
 fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -2740,6 +2743,17 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                     .as_array_mut()
                     .unwrap()
                     .push(placeholder);
+            }
+            "repeated-clock-place-reference" => {
+                // QSpec FR-322-AC-260, TM-30: the first place's reference
+                // listed again repeats its predecessor's order key, the
+                // order refusal with no cause at the repeated member.
+                let places = candidate["semantic_graph"]["nodes"][52]["body"]["members"][3]
+                    ["value"]["members"]
+                    .as_array_mut()
+                    .unwrap();
+                let first = places[0].clone();
+                places.push(first);
             }
             "noncanonical-place-path" => {
                 candidate["semantic_graph"]["nodes"][45]["body"]["members"][1]["value"]["members"]
