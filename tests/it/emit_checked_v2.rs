@@ -14,8 +14,8 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
 use quire_contract_model::{
     ApplicationOperator, CheckedNodeId, CheckedOccurrenceRole, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticNodeV2,
-    CheckedTerm,
+    CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits, CheckedPackageV2,
+    CheckedPackageV2ReadResult, CheckedSemanticNodeV2, CheckedTerm,
 };
 use quire_spec_language::emit_checked_v2::{emit, run, Error, Request, MODEL_DIGEST_TOKEN};
 use serde_json::{json, Value};
@@ -390,7 +390,10 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
     // The claim occurrence, and the source region it points at.
     assert_eq!(transition.occurrences.len(), 1);
     assert_eq!(transition.occurrences[0].role, CheckedOccurrenceRole::Claim);
+    // The source states one `post` clause, so this is the first occurrence of
+    // the Claim role on the node; ordinals count a role's repeats from zero.
     let ordinal = transition.occurrences[0].ordinal;
+    assert_eq!(ordinal, 0, "the first Claim occurrence has ordinal 0");
     let rows: Vec<_> = package
         .source_map()
         .iter()
@@ -402,10 +405,9 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
         panic!("one source region");
     };
     let body = "self.on";
-    let start = source
-        .find(&format!("{{ {body} }}"))
-        .expect("the post body")
-        + 2;
+    let clause = source.find("post Q1").expect("the post clause");
+    let open = clause + source[clause..].find('{').expect("the clause body") + 1;
+    let start = open + (source[open..].len() - source[open..].trim_start().len());
     assert_eq!(
         (region.start, region.end),
         (start as u64, (start + body.len()) as u64),
@@ -424,6 +426,101 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
         .find(|row| row.node_id == post.node_id && row.role == CheckedOccurrenceRole::Claim)
         .expect("the post clause's claim row");
     assert_eq!(post_row.regions, rows[0].regions);
+
+    // Read -> typed re-encode -> read: the public typed writer's output
+    // admits again and the re-read carries the same typed graph (so the same
+    // transition, subject, inputs, post and occurrences), the same source
+    // rows and the same package identity. Only what the writer guarantees is
+    // asserted: that its bytes are a fixed point of read then write.
+    let written = encode(&package);
+    let again = read_back(&written, &[&document]);
+    assert_eq!(again.graph(), package.graph());
+    assert_eq!(again.source_map(), package.source_map());
+    assert_eq!(again.package_id(), package.package_id());
+    assert_eq!(encode(&again), written, "write/read/write is stable");
+}
+
+/// The package re-encoded by IR's public typed writer.
+fn encode(read: &CheckedPackageV2) -> Vec<u8> {
+    let selection = read.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: &selection.version,
+        edition: &selection.edition,
+        profile_selections: &selection.profile_selections,
+        definition_selections: &selection.definition_selections,
+        model_selections: &selection.model_selections,
+        required_features: &selection.required_features,
+        dependency_selections: &selection.dependency_selections,
+        identity_projection: &read.graph().nodes,
+    };
+    quire_contract_model::encode_checked_package_v2(
+        &preimage,
+        read.package_id(),
+        read.lock(),
+        read.graph(),
+        quire_contract_model::CheckedPackageSourceCorrespondenceRef {
+            source_map: read.source_map(),
+            refinement_step_rows: read.refinement_step_rows(),
+        },
+        read.capability_report(),
+        read.diagnostics(),
+        quire_canonical::Limits::new(1 << 24),
+    )
+    .expect("the typed writer encodes an admitted package")
+}
+
+/// Input order: a test-local copy of the Switch model whose `set` takes two
+/// Boolean parameters, `flag` then `other`, is emitted (its digest derived by
+/// `model_digest`, no file or digest committed) and the typed transition's
+/// `inputs` aggregate names them in the declared order.
+#[test]
+fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
+    let mut model: Value = serde_json::from_slice(&std::fs::read(SWITCH_MODEL).unwrap()).unwrap();
+    let operation = &mut model["types"][0]["operations"][0];
+    let mut second = operation["params"][0].clone();
+    second["identity"] = json!("ix://test/orders/Switch/set/other");
+    second["name"] = json!("other");
+    let inputs = second["origin"]["generated"].as_object_mut().unwrap();
+    inputs["generatorIdentity"] = json!("ix://test/orders/Switch/set/other");
+    inputs["inputIdentities"] = json!(["ix://test/orders/Switch/set/other"]);
+    operation["params"].as_array_mut().unwrap().push(second);
+    let declared: Vec<String> = operation["params"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|param| param["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(declared, ["flag", "other"]);
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("switch2.semantic-ir.json");
+    let document = serde_json::to_vec(&model).unwrap();
+    std::fs::write(&path, &document).unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[&path, Path::new(SWITCH_TEMPLATE)]));
+    let bytes = emit(&Request::parse(&command).unwrap()).expect("the two-input form emits");
+    let package = read_back(&bytes, &[&document]);
+    let transition = package
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| node.semantic_form.as_ref() == "transition")
+        .expect("the transition");
+    let CheckedTerm::Application { arguments, .. } = &transition.body else {
+        panic!("a typed transition application");
+    };
+    let CheckedTerm::Binding { name, value } = &arguments[2] else {
+        panic!("the third binding");
+    };
+    assert_eq!(name.as_ref(), "inputs");
+    let CheckedTerm::Aggregate { members } = &**value else {
+        panic!("inputs are an ordered aggregate");
+    };
+    let names: Vec<String> = members
+        .iter()
+        .map(|member| parameter_name(node(&package, target(member))))
+        .collect();
+    assert_eq!(names, declared, "the inputs keep the declared order");
 }
 
 /// Fail closed: the typed readback is not a fallback to a generic term. A
