@@ -60,16 +60,6 @@ const REQUIREMENT_NAMESPACE: &str = "quire-contract-ir/requirement-revision";
 const DEFINITION_NAMESPACE: &str = "quire/native-definition-revision";
 const CONTRACT: &[u8] = include_bytes!("../../../docs/compiled-protocol-v1.md");
 const CONTRACT_V2: &[u8] = include_bytes!("../../../docs/compiled-protocol-v2.md");
-/// The producer's own source text. `Producer.binary` identifies this file by
-/// a digest over these bytes (see `producer_source_digest`), so its identity
-/// is exactly what anyone with this repository can independently recompute
-/// (`sha256sum src/protocol_artifact/handoff/writer.rs`) -- unlike a compiled
-/// executable, which nobody retains and which moves with the toolchain. The
-/// digest covers `writer.rs` alone -- not the embedded recipe inputs, and not
-/// the rest of the library that actually performs compilation -- so
-/// "producer identity" means exactly this file, not a binary or its
-/// dependency closure.
-const PRODUCER_SOURCE: &[u8] = include_bytes!("writer.rs");
 const EVENT_CLOCK: &[u8] =
     b"{ \"kind\": \"event_position\", \"sequence_authority\": \"workflow-events\" }\n";
 const SAMPLE_CLOCK: &[u8] = b"{ \"kind\": \"fixed_sample\", \"epoch\": { \"kind\": \"integer\", \"decimal\": \"0\" }, \"period\": { \"kind\": \"rational\", \"numerator\": \"1\", \"denominator\": \"2\" }, \"unit\": \"second\" }\n";
@@ -576,54 +566,18 @@ fn reference(
     version: &str,
     bytes: &[u8],
 ) -> w::ArtifactRef {
-    digest_reference(
-        authority,
-        kind,
-        identity,
-        revision,
-        wire,
-        version,
-        ByteDigest::of(bytes),
-    )
-}
-
-/// Build an artifact reference from an already-computed digest, for the one
-/// case (the producer's own source) whose bytes are already tracked at a
-/// known repository path and are never re-materialized as a dependency (see
-/// `producer_source_digest`).
-fn digest_reference(
-    authority: &str,
-    kind: w::ArtifactKind,
-    identity: &str,
-    revision: w::Revision,
-    wire: &str,
-    version: &str,
-    digest: ByteDigest,
-) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: authority.into(),
         identity: identity.into(),
         revision,
-        digest,
+        digest: ByteDigest::of(bytes),
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
         },
     }
-}
-
-/// FR-042-AC-10: identify the producer by a digest over its own source text,
-/// checkable by anyone with this repository (`sha256sum
-/// src/protocol_artifact/handoff/writer.rs`) rather than by hashing a compiled
-/// executable that nobody retains and that moves with the toolchain. This is
-/// `Producer.binary` -- not a dependency whose original bytes an independent
-/// reader must recover -- so `PRODUCER_SOURCE` is read only to compute the
-/// digest and is never written to a fixture file or supplied as a
-/// dependency's exact-byte content.
-fn producer_source_digest() -> ByteDigest {
-    ByteDigest::of(PRODUCER_SOURCE)
 }
 
 /// The FR-001 `ByteDigest` of a clock input's exact embedded bytes, as
@@ -1054,19 +1008,9 @@ impl SelectedInputs {
             "1",
             CONTRACT,
         );
-        let binary_ref = digest_reference(
-            AUTHORITY,
-            w::ArtifactKind::GeneratedArtifact,
-            "native_protocol_handoff",
-            revision("crate-version", env!("CARGO_PKG_VERSION")),
-            "text/rust",
-            "1",
-            producer_source_digest(),
-        );
         let producer = w::Producer {
             implementation: "quire-spec-language/native_protocol_handoff".into(),
             revision: revision("crate-version", env!("CARGO_PKG_VERSION")),
-            binary: binary_ref,
         };
         let model_ref = reference(
             AUTHORITY,
@@ -1136,10 +1080,6 @@ impl SelectedInputs {
         contract_dependency.bytes = Cow::Borrowed(CONTRACT_V2);
         selected.contract = contract;
 
-        // The producer's binary is Producer identity, not a byte-sealed
-        // dependency (see `producer_source_digest`), so there is no
-        // `dependencies` entry to find here -- only the reference itself.
-        selected.producer.binary.identity = "native_protocol_v2_handoff".into();
         selected.producer.implementation = "quire-spec-language/native_protocol_v2_handoff".into();
 
         selected
@@ -1218,9 +1158,6 @@ fn selected_dependencies(
             file: String::new(),
         });
     }
-    // The producer's own binary is not one of these exact-byte dependencies
-    // (see `producer_source_digest`): its identity is Producer.binary, an
-    // artifact reference recording only a digest.
     dependencies.extend([
         Dependency {
             artifact: contract.clone(),

@@ -120,7 +120,7 @@ pub struct Selection {
     pub contract: w::ArtifactRef,
     /// Exact accepted semantic baseline dependency.
     pub baseline: w::ArtifactRef,
-    /// Explicit implementation, revision and immutable binary selection.
+    /// Explicit implementation and revision selection.
     pub producer: w::Producer,
     /// Accepted native language edition.
     pub language: w::Language,

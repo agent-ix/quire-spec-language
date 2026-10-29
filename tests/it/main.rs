@@ -72,7 +72,6 @@ mod string_edge_marker;
 mod value_parity_profile_selections;
 // The handoff writer is behind its feature; the all-features lane runs this.
 mod fairness_item_path;
-mod handoff_layout;
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;
 mod hybrid_request_items;

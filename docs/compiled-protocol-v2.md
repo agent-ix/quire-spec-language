@@ -264,9 +264,7 @@ The directory contains:
 - the four original `.native` files and `model-source.json`; and
 - `dependencies/*.bin`: every exact original definition, rule, model package
   and contract selected by the invocation, with paths, identities, direct
-  prerequisites and raw-byte digests in `expected-v2.json`. The producer's own
-  executable is not among them: it is Producer identity, recorded as a digest
-  on `producer.binary` rather than as one of these exact-byte dependencies.
+  prerequisites and raw-byte digests in `expected-v2.json`.
 
 `expected-v2.json` and `mutations/manifest.json` are the two interchange files a
 consumer decodes, so their record shapes are published as
