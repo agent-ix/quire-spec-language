@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real source/model/definition inputs shared by the composed type controls.
 
+use crate::support::native_rule_model;
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
@@ -150,8 +151,7 @@ fn try_model_with(
     maximum: u32,
     extend: impl FnOnce(&mut Value),
 ) -> Result<NativeModel, Box<model_source::ModelSourceError>> {
-    let mut document: Value =
-        serde_json::from_str(include_str!("../../fixtures/native-rule-model.json")).unwrap();
+    let mut document: Value = serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["package"] = json!(format!("test/{name}"));
     document["scalars"].as_array_mut().unwrap().extend([
         json!({"name":"Q", "kind":"rational", "numerator_minimum":-1, "numerator_maximum":1, "maximum_denominator":2}),

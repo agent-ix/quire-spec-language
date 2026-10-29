@@ -428,15 +428,13 @@ fn vector_document() -> Vec<u8> {
 /// timed-slot-selector vectors SL-01, SL-05 and SL-08, and those of `v` and
 /// `q` the vectors' presence places `v` and `q` (body and dependencies), once the vectors' `acme/orders` model node digest and
 /// type identities are read as this package's. Reads the vectors from
-/// `$QSPEC_DIR` (skipped, and passing, when it is unset; `make
-/// conformance` requires it); nothing of QSpec is copied here.
+/// `$QSPEC_DIR`; this test fails explicitly if the QSpec checkout is unavailable.
+/// Nothing of QSpec is copied here.
 #[trace("TC-685")]
 #[test]
 fn conformance_the_template_places_match_the_slot_selector_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = std::env::var_os("QSPEC_DIR")
+        .unwrap_or_else(|| panic!("QSPEC_DIR must point to an available QSpec checkout"));
     let path = std::path::Path::new(&qspec)
         .join("proposals/checked-package-v2/timed-slot-selector-vectors.json");
     let vectors: Value = serde_json::from_slice(

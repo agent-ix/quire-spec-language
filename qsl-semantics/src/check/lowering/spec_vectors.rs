@@ -118,7 +118,8 @@ fn digest_of(value: &Value) -> String {
 /// source, and `test-support` is shipped source.
 #[cfg(test)]
 pub fn published_key(name: &str) -> Option<String> {
-    let dir = std::env::var_os("QSPEC_DIR")?;
+    let dir = std::env::var_os("QSPEC_DIR")
+        .unwrap_or_else(|| panic!("QSPEC_DIR must point to an available QSpec checkout"));
     let path =
         std::path::Path::new(&dir).join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =

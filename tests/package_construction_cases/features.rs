@@ -19,7 +19,7 @@ const RULE_FEATURES: [&str; 7] = [
 ];
 
 fn changed_model(change: impl FnOnce(&mut Value)) -> NativeModel {
-    let mut data = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut data = serde_json::from_str(native_rule_model::fixture()).unwrap();
     change(&mut data);
     native_rule_model::from_text(
         &serde_json::to_string_pretty(&data).unwrap(),

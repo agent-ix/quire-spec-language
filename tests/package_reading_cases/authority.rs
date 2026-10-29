@@ -189,7 +189,7 @@ fn source_and_authored_axes_are_checked_against_external_bindings() {
 fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
     let original_model = native_rule_model::parts().model();
     let changed = native_rule_model::from_text(
-        &(native_rule_model::FIXTURE.to_owned() + " "),
+        &(native_rule_model::fixture().to_owned() + " "),
         "changed.native-model",
         "draft:1",
     )
