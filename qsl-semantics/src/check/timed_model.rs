@@ -510,6 +510,8 @@ pub struct ClockReset {
 pub struct SlotSelection {
     path: Vec<String>,
     name: String,
+    /// The binder as written, which the reset's binder node names.
+    binder: String,
     predicate: Option<CheckedTimedPredicate>,
 }
 
@@ -523,6 +525,11 @@ impl SlotSelection {
     /// `self`.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The binder as written (`e` of `forall(e in self.ts: ...)`).
+    pub fn binder(&self) -> &str {
+        &self.binder
     }
 
     /// The data predicate over the element; `None` selects every held
@@ -1350,9 +1357,9 @@ struct ResetDraft {
     clock: ClockId,
     value: Rational,
     span: Span,
-    /// The collection field, the element's parameter name and the data
-    /// predicate over it, of a reset by selection.
-    selection: Option<(Vec<String>, String, Option<ExpressionForm>)>,
+    /// The collection field, the element's parameter name, its binder as
+    /// written and the data predicate over it, of a reset by selection.
+    selection: Option<(Vec<String>, String, String, Option<ExpressionForm>)>,
     /// The `Clock` parameter's position, of a reset of one.
     parameter: Option<usize>,
 }
@@ -4027,7 +4034,6 @@ fn prepare_models(
             .collect();
         models.push(ModelDraft {
             model: source.model.clone(),
-            span: source.span,
             clocks: clocks.fields,
             clock_parameters: parameter_ranges,
             dimensions,
@@ -4480,7 +4486,7 @@ pub(crate) fn check(
             for reset in written.resets {
                 let selection = match reset.selection {
                     None => None,
-                    Some((path, name, predicate)) => {
+                    Some((path, name, binder, predicate)) => {
                         let predicate = match predicate {
                             None => None,
                             Some(form) => {
@@ -4507,6 +4513,7 @@ pub(crate) fn check(
                         Some(SlotSelection {
                             path,
                             name,
+                            binder,
                             predicate,
                         })
                     }

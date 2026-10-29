@@ -2700,12 +2700,43 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 replace_dependency(&mut source["dependencies"], &old, &target);
             }
             "duplicate-clock-place" => {
-                let places = candidate["semantic_graph"]["nodes"][52]["body"]["members"][3]
-                    ["value"]["members"]
+                // QSpec FR-322-AC-260, TM-12: a distinct second place of the
+                // same path (only its derived `resolved_path` differs), listed
+                // after the first and located after every published place,
+                // so the root is in declared order and only the repeated path
+                // refuses. A repeated reference would repeat its order key
+                // and refuse as an order defect first. `rekey_stale` gives
+                // the placeholder identity its key.
+                let mut second = candidate["semantic_graph"]["nodes"][45].clone();
+                let original = second["node_id"].clone();
+                let rows = second["body"]["members"][2]["value"]["members"]
                     .as_array_mut()
                     .unwrap();
-                let duplicate = places[0].clone();
-                places.push(duplicate);
+                let identity = &mut rows.last_mut().unwrap()["members"][2]["value"]["value"];
+                *identity = json!(format!("{}#again", identity.as_str().unwrap()));
+                let placeholder = json!({"domain": NODE_DOMAIN, "digest": "f".repeat(64)});
+                second["node_id"] = placeholder.clone();
+                second["semantic_type"] = placeholder.clone();
+                let mut entry = candidate["source_map"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|entry| entry["node_id"] == original)
+                    .unwrap()
+                    .clone();
+                entry["node_id"] = placeholder.clone();
+                entry["regions"][0]["start"] = json!(9000);
+                entry["regions"][0]["end"] = json!(9001);
+                candidate["source_map"].as_array_mut().unwrap().push(entry);
+                let nodes = candidate["semantic_graph"]["nodes"].as_array_mut().unwrap();
+                let at = nodes.len() - 1;
+                nodes.insert(at, second);
+                let root = &mut nodes[52];
+                root["body"]["members"][3]["value"]["members"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"term": "reference", "target": placeholder.clone()}));
+                root["dependencies"].as_array_mut().unwrap().push(placeholder);
             }
             "noncanonical-place-path" => {
                 candidate["semantic_graph"]["nodes"][45]["body"]["members"][1]["value"]["members"]

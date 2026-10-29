@@ -113,12 +113,6 @@ impl ClockComparison {
             _ => return None,
         })
     }
-
-    /// Whether the comparison is an upper bound, the only comparisons a
-    /// `time_invariant` bound may carry.
-    pub const fn is_upper_bound(self) -> bool {
-        matches!(self, Self::Lt | Self::Le)
-    }
 }
 
 /// What a `clock_constraint` bounds (QSpec FR-322 "Clause nodes").

@@ -107,7 +107,7 @@ impl Lowering<'_> {
                             None => Vec::new(),
                             Some(selection) => {
                                 let integer = self.type_node(&ValueType::Integer, location)?;
-                                vec![self.parameter(selection.name(), 0, integer, location)?]
+                                vec![self.parameter(selection.binder(), 0, integer, location)?]
                             }
                         };
                         ResetTargetNodes::Place {

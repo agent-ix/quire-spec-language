@@ -458,10 +458,39 @@ ill-formed use.
   nodes" (FR-322-AC-148 to FR-322-AC-150). There is one `clock_place` node for
   each path, and its slot selector is the symbolic element selector, never an
   index, so a collection holding more or fewer elements changes no node.
-  A model whose guards the emission cannot yet write SHALL be refused
-  `TimedModelNotEmitted`; it SHALL NOT be emitted with an empty `guards`
-  aggregate. An empty aggregate is written only for a place or model that has
-  no guard.
+  A place is exactly `model`, `path` and `resolved_path`: it lists no guard
+  (QSpec FR-322-AC-261).
+  **Clause nodes.** Each operation's guard SHALL be written as one
+  `clock_guard` of the operation's no-point `state`/`operation_anchor`
+  (QSpec FR-342-AC-11), one part for each convex part of the precondition's
+  disjunctive form: the part's predicate is the Boolean expression node of its
+  data predicate, lowered at its own site, or of `true`, followed by its
+  `clock_constraint` nodes. A constraint on a clock of `self` is of kind
+  `place` (the place, the owner `self`, a level-0 `parameter` node, its slot
+  terms, the comparison `lt`, `le`, `eq`, `ge` or `gt` and the bound); a
+  constraint on a `Clock` parameter is of kind `parameter` (the anchor and the
+  parameter's name). Each reset SHALL be one `clock_reset` of the anchor: of
+  kind `place` (the place, owner, slots, the binders of a reset by selection,
+  the condition `true` and the value) or of kind `parameter` (the name and the
+  value, no condition). Each time invariant SHALL be one `time_invariant` of
+  its predicate's expression node and its upper bounds; a `max` constraint on
+  clocks is the predicate `true`. A predicate whose root is a value is
+  referenced through an `expression`/`reference` node. Every clause node is
+  located at its own source; clause nodes of equal content are one node with
+  an occurrence at each source, and the root lists every clause and every
+  constraint a part or an invariant names once. Every aggregate is written in
+  QSpec FR-322's declared order (FR-322-AC-260, FR-322-AC-265).
+  A model with a member S4 does not write yet SHALL be refused
+  `TimedModelNotEmitted` (`unsupported_construct`/`not-yet-implemented`) at
+  the member, never emitted without it: a guard quantified over a clock
+  collection, at the quantifier (STD-554, QSpec FR-322-AC-263); a clock-reading
+  clause bound to an execution point (STD-555); a guard part, invariant or
+  `urgent when` predicate reading a clock presence; a constraint on another
+  object's clock; a guard disjunct that constrains no clock; two guarded
+  preconditions of one operation; a clock collection written whole, a place
+  set absent or a postcondition requiring a presence; and a reset by
+  selection that reads the element's data or of an element no single binder
+  selects. A model with no guard writes an empty `guards` aggregate.
   **Urgency.** Each `urgent` declaration SHALL be written as one `urgency`
   node, listed in the root's `urgencies` in declared order and located at its
   declaration, so that its order key is its own source region. Two
@@ -786,10 +815,11 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-47 | `t: Set<Clock>[0, 5]`, `o: OrderedSet<Clock>[0, 5]`, `so: Set<Option<Clock>>[0, 5]` and a `Set<Stopwatch>[0, 5]` each range over `[0, 1]`; `Set<Clock>[2, 5]` leaves no initial state (`Undecided(NoInitialState)`); a `Map<Text, Clock>[0, 2]` is not pure-clock and takes its entries from the snapshot. | Test |
 | FR-230-AC-48 | Over `u: Sequence<Clock>` with no declared maximum, initial states are produced in ascending count from 0 and the analysis stops `incomplete` with `limit-reached` whose `limit` is `max_clocks` once the live clocks exceed it, and it does not return `NotSimulated::RequiresBound`. | Test |
 | FR-230-AC-49 | The emitted `clock_place` of `ts.x` below `ts: Sequence<Timer>[0, 3]` is one node for the three places `ts.0.x`, `ts.1.x` and `ts.2.x`, its slot step carries the symbolic element selector of QSpec FR-322-AC-148 and no index, and the place ids of slots 0 and 1 differ only in the final component of `<slots>`; the same holds for `Set`, `Bag`, `OrderedSet` and a nested `Sequence` (two `<slots>` components). | Test |
-| FR-230-AC-50 | A checked timed model with a guard is refused `TimedModelNotEmitted` until the guard is written, and is never emitted with an empty `guards` aggregate; a model with no guard emits empty aggregates and reads back (QSpec FR-322-AC-150). | Test |
+| FR-230-AC-50 | A checked timed model with a member S4 does not write yet is refused `TimedModelNotEmitted` (`unsupported_construct`/`not-yet-implemented`) at the member, and is never emitted without it: `forall(e in self.ts: e.x < 5 ms)` over `ts: Sequence<Timer>[0, 3]` as a guard at the quantifier (STD-554), a clock-reading `pre` bound to an execution point at the clause (STD-555), two guarded preconditions of one operation and a guard disjunct that constrains no clock at the precondition; a model with no guard emits empty aggregates and reads back (QSpec FR-322-AC-150). | Test |
 | FR-230-AC-51 | Over `v: Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]` on two objects, `present(other.v)`, `present(self.q[i])`, and `present(e)` in the bodies of `forall(e in self.q: ...)` and `exists(e in self.q: ...)` each check as a `Boolean` data predicate resolved through the place identity, are recorded as data predicates of the convex part at the owner and slot, declare no `Option<Boolean>` or other member, and leave every model declaration key as it is without `v`; a `present` with a wrong slot count or owner type is refused as QSpec FR-322-AC-156 states. | Test |
 | FR-230-AC-52 | Over `v: Option<Clock>` and `st: Mode` (`Idle` or `Armed` holding a clock), both in an operation's frame, the vectors `FP-01`..`FP-14` of QSpec's `clock-presence-frame-vectors.json` step as published: a requirement of an absent place with no write has no successor, and refuses `invalid_timed_model`/`clock-presence-unwritten` when the precondition establishes it absent; a write makes it present with its clock, a drop makes it absent, an unwritten `v` keeps its bit while an unwritten `Armed` `st` may also step to `Idle`, and each `Option` vector's pairing with its union twin holds of the observed results (QSpec FR-415-AC-21, TC-367 CK-31). | Test |
 | FR-230-AC-53 | A dense model whose only timed members are its clock `x`, `urgent Busy when { self.versionNumber > 0 }` and `urgent Prompt Config::ConfigVersion::attemptUpdate` emits two `urgency` nodes listed in declared order, each located at its declaration: the `when` one references the located Boolean expression node of the predicate, whose `self` is a level-0 `parameter` node, and the `operation` one the model node and `attemptUpdate`; I2 admits and reads both back. Two declarations of equal content are one node listed once with an occurrence at each declaration. `urgent Armed when { present(self.v) }` over `v: Option<Clock>` is refused `TimedModelNotEmitted`. | Test |
+| FR-230-AC-54 | Over `x: Clock`, `pre { self.x >= 1 ms and self.versionNumber > 0 or self.x < 5 ms }` emits one `clock_guard` of `attemptUpdate`'s no-point anchor with two parts (the expression node of `self.versionNumber > 0` with `ge 1/1`, and `true` with `lt 5/1`), `post { self.x = 0 ms }` one `clock_reset` of kind `place` with owner `self` and condition `true`, and `time invariant Bounded when { self.versionNumber >= 0 } { self.x <= 9 ms }` one `time_invariant` with the bound `le 9/1`; each clause node is located at its source and the root lists every clause and constraint once, in declared order. A constraint written twice is one node with two occurrences; `self.x = 2 ms` writes `eq`. Over `attemptUpdate(c: Clock)`, `c >= 1 ms` is a constraint and `c = 0 ms` a reset of kind `parameter` naming the anchor and `c`. | Test |
 
 ## Dependencies
 
