@@ -881,6 +881,37 @@ fn excluded(document: &[u8], body: &str) -> (qsl_semantics::check::ExcludedClaus
     found.unwrap_or_else(|| panic!("{body}: {refusals:?}"))
 }
 
+/// QSpec FR-322-AC-267 `CW-06`: an indexed element write `self.ts[0] =
+/// Config::Timer { x: 0 ms, n: 1 }` has no package form. S2 represents no
+/// indexed element read, so the unit is refused `unsupported_construct` at
+/// `self.ts[0]` before S3, and no package is emitted.
+#[trace("TC-685", "QSpec-FR-322-AC-267")]
+#[test]
+fn an_indexed_element_write_is_refused() {
+    let document = timer_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let unit = clocked_unit(
+        &packages,
+        "post P using v on Config::ConfigVersion::attemptUpdate { \
+         self.ts[0] = Config::Timer { x: 0 ms, n: 1 } }\n",
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    let refusal = qsl_forms::build_unit(&parsed).expect_err("S2 has no indexed element read");
+    assert_eq!(
+        refusal.catalog_code(),
+        Code::UnsupportedConstruct,
+        "{refusal:?}"
+    );
+    let span = refusal.span.expect("a span");
+    assert_eq!(&unit[span.start..span.end], "self.ts[0]");
+}
+
 /// [`presence_document`] whose `attemptUpdate` frame names `v`.
 fn dropping_document() -> Vec<u8> {
     let mut document: Value = serde_json::from_slice(&presence_document()).expect("JSON");
