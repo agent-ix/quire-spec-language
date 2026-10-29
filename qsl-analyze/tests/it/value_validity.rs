@@ -353,6 +353,19 @@ fn key_of(package: &CheckedPackage, function: &str, occurrence: &Json) -> Occurr
     )
 }
 
+/// A cancellation that ends the run after a minute, so a search that does
+/// not stop (an unenforced budget, a lost violation) fails the test that
+/// asserts its result instead of never returning.
+fn guarded() -> Cancel {
+    let cancel = Cancel::new();
+    let watchdog = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        watchdog.cancel(quire_exact::CancelCause::Deadline);
+    });
+    cancel
+}
+
 fn index() -> RequestIndex {
     RequestIndex::new(0)
 }
@@ -395,7 +408,7 @@ fn run_in(
         max_cases: ask.max_cases.and_then(NonZeroU64::new),
         reported: ask.reported,
     });
-    analyze(engines, vec![value_item(index(), request)], &Cancel::new()).remove(0)
+    analyze(engines, vec![value_item(index(), request)], &guarded()).remove(0)
 }
 
 fn run(
@@ -864,7 +877,7 @@ fn an_unsatisfiable_domain_proves_no_case_and_is_vacuous_not_proved() {
                 reported: None,
             }),
         )],
-        &Cancel::new(),
+        &guarded(),
     )
     .remove(0);
     // Zero cases examined: not an exhaustive proof, the vacuous one.
@@ -1073,14 +1086,7 @@ fn a_huge_domain_and_a_huge_budget_are_enumerated_lazily() {
         "breaks",
         &serde_json::json!({"role": "claim", "ordinal": 0}),
     );
-    // A watchdog ends a run that never finds the violation, so a broken
-    // search fails this test after a minute instead of never returning.
-    let cancel = Cancel::new();
-    let watchdog = cancel.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(60));
-        watchdog.cancel(quire_exact::CancelCause::Deadline);
-    });
+    let cancel = guarded();
     let request = ValueTarget::select(&package, "breaks", &breaks).map(|target| ValueRequest {
         target,
         max_cases: NonZeroU64::new(u64::MAX),
@@ -1163,7 +1169,7 @@ fn an_unbounded_integer_parameter_needs_a_bound_and_a_bound_makes_it_bounded() {
                 reported: None,
             }),
         )],
-        &Cancel::new(),
+        &guarded(),
     )
     .remove(0);
     assert!(matches!(
@@ -1311,7 +1317,7 @@ fn negotiated_refusals_run_no_arm() {
             reported: None,
         });
         let item: AnalyzeItem<'_> = value_item(index(), request).disposed(disposition, None);
-        let records = analyze(&Engines::qsl().unwrap(), vec![item], &Cancel::new());
+        let records = analyze(&Engines::qsl().unwrap(), vec![item], &guarded());
         let Settlement::Disposed(disposed) = &records[0].settlement else {
             panic!()
         };
@@ -1358,5 +1364,50 @@ fn a_location_holds_one_candidate_expression_occurrence() {
             }
         }
         assert!(!seen.is_empty());
+    }
+}
+
+/// A reported candidate that is no assignment of the claim's parameters
+/// (wrong arity, wrong type, outside the declared domain) is not a violation
+/// the native replay can reproduce: `inconclusive` `replay-parity` with no
+/// counterexample, never a failure of the item.
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-3")]
+#[test]
+fn a_reported_candidate_outside_the_domain_is_replay_parity_not_a_failure() {
+    let package = package_of(
+        "function subject using v(x: Int[0, 255], flag: Boolean): Boolean pure { x >= 0 }",
+    );
+    let key = key_of(
+        &package,
+        "subject",
+        &serde_json::json!({"role": "claim", "ordinal": 0}),
+    );
+    let candidates = [
+        vec![integer(3)],
+        vec![integer(3), Value::Boolean(true), integer(1)],
+        vec![integer(999), Value::Boolean(true)],
+        vec![integer(-1), Value::Boolean(false)],
+        vec![Value::Boolean(true), integer(3)],
+    ];
+    for candidate in candidates {
+        let record = run_in(
+            &Engines::qsl().unwrap(),
+            &package,
+            &key,
+            "subject",
+            Ask {
+                max_cases: None,
+                reported: Some(candidate.clone()),
+            },
+        );
+        assert!(
+            matches!(
+                terminal(&record),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+            ),
+            "{candidate:?}: {:?}",
+            record.settlement
+        );
+        assert!(record.value_check.is_none());
     }
 }

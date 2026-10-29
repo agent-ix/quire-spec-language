@@ -93,6 +93,9 @@ pub(crate) enum Step {
     Stop(Stop),
     /// The evaluator refused: the arm cannot decide the claim.
     Refuse,
+    /// The goal is undefined where the package names no single occurrence:
+    /// the arm cannot report the violation and does not claim the goal.
+    Unlocated,
 }
 
 /// The step a verdict is. A refused evaluation is never a held goal.
@@ -102,26 +105,33 @@ pub(crate) fn judge(verdict: Verdict) -> Step {
         Verdict::Violated(violation) => Step::Violated(violation),
         Verdict::Stopped(stop) => Step::Stop(stop),
         Verdict::Refused => Step::Refuse,
+        Verdict::Unlocated => Step::Unlocated,
     }
 }
 
-/// `refuted` when the native replay reproduces `violation` at `assignment`,
-/// and `replay-parity` otherwise: the verdict is never the search's own.
+/// The outcome of a replay: `refuted` when the native replay reproduced the
+/// violation, `replay-parity` when it did not (QSpec FR-483 "Counterexample
+/// and evidence kind"). The parity branch is defence in depth: the arm's own
+/// search and its replay share one evaluator, so only a reported candidate
+/// (or an evaluator that is not deterministic) reaches it.
+pub(crate) fn replayed(reproduced: Option<ReproducedViolation>) -> ValueOutcome {
+    match reproduced {
+        Some(reproduced) => ValueOutcome::Refuted(Box::new(reproduced)),
+        None => ValueOutcome::ReplayParity,
+    }
+}
+
+/// Replay `violation` at `assignment` natively and settle by the result.
 fn reproduce(
     target: &ValueTarget<'_>,
     assignment: &[Value],
     violation: &qsl_replay::value_check::Violation,
     cancel: &Cancel,
 ) -> Result<ValueOutcome, ValueRefusal> {
-    Ok(
-        match target
-            .replay(assignment, violation, cancel)
-            .map_err(ValueRefusal::Fault)?
-        {
-            Some(reproduced) => ValueOutcome::Refuted(Box::new(reproduced)),
-            None => ValueOutcome::ReplayParity,
-        },
-    )
+    target
+        .replay(assignment, violation, cancel)
+        .map(replayed)
+        .map_err(ValueRefusal::Fault)
 }
 
 /// Confirm a candidate violation an external source reports: `refuted` only
@@ -131,12 +141,18 @@ fn confirm_reported(
     reported: &[Value],
     cancel: &Cancel,
 ) -> Result<ValueOutcome, ValueRefusal> {
+    // A candidate that is no assignment of the target (wrong arity, type or
+    // outside its domain) is not a violation the native replay can
+    // reproduce: `replay-parity`, never a fault.
+    if !target.admits(reported) {
+        return Ok(ValueOutcome::ReplayParity);
+    }
     let verdict = target
         .evaluate(reported, cancel)
         .map_err(ValueRefusal::Fault)?;
     match judge(verdict) {
         Step::Violated(violation) => reproduce(target, reported, &violation, cancel),
-        Step::Continue => Ok(ValueOutcome::ReplayParity),
+        Step::Continue | Step::Unlocated => Ok(ValueOutcome::ReplayParity),
         Step::Stop(stop) => Ok(ValueOutcome::Stopped(stop)),
         Step::Refuse => Err(ValueRefusal::Unsupported(
             target.form(),
@@ -249,6 +265,10 @@ pub fn check_value(
             Step::Continue => {}
             Step::Violated(violation) => return reproduce(target, &assignment, &violation, cancel),
             Step::Stop(stop) => return Ok(ValueOutcome::Stopped(stop)),
+            // A violation that cannot be named is not a pass: the claim is
+            // undecided (`solver-inconclusive`, an element the arm does not
+            // cover).
+            Step::Unlocated => return Ok(ValueOutcome::Undecided),
             Step::Refuse => {
                 return Err(ValueRefusal::Unsupported(
                     form,
@@ -468,6 +488,7 @@ mod tests {
         assert_eq!(judge(Verdict::Holds), Step::Continue);
         assert_eq!(judge(Verdict::NotDecisive), Step::Continue);
         assert_eq!(judge(Verdict::Refused), Step::Refuse);
+        assert_eq!(judge(Verdict::Unlocated), Step::Unlocated);
         let violation = Violation { undefined: None };
         assert_eq!(
             judge(Verdict::Violated(violation.clone())),
@@ -475,5 +496,48 @@ mod tests {
         );
         let stop = Stop::Cancelled(CancelCause::Deadline);
         assert_eq!(judge(Verdict::Stopped(stop.clone())), Step::Stop(stop));
+    }
+
+    /// A replay that does not reproduce is `replay-parity`, with no
+    /// counterexample; one that does is `refuted`.
+    #[test]
+    fn a_replay_that_does_not_reproduce_is_replay_parity() {
+        assert!(matches!(replayed(None), ValueOutcome::ReplayParity));
+    }
+
+    /// An undecided claim (a violation the package cannot locate, or a
+    /// scalar operation) settles `inconclusive` `solver-inconclusive`, and
+    /// a replay-parity outcome `inconclusive` `replay-parity`; neither
+    /// records a counterexample.
+    #[test]
+    fn undecided_and_parity_outcomes_settle_inconclusive_without_a_counterexample() {
+        use qsl_replay::{InconclusiveCause, TerminalValue};
+        let settle_one = |outcome| {
+            let report = ValueReport::Found(outcome, Vec::new(), claim_key());
+            settle(
+                report,
+                RequestIndex::new(0),
+                qsl_foundation::BackendId::new("value-checker"),
+            )
+        };
+        let (undecided, none) = settle_one(ValueOutcome::Undecided);
+        assert!(none.is_none());
+        assert!(matches!(
+            undecided.value(),
+            TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive { .. })
+        ));
+        let (parity, none) = settle_one(ValueOutcome::ReplayParity);
+        assert!(none.is_none());
+        assert!(matches!(
+            parity.value(),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+        ));
+    }
+
+    fn claim_key() -> qsl_replay::OccurrenceKey {
+        qsl_replay::OccurrenceKey::new(
+            qsl_replay::WireNodeId::from_digest([1; 32]),
+            quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
+        )
     }
 }

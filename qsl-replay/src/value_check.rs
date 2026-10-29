@@ -175,6 +175,10 @@ pub enum Verdict {
     Stopped(Stop),
     /// The evaluator refused: the result is defined but not admitted.
     Refused,
+    /// The goal is undefined at the assignment but the package locates the
+    /// undefined subexpression at no single `expression` occurrence, so the
+    /// violation cannot be named: neither a refutation nor a pass.
+    Unlocated,
 }
 
 /// A violation the native replay reproduced: the only evidence of a
@@ -397,12 +401,7 @@ impl<'p> ValueTarget<'p> {
                             reason: undefined_reason(reason),
                         }),
                     }),
-                    (ClaimForm::Clause, None) => {
-                        return Err(InternalFault::new(
-                            "value-check",
-                            "undefined-evaluation-is-located",
-                        ))
-                    }
+                    (ClaimForm::Clause, None) => Verdict::Unlocated,
                     (ClaimForm::ScalarOperation, Some(locus)) if locus == self.claim => {
                         Verdict::Violated(Violation {
                             undefined: Some(UndefinedAt {
@@ -426,6 +425,22 @@ impl<'p> ValueTarget<'p> {
         })
     }
 
+    /// Whether `assignment` is one of the target's assignments: one value
+    /// per parameter, each of the parameter's type and within its domain.
+    pub fn admits(&self, assignment: &[Value]) -> bool {
+        assignment.len() == self.parameters.len()
+            && assignment
+                .iter()
+                .zip(&self.parameters)
+                .all(|(value, parameter)| match (value, &parameter.domain) {
+                    (Value::Boolean(_), ParameterDomain::Boolean) => true,
+                    (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
+                        n >= interval.lower() && n <= interval.upper()
+                    }
+                    _ => false,
+                })
+    }
+
     /// Replay `assignment` through the native evaluator: the violation it
     /// reproduces, or `None` when the evaluator does not violate the goal at
     /// it, or violates it differently from `expected` (QSpec FR-483: the
@@ -440,6 +455,9 @@ impl<'p> ValueTarget<'p> {
         expected: &Violation,
         cancel: &Cancel,
     ) -> Result<Option<ReproducedViolation>, InternalFault> {
+        if !self.admits(assignment) {
+            return Ok(None);
+        }
         Ok(match self.evaluate(assignment, cancel)? {
             Verdict::Violated(found) if found == *expected => Some(ReproducedViolation {
                 assignment: assignment.to_vec(),
@@ -449,7 +467,8 @@ impl<'p> ValueTarget<'p> {
             | Verdict::Holds
             | Verdict::NotDecisive
             | Verdict::Stopped(_)
-            | Verdict::Refused => None,
+            | Verdict::Refused
+            | Verdict::Unlocated => None,
         })
     }
 
