@@ -3880,7 +3880,10 @@ impl PackageDeclarations {
                             *slot = Some(lowered);
                         }
                     }
-                    Err(refusal) => refusals.push(refusal),
+                    Err(refusal) => {
+                        lowering.record_temporal_refused(*index);
+                        refusals.push(refusal);
+                    }
                 }
             };
         for step in &order {

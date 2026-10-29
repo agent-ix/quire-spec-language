@@ -700,6 +700,10 @@ pub(crate) struct Lowering<'a> {
     protocol_compensations: Vec<Vec<protocol::CompensationNodes>>,
     /// Temporal clause nodes keyed before a protocol that requires them.
     temporal_keys: BTreeMap<usize, NodeKey>,
+    /// Temporal clauses whose lowering refused: the refusal is reported at
+    /// the clause, so a protocol requiring one is left unkeyed without a
+    /// second refusal of its own.
+    refused_temporals: BTreeSet<usize>,
     /// Parameter nodes minted while lowering one protocol's expression
     /// bodies, by enclosing protocol declaration.
     protocol_binder_keys:
@@ -1634,6 +1638,7 @@ impl<'a> Lowering<'a> {
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
             temporal_keys: BTreeMap::new(),
+            refused_temporals: BTreeSet::new(),
             protocol_binder_keys: BTreeMap::new(),
             protocol_expression_binders: BTreeMap::new(),
             active_protocol: None,

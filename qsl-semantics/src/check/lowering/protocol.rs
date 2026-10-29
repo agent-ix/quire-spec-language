@@ -24,7 +24,7 @@
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
 //! by `quire.structural-node/v1`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
@@ -537,18 +537,38 @@ impl Lowering<'_> {
         self.temporal_keys.insert(index, key);
     }
 
+    /// Record that the `index`-th temporal clause's lowering refused.
+    pub(crate) fn record_temporal_refused(&mut self, index: usize) {
+        self.refused_temporals.insert(index);
+    }
+
+    /// The keys of the temporal clauses `protocol` requires, in requirement
+    /// order, or `None` when one of them was refused: that refusal is
+    /// already reported at the clause, so the protocol is left unkeyed and
+    /// adds none of its own. A required clause that is neither keyed nor
+    /// refused is bound to a key no emitted node carries and refuses
+    /// `missing_declaration`/`missing-name` at the protocol that requires it
+    /// (FR-383-AC-17).
     fn required_temporal_keys(
         &self,
         protocol: &ProtocolInput<'_>,
         location: &Location,
-    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+    ) -> Result<Option<Vec<NodeKey>>, CheckRefusal> {
+        let requirements = protocol.checked.requirements.iter();
         resolve_temporal_requirement_keys(
-            protocol
-                .checked
-                .requirements
-                .iter()
-                .map(|requirement| requirement.temporal),
+            requirements.map(|requirement| {
+                (
+                    requirement.temporal,
+                    protocol
+                        .form
+                        .requirements
+                        .iter()
+                        .find(|written| written.temporal.span == requirement.span)
+                        .map_or("", |written| written.temporal.name.as_str()),
+                )
+            }),
             &self.temporal_keys,
+            &self.refused_temporals,
             location,
         )
     }
@@ -609,7 +629,10 @@ impl Lowering<'_> {
             self.set_protocol_key(index, ProtocolKey::AfterClauses);
             return Ok(Vec::new());
         }
-        let requirements = self.required_temporal_keys(protocol, &location)?;
+        let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
+            self.set_protocol_key(index, ProtocolKey::Unkeyed);
+            return Ok(Vec::new());
+        };
         match self.protocol_node_for(
             protocol,
             &law,
@@ -675,7 +698,10 @@ impl Lowering<'_> {
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
             let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
             let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
-            let requirements = self.required_temporal_keys(protocol, &location)?;
+            let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
+                self.protocol_keys[index] = ProtocolKey::Unkeyed;
+                continue;
+            };
             let key = self.protocol_node_for(
                 protocol,
                 &law,
@@ -2012,20 +2038,22 @@ impl Lowering<'_> {
     }
 }
 
-fn resolve_temporal_requirement_keys(
-    requirements: impl IntoIterator<Item = usize>,
+fn resolve_temporal_requirement_keys<'n>(
+    requirements: impl IntoIterator<Item = (usize, &'n str)>,
     temporal_keys: &BTreeMap<usize, NodeKey>,
+    refused: &BTreeSet<usize>,
     location: &Location,
-) -> Result<Vec<NodeKey>, CheckRefusal> {
-    requirements
-        .into_iter()
-        .map(|requirement| {
-            temporal_keys
-                .get(&requirement)
-                .copied()
-                .ok_or_else(|| fault(location, KeyFault::UnkeyableRequirements))
-        })
-        .collect()
+) -> Result<Option<Vec<NodeKey>>, CheckRefusal> {
+    let mut keys = Vec::new();
+    let mut any_refused = false;
+    for (requirement, name) in requirements {
+        match temporal_keys.get(&requirement) {
+            Some(key) => keys.push(*key),
+            None if refused.contains(&requirement) => any_refused = true,
+            None => return Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
+        }
+    }
+    Ok((!any_refused).then_some(keys))
 }
 
 impl Lowering<'_> {
@@ -2202,18 +2230,37 @@ pub(super) enum ProtocolKey {
 mod requirement_key_tests {
     use super::*;
 
+    fn location() -> Location {
+        Location::root(Origin::Expression)
+    }
+
+    /// FR-383-AC-17: a required clause no emitted node carries refuses
+    /// `missing-name` naming the clause, never an internal fault.
+    #[ix_trace_rs::trace("FR-383-AC-17", "TC-1063")]
     #[test]
-    fn a_required_temporal_without_a_key_is_unkeyable_requirements() {
-        let location = Location::root(Origin::Expression);
-        let Err(refusal) = resolve_temporal_requirement_keys([7], &BTreeMap::new(), &location)
-        else {
-            panic!("a missing required temporal key is an internal key fault");
+    fn a_required_temporal_without_a_key_is_missing_name() {
+        let Err(refusal) = resolve_temporal_requirement_keys(
+            [(7, "Due")],
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &location(),
+        ) else {
+            panic!("an unkeyed, unrefused required clause refuses");
         };
-        assert_eq!(
-            refusal.cause,
-            crate::check::CheckCause::InternalFault(Box::new(
-                crate::check::refusal::KeyFault::UnkeyableRequirements
-            ))
-        );
+        assert_eq!(refusal.cause, CheckCause::MissingName("Due".to_owned()));
+    }
+
+    /// A required clause whose own lowering refused leaves the protocol
+    /// unkeyed without a second refusal.
+    #[ix_trace_rs::trace("FR-383-AC-17", "TC-1063")]
+    #[test]
+    fn a_refused_required_temporal_adds_no_refusal() {
+        let keys = BTreeMap::from([(1, NodeKey::from_digest([1; 32]))]);
+        let refused = BTreeSet::from([7]);
+        let resolved =
+            resolve_temporal_requirement_keys([(1, "A"), (7, "Due")], &keys, &refused, &location());
+        assert!(matches!(resolved, Ok(None)), "{resolved:?}");
+        let resolved = resolve_temporal_requirement_keys([(1, "A")], &keys, &refused, &location());
+        assert!(matches!(resolved, Ok(Some(found)) if found == [NodeKey::from_digest([1; 32])]));
     }
 }

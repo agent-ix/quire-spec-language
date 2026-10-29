@@ -2,10 +2,15 @@
 //! FR-383-AC-2, AC-13: a protocol's requirements set names the emitted
 //! temporal clause nodes, deduplicated and sorted by canonical node identity.
 
+use qsl_semantics::check::CheckCause;
+use quire_semantic_value::checking::CheckingLimits;
+
+use super::owner_model::verdict;
 use super::protocol_graph::{flow_over, model};
 use super::protocol_reference::{clause_argument, node_by_id, node_of};
-use super::reachability::lower_with;
+use super::reachability::{lower_with, Lowered};
 use super::*;
+use crate::checked_v2::tests::rekey_stale;
 
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
@@ -58,33 +63,6 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
     );
 }
 
-fn read_mutated_wire(mut wire: Value) -> Read {
-    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
-    wire["package_id"]["digest"] = json!(package_id.hex());
-    let bytes = serde_json::to_vec(&wire).expect("mutated wire serializes");
-    let document = model();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied model document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
-    let mut evidence = CheckedPackageEvidence::new();
-    for feature in wire["lock"]["required_features"].as_array().unwrap() {
-        evidence.support_feature(feature.as_str().unwrap());
-    }
-    evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
-        .expect("fresh model evidence");
-    let pinned = qsl_semantics::library::fixtures::single_pin(library(), package_id);
-    read_v2(
-        &bytes,
-        library(),
-        V2ReadLimits::default(),
-        &evidence,
-        &pinned,
-    )
-}
-
 fn protocol_clause_index(wire: &Value) -> usize {
     wire["semantic_graph"]["nodes"]
         .as_array()
@@ -92,6 +70,29 @@ fn protocol_clause_index(wire: &Value) -> usize {
         .iter()
         .position(|node| node["semantic_form"] == "protocol_clause")
         .expect("one protocol clause")
+}
+
+/// The reader's verdict on `valid` after `edit` to its clause node, with the
+/// clause's node id (and everything that names it) recomputed, so the
+/// refusal is the reader's rule on the edited content and not a stale-key
+/// refusal at the clause's node id.
+fn clause_edit_verdict(valid: &Lowered, edit: impl FnOnce(&mut Value)) -> String {
+    let mut wire = valid.wire.clone();
+    let index = protocol_clause_index(&wire);
+    edit(&mut wire["semantic_graph"]["nodes"][index]);
+    rekey_stale(&mut wire);
+    verdict(valid, &wire)
+}
+
+fn requirements_members(clause: &mut Value) -> &mut Vec<Value> {
+    clause["body"]["arguments"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|argument| argument["name"] == "requirements")
+        .unwrap()["value"]["members"]
+        .as_array_mut()
+        .unwrap()
 }
 
 fn sort_dependencies(clause: &mut Value) {
@@ -106,6 +107,10 @@ fn sort_dependencies(clause: &mut Value) {
         });
 }
 
+/// FR-383-AC-2, AC-13: each mutated clause is rekeyed, so the package is
+/// refused by the reader's own requirements-set rule for that mutation and
+/// not by a stale node id. The unmutated, rekeyed wire is admitted, which
+/// shows the rekey itself introduces no refusal.
 #[trace("FR-383-AC-2", "FR-383-AC-13", "TC-1062")]
 #[test]
 fn requirement_wire_mutations_refuse() {
@@ -126,70 +131,64 @@ fn requirement_wire_mutations_refuse() {
     assert_eq!(requirements["members"].as_array().unwrap().len(), 2);
     let original_target = requirements["members"][0]["target"].clone();
 
-    let mut noncanonical = valid.wire.clone();
-    let clause = &mut noncanonical["semantic_graph"]["nodes"][clause_index];
-    clause["body"]["arguments"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|argument| argument["name"] == "requirements")
-        .unwrap()["value"]["members"]
-        .as_array_mut()
-        .unwrap()
-        .swap(0, 1);
-    assert!(matches!(read_mutated_wire(noncanonical), Read::Refused(_)));
+    assert_eq!(clause_edit_verdict(&valid, |_| {}), "admitted");
 
-    let mut missing_dependency = valid.wire.clone();
-    missing_dependency["semantic_graph"]["nodes"][clause_index]["dependencies"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|dependency| dependency != &original_target);
-    assert!(matches!(
-        read_mutated_wire(missing_dependency),
-        Read::Refused(_)
-    ));
-
-    let mut wrong_form = valid.wire.clone();
-    let replacement = wrong_form["semantic_graph"]["nodes"]
+    let noncanonical = clause_edit_verdict(&valid, |clause| {
+        requirements_members(clause).swap(0, 1);
+    });
+    let missing_dependency = clause_edit_verdict(&valid, |clause| {
+        clause["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|dependency| dependency != &original_target);
+    });
+    let non_temporal = valid.wire["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
         .iter()
         .find(|node| {
-            node["semantic_form"] != "temporal_clause"
-                && node["node_id"] != wrong_form["semantic_graph"]["nodes"][clause_index]["node_id"]
+            node["semantic_form"] != "temporal_clause" && node["node_id"] != clause["node_id"]
         })
-        .expect("a non-temporal node")
-        .get("node_id")
-        .unwrap()
+        .expect("a non-temporal node")["node_id"]
         .clone();
-    let clause = &mut wrong_form["semantic_graph"]["nodes"][clause_index];
-    clause["body"]["arguments"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|argument| argument["name"] == "requirements")
-        .unwrap()["value"]["members"][0]["target"] = replacement.clone();
-    let dependencies = clause["dependencies"].as_array_mut().unwrap();
-    dependencies.retain(|dependency| dependency != &original_target);
-    dependencies.push(replacement);
-    sort_dependencies(clause);
-    assert!(matches!(read_mutated_wire(wrong_form), Read::Refused(_)));
-
-    let mut unknown_key = valid.wire.clone();
-    let clause = &mut unknown_key["semantic_graph"]["nodes"][clause_index];
+    let retarget = |replacement: Value| {
+        let original = original_target.clone();
+        move |clause: &mut Value| {
+            requirements_members(clause)[0]["target"] = replacement.clone();
+            let dependencies = clause["dependencies"].as_array_mut().unwrap();
+            dependencies.retain(|dependency| dependency != &original);
+            dependencies.push(replacement);
+            sort_dependencies(clause);
+        }
+    };
+    let wrong_form = clause_edit_verdict(&valid, retarget(non_temporal));
     let mut unknown = original_target.clone();
     unknown["digest"] = json!("0000000000000000000000000000000000000000000000000000000000000000");
-    clause["body"]["arguments"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|argument| argument["name"] == "requirements")
-        .unwrap()["value"]["members"][0]["target"] = unknown.clone();
-    let dependencies = clause["dependencies"].as_array_mut().unwrap();
-    dependencies.retain(|dependency| dependency != &original_target);
-    dependencies.push(unknown);
-    sort_dependencies(clause);
-    assert!(matches!(read_mutated_wire(unknown_key), Read::Refused(_)));
+    let unknown_key = clause_edit_verdict(&valid, retarget(unknown));
+
+    let clause_path = format!("/semantic_graph/nodes/{clause_index}");
+    let member_target = format!("{clause_path}/body/arguments/7/value/members/0/target");
+    // A set out of canonical order, and a clause that drops the dependency
+    // its body names, are the reader's graph rules on the clause node.
+    assert_eq!(
+        noncanonical,
+        format!("InvalidSemanticGraph at {clause_path} (None)")
+    );
+    assert_eq!(
+        missing_dependency,
+        format!("InvalidSemanticGraph at {clause_path}/dependencies (None)")
+    );
+    // The requirements member must be a temporal clause node of the graph:
+    // a node of another form is a malformed declaration at the member, and
+    // a key no node carries is a missing name at the member.
+    assert_eq!(
+        wrong_form,
+        format!("InvalidModelBinding at {member_target} (Some(MalformedDeclaration))")
+    );
+    assert_eq!(
+        unknown_key,
+        format!("MissingDeclaration at {member_target} (Some(MissingName))")
+    );
 }
 
 #[trace("FR-383-AC-13", "TC-1062")]
@@ -228,7 +227,24 @@ fn requirement_order_does_not_change_the_protocol_package_identity() {
         .map(|reference| reference["target"]["digest"].as_str().unwrap())
         .collect();
     assert_eq!(requirements.len(), 2);
-    assert!(digests.windows(2).all(|pair| pair[0] < pair[1]));
+    // The expected order comes from the wire's own temporal nodes, sorted
+    // here, not from the order lowering or the source wrote them in.
+    let mut temporal_digests: Vec<&str> = first.wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "temporal_clause")
+        .map(|node| node["node_id"]["digest"].as_str().unwrap())
+        .collect();
+    temporal_digests.sort_unstable();
+    assert_eq!(temporal_digests.len(), 2);
+    assert_eq!(digests, temporal_digests);
+    let second_clause = node_of(&second.wire, "protocol", "protocol_clause");
+    assert_eq!(
+        clause_argument(second_clause, "requirements"),
+        clause_argument(clause, "requirements"),
+        "the reversed source order emits the same set"
+    );
     for requirement in requirements {
         let target = node_by_id(&first.wire, &requirement["target"]);
         assert!(clause["dependencies"]
@@ -367,4 +383,114 @@ fn a_required_clause_relation_carries_the_each_trigger() {
         row_trigger.digest.as_ref(),
         trigger["digest"].as_str().unwrap()
     );
+}
+
+/// FR-383-AC-17: a unit that selects no protocol profile emits no protocol
+/// node and no refusal for a protocol declaration, whatever it requires; the
+/// temporal clause it requires is still emitted and read back verified, and
+/// no `protocol_clause` (hence no requirements set) is in the wire.
+#[trace("FR-383-AC-17", "TC-1063")]
+#[test]
+fn a_requirement_without_a_protocol_profile_emits_no_protocol_node_and_no_refusal() {
+    let unit = format!(
+        "temporal Due using t over (c: M::Order) clock \"model-steps\" \
+         on origin {{ always true }}\n{}",
+        flow_over(
+            "M::Order",
+            "on origin",
+            "role Buyer on M::Order;\nrequires temporal Due;",
+        )
+    );
+    let lowered = lower_with(
+        model(),
+        "profile t = \"quire.temporal.infinite-trace/v1\";\n",
+        &unit,
+    );
+    assert!(lowered.verified, "{}", lowered.text);
+    let nodes = lowered.wire["semantic_graph"]["nodes"].as_array().unwrap();
+    assert!(nodes.iter().all(|node| node["node_tag"] != "protocol"));
+    assert!(nodes
+        .iter()
+        .all(|node| node["semantic_form"] != "protocol_clause"));
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node["semantic_form"] == "temporal_clause")
+            .count(),
+        1
+    );
+}
+
+/// The refusals of `clauses` checked over [`model`] with `profiles`.
+fn refusals_of(profiles: &str, clauses: &str) -> Vec<qsl_semantics::check::CheckRefusal> {
+    let document = model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{profiles}\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         {clauses}\n"
+    );
+    match assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+    {
+        Ok(_) => Vec::new(),
+        Err(refusals) => refusals,
+    }
+}
+
+/// FR-383-AC-17: a protocol that requires a temporal clause whose own
+/// lowering refused adds no refusal of its own: the clause's refusal is the
+/// only report of it, and the protocol is neither an internal fault nor a
+/// `missing-name` at the requirement.
+#[trace("FR-383-AC-17", "TC-1063")]
+#[test]
+fn a_protocol_requiring_a_refused_temporal_adds_no_second_refusal() {
+    let unit = format!(
+        "record Ack {{ ok: Boolean; }}\n\
+         function refers using v(): Boolean pure {{ protocol Bad }}\n\
+         protocol Bad using v over (input: M::Order) on origin {{\n\
+         role R on M::Order;\n\
+         run sequence Main {{ repeat Again by R visible (e.ok) while {{ not e.ok }} \
+         sequence Body {{ event E by R as (e: Ack) {{ true }}; }} }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n}}\n\
+         temporal Due using t over (c: M::Order) clock \"model-steps\" \
+         on origin {{ always holds(refers()) }}\n{}",
+        flow_over(
+            "M::Order",
+            "on origin",
+            "role Buyer on M::Order;\nrequires temporal Due;"
+        )
+    );
+    let refusals = refusals_of(PROFILES, &unit);
+    let name = |refusal: &qsl_semantics::check::CheckRefusal| match &refusal.location.origin {
+        quire_semantic_value::location::Origin::TypeDeclaration { name } => name.clone(),
+        other => format!("{other:?}"),
+    };
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| name(refusal) == "temporal 0 holds 1"
+                && matches!(refusal.cause, CheckCause::UnsupportedFeature { .. })),
+        "the temporal clause's own refusal is reported: {refusals:?}"
+    );
+    assert!(
+        refusals
+            .iter()
+            .all(|refusal| name(refusal) != "protocol Flow"),
+        "the requiring protocol adds no refusal: {refusals:?}"
+    );
+    assert!(
+        refusals.iter().all(|refusal| !matches!(
+            refusal.cause,
+            CheckCause::InternalFault(_) | CheckCause::MissingName(_)
+        )),
+        "{refusals:?}"
+    );
+    assert_eq!(refusals.len(), 3, "{refusals:?}");
 }
