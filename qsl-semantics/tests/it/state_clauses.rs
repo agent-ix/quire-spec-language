@@ -3799,7 +3799,7 @@ fn tc465_row12_anchor_mismatch_refuses_wrong_anchor() {
 }
 
 /// Row 13 (check 4): `model.digest` of another package.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "FR-106-AC-3", "TC-136", "FR-049-AC-2")]
 #[test]
 fn tc465_row13_wrong_model_digest_refuses_wrong_model_selection() {
     let document = tc465_document();

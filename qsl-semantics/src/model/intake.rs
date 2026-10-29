@@ -36,7 +36,7 @@
 //! than refusing the frame outright.
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, the typed-failure convention of the checked-term result categories"
 )]
 
 use std::collections::{BTreeMap, HashMap};
