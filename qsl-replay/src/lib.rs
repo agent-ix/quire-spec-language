@@ -240,9 +240,7 @@ pub use monitor_plan::{
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
 };
-pub use qsl_eval::smt::{
-    encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind,
-};
+
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,

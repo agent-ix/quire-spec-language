@@ -25,7 +25,7 @@
 //!   disjunct conjoined with the negation of the row's rule for it;
 //!
 //! and `(check-sat)`. FR-315 states no assertion order for these queries;
-//! this one is the encoding's own (spec gap, raised on QSL-1219).
+//! this one is the encoding's own (spec gap STD-556).
 //!
 //! The encoding reads no encoding limit (FR-314 "Encoding limits"). A
 //! refinement with a hidden field or a history field, a row of a protocol

@@ -6,12 +6,14 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::smt::{Refusal, SmtEncodingRefusal};
+use qsl_eval::smt::{
+    encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind, Refusal,
+    SmtEncodingRefusal,
+};
 use qsl_replay::{
-    check_refinement_smt_proof, encode_refinement_query, CertificateCheckLimits, CertificateLocus,
-    CertificateRejection, CertificateRule, IncompleteCause, ModelCheckLimit, ProofFormat,
-    QueryPart, RefinementCertificateRequest, RefinementQueryKind, RefinementSmtCertificate,
-    RefutedQuery, SmtProofCheck,
+    check_refinement_smt_proof, CertificateCheckLimits, CertificateLocus, CertificateRejection,
+    CertificateRule, IncompleteCause, ModelCheckLimit, ProofFormat, QueryPart,
+    RefinementSmtCertificate, RefutedQuery, SmtProofCheck,
 };
 use quire_exact::Cancel;
 
