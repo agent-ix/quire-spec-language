@@ -311,3 +311,152 @@ fn settle(world: &World, initial: &DocumentRef) -> TerminalValue {
     )
     .value
 }
+
+/// A stand-in for CG's SMT backend (ADR-018 EN-2, EN-3), registered from a
+/// manifest advertising `advertises`, with the fairness kinds a refinement
+/// record uses.
+fn smt_backend(advertises: &[(Capability, qsl_route::Mode)]) -> qsl_route::BackendDescriptor {
+    use qsl_foundation::bound::DomainKind;
+    qsl_route::BackendDescriptor::new(
+        qsl_route::Candidate::new(qsl_foundation::BackendId::new("smt")),
+        ProviderOrigin::Process,
+        ManifestDigest::from_digest([9; 32]),
+        advertises.iter().copied(),
+        Some(
+            [DomainKind::Population, DomainKind::Integer]
+                .into_iter()
+                .collect(),
+        ),
+        None,
+    )
+    .expect("the SMT stand-in admits")
+    .with_fairness_kinds([
+        quire_semantic_value::fairness::FairnessKind::Weak,
+        quire_semantic_value::fairness::FairnessKind::Strong,
+    ])
+}
+
+/// The registry of EN-1 and, when given, the SMT stand-in.
+fn registry(smt: Option<qsl_route::BackendDescriptor>) -> Registry {
+    let mut registry = Registry::new();
+    registry
+        .register(
+            en1::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([8; 32]))
+                .expect("EN-1 admits"),
+        )
+        .expect("registered");
+    if let Some(smt) = smt {
+        registry.register(smt).expect("registered");
+    }
+    registry
+}
+
+/// The candidate ids of `outcome`.
+fn candidate_ids(outcome: &CandidateOutcome) -> Vec<String> {
+    let CandidateOutcome::Candidates(set) = outcome else {
+        panic!("a computed candidate set: {outcome:?}");
+    };
+    set.candidates()
+        .iter()
+        .map(|candidate| candidate.id().as_str().to_owned())
+        .collect()
+}
+
+/// The request items of `world`'s FR-146 per-step simulation records.
+fn per_step_items(world: &World, registry: &Registry) -> Vec<qsl_route::request::RequirementItem> {
+    let records = world.package().graph().requirements();
+    let generated: Vec<&OccurrenceKey> = world
+        .refinement()
+        .step_simulations()
+        .iter()
+        .map(|entry| entry.occurrence())
+        .collect();
+    let items: Vec<_> = items_from_requirements(records, registry, None)
+        .into_iter()
+        .filter(|item| generated.contains(&item.occurrence()))
+        .collect();
+    assert_eq!(items.len(), generated.len());
+    items
+}
+
+/// FR-146 "Routing and settlement", FR-146-AC-10 (TC-551): each per-step
+/// simulation record is an `operation-contract` item whose candidates are
+/// chosen by kind alone, so under an SMT backend advertising
+/// `operation-contract` only in bounded mode it routes there with an
+/// unbounded extent every domain of which is boundable, the inputs from
+/// which negotiation settles it `requires-bound`; with the population
+/// bounded the extent is bounded.
+#[trace("TC-551", "FR-146-AC-10")]
+#[test]
+fn per_step_records_route_by_kind_to_an_operation_contract_backend() {
+    use qsl_route::request::ExtentClassification;
+    let registry = registry(Some(smt_backend(&[(
+        Capability::OperationContract,
+        qsl_route::Mode::Bounded,
+    )])));
+    let world = World::new(&cas_refines_counter());
+    let items = per_step_items(&world, &registry);
+    assert_eq!(items.len(), 8);
+    for item in &items {
+        assert_eq!(item.kind(), Capability::OperationContract);
+        assert_eq!(candidate_ids(item.candidates()), ["smt"]);
+        assert_eq!(
+            item.extent(),
+            ExtentClassification::Unbounded {
+                finite_bound_available: true
+            }
+        );
+    }
+
+    let bounded = World::new(&format!(
+        "{}\nbound CountersBound on Impl::counters [2]\n",
+        cas_refines_counter()
+    ));
+    for item in per_step_items(&bounded, &registry) {
+        assert_eq!(item.extent(), ExtentClassification::Bounded);
+    }
+}
+
+/// FR-146-AC-4's `unsupported` half (TC-551): with no backend advertising
+/// `operation-contract`, each per-step simulation record's candidate set is
+/// empty, which negotiation settles V-8 `unsupported`; the refinement
+/// record still routes to EN-1.
+#[trace("TC-551", "FR-146-AC-4")]
+#[test]
+fn per_step_records_have_no_candidate_without_an_smt_backend() {
+    let registry = registry(None);
+    let world = World::new(&cas_refines_counter());
+    for item in per_step_items(&world, &registry) {
+        assert!(candidate_ids(item.candidates()).is_empty(), "{item:?}");
+    }
+    let (occurrence, _) = record(&world);
+    let item = items_from_requirements(world.package().graph().requirements(), &registry, None)
+        .into_iter()
+        .find(|item| item.occurrence() == occurrence)
+        .expect("the refinement record has an item");
+    assert_eq!(candidate_ids(item.candidates()), [en1::BACKEND_ID]);
+}
+
+/// FR-146 "Routing and settlement" (ADR-020 RE-3, TC-551): the refinement
+/// record is a candidate for SMT unrolling as well as for EN-1, so an SMT
+/// backend advertising `temporal-satisfaction` and the record's fairness
+/// kinds is among its candidates.
+#[trace("TC-551")]
+#[test]
+fn the_refinement_record_is_also_an_smt_unrolling_candidate() {
+    let registry = registry(Some(smt_backend(&[(
+        Capability::TemporalSatisfaction,
+        qsl_route::Mode::Bounded,
+    )])));
+    let world = World::new(&cas_refines_counter());
+    let (occurrence, _) = record(&world);
+    let item = items_from_requirements(world.package().graph().requirements(), &registry, None)
+        .into_iter()
+        .find(|item| item.occurrence() == occurrence)
+        .expect("the refinement record has an item");
+    let mut ids = candidate_ids(item.candidates());
+    ids.sort();
+    let mut expected = vec![en1::BACKEND_ID.to_owned(), "smt".to_owned()];
+    expected.sort();
+    assert_eq!(ids, expected);
+}
