@@ -16,9 +16,7 @@ use qsl_replay::{
 };
 use qsl_replay::{ModelCheckItem, ModelCheckLimits};
 use qsl_route::deadlock::ObligationKind;
-use qsl_route::request::{
-    DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem,
-};
+use qsl_route::request::{DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem};
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, HyperForm};
 use qsl_semantics::family::UnsupportedItem;

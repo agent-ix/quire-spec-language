@@ -925,7 +925,10 @@ fn a_refused_certificate_check_settles_stale_or_failed() {
 #[test]
 fn a_certificate_with_no_initials_is_malformed_at_initials() {
     let (world, certificate) = no_late_reply();
-    assert_eq!(verdict(&world, &certificate), ZoneCertificateVerdict::Accepted);
+    assert_eq!(
+        verdict(&world, &certificate),
+        ZoneCertificateVerdict::Accepted
+    );
     let mut tampered = certificate;
     tampered.initials.clear();
     assert_eq!(
@@ -978,8 +981,7 @@ fn the_certificate_members_are_the_schemas_fifty_names() {
     assert!(!written.contains(&"initial"));
     for member in CertificateMember::ALL {
         assert_eq!(
-            serde_json::to_value(CertificateLocus::CertificateMember(*member))
-                .expect("a locus"),
+            serde_json::to_value(CertificateLocus::CertificateMember(*member)).expect("a locus"),
             serde_json::json!({"member": member.as_str()})
         );
     }

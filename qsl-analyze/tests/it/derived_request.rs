@@ -22,6 +22,7 @@ use qsl_eval::simulation::model::{PopulationUniverse, TimedSystem, DEFAULT_MAX_C
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
+use qsl_replay::SubjectIdentity;
 use qsl_replay::{
     CertificateCheckLimits, CertifiedItem, IncompleteCause, ModelCheckLimit, TerminalValue,
     ZoneCertificateRequest,
@@ -31,7 +32,6 @@ use qsl_route::reductions::Reductions;
 use qsl_route::request::{DerivedLimits, ExtentClassification, ItemKind, RequestItem};
 use qsl_semantics::check::Capability;
 use qsl_semantics::library::PackageId;
-use qsl_replay::SubjectIdentity;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -181,9 +181,13 @@ fn a_dense_subjects_derived_items_settle_on_en6() {
         };
         derived_zone_item(derived, timed_item)
     };
-    let mismatch = run(1, ZoneCheckItem::TimeLockFreedom, CertifiedItem::TimeLockFreedom)
-        .err()
-        .expect("a time-lock run is not the deadlock-freedom item's");
+    let mismatch = run(
+        1,
+        ZoneCheckItem::TimeLockFreedom,
+        CertifiedItem::TimeLockFreedom,
+    )
+    .err()
+    .expect("a time-lock run is not the deadlock-freedom item's");
     assert_eq!(
         mismatch,
         DerivedItemMismatch::OtherItem {
@@ -194,10 +198,18 @@ fn a_dense_subjects_derived_items_settle_on_en6() {
     let records = analyze(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![
-            run(1, ZoneCheckItem::DeadlockFreedom, CertifiedItem::DeadlockFreedom)
-                .expect("the deadlock-freedom run"),
-            run(2, ZoneCheckItem::TimeLockFreedom, CertifiedItem::TimeLockFreedom)
-                .expect("the time-lock-freedom run"),
+            run(
+                1,
+                ZoneCheckItem::DeadlockFreedom,
+                CertifiedItem::DeadlockFreedom,
+            )
+            .expect("the deadlock-freedom run"),
+            run(
+                2,
+                ZoneCheckItem::TimeLockFreedom,
+                CertifiedItem::TimeLockFreedom,
+            )
+            .expect("the time-lock-freedom run"),
         ],
         &Cancel::new(),
     );
@@ -282,10 +294,7 @@ fn an_untimed_subjects_deadlock_item_settles_on_en1() {
         )
     );
 
-    let opted_out = case(
-        &counter_body("terminal Halt using v on M any;\n"),
-        &[0],
-    );
+    let opted_out = case(&counter_body("terminal Halt using v on M any;\n"), &[0]);
     let item = opted_out.model_item();
     let written = written(&item.request.subject, &DerivedLimits::default());
     assert_eq!(kinds(&written), [Some(ItemKind::Formula)]);
@@ -336,8 +345,8 @@ fn a_subject_reading_several_model_selections_has_no_derived_request_item() {
         &root_claim(&world.package, PACKAGE)
     );
 
-    let abstract_identity = serde_json::from_slice::<serde_json::Value>(&req())
-        .expect("JSON")["package"]["identity"]
+    let abstract_identity = serde_json::from_slice::<serde_json::Value>(&req()).expect("JSON")
+        ["package"]["identity"]
         .as_str()
         .expect("an identity")
         .to_owned();

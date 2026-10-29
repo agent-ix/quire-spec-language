@@ -261,7 +261,7 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
             .package()
             .package_id()
     );
-    assert_eq!(abstract_subject.initial_states, [one.clone()]);
+    assert_eq!(abstract_subject.initial_states, std::slice::from_ref(&one));
 
     assert_eq!(settle(&world, &one), TerminalValue::Refuted);
 }

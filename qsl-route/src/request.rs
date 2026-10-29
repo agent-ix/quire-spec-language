@@ -129,15 +129,6 @@ impl ItemKind {
             Self::Refinement => "refinement",
         }
     }
-
-    /// Whether the item is derived by the request writer, with no
-    /// authored claim (FR-368 "Claim and anchor").
-    pub const fn is_derived(self) -> bool {
-        matches!(
-            self,
-            Self::DeadlockFreedom | Self::TimeLockFreedom | Self::RaceFreedom
-        )
-    }
 }
 
 /// QSpec FR-368 `abstract_subject`, present exactly on a `refinement` item
@@ -1698,7 +1689,7 @@ mod tests {
     /// QSpec FR-368-AC-13 and AC-21: a temporal item over a model subject
     /// has one of exactly five kinds, `formula`, `deadlock-freedom`,
     /// `time-lock-freedom`, `race-freedom` and `refinement`; `transfer` is
-    /// none of them, and the three derived kinds are the derived ones.
+    /// none of them.
     #[trace("QSpec-TC-431", "QSpec-FR-368-AC-13")]
     #[trace("QSpec-TC-431", "QSpec-FR-368-AC-21")]
     #[test]
@@ -1715,18 +1706,6 @@ mod tests {
             ]
         );
         assert!(!spelled.contains(&"transfer"));
-        let derived: Vec<_> = ItemKind::ALL
-            .into_iter()
-            .filter(|kind| kind.is_derived())
-            .collect();
-        assert_eq!(
-            derived,
-            [
-                ItemKind::DeadlockFreedom,
-                ItemKind::TimeLockFreedom,
-                ItemKind::RaceFreedom
-            ]
-        );
     }
 
     /// QSpec FR-368-AC-20: a derived item's `limits` hold a caller's
@@ -1763,8 +1742,8 @@ mod tests {
             "max_witness_set",
             "max_relation_tuples",
         ] {
-            let refusal = DerivedLimits::from_settings([("max_states", 5), (refused, 1)])
-                .expect_err(refused);
+            let refusal =
+                DerivedLimits::from_settings([("max_states", 5), (refused, 1)]).expect_err(refused);
             assert_eq!(refusal.name, refused);
             assert_eq!(
                 refusal.catalog_code(),
