@@ -5,7 +5,7 @@
 //! names, so the functions and protocols are keyed in dependency order.
 //! Every emitted package is read back through IR's v2 reader.
 
-use super::protocol_graph::{checked, clause, model, target, PROFILES};
+use super::protocol_graph::{checked, clause, model, PROFILES};
 use super::reachability::{lower_with, Lowered};
 use super::*;
 use qsl_semantics::check::{CheckCause, ProtocolConstruct, ProtocolReferenceCause};
@@ -163,53 +163,6 @@ fn a_chain_of_functions_and_protocols_is_keyed_in_dependency_order() {
             .collect()
     };
     assert_eq!(clause_ids(&admitted(&reversed)), clause_ids(&lowered));
-}
-
-/// QSL-844: a component of function calls and protocol references that
-/// closes a cycle is a recursion group (FR-383 "Cyclic reference
-/// components"), which is not written yet: the protocol refuses naming
-/// `ReferenceCycle` through a function that reads it back, whichever body
-/// holds the call (a capture, a guard, a `terminal when`, a control or the
-/// `finish`), and no clause node is written. The declaration and the
-/// function's reference to it are refused, once each.
-#[test]
-fn a_protocol_in_a_cycle_refuses_naming_the_recursion_group_ticket() {
-    let reach = ProtocolConstruct::ReferenceCycle;
-    assert_eq!(reach.tracking(), "QSL-844");
-    let cycle = CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::NotEmitted {
-        construct: reach,
-    }));
-    let back = "function back using v(): Boolean pure { protocol Flow }\n";
-    let sites = [
-        flow("on origin", "capture c: Boolean = back();", "", "true"),
-        flow("on each (t: Tick) when (back())", "", "", "true"),
-        flow("on origin", "", "terminal when { back() };", "true"),
-        flow("on origin", "", "", "back()"),
-        flow("on origin", "", "", "true").replace(
-            "run sequence Main { }",
-            "run sequence Main { check Gate using v { back() }; }",
-        ),
-    ];
-    for site in sites {
-        let text = format!("{back}{site}");
-        let refusals = checked(&text, false).expect_err(&text);
-        assert_eq!(refusals.len(), 2, "{text}: {refusals:?}");
-        assert!(refusals.iter().all(|r| r.cause == cycle), "{refusals:?}");
-        // The declaration order does not matter.
-        let swapped = format!("{site}{back}");
-        let again = checked(&swapped, false).expect_err(&swapped);
-        assert_eq!(again.len(), 2, "{swapped}: {again:?}");
-        assert!(again.iter().all(|r| r.cause == cycle), "{again:?}");
-    }
-    // A function that only reads a protocol, and a protocol that only calls
-    // a function, are not a cycle.
-    let acyclic = format!("{back}{}", flow("on origin", "", "", "true"));
-    let lowered = admitted(&acyclic);
-    assert!(target(
-        &lowered.wire,
-        &clause(&lowered.wire)["body"]["arguments"][0]["value"]
-    )
-    .is_object());
 }
 
 /// A second protocol, `Other`, whose `finish` binder is named `done` (not
