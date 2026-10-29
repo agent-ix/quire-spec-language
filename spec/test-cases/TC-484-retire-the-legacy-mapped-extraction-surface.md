@@ -24,17 +24,25 @@ cases.
    Confirm it declares no `quire-extraction` feature and no direct `qsl-source`
    dependency. Confirm the workspace still contains `qsl-source` and
    `qsl-replay` declares its own `quire-extraction` feature.
-3. Run `cargo test -p qsl-replay --features quire-extraction` and the
-   FR-030/FR-031 integration tests. Confirm the extraction test modules
-   previously gated by the root feature in `tests/it/config_version_spine.rs`
-   and `tests/it/spine_run.rs` are exercised without that feature and direct
-   root dependency.
+3. Before removing the root feature, run
+   `cargo test -p quire-spec-language --features quire-extraction,qsl-replay/quire-extraction --test config_version_spine --test spine_run`
+   to exercise the current root-owned cases. The code change moves those
+   cases from `tests/it/config_version_spine.rs` and `tests/it/spine_run.rs`
+   into `qsl-replay` or `qsl-source` tests before deleting their former
+   locations. In the resulting test sources, locate passing tests whose
+   trace tags include each of `FR-030-AC-1`, `FR-030-AC-2` and
+   `FR-031-AC-2`. Confirm the existing `qsl-source` tests tagged
+   `FR-030-AC-3`, `FR-030-AC-4` and `FR-030-AC-5` remain. Run
+   `cargo test -p qsl-replay --features quire-extraction` and
+   `cargo test -p qsl-source --features quire-extraction` for the
+   post-retirement owning-crate suites.
 
 ## Expected Results
 
 - Steps 1 and 2 show that the root Rust API, root feature and direct root
   dependency are absent, while the `qsl-source` crate and replay-owned feature
   remain present.
-- Step 3 passes with extraction coverage owned by the crate that owns the
-  FR-030/FR-031 path. Extraction identity, source-map, limit, refusal and
-  clause-run behavior remains as specified by those requirements.
+- Step 3 shows each named acceptance criterion has a tagged, passing test
+  under `qsl-replay` or `qsl-source`, with the proper owning feature enabled.
+  Extraction identity, source-map, limit, refusal and clause-run behavior
+  remains as specified by those requirements.

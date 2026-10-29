@@ -46,7 +46,7 @@ define.
 | --- | --- | --- |
 | FR-490-AC-1 | A downstream Rust crate cannot import the root package's `mapped` module or `command::extraction` module or its output types. The implementation removes `src/mapped.rs`, `src/command/extraction.rs`, `src/command/output/extraction.rs`, and `tests/it/mapped.rs`. | Test |
 | FR-490-AC-2 | Root `Cargo.toml` declares neither a `quire-extraction` feature nor a direct optional `qsl-source` dependency; it has no compatibility feature, alias, or fallback for either. The `qsl-source` workspace crate and `qsl-replay/quire-extraction` feature remain declared. | Test |
-| FR-490-AC-3 | The `qsl-replay` extraction feature builds and its FR-030/FR-031 integration tests still pass after the root surfaces are removed. The extraction test modules currently gated by the root feature in `tests/it/config_version_spine.rs` and `tests/it/spine_run.rs` no longer depend on that removed feature or a direct root `qsl-source` dependency. | Test |
+| FR-490-AC-3 | After the root surfaces are removed, FR-030-AC-1, FR-030-AC-2 and FR-031-AC-2 each remain backed by a passing test owned by `qsl-replay` or `qsl-source`, with that acceptance-criterion ID on the test's trace tags. The tests now at `tests/it/config_version_spine.rs` and `tests/it/spine_run.rs` move to that owning crate as needed; the existing `qsl-source` tests tagged for FR-030-AC-3/4/5 remain. The replay feature and the root integration cases build and pass with the owning feature enabled. | Test (TC-484) |
 
 ## Dependencies
 
