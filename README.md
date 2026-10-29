@@ -299,7 +299,8 @@ refusal naming it; a point for no authored clause, or one the clause kind does
 not accept, is the checker's refusal. The points file is read under the same
 file ceiling as a `--model` file (over it is an explicit refusal, never
 truncated). A repeated clause name, an empty object, a member the point does
-not define and a malformed anchor name are each a refusal naming the file; an
+not define and an unknown `kind` are each a refusal naming the file (a
+malformed anchor name is the checker's refusal instead); an
 empty object is refused rather than emitting point-free bytes, since passing
 the option means points are expected. In every refusal no bytes are written and
 the exit is nonzero. Without the option the clauses are point-free.

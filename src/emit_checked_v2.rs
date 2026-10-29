@@ -241,11 +241,10 @@ impl<'de> serde::Deserialize<'de> for PointsFile {
 }
 
 /// The accepted execution points `path` holds, keyed by authored clause name.
-/// An empty object, a repeated clause name, an unknown `kind`, a malformed
-/// anchor name or a member the point does not define is an [`Error::Points`]
-/// refusal; whether a clause exists and accepts its point is the checker's,
-/// reported as [`Error::Producer`].
-#[ix_trace_rs::string_edge]
+/// An empty object, a repeated clause name, an unknown `kind` or a member the
+/// point does not define is an [`Error::Points`] refusal; whether a clause
+/// exists, accepts its point and the anchor name is well formed is the
+/// checker's, reported as [`Error::Producer`].
 fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
     let bad = |message: String| Error::Points {
         path: path.display().to_string(),

@@ -231,7 +231,12 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
     let document = std::fs::read(model).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let points = |text: &str| {
-        let file = directory.path().join(format!("points-{}.json", text.len()));
+        let file = directory.path().join(format!("points-{:x}.json", {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            text.hash(&mut hasher);
+            hasher.finish()
+        }));
         std::fs::write(&file, text).unwrap();
         file
     };
@@ -271,29 +276,84 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
         .filter(|node| node["semantic_form"] == "state_clause")
         .all(|node| node["body"]["operation"]["member"]["execution_point"].is_null()));
 
+    // (file text, refused by the checker rather than by the points reader)
     for (text, producer) in [
         (
             r#"{"NotAClause": {"kind": "post", "operation": "set"}}"#,
             true,
         ),
         (r#"{"Q1": {"kind": "pre", "operation": "set"}}"#, true),
+        (
+            r#"{"Q1": {"kind": "post", "operation": "not a name!"}}"#,
+            true,
+        ),
         (r#"{"Q1": {"kind": "sideways"}}"#, false),
+        (
+            r#"{"Q1": {"kind": "post", "operation": "set"}, "Q1": {"kind": "post", "operation": "set"}}"#,
+            false,
+        ),
+        ("{}", false),
+        (
+            r#"{"Q1": {"kind": "post", "operation": "set", "extra": 1}}"#,
+            false,
+        ),
         ("not json", false),
     ] {
         let mut refused = Vec::new();
         let refusal = run(&command(&[&points(text)]), &mut refused).expect_err(text);
-        assert_eq!(
-            matches!(refusal, Error::Producer(_)),
-            producer,
-            "{text}: {refusal:?}"
-        );
-        assert!(
-            producer || matches!(refusal, Error::Points { .. }),
-            "{text}: {refusal:?}"
-        );
+        if producer {
+            assert!(matches!(refusal, Error::Producer(_)), "{text}: {refusal:?}");
+        } else {
+            assert!(
+                matches!(refusal, Error::Points { .. }),
+                "{text}: {refusal:?}"
+            );
+            assert_eq!(refusal.exit_code(), 20, "{text}");
+        }
         assert_ne!(refusal.exit_code(), 0);
         assert!(refused.is_empty(), "{text}");
     }
+}
+
+/// Several accepted points in one file each reach their own clause: the
+/// example source plus a second clause, both over operation `set`.
+#[test]
+fn several_accepted_execution_points_each_reach_their_clause() {
+    let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
+    let document = std::fs::read(model).unwrap();
+    let source = std::fs::read_to_string("examples/switch-transition/switch.native").unwrap()
+        + "pre Q0 using v on M::Switch::set { true }\n";
+    let directory = tempfile::tempdir().unwrap();
+    let program = directory.path().join("two-clauses.native");
+    std::fs::write(&program, source).unwrap();
+    let file = directory.path().join("points.json");
+    std::fs::write(
+        &file,
+        r#"{"Q0": {"kind": "pre", "operation": "set"}, "Q1": {"kind": "post", "operation": "set"}}"#,
+    )
+    .unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[model]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&file, &program]));
+    let mut stdout = Vec::new();
+    run(&command, &mut stdout).expect("both points emit");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let mut points: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .map(|node| node["body"]["operation"]["member"]["execution_point"].to_string())
+        .collect();
+    points.sort();
+    let mut expected = vec![
+        json!({"kind": "pre", "operation": "set"}).to_string(),
+        json!({"kind": "post", "operation": "set"}).to_string(),
+    ];
+    expected.sort();
+    assert_eq!(points, expected, "each clause carries its own point");
 }
 
 /// A points file over the file ceiling is an explicit refusal naming it
