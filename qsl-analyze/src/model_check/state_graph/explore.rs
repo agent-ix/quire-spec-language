@@ -27,12 +27,15 @@ use qsl_eval::automaton::{SafetyState, SafetyTranslation};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
-    ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit, ModelCheckLimits,
-    ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, RunEnd, RunStats,
-    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    AppliedReduction, ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, Proviso, RunEnd,
+    RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::model_transition::ModelTransition;
 
+use super::super::ample::Por;
 use super::{
     cancelled, expansion_stop, stopped, Budgets, ExploredStateGraph, GraphEdge, GraphNode,
     GraphStats, Halt, InstanceView, NodeIndex, PredicateLabel,
@@ -65,6 +68,8 @@ enum DeadlockEvent {
 pub(super) struct Explored {
     pub(super) graph: ExploredStateGraph,
     pub(super) deadlock: Option<ModelCheckOutcome>,
+    pub(super) reduced: bool,
+    pub(super) partial_order_reduced: bool,
 }
 
 /// Phase 1 of one run.
@@ -77,6 +82,7 @@ pub(super) struct Exploration<'r, 'a, 'v> {
     pub(super) budgets: Budgets,
     pub(super) views: &'r [Vec<InstanceView<'v>>],
     pub(super) deadlock_freedom: bool,
+    pub(super) por: Option<&'r Por<'r, 'a>>,
 }
 
 /// The run's working state.
@@ -86,6 +92,8 @@ struct Walk {
     queue: VecDeque<usize>,
     deadlock: Option<DeadlockEvent>,
     horizon_cut: bool,
+    reduced: bool,
+    partial_order_reduced: bool,
 }
 
 impl Walk {
@@ -130,6 +138,8 @@ impl Exploration<'_, '_, '_> {
             queue: VecDeque::new(),
             deadlock: None,
             horizon_cut: false,
+            reduced: false,
+            partial_order_reduced: false,
         };
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
@@ -267,7 +277,39 @@ impl Exploration<'_, '_, '_> {
         }
         successors.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         let root = walk.graph.root[at];
+        let selected = if let Some(por) = self.por {
+            let mut enabled: Vec<_> = successors
+                .iter()
+                .map(|(_, _, _, transition, _)| transition.clone())
+                .collect();
+            enabled.sort();
+            let fresh = |transition: &ModelTransition| {
+                successors
+                    .iter()
+                    .find(|(_, _, _, candidate, _)| candidate == transition)
+                    .is_some_and(|(_, key, _, _, _)| !known.contains_key(key))
+            };
+            match por.ample(&walk.states[at], &enabled, &fresh) {
+                Ok(selected) => Some(selected),
+                Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
+            }
+        } else {
+            None
+        };
+        if selected
+            .as_ref()
+            .is_some_and(|chosen| chosen.len() < successors.len())
+        {
+            walk.reduced = true;
+            walk.partial_order_reduced = true;
+        }
         for (_, key, digest, transition, state) in successors {
+            if selected
+                .as_ref()
+                .is_some_and(|chosen| !chosen.contains(&transition))
+            {
+                continue;
+            }
             if walk.graph.edges.len() >= self.limits.limits.max_transitions {
                 return Ok(Err(stopped(
                     ModelCheckLimit::MaxTransitions,
@@ -375,6 +417,8 @@ impl Exploration<'_, '_, '_> {
         Ok(Explored {
             graph: walk.graph,
             deadlock,
+            reduced: walk.reduced,
+            partial_order_reduced: walk.partial_order_reduced,
         })
     }
 
@@ -416,6 +460,16 @@ impl Exploration<'_, '_, '_> {
                 },
                 RunEnd::Completed if walk.horizon_cut => ModelCheckOutcome::BoundReached {
                     depth: widen(self.horizon.unwrap_or(0)),
+                    stats,
+                },
+                RunEnd::Completed if walk.reduced => ModelCheckOutcome::HoldsReduced {
+                    reductions: if walk.partial_order_reduced {
+                        vec![AppliedReduction::PartialOrder {
+                            proviso: Proviso::BreadthFirstRevisit,
+                        }]
+                    } else {
+                        Vec::new()
+                    },
                     stats,
                 },
                 RunEnd::Completed => ModelCheckOutcome::Holds {

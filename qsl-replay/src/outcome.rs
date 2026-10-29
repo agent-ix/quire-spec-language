@@ -40,7 +40,7 @@ use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
     Certification, DeclineCode, IncompleteCause, InconclusiveCause, InstanceBound, ProofBasis,
-    ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
+    ReportedInconclusiveCause, StaleIdentity, SymmetryBrokenCause, TerminalRecord, TerminalValue,
     UnavailabilityCause, WeakAccessFailure,
 };
 use crate::result::ReplayResult;
@@ -277,18 +277,19 @@ pub struct ItemCause {
     /// A `recovery-view` cause's template, by its qualified name.
     #[serde(skip_serializing_if = "Option::is_none")]
     predicate: Option<String>,
-    /// The requested package identity of `stale-dependency`.
+    /// The requested tagged identity of `stale-dependency`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    requested: Option<PackageIdentity>,
-    /// The recompiled package identity of `stale-dependency`.
+    requested: Option<StaleIdentityWire>,
+    /// The current tagged identity of `stale-dependency`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    recompiled: Option<PackageIdentity>,
+    recompiled: Option<StaleIdentityWire>,
 }
 
 /// A `quire.package.semantic/v2` identity on FR-331's stale-dependency cause.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct PackageIdentity {
     domain: &'static str,
+    algorithm: &'static str,
     digest: String,
 }
 
@@ -296,7 +297,28 @@ impl From<&DigestRecord> for PackageIdentity {
     fn from(record: &DigestRecord) -> Self {
         Self {
             domain: record.domain().as_str(),
+            algorithm: "sha256",
             digest: record.hex(),
+        }
+    }
+}
+
+/// A stale identity on the terminal wire. The explicit discriminator keeps
+/// package IDs and refinement names distinct while sharing one cause shape.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum StaleIdentityWire {
+    Package { package_id: PackageIdentity },
+    Refinement { name: String },
+}
+
+impl From<&StaleIdentity> for StaleIdentityWire {
+    fn from(identity: &StaleIdentity) -> Self {
+        match identity {
+            StaleIdentity::Package(package_id) => Self::Package {
+                package_id: package_id.into(),
+            },
+            StaleIdentity::Refinement(name) => Self::Refinement { name: name.clone() },
         }
     }
 }
@@ -2142,7 +2164,7 @@ mod tests {
 
     /// Each terminal cause is written in its FR-331 spelling, with its
     /// payload.
-    #[trace("TC-770", "FR-286-AC-3", "FR-357-AC-12")]
+    #[trace("TC-770", "FR-286-AC-3", "FR-357-AC-12", "FR-127-AC-18", "FR-149-AC-4")]
     #[test]
     fn terminal_causes_use_their_own_spellings() {
         let parity = DisagreementCause::Verdicts {
@@ -2177,15 +2199,30 @@ mod tests {
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-                    requested,
-                    recompiled,
+                    requested: StaleIdentity::Package(requested),
+                    recompiled: StaleIdentity::Package(recompiled),
                 }),
                 json!({
                     "result": "inconclusive",
                     "cause": {
                         "kind": "stale-dependency",
-                        "requested": {"domain": "quire.package.semantic/v2", "digest": requested.hex()},
-                        "recompiled": {"domain": "quire.package.semantic/v2", "digest": recompiled.hex()},
+                        "requested": {"kind": "package", "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": requested.hex()}},
+                        "recompiled": {"kind": "package", "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": recompiled.hex()}},
+                    },
+                    "category": "inconclusive",
+                }),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+                    requested: StaleIdentity::Refinement("OtherRefinement".to_owned()),
+                    recompiled: StaleIdentity::Refinement("CasRefinesCounter".to_owned()),
+                }),
+                json!({
+                    "result": "inconclusive",
+                    "cause": {
+                        "kind": "stale-dependency",
+                        "requested": {"kind": "refinement", "name": "OtherRefinement"},
+                        "recompiled": {"kind": "refinement", "name": "CasRefinesCounter"},
                     },
                     "category": "inconclusive",
                 }),
