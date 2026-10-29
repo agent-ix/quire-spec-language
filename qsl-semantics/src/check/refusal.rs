@@ -1204,10 +1204,11 @@ pub enum UnwrittenTimedMember {
     /// names its operation's no-point anchor, and STD-555 rules the
     /// point-qualified anchor (QSpec FR-342-AC-11).
     PointQualifiedClause,
-    /// A guard part, time invariant or `urgent when` predicate that reads a
-    /// clock presence, whose `presence_read` over a `clock_place` S3 does
-    /// not lower yet.
-    PresenceRead,
+    /// A guard part, time invariant or `urgent when` predicate that reads
+    /// the presences of a clock collection's elements (`forall(e in self.q:
+    /// present(e))`), whose quantifier over the collection's slots has no
+    /// checked form until STD-554.
+    ElementPresence,
     /// A guard disjunct that constrains no clock: a `clock_guard` part
     /// names at least one constraint (QSpec FR-322-AC-261, `CL-20`).
     UnconstrainedGuardPart,
@@ -1237,7 +1238,9 @@ impl UnwrittenTimedMember {
             Self::PointQualifiedClause => {
                 "a clock-reading clause bound to an execution point waits on STD-555"
             }
-            Self::PresenceRead => "a predicate reading a clock presence is not lowered yet",
+            Self::ElementPresence => {
+                "a predicate reading a clock collection's element presences waits on STD-554"
+            }
             Self::UnconstrainedGuardPart => "a guard disjunct that constrains no clock",
             Self::CollectionWrite => "a clock collection written whole",
             Self::PresenceDrop => "a clock place set absent",

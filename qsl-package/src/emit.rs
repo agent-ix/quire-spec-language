@@ -2271,25 +2271,23 @@ fn emit_package_inner(
                     &generated,
                 );
             }
-            // QSpec FR-322 "Timed-model nodes": one template `clock_place`
-            // for each clock path, its slot steps' symbolic selector the
-            // Integer type node.
+            // QSpec FR-322 "Timed-model nodes": the template `clock_place`
+            // of each clock path, which S3 wrote so that a `presence_read`
+            // names it, read back from its emitted node.
             let integer_type = node_id(qsl_semantics::check::builtin_integer_type_key());
             model.clock_places = graph
                 .timed_models()
                 .iter()
                 .filter(|timed| timed.model() == source.model)
-                .flat_map(|timed| timed.clocks())
-                .enumerate()
-                .map(|(at, clock)| {
-                    CheckedClockPlace::template(
-                        clock,
-                        placeholder(&format!("place-{at}")),
-                        &model.model,
-                        &integer_type,
-                    )
+                .flat_map(|timed| timed.place_nodes())
+                .map(|key| {
+                    let id = node_id(*key);
+                    let written = nodes.iter().find(|node| node.node_id == id).ok_or(
+                        EmitRefusal::TimedModelWriterInvariant("a clock place S3 wrote is emitted"),
+                    )?;
+                    CheckedClockPlace::project(written).map_err(EmitRefusal::TimedModelWriterInvariant)
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             // QSpec FR-322 "Timed-model nodes": one `urgency` node for each
             // `urgent` declaration, in declared order (FR-322 "Aggregate
             // order"), each located at its declaration so that its order key
@@ -2500,6 +2498,10 @@ fn emit_package_inner(
                 .write_nodes()
                 .map_err(EmitRefusal::TimedModelWriterInvariant)?
             {
+                // A clock place is S3's node, emitted with the graph.
+                if nodes.iter().any(|written| written.node_id == node.node_id) {
+                    continue;
+                }
                 if node.occurrences.is_empty() {
                     return Err(EmitRefusal::TimedModelWriterInvariant(
                         "timed nodes must retain their source occurrence",

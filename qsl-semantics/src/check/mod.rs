@@ -2545,8 +2545,10 @@ impl PackageDeclarations {
         // FR-230: each `urgent when` predicate S3 lowers is located at its own
         // site, so its nodes' occurrences resolve.
         for model in &mut timed_models {
-            for (_, _, predicate) in model.urgency_predicates_mut() {
-                site_spans.insert(predicate.site.clone(), predicate.spans.clone());
+            for (_, _, predicate) in model.urgency_predicates() {
+                for (site, spans) in &predicate.sites {
+                    site_spans.insert(site.clone(), spans.clone());
+                }
             }
             // FR-230, QSpec FR-322 "Clause nodes": so is each guard part's
             // and time invariant's predicate.
@@ -4500,10 +4502,31 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // QSpec FR-322 "Timed-model nodes": the `clock_place` template of
+        // each clock of each dense model, located at its time declaration,
+        // which a `presence_read` and a clause name.
+        for model in &mut timed_models {
+            let Some((index, source)) = self
+                .time_sources
+                .iter()
+                .enumerate()
+                .find(|(_, source)| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(index),
+            });
+            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+                Ok(places) => model.set_place_nodes(places),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         // FR-230, QSpec FR-322 "Timed-model nodes": each `urgent when`
         // predicate's expression node, which its `urgency` node references.
         for model in &mut timed_models {
-            for (_, urgency, predicate) in model.urgency_predicates_mut() {
+            let mut lowered = Vec::new();
+            for (index, urgency, predicate) in model.urgency_predicates() {
                 let timed_model::Urgency::When {
                     context,
                     alternatives,
@@ -4512,15 +4535,17 @@ impl PackageDeclarations {
                 else {
                     continue;
                 };
-                let [alternative] = alternatives.as_slice() else {
-                    continue;
-                };
-                match lowering.urgency_predicate(*context, alternative.predicate(), &predicate.site)
-                {
-                    Ok(key) => predicate.node = Some(key),
+                let sites: Vec<_> = predicate
+                    .sites
+                    .iter()
+                    .map(|(site, _)| timed_model::site_location(site))
+                    .collect();
+                match lowering.timed_state(model.clocks(), *context, alternatives, &sites) {
+                    Ok(key) => lowered.push((index, key)),
                     Err(refusal) => refusals.push(refusal),
                 }
             }
+            model.set_urgency_predicate_nodes(lowered);
         }
         // FR-230, QSpec FR-322 "Clause nodes": the terms of the guards,
         // resets and time invariants of each model S4 writes whole.
@@ -4542,8 +4567,12 @@ impl PackageDeclarations {
             let part_site = |guard: usize, part: usize| {
                 timed_model::site_location(&timed_model::guard_part_site(&name, guard, part))
             };
-            let invariant_site = |invariant: usize| {
-                timed_model::site_location(&timed_model::invariant_site(&name, invariant))
+            let invariant_site = |invariant: usize, alternative: usize| {
+                timed_model::site_location(&timed_model::invariant_site(
+                    &name,
+                    invariant,
+                    alternative,
+                ))
             };
             let input = lowering::TimedClauseInput {
                 model,

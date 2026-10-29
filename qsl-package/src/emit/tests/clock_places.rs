@@ -763,90 +763,36 @@ fn a_self_free_urgency_predicate_writes_no_parameter() {
     );
 }
 
-/// SR-1770002 FND-002 (TC-685, FR-230-AC-50/53): an `urgent when` reading
-/// another object's presence (`present(self.peer.v)`) or a quantified
-/// element presence (`forall(e in self.q : present(e))`) has no lowered
-/// form yet, so its model is refused `TimedModelNotEmitted`.
+/// FR-230-AC-50 and AC-53 (TC-685, STD-554): an `urgent when` reading
+/// the presences of a clock collection's elements (`forall(e in self.q :
+/// present(e))`) has no quantifier form over the collection's slots, so its
+/// model is refused `TimedModelNotEmitted`.
 #[trace("TC-685")]
 #[test]
-fn an_urgency_reading_another_presence_is_not_emitted() {
+fn an_urgency_reading_element_presences_is_not_emitted() {
     let mut document: Value = serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
     let fields = document["types"][1]["fields"]
         .as_array_mut()
         .expect("fields");
-    let template = fields.last().expect("x").clone();
-    let field = |name: &str, type_ref: &str, presence: &str, bounds: (u64, u64), ordered: bool| {
-        let identity = format!("ix://example/config-version/ConfigVersion/{name}");
-        let mut field = template.clone();
-        field["identity"] = json!(identity);
-        field["name"] = json!(name);
-        field["typeRef"] = json!(type_ref);
-        field["presence"] = json!(presence);
-        field["multiplicity"] =
-            json!({"lower": bounds.0, "upper": bounds.1, "ordered": ordered, "unique": !ordered});
-        field["origin"]["generated"]["generatorIdentity"] = json!(identity);
-        field["origin"]["generated"]["inputIdentities"] = json!([identity]);
-        field
-    };
-    let clock = "ix://quire/native/Clock";
-    fields.push(field("v", clock, "optional", (1, 1), false));
-    fields.push(field("q", clock, "optional", (0, 2), true));
-    fields.push(field(
-        "peer",
-        "ix://example/config-version/ConfigVersion",
-        "required",
-        (1, 1),
-        false,
-    ));
+    let mut q = fields.last().expect("x").clone();
+    let identity = "ix://example/config-version/ConfigVersion/q";
+    q["identity"] = json!(identity);
+    q["name"] = json!("q");
+    q["presence"] = json!("optional");
+    q["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    q["origin"]["generated"]["generatorIdentity"] = json!(identity);
+    q["origin"]["generated"]["inputIdentities"] = json!([identity]);
+    fields.push(q);
     let document = serde_json::to_vec(&document).expect("JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    for body in [
-        "urgent Peer when { present(self.peer.v) };
-",
-        "urgent All when { forall(e in self.q : present(e)) };
-",
-    ] {
-        let unit = clocked_unit(&packages, body);
-        let refusals = assemble_with_models(unit.as_bytes(), &packages)
-            .expect("the unit assembles")
-            .check(CheckingLimits::default())
-            .expect_err("a presence urgency is not written yet");
-        assert!(
-            refusals.iter().any(|refusal| matches!(
-                &refusal.cause,
-                qsl_semantics::check::CheckCause::Temporal(cause)
-                    if matches!(**cause, qsl_semantics::check::TemporalCause::TimedModelNotEmitted { .. })
-            )),
-            "{body}: {refusals:?}"
-        );
-    }
-}
-
-/// FR-230-AC-50 and AC-53 (TC-685 step 36): an `urgent when` whose
-/// predicate reads a clock presence is not written yet, so its model is
-/// refused `TimedModelNotEmitted`, never emitted without the urgency.
-#[trace("TC-685")]
-#[test]
-fn an_urgency_reading_a_presence_is_not_emitted() {
-    let mut document: Value = serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
-    let fields = document["types"][1]["fields"]
-        .as_array_mut()
-        .expect("fields");
-    let mut v = fields.last().expect("x").clone();
-    let identity = "ix://example/config-version/ConfigVersion/v";
-    v["identity"] = json!(identity);
-    v["name"] = json!("v");
-    v["presence"] = json!("optional");
-    v["origin"]["generated"]["generatorIdentity"] = json!(identity);
-    v["origin"]["generated"]["inputIdentities"] = json!([identity]);
-    fields.push(v);
-    let document = serde_json::to_vec(&document).expect("JSON");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let unit = clocked_unit(&packages, "urgent Armed when { present(self.v) };\n");
+    let unit = clocked_unit(
+        &packages,
+        "urgent All when { forall(e in self.q : present(e)) };\n",
+    );
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .expect_err("a presence urgency is not written yet");
+        .expect_err("an element presence urgency is not written yet");
     assert!(
         refusals.iter().any(|refusal| matches!(
             &refusal.cause,

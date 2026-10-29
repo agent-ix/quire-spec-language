@@ -865,23 +865,23 @@ impl Urgency {
 
 /// The `urgent when` predicate S3 lowers to a checked expression node
 /// (QSpec FR-322 "Timed-model nodes": an `urgency` of kind `when` references
-/// its data predicate): one alternative that reads no clock presence,
-/// typed at its own site so that its nodes are located.
+/// its predicate): each alternative's data predicate typed at its own site
+/// so that its nodes are located.
 #[derive(Debug)]
 pub(crate) struct UrgencyPredicate {
-    /// The site the predicate was typed at ([`urgency_site`]).
-    pub(crate) site: String,
-    /// The predicate's source spans, which locate the site.
-    pub(crate) spans: qsl_forms::ExpressionSpans,
+    /// Each alternative's site ([`urgency_site`]) with its data predicate's
+    /// source spans, which locate the site.
+    pub(crate) sites: Vec<(String, qsl_forms::ExpressionSpans)>,
     /// The predicate's expression node, once lowered.
     pub(crate) node: Option<NodeKey>,
 }
 
-/// The `Origin::TypeDeclaration` name of the `urgent when` predicate at
-/// `index` among the urgency declarations of the timed model `model`.
-/// Spaced, so it names no declared type.
-pub(crate) fn urgency_site(model: &str, index: usize) -> String {
-    format!("urgency {model} {index}")
+/// The `Origin::TypeDeclaration` name of the data predicate of the
+/// alternative `alternative` of the `urgent when` predicate at `index`
+/// among the urgency declarations of the timed model `model`. Spaced, so it
+/// names no declared type.
+pub(crate) fn urgency_site(model: &str, index: usize, alternative: usize) -> String {
+    format!("urgency {model} {index} {alternative}")
 }
 
 /// The checked nodes a timed model's guards, resets and time invariants
@@ -1009,11 +1009,12 @@ pub(crate) fn guard_part_site(model: &str, guard: usize, part: usize) -> String 
     format!("timed {model} guard {guard} part {part}")
 }
 
-/// The `Origin::TypeDeclaration` name of the predicate of the time
-/// invariant at `invariant` among the invariants of the timed model
-/// `model`. Spaced, so it names no declared type.
-pub(crate) fn invariant_site(model: &str, invariant: usize) -> String {
-    format!("timed {model} invariant {invariant}")
+/// The `Origin::TypeDeclaration` name of the data predicate of the
+/// alternative `alternative` of the time invariant at `invariant` among the
+/// invariants of the timed model `model`. Spaced, so it names no declared
+/// type.
+pub(crate) fn invariant_site(model: &str, invariant: usize, alternative: usize) -> String {
+    format!("timed {model} invariant {invariant} {alternative}")
 }
 
 /// The root location of the predicate site `site`.
@@ -1051,6 +1052,8 @@ pub struct TimedModel {
     sites: Vec<(String, qsl_forms::ExpressionSpans)>,
     /// The nodes of the clauses, once S3 lowered them.
     clause_nodes: Option<TimedClauseNodes>,
+    /// The `clock_place` template node of each clock, once S3 wrote them.
+    place_nodes: Vec<NodeKey>,
 }
 
 impl TimedModel {
@@ -1136,13 +1139,12 @@ impl TimedModel {
                 if !part.elements.is_empty() || !part.families.is_empty() {
                     return Some((Member::QuantifiedClause, guard.span));
                 }
-                if !part.presences.is_empty()
-                    || part
-                        .data
-                        .as_ref()
-                        .is_some_and(|data| data.checked_body().reads_presence_place())
+                if part
+                    .data
+                    .as_ref()
+                    .is_some_and(|data| data.checked_body().reads_slot_presence())
                 {
-                    return Some((Member::PresenceRead, guard.span));
+                    return Some((Member::ElementPresence, guard.span));
                 }
                 if part.clocks.is_empty() {
                     return Some((Member::UnconstrainedGuardPart, guard.span));
@@ -1192,11 +1194,12 @@ impl TimedModel {
             {
                 return Some((member, invariant.span));
             }
-            match invariant.alternatives.as_slice() {
-                [only]
-                    if only.presences.is_empty()
-                        && !only.predicate.checked_body().reads_presence_place() => {}
-                _ => return Some((Member::PresenceRead, invariant.span)),
+            if invariant
+                .alternatives
+                .iter()
+                .any(|alternative| alternative.predicate.checked_body().reads_slot_presence())
+            {
+                return Some((Member::ElementPresence, invariant.span));
             }
         }
         self.urgency
@@ -1205,22 +1208,17 @@ impl TimedModel {
             .find(|(urgency, predicate)| {
                 matches!(urgency, Urgency::When { .. }) && predicate.is_none()
             })
-            .map(|(urgency, _)| (Member::PresenceRead, urgency.span()))
+            .map(|(urgency, _)| (Member::ElementPresence, urgency.span()))
     }
 
     /// Why S4 does not write `constraint` yet, `None` when it does: a
-    /// constraint on a `Clock` parameter or on an unguarded slotless clock
-    /// of `self`.
+    /// constraint on a clock of a collection's element, which a quantified
+    /// clause reads.
     fn unwritten_constraint(&self, constraint: &ClockConstraint) -> Option<UnwrittenTimedMember> {
         if constraint.parameter.is_some() {
             return None;
         }
-        if !constraint.slots.is_empty() {
-            return Some(UnwrittenTimedMember::QuantifiedClause);
-        }
-        self.clock(constraint.clock)
-            .is_some_and(|clock| clock.guarded)
-            .then_some(UnwrittenTimedMember::PresenceRead)
+        (!constraint.slots.is_empty()).then_some(UnwrittenTimedMember::QuantifiedClause)
     }
 
     /// The site of each guard part's and time invariant's predicate S3
@@ -1252,18 +1250,37 @@ impl TimedModel {
 
     /// Each `urgent when` predicate S3 writes, with its index among
     /// [`Self::urgency`].
-    pub(crate) fn urgency_predicates_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (usize, &Urgency, &mut UrgencyPredicate)> {
+    pub(crate) fn urgency_predicates(
+        &self,
+    ) -> impl Iterator<Item = (usize, &Urgency, &UrgencyPredicate)> {
         self.urgency
             .iter()
-            .zip(self.urgency_predicates.iter_mut())
+            .zip(&self.urgency_predicates)
             .enumerate()
             .filter_map(|(index, (urgency, predicate))| {
-                predicate
-                    .as_mut()
-                    .map(|predicate| (index, urgency, predicate))
+                predicate.as_ref().map(|predicate| (index, urgency, predicate))
             })
+    }
+
+    /// Record each lowered `urgent when` predicate's expression node, by
+    /// its index among [`Self::urgency`].
+    pub(crate) fn set_urgency_predicate_nodes(&mut self, nodes: Vec<(usize, NodeKey)>) {
+        for (index, node) in nodes {
+            if let Some(Some(predicate)) = self.urgency_predicates.get_mut(index) {
+                predicate.node = Some(node);
+            }
+        }
+    }
+
+    /// The `clock_place` template node of each clock, by
+    /// [`ClockId::index`], once S3 wrote them.
+    pub fn place_nodes(&self) -> &[NodeKey] {
+        &self.place_nodes
+    }
+
+    /// Record the `clock_place` template node of each clock.
+    pub(crate) fn set_place_nodes(&mut self, nodes: Vec<NodeKey>) {
+        self.place_nodes = nodes;
     }
 }
 
@@ -3574,9 +3591,11 @@ fn state_alternatives(
             continue;
         }
         let data = if literals.is_empty() {
+            // `true`, spanning the whole predicate: the site the
+            // alternative's presences are located at.
             let span = located.span(located.root());
             let expression = qsl_forms::Expression::boolean(true);
-            let spans = qsl_forms::ExpressionSpans::at_point(&expression, span.start)
+            let spans = qsl_forms::ExpressionSpans::new(span)
                 .map_err(|_| timed(located.outside(located.root())))?;
             ExpressionForm { expression, spans }
         } else {
@@ -4328,39 +4347,36 @@ pub(crate) fn check(
                 .alternatives
                 .first()
                 .map(|alternative| alternative.predicate.context);
-            // One alternative is the whole predicate, typed at its own site
-            // so that S3 lowers it located; a bound of a `max` constraint
-            // has the predicate `true` and no source of its own.
-            let site = invariant_site(&draft.model, invariants.len());
-            let location = site_location(&site);
-            let declarations = ClauseDeclarations {
-                location: &location,
-                ..checking.declarations.at()
-            };
-            let alternatives = match invariant.alternatives.as_slice() {
-                [only] if !invariant.from_bound => {
-                    sites.push((site.clone(), only.predicate.predicate.spans.clone()));
-                    invariant
-                        .alternatives
-                        .into_iter()
-                        .map(|alternative| {
-                            typed_alternative_in(
-                                alternative,
-                                checking,
-                                &declarations,
-                                cx,
-                                &mut nodes_used,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, CheckRefusal>>()?
-                }
-                _ => invariant
+            // Each alternative's data predicate is typed at its own site so
+            // that S3 lowers it located; a bound of a `max` constraint has
+            // the predicate `true` and no source of its own.
+            let alternatives = if invariant.from_bound {
+                invariant
                     .alternatives
                     .into_iter()
                     .map(|alternative| {
                         typed_alternative(alternative, checking, cx, &mut nodes_used)
                     })
-                    .collect::<Result<Vec<_>, CheckRefusal>>()?,
+                    .collect::<Result<Vec<_>, CheckRefusal>>()?
+            } else {
+                let mut typed = Vec::with_capacity(invariant.alternatives.len());
+                for (at, alternative) in invariant.alternatives.into_iter().enumerate() {
+                    let site = invariant_site(&draft.model, invariants.len(), at);
+                    sites.push((site.clone(), alternative.predicate.predicate.spans.clone()));
+                    let location = site_location(&site);
+                    let declarations = ClauseDeclarations {
+                        location: &location,
+                        ..checking.declarations.at()
+                    };
+                    typed.push(typed_alternative_in(
+                        alternative,
+                        checking,
+                        &declarations,
+                        cx,
+                        &mut nodes_used,
+                    )?);
+                }
+                typed
             };
             let Some(context) = context else {
                 continue;
@@ -4390,55 +4406,35 @@ pub(crate) fn check(
                     else {
                         continue;
                     };
-                    // One alternative with no presence: the predicate whole,
-                    // typed at its own site so S3 lowers it located. A
-                    // predicate with a clock presence is not written yet.
-                    let written = match alternatives.as_slice() {
-                        [only] if only.presences.is_empty() => Some(UrgencyPredicate {
-                            site: urgency_site(&draft.model, index),
-                            spans: only.predicate.predicate.spans.clone(),
-                            node: None,
-                        }),
-                        _ => None,
-                    };
-                    let alternatives = match &written {
-                        Some(predicate) => {
-                            let location = quire_semantic_value::location::Location::root(
-                                quire_semantic_value::location::Origin::TypeDeclaration {
-                                    name: predicate.site.clone(),
-                                },
-                            );
-                            let declarations = ClauseDeclarations {
-                                location: &location,
-                                ..checking.declarations.at()
-                            };
-                            alternatives
-                                .into_iter()
-                                .map(|alternative| {
-                                    typed_alternative_in(
-                                        alternative,
-                                        checking,
-                                        &declarations,
-                                        cx,
-                                        &mut nodes_used,
-                                    )
-                                })
-                                .collect::<Result<Vec<_>, CheckRefusal>>()?
-                        }
-                        None => alternatives
-                            .into_iter()
-                            .map(|alternative| {
-                                typed_alternative(alternative, checking, cx, &mut nodes_used)
-                            })
-                            .collect::<Result<Vec<_>, CheckRefusal>>()?,
-                    };
-                    // A predicate reading another object's presence has no
-                    // lowered form yet.
-                    let written = written.filter(|_| {
-                        alternatives.iter().all(|alternative| {
-                            !alternative.predicate.checked_body().reads_presence_place()
+                    // Each alternative's data predicate is typed at its own
+                    // site so S3 lowers it located.
+                    let mut sites = Vec::with_capacity(alternatives.len());
+                    let mut typed = Vec::with_capacity(alternatives.len());
+                    for (at, alternative) in alternatives.into_iter().enumerate() {
+                        let site = urgency_site(&draft.model, index, at);
+                        let location = site_location(&site);
+                        sites.push((site, alternative.predicate.predicate.spans.clone()));
+                        let declarations = ClauseDeclarations {
+                            location: &location,
+                            ..checking.declarations.at()
+                        };
+                        typed.push(typed_alternative_in(
+                            alternative,
+                            checking,
+                            &declarations,
+                            cx,
+                            &mut nodes_used,
+                        )?);
+                    }
+                    let alternatives = typed;
+                    // A presence read of a quantified element has no binder
+                    // form until STD-554.
+                    let written = alternatives
+                        .iter()
+                        .all(|alternative| {
+                            !alternative.predicate.checked_body().reads_slot_presence()
                         })
-                    });
+                        .then_some(UrgencyPredicate { sites, node: None });
                     (
                         Urgency::When {
                             name,
@@ -4538,6 +4534,7 @@ pub(crate) fn check(
             urgency_predicates,
             sites,
             clause_nodes: None,
+            place_nodes: Vec::new(),
         });
     }
     Ok((models, nodes_used))

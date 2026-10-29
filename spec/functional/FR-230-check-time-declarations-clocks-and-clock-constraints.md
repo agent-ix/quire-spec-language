@@ -459,7 +459,21 @@ ill-formed use.
   each path, and its slot selector is the symbolic element selector, never an
   index, so a collection holding more or fewer elements changes no node.
   A place is exactly `model`, `path` and `resolved_path`: it lists no guard
-  (QSpec FR-322-AC-261).
+  (QSpec FR-322-AC-261). S3 SHALL write each place, self-typed and located
+  at the model's time declaration, with its path positions, collection
+  bounds and row positions JSON numbers as QSpec's timed nodes spell them,
+  so the key S3 gives it is the key IR derives and a `presence_read` names
+  it.
+  **Presence reads.** `present(p)` of a clock place SHALL be written as
+  QSpec FR-322's `presence_read` (FR-322-AC-155): the application of
+  `quire.op.option.present`, typed `Boolean`, over the place's
+  `clock_place` template and the owner term (`self`, or another object's
+  term such as `self.peer`). A predicate that requires presences of
+  `self`'s places is written in its disjunctive form over them: the `or` of
+  its alternatives, each the `and` of its presences' reads (`not` of the
+  read for an absence) and its data predicate, the data predicate left out
+  where it is `true`. A guard part's predicate is the `and` of its
+  presences' reads and its data predicate.
   **Clause nodes.** Each operation's guard SHALL be written as one
   `clock_guard` of the operation's no-point `state`/`operation_anchor`
   (QSpec FR-342-AC-11), one part for each convex part of the precondition's
@@ -493,8 +507,10 @@ ill-formed use.
   the member, never emitted without it: a guard quantified over a clock
   collection, at the quantifier (STD-554, QSpec FR-322-AC-263); a clock-reading
   clause bound to an execution point (STD-555); a guard part, invariant or
-  `urgent when` predicate reading a clock presence; a guard disjunct that
-  constrains no clock; a clock collection written whole, a place
+  `urgent when` predicate reading the presences of a clock collection's
+  elements (`forall(e in self.q: present(e))`, whose quantifier over the
+  collection's slots has no checked form until STD-554); a guard disjunct
+  that constrains no clock; a clock collection written whole, a place
   set absent or a postcondition requiring a presence; and a reset by
   selection that reads the element's data or of an element no single binder
   selects. A model with no guard writes an empty `guards` aggregate.
@@ -509,10 +525,10 @@ ill-formed use.
   checked expression node of `P`, which S3 lowers at `P`'s own site so each
   of its nodes is located; `self` is a `parameter` node at level 0 typed
   `Reference<T>`, `T` the object type `P` ranges over, written only when `P`
-  reads it. A `when` predicate that reads a clock presence (`present(p)` of a
-  place of `self` or of another object, or of a quantified element) has no
-  lowered form yet: a model with one SHALL be refused `TimedModelNotEmitted`
-  and never emitted without it.
+  reads it. A `when` predicate that reads a clock presence writes it as a
+  `presence_read` (Presence reads, above); one that reads the presences of a
+  clock collection's elements SHALL be refused `TimedModelNotEmitted` and
+  never emitted without it.
   The remaining node data records guards;
   reset target and exact converted value; guard/invariant constraint terms;
   urgency predicate or operation; and every bound's comparison, exact value
@@ -825,8 +841,8 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-50 | A checked timed model with a member S4 does not write yet is refused `TimedModelNotEmitted` (`unsupported_construct`/`not-yet-implemented`) at the member, and is never emitted without it: `forall(e in self.ts: e.x < 5 ms)` over `ts: Sequence<Timer>[0, 3]` as a guard at the quantifier (STD-554), a clock-reading `pre` bound to an execution point at the clause (STD-555) and a guard disjunct that constrains no clock at the precondition; a model with no guard emits empty aggregates and reads back (QSpec FR-322-AC-150). | Test |
 | FR-230-AC-51 | Over `v: Option<Clock>` and `q: Sequence<Option<Clock>>[0, 2]` on two objects, `present(other.v)`, `present(self.q[i])`, and `present(e)` in the bodies of `forall(e in self.q: ...)` and `exists(e in self.q: ...)` each check as a `Boolean` data predicate resolved through the place identity, are recorded as data predicates of the convex part at the owner and slot, declare no `Option<Boolean>` or other member, and leave every model declaration key as it is without `v`; a `present` with a wrong slot count or owner type is refused as QSpec FR-322-AC-156 states. | Test |
 | FR-230-AC-52 | Over `v: Option<Clock>` and `st: Mode` (`Idle` or `Armed` holding a clock), both in an operation's frame, the vectors `FP-01`..`FP-14` of QSpec's `clock-presence-frame-vectors.json` step as published: a requirement of an absent place with no write has no successor, and refuses `invalid_timed_model`/`clock-presence-unwritten` when the precondition establishes it absent; a write makes it present with its clock, a drop makes it absent, an unwritten `v` keeps its bit while an unwritten `Armed` `st` may also step to `Idle`, and each `Option` vector's pairing with its union twin holds of the observed results (QSpec FR-415-AC-21, TC-367 CK-31). | Test |
-| FR-230-AC-53 | A dense model whose only timed members are its clock `x`, `urgent Busy when { self.versionNumber > 0 }` and `urgent Prompt Config::ConfigVersion::attemptUpdate` emits two `urgency` nodes listed in declared order, each located at its declaration: the `when` one references the located Boolean expression node of the predicate, whose `self` is a level-0 `parameter` node, and the `operation` one the model node and `attemptUpdate`; I2 admits and reads both back. Two declarations of equal content are one node listed once with an occurrence at each declaration. `urgent Armed when { present(self.v) }` over `v: Option<Clock>` is refused `TimedModelNotEmitted`. | Test |
-| FR-230-AC-54 | Over `x: Clock`, `pre { self.x >= 1 ms and self.versionNumber > 0 or self.x < 5 ms }` emits one `clock_guard` of `attemptUpdate`'s no-point anchor with two parts (the expression node of `self.versionNumber > 0` with `ge 1/1`, and `true` with `lt 5/1`), `post { self.x = 0 ms }` one `clock_reset` of kind `place` with owner `self` and condition `true`, and `time invariant Bounded when { self.versionNumber >= 0 } { self.x <= 9 ms }` one `time_invariant` with the bound `le 9/1`; each clause node is located at its source and the root lists every clause and constraint once, in declared order. A constraint written twice is one node with two occurrences; `self.x = 2 ms` writes `eq`. Over `attemptUpdate(c: Clock)`, `c >= 1 ms` is a constraint and `c = 0 ms` a reset of kind `parameter` naming the anchor and `c`. With `peer: ConfigVersion` and `peer_clock(o) { o.peer.x }`, `peer_clock(self) <= 2 ms` is a constraint of kind `place` on `x` whose owner is the `record.project` of `peer` over the `model.deref` of `self`. Two guarded preconditions of `attemptUpdate`, `self.x >= 1 ms or self.x > 7 ms` and `self.versionNumber > 0 and self.x < 5 ms`, emit one `clock_guard` with two parts, each the predicate `self.versionNumber > 0` and the constraints of both; with a data predicate on each side the part's predicate is their `quire.op.boolean.and`. | Test |
+| FR-230-AC-53 | A dense model whose only timed members are its clock `x`, `urgent Busy when { self.versionNumber > 0 }` and `urgent Prompt Config::ConfigVersion::attemptUpdate` emits two `urgency` nodes listed in declared order, each located at its declaration: the `when` one references the located Boolean expression node of the predicate, whose `self` is a level-0 `parameter` node, and the `operation` one the model node and `attemptUpdate`; I2 admits and reads both back. Two declarations of equal content are one node listed once with an occurrence at each declaration. `urgent Armed when { present(self.v) }` over `v: Option<Clock>` references the `presence_read` of `v`'s template and `self`; `urgent All when { forall(e in self.q : present(e)) }` over `q: Sequence<Option<Clock>>[0, 2]` is refused `TimedModelNotEmitted`. | Test |
+| FR-230-AC-54 | Over `x: Clock`, `pre { self.x >= 1 ms and self.versionNumber > 0 or self.x < 5 ms }` emits one `clock_guard` of `attemptUpdate`'s no-point anchor with two parts (the expression node of `self.versionNumber > 0` with `ge 1/1`, and `true` with `lt 5/1`), `post { self.x = 0 ms }` one `clock_reset` of kind `place` with owner `self` and condition `true`, and `time invariant Bounded when { self.versionNumber >= 0 } { self.x <= 9 ms }` one `time_invariant` with the bound `le 9/1`; each clause node is located at its source and the root lists every clause and constraint once, in declared order. A constraint written twice is one node with two occurrences; `self.x = 2 ms` writes `eq`. Over `attemptUpdate(c: Clock)`, `c >= 1 ms` is a constraint and `c = 0 ms` a reset of kind `parameter` naming the anchor and `c`. With `peer: ConfigVersion` and `peer_clock(o) { o.peer.x }`, `peer_clock(self) <= 2 ms` is a constraint of kind `place` on `x` whose owner is the `record.project` of `peer` over the `model.deref` of `self`. Over `v: Option<Clock>`, `present(self.v)` is a `presence_read` over `v`'s template and `self`, S3's place key being the key IR derives: the predicate of the part of `present(self.v) and value(self.v) >= 1 ms`, the whole predicate of `time invariant when { present(self.v) }`, and conjoined with `self.versionNumber > 0` in an `urgent when`; `present(self.peer.v)` takes the owner `self.peer`. Two guarded preconditions of `attemptUpdate`, `self.x >= 1 ms or self.x > 7 ms` and `self.versionNumber > 0 and self.x < 5 ms`, emit one `clock_guard` with two parts, each the predicate `self.versionNumber > 0` and the constraints of both; with a data predicate on each side the part's predicate is their `quire.op.boolean.and`. | Test |
 
 ## Dependencies
 

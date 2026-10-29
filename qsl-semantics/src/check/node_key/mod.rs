@@ -1236,6 +1236,10 @@ pub enum LiteralValue {
     Boolean(bool),
     /// `integer`: the canonical decimal string.
     Integer(Integer),
+    /// `integer`: a JSON number, as QSpec FR-322 "Timed-model nodes" spells
+    /// a `clock_place`'s path positions, collection bounds and row
+    /// positions.
+    Count(u64),
     /// `rational`: `"n/d"`, reduced, positive denominator.
     Rational(Rational),
     /// `float32_bits`: the eight lowercase hexadecimal binary32 bits.
@@ -1269,6 +1273,7 @@ impl LiteralValue {
         let (value_kind, value) = match self {
             Self::Boolean(value) => ("boolean", LiteralJson::Boolean(*value)),
             Self::Integer(value) => ("integer", LiteralJson::Spelled(value.to_string())),
+            Self::Count(value) => ("integer", LiteralJson::Number(*value)),
             // QSpec FR-322 "Scalar literal values": the canonical magnitude
             // spelling (`0`, `-3`, `1/2`), so one rational has one spelling.
             Self::Rational(value) => (
@@ -1323,11 +1328,12 @@ struct LiteralWire<'a> {
     value: LiteralJson<'a>,
 }
 
-/// A literal's JSON `value`: a boolean, a string, or `null`.
+/// A literal's JSON `value`: a boolean, a number, a string, or `null`.
 #[derive(Serialize, FixedShape)]
 #[serde(untagged)]
 enum LiteralJson<'a> {
     Boolean(bool),
+    Number(u64),
     Text(&'a str),
     Spelled(String),
     Null(()),

@@ -378,8 +378,9 @@ fn a_clock_parameter_is_an_inline_name_of_its_operation() {
 }
 
 /// QSpec FR-322 "Clause nodes": a model has one `clock_guard` for each
-/// operation anchor, so two guarded preconditions of one operation, `self.x
-/// >= 1 ms or self.x > 7 ms` and `self.versionNumber > 0 and self.x < 5 ms`,
+/// operation anchor, so two guarded preconditions of one operation,
+/// `self.x >= 1 ms or self.x > 7 ms` and `self.versionNumber > 0 and
+/// self.x < 5 ms`,
 /// are the one guard of their conjunction: each part of the one a part of
 /// each part of the other, its predicate the `and` of theirs (the data
 /// predicate alone where the other's is `true`) and its constraints both
@@ -536,6 +537,148 @@ fn a_constraint_on_another_objects_clock_names_its_owner_term() {
         "quire.op.model.deref"
     );
     assert_self(&wire, &dereferenced["body"]["arguments"][0]);
+    assert_declared_order(&wire);
+}
+
+/// [`peer_document`] with `v: Option<Clock>`.
+fn presence_document() -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(&peer_document()).expect("JSON");
+    let config = &mut document["types"][1];
+    let owner = config["identity"].as_str().expect("an identity").to_owned();
+    let fields = config["fields"].as_array_mut().expect("fields");
+    let mut v = fields
+        .iter()
+        .find(|field| field["name"] == "x")
+        .expect("x")
+        .clone();
+    let identity = format!("{owner}/v");
+    v["identity"] = json!(identity);
+    v["name"] = json!("v");
+    v["presence"] = json!("optional");
+    v["origin"]["generated"]["generatorIdentity"] = json!(identity);
+    v["origin"]["generated"]["inputIdentities"] = json!([identity]);
+    fields.push(v);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// `present(p)` of the place `name`: a `presence_read` application of
+/// `quire.op.option.present`, typed Boolean, over the place's template and
+/// the owner term; returns the owner term's node.
+fn assert_presence<'w>(wire: &'w Value, read: &Value, place: &Value) -> &'w Value {
+    assert_eq!(
+        (&read["node_tag"], &read["semantic_form"]),
+        (&json!("expression"), &json!("presence_read"))
+    );
+    assert_eq!(
+        read["body"]["operation"]["identity"],
+        "quire.op.option.present"
+    );
+    assert_eq!(read["body"]["operator"], "present");
+    assert_eq!(
+        target(wire, &json!({"target": read["body"]["result_type"]}))["semantic_form"],
+        "boolean"
+    );
+    let [template, owner] = read["body"]["arguments"].as_array().expect("arguments").as_slice()
+    else {
+        panic!("a place and an owner term: {read}");
+    };
+    assert_eq!(template["target"], place["node_id"]);
+    target(wire, owner)
+}
+
+/// The `clock_place` of `wire` whose path is the one field `name`.
+fn place_of<'w>(wire: &'w Value, name: &str) -> &'w Value {
+    timed(wire, "clock_place")
+        .into_iter()
+        .find(|place| {
+            member(&place["body"], "path")["members"][0]["members"][1]["value"]["value"] == name
+        })
+        .unwrap_or_else(|| panic!("the place {name}"))
+}
+
+/// QSpec FR-322 "Presence" (FR-322-AC-155), FR-230 "Presence is derived":
+/// `present(self.v)` over `v: Option<Clock>` is a `presence_read` of
+/// `quire.op.option.present` over `v`'s `clock_place` template and the
+/// owner `self`, in a guard part beside the part's constraint on `v`, as a
+/// time invariant's whole predicate and conjoined with an `urgent when`'s
+/// data predicate; `present(self.peer.v)` takes the owner term `self.peer`.
+/// Each place is S3's template, keyed as IR keys it, and no place or model
+/// node carries a presence member.
+#[trace("TC-685", "FR-230-AC-50", "FR-230-AC-53", "FR-230-AC-54")]
+#[trace("QSpec-FR-322-AC-155", "QSpec-FR-322-AC-261")]
+#[test]
+fn a_presence_reads_the_place_template_at_its_owner() {
+    let (unit, wire) = emitted(
+        &presence_document(),
+        "pre Armed using v on Config::ConfigVersion::attemptUpdate { \
+         present(self.v) and value(self.v) >= 1 ms }\n\
+         time invariant Held when { present(self.v) } { value(self.v) <= 9 ms }\n\
+         urgent Due when { present(self.v) and self.versionNumber > 0 };\n\
+         urgent Peer when { present(self.peer.v) };\n",
+    );
+    let places = timed(&wire, "clock_place");
+    assert_eq!(places.len(), 2);
+    for place in &places {
+        let node: quire_contract_model::CheckedSemanticNodeV2 =
+            serde_json::from_value((*place).clone()).expect("a node");
+        assert_eq!(
+            crate::emit::timed_model_node_id(&node).expect("a key"),
+            node.node_id,
+            "S3's place key is the key IR derives"
+        );
+        assert_eq!(names(&place["body"]), ["model", "path", "resolved_path"]);
+    }
+    let v = place_of(&wire, "v");
+
+    let [guard] = timed(&wire, "clock_guard")[..] else {
+        panic!("one guard");
+    };
+    let part = &member(&guard["body"], "parts")["members"][0]["members"];
+    let read = target(&wire, &part[0]["value"]);
+    assert_self(&wire, &json!({"target": assert_presence(&wire, read, v)["node_id"]}));
+    let constraint = target(&wire, &part[1]);
+    assert_eq!(member(&constraint["body"], "place")["target"], v["node_id"]);
+    assert_eq!(literal(&constraint["body"], "comparison"), "ge");
+
+    let [invariant] = timed(&wire, "time_invariant")[..] else {
+        panic!("one invariant");
+    };
+    assert_eq!(
+        member(&invariant["body"], "predicate")["target"],
+        read["node_id"],
+        "one presence node"
+    );
+
+    let urgencies = timed(&wire, "urgency");
+    let predicate = |name: &str| {
+        let urgency = urgencies
+            .iter()
+            .find(|urgency| located(&wire, urgency, &unit).starts_with(name))
+            .unwrap_or_else(|| panic!("urgency {name}"));
+        target(&wire, member(&urgency["body"], "predicate"))
+    };
+    let due = predicate("urgent Due");
+    assert_eq!(due["body"]["operation"]["identity"], "quire.op.boolean.and");
+    assert_eq!(due["body"]["arguments"][0]["target"], read["node_id"]);
+    assert_eq!(
+        located(&wire, target(&wire, &due["body"]["arguments"][1]), &unit),
+        "self.versionNumber > 0"
+    );
+    let owner = assert_presence(&wire, predicate("urgent Peer"), v);
+    assert_eq!(
+        owner["body"]["operation"]["identity"],
+        "quire.op.record.project"
+    );
+    assert_eq!(owner["body"]["operation"]["member"]["name"], "peer");
+
+    for node in nodes(&wire) {
+        if node["node_tag"] == "timed_model" || node["semantic_form"] == "model" {
+            assert!(
+                !node.to_string().contains("\"presence\""),
+                "no node carries a presence member: {node}"
+            );
+        }
+    }
     assert_declared_order(&wire);
 }
 

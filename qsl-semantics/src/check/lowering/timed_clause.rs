@@ -17,20 +17,23 @@
 //! A reset by selection binds its element by a `parameter` node of the
 //! slot's selector domain, `Integer`, which is its one slot term.
 
-use quire_exact::{EffectiveId, Identifier, NodeKey, ValueType};
+use quire_exact::{EffectiveId, Identifier, NodeKey, Value, ValueType};
 use quire_semantic_value::location::Location;
 
 use super::{Binder, Binders, Lowering, PlaceStep};
 use crate::value::member::Member;
 use crate::check::family::OccurrenceRole;
+use crate::check::ir::{CheckedLiteral, NodeKind};
 use crate::check::node_key::{
-    BodyTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag, Operation, Operator,
+    Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, LiteralValue, MemberTerm,
+    NodeTag, Operation, Operator, TupleMember, TupleTerm,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::ClauseOperation;
 use crate::check::timed_model::{
-    CheckedTimedPredicate, ClockConstraint, ConstraintNodes, ConstraintTargetNodes, GuardNodes,
-    InvariantNodes, PartNodes, ResetNodes, ResetTargetNodes, TimedClauseNodes, TimedModel,
+    CheckedTimedPredicate, ClockConstraint, ClockField, ClockId, ConstraintNodes,
+    ConstraintTargetNodes, GuardNodes, InvariantNodes, PartNodes, ResetNodes, ResetTargetNodes,
+    StateAlternative, TimedClauseNodes, TimedModel,
 };
 
 /// What [`Lowering::timed_clauses`] reads beside the model.
@@ -46,8 +49,21 @@ pub(crate) struct TimedClauseInput<'a> {
     /// The root location of a guard part's predicate site, by guard and
     /// part.
     pub(crate) part_site: &'a dyn Fn(usize, usize) -> Location,
-    /// The root location of a time invariant's predicate site.
-    pub(crate) invariant_site: &'a dyn Fn(usize) -> Location,
+    /// The root location of a time invariant's alternative's predicate
+    /// site, by invariant and alternative.
+    pub(crate) invariant_site: &'a dyn Fn(usize, usize) -> Location,
+}
+
+/// One clock place's `clock_place` template node (QSpec FR-322
+/// "Timed-model nodes"), which a `presence_read` and a clause name.
+#[derive(Clone, Debug)]
+pub(crate) struct TimedPlace {
+    /// The object type declaring the place's field.
+    owner: EffectiveId,
+    /// The place's path from its owner.
+    path: Vec<PlaceStep>,
+    /// The template node.
+    node: NodeKey,
 }
 
 impl Lowering<'_> {
@@ -72,8 +88,19 @@ impl Lowering<'_> {
             let operation = self.clause_anchor(guard.operation(), location)?;
             let mut parts = Vec::with_capacity(guard.parts().len());
             for (index, part) in guard.parts().iter().enumerate() {
-                let predicate = match part.data() {
-                    Some(data) => self.timed_predicate(data, &(input.part_site)(at, index))?,
+                // A part with no data predicate has no site of its own: its
+                // presences are located at the clause.
+                let site = match part.data() {
+                    Some(_) => (input.part_site)(at, index),
+                    None => location.clone(),
+                };
+                let mut conjuncts =
+                    self.self_presences(model.clocks(), part.presences(), context, &site)?;
+                if let Some(data) = part.data() {
+                    conjuncts.push(self.timed_predicate(data, &site)?);
+                }
+                let predicate = match self.conjunction(&conjuncts, &site)? {
+                    Some(predicate) => predicate,
                     None => self.timed_true(location)?,
                 };
                 let constraints = part
@@ -98,12 +125,23 @@ impl Lowering<'_> {
                 .find(|held: &&mut GuardNodes| held.operation == operation)
             {
                 Some(held) => {
-                    let truth = self.timed_true(location)?;
                     let mut product = Vec::with_capacity(held.parts.len() * parts.len());
                     for left in &held.parts {
                         for right in &parts {
-                            let predicate =
-                                self.timed_and(left.predicate, right.predicate, truth, location)?;
+                            let predicate = if self.is_truth(left.predicate) {
+                                right.predicate
+                            } else if self.is_truth(right.predicate)
+                                || left.predicate == right.predicate
+                            {
+                                left.predicate
+                            } else {
+                                self.connective(
+                                    "quire.op.boolean.and",
+                                    left.predicate,
+                                    right.predicate,
+                                    location,
+                                )?
+                            };
                             let mut constraints = left.constraints.clone();
                             constraints.extend(right.constraints.iter().cloned());
                             let part = PartNodes {
@@ -163,16 +201,18 @@ impl Lowering<'_> {
         }
         let mut invariants = Vec::with_capacity(model.invariants().len());
         for (at, invariant) in model.invariants().iter().enumerate() {
-            let [alternative] = invariant.alternatives() else {
-                return Err(super::fault(
-                    input.declaration,
-                    KeyFault::UnkeyableRequirements,
-                ));
-            };
             let predicate = if invariant.from_bound() {
                 self.timed_true(input.declaration)?
             } else {
-                self.timed_predicate(alternative.predicate(), &(input.invariant_site)(at))?
+                let sites: Vec<Location> = (0..invariant.alternatives().len())
+                    .map(|alternative| (input.invariant_site)(at, alternative))
+                    .collect();
+                self.timed_state(
+                    model.clocks(),
+                    invariant.context(),
+                    invariant.alternatives(),
+                    &sites,
+                )?
             };
             let bounds = invariant
                 .bounds()
@@ -359,27 +399,21 @@ impl Lowering<'_> {
         self.boolean_expression(literal, location)
     }
 
-    /// The Boolean `expression` node of `left and right`, `truth` being the
-    /// node of `true`: either operand when the other is `truth`.
-    fn timed_and(
+    /// The `expression` node of the Boolean connective `identity` over
+    /// `left` and `right`.
+    fn connective(
         &mut self,
+        identity: &str,
         left: NodeKey,
         right: NodeKey,
-        truth: NodeKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        if left == truth {
-            return Ok(right);
-        }
-        if right == truth || left == right {
-            return Ok(left);
-        }
         let boolean = self.type_node(&ValueType::Boolean, location)?;
         let term = self.typed_application(
             location,
             boolean,
             Operator::Binary,
-            Operation::plain("quire.op.boolean.and"),
+            Operation::plain(identity),
             vec![
                 MemberTerm::Leaf(LeafTerm::reference(left)),
                 MemberTerm::Leaf(LeafTerm::reference(right)),
@@ -387,6 +421,246 @@ impl Lowering<'_> {
         )?;
         term.key()
             .ok_or_else(|| super::fault(location, KeyFault::UnkeyableRequirements))
+    }
+
+    /// The `and` of `conjuncts`, left to right; `None` for none.
+    fn conjunction(
+        &mut self,
+        conjuncts: &[NodeKey],
+        location: &Location,
+    ) -> Result<Option<NodeKey>, CheckRefusal> {
+        let Some((first, rest)) = conjuncts.split_first() else {
+            return Ok(None);
+        };
+        let mut joined = *first;
+        for conjunct in rest {
+            joined = self.connective("quire.op.boolean.and", joined, *conjunct, location)?;
+        }
+        Ok(Some(joined))
+    }
+
+    /// Whether `key` is the node [`Self::timed_true`] writes: the
+    /// `expression`/`reference` node over the literal `true`.
+    fn is_truth(&self, key: NodeKey) -> bool {
+        let content = |key: NodeKey| self.graph.nodes.get(&key).map(|node| &node.content);
+        let Some(wrapper) = content(key) else {
+            return false;
+        };
+        let BodyTerm::Leaf(LeafTerm::Reference { target }) = &wrapper.body else {
+            return false;
+        };
+        wrapper.node_tag == NodeTag::Expression
+            && wrapper.semantic_form == "reference"
+            && content(target.0).is_some_and(|literal| {
+                matches!(
+                    &literal.body,
+                    BodyTerm::Leaf(LeafTerm::Literal {
+                        value: LiteralValue::Boolean(true),
+                        ..
+                    })
+                )
+            })
+    }
+
+    /// The `clock_place` template node of every clock of `clocks`, the
+    /// clocks of the timed model whose model node is `model_node`, located
+    /// at the model's time declaration `location` (QSpec FR-322
+    /// "Timed-model nodes"): exactly `model`, `path` and `resolved_path`,
+    /// each slot step's selector the `Integer` type node, and the place
+    /// self-typed. The places are kept for the `presence_read` and the
+    /// clauses that name them.
+    pub(crate) fn clock_places(
+        &mut self,
+        clocks: &[ClockField],
+        model_node: NodeKey,
+        location: &Location,
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+        if clocks.is_empty() {
+            return Ok(Vec::new());
+        }
+        let integer = self.scalar("integer", location)?;
+        let count = |value: u64| LeafTerm::literal(integer, LiteralValue::Count(value));
+        let group = |members: Vec<(&str, LeafTerm)>| {
+            TupleMember::Group(GroupTerm::new(
+                members
+                    .into_iter()
+                    .map(|(name, leaf)| GroupMember::Binding(Binding::new(name, leaf)))
+                    .collect(),
+            ))
+        };
+        let mut nodes = Vec::with_capacity(clocks.len());
+        for clock in clocks {
+            let mut path = Vec::with_capacity(clock.path().len());
+            for step in clock.path() {
+                let members = match step {
+                    PlaceStep::Field(name) => vec![
+                        ("kind", self.text_literal("field", location)?),
+                        ("name", self.text_literal(name, location)?),
+                    ],
+                    PlaceStep::Union(case) => vec![
+                        ("kind", self.text_literal("union", location)?),
+                        ("case", self.text_literal(case, location)?),
+                    ],
+                    PlaceStep::Slot(shape) => vec![
+                        ("kind", self.text_literal("slot", location)?),
+                        (
+                            "collection",
+                            self.text_literal(super::collection_kind(*shape), location)?,
+                        ),
+                        ("selector", LeafTerm::reference(integer)),
+                        ("minimum", count(shape.min)),
+                        (
+                            "maximum",
+                            match shape.max {
+                                Some(maximum) => count(maximum),
+                                None => self.text_literal("unbounded", location)?,
+                            },
+                        ),
+                    ],
+                };
+                path.push(group(members));
+            }
+            let mut rows = Vec::with_capacity(clock.resolved_path().len());
+            for (row, at) in clock.resolved_path().iter().zip(0_u64..) {
+                rows.push(group(vec![
+                    ("path_step", count(at)),
+                    (
+                        "declaring_type",
+                        self.text_literal(&row.declaring_type, location)?,
+                    ),
+                    (
+                        "member_identity",
+                        self.text_literal(&row.member_identity, location)?,
+                    ),
+                    ("member_type", self.text_literal(&row.member_type, location)?),
+                    (
+                        "collection_kind",
+                        self.text_literal(&row.collection_kind, location)?,
+                    ),
+                    ("minimum", self.text_literal(&row.minimum, location)?),
+                    ("maximum", self.text_literal(&row.maximum, location)?),
+                ]));
+            }
+            let body = BodyTerm::aggregate(vec![
+                MemberTerm::bound("model", LeafTerm::reference(model_node)),
+                MemberTerm::binding("path", BindingValue::Tuple(TupleTerm::new(path))),
+                MemberTerm::binding("resolved_path", BindingValue::Tuple(TupleTerm::new(rows))),
+            ]);
+            let node = self.insert(
+                location,
+                NodeTag::TimedModel,
+                "clock_place",
+                None,
+                None,
+                body,
+            )?;
+            self.record(node, OccurrenceRole::Expression, location.clone());
+            self.timed_places.push(TimedPlace {
+                owner: clock.owner(),
+                path: clock.path().to_vec(),
+                node,
+            });
+            nodes.push(node);
+        }
+        Ok(nodes)
+    }
+
+    /// The `clock_place` template node of the place at `path` of the object
+    /// type `owner`, once [`Self::clock_places`] wrote it.
+    pub(super) fn timed_place(&self, owner: EffectiveId, path: &[PlaceStep]) -> Option<NodeKey> {
+        self.timed_places
+            .iter()
+            .find(|place| place.owner == owner && place.path == path)
+            .map(|place| place.node)
+    }
+
+    /// The `presence_read` of each of `presences`, a place of `self`, an
+    /// object of `context`, with whether present: the application of
+    /// `quire.op.option.present` over the place's template and the owner
+    /// term `self` (QSpec FR-322 "Presence"), under `not` where absent.
+    fn self_presences(
+        &mut self,
+        clocks: &[ClockField],
+        presences: &[(ClockId, bool)],
+        context: EffectiveId,
+        location: &Location,
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+        let mut reads = Vec::with_capacity(presences.len());
+        for (clock, present) in presences {
+            let unplaced = || super::fault(location, KeyFault::UnkeyableRequirements);
+            let clock = clocks.get(clock.index()).ok_or_else(unplaced)?;
+            let place = self
+                .timed_place(clock.owner(), clock.path())
+                .ok_or_else(unplaced)?;
+            let owner = self.timed_self(context, location)?;
+            let boolean = self.type_node(&ValueType::Boolean, location)?;
+            let read = self
+                .typed_application(
+                    location,
+                    boolean,
+                    Operator::Present,
+                    Operation::plain("quire.op.option.present"),
+                    vec![
+                        MemberTerm::Leaf(LeafTerm::reference(place)),
+                        MemberTerm::Leaf(LeafTerm::reference(owner)),
+                    ],
+                )?
+                .key()
+                .ok_or_else(unplaced)?;
+            reads.push(if *present {
+                read
+            } else {
+                self.typed_application(
+                    location,
+                    boolean,
+                    Operator::Unary,
+                    Operation::plain("quire.op.boolean.not"),
+                    vec![MemberTerm::Leaf(LeafTerm::reference(read))],
+                )?
+                .key()
+                .ok_or_else(unplaced)?
+            });
+        }
+        Ok(reads)
+    }
+
+    /// The Boolean `expression` node of a state predicate over objects of
+    /// `context` in its disjunctive form over the presences of `self`'s
+    /// places (FR-230 "Presence bit"): the `or` of its alternatives, each
+    /// the `and` of its presences' `presence_read`s and its data predicate,
+    /// typed at the alternative's site in `sites`; a data predicate `true`
+    /// beside a presence is left out.
+    pub(crate) fn timed_state(
+        &mut self,
+        clocks: &[ClockField],
+        context: EffectiveId,
+        alternatives: &[StateAlternative],
+        sites: &[Location],
+    ) -> Result<NodeKey, CheckRefusal> {
+        let mut disjuncts = Vec::with_capacity(alternatives.len());
+        for (alternative, site) in alternatives.iter().zip(sites) {
+            let mut conjuncts = self.self_presences(clocks, alternative.presences(), context, site)?;
+            let data = alternative.predicate();
+            let trivial = matches!(
+                data.checked_body().root().kind(),
+                NodeKind::Literal(CheckedLiteral(Value::Boolean(true)))
+            );
+            if conjuncts.is_empty() || !trivial {
+                conjuncts.push(self.timed_predicate(data, site)?);
+            }
+            disjuncts.extend(self.conjunction(&conjuncts, site)?);
+        }
+        let (Some((first, rest)), Some(site)) = (disjuncts.split_first(), sites.first()) else {
+            return Err(super::fault(
+                &Location::root(quire_semantic_value::location::Origin::Expression),
+                KeyFault::UnkeyableRequirements,
+            ));
+        };
+        let mut joined = *first;
+        for disjunct in rest {
+            joined = self.connective("quire.op.boolean.or", joined, *disjunct, site)?;
+        }
+        self.boolean_expression(joined, site)
     }
 
     /// `key` when it is an `expression` node; else the

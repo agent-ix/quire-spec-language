@@ -340,65 +340,9 @@ pub struct CheckedClockConstraint {
 }
 
 impl CheckedClockPlace {
-    /// The template `clock_place` of the checked clock `clock` of the timed
-    /// model of `model` (QSpec FR-322 "Timed-model nodes"): its path, with
-    /// each slot step's symbolic selector the Integer type node
-    /// `integer_type`, and its `resolved_path` rows. The emitter rekeys
-    /// `id`.
-    pub(crate) fn template(
-        clock: &qsl_semantics::check::ClockField,
-        id: CheckedNodeId,
-        model: &CheckedNodeId,
-        integer_type: &CheckedNodeId,
-    ) -> Self {
-        use qsl_semantics::check::PlaceStep;
-        let path = clock
-            .path()
-            .iter()
-            .map(|step| match step {
-                PlaceStep::Field(name) => ClockPathStep::Field(name.clone()),
-                PlaceStep::Union(case) => ClockPathStep::Union(case.clone()),
-                PlaceStep::Slot(shape) => ClockPathStep::Slot {
-                    collection: qsl_semantics::check::collection_kind(*shape).to_owned(),
-                    selector: integer_type.clone(),
-                    minimum: shape.min,
-                    maximum: shape.max,
-                },
-            })
-            .collect();
-        let resolved_path = clock
-            .resolved_path()
-            .iter()
-            .zip(0_u64..)
-            .map(|(row, path_step)| ResolvedClockPathStep {
-                path_step,
-                declaring_type: row.declaring_type.clone(),
-                member_identity: row.member_identity.clone(),
-                member_type: row.member_type.clone(),
-                collection_kind: row.collection_kind.clone(),
-                minimum: row.minimum.clone(),
-                maximum: row.maximum.clone(),
-            })
-            .collect();
-        Self {
-            metadata: TimedNodeMetadata {
-                node_id: id.clone(),
-                schema_version: "quire.checked-semantic-graph/v2".into(),
-                semantic_type: id,
-                dependencies: Vec::new(),
-                occurrences: vec![CheckedOccurrence {
-                    role: CheckedOccurrenceRole::Expression,
-                    ordinal: 0,
-                }],
-                recursion_group: None,
-                nominal_identity_preimage: None,
-                declaration: None,
-                owner: None,
-            },
-            path,
-            resolved_path,
-            model: model.clone(),
-        }
+    /// The typed place of the emitted `clock_place` node `node`.
+    pub(crate) fn project(node: &CheckedSemanticNodeV2) -> Result<Self, &'static str> {
+        project_place(node)
     }
 }
 
