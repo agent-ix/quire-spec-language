@@ -13,7 +13,7 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-32.
+Scope: FR-315-AC-1 to FR-315-AC-6, FR-315-AC-15 to FR-315-AC-32 and FR-315-AC-53 to FR-315-AC-55.
 
 Steps 8, 10, 18 and 20 read scripts with a `QF_LIA` solver, steps 18 and
 20 with replay as well; every other step reads
@@ -74,6 +74,15 @@ the printed script.
 23. Encode FR-315-AC-1's query and read the negated property's disjuncts.
 24. Call the encoding inside `qsl-eval` with a TP-1 item whose checked
     clause has its atom removed, and repeat FR-315-AC-21's requests.
+25. Over `CasRefinesCounter2`, encode the `Initial` query and the `commitA`
+    `Step` query, read the command heads in order, rename and reorder the
+    invariant clauses, apply each FR-315-AC-53 mutation and check FR-314's
+    verdict on the unmutated certificate.
+26. Over the lost-update variant, add the FR-315-AC-54 equalities to the
+    `commitB` query and solve it for each of the two pre-states; encode a row
+    with one application and a row with none.
+27. Request the refinement queries of FR-315-AC-55's refusal cases and read
+    each refusal's code, locus and FR-314 `Unencodable` part.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -139,3 +148,10 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 24: `Fault` carrying `InternalFault` (`runtime_invariant`) naming the
   atom invariant, not `Refused` with `item-form`; no AC-21 request returns
   it.
+- Step 25: the head sequence of FR-315-AC-53, the hypothesis order
+  `AaInv`/`c0`, `AaInv`/`c1`, `CasInv`/`c0`, `CasInv`/`c1`, a `Step` query with
+  one row assertion over the applications in `c0`, `c1` order; every mutation
+  changes the bytes and gives `QueryMismatch`.
+- Step 26: satisfiable for the first pre-state, unsatisfiable for the second;
+  `(assert false)` for the row with no application.
+- Step 27: the codes and loci of FR-315-AC-55, in its stated order.

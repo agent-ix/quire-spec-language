@@ -296,8 +296,8 @@ number of step rows of the recompiled refinement's `steps` array.
   `Step { row: Some(r) }`, the first part in the order `base`, then rows
   `0..N`, whose carried query differs byte for byte. A step part carried in
   the `base` position therefore rejects `QueryMismatch` at `Base`. A row
-  whose query FR-315 refuses to encode (a `_` argument, an `any` row or a term
-  outside `QF_LIA`) has no expected query: its part is neither compared nor
+  whose query FR-315 refuses to encode (a `_` argument, an `any` row, a
+  protocol or `binds_result` row, or a term outside `QF_LIA`: FR-315 "Refinement queries") has no expected query: its part is neither compared nor
   checked.
 - The checker SHALL then check the proofs of `base` and of the encodable
   `steps[r]` in that order by the proof rules above, naming
