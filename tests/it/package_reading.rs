@@ -30,15 +30,15 @@ fn independent_reader_fixtures_have_successful_real_compiler_setup() {
     let models = [model()];
     assert_eq!(
         models[0].artifact_bytes(),
-        include_bytes!("../fixtures/native-package/model-artifact.json")
+        crate::support::historical_model_artifact()
     );
-    for vector in package_vector_setup::cases() {
+    for vector in package_vector_setup::cases(&models[0]) {
         let checked = package_vector_setup::checked(&vector, &models);
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact, "{}", vector.name);
         assert_eq!(
             package.canonical_identity().to_string(),
-            vector.digest.trim_end()
+            vector.digest.as_str()
         );
         assert_eq!(
             package.usage().canonical.unwrap().output_bytes,
@@ -51,14 +51,14 @@ fn independent_reader_fixtures_have_successful_real_compiler_setup() {
 #[trace("TC-082", "TC-087", "FR-020-AC-8", "FR-020-AC-10")]
 fn independently_frozen_packages_reconstruct_after_original_checker_is_dropped() {
     let models = [model()];
-    for vector in package_vector_setup::cases() {
+    for vector in package_vector_setup::cases(&models[0]) {
         let original = package_vector_setup::checked(&vector, &models);
         let mut bindings = original.bindings().clone();
         bindings.clauses.reverse();
         drop(original);
         let package = NativePackage::read_verified(
-            vector.artifact,
-            NativePackageRef::new(ByteDigest::of(vector.artifact)),
+            &vector.artifact,
+            NativePackageRef::new(ByteDigest::of(&vector.artifact)),
             bindings,
             &models,
             &PackageSupport::default(),
@@ -69,7 +69,7 @@ fn independently_frozen_packages_reconstruct_after_original_checker_is_dropped()
         assert_eq!(package.checked().clauses().len(), vector.clauses.len());
         assert_eq!(
             package.canonical_identity().to_string(),
-            vector.digest.trim_end()
+            vector.digest.as_str()
         );
         assert_eq!(package.usage().admitted_input_bytes, vector.artifact.len());
         assert!(package.usage().recognition.is_some());
@@ -83,7 +83,7 @@ fn independently_frozen_packages_reconstruct_after_original_checker_is_dropped()
 #[trace("FR-020-AC-2", "FR-020-AC-3", "FR-020-AC-9")]
 fn selected_raw_requests_preserve_admission_and_recognition_precedence() {
     let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases();
+    let [vector, _, _] = package_vector_setup::cases(&models[0]);
     let bindings = package_vector_setup::checked(&vector, &models)
         .bindings()
         .clone();

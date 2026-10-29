@@ -259,6 +259,52 @@ prints the checked package as `quire.checked-package/v2` JSON:
 target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
 ```
 
+**Emit package bytes from a source file.** `compile` needs a request file with
+source digests. For a downstream reader that wants the bytes of one `1-draft`
+source, the `emit_checked_v2` example takes the files directly and calls the
+same producer (`qsl_replay::compile_package`), so the bytes follow the
+producer and nothing is frozen. Pass each domain package document the
+source's `model` declarations select with `--model`, and each imported library
+as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
+Every failure (usage, unreadable file, write failure, refusal) writes no
+bytes, prints a diagnostic on stderr that tells them apart, and exits with the
+refusal category's code 20, as `quire-spec` does; a producer refusal whose
+catalog code is in another category (for example incomplete) exits with that
+category's code (22). The emitted bytes embed the source path exactly as given
+(the `source:<path>` label feeds the source digest labels and the
+`package_id`), so pass an identical, fixed, cwd-relative path on every
+invocation to get stable bytes. The source is read under the source-size ceiling (a longer source is the
+producer's size refusal, exit 22, with its `--limit` hint removed because this
+tool has no such flag); a `--model`, `--library` or `--execution-points` file over the
+ceiling is an explicit refusal naming the file (exit 20), never truncated.
+
+```sh
+cargo run --locked --example emit_checked_v2 -- \
+  --model examples/switch-transition/switch.semantic-ir.json \
+  examples/switch-transition/switch.native > package.json
+```
+
+The package is read back with the same domain documents as evidence
+(`CheckedPackageEvidence::insert_domain_package_document`).
+
+**Accepted execution points.** `--execution-points <file>` supplies accepted
+state-clause execution points (FR-104-AC-15) through the producer's
+`check_with_execution_points` (`qsl_replay::compile_package_with_execution_points`),
+so the emitted state clauses carry them. The file is a JSON object from the
+exact authored clause name to an execution point: `{"kind": "initialization" |
+"handler", "name": "<anchor>"}` or `{"kind": "pre" | "post", "operation":
+"<anchor>"}`. For example, `{"After": {"kind": "post", "operation": "probe"}}`
+accepts the point for `post After ... on X::Y::probe`. A malformed file is a
+refusal naming it; a point for no authored clause, or one the clause kind does
+not accept, is the checker's refusal. The points file is read under the same
+file ceiling as a `--model` file (over it is an explicit refusal, never
+truncated). A repeated clause name, an empty object, a member the point does
+not define and an unknown `kind` are each a refusal naming the file (a
+malformed anchor name is the checker's refusal instead); an
+empty object is refused rather than emitting point-free bytes, since passing
+the option means points are expected. In every refusal no bytes are written and
+the exit is nonzero. Without the option the clauses are point-free.
+
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
 and incomplete runs. `run` can also evaluate one pure function;

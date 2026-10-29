@@ -46,11 +46,11 @@ use quire_contract_model::{
 };
 use quire_semantic_value::checking::CheckingLimits;
 
-/// The domain package document `spine-model.native`'s `model M` selects.
-const DOMAIN_PACKAGE: &[u8] = include_bytes!("../tests/fixtures/spine-model.semantic-ir.json");
+#[path = "../tests/support/spine_model.rs"]
+mod spine_model;
 
-/// The TC-442 spine-model unit every case is assembled against.
-const SPINE_MODEL_UNIT: &str = include_str!("../tests/fixtures/spine-model.native");
+/// The domain package document `spine-model.native`'s `model M` selects.
+const DOMAIN_PACKAGE: &[u8] = spine_model::DOCUMENT;
 
 /// The file the domain package document is written to.
 pub const DOMAIN_PACKAGE_FILE: &str = "spine-model.semantic-ir.json";
@@ -252,7 +252,7 @@ fn assemble(packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Result<PackageDeclaration
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
-        SPINE_MODEL_UNIT.as_bytes(),
+        spine_model::unit().as_bytes(),
         qsl_cst::Limits::default(),
     )
     .map_err(|refusal| stage("S1")(format!("{refusal:?}")))?;
@@ -331,7 +331,7 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     // The forms carry no spans, so every occurrence is placed at the whole
     // of the unit the package was checked from.
     let source = package.graph().source().clone();
-    let length = u64::try_from(SPINE_MODEL_UNIT.len()).unwrap_or(u64::MAX);
+    let length = u64::try_from(spine_model::unit().len()).unwrap_or(u64::MAX);
     let emission = qsl_package::emit_package(package, |_| {
         SourceRegion::new(source.clone(), 0, length).ok()
     })

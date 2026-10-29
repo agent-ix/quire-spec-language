@@ -90,25 +90,18 @@ The output directory contains:
   producer's own binary is not among them: `expected.json`'s `producer.binary`
   records its identity as a digest.
 
-The immutable checked-in consumer copy is addressed by
-`protocol_artifact::handoff::PUBLISHED_V1_HANDOFF`; its version-explicit member
-constants prevent consumers from guessing filenames. It omits `dependencies/`:
-this repository does not commit exact-byte dependency fixtures, so the checked-in
-`expected.json`/`expected-v2.json` selections carry an empty `dependencies` list.
-A fresh run of the producer still writes its own `dependencies/` directory to
-its (uncommitted) output path, exactly as described above. The checked-in
-copies are therefore not admissible, and their `Producer.binary` digest is
-informational (the producer source when they were taken); a consumer that must
-admit a handoff calls `write_v1`/`write_v2` into its own directory. Selecting the pinned
-crate and this owner-published directory is separate from offering the package bytes:
+No handoff copy is checked in. A consumer that must admit a handoff calls
+`write_v1`/`write_v2` (feature `handoff-writer`) from its own build or test
+into a directory it chooses; the version-explicit member constants in
+`protocol_artifact::handoff` prevent consumers from guessing filenames, and the
+written tree includes `dependencies/`. Selecting the pinned crate and the
+directory it wrote is separate from offering the package bytes:
 decoding `Selection` remains inert until the caller constructs and invokes the
 strict public reader.
 
 The version-1 `Flow` uses distinct admitted object authorities for its `Service`
 and `Provider` roles; only `Service` owns `Workflow::apply`. The version-2
-handoff predates this consumer-corpus correction, so its producer recipe reads
-the historical model and workflow inputs from `model-v2-frozen.json` and
-`workflow-v2-frozen.body.native` rather than the corrected `/1` inputs.
+producer recipe reads the same model and workflow inputs.
 
 The baseline is the accepted registered Edition artifact, identity `ix:native`,
 semantic revision `1-draft.2`, from [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15).

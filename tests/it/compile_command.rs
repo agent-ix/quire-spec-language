@@ -626,12 +626,6 @@ fn a_source_without_an_ix_native_header_goes_to_native() {
     }
 }
 
-/// The complete-V1 compile fixture with a domain package (FR-027-AC-9).
-const SPINE_MODEL_FIXTURE: &str = "tests/fixtures/spine-model.native";
-
-/// The domain package document `SPINE_MODEL_FIXTURE`'s `model M` selects.
-const SPINE_MODEL_DOCUMENT: &str = "tests/fixtures/spine-model.semantic-ir.json";
-
 /// [`spine_request`], with `document` written as `orders.json` and selected
 /// as a `semantic-ir/2.0.0` model.
 fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
@@ -655,8 +649,9 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
 #[test]
 #[trace("TC-442", "FR-027-AC-9")]
 fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
-    let program = std::fs::read(SPINE_MODEL_FIXTURE).unwrap();
-    let document = std::fs::read(SPINE_MODEL_DOCUMENT).unwrap();
+    // The complete-V1 compile fixture with a domain package (FR-027-AC-9).
+    let program = crate::support::spine_model::unit().into_bytes();
+    let document = crate::support::spine_model::DOCUMENT.to_vec();
     let directory = tempfile::tempdir().unwrap();
     spine_model_request(directory.path(), &program, &document);
     let output = compile(directory.path());
@@ -703,8 +698,8 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
 #[test]
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 fn a_model_bearing_request_refuses_at_the_owning_stage() {
-    let program = std::fs::read_to_string(SPINE_MODEL_FIXTURE).unwrap();
-    let document = std::fs::read(SPINE_MODEL_DOCUMENT).unwrap();
+    let program = crate::support::spine_model::unit();
+    let document = crate::support::spine_model::DOCUMENT.to_vec();
     let declaration = program
         .lines()
         .find(|line| line.starts_with("model M = "))

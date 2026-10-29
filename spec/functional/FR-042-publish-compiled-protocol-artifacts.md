@@ -61,8 +61,20 @@ SHALL construct the accepted inventory as Rust values from independently selecte
 original sources, admitted domain packages, registered definitions, artifact
 contract and compiler binary bytes. The compiler supplies those original inputs with its emitted
 bytes and reference; the offered payload cannot appoint its own accepted inventory.
-The handoff example's `expected.json` is an inspection aid for the fixture, not
-an accepted-inventory interchange format or an authority B may accept by default.
+The handoff example's `expected.json` is an inspection aid for the written
+handoff, not an accepted-inventory interchange format or an authority B may
+accept by default.
+
+The `/1` handoff is generated, never committed. The repository SHALL commit no
+tree under `artifacts/compiled-protocol-v1`, and no checksum manifest, frozen
+digest or file count of handoff files. `protocol_artifact::handoff::write_v1`
+is its only producer: a consumer's build or test calls it to write the handoff
+into a directory the consumer chooses, under its own build output. That call
+is the generation command; there is no second producer and no make target. The
+consumer SHALL NOT vendor or copy a handoff tree. The crate publishes the `/1`
+member-name constants but no constant naming a committed directory.
+[FR-050](FR-050-publish-authenticated-temporal-artifacts.md) states the same
+rule for `/2`.
 
 ## Outputs
 
@@ -408,12 +420,14 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-7 | The public reader verifies canonical bytes and external selection without a native parser. Unknown/duplicate/missing fields, wrong tags, noncanonical encodings, out-of-range/foreign handles and changed content refuse with typed causes. Resealing a tampered payload under an unchanged expected reference still refuses; digest success alone is never evidence of native-source equivalence. | Test (TC-121) |
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. Every protocol-role admission refusal locus pairs a source index and span from the same owning declaration; a multi-unit invalid protocol role identifies and slices that exact role rather than a preceding source. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow, a limit raised above its default, and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
-| FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
+| FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the handoff written by `write_v1`/`write_v2` and consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
 | FR-042-AC-11 | For a model whose native package imports a domain package, reading `Model`'s domain package identity, version and digest from decoded bytes reproduces exactly the `DomainPackageRef` FR-056 admitted for that model at linking, with no producer or relation object between them. A payload whose `Model` object carries a `correspondence`, `producer` or `interface` member, of any value including `null`, or that carries a `ProducerObject`-shaped or `Correspondence`-shaped value under any key, refuses as an unrecognized field rather than being read into a domain package identity or silently ignored. | Test (TC-121) |
 | FR-042-AC-12 | For a directly admitted native model with no domain-package import, `Model`'s domain-package member decodes as explicit `null`; a payload that omits the member entirely refuses exactly as an omitted `Nullable<T>` member already refuses elsewhere in this contract, and is never read as an implicit `null`. | Test (TC-121) |
 | FR-042-AC-13 | Over an admitted domain package, a declaration over a domain object type's population input and a domain operation (an operation clause, an attempt with a domain event record, and a FIFO channel keyed by a domain object) check, emit exactly one population/closure pair per covering declaration and anchor and the operation's own export, and read back unchanged. A changed package digest, an export the package does not declare, a population pair keyed to another object type and an operation context other than its owner each refuse; an object type with no covering population declaration refuses emission as `Unsupported::Export`. | Test (TC-121) |
 | FR-042-AC-14 | Over an admitted domain package, a precondition reading a domain operation's parameter and a postcondition reading its parameters and `result` check, emit each parameter as an `invocation_parameter` binder at the `invocation_input` anchor and the result as the `result` binder at `invocation_post`, typed by the package's exports or `Boolean`, with a domain object parameter's population pair at that anchor, and read back unchanged. A parameter or result whose type has no native type here refuses checking as `DomainRepresentation`, and a clause reading a name the operation does not declare refuses at scope resolution. | Test (TC-121) |
 | FR-042-AC-15 | `protocol_artifact::handoff::write_v1(directory)`, in the normal (non-dev) dependency surface behind the `handoff-writer` feature and adding no dependency, lets a downstream crate compile the authored recipe fresh and write a complete handoff -- original sources, model source, every selected dependency's exact bytes, the independent `expected.json` selection and the artifact reference -- to a caller-chosen new directory, in-process, without building this crate's examples or dev-dependencies. It reads the emitted bytes back through the strict public reader before writing anything. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-121) |
+| FR-042-AC-16 | In a git checkout, `git ls-files` lists no file under `artifacts/compiled-protocol-v1`. | Test (TC-121) |
+| FR-042-AC-17 | `protocol_artifact::handoff` exports no `PUBLISHED_V1_HANDOFF`. | Test (TC-121) |
 
 ## Dependencies
 
