@@ -107,7 +107,7 @@ pub enum RunEnd {
   with no property automaton, by FR-101's canonical breadth-first engine,
   and retain every explored edge. With no reduction, a closed node's outgoing
   edges SHALL be exactly its FR-120 successors. With a selected reduction
-  admitted by ADR-021 PT-2, the engine SHALL retain the quotient or ample-set
+  admitted for the state-graph form by ADR-022 GR-1, the engine SHALL retain the quotient or ample-set
   edges specified by ADR-021; a node is closed when that reduced expansion is
   complete.
 - When symmetry is selected and admitted for the item's form, the engine
@@ -175,7 +175,7 @@ pub enum RunEnd {
 | FR-167-AC-3 | §7.2's game with no `terminal` declaration: the deadlock-freedom item's violation is `Lost` with the path `play, lose`. A subject with no initial state ends `NoInitialState`. An unbounded population root returns `RequiresBound` with no node explored. | Test (TC-592) |
 | FR-167-AC-4 | With partial-order reduction selected, an `always possible` item and a `unique path` item settle V-6 `ReductionNotPreserving` before any expansion while a `possible` item over the same subject is explored under it; with symmetry selected, a `unique path` item settles `ReductionNotPreserving`. The EN-1 manifest's `state_graph_forms` lists the three exact FR-390 forms, the trace monitor's manifest has no such member, and candidate computation filters a state-graph item by its exact form. | Test (TC-592, TC-193) |
 | FR-167-AC-5 | Running AC-1's §7.2 request twice gives byte-equal explored graphs, labels and open sets. | Test (TC-592) |
-| FR-167-AC-6 | Over ADR-021 §7.1 with the admitted `config_history` symmetry declaration and `ReachesTwo` instance `c = a`, EN-1 stores the 18 states of the instance's stabiliser quotient rather than 27; every retained edge targets a canonical state and carries the permutation mapping its concrete successor to that target, and predicate labels remain keyed to `c = a`. The same request without symmetry stores 27 states. | Test (TC-592) |
+| FR-167-AC-6 | Over ADR-021 §7.1 with the admitted `config_history` symmetry declaration and `ReachesTwo` instance `c = a`, whose binding stabilizer is `[[a], [b, c]]` (SYM-6), EN-1 stores the 18 states of that quotient rather than 27; every retained edge targets a canonical state and carries the permutation mapping its concrete successor to that target, and predicate labels remain keyed to `c = a`. The same request without symmetry stores 27 states. | Test (TC-592) |
 
 ## Dependencies
 

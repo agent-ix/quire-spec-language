@@ -62,10 +62,13 @@ left undecided, never guessed.
   holds and two distinct step sequences from it, each ending at its first
   `to` node;
 - `Holds`: an exhaustive state-graph proof, with its certificate;
-- `HoldsReduced { reductions }`: a proof from a completed graph under the
-  reductions admitted for the claim, with the applied reductions in
-  ADR-021's canonical order (symmetry, then partial-order reduction); no
-  certificate is returned for this quotient or ample-set proof;
+- `HoldsReduced { reductions, witnesses }`: a proof from a completed graph
+  under the reductions admitted for the claim, with the applied reductions
+  in ADR-022 GR-1's canonical order (symmetry, then partial-order reduction).
+  For SG-1 `Possible`, `witnesses` is `Some(paths)`, one concrete
+  `ModelPath` and source per initial state, as for `Witnessed`; for SG-2
+  `AlwaysPossible`, it is `None`. No state-graph certificate is returned
+  for this quotient or ample-set proof;
 - `NoDecision { end, open }`: the run's end and the causes of its open
   nodes, which FR-169 maps;
 - `Undefined { stem, undefined }`: a `ModelPath` ending at the first node, in
@@ -75,15 +78,22 @@ left undecided, never guessed.
   its `UndefinedEvaluation{where, cause}`;
 - `NoInitialState`.
 
+These variants are members of `StateGraphOutcome`. The names do not refer to
+FR-143's `LivenessHalf::Checked(ModelCheckOutcome)` or to the other outcome
+types used by FR-142 and FR-177 through FR-197; in particular those documents'
+`Holds{Exhaustive}` and FR-143's `HoldsReduced{reductions: []}` retain their
+own type and meaning.
+
 With `Witnessed`, and with `Holds`, the engine SHALL also return
 the `StateGraphCertificate` FR-169 checks: the explored states, and the
 target distances or path counts it computed (ADR-022 GC-1). `HoldsReduced`
-carries none (GC-4). If `Possible` finds a witness for every initial state
-on a completed run under an admitted reduction, the engine SHALL return
-`HoldsReduced{reductions}` rather than `Witnessed`: the terminal result then
-states that its well-definedness conclusion depends on the reduced
-exploration. On a run that has open nodes or stopped at a limit, the engine
-SHALL return `WitnessedUnchecked` with the paths and run status.
+carries no certificate (GC-4). If `Possible` finds a witness for every
+initial state on a completed run under an admitted reduction, the engine
+SHALL return `HoldsReduced{reductions, witnesses: Some(paths)}` rather than
+`Witnessed`; the concrete paths remain available for FR-170 replay, while
+the well-definedness conclusion depends on the reduced exploration. On a
+run that has open nodes or stopped at a limit, the engine SHALL return
+`WitnessedUnchecked` with the paths and run status.
 
 Each carries its instance's `over` binding.
 
@@ -113,17 +123,18 @@ Each carries its instance's `over` binding.
   whether or not the run has open nodes.
 - When every initial state has a sampled or explored witness, `Possible`
   SHALL return `Witnessed` if the unreduced run completed with no open node,
-  and `HoldsReduced{reductions}` if a run under an admitted reduction
-  completed with no open node. It SHALL return `WitnessedUnchecked` when the
-  run has open nodes or a limit stopped it. Otherwise, if an initial state is a trap,
+  and `HoldsReduced{reductions, witnesses: Some(paths)}` if a run under an
+  admitted reduction completed with no open node. It SHALL return
+  `WitnessedUnchecked` when the run has open nodes or a limit stopped it.
+  Otherwise, if an initial state is a trap,
   it SHALL return `Trapped` with that initial state and an empty stem.
 - `AlwaysPossible` SHALL return `Trapped` when a trap where `from` holds is
   reachable: the first such trap in FR-101 canonical breadth-first discovery
   order, with the canonical breadth-first path to it as its stem.
 - `AlwaysPossible` SHALL return `Holds` when no node is open and every
   reachable node where `from` holds is in `E⁺` in an unreduced run, and
-  `HoldsReduced{reductions}` when the same condition holds over a graph
-  reduced by an admitted selection.
+  `HoldsReduced{reductions, witnesses: None}` when the same condition holds
+  over a graph reduced by an admitted selection.
 
 ### `unique path`: path counting
 
@@ -150,7 +161,7 @@ Each carries its instance's `over` binding.
   breadth-first stem. A closed node that counts 0 only because the nodes it
   reaches are open is not known and is no trap.
 - `UniquePath` SHALL return `Holds` when no node is open and every reachable
-  node where `from` holds counts exactly 1 in an unreduced run. ADR-021 PT-2
+  node where `from` holds counts exactly 1 in an unreduced run. ADR-022 GR-1
   rejects the currently defined symmetry and POR reductions for this form.
 
 ### Undefined evaluation
@@ -220,7 +231,8 @@ Each carries its instance's `over` binding.
 | FR-168-AC-11 | Over §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (FR-169-AC-11's fixture), `ReachesTwo` for `c = a`, which has a witness ending at `va = 2`, returns `Undefined`, not `Witnessed`, with stem `(0) -upd(a)-> (1) -upd(a)-> (2)` and a `where` naming the state key of `va = 2`, the guard's locus and the transition identity of `upd(a)`, with no predicate; `always possible CanReachTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }` for `c = a` returns the same evidence; `ReachesThree` (`possible c.versionNumber = 3`, which no node satisfies) over the same subject returns the same `Undefined` evidence, not `Trapped`, with the node `va = 2` open `UndecidedSuccessor`; each item settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` (FR-169). | Test (TC-612) |
 | FR-168-AC-12 | Over FR-126-AC-9's `Counter` subject with `terminal Done using v on Counter when { 6 mod (3 - c.value) = 0 }`, the claim `possible c.value = 3` returns `Undefined` at the terminal node `value = 3`, with a `where` naming its state key and the terminal predicate's locus, with neither a predicate nor a transition, although the node satisfies the target. | Test (TC-612) |
 | FR-168-AC-13 | Over §7.1's subject with universe `{a}`, the one initial state `va = 0`, a package that selects an integer-division law (as FR-168-AC-11's fixture does) and the unit declaring the state constraint `constraint Half using v on Config::ConfigVersion at current { 2 div (2 - self.versionNumber) >= 1 }` (ADR-021 SC-1; S2 kind `Constraint` by FR-102, checked by FR-158 and emitted by FR-105 as a `state`/`state_clause` node of clause `constraint`), selected by the request's `reductions.constraint` (FR-159): the unit compiles, `Half` holds at `va = 0` and `va = 1` so both are expanded, and `ReachesTwo` for `c = a` returns `Undefined` at `va = 2` with stem `(0) -upd(a)-> (1) -upd(a)-> (2)`, cause `division-by-zero` and a `where` naming its state key and the locus of `Half` (its `state_clause` node and claim occurrence), with neither a predicate nor a transition; the node is not reported as a `ConstraintBoundary`, and the item settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` (FR-169). | Test (TC-612) |
-| FR-168-AC-14 | Over ADR-021 §7.1 with the admitted `config_history` symmetry declaration, `ReachesTwo` (`possible` for `c = a`) and `always possible` for `c = a` that `c.versionNumber = 2` each return `HoldsReduced{[Symmetry{config_history, [[a, b, c]]}]}`, with no certificate; `unique path` under that declaration returns `ReductionNotPreserving` before its item is expanded. On the same subject with partial-order reduction, `ReachesTwo` returns `HoldsReduced{[PartialOrder{BreadthFirstRevisit}]}`, with no certificate, while `always possible` remains `ReductionNotPreserving`. | Test (TC-593) |
+| FR-168-AC-14 | Over ADR-021 §7.1 with the admitted `config_history` declaration `[[a, b, c]]`, `ReachesTwo` (`possible` for `c = a`) returns `StateGraphOutcome::HoldsReduced{reductions: [Symmetry{config_history, declared: [[a, b, c]], stabilizer: [[a], [b, c]]}], witnesses: Some(paths)}` whose path is `upd(a), upd(a)`, and `always possible` for `c = a` that `c.versionNumber = 2` returns the same result with `witnesses: None`; neither carries a certificate. `unique path` under that declaration returns `ReductionNotPreserving` before expansion. Under ADR-021 §7.2 POR, the `ReachesTwo` instance `x = a` returns `StateGraphOutcome::HoldsReduced{reductions: [PartialOrder{BreadthFirstRevisit}], witnesses: Some(paths)}` whose path is `bump(b), bump(b), bump(c), bump(c), bump(a), bump(a)`; its root has 3 enabled successors and ample set size 1, and its graph has 7 states/6 transitions rather than the unreduced 27 states/54 transitions. Every returned path replays to `reproduced-with-evaluated-witness`. `always possible` under POR remains `ReductionNotPreserving`. | Test (TC-593) |
+| FR-168-AC-15 | `possible` for `c = a` that `c.versionNumber = 0 and c.versionNumber = 1` over ADR-021 §7.1 returns `Trapped` at the initial state under symmetry, and `possible` for `x = a` that `x.v = 0 and x.v = 1` over ADR-021 §7.2 returns `Trapped` at the initial state under POR; both empty-stem counterexamples replay through FR-170 as `reproduced-with-evaluated-witness` by checking the unreduced concrete closure. | Test (TC-593) |
 
 ## Dependencies
 

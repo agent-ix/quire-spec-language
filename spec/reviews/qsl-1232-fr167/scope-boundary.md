@@ -20,6 +20,6 @@ The change remains within QSL's EN-1 state-graph exploration and settlement path
 ## Boundary disposition
 
 - `qsl-eval` owns the model transitions and reduction hooks; `qsl-analyze` owns state-graph expansion and claim outcomes.
-- `qsl-replay` continues to re-establish concrete evidence and owns the terminal proof vocabulary.
+- `qsl-replay` continues to re-establish concrete evidence and owns the terminal proof vocabulary. `StateGraphOutcome::HoldsReduced` is distinct from FR-143's `ModelCheckOutcome` inside `LivenessHalf::Checked` and the hyper result types.
 - Reduced proofs are explicitly uncertified because the current core checker does not check quotient or ample-set closure.
 - No parser, package wire, provider negotiation or external repository contract is changed by this QSL specification batch.
