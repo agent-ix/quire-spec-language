@@ -1,6 +1,5 @@
 {
   "collectionId": "qsl205-ab-b-checker-v2",
-  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
   "environment": {
     "loads": [
       {
@@ -56,7 +55,7 @@
     ],
     "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
     "role": "candidate (B, task/205-checker-lookups)",
-    "session": "qsl205-ab: A = ddc0083e, B = 61dd8188, rounds A1 B1 A2 B2 ... A5 B5",
+    "session": "qsl205-ab: A = baseline, B = candidate, rounds A1 B1 A2 B2 ... A5 B5",
     "sharedLoad": "QSL-205 interleaved A/B session, A and B alternating per round; other agents' QSL builds and benches ran on the same machine; loadavg recorded per round"
   },
   "observations": [
@@ -317,34 +316,13 @@
     "benchmarks": 5,
     "repetitions": 5
   },
-  "sourceRevision": "61dd8188d92e97723446b42b881b3711828debac",
   "subject": "quire-spec-language qsl-bench checker benchmarks",
   "timestamp": "2026-09-24T08:37:47.000Z",
   "toolIdentity": "criterion via cargo bench -p qsl-bench",
-  "toolVersion": "criterion 0.8.2; rustc 1.94.1 (e408947bf 2026-03-25)",
   "verificationStack": {
-    "artifacts": {
-      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
-      "qsl-bench/benches/checker.rs": "sha256:3aa271b2d8ac8666ed9bb16dc2c41ae8c7bdec2f1e7c4d40cde5527f14e6654b"
-    },
     "buildProfile": "release",
     "capabilities": [
       "criterion.wall-time"
-    ],
-    "executableDigest": "sha256:1b81e085996944a4c53f0244396f70f9bf2521b4c5c2e4c5f13a952c840e8929",
-    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
-    "schemaVersion": "verification-stack-attestation-v1",
-    "sources": {
-      "quire-spec-language": {
-        "remote": "https://github.com/agent-ix/quire-spec-language",
-        "revision": "61dd8188d92e97723446b42b881b3711828debac",
-        "sourceState": "clean"
-      }
-    },
-    "toolchains": {
-      "node": null,
-      "python": null,
-      "rust": "rustc 1.94.1 (e408947bf 2026-03-25)"
-    }
+    ]
   }
 }

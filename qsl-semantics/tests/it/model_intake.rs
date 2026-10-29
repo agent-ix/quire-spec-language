@@ -269,6 +269,133 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     assert_eq!(admitted_document.tree(), &package);
 }
 
+/// TC-145 / FR-056-AC-4 / FR-056-AC-44: exercise the merged FCD member-name
+/// and artifact-id contract through the real lift and QSL read paths. The
+/// assertions inspect FCD's emitted identities before passing those exact
+/// bytes to QSL, so a hand-authored Semantic IR document cannot satisfy this
+/// coverage.
+#[trace("TC-145", "FR-056-AC-4", "FR-056-AC-44")]
+#[test]
+fn lifts_hyphenated_business_ids_and_reads_authored_member_names() {
+    let bundle = write_bundle(&[
+        (
+            "spec/spec.md",
+            "---\ntype: master-requirements\nname: identity-service\norg: acme\ntitle: Identity Service\n---\n# Identity Service\n",
+        ),
+        (
+            "spec/functional/FR-001-note.md",
+            "---\nid: FR-001-note\ntitle: Note\nobject: entity\ntype: entity\nname: Note\n---\n# FR-001-note: Note\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| id | String | 1 | identity |\n| created_at | String | 1 | |\n\n## Operations\n\n### find_by_id\n\n| Param | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| note_id | String | 1 | |\n\nFind a note by its id. The operation returns nothing.\n",
+        ),
+        (
+            "spec/functional/OP-001-check.md",
+            "---\nid: OP-001-check\ntitle: Note Check\nobject: entity\ntype: entity\nname: NoteCheck\n---\n# OP-001-check: Note Check\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| id | String | 1 | identity |\n| note_ref | Note | 1 | |\n",
+        ),
+    ]);
+    let fixtures = fcd_fixtures_dir();
+    let module_roots = vec![
+        fixtures.join("modules/fixture-domain"),
+        fixtures.join("modules/fixture-edges"),
+        fixtures.join("modules/fixture-systems"),
+    ];
+
+    let lifted = lift_document(bundle.path(), &module_roots)
+        .expect("the real FCD pipeline lifts hyphenated business ids and underscore members");
+    let document: Value = serde_json::from_slice(&lifted).expect("FCD output is JSON");
+    let types = document["types"]
+        .as_array()
+        .expect("lifted types are an array");
+    let find_type = |identity: &str| {
+        types
+            .iter()
+            .find(|type_node| type_node["identity"] == identity)
+            .unwrap_or_else(|| panic!("FCD output has no type identity {identity}"))
+    };
+
+    let note = find_type("ix://acme/identity-service/FR-001-note");
+    let created_at = note["fields"]
+        .as_array()
+        .expect("note fields are an array")
+        .iter()
+        .find(|field| field["name"] == "created_at")
+        .expect("FCD emits the authored underscore field name");
+    assert_eq!(
+        created_at["identity"],
+        "ix://acme/identity-service/FR-001-note/created_at"
+    );
+    assert_eq!(
+        note["operations"][0]["name"], "find_by_id",
+        "FCD retains the authored operation member name"
+    );
+    assert_eq!(
+        note["operations"][0]["identity"],
+        "ix://acme/identity-service/FR-001-note/find_by_id"
+    );
+    assert_eq!(
+        note["operations"][0]["params"][0]["name"], "note_id",
+        "FCD retains the authored operation parameter name"
+    );
+    assert_eq!(
+        note["operations"][0]["params"][0]["identity"],
+        "ix://acme/identity-service/FR-001-note/find_by_id/note_id"
+    );
+    let checker = find_type("ix://acme/identity-service/OP-001-check");
+    let note_ref = checker["fields"]
+        .as_array()
+        .expect("checker fields are an array")
+        .iter()
+        .find(|field| field["name"] == "note_ref")
+        .expect("FCD emits the authored underscore reference name");
+    assert_eq!(
+        note_ref["identity"],
+        "ix://acme/identity-service/OP-001-check/note_ref"
+    );
+    assert_eq!(
+        note_ref["typeRef"], "ix://acme/identity-service/FR-001-note",
+        "the cross-artifact reference resolves to the emitted business identity"
+    );
+
+    let records = read_records("acme/identity-service", &parse_document(&lifted))
+        .expect("QSL reads the exact Semantic IR document emitted by FCD");
+    use qsl_semantics::model::domain_package::DomainPackageRecord;
+    let has_field = |identity: &str| {
+        records.iter().any(|record| {
+            matches!(record, DomainPackageRecord::FieldMember(field) if field.key.node == identity)
+        })
+    };
+    assert!(has_field(
+        "ix://acme/identity-service/FR-001-note/created_at"
+    ));
+    assert!(has_field(
+        "ix://acme/identity-service/OP-001-check/note_ref"
+    ));
+    let has_operation_parameter = records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::OperationMember(operation)
+        if operation.parameters.iter().any(|parameter| {
+            parameter.key.node == "ix://acme/identity-service/FR-001-note/find_by_id/note_id"
+        }))
+    });
+    assert!(
+        has_operation_parameter,
+        "QSL retains the authored parameter identity"
+    );
+    let note_reference = records.iter().find_map(|record| match record {
+        DomainPackageRecord::FieldMember(field)
+            if field.key.node == "ix://acme/identity-service/OP-001-check/note_ref" =>
+        {
+            field.value_type.as_package()
+        }
+        _ => None,
+    });
+    assert_eq!(
+        note_reference,
+        Some(&key(
+            "acme/identity-service",
+            "ix://acme/identity-service/FR-001-note"
+        )),
+        "QSL resolves the reference to the first emitted artifact"
+    );
+}
+
 /// FR-056 requires `UUID` among the native value types a field may name, so
 /// the architecture golden of the pinned `agent-ix-extraction-frontend`
 /// (12 types, no `populations[]`, asserted below) reads clean: `Pump.id`,
@@ -1761,11 +1888,10 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
 /// and its own operation are both named `revision`. FCD #199/#200 collapses
 /// the field and operation identity namespaces into one `<Owner>/<name>`
 /// segment with no kind segment of its own, so the two now mint the same
-/// identity and `lift_document` blocks. At the previously pinned rev
-/// (`7dcb2f2c`, predating FCD #199/#200) this same bundle did *not*
+/// identity and `lift_document` blocks. Before FCD #199/#200 this same bundle did *not*
 /// collide -- `NodeKind::Field` and `NodeKind::Operation` minted under
 /// different segments there -- which is why this test was deleted rather
-/// than kept `#[ignore]`d until the pin bumped; this is that test, rebuilt
+/// than kept `#[ignore]`d until FCD moved; this is that test, rebuilt
 /// fresh against the collision this pin actually produces.
 ///
 /// The expected diagnostic is read verbatim from FCD's own committed

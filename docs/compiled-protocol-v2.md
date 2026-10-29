@@ -161,7 +161,7 @@ progress.
 
 ## Reproducible producer-to-consumer handoff
 
-A consumer handoff pins the final published compiler implementation revision
+A consumer handoff names the final published compiler implementation
 that retains this contract and names the exact public surface it consumes:
 
 - `protocol_artifact::handoff::{PUBLISHED_HANDOFF, PUBLISHED_OFFER_FILE,

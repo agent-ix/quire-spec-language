@@ -1761,8 +1761,8 @@ mod cargo_deny_bans_the_three_registry_crates {
     /// Skips, rather than fails, when the `cargo-deny` binary is not on
     /// `PATH`: this crate does not depend on `cargo-deny` being installed to
     /// build or test locally (`make cargo-deny-bans`'s own header documents
-    /// installing it), while `.github/workflows/ci.yml` installs a pinned
-    /// version unconditionally, so the hosted gate always exercises this
+    /// installing it), while `.github/workflows/ci.yml` installs it
+    /// unconditionally, so the hosted gate always exercises this
     /// test for real. `make cargo-deny-bans` itself fails outright when the
     /// binary is absent, so `make ci` cannot go green by relying on this
     /// skip.

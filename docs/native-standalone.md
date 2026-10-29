@@ -95,6 +95,6 @@ Only a completed run carries a truth value. Refused and incomplete results have
 no truth field. Request errors are JSON on stderr.
 The [diagnostic codes](native-error-codes.md) page lists every code.
 
-The request shapes are pinned by the CLI tests in
+The request shapes are exercised by the CLI tests in
 [`tests/it/config_version_spine.rs`](../tests/it/config_version_spine.rs) and
 [`tests/it/spine_run.rs`](../tests/it/spine_run.rs).

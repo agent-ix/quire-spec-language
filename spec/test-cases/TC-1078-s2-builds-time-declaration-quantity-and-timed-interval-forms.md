@@ -25,7 +25,7 @@ Fixtures: the declarations of FR-393-AC-1; a unit with a field named `time` and 
 5. Parse `eventually[0, 3 ms] holds(p)` and `eventually[0 ms, 3] holds(p)`; build `always [2 s, *] holds(p)`.
 6. Build the `Rpc` unit under both facet selections and compare the forms.
 7. Build the three `Clock` units.
-8. Build a unit with `function f(c: Clock): Clock`, `predicate p(c: Clock)`, an operation parameter `c: Clock`, `record R { x: Clock; d: Quantity<ms>; o: Option<Clock>; s: Set<Quantity<ms>> }`, a tuple with a `Clock` element, a union case with a `Clock` payload and `type Alias = Clock;`, under no facet and under the complete facets.
+8. Build the same declarations under no facet and under the complete facets, including a tuple with a `Clock` element and a union case with a `Clock` payload. Observe the S1/S2 forms, then submit the tuple and union declarations separately through checked-package intake under the complete facets.
 
 Tag the tests `#[trace("TC-1078", "FR-393-AC-n")]`.
 
@@ -38,4 +38,4 @@ Tag the tests `#[trace("TC-1078", "FR-393-AC-n")]`.
 - Step 5: a parse diagnostic at `3 ms` and `3` respectively, no form; the open-ended interval builds as a timed interval with lower quantity `2 s` and open upper end.
 - Step 6: equal forms and no facet diagnostic.
 - Step 7: `TypeForm::Clock`; a named type form with no `TypeForm::Clock`; a parse diagnostic at the declared name.
-- Step 8: `TypeForm::Clock` or the `Quantity` type form at each position with the span of its word, the same forms under both selections, and no diagnostic.
+- Step 8: S1/S2 build `TypeForm::Clock` at the tuple and union positions with the span of the `Clock` word, under both facet selections, without an S1/S2 diagnostic (FR-393-AC-8). At checked-package intake, the tuple position refuses `invalid_model_binding`/`malformed-declaration` at its `typeRef` under QSpec FR-322; the union payload refuses `unsupported_construct`/`declaration-form` at node `ix://<package identity>/variant/Tier-Gold`, path `Variant.payloadType`, under QSpec FR-154-AC-25 and FR-208-AC-15. Neither package is admitted.

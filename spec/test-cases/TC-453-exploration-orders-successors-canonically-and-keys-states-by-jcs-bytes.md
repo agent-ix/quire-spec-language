@@ -62,11 +62,8 @@ public entries; `explore` is `pub(crate)` (FR-101).
   duplicate is one state.
 - Step 5: `Cancelled`, frontier 3's digest then 4's: level-2 parents keep
   the FIFO order 1, 2.
-- Step 6: the digests are
-  `943ae638f84583f2a35a7a92f1eac7f58c380c045298892fb1412756a1cc95e6`,
-  `92a3e9557f9aaf672a61aaab71eb2bfad13a0d88662953998de4057ed54e4b01`,
-  `a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec` and
-  `62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955`, each a
+- Step 6: the four digests are
+  the SHA-256 of each state's JCS key bytes, each a
   `DigestRecord` under `quire.simulation.state-key/v1`; each exploration
   counts two states.
 - Step 7: `Exhaustive` with 4 states and 4 transitions.

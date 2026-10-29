@@ -93,6 +93,8 @@ mod hyper;
 mod model;
 mod protocol;
 mod refinement_rows;
+#[cfg(test)]
+mod spec_vectors;
 mod state;
 mod state_graph;
 mod state_transition;
