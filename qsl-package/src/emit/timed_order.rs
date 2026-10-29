@@ -57,7 +57,7 @@ pub enum OrderFault {
     /// A node's body is not the closed form its key reads.
     #[error("an ordered timed member's body is not its closed form")]
     Malformed,
-    /// A term nests deeper than [`TERM_DEPTH`].
+    /// A term nests deeper than 256 levels.
     #[error("an ordered timed member's term nests too deeply to key")]
     TooDeep,
     /// Two members of one aggregate have one order key.
