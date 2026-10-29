@@ -456,10 +456,12 @@ ADR-011 §4 "Checking precedes lowering").
 
 QSL SHALL construct a `VerifiedPackage` from v2 wire bytes only when all
 three ADR-011 §4 conditions hold: the schema version is a supported v2
-version; the FR-322 `package_id`, recomputed as the `quire.package.semantic/v2`
-digest of the JCS bytes of the `identity_preimage` read, lexically equals
-the declared `package_id`; and that identity is listed in the consumer's
-library lock or pinned request. If any of the three conditions fails to
+version; the `package_id` recomputed according to QSpec FR-322 lexically
+equals the declared `package_id`; and that identity is listed in the
+consumer's library lock or pinned request. QSpec FR-322 defines the
+`identity_preimage` and `package_id` derivation, including its included and
+excluded inputs (FR-322-AC-14); this requirement owns the three-condition
+admission rule. If any of the three conditions fails to
 hold, QSL SHALL refuse with a named cause and yield nothing — no partial
 `VerifiedPackage`, and no fallback to a digest of the file bytes, the lock
 file, or the source. This binding and

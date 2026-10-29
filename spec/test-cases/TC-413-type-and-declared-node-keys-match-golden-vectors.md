@@ -56,9 +56,11 @@ selection whose alias is `v`.
    `record Leaf { label: Text[0, 8; nfc]; }`, alone and with an equality
    over `C0`; check the same chain 1,000 records long, alone and with the
    equality, with S1 and S3 limits raised to fit it.
-6. Key QSpec's `enum-status` and `enum-status-ready` preimages from
-   `node-identity-vectors.json`, read at run time from `QSPEC_DIR` (the opt-in
-   `make conformance` gate).
+6. Read in place from the QSpec checkout the `enum-status` and
+   `enum-status-ready` vectors at
+   `proposals/checked-package-v2/node-identity-vectors.json`, `vectors`;
+   key their preimages and compare the minted keys to their recorded
+   `sha256` values (the opt-in `make conformance` gate).
 7. Build the type nodes of `Rational[-9, 9; 1, 9]`,
    `Decimal[-100000, 100000; 2, 2; nearest-even]`,
    `tuple Pair(Int[0, 9], Int[0, 9]);` and the two `record Opt` declarations
