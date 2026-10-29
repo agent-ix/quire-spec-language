@@ -1504,6 +1504,9 @@ fn clock_variant_payload_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> Option<ModelRefusal> {
+    if located.code != "agent-ix.semantic-ir.INVALID_CLOCK_MEMBER" {
+        return None;
+    }
     let pointer = located
         .pointer
         .strip_prefix("/ir")
