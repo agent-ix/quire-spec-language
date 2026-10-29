@@ -183,6 +183,20 @@ impl<'a> ModelSystem<'a> {
         select: &dyn Fn(NodeKey) -> bool,
         budget: &mut Budget,
     ) -> Result<Applications, ExpansionStop> {
+        self.apply_operation_matching(observed, operation, select, None, budget)
+    }
+
+    /// As [`Self::apply_operation`], checking only candidate identities in
+    /// `selected_transitions` when supplied. The full argument domain is
+    /// still enumerated and charged against `budget`.
+    pub(crate) fn apply_operation_matching(
+        &self,
+        observed: &ModelSimState,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&std::collections::BTreeSet<ModelTransition>>,
+        budget: &mut Budget,
+    ) -> Result<Applications, ExpansionStop> {
         let walk = walk_of(self, observed, None)?;
         let mut contract = Vec::new();
         let mut successors = Vec::new();
@@ -202,6 +216,7 @@ impl<'a> ModelSystem<'a> {
                     successors: &mut successors,
                     enabled: None,
                     enabled_transitions: None,
+                    selected_transitions,
                 },
             )?;
         }
@@ -211,20 +226,15 @@ impl<'a> ModelSystem<'a> {
         })
     }
 
-    /// FR-220 MA-1: the transition identities with a true selected effective
-    /// precondition and at least one completed candidate at `observed`. The
-    /// first completed candidate is sufficient when no attempt constraint
-    /// reads its result.
-    ///
-    /// # Errors
-    ///
-    /// An [`ExpansionStop`] when a precondition or the first candidate cannot
-    /// be evaluated within the available resources.
-    pub(crate) fn enabled_transitions(
+    /// FR-220 MA-1: the enabled transition identities at `observed`, checking
+    /// only candidate identities in `selected_transitions` when supplied.
+    /// Candidate enumeration and budget charges still cover the full domain.
+    pub(crate) fn enabled_transitions_matching(
         &self,
         observed: &ModelSimState,
         operation: &OperationRef<'_>,
         select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&std::collections::BTreeSet<ModelTransition>>,
         budget: &mut Budget,
     ) -> Result<Vec<ModelTransition>, ExpansionStop> {
         let walk = walk_of(self, observed, None)?;
@@ -247,6 +257,7 @@ impl<'a> ModelSystem<'a> {
                     successors: &mut successors,
                     enabled: None,
                     enabled_transitions: Some(&mut transitions),
+                    selected_transitions,
                 },
             )?;
         }

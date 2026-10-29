@@ -340,6 +340,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     ) -> Result<StateWeakAccesses, ExpansionStop> {
         let mut applications = Vec::new();
         let mut readers = Vec::new();
+        let empty_transitions = BTreeSet::new();
         for (instance_ordinal, instance) in &state.instances {
             for (path, thread) in &instance.threads {
                 if thread.disposition == Disposition::Cancelled {
@@ -409,6 +410,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 .observe(&state.memory, &observation_path, &state.model);
                         let mut observations = vec![(probe.clone(), None)];
                         let mut read_locations = BTreeSet::new();
+                        let mut selected_by_location = BTreeMap::new();
                         if let Some(potential) = self.potential.of(node) {
                             let mut locations = BTreeSet::new();
                             for candidate in &potential.instances {
@@ -423,6 +425,24 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 {
                                     locations.extend(shape.iter().cloned());
                                 }
+                            }
+                            for location in &locations {
+                                let selected = potential
+                                    .instances
+                                    .iter()
+                                    .filter(|candidate| match &candidate.access {
+                                        InstanceAccess::Access {
+                                            class: AccessClass::Load | AccessClass::Rmw,
+                                            location: Some(candidate_location),
+                                        } => candidate_location == location,
+                                        InstanceAccess::Shape { locations } => {
+                                            locations.contains(location)
+                                        }
+                                        _ => false,
+                                    })
+                                    .map(|candidate| candidate.transition.clone())
+                                    .collect::<BTreeSet<_>>();
+                                selected_by_location.insert(location.clone(), selected);
                             }
                             for location in locations {
                                 let Some(cell) = self.potential.cell(&location) else {
@@ -450,23 +470,38 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             }
                         }
                         for (observed, read_location) in observations {
-                            let enabled: Vec<(ModelTransition, Option<Value>)> = if attempt
-                                .constraint
-                                .is_some()
-                            {
-                                self.model
-                                    .apply_operation(&observed, &operation, &select, budget)?
-                                    .successors
-                                    .into_iter()
-                                    .map(|applied| (applied.transition, applied.result))
-                                    .collect()
-                            } else {
-                                self.model
-                                    .enabled_transitions(&observed, &operation, &select, budget)?
-                                    .into_iter()
-                                    .map(|transition| (transition, None))
-                                    .collect()
-                            };
+                            let selected_transitions = read_location.as_ref().map(|location| {
+                                selected_by_location
+                                    .get(location)
+                                    .unwrap_or(&empty_transitions)
+                            });
+                            let enabled: Vec<(ModelTransition, Option<Value>)> =
+                                if attempt.constraint.is_some() {
+                                    self.model
+                                        .apply_operation_matching(
+                                            &observed,
+                                            &operation,
+                                            &select,
+                                            selected_transitions,
+                                            budget,
+                                        )?
+                                        .successors
+                                        .into_iter()
+                                        .map(|applied| (applied.transition, applied.result))
+                                        .collect()
+                                } else {
+                                    self.model
+                                        .enabled_transitions_matching(
+                                            &observed,
+                                            &operation,
+                                            &select,
+                                            selected_transitions,
+                                            budget,
+                                        )?
+                                        .into_iter()
+                                        .map(|transition| (transition, None))
+                                        .collect()
+                                };
                             for (transition, result) in enabled {
                                 let potential_access = self
                                     .potential

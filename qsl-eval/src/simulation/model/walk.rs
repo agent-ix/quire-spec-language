@@ -291,6 +291,7 @@ fn expand(
                     successors: &mut successors,
                     enabled: enabled.as_deref_mut(),
                     enabled_transitions: None,
+                    selected_transitions: None,
                 },
             )?;
         }
