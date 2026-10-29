@@ -366,10 +366,16 @@ mod family_contract_tests {
         .expect("f checks")
         .function_identity("f")
         .expect("f is declared");
-        assert_eq!(
-            expected.to_string(),
-            "dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79"
-        );
+        // The vector's key, read from FR-092 in this repository.
+        let published = include_str!(
+            "../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md"
+        )
+        .split("**F1**:")
+        .nth(1)
+        .and_then(|rest| rest.split("Key: `").nth(1))
+        .and_then(|rest| rest.split('`').next())
+        .expect("FR-092 publishes vector F1's key");
+        assert_eq!(expected.to_string(), published);
     }
 
     /// TC-160 (FR-062-AC-4): a function declaration whose body holds no

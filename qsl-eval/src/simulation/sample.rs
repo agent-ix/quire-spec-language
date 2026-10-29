@@ -302,31 +302,126 @@ mod tests {
     use crate::simulation::choice::DrawPreimage;
     use crate::simulation::key::plain_digest;
 
+    /// SHA-256 of `bytes`, by `sha2` directly: a path independent of
+    /// `quire_canonical`, which the sampler's own digest goes through.
+    fn independent_sha256(bytes: &[u8]) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes).into()
+    }
+
+    /// The preimage JSON of a draw, written by hand from FR-181's member list
+    /// (sorted keys, decimal strings), independent of the serializer.
+    fn written_preimage(seed: u64, trace: u64, step: u64, choice: u32, draw: u64) -> String {
+        format!(
+            r#"{{"choice":"{choice}","draw":"{draw}","seed":"{seed}","step":"{step}","trace":"{trace}"}}"#
+        )
+    }
+
+    fn hex(digest: &[u8; 32]) -> String {
+        digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// The draw digest's big-endian 256-bit value reduced mod `n`, folded a
+    /// byte at a time with no big-integer type.
+    fn reduce_big_endian(digest: &[u8; 32], n: usize) -> usize {
+        digest
+            .iter()
+            .fold(0_usize, |rest, byte| (rest * 256 + usize::from(*byte)) % n)
+    }
+
+    /// The sampler's first `steps` indices over `n` candidates.
+    fn indices(seed: u64, trace: u64, n: usize, steps: usize) -> Vec<usize> {
+        let mut sampler = PinnedSampler::new(seed, trace);
+        (0..steps).map(|_| sampler.next_index(n)).collect()
+    }
+
+    /// QSpec's TC-210 "Sampler index-sequence vector" section, read from the
+    /// checkout `QSPEC_DIR` names; `None` when it is unset (`make
+    /// conformance` requires it). Nothing from it is copied into QSL.
+    fn tc_210_section() -> Option<String> {
+        let qspec = std::env::var_os("QSPEC_DIR")?;
+        let path = std::path::Path::new(&qspec)
+            .join("spec/test-cases/TC-210-finite-simulation-reproducibility.md");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()));
+        let start = text
+            .find("## Sampler index-sequence vector")
+            .expect("TC-210 has the sampler index-sequence section");
+        let section = &text[start..];
+        let end = section[3..]
+            .find("\n## ")
+            .map_or(section.len(), |at| at + 3);
+        Some(section[..end].to_owned())
+    }
+
+    /// The backtick-quoted spans of `text`, in order.
+    fn code_spans(text: &str) -> Vec<&str> {
+        text.split('`').skip(1).step_by(2).collect()
+    }
+
     /// TC-454 step 1b: the sampler's step-0 preimage bytes and digest at
-    /// seed 424242, trace 0, choice 0, `n = 5` -- QSpec TC-210's vector
-    /// under FR-181's `choice` preimage member.
+    /// seed 424242, trace 0, choice 0 are what the hand-written FR-181
+    /// preimage hashes to under an independent SHA-256, and (when QSpec is
+    /// at hand) what QSpec's TC-210 publishes.
     #[trace("TC-454", "FR-101-AC-3")]
     #[test]
-    fn tc_454_step_0_preimage_and_digest_match_the_pinned_vector() {
-        let preimage = DrawPreimage {
-            choice: "0".to_owned(),
-            draw: "0".to_owned(),
-            seed: "424242".to_owned(),
-            step: "0".to_owned(),
-            trace: "0".to_owned(),
-        };
+    fn tc_454_step_0_preimage_and_digest_match_an_independent_computation() {
+        let preimage = DrawPreimage::at(
+            ChoicePoint {
+                seed: 424_242,
+                trace: 0,
+                step: 0,
+                choice: 0,
+            },
+            0,
+        );
         let bytes = quire_canonical::to_vec(&preimage, quire_canonical::Limits::new(u64::MAX))
             .expect("a draw preimage encodes");
+        let written = written_preimage(424_242, 0, 0, 0, 0);
+        assert_eq!(bytes, written.as_bytes());
         assert_eq!(
-            bytes,
-            br#"{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}"#
+            plain_digest(&preimage),
+            independent_sha256(written.as_bytes())
         );
-        let digest = plain_digest(&preimage);
-        let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-        assert_eq!(
-            hex,
-            "d5160380d7495443315376de306a5d3613f3e010df74a5db92853829205995f2"
-        );
+
+        let Some(section) = tc_210_section() else {
+            println!("skipped: QSPEC_DIR not set");
+            return;
+        };
+        let spans = code_spans(&section);
+        let published_preimage = spans
+            .iter()
+            .find(|span| span.starts_with('{'))
+            .expect("TC-210 publishes the step-0 preimage");
+        let published_digest = spans
+            .iter()
+            .find(|span| span.len() == 64 && span.bytes().all(|b| b.is_ascii_hexdigit()))
+            .expect("TC-210 publishes the step-0 digest");
+        assert_eq!(*published_preimage, written);
+        assert_eq!(*published_digest, hex(&plain_digest(&preimage)));
+    }
+
+    /// TC-454 step 1c: the published index sequence for seed 424242,
+    /// trace 0, `n = 5` is the sampler's (read from QSpec's TC-210).
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_published_index_sequence_is_the_samplers() {
+        let Some(section) = tc_210_section() else {
+            println!("skipped: QSPEC_DIR not set");
+            return;
+        };
+        let published: Vec<usize> = section
+            .split("index `")
+            .skip(1)
+            .map(|rest| {
+                rest.split('`')
+                    .next()
+                    .and_then(|digits| digits.parse().ok())
+                    .expect("TC-210 index is a decimal")
+            })
+            .collect();
+        assert_eq!(published.len(), 5, "TC-210 publishes five steps");
+        assert_eq!(indices(424_242, 0, 5, published.len()), published);
     }
 
     /// TC-454 step 3b: the sampler computes no digest at all over a chain
@@ -347,25 +442,81 @@ mod tests {
         assert!(sampler.digests_computed() > 0);
     }
 
-    /// SR-672 FND-005: `n = 3` and `n = 5` alone cannot tell a big-endian
-    /// reading of the draw digest from a little-endian one, because
-    /// `256 ≡ 1 (mod 3)` and `256 ≡ 1 (mod 5)` make `v mod n` invariant
-    /// under byte reversal for those two moduli specifically. `n = 2` and
-    /// `n = 7` do not share that property, and a little-endian reading
-    /// gives a different sequence at each (recomputed independently in
-    /// Python with `hashlib`, under the `choice` preimage member): seed
-    /// 424242, trace 0, `n = 2` is `0, 1, 0, 1, 1` (little-endian
-    /// `1, 0, 1, 1, 0`), and `n = 7` is `6, 2, 6, 6, 1` (little-endian
-    /// `1, 5, 6, 5, 2`).
+    /// SR-672 FND-005: the draw is the digest read big-endian, reduced mod
+    /// `n`. `n = 3` and `n = 5` cannot tell big-endian from little-endian
+    /// (`256 ≡ 1 mod 3` and `mod 5` make `v mod n` invariant under byte
+    /// reversal), so this is checked at moduli that can, against an
+    /// independent fold of the independently hashed preimage, and the two
+    /// readings are required to differ somewhere in the sample so the check
+    /// can fail on a byte-order flip.
     #[trace("TC-454", "FR-101-AC-3")]
     #[test]
-    fn tc_454_n2_and_n7_vectors_distinguish_byte_order() {
-        let mut two = PinnedSampler::new(424_242, 0);
-        let indices: Vec<usize> = (0..5).map(|_| two.next_index(2)).collect();
-        assert_eq!(indices, vec![0, 1, 0, 1, 1]);
+    fn tc_454_draw_is_the_big_endian_digest_mod_n() {
+        let mut readings_differ = false;
+        for n in [2_usize, 4, 7, 9, 11] {
+            let got = indices(424_242, 0, n, 32);
+            for (step, index) in got.iter().enumerate() {
+                let preimage = written_preimage(424_242, 0, step as u64, 0, 0);
+                let digest = independent_sha256(preimage.as_bytes());
+                assert_eq!(*index, reduce_big_endian(&digest, n), "n={n} step={step}");
+                let mut reversed = digest;
+                reversed.reverse();
+                readings_differ |= reduce_big_endian(&reversed, n) != *index;
+            }
+        }
+        assert!(
+            readings_differ,
+            "byte order must be observable in the sample"
+        );
+    }
 
-        let mut seven = PinnedSampler::new(424_242, 0);
-        let indices: Vec<usize> = (0..5).map(|_| seven.next_index(7)).collect();
-        assert_eq!(indices, vec![6, 2, 6, 6, 1]);
+    /// Same seed and trace give the same sequence; a different seed, trace
+    /// or step changes the draw digest (domain separation), and every index
+    /// is below `n`.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_sequences_are_deterministic_and_separated() {
+        assert_eq!(indices(7, 3, 6, 64), indices(7, 3, 6, 64));
+        assert_ne!(indices(7, 3, 6, 64), indices(8, 3, 6, 64));
+        assert_ne!(indices(7, 3, 6, 64), indices(7, 4, 6, 64));
+        let digests: std::collections::BTreeSet<[u8; 32]> = (0..4_u64)
+            .flat_map(|seed| (0..4_u64).map(move |trace| (seed, trace)))
+            .flat_map(|(seed, trace)| (0..4_u64).map(move |step| (seed, trace, step)))
+            .map(|(seed, trace, step)| {
+                plain_digest(&DrawPreimage::at(
+                    ChoicePoint {
+                        seed,
+                        trace,
+                        step,
+                        choice: 0,
+                    },
+                    0,
+                ))
+            })
+            .collect();
+        assert_eq!(digests.len(), 64, "no two choice points share a draw");
+        for n in 1..=12 {
+            assert!(indices(1, 1, n, 50).iter().all(|index| *index < n));
+        }
+    }
+
+    /// Choice behaviour: over many steps every index of `n = 4` is drawn and
+    /// none is drawn far from its uniform share.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_choice_is_uniform_over_the_candidates() {
+        let n = 4;
+        let draws = 4_000;
+        let mut counts = [0_usize; 4];
+        for index in indices(99, 0, n, draws) {
+            counts[index] += 1;
+        }
+        let share = draws / n;
+        for (index, count) in counts.iter().enumerate() {
+            assert!(
+                count.abs_diff(share) < share / 10,
+                "index {index} drawn {count} times of {draws}"
+            );
+        }
     }
 }

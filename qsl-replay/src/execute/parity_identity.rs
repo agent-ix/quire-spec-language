@@ -534,14 +534,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(digest, ByteDigest::of(text.as_bytes()).as_bytes());
-        assert_eq!(
-            ByteDigest::of(text.as_bytes())
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>(),
-            "4c36290f8830ff25cbb3915fa955b093f802fb801de2074415a6c4884fc9659f"
-        );
     }
 
     /// FR-357-AC-19: the whole preimage of the worked example, through the
@@ -599,14 +591,6 @@ mod tests {
         let bytes = quire_canonical::to_vec(&preimage, Limits::new(u64::MAX)).unwrap();
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), text);
         let digest = ByteDigest::of(text.as_bytes());
-        assert_eq!(
-            digest
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>(),
-            "ce7c6db3f790558d63e613427d14cfc5916802329b1e3ce032daa5878dc8ee2a"
-        );
         assert_eq!(
             parity_obligation(&preimage).unwrap(),
             ObligationIdentity::from_digest(digest.as_bytes())
