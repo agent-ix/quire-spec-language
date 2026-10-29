@@ -128,6 +128,8 @@ fn fixed_member_order_and_serde_escaping_have_one_selected_byte_spelling() {
     }
 }
 
+// BLOCKED-BY QSL-1270 (draco): expected-byte-seal behaviour, removed with
+// `ArtifactRef.digest`.
 #[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
 fn resealing_a_tampered_candidate_cannot_replace_the_original_expected_seal() {
