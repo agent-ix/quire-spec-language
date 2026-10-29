@@ -28,20 +28,17 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 4. Settle a backend "holds" for the `commitA` record, a backend
    counterexample for the lost-update `commitB` record from `(1, 0, f, 0,
    t)`, and each record with no SMT candidate registered.
-5. Write the requests for `CasRefinesCounter` with its seven `step` rows in
-   reverse source order, and for FR-136-AC-7's protocol (with its channel `ch` and `tso` outermost `parallel`) with its rows
-   in source order and in reverse.
-6. Add `AbsInv` on `Spec::Counter` beside `CasInv`, write the request, then
+5. Add `AbsInv` on `Spec::Counter` beside `CasInv`, write the request, then
    write the clauses in the opposite source order.
-7. Feed the settlement map the checker's `Rejected` and `Unverifiable`
+6. Feed the settlement map the checker's `Rejected` and `Unverifiable`
    results for the `commitA` record's "holds" outcome.
 
-8. Settle the safety half of `CasRefinesCounter` from its eight records and hypothesis items: all proved and certified; one hypothesis item `Uncertified`; the invariant `self.value < 0` with every step record proved; a backend counterexample for one `Step` record; a counterexample for the `Initial` record.
+7. Settle the safety half of `CasRefinesCounter` from its eight records and hypothesis items: all proved and certified; one hypothesis item `Uncertified`; the invariant `self.value < 0` with every step record proved; a backend counterexample for one `Step` record; a counterexample for the `Initial` record.
 
-9. Settle the eight records of `CasRefinesCounter` when `check_refinement_smt_proof` returns `Verified`; then for `CasRefinesCounterAdd` (FR-315-AC-6), whose `bump` row has a `_` argument (the checker returns `Unencodable` for its step part), for that fixture with the base query also mismatched, and for `CasRefinesCounter` with a mapping row outside `QF_LIA`, whose `Initial` query FR-315 refuses (FR-314-AC-9).
+8. Settle the eight records of `CasRefinesCounter` when `check_refinement_smt_proof` returns `Verified`; then for `CasRefinesCounterAdd` (FR-315-AC-6), whose `bump` row has a `_` argument (the checker returns `Unencodable` for its step part), for that fixture with the base query also mismatched, and for `CasRefinesCounter` with a mapping row outside `QF_LIA`, whose `Initial` query FR-315 refuses (FR-314-AC-9).
 
-10. Read the occurrence key of each of `CasRefinesCounter`'s eight records.
-11. Read `CheckedGraph::requirements()` for `CasRefinesCounter`, with and
+9. Read the occurrence key of each of `CasRefinesCounter`'s eight records.
+10. Read `CheckedGraph::requirements()` for `CasRefinesCounter`, with and
     without `bound CountersBound on Impl::counters [2]`, for the
     `Audit`/`audits` variant, for the variants with an unbounded population that only a contract clause of `peek` ranges over and one that only the state mapping's `reaches` walks, for the variants whose `peek` takes
     `n: Integer` or returns `Integer`, negotiate the records against a
@@ -60,11 +57,10 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 4: `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate;
   `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`;
   `unsupported`.
-- Step 5: the same eight records with the same `StepRowRef`s as step 1; the protocol subject's records name the positions of FR-136's protocol sort key in both orders.
-- Step 6: `CasInv` listed and `AbsInv` not; unchanged by clause order.
-- Step 7: `inconclusive`, `CertificateRejected{rule, at}` for `Rejected`;
+- Step 5: `CasInv` listed and `AbsInv` not; unchanged by clause order.
+- Step 6: `inconclusive`, `CertificateRejected{rule, at}` for `Rejected`;
   `proved`, `Uncertified` for `Unverifiable`.
-- Step 8: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`, `hypotheses-not-established`; `Inconclusive(InductionNotClosed{depth: 1})`; `refuted` through replay (FR-146-AC-8).
-- Step 9: every record `Proved{Inductive{depth: 1}, Certified}`; with `CasRefinesCounterAdd` every record `Uncertified`; with the base mismatch the `Initial` record `Inconclusive(CertificateRejected{rule, at})` at `base` and the others `Uncertified` (FR-146-AC-4); with the refused `Initial` query the `Initial` record is `Inconclusive(CertificateRejected{QueryMismatch, Base})` and the others `Uncertified`, none `Certified`.
-- Step 10: each key is (the refinement node, `generated`, ordinal): 0 for `Initial` and `i + 1` for `Step { row: i }` (FR-146-AC-9).
-- Step 11: eight `operation-contract` records keyed by their occurrences, each `Unbounded` with the one `Impl::counters` population domain, boundable by `Cardinality`; each `Bounded` under `CountersBound`; the `audits` variant gives the same single domain; the population only a contract clause of `peek` ranges over adds its domain to `peek`'s record alone, and the one only the state mapping walks adds it to the `Initial` record and every `Step` record; in the `n: Integer` and `Integer`-result variants `peek`'s record also names that `Integer` domain and the other seven are unchanged; against the bounded-only backend each `Unbounded` record settles `requires-bound`; the `spare` variant refuses `ambiguous_declaration`/`ambiguous-name` at each step row naming `counters` and `spare`, with no step record (FR-146-AC-10).
+- Step 7: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`, `hypotheses-not-established`; `Inconclusive(InductionNotClosed{depth: 1})`; `refuted` through replay (FR-146-AC-8).
+- Step 8: every record `Proved{Inductive{depth: 1}, Certified}`; with `CasRefinesCounterAdd` every record `Uncertified`; with the base mismatch the `Initial` record `Inconclusive(CertificateRejected{rule, at})` at `base` and the others `Uncertified` (FR-146-AC-4); with the refused `Initial` query the `Initial` record is `Inconclusive(CertificateRejected{QueryMismatch, Base})` and the others `Uncertified`, none `Certified`.
+- Step 9: each key is (the refinement node, `generated`, ordinal): 0 for `Initial` and `i + 1` for `Step { row: i }` (FR-146-AC-9).
+- Step 10: eight `operation-contract` records keyed by their occurrences, each `Unbounded` with the one `Impl::counters` population domain, boundable by `Cardinality`; each `Bounded` under `CountersBound`; the `audits` variant gives the same single domain; the population only a contract clause of `peek` ranges over adds its domain to `peek`'s record alone, and the one only the state mapping walks adds it to the `Initial` record and every `Step` record; in the `n: Integer` and `Integer`-result variants `peek`'s record also names that `Integer` domain and the other seven are unchanged; against the bounded-only backend each `Unbounded` record settles `requires-bound`; the `spare` variant refuses `ambiguous_declaration`/`ambiguous-name` at each step row naming `counters` and `spare`, with no step record (FR-146-AC-10).

@@ -105,7 +105,8 @@ fn domains(graph: &CheckedGraph) -> Vec<(StepObligation, Vec<(DomainKey, DomainK
         .collect()
 }
 
-/// The `StepRowRef` of each source row, by its concrete operation's name.
+/// The `StepRowRef` of each step row, its declaration position, by its
+/// concrete operation's name.
 fn row_refs_by_operation(graph: &CheckedGraph) -> BTreeMap<String, StepRowRef> {
     let refinement = only_refinement(graph);
     refinement
@@ -116,10 +117,8 @@ fn row_refs_by_operation(graph: &CheckedGraph) -> BTreeMap<String, StepRowRef> {
             let StepClass::Operation(operation) = &row.class else {
                 panic!("an operation row: {:?}", row.class);
             };
-            let reference = refinement
-                .step_row_ref(source)
-                .expect("the refinement emits");
-            (operation.node.clone(), reference)
+            let source = u32::try_from(source).expect("a small position");
+            (operation.node.clone(), StepRowRef::new(source))
         })
         .collect()
 }
@@ -207,50 +206,6 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
         .get(&key)
         .expect("the invariant has a requirement record");
     assert_eq!(record.requirements().kind(), Capability::OperationContract);
-}
-
-/// FR-146-AC-5, model subject: the seven `Step` records name positions 0
-/// to 6 once each, the rows at those positions ascend by the node-key digest
-/// of their concrete operation, and writing the rows in exact reverse gives
-/// each the same `StepRowRef`.
-#[trace("TC-551", "FR-146-AC-5")]
-#[test]
-fn step_row_refs_follow_fr375_order_whatever_the_source_order() {
-    let base = cas_refines_counter();
-    let mut lines: Vec<&str> = base.split('\n').collect();
-    let steps: Vec<usize> = (0..lines.len())
-        .filter(|index| lines[*index].starts_with("step "))
-        .collect();
-    assert_eq!(steps.len(), 7);
-    let forward: Vec<&str> = steps.iter().map(|index| lines[*index]).collect();
-    for (index, line) in steps.iter().zip(forward.iter().rev()) {
-        lines[*index] = line;
-    }
-    let reversed = lines.join("\n");
-    assert_ne!(base, reversed);
-
-    let graph = checked_counter(&base);
-    let refs = row_refs_by_operation(&graph);
-    assert_eq!(refs, row_refs_by_operation(&checked_counter(&reversed)));
-    let mut positions: Vec<u32> = refs.values().map(|reference| reference.index()).collect();
-    positions.sort_unstable();
-    assert_eq!(positions, (0..7).collect::<Vec<_>>());
-
-    let emission = only_refinement(&graph)
-        .v2_emission()
-        .expect("the refinement emits");
-    let body = serde_json::to_value(&emission.body).expect("the body serializes");
-    let digests: Vec<&str> = body["steps"]
-        .as_array()
-        .expect("steps")
-        .iter()
-        .map(|step| step["source_node"]["digest"].as_str().expect("a node"))
-        .collect();
-    assert_eq!(digests.len(), 7);
-    assert!(
-        digests.windows(2).all(|pair| pair[0] <= pair[1]),
-        "{digests:?}"
-    );
 }
 
 /// FR-146-AC-6: with `AbsInv` on `Spec::Counter` beside `CasInv` on

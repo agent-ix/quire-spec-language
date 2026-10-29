@@ -4,7 +4,7 @@
 //! `check_refinement_smt_proof` checks.
 //!
 //! [`encode_refinement_query`] encodes the `Initial` query or the `Step`
-//! query of one row of the refinement node's `steps` array over the concrete
+//! query of one step row, by its declaration position, over the concrete
 //! subject's state copies `s0` (and `s1`). `map(s)` is read as terms: each
 //! abstract object is the key-preserving image of a concrete object, and
 //! each of its fields is its mapping row read over the concrete copy with
@@ -72,8 +72,8 @@ pub enum RefinementQueryKind {
     /// The initial query: every concrete initial state maps to an abstract
     /// initial state.
     Initial,
-    /// The step query of the row at this zero-based position of the
-    /// refinement node's `steps` array.
+    /// The step query of the step row at this zero-based declaration
+    /// position.
     Step {
         /// The row's position.
         row: u64,
@@ -97,8 +97,7 @@ fn out_of_fragment(clause: &str, form: &'static str) -> SmtEncodingRefusal {
     .into()
 }
 
-/// The refinement `request` names, and the source row of each entry of its
-/// `steps` array.
+/// The refinement `request` names.
 fn refinement_of<'p>(
     request: &RefinementCertificateRequest<'p>,
 ) -> Result<(&'p CheckedRefinement, Vec<usize>), SmtEncodingRefusal> {
@@ -153,14 +152,13 @@ pub fn encode_refinement_query(
     request: &RefinementCertificateRequest<'_>,
     kind: RefinementQueryKind,
 ) -> Result<Vec<u8>, SmtEncodingRefusal> {
-    let (refinement, step_sources) = refinement_of(request)?;
+    let (refinement, _) = refinement_of(request)?;
     let row = match kind {
         RefinementQueryKind::Initial => None,
         RefinementQueryKind::Step { row } => {
             let source = usize::try_from(row)
                 .ok()
-                .and_then(|row| step_sources.get(row))
-                .and_then(|source| refinement.steps().get(*source))
+                .and_then(|row| refinement.steps().get(row))
                 .ok_or_else(|| fault("the step row is a row of the refinement"))?;
             Some((row, source))
         }

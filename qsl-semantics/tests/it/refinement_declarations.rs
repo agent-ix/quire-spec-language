@@ -769,7 +769,7 @@ fn the_counter_refinement_checks_to_one_population_and_one_object_row() {
 
 /// FR-136 and QSpec FR-375-AC-22: source provenance covers every authored
 /// step row, including `any`, before any proof eligibility filtering.
-#[trace("FR-136-AC-5", "FR-375-AC-22")]
+#[trace("FR-375-AC-22")]
 #[test]
 fn checked_step_sources_keep_source_order_and_exact_rows_including_any() {
     let base = cas_refines_counter();

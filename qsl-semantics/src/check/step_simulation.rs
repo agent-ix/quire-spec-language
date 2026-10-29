@@ -19,9 +19,8 @@
 //! key and deduplicated, so the order of the invariant clauses in the source
 //! does not change a record.
 //!
-//! A row is named by its zero-based position in the refinement node's
-//! `steps` array, which QSpec FR-375 sorts; the records come out in that
-//! order, so reordering rows in the source changes nothing.
+//! A row is named by its zero-based position among the refinement's step
+//! rows in declaration order, and the records come out in that order.
 //!
 //! A record's extent is FR-146 "Claim extent"'s: a `Step` record ranges over
 //! its concrete operation's receiver, result and parameter types (keyed
@@ -83,9 +82,6 @@ impl StepSimulationEntry {
 pub(crate) struct ExtentInputs<'a> {
     /// The refinement's V2 node.
     pub(crate) node: NodeKey,
-    /// For each `steps` entry in V2 order, its source row's position among
-    /// [`CheckedRefinement::steps`].
-    pub(crate) step_sources: &'a [usize],
     /// The `Boolean` type node every record is result-bounded at.
     pub(crate) boolean: NodeKey,
     /// The populations each concrete operation's contract clauses range
@@ -99,24 +95,6 @@ pub(crate) struct ExtentInputs<'a> {
     pub(crate) position_limit: u64,
     /// The refinement declaration's location, where a fault is reported.
     pub(crate) location: &'a Location,
-}
-
-/// The positions [`CheckedRefinement::step_row_ref`] reads: for each source
-/// row, its position in the V2 `steps` order `step_sources` gives.
-pub(crate) fn row_positions(
-    step_sources: &[usize],
-    location: &Location,
-) -> Result<Vec<StepRowRef>, CheckRefusal> {
-    let mut positions = vec![None; step_sources.len()];
-    for (position, source) in step_sources.iter().enumerate() {
-        let position = u32::try_from(position).map_err(|_| fault(location))?;
-        *positions.get_mut(*source).ok_or_else(|| fault(location))? =
-            Some(StepRowRef::new(position));
-    }
-    positions
-        .into_iter()
-        .map(|position| position.ok_or_else(|| fault(location)))
-        .collect()
 }
 
 /// The per-step simulation records of `refinement`, each with its
@@ -149,7 +127,7 @@ pub(crate) fn simulation_records(
         .row_keys
         .as_ref()
         .ok_or_else(|| fault(location))?;
-    let mut written = Vec::with_capacity(inputs.step_sources.len() + 1);
+    let mut written = Vec::with_capacity(refinement.steps().len() + 1);
     // The `Initial` obligation evaluates the state mapping, so it ranges
     // over the populations a `reaches` there walks as well.
     // Every record reads its hypotheses, so the populations they range over
@@ -177,11 +155,7 @@ pub(crate) fn simulation_records(
         ),
         initial,
     ));
-    for (position, source) in inputs.step_sources.iter().enumerate() {
-        let row = refinement
-            .steps()
-            .get(*source)
-            .ok_or_else(|| fault(location))?;
+    for (position, row) in refinement.steps().iter().enumerate() {
         let Some(RowRoots {
             operation,
             types,
@@ -193,7 +167,7 @@ pub(crate) fn simulation_records(
         };
         let anchor = keyed
             .steps
-            .get(*source)
+            .get(position)
             .and_then(|keyed| keyed.source_node)
             .ok_or_else(|| fault(location))?;
         let mut populations: BTreeSet<PopulationDomain> = read.clone();

@@ -461,15 +461,7 @@ fn refinement_queries_print_in_the_normative_order() {
         ),
     ];
     with_request(&world, |request| {
-        let rows = u64::try_from(
-            world
-                .refinement()
-                .v2_emission()
-                .expect("emits")
-                .step_sources
-                .len(),
-        )
-        .expect("small");
+        let rows = u64::try_from(world.refinement().steps().len()).expect("small");
         let honest = |row: u64| {
             part(
                 encode(request, RefinementQueryKind::Step { row }).expect("encodes"),

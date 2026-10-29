@@ -647,8 +647,8 @@ impl CheckedRefinement {
                 })
             })
             .collect::<Result<Vec<_>, RefinementV2EncodingError>>()?;
-        // FR-375: rows naming a declaration by its node digest, then the
-        // class spelling; a row naming none (a memory row) after them.
+        // The wire order IR's checked-package reader requires of the
+        // `steps` array; no row reference reads it.
         let mut ordered: Vec<&KeyedStepRow> = rows.steps.iter().collect();
         ordered.sort_by(|left, right| {
             (
@@ -1116,8 +1116,7 @@ pub struct ObjectRow {
 ///
 /// FR-383's minting of the protocol nodes' keys is not built, so a class
 /// names a node by its identity in the clause, and a template, channel or
-/// role by its declared name, where FR-136 has `NodeKey`s. They become
-/// `NodeKey`s with the sort key (FR-136-AC-7, FR-146-AC-5).
+/// role by its declared name, where FR-136 has `NodeKey`s.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepClass {
     /// A concrete operation.
@@ -1430,12 +1429,8 @@ pub struct CheckedRefinement {
     /// records range over; `None` when it writes none.
     pub(crate) simulation: Option<SimulationRoots>,
     /// FR-146: the per-step simulation records S3 wrote, `Initial` first and
-    /// then one per row in `steps` order.
+    /// then one per row in declaration order.
     pub(crate) simulations: Vec<super::step_simulation::StepSimulationEntry>,
-    /// For each authored step row, in source order, its zero-based position
-    /// in the V2 node's `steps` array (QSpec FR-375); empty for a
-    /// refinement S4 does not emit.
-    pub(crate) row_positions: Vec<quire_semantic_value::step_simulation::StepRowRef>,
 }
 
 impl CheckedRefinement {
@@ -1451,27 +1446,14 @@ impl CheckedRefinement {
 
     /// FR-146: the per-step simulation records S3 wrote beside the
     /// refinement record, `Initial` first and then one `Step` per row in
-    /// `steps` order, each with its ADR-013 O-07 occurrence. Empty for a
+    /// declaration order, each with its ADR-013 O-07 occurrence. Empty for a
     /// refinement with a hidden field, a history field or an `any` row.
     ///
     /// Interim, withdrawn when the spec defines a protocol row's `Step`
     /// record extent (STD-493 comment c699936f): a protocol subject writes
-    /// none yet, though its rows have their FR-375 positions.
+    /// none yet.
     pub fn step_simulations(&self) -> &[super::step_simulation::StepSimulationEntry] {
         &self.simulations
-    }
-
-    /// FR-146 "Row order": the [`StepRowRef`] of the authored step row at
-    /// `source` (its position in [`Self::steps`]): its position in the V2
-    /// node's `steps` array, which QSpec FR-375 sorts. `None` for a
-    /// refinement S4 does not emit.
-    ///
-    /// [`StepRowRef`]: quire_semantic_value::step_simulation::StepRowRef
-    pub fn step_row_ref(
-        &self,
-        source: usize,
-    ) -> Option<quire_semantic_value::step_simulation::StepRowRef> {
-        self.row_positions.get(source).copied()
     }
 
     /// FR-144 (ADR-020 "Negotiation"): the TP-5 property form of the
@@ -2309,7 +2291,6 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         requirement: None,
         simulation,
         simulations: Vec::new(),
-        row_positions: Vec::new(),
         declaration_span: form.span,
     };
     // A protocol abstract side refused by its own clause checks reported

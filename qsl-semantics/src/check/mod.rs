@@ -5471,7 +5471,6 @@ impl PackageDeclarations {
             };
             let inputs = step_simulation::ExtentInputs {
                 node: emission.identity,
-                step_sources: &emission.step_sources,
                 boolean,
                 contracts: &contract_populations,
                 clauses: &clause_populations,
@@ -5480,9 +5479,6 @@ impl PackageDeclarations {
                 position_limit: limits.nodes(),
                 location: &location,
             };
-            checked.row_positions =
-                step_simulation::row_positions(&emission.step_sources, &location)
-                    .map_err(|refusal| vec![refusal])?;
             let written = step_simulation::simulation_records(checked, &state_clauses, &inputs)
                 .map_err(|refusal| vec![refusal])?;
             let mut entries = Vec::with_capacity(written.len());
