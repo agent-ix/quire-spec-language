@@ -341,6 +341,15 @@ pub enum Error {
         #[source]
         source: serde_json::Error,
     },
+    /// FR-340: the run-time versioning corpus could not be generated.
+    #[error("refinement: cannot generate the corpus at {path}: {source}")]
+    RefinementCorpus {
+        /// The model file or corpus path that failed.
+        path: String,
+        /// The I/O failure.
+        #[source]
+        source: std::io::Error,
+    },
     /// FR-489: a production linked-provider snapshot could not be built.
     #[error("refinement: cannot build the production provider registry: {source}")]
     RefinementRegistryBuild {
@@ -395,9 +404,9 @@ impl Error {
             | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
-            Self::RefinementReport { .. } | Self::RefinementRegistryBuild { .. } => {
-                Code::Refinement
-            }
+            Self::RefinementReport { .. }
+            | Self::RefinementCorpus { .. }
+            | Self::RefinementRegistryBuild { .. } => Code::Refinement,
             Self::QualificationRefusal(_) => Code::Qualification,
         }
     }

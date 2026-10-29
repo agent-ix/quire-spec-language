@@ -18,11 +18,12 @@ use crate::error::{Error, Result};
 use crate::Outcome;
 
 pub mod compare;
+pub mod corpus;
 pub mod layering;
 pub mod report;
 pub mod versioning;
 
-const USAGE: &str = "usage: cargo xtask refinement versioning <corpus> | layering <corpus>";
+const USAGE: &str = "usage: cargo xtask refinement versioning <corpus> | layering <corpus> | generate-versioning <dir>";
 
 /// `cargo xtask refinement <gate> <corpus>`: run the selected gate and return
 /// its report with the exit code of its verdict (FR-344).
@@ -39,6 +40,10 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                 .to_json()
                 .map_err(|source| Error::RefinementReport { source })?;
             (stdout, report.verdict.exit_code())
+        }
+        Some("generate-versioning") => {
+            corpus::generate(workspace_root, path)?;
+            (String::new(), 0)
         }
         Some("layering") => {
             let outcome = run_layering(path, layering::RegistrySnapshot::production())?;
