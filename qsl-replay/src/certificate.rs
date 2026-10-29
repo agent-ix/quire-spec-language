@@ -163,63 +163,89 @@ pub enum CertificateLocus {
     },
 }
 
-/// A certificate member QSpec FR-331's certificate-member locus names.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CertificateMember {
-    /// `identity`.
-    Identity,
-    /// `objective`.
-    Objective,
-    /// `kind`.
-    Kind,
-    /// `values`.
-    Values,
-    /// `ranking`.
-    Ranking,
-    /// `policy`.
-    Policy,
-    /// `components`.
-    Components,
-    /// `scale`.
-    Scale,
-    /// `bounds`, a zone certificate's LU bounds.
-    Bounds,
-    /// `nodes`.
-    Nodes,
-    /// `edges`.
-    Edges,
-    /// `reasons`.
-    Reasons,
-    /// `divergence`.
-    Divergence,
-    /// `refinement`, a zone certificate's refinement part (FR-244
-    /// "Refinement form"; spec gap STD-493: FR-331's member list lags it).
-    Refinement,
-    /// `positions`, the refinement part's product positions (FR-244).
-    Positions,
+/// The certificate members QSpec FR-331's certificate-member locus names,
+/// each variant with its FR-331 spelling, in the row's order: the thirteen
+/// members of the FR-412 and Büchi parts, the eleven FR-418 adds, and the
+/// twenty-six members of the entries these hold (FR-331-AC-46). One table
+/// is the enum, its spellings and [`CertificateMember::ALL`].
+macro_rules! certificate_members {
+    ($($variant:ident => $name:literal,)*) => {
+        /// A certificate member QSpec FR-331's certificate-member locus
+        /// names: a member, at any depth, of the FR-412 or FR-418
+        /// certificate. The locus names the member and carries no path.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum CertificateMember {
+            $(
+                #[doc = concat!("`", $name, "`.")]
+                $variant,
+            )*
+        }
+
+        impl CertificateMember {
+            /// Every member, in FR-331's order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant,)*];
+
+            /// The member's FR-331 spelling.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
+        }
+    };
 }
 
-impl CertificateMember {
-    /// The member's FR-331 spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Identity => "identity",
-            Self::Objective => "objective",
-            Self::Kind => "kind",
-            Self::Values => "values",
-            Self::Ranking => "ranking",
-            Self::Policy => "policy",
-            Self::Components => "components",
-            Self::Scale => "scale",
-            Self::Bounds => "bounds",
-            Self::Nodes => "nodes",
-            Self::Edges => "edges",
-            Self::Reasons => "reasons",
-            Self::Divergence => "divergence",
-            Self::Refinement => "refinement",
-            Self::Positions => "positions",
-        }
-    }
+certificate_members! {
+    Identity => "identity",
+    Objective => "objective",
+    Kind => "kind",
+    Values => "values",
+    Ranking => "ranking",
+    Policy => "policy",
+    Components => "components",
+    Scale => "scale",
+    Bounds => "bounds",
+    Nodes => "nodes",
+    Edges => "edges",
+    Reasons => "reasons",
+    Divergence => "divergence",
+    Initials => "initials",
+    Admitted => "admitted",
+    Refinement => "refinement",
+    RefinementNode => "refinement_node",
+    ConcretePackage => "concrete_package",
+    AbstractPackage => "abstract_package",
+    Positions => "positions",
+    Taken => "taken",
+    Locked => "locked",
+    Start => "start",
+    Nested => "nested",
+    AbstractStates => "abstract_states",
+    Algorithm => "algorithm",
+    Automaton => "automaton",
+    Bias => "bias",
+    Bound => "bound",
+    Choice => "choice",
+    Clock => "clock",
+    Concrete => "concrete",
+    Constraint => "constraint",
+    Digest => "digest",
+    Domain => "domain",
+    Gain => "gain",
+    History => "history",
+    Lower => "lower",
+    Node => "node",
+    Rank => "rank",
+    Set => "set",
+    State => "state",
+    Strict => "strict",
+    Target => "target",
+    Transition => "transition",
+    Transitions => "transitions",
+    Type => "type",
+    Upper => "upper",
+    Value => "value",
+    Zone => "zone",
 }
 
 impl Serialize for CertificateLocus {
