@@ -111,10 +111,7 @@ impl Loaded {
         let dependency_bytes = selection
             .dependencies
             .iter()
-            .map(|dependency| {
-                let bytes = fs::read(root.join(&dependency.file)).expect("written dependency");
-                bytes
-            })
+            .map(|dependency| fs::read(root.join(&dependency.file)).expect("written dependency"))
             .collect::<Vec<_>>();
         let model_bytes = selection
             .dependencies
