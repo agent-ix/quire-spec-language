@@ -26,9 +26,8 @@ Alternate whitespace, escaping, member order and numeric spelling refuse.
 
 The existing `ix.artifact-ref/3-draft` reference is **external** to these bytes.
 Its `kind` is `linked-package`, `wire` is `{identity:"quire.compiled-protocol",version:"1"}`,
-and `digest` is `sha256:` plus lowercase SHA-256 of the complete canonical payload.
-The payload contains no digest of itself. This is its one artifact-content binding;
-there is no additional payload hash, semantic hash or result-JCS hash. The outer
+and it carries no content digest. The payload contains no digest of itself.
+The outer
 composed-package `SemanticRef` retains its selected package definition, exactly
 the declaration-family features below and `canonicalIdentity:null` under
 [standard FR-130](ix://agent-ix/quire-specification/FR-130).
@@ -36,10 +35,9 @@ the declaration-family features below and `canonicalIdentity:null` under
 Reader input includes that independently selected expected artifact reference,
 the accepted contract/baseline and producer selections, and exact supplied
 dependency bytes/admitted producer views. The artifact cannot designate its own
-acceptance, trusted seal or replacement inventory. Recomputing a modified
-payload's seal does not change the expected reference. Authorizing a different
-external reference is a new selection; digest integrity alone does not prove
-authenticity or equivalence to native source. That correspondence comes from the
+acceptance or replacement inventory. Authorizing a different external reference
+is a new selection; reference identity alone does not prove equivalence to
+native source. That correspondence comes from the
 real compiler's admitted input/output path, not parser-free reconstruction.
 
 ## Closed records and ordering
@@ -70,7 +68,7 @@ Number = Integer | {kind:"rational",numerator:String,denominator:String}
 Revision = {namespace:Name,value:Name}
 Wire = {identity:Name,version:Name}
 Ref = {refVersion:"ix.artifact-ref/3-draft",kind:ArtifactKind,authority:Name,
-       identity:Name,revision:Revision,digest:ByteDigest,wire:Wire}
+       identity:Name,revision:Revision,wire:Wire}
 Formal = {document:Name,revision:Revision}
 Span = {start:U,end:U}
 Locus = {source:U,span:Span}
@@ -94,7 +92,7 @@ CompiledProtocolPackage = {
 }
 ```
 
-`ByteDigest` and `ArtifactKind` use the shared-reference schema rather than a
+`ArtifactKind` uses the shared-reference schema rather than a
 package-private vocabulary. The shared vocabulary includes distinct
 `population` and `window` assessment-document kinds; neither is the
 `linked-package` kind of this artifact, and neither makes a runtime assessment
@@ -183,13 +181,12 @@ native record does.
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index
 dependencies. `Model.artifact` also indexes dependencies.
 Dependency and definition closure is acyclic and complete under the selected
-package contract. Source/dependency revision or digest values are copied exactly
-from the selected producer reference, never regenerated in the artifact domain.
+package contract. Source/dependency revision values are copied exactly from the
+selected producer reference, never regenerated in the artifact domain.
 
 Native source labels, external source-artifact revision and the explicitly
-authored formal document/revision remain separate. Source bytes must hash to
-the source artifact digest; spans use those original decoded UTF-8 bytes and
-must be scalar-boundary aligned. Declaration loci are disjoint in each source;
+authored formal document/revision remain separate. Spans use the original decoded
+UTF-8 source bytes and must be scalar-boundary aligned. Declaration loci are disjoint in each source;
 all local loci lie inside their owning declaration. Foreign model loci are
 validated against their separately supplied exact source bytes. No display
 path, occurrence ordinal or equal name establishes authority.
@@ -619,8 +616,7 @@ adapters. Reference/population exports use the actual admitted native object
 role as specified above. These remaining refusals keep full FR-042
 emission and handoff acceptance open.
 
-The Rust reader accepts bytes plus an explicit expected selection. It hashes
-the bounded offered bytes against the external seal, decodes the closed shape,
+The Rust reader accepts bytes plus an explicit expected selection. It decodes the closed shape,
 checks header/accepted identities and dependency bytes before interpreting their
 dependent records, validates numbers and table/reference/scope/type/control
 invariants, then performs bounded canonical byte comparison. Source text is
@@ -640,8 +636,8 @@ variants and fields, never `Display` text. It is not a serialized error protocol
 | `Error::Unsupported(Unsupported)` | `Wire`, `Feature`, `Definition` or `Profile` lacks an interpretation; `Export` lacks the required authoritative adapter; `FamilyProof` means the native family prerequisites are not established. |
 | `Error::Incomplete(Exhaustion)` | `dimension`, successful prior `used`, next `requested`, effective `limit` and available original `locus` identify the unaffordable operation. |
 
-`Invalid` distinguishes `Selection` (independent identity mismatch), `Seal`
-(exact-byte mismatch), `Name`, `StructuralInteger`, `WrongNumericKind`,
+`Invalid` distinguishes `Selection` (independent identity mismatch), `Name`,
+`StructuralInteger`, `WrongNumericKind`,
 `NumericDomain`, `Inventory` (missing/extra entries), `Order`, `Duplicate`,
 `Dependency`, `Definition`, `Model`, `ForeignLocus`, `Locus`, `Reference`
 (dangling handle), `Owner`, `Scope`, `Type`, `Profile`, `Call`, `Binding`,
@@ -652,7 +648,7 @@ Resource dimensions are `PayloadBytes`, `OutputBytes`, `SourceBytes`,
 `Declarations`, `Entries`, `References`, `ByteWork` and `Depth`.
 
 The first failed check in the stated pass order wins. In particular, after the
-seal and closed-shape checks, an unknown wire version refuses as
+closed-shape check, an unknown wire version refuses as
 `Unsupported::Wire` before dependency inventory checks, even if the latter would
 also fail. A failed prerequisite prevents interpretation of dependent records.
 Package-wide canonical output has no native source locus; it must not inherit
@@ -699,9 +695,9 @@ source/formal correspondence and exact definitions/models/runtime requirements.
 It does not accept freely constructed wire records, type reports or proof graphs
 as that authority. The emitter independently checks references and exact model/
 type/profile correspondence while deriving the records, then uses the existing
-Rust numeric codec, bounded Serde writer and SHA-256 machinery. Failure leaves
+Rust numeric codec and bounded Serde writer. Failure leaves
 the partial compilation report intact but returns no accepted full-package
-artifact or external seal.
+artifact.
 
 The Rust path is `checking::composed::proofs::discharge` →
 `protocol_artifact::native::admit` → `native::emit`. Admission borrows the actual
@@ -713,7 +709,7 @@ namespaces for formal-source, requirement and registered-definition revisions;
 a registered definition's semantic revision comes from its actual registered
 bytes, not the source artifact's revision label. Successful admission owns a
 private `FamilyAdmission`; `emit` takes that type and returns `EmittedPackage`
-bytes and their raw-byte digest under a fresh invocation's limits. An arbitrary
+bytes under a fresh invocation's limits. An arbitrary
 `wire::Package`, reader result or proof witness cannot be passed as this authority.
 
 The implemented path preserves original expression/control arenas, declaration

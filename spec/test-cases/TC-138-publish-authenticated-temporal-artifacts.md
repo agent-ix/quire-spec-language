@@ -29,11 +29,10 @@ add, omit and rename a parameter-map key independently.
 
 Remove, duplicate, reorder and append one binding; cross its declaration and
 definition indices; substitute each definition identity, revision, artifact
-reference, raw byte digest and raw bytes; cross every pair of clock alternatives;
+reference and raw bytes; cross every pair of clock alternatives;
 and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
-component-overflow periods plus a changed epoch or unit. Re-seal each mutated
-candidate so the test reaches the owning validation rather than passing on an
-earlier digest mismatch.
+component-overflow periods plus a changed epoch or unit. Require each mutation
+to reach its owning selection or semantic validation for the altered values.
 
 Exercise `mapping_support_v2` without a trace and require its admitted
 definition/profile binding before formula classification. For progress, attempt
@@ -53,16 +52,16 @@ one-short and raised-above-default limits.
 Import the public `protocol_artifact::handoff` member-name and mutation format
 constants. Call `write_v2` into a temporary directory, join each member name to
 that directory, require every named file to exist, decode the named mutation
-manifest, and compare its base offer, artifact reference, independent selection
-and format fields with the published constants, and require each of those base
-files to exist, without consulting an environment variable or redeclaring a
-path, filename or format literal in the consumer harness (FR-050-AC-7).
+manifest, and compare its base offer, independent selection and format fields
+with the published constants, and require each of those base files to exist,
+without consulting an environment variable or redeclaring a path, filename or
+format literal in the consumer harness (FR-050-AC-7).
 
 Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
 that public function -- exactly as a downstream crate would. Confirm the two
-written trees are byte-identical, that each written clock
-input's bytes match its selection entry's digest, and that the strict `/2`
+written trees are byte-identical, that each written clock input is the one named
+by the selection, and that the strict `/2`
 reader admits the written offer against the written selection with no other
 input. Decode the written mutation manifest, confirm every case's referenced
 file(s) exist, and replay one case's exact bytes through the strict `/2`
