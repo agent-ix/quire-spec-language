@@ -89,6 +89,7 @@ mod timed_world;
 mod tso_fairness;
 mod units;
 mod universe_obligation;
+mod value_validity;
 mod weak_memory;
 mod zone_certificate;
 mod zone_clock_collections;

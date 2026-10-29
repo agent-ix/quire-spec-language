@@ -1265,12 +1265,27 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["en-4"]
         );
-        for kind in [Capability::ValueValidity, Capability::OperationContract] {
-            let CandidateOutcome::Candidates(candidates) = first.candidates(kind) else {
-                panic!("an unregistered kind returns its empty candidate set");
-            };
-            assert!(candidates.is_empty(), "unexpected provider for {kind:?}");
-        }
+        let CandidateOutcome::Candidates(value) = first.candidates(Capability::ValueValidity)
+        else {
+            panic!("the value-validity arm gives a candidate set");
+        };
+        assert_eq!(
+            value
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["value-checker"]
+        );
+        let CandidateOutcome::Candidates(contract) =
+            first.candidates(Capability::OperationContract)
+        else {
+            panic!("an unregistered kind returns its empty candidate set");
+        };
+        assert!(
+            contract.is_empty(),
+            "unexpected provider for OperationContract"
+        );
     }
 
     /// FR-489-AC-3/6: a source failure or refused registration returns a

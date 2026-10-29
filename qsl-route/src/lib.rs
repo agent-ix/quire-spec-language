@@ -287,6 +287,7 @@ pub struct BackendDescriptor {
     evidence_kinds: BTreeSet<EvidenceKind>,
     dynamics: Option<BTreeSet<DynamicsKind>>,
     solver_bounds: Option<SolverBounds>,
+    max_cases: Option<std::num::NonZeroU64>,
     dense_time: bool,
 }
 
@@ -412,6 +413,7 @@ pub fn descriptor_from_manifest<'a>(
         evidence_kinds,
         dynamics: None,
         solver_bounds: None,
+        max_cases: None,
         memory_models,
         reductions,
         dense_time: false,
@@ -642,6 +644,7 @@ impl BackendDescriptor {
             evidence_kinds,
             dynamics: None,
             solver_bounds: None,
+            max_cases: None,
             dense_time: false,
         })
     }
@@ -654,6 +657,20 @@ impl BackendDescriptor {
     pub fn with_dense_time(mut self) -> Self {
         self.dense_time = true;
         self
+    }
+
+    /// Publish the default `max_cases` of a check arm (QSpec FR-483
+    /// "Descriptor modes, domains and registration": the descriptor's
+    /// `bounds` key `max_cases`). A `PositiveCount` by type.
+    #[must_use]
+    pub fn with_max_cases(mut self, max_cases: std::num::NonZeroU64) -> Self {
+        self.max_cases = Some(max_cases);
+        self
+    }
+
+    /// The published default `max_cases`, when the descriptor has one.
+    pub fn max_cases(&self) -> Option<std::num::NonZeroU64> {
+        self.max_cases
     }
 
     /// Whether the engine decides items over a `time dense` subject.

@@ -45,13 +45,14 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
+pub use crate::value_check::value_item;
 pub use items::{
     hyper_form_item, model_item, statistical_item, timed_refinement_item, zone_item, ModelItem,
     RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 
 use crate::zone_check::ZoneCheckRecord;
-use crate::{model_check, statistical, zone_check};
+use crate::{model_check, statistical, value_check, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
@@ -93,6 +94,15 @@ impl Engine {
     /// Only if the registry's admission rules refuse EN-4's own manifest.
     pub fn statistical() -> Result<Self, RegistrationRefusal> {
         statistical::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+    }
+
+    /// The value-validity check arm (QSpec FR-483, FR-484).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the arm's own manifest.
+    pub fn value_check() -> Result<Self, RegistrationRefusal> {
+        value_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
     }
 
     /// The engine's backend identity.
@@ -152,6 +162,7 @@ impl Engines {
                 Engine::model_check()?,
                 Engine::statistical()?,
                 Engine::zone_check()?,
+                Engine::value_check()?,
             ],
         })
     }
@@ -266,6 +277,8 @@ pub(crate) enum EngineReport {
     Model(Box<ModelCheckRecord>),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
+    /// The value-validity arm's finding.
+    Value(Box<value_check::ValueReport>),
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
     Zone(Box<ZoneCheckRecord>),
@@ -367,6 +380,8 @@ pub struct AnalyzeRecord {
     pub model_check: Option<Box<ModelCheckRecord>>,
     /// EN-6's full record, carrying the counterexample of a `refuted` item.
     pub zone_check: Option<Box<ZoneCheckRecord>>,
+    /// The value-validity arm's counterexample, carried by a `refuted` item.
+    pub value_check: Option<Box<value_check::ValueCounterexample>>,
 }
 
 /// How an item settled.
@@ -468,6 +483,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         settlement,
         model_check: None,
         zone_check: None,
+        value_check: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -541,6 +557,7 @@ fn settle(
         settlement,
         model_check,
         zone_check: None,
+        value_check: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -563,6 +580,12 @@ fn settle(
             ),
             Some(model),
         ),
+        EngineReport::Value(report) => {
+            let (settled_record, counterexample) = value_check::settle(*report, index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.value_check = counterexample.map(Box::new);
+            settled
+        }
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
@@ -581,6 +604,7 @@ fn settle(
             ),
             model_check: None,
             zone_check: Some(zone),
+            value_check: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
@@ -681,10 +705,10 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4", "en-6"]
+            ["en-1", "en-4", "en-6", "value-checker"]
         );
-        let [en1, en4, _en6] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4 and EN-6");
+        let [en1, en4, _en6, value] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the value arm");
         };
         assert!(registrations
             .iter()
@@ -695,6 +719,9 @@ mod tests {
         assert!(en4
             .advertises()
             .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
+        assert!(value
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ValueValidity));
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as

@@ -27,4 +27,5 @@ pub mod model_check;
 pub mod monitor_plan;
 pub mod schedulability;
 pub mod statistical;
+pub mod value_check;
 pub mod zone_check;
