@@ -195,8 +195,8 @@ clock configuration. Progress recorded for `/1`, another `/2` artifact or a
 different authenticated clock configuration SHALL NOT settle this evaluation.
 
 Changing a selected definition artifact, sequence authority, epoch, period,
-unit or timestamp unit SHALL change canonical `/2` bytes and the external
-artifact digest without changing the admitted native source.
+unit or timestamp unit SHALL change canonical `/2` bytes without changing the
+admitted native source.
 
 The compiler SHALL NOT interpret clock progress, settle temporal truth, map a TL
 formula, create observation records or emit a protocol result through this

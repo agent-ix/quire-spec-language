@@ -92,7 +92,7 @@ CompiledProtocolPackage = {
 }
 ```
 
-`ByteDigest` and `ArtifactKind` use the shared-reference schema rather than a
+`ArtifactKind` uses the shared-reference schema rather than a
 package-private vocabulary. The shared vocabulary includes distinct
 `population` and `window` assessment-document kinds; neither is the
 `linked-package` kind of this artifact, and neither makes a runtime assessment
@@ -181,13 +181,12 @@ native record does.
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index
 dependencies. `Model.artifact` also indexes dependencies.
 Dependency and definition closure is acyclic and complete under the selected
-package contract. Source/dependency revision or digest values are copied exactly
-from the selected producer reference, never regenerated in the artifact domain.
+package contract. Source/dependency revision values are copied exactly from the
+selected producer reference, never regenerated in the artifact domain.
 
 Native source labels, external source-artifact revision and the explicitly
-authored formal document/revision remain separate. Source bytes must hash to
-the source artifact digest; spans use those original decoded UTF-8 bytes and
-must be scalar-boundary aligned. Declaration loci are disjoint in each source;
+authored formal document/revision remain separate. Spans use the original decoded
+UTF-8 source bytes and must be scalar-boundary aligned. Declaration loci are disjoint in each source;
 all local loci lie inside their owning declaration. Foreign model loci are
 validated against their separately supplied exact source bytes. No display
 path, occurrence ordinal or equal name establishes authority.
@@ -710,7 +709,7 @@ namespaces for formal-source, requirement and registered-definition revisions;
 a registered definition's semantic revision comes from its actual registered
 bytes, not the source artifact's revision label. Successful admission owns a
 private `FamilyAdmission`; `emit` takes that type and returns `EmittedPackage`
-bytes and their raw-byte digest under a fresh invocation's limits. An arbitrary
+bytes under a fresh invocation's limits. An arbitrary
 `wire::Package`, reader result or proof witness cannot be passed as this authority.
 
 The implemented path preserves original expression/control arenas, declaration

@@ -32,8 +32,7 @@ definition indices; substitute each definition identity, revision, artifact
 reference and raw bytes; cross every pair of clock alternatives;
 and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
 component-overflow periods plus a changed epoch or unit. Require each mutation
-to reach its owning selection or semantic validation without an external byte
-seal check.
+to reach its owning selection or semantic validation for the altered values.
 
 Exercise `mapping_support_v2` without a trace and require its admitted
 definition/profile binding before formula classification. For progress, attempt
