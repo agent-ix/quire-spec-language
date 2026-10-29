@@ -1371,6 +1371,12 @@ fn settle(
 fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {
         CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
+        // This path calls the named function facade, which admits arguments
+        // through `InputRefusal`; it never selects a checked protocol slot.
+        CallFailure::Admission(_) => ReplayRefusal::Fault(InternalFault::new(
+            "call",
+            "function-replay-has-no-protocol-slot-admission",
+        )),
         CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
         // The request replay path constructs no registered host body. Body
         // failures are surfaced unchanged by the checked application facade.
