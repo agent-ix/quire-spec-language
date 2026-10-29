@@ -1888,11 +1888,10 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
 /// and its own operation are both named `revision`. FCD #199/#200 collapses
 /// the field and operation identity namespaces into one `<Owner>/<name>`
 /// segment with no kind segment of its own, so the two now mint the same
-/// identity and `lift_document` blocks. At the previously pinned rev
-/// (`7dcb2f2c`, predating FCD #199/#200) this same bundle did *not*
+/// identity and `lift_document` blocks. Before FCD #199/#200 this same bundle did *not*
 /// collide -- `NodeKind::Field` and `NodeKind::Operation` minted under
 /// different segments there -- which is why this test was deleted rather
-/// than kept `#[ignore]`d until the pin bumped; this is that test, rebuilt
+/// than kept `#[ignore]`d until FCD moved; this is that test, rebuilt
 /// fresh against the collision this pin actually produces.
 ///
 /// The expected diagnostic is read verbatim from FCD's own committed
