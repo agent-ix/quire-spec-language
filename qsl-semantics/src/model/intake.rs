@@ -4486,17 +4486,16 @@ pub(super) fn read_tuple_value_type(
     Ok(())
 }
 
-/// Whether `payload_type` resolves to one of the admitted model or native
-/// value types, or is `Clock`: a case with a `Clock` payload is a clock place
-/// guarded by the case and holds no data payload (FR-230 "Records, tuples
-/// and unions"). A unit is a location, and an unresolved or non-value
-/// package meaning is not a union payload type.
+/// Whether `payload_type` resolves to an admitted model or native value type.
+/// `Clock` is not admitted as a union payload (QSpec FR-154-AC-25); tuple
+/// positions have their separate FR-322 admission rule. A unit is a location,
+/// and an unresolved or non-value package meaning is not a union payload type.
 fn variant_payload_is_value_type(
     payload_type: &ValueTypeRef,
     type_meanings: &HashMap<&str, &str>,
 ) -> bool {
     match payload_type {
-        ValueTypeRef::Clock => true,
+        ValueTypeRef::Clock => false,
         ValueTypeRef::Unit(_) => false,
         ValueTypeRef::Native(_) => true,
         ValueTypeRef::Package(key) => type_meanings.get(key.node.as_str()).is_some_and(|meaning| {
