@@ -14,10 +14,6 @@ use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
 
-#[path = "../../../examples/config-version/spine_unit.rs"]
-#[allow(dead_code, missing_docs)]
-mod config_version;
-
 /// The model the pair selects, relative to the repository root.
 const MODEL: &str = "examples/config-version/model.semantic-ir.json";
 const AUTHORITY: &str = "agent-ix";
@@ -27,22 +23,64 @@ const CLAUSE: &str = "present(self.parent) implies";
 /// A meaning-preserving revision of [`CLAUSE`] (the superseding unit).
 const CLAUSE_REVISED: &str = "not not present(self.parent) implies";
 
-/// The model file's digest, hex-encoded, computed from `root`'s copy of it.
-///
-/// # Errors
-/// [`Error::RefinementCorpus`] when the model file cannot be read.
-pub fn model_digest_hex(root: &Path) -> Result<String> {
-    let path = root.join(MODEL);
-    let bytes = fs::read(&path).map_err(|source| Error::RefinementCorpus {
-        path: path.display().to_string(),
-        source,
-    })?;
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let digest = packages.keys().next().expect("one supplied package");
-    Ok(qsl_semantics::model::key::hex(digest))
+/// What the model file says about itself: the three values a `model`
+/// statement and a snapshot's `model` member must repeat. All three are read
+/// from the file, none is a constant.
+struct Model {
+    identity: String,
+    version: String,
+    digest: String,
 }
 
-fn snapshot(digest: &str, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Value {
+fn read_model(root: &Path) -> Result<Model> {
+    let path = root.join(MODEL);
+    let fail = |source: std::io::Error| Error::RefinementCorpus {
+        path: path.display().to_string(),
+        source,
+    };
+    let bytes = fs::read(&path).map_err(fail)?;
+    let document: Value = serde_json::from_slice(&bytes)
+        .map_err(|source| fail(std::io::Error::new(std::io::ErrorKind::InvalidData, source)))?;
+    let member = |name: &str| {
+        document["package"][name]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                fail(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("no package.{name}"),
+                ))
+            })
+    };
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    let digest = packages.keys().next().expect("one supplied package");
+    Ok(Model {
+        identity: member("identity")?,
+        version: member("version")?,
+        digest: qsl_semantics::model::key::hex(digest),
+    })
+}
+
+/// The ConfigVersion unit, selecting `model` by what the model file declares.
+fn unit_text(model: &Model) -> String {
+    format!(
+        "// SPDX-License-Identifier: AGPL-3.0-only\n\
+         language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         model Config = {:?} version {:?} digest \"sha256-jcs:{}\";\n\
+         invariant ParentOrder using v on Config::ConfigVersion at current {{ \
+         present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
+         invariant NoCycle using v on Config::ConfigVersion at current {{ \
+         not reaches(self, self, parent) }}\n\
+         post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {{ \
+         self.versionNumber = pre(self.versionNumber) }}\n\
+         function sameIdentity using v(a: Config::ConfigVersion, b: Config::ConfigVersion): \
+         Boolean pure {{ a = b }}\n",
+        model.identity, model.version, model.digest
+    )
+}
+
+fn snapshot(model: &Model, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Value {
     let objects: Vec<Value> = rows
         .iter()
         .map(|(key, version, parent)| {
@@ -70,9 +108,9 @@ fn snapshot(digest: &str, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Val
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
-            "identity": config_version::PACKAGE_IDENTITY,
-            "version": config_version::PACKAGE_VERSION,
-            "digest": format!("sha256-jcs:{digest}"),
+            "identity": model.identity,
+            "version": model.version,
+            "digest": format!("sha256-jcs:{}", model.digest),
         },
         "populations": [{"population": POPULATION, "complete": true, "objects": objects}],
     })
@@ -97,8 +135,8 @@ fn clause_case(observation: &str) -> Value {
 /// [`Error::RefinementCorpus`] when the model cannot be read or a corpus file
 /// cannot be written.
 pub fn generate(root: &Path, out: &Path) -> Result<()> {
-    let digest = model_digest_hex(root)?;
-    let prior = config_version::unit_text(&digest);
+    let model = read_model(root)?;
+    let prior = unit_text(&model);
     let superseding = prior.replace(CLAUSE, CLAUSE_REVISED);
     assert_ne!(prior, superseding, "the superseding revision differs");
     let pair = json!({
@@ -124,12 +162,12 @@ pub fn generate(root: &Path, out: &Path) -> Result<()> {
     write("superseding.native", superseding)?;
     write("pair.json", pair.to_string())?;
     let healthy = snapshot(
-        &digest,
+        &model,
         "healthy-parent",
         &[("root", 1, None), ("child", 2, Some("root"))],
     );
     let violating = snapshot(
-        &digest,
+        &model,
         "violating-parent",
         &[("root", 3, None), ("child", 2, Some("root"))],
     );

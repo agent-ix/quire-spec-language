@@ -548,12 +548,12 @@ fn a_copied_corpus_gives_a_byte_equal_report() {
     assert_eq!(first, second);
 }
 
-/// FR-343-AC-2, FR-344-AC-5 and FR-340-AC-6 (seeded half): the seeded pair
+/// FR-343-AC-2, FR-344-AC-5 and FR-340-AC-7 (seeded half): the seeded pair
 /// tightens a clause. Its healthy-parent case is the one regression; the
 /// violating-parent case, which the prior revision refuses, does not apply;
 /// the identity pair holds. The gate exits 10.
 #[test]
-#[trace("TC-864", "FR-343-AC-2", "FR-344-AC-5", "FR-340-AC-6")]
+#[trace("TC-864", "FR-343-AC-2", "FR-344-AC-5", "FR-340-AC-7")]
 fn a_seeded_regression_fails_the_gate_naming_exactly_that_case() {
     let corpus = corpus(&[("identity", identity_pair()), ("seed", seed_pair())]);
     let report = versioning::run(corpus.path(), &repository());
@@ -651,10 +651,10 @@ fn a_superseding_compile_refusal_regresses_every_admitted_case() {
     assert_eq!(healthy["superseding"]["codes"][0]["code"], "ill_typed");
 }
 
-/// FR-340-AC-6: the real corpus passes, and adding the seeded pair makes the
+/// FR-340-AC-6 and FR-340-AC-7: the real corpus passes, and adding the seeded pair makes the
 /// gate fail.
 #[test]
-#[trace("TC-864", "FR-340-AC-6")]
+#[trace("TC-864", "FR-340-AC-6", "FR-340-AC-7")]
 fn the_real_corpus_passes_and_the_seeded_copy_fails() {
     let generated = real_corpus(&repository());
     let real = generated.path();
@@ -673,20 +673,21 @@ fn the_real_corpus_passes_and_the_seeded_copy_fails() {
     assert_eq!(exit_code(seeded.path()), 10);
 }
 
-/// FR-340-AC-6: the corpus carries the digest of the model file as it stands.
-/// After the model file is edited the corpus is generated again with the new
-/// digest and the gate still passes; nothing frozen is read.
+/// FR-340-AC-8 and FR-340-AC-9: the corpus carries what the model file says, never a constant.
+/// After the model file is edited (its package version and its package
+/// identity, so its digest too) the corpus is generated again; the unit and
+/// both snapshots change together and name the edited values, and the gate
+/// still passes.
 #[test]
-#[trace("TC-864", "FR-340-AC-6")]
+#[trace("TC-864", "FR-340-AC-8", "FR-340-AC-9")]
 fn the_generated_corpus_follows_the_model_file() {
     let root = tempfile::tempdir().unwrap();
     let model = "examples/config-version/model.semantic-ir.json";
     fs::create_dir_all(root.path().join("examples/config-version")).unwrap();
     let original = fs::read_to_string(repository().join(model)).unwrap();
-    // A model edit that keeps the package valid: the source version moves.
     let edited = original.replacen(
-        "\"identity\": \"ix://example/config-version/spec\",\n    \"version\": \"1.0.0\"",
-        "\"identity\": \"ix://example/config-version/spec\",\n    \"version\": \"1.0.1\"",
+        "\"identity\": \"example/config-version\",\n    \"version\": \"1.0.0\"",
+        "\"identity\": \"example/config-version\",\n    \"version\": \"1.0.7\"",
         1,
     );
     assert_ne!(edited, original, "the model edit applies");
@@ -694,10 +695,35 @@ fn the_generated_corpus_follows_the_model_file() {
 
     let before = real_corpus(&repository());
     let after = real_corpus(root.path());
-    let unit = |corpus: &tempfile::TempDir| {
-        fs::read_to_string(corpus.path().join("config-version-revision/unit.native")).unwrap()
+    let read = |corpus: &tempfile::TempDir, name: &str| {
+        fs::read_to_string(corpus.path().join("config-version-revision").join(name)).unwrap()
     };
-    assert_ne!(unit(&before), unit(&after), "the digest follows the model");
+    let digest_of = |text: &str| {
+        let start = text.find("sha256-jcs:").expect("a digest") + "sha256-jcs:".len();
+        text[start..start + 64].to_owned()
+    };
+    let old_digest = digest_of(&read(&before, "unit.native"));
+    let new_digest = digest_of(&read(&after, "unit.native"));
+    assert_ne!(old_digest, new_digest, "the digest follows the model");
+    for name in [
+        "unit.native",
+        "superseding.native",
+        "healthy-parent.json",
+        "violating-parent.json",
+    ] {
+        let text = read(&after, name);
+        assert_eq!(
+            digest_of(&text),
+            new_digest,
+            "{name} carries the new digest"
+        );
+        assert!(!text.contains(&old_digest), "{name} keeps no old digest");
+        assert!(
+            text.contains("1.0.7") && !text.contains("1.0.0"),
+            "{name} names the edited package version"
+        );
+    }
+    // The root holds only the model file: no committed digest is read.
     let report = versioning::run(after.path(), root.path());
     assert_eq!(
         report.verdict,
@@ -705,6 +731,31 @@ fn the_generated_corpus_follows_the_model_file() {
         "{}",
         report.to_json().unwrap()
     );
+}
+
+/// FR-340-AC-6: the make recipe's two commands, run as the binary: generate
+/// the corpus into a fresh directory, then run the gate over it. (The recipe's
+/// `mktemp` and cleanup are shell and are exercised by `make
+/// refinement-versioning` itself.)
+#[test]
+#[trace("TC-864", "FR-340-AC-6")]
+fn the_recipe_commands_generate_then_gate_with_exit_zero() {
+    let out = tempfile::tempdir().unwrap();
+    let status = |gate: &str| {
+        Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .args(["refinement", gate])
+            .arg(out.path())
+            .output()
+            .unwrap()
+            .status
+            .code()
+    };
+    assert_eq!(status("generate-versioning"), Some(0));
+    assert!(out
+        .path()
+        .join("config-version-revision/pair.json")
+        .is_file());
+    assert_eq!(status("versioning"), Some(0));
 }
 
 /// FR-343-AC-5 (unsupported half): an unsupported superseding compile and an

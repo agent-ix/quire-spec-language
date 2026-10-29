@@ -33,13 +33,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         return Err(Error::Usage(USAGE));
     };
     let path = Path::new(corpus);
-    if gate.to_str() == Some("generate-versioning") {
-        corpus::generate(workspace_root, path)?;
-        return Ok(Outcome {
-            stdout: String::new(),
-            code: 0,
-        });
-    }
     let (stdout, code) = match gate.to_str() {
         Some("versioning") => {
             let report = versioning::run(path, workspace_root);
@@ -47,6 +40,10 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                 .to_json()
                 .map_err(|source| Error::RefinementReport { source })?;
             (stdout, report.verdict.exit_code())
+        }
+        Some("generate-versioning") => {
+            corpus::generate(workspace_root, path)?;
+            (String::new(), 0)
         }
         Some("layering") => {
             let outcome = run_layering(path, layering::RegistrySnapshot::production())?;
