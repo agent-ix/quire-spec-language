@@ -89,7 +89,7 @@ pub struct StateGraphRecord {
     pub execution: Execution,
     /// The truth.
     pub truth: Truth,
-    /// The settlement method: [`EXPLICIT_STATE`].
+    /// The settlement method: [`EXPLICIT_STATE`](crate::model_check::settle::EXPLICIT_STATE).
     pub method: &'static str,
     /// The search horizon, a method parameter and never a limit (QSpec
     /// FR-392).

@@ -96,13 +96,14 @@ fn rows_without_a_node_form_refuse_the_refinement_at_its_declaration() {
 /// leaves the refinement's class catalog unkeyed: the clause refuses
 /// `unsupported_construct`/`not-yet-implemented` at its declaration naming
 /// the construct, and the refinement refuses with the same cause, located
-/// at its first step row naming the clause. Each construct of QSL-1186 is a case.
+/// at its first step row naming the clause. Each construct of QSL-1186 is a case;
+/// a predicate join is written (FR-466), so it is none.
 #[trace("FR-375-AC-23", "FR-092-AC-18", "TC-310", "TC-1021")]
 #[test]
 fn a_refinement_over_an_unwritten_clause_refuses_naming_the_construct() {
     let event =
         |name: &str, binder: &str| format!("event {name} by w as ({binder}: Boolean) {{ true }};");
-    let cases: [(ProtocolConstruct, String, Vec<&str>); 5] = [
+    let cases: [(ProtocolConstruct, String, Vec<&str>); 4] = [
         (
             ProtocolConstruct::RepeatDecisionReadsBody,
             "sequence Main { repeat Again by w visible (e.ok) while { true } \
@@ -136,17 +137,6 @@ fn a_refinement_over_an_unwritten_clause_refuses_naming_the_construct() {
             ),
             vec!["step C::Impl::T -> stutter;"],
         ),
-        (
-            ProtocolConstruct::Control("parallel"),
-            "sequence Main { parallel Par { branch a sequence Ay { } \
-             branch b sequence Bee { } } join predicate(both) [a, b]; }"
-                .to_owned(),
-            vec![
-                "step fork C::Impl::Par -> stutter;",
-                "step join C::Impl::Par -> stutter;",
-                "step memory drain -> stutter;",
-            ],
-        ),
     ];
     for (construct, run, extra) in cases {
         let mut rows: Vec<&str> = PROTOCOL_ROWS.to_vec();
@@ -155,7 +145,6 @@ fn a_refinement_over_an_unwritten_clause_refuses_naming_the_construct() {
         let unit = unit.replacen(
             "protocol Impl",
             "record Ack { ok: Boolean; }\n\
-             function both using v(x: Boolean, y: Boolean): Boolean pure { x and y }\n\
              protocol Impl",
             1,
         );

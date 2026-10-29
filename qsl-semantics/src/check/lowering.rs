@@ -100,6 +100,7 @@ mod state_graph;
 mod state_transition;
 mod temporal;
 mod terminal;
+mod urgency;
 mod wire;
 
 pub(crate) use abstraction::{object_type_node, population_node, relation_node};
@@ -892,6 +893,8 @@ enum Keyed {
         semantic_type: NodeKey,
         member: String,
     },
+    /// A present option's payload binding, typed at its option node.
+    OptionValue(NodeKey),
 }
 
 /// A node over its operands' terms.
@@ -3569,8 +3572,13 @@ impl<'a> Lowering<'a> {
             // FR-139, FR-138: a population-valued form and a history read
             // live in a refinement row, which S4 does not emit yet
             // (FR-310's node): no FR-093 row lowers either.
+            // FR-230 "Presence is derived": a presence read lives in a timed
+            // predicate, which S4 does not emit yet; S3 keeps it out of
+            // every lowered clause body.
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
+            | NodeKind::PlacePresence { .. }
+            | NodeKind::SlotPresence { .. }
             | NodeKind::Seq { .. } => {
                 return Err(refuse(
                     node.location(),
@@ -3587,6 +3595,10 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Value, plain("quire.op.option.value")),
                 Operands::One(operand),
             ),
+            NodeKind::OptionSome(operand) => {
+                let semantic_type = self.value_type_node(node, binders)?;
+                (Keyed::OptionValue(semantic_type), Operands::One(operand))
+            }
             NodeKind::Call {
                 function,
                 arguments,
@@ -4190,6 +4202,20 @@ impl<'a> Lowering<'a> {
                     )]),
                 )
             }
+            Keyed::OptionValue(semantic_type) => self.value_node(
+                node,
+                "option_value",
+                semantic_type,
+                BodyTerm::aggregate(vec![MemberTerm::binding(
+                    "value",
+                    BindingValue::Leaf(
+                        terms
+                            .into_iter()
+                            .next()
+                            .ok_or_else(|| fault(node.location(), KeyFault::RecordSlotCount))?,
+                    ),
+                )]),
+            ),
         }
         .map(LowerStep::Lowered)
     }
@@ -4414,7 +4440,7 @@ impl<'a> Lowering<'a> {
                         TupleMember::Group(parameters),
                         TupleMember::Leaf(term),
                     ])),
-                ));
+                ))
             }
         }
         self.open_arm(frame, binders, frames)
@@ -4668,7 +4694,7 @@ impl<'a> Lowering<'a> {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),
-                ))
+                ));
             }
         };
         Ok(Operation::plain(&format!("quire.op.{family}.{suffix}")))

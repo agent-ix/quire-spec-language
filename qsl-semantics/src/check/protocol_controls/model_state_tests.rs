@@ -545,3 +545,160 @@ fn an_object_or_reference_read_is_model_state() {
     ));
     assert_eq!(at, "M::Node");
 }
+
+/// An outer `repeat` whose only body is the nested `repeat Inner` with
+/// `max` (written when given), the guard `true`, `body` and, with a
+/// maximum, the `exhausted` control `exhausted`.
+fn nested_repeat_of(max: Option<u64>, body: &str, exhausted: &str) -> String {
+    let (max, exhausted) = match max {
+        Some(max) => (format!("max {max} "), format!(" exhausted {exhausted};")),
+        None => (String::new(), String::new()),
+    };
+    decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             repeat Outer by Service visible () while {{ true }} \
+             sequence OuterBody {{ \
+             repeat Inner by Service visible () {max}while {{ true }} \
+             sequence InnerBody {{ {body} }}{exhausted} \
+             }} }}"
+        ),
+    )
+}
+
+fn refuses_outer(text: &str) {
+    let refusals = check(text).expect_err("the outer repeat has no progress");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::ProtocolAnchor(cause)
+                if matches!(cause.as_ref(), ProtocolAnchorCause::NoProgress { repeat, .. } if repeat == "Outer")
+        )),
+        "{refusals:?}"
+    );
+}
+
+const PROGRESS: &str = "event Progress by Service as (progress: Boolean) { true };";
+const EXHAUSTED_EVENT: &str = "event Spent by Service as (spent: Boolean) { true }";
+
+/// QSpec FR-464 "Nested `repeat` rule" (STD-539, QSpec #481): a nested
+/// `repeat` is counted by its body only. `repeat max 1 while true` whose
+/// body is only a `check` and whose `exhausted` control is an event leaves
+/// the outer `repeat` refused (FR-464-AC-23); with the event in its body it
+/// is admitted.
+#[trace("TC-663", "FR-218-AC-32")]
+#[test]
+fn a_nested_repeat_is_never_counted_through_its_exhausted_control() {
+    refuses_outer(&nested_repeat_of(
+        Some(1),
+        "check Idle using v { true };",
+        EXHAUSTED_EVENT,
+    ));
+    check(&nested_repeat_of(
+        Some(1),
+        PROGRESS,
+        "check Done using v { true }",
+    ))
+    .expect("a nested repeat that steps in its body is a step of the outer one");
+}
+
+/// QSpec FR-464 "Nested `repeat` rule" item 2 (STD-539, FR-464-AC-21): a
+/// nested `repeat max 0 while true` never enters its body, so it gives the
+/// outer `repeat` no progress whatever its guard; with no maximum, or a
+/// maximum of 1, the same nested `repeat` is a step.
+#[trace("TC-663", "FR-218-AC-32")]
+#[test]
+fn a_nested_repeat_with_maximum_zero_gives_no_progress() {
+    refuses_outer(&nested_repeat_of(
+        Some(0),
+        PROGRESS,
+        "check Done using v { true }",
+    ));
+    check(&nested_repeat_of(None, PROGRESS, ""))
+        .expect("an unbounded nested repeat with an infeasible exit steps");
+    check(&nested_repeat_of(
+        Some(1),
+        PROGRESS,
+        "check Done using v { true }",
+    ))
+    .expect("a maximum of 1 enters the body once per entry");
+}
+
+/// The `NoProgress` refusals of `text`, by repeat name.
+fn no_progress(text: &str) -> Vec<String> {
+    check(text)
+        .err()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            CheckCause::ProtocolAnchor(cause) => match cause.as_ref() {
+                ProtocolAnchorCause::NoProgress { repeat, .. } => Some(repeat.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// QSpec FR-464-AC-21's `choice` clause (STD-539, SR-1758002 FND-001): a
+/// nested `repeat` that is the only stepping part of a `choice` case
+/// follows the nested `repeat` rule. With `max 0` the outer `repeat` is
+/// refused; with `max 1` it is admitted.
+#[trace("TC-663", "FR-218-AC-32")]
+#[test]
+fn a_nested_repeat_in_a_choice_case_follows_the_rule() {
+    let text = |max: u64| {
+        decide(
+            "",
+            &format!(
+                "sequence Main {{ \
+                 repeat Outer by Service visible () while {{ true }} \
+                 choice Pick by Service visible () {{ \
+                 case work when {{ true }} sequence Work {{ \
+                 event Worked by Service as (worked: Boolean) {{ true }}; }} \
+                 case more when {{ false }} repeat Inner by Service visible () max {max} \
+                 while {{ true }} sequence InnerBody {{ {PROGRESS} }} \
+                 exhausted check Spent using v {{ true }}; }} }}"
+            ),
+        )
+    };
+    assert_eq!(no_progress(&text(0)), ["Outer"]);
+    check(&text(1)).expect("a maximum of 1 makes the case step");
+}
+
+/// QSpec FR-464 (STD-539, SR-1758001 FND-001, SR-1758002 FND-002): through
+/// an intermediate `repeat Mid`, a `max 0` `Inner` gives neither `Mid` nor
+/// `Outer` progress, and only the first non-stepping `repeat` in tree
+/// order, `Outer`, is refused. A `repeat` reached through `Mid`'s in-body
+/// `exhausted` control is no step of `Mid`: with `Mid`'s body only a
+/// `check`, `Outer` is refused again.
+#[trace("TC-663", "FR-218-AC-32")]
+#[test]
+fn deeper_nesting_refuses_the_first_repeat_once() {
+    let deeper = decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             repeat Outer by Service visible () while {{ true }} \
+             repeat Mid by Service visible () while {{ true }} \
+             repeat Inner by Service visible () max 0 while {{ true }} \
+             sequence InnerBody {{ {PROGRESS} }} \
+             exhausted check Spent using v {{ true }}; }}"
+        ),
+    );
+    assert_eq!(no_progress(&deeper), ["Outer"]);
+
+    let through_exhausted = decide(
+        "",
+        &format!(
+            "sequence Main {{ \
+             repeat Outer by Service visible () while {{ true }} \
+             repeat Mid by Service visible () max 1 while {{ true }} \
+             sequence MidBody {{ check Idle using v {{ true }}; }} \
+             exhausted repeat Inner by Service visible () while {{ true }} \
+             sequence InnerBody {{ {PROGRESS} }} }}"
+        ),
+    );
+    assert_eq!(no_progress(&through_exhausted), ["Outer"]);
+}

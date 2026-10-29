@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, JoinPolicy, LossSelector,
+    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
     ProtocolDeclarationForm, ProtocolNodeKind,
 };
 use qsl_foundation::MemoryModelName;
@@ -211,15 +211,14 @@ impl ProtocolInput<'_> {
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
             // A `branch` and a `case` are held by the `parallel` and the
-            // `choice` that hold them. A `parallel` is written unless its
-            // join is a predicate, which names a function written after the
-            // protocols.
+            // `choice` that hold them. A `parallel` is written whatever its
+            // join: a predicate join's function is keyed before the
+            // protocol (`dependencies`).
             let refused = match control.kind {
-                ProtocolNodeKind::Parallel => form
+                ProtocolNodeKind::Parallel => !form
                     .parallels
                     .iter()
-                    .find(|parallel| parallel.declaration == control.node.0)
-                    .is_none_or(|parallel| matches!(parallel.join.value, JoinPolicy::Predicate(_))),
+                    .any(|parallel| parallel.declaration == control.node.0),
                 _ => false,
             };
             if refused && !kinds.contains(&control.kind) {
@@ -401,6 +400,14 @@ impl ProtocolInput<'_> {
             functions.extend(root.callees());
             protocols.extend(root.protocol_references());
         }
+        // A predicate join's function is referenced by the `parallel`'s
+        // `join` (FR-466 "Control layouts").
+        functions.extend(
+            self.checked
+                .pending_predicate_joins
+                .iter()
+                .map(|join| join.function),
+        );
         for list in [&mut functions, &mut protocols] {
             list.sort_unstable();
             list.dedup();

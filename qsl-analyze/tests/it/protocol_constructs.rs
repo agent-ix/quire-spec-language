@@ -1150,3 +1150,32 @@ fn a_waiting_receive_names_why_it_waits() {
         }
     );
 }
+
+/// QSpec FR-425 and FR-426 (STD-539, QSpec #481, FR-464-AC-23): a nested
+/// `repeat`'s counter is 0 on each entry from outside it. `repeat Inner max
+/// 1 while true` inside `repeat Outer max 2 while true` takes its body and
+/// then its `exhausted` control on each of the outer repeat's two
+/// iterations: `X E X E`, then the outer `exhausted` `F`.
+#[trace("TC-651", "FR-206-AC-5")]
+#[test]
+fn a_nested_repeat_counter_restarts_on_each_entry() {
+    let run = format!(
+        "sequence Main {{ repeat Outer by w visible () max 2 while {{ true }} \
+         sequence OuterBody {{ repeat Inner by w visible () max 1 while {{ true }} {} \
+         exhausted {} }} exhausted {} }}",
+        touch("X"),
+        touch("E"),
+        touch("F"),
+    );
+    let unit = case("", &run);
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let expected: BTreeSet<Vec<String>> = [["X", "E", "X", "E", "F", "Done"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()]
+    .into_iter()
+    .collect();
+    assert_eq!(projections(&reached), expected);
+}
