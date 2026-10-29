@@ -144,6 +144,15 @@ pub enum ObligationKind {
     /// The derived time-lock-freedom item (FR-232): the fixed kind
     /// `time-lock-freedom`.
     TimeLockFreedom,
+    /// The derived deadlock-freedom item of a protocol subject (QSpec
+    /// FR-429): the fixed kind `deadlock-freedom`, over the subject's
+    /// resolved models, which are part of the protocol subject (QSpec
+    /// FR-425) and so of its identity.
+    ProtocolDeadlockFreedom {
+        /// The resolved model of each outermost `parallel`, by its scoped
+        /// path, in ascending path order.
+        models: Vec<(String, MemoryModelName)>,
+    },
     /// The derived race-freedom item (FR-224, ADR-025 DR-4): the fixed kind
     /// `race-freedom`, over the subject's resolved models, which are part of
     /// its identity (ADR-013 O-09).
@@ -202,11 +211,13 @@ struct ProtocolReading {
     /// The clause's node; `None` for a clause with no node. A subject names
     /// one protocol clause, so every reading of it has the same node.
     node: Option<WireNodeId>,
-    /// Each distinct set of resolved models the subject's items are over
-    /// that gets a race-freedom item, in the order each first occurs: the
-    /// resolved models are part of the protocol subject (QSpec FR-425), so
-    /// each set gets its own item, as one `(subject, models)` pair does.
-    races: Vec<Vec<(String, MemoryModelName)>>,
+    /// The resolved model of each outermost `parallel`, by scoped path, in
+    /// ascending path order. They are part of the protocol subject (QSpec
+    /// FR-425), so two readings with other models are two subjects.
+    models: Vec<(String, MemoryModelName)>,
+    /// Whether a resolved model is weak and an access is non-atomic, which
+    /// gives the subject its race-freedom item (FR-224, QSpec FR-438).
+    races: bool,
 }
 
 impl SubjectReading {
@@ -254,23 +265,26 @@ impl SubjectReading {
             (None, Some(protocol)) => self.protocol = Some(protocol.clone()),
             (Some(seen), Some(protocol)) => {
                 seen.node = seen.node.or(protocol.node);
-                for models in &protocol.races {
-                    if !seen.races.contains(models) {
-                        seen.races.push(models.clone());
-                    }
-                }
+                seen.races |= protocol.races;
             }
             (_, None) => {}
         }
     }
 
-    /// Each set of resolved models of a protocol subject that gets a
-    /// race-freedom item (FR-224, QSpec FR-438), in the order each first
-    /// occurs; none for every other subject.
-    pub fn races(&self) -> &[Vec<(String, MemoryModelName)>] {
+    /// A protocol subject's resolved models (QSpec FR-425); `None` for
+    /// every other subject.
+    pub fn protocol_models(&self) -> Option<&[(String, MemoryModelName)]> {
         self.protocol
             .as_ref()
-            .map_or(&[], |protocol| protocol.races.as_slice())
+            .map(|protocol| protocol.models.as_slice())
+    }
+
+    /// Whether a protocol subject gets the race-freedom item: a resolved
+    /// model is weak and an access is non-atomic (FR-224, QSpec FR-438).
+    pub fn races(&self) -> bool {
+        self.protocol
+            .as_ref()
+            .is_some_and(|protocol| protocol.races)
     }
 
     /// QSpec FR-368 "Claim and anchor of a derived or refinement item": the
@@ -320,13 +334,18 @@ pub enum NoAnchor {
 
 /// The subjects of `readings`, in the order each first occurs, each with
 /// the merged reading of every caller item over it (QSpec FR-368
-/// "Position of derived items in the request").
+/// "Position of derived items in the request"). A protocol subject's
+/// resolved models are part of it (QSpec FR-425), so readings of one
+/// caller subject under other models, or one read as a model subject and
+/// one as a protocol subject, are other subjects.
 pub(crate) fn by_subject<S: Clone + Eq>(
     readings: impl IntoIterator<Item = (S, SubjectReading)>,
 ) -> Vec<(S, SubjectReading)> {
     let mut subjects: Vec<(S, SubjectReading)> = Vec::new();
     for (subject, reading) in readings {
-        match subjects.iter_mut().find(|(seen, _)| *seen == subject) {
+        match subjects.iter_mut().find(|(seen, known)| {
+            *seen == subject && known.protocol_models() == reading.protocol_models()
+        }) {
             Some((_, seen)) => seen.merge(&reading),
             None => subjects.push((subject, reading)),
         }
@@ -400,11 +419,8 @@ impl<S: Clone> ProtocolTemporalItem<'_, S> {
                     .protocol
                     .node()
                     .map(|key| WireNodeId::from_digest(*key.as_bytes())),
-                races: if weak && self.non_atomic_access {
-                    vec![self.models.to_vec()]
-                } else {
-                    Vec::new()
-                },
+                models: self.models.to_vec(),
+                races: weak && self.non_atomic_access,
             }),
         }
     }

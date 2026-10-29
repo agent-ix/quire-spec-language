@@ -1542,14 +1542,16 @@ fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
     assert!(written.unanchored().is_empty());
 }
 
-/// QSpec FR-425 with FR-438: the resolved models are part of the protocol
-/// subject, so two caller items over one subject `SB`, one under `ra` and one
-/// under `tso`, give one race-freedom item for each set of models, in the
-/// order each first occurs after `SB`'s one deadlock-freedom item; neither
-/// set's item is dropped.
+/// QSpec FR-425 with FR-429, FR-438 and FR-368's order: the resolved models
+/// are part of the protocol subject, so caller items over `SB` under `ra`
+/// and under `tso` are over two protocol subjects, each with its own
+/// deadlock-freedom item and race-freedom item over its models. The
+/// subjects follow in the order each first occurs, so the subject of an item
+/// between the two stands between their derived items.
 #[trace("QSpec-TC-392", "QSpec-FR-438-AC-2")]
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
 #[test]
-fn each_set_of_resolved_models_of_one_subject_gets_its_race_freedom_item() {
+fn each_set_of_resolved_models_of_one_subject_gets_its_derived_items() {
     let case = two_plain_stores();
     let under_ra = case.subject(&ra());
     let under_tso = case.subject(&tso());
@@ -1558,37 +1560,60 @@ fn each_set_of_resolved_models_of_one_subject_gets_its_race_freedom_item() {
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let between = OccurrenceKey::generated(WireNodeId::from_digest([8; 32]));
     let other = other_claim();
-    let item = |occurrence, models| ProtocolTemporalItem {
+    let sb = under_ra.protocol.clone();
+    let elsewhere = "Elsewhere".to_owned();
+    let item = |occurrence, subject, models| ProtocolTemporalItem {
         occurrence,
-        subject: &under_ra.protocol,
+        subject,
         protocol,
         models,
         non_atomic_access: true,
     };
-    let written = protocol_request(&[item(&clause, &ra_models), item(&other, &tso_models)]);
-    let derived: Vec<_> = written.items()[2..]
+    let written = protocol_request(&[
+        item(&clause, &sb, &ra_models),
+        item(&between, &elsewhere, &ra_models),
+        item(&other, &sb, &tso_models),
+    ]);
+    let derived: Vec<_> = written.items()[3..]
         .iter()
         .map(|item| {
             let obligation = written.obligation(item.index()).expect("its obligation");
-            (item.item_kind(), obligation.kind.clone())
+            (
+                item.item_kind(),
+                obligation.subject.clone(),
+                obligation.kind.clone(),
+            )
         })
         .collect();
+    let deadlock = |subject: &String, models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::DeadlockFreedom),
+            subject.clone(),
+            ObligationKind::ProtocolDeadlockFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
+    let race = |subject: &String, models: &[(String, MemoryModelName)]| {
+        (
+            Some(ItemKind::RaceFreedom),
+            subject.clone(),
+            ObligationKind::RaceFreedom {
+                models: models.to_vec(),
+            },
+        )
+    };
     assert_eq!(
         derived,
         [
-            (
-                Some(ItemKind::DeadlockFreedom),
-                ObligationKind::DeadlockFreedom
-            ),
-            (
-                Some(ItemKind::RaceFreedom),
-                ObligationKind::RaceFreedom { models: ra_models }
-            ),
-            (
-                Some(ItemKind::RaceFreedom),
-                ObligationKind::RaceFreedom { models: tso_models }
-            ),
+            deadlock(&sb, &ra_models),
+            race(&sb, &ra_models),
+            deadlock(&elsewhere, &ra_models),
+            race(&elsewhere, &ra_models),
+            deadlock(&sb, &tso_models),
+            race(&sb, &tso_models),
         ]
     );
     assert!(written.unanchored().is_empty());
