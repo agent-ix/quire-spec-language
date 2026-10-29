@@ -9,7 +9,7 @@ review_set: subset
 
 ## Summary
 
-The model and temporal lock criteria continue to impose observable QSL conformance obligations. Their source of truth is identified by QSpec FR-001 and FR-453 rather than repeated as local member lists.
+The model and temporal lock criteria continue to impose observable QSL conformance obligations. Their source of truth is identified by QSpec FR-001, FR-201-AC-9 and FR-453 rather than repeated as local member lists.
 
 ## Findings
 
