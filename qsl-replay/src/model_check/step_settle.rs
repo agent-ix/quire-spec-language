@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn a_rejected_certificate_settles_inconclusive_never_proved() {
         let at = CertificateLocus::Query {
-            part: crate::certificate::QueryPart::Step,
+            part: crate::certificate::QueryPart::Step { row: None },
         };
         let settled = settle_step_simulation(StepBackendOutcome::Holds {
             certificate: BackendCertificate::Rejected {

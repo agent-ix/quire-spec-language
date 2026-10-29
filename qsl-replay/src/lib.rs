@@ -115,6 +115,9 @@ pub use certificate::simulation::{
     IncompleteLimit, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
     UndeterminedStep,
 };
+pub use certificate::smt::{
+    check_refinement_smt_proof, ProofFormat, RefinementSmtCertificate, RefutedQuery, SmtProofCheck,
+};
 pub use certificate::state_graph::{
     check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
 };
@@ -236,6 +239,9 @@ pub use monitor_plan::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
+};
+pub use qsl_eval::smt::{
+    encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind,
 };
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
