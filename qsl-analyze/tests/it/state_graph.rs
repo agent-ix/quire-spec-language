@@ -299,7 +299,7 @@ fn possible_reachestwo_for_one_binding_uses_the_por_ample_set() {
         &["a", "b", "c"],
         vec![StateGraphItem::for_binding(
             world.claim("ReachesTwo"),
-            binding,
+            binding.clone(),
         )],
         no_samples(),
     );
@@ -378,6 +378,21 @@ fn possible_reachestwo_for_one_binding_uses_the_por_ample_set() {
     );
     let replayed = positions(&world, &["a", "b", "c"], &paths[0].path);
     assert_eq!(world.value(&replayed[6], "a", "versionNumber"), 2);
+    for witness in paths {
+        let replay = world.replay_witness(
+            world.claim("ReachesTwo"),
+            binding.clone(),
+            witness.path.clone(),
+            witness.source.clone(),
+            &["a", "b", "c"],
+        );
+        assert_eq!(
+            replay.settlement,
+            qsl_replay::GraphReplaySettlement::Reproduced,
+            "each returned path reproduces with its evaluated witness"
+        );
+        assert_eq!(replay.evaluated_predicates, [(PredicateRole::Target, true)]);
+    }
 }
 
 /// FR-167-AC-6 (TC-592): state-graph exploration canonicalises roots and

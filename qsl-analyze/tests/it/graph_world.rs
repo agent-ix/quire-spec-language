@@ -12,13 +12,18 @@
 use std::collections::BTreeMap;
 
 use qsl_analyze::model_check::{StateGraphItem, StateGraphRequest};
-use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::{BackendId, ByteDigest, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_replay::ModelCheckLimits;
+use qsl_replay::{
+    GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
+    ModelTraceSubject, ObligationIdentity, RawSourceRef, ReplayLimits, ReplayRequestWire,
+    ReplayResult, ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+};
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -217,6 +222,7 @@ pub(crate) struct World {
     pub(crate) model: Model,
     pub(crate) package: CheckedPackage,
     document: Vec<u8>,
+    source: Vec<u8>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
@@ -286,6 +292,7 @@ impl World {
             model,
             package,
             document,
+            source: text.into_bytes(),
             packages,
             snapshots: BTreeMap::new(),
             initial: Vec::new(),
@@ -367,6 +374,114 @@ impl World {
             .expect("the package emits")
             .package()
             .package_id()
+    }
+
+    /// Recompile and replay one state-graph witness through FR-170.
+    pub(crate) fn replay_witness(
+        &self,
+        claim: &CheckedStateGraphClaim,
+        over: ModelInstance,
+        path: ModelPath,
+        source: WitnessSource,
+        keys: &[&str],
+    ) -> GraphReplayResult {
+        let source_record = DigestRecord::mint(
+            DigestDomain::SourceBytesV1,
+            ByteDigest::of(&self.source).as_bytes(),
+        );
+        let source_wire: (String, String, String, String, Option<String>, String) = (
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
+            "git".to_owned(),
+            "1".to_owned(),
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            source_record.hex(),
+        );
+        let package_id = self.package_id().record();
+        let sha256_jcs = |digest: [u8; 32]| {
+            (
+                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+                DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
+            )
+        };
+        let mut byte_provision = vec![
+            (
+                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+                source_record.hex(),
+                self.source.clone(),
+            ),
+            {
+                let (domain, hex) = sha256_jcs(digest_of(&self.document));
+                (domain, hex, self.document.clone())
+            },
+        ];
+        byte_provision.extend(self.snapshots.iter().map(|(digest, bytes)| {
+            let (domain, hex) = sha256_jcs(*digest);
+            (domain, hex, bytes.clone())
+        }));
+        let obligation = [3; 32];
+        let occurrence = claim
+            .occurrence()
+            .expect("a checked claim has an occurrence");
+        let envelope = GraphEvidenceEnvelope::new(
+            ObligationIdentity::from_digest(obligation),
+            occurrence.clone(),
+            occurrence.node(),
+            package_id,
+            vec![RawSourceRef::new(
+                "agent-ix".to_owned(),
+                "graph".to_owned(),
+                "git".to_owned(),
+                "1".to_owned(),
+                source_record,
+            )],
+            Vec::new(),
+            UNLIMITED,
+            Vec::new(),
+            BackendId::new("qsl-en-1"),
+            GraphEvidence::Witness {
+                paths: vec![(WitnessPath::Path(path), source)],
+                over: Some(over),
+            },
+        );
+        let wire = ReplayRequestWire {
+            profile_selections: Vec::new(),
+            package_id: (
+                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+                package_id.hex(),
+            ),
+            source_digests: vec![source_wire],
+            dependencies: Vec::new(),
+            replay_target: RequestTargetWire::default(),
+            source: ReplaySource::ModelGraph(Box::new(envelope)),
+            obligation_identity: obligation,
+            backend: "qsl-en-1".to_owned(),
+            state_environment: StateEnvironment::new(Vec::new()),
+            accounting_limits: UNLIMITED,
+            stage_limits: BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
+            declared_domains: Vec::new(),
+            byte_provision,
+        };
+        let subject = ModelTraceSubject {
+            timed: None,
+            initial: self.initial.clone(),
+            universes: vec![PopulationUniverse {
+                population: self.model.key(self.model.population),
+                keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            }],
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+        };
+        let ReplayResult::ModelGraph(replayed) =
+            qsl_replay::replay_model_graph(wire, &subject, ReplayLimits::default())
+                .expect("the state-graph witness replays")
+        else {
+            panic!("state-graph replay returns its typed result arm")
+        };
+        replayed
     }
 
     /// The reference of the object `key` of the world's type.
