@@ -1631,13 +1631,7 @@ fn model_object_types(
         let mut members = Vec::with_capacity(cases.len());
         for case in cases {
             let mut payload = Vec::new();
-            // FR-230: a `Clock` payload is the case's clock place, no data.
-            let clock = case.payload_type.as_ref().is_some_and(|payload_type| {
-                crate::model::domain_package::unaliased(payload_type, |key| {
-                    records.get(key).copied()
-                }) == Some((&ValueTypeRef::Clock, 0))
-            });
-            if let (false, Some(payload_type)) = (clock, &case.payload_type) {
+            if let Some(payload_type) = &case.payload_type {
                 match model_value_type(
                     payload_type,
                     Multiplicity {

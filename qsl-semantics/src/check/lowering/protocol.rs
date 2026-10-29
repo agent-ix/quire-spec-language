@@ -574,7 +574,7 @@ impl Lowering<'_> {
             self.set_protocol_key(index, ProtocolKey::AfterClauses);
             return Ok(Vec::new());
         }
-        match self.protocol_node(protocol, &law, owner, &[], &[], &location) {
+        match self.protocol_node_for(protocol, &law, owner, &[], &[], &location) {
             Ok(key) => {
                 self.set_protocol_key(index, ProtocolKey::Keyed(key));
                 Ok(Vec::new())
@@ -624,8 +624,14 @@ impl Lowering<'_> {
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
             let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
             let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
-            let key =
-                self.protocol_node(protocol, &law, owner, nodes, compensation_nodes, &location)?;
+            let key = self.protocol_node_for(
+                protocol,
+                &law,
+                owner,
+                nodes,
+                compensation_nodes,
+                &location,
+            )?;
             self.protocol_keys[index] = ProtocolKey::Keyed(key);
         }
         Ok(())
@@ -770,6 +776,24 @@ impl Lowering<'_> {
         Ok(key)
     }
 
+    fn protocol_node_for(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        law: &OperationLaw,
+        owner: EffectiveId,
+        attempts: &[AttemptNodes],
+        compensation_nodes: &[CompensationNodes],
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let previous = self
+            .active_protocol
+            .replace(protocol.form.name.name.clone());
+        let result =
+            self.protocol_node(protocol, law, owner, attempts, compensation_nodes, location);
+        self.active_protocol = previous;
+        result
+    }
+
     /// The nodes of one protocol whose every part is written, and its
     /// `protocol_clause` node's key.
     fn protocol_node(
@@ -855,6 +879,8 @@ impl Lowering<'_> {
             trigger,
             boolean,
         )?;
+        let compensation_keys = compensations.clone();
+        let terminal_key = terminal;
         let finish_node = protocol.checked.finish.as_ref().ok_or_else(unchecked)?.0;
         let mut nodes = run.nodes;
         nodes.insert(finish_node, finish);
@@ -927,6 +953,13 @@ impl Lowering<'_> {
                 nodes,
                 channels: named_channels.into_iter().collect(),
                 roles: named_roles,
+                compensations: compensation_keys,
+                terminal: terminal_key,
+                binders: self.protocol_binder_keys.remove(name).unwrap_or_default(),
+                expressions: self
+                    .protocol_expression_binders
+                    .remove(name)
+                    .unwrap_or_default(),
             },
         );
         Ok(clause)
@@ -2069,6 +2102,10 @@ pub(crate) struct ProtocolMembers {
     pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
     pub(crate) channels: BTreeMap<String, NodeKey>,
     pub(crate) roles: BTreeMap<String, NodeKey>,
+    pub(crate) compensations: Vec<NodeKey>,
+    pub(crate) terminal: Option<NodeKey>,
+    pub(crate) binders: Vec<super::super::protocol_clause::CheckedProtocolBinderKey>,
+    pub(crate) expressions: Vec<super::super::protocol_clause::CheckedProtocolExpressionBindings>,
 }
 
 /// What lowering holds for one protocol declaration.

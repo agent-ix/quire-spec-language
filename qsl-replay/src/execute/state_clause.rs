@@ -555,6 +555,11 @@ pub(crate) fn separate(
         Err(CallFailure::Input(_)) => {
             return Err(fault("separation-check-over-the-admitted-clause"))
         }
+        // This state-clause path selects no protocol node or supplied binder;
+        // checked-package protocol admission cannot be produced here.
+        Err(CallFailure::Admission(_)) => {
+            return Err(fault("separation-check-has-no-protocol-slot-admission"))
+        }
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => return Err(fault("cancelled-without-a-handle")),
         // Clause separation admits no supplied-value argument: the admission
