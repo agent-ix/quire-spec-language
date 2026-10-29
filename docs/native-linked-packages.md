@@ -256,9 +256,8 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
    Existing unknown_language/unknown_edition/unknown_profile distinctions apply.
    No decoder fallback or
    interpretation of an unsupported version's fields occurs.
-4. Verify the source's four labels and formal identity against the externally
-   selected bindings. A native label mismatch is stale_dependency; a foreign
-   native/formal identity is invalid_model_binding. Check wire authored clause
+4. Verify the source's formal identity against the externally
+   selected bindings. A foreign native/formal identity is invalid_model_binding. Check wire authored clause
    bindings against the complete external CheckBindings before they can be used.
    External bindings may be permuted, but duplicate names or owner/clause pairs,
    a different count, and any missing/extra/changed binding are

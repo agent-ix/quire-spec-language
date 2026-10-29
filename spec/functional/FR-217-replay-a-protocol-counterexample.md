@@ -90,15 +90,7 @@ causes, and the report counts as a refutation only then.
   enabledness, the lasso fairness check included, as FR-209 reads it
   (ADR-018 FA-2).
 - The executor SHALL read the fairness set, scheduler constraints included,
-  from the recompiled clause, and SHALL refuse a payload fairness set that
-  differs with `stale_dependency`/`content-mismatch`, naming both sets.
-- When a step's identity has no successor with the recorded state key, the
-  executor SHALL refuse `stale_dependency`/`content-mismatch`, naming the
-  step and both state keys.
-- The executor SHALL recompute a `send` step's send record from its
-  pre-state and, when it differs from the recorded `send_record`, SHALL
-  refuse `stale_dependency`/`content-mismatch`, naming the step and both
-  records.
+  from the recompiled clause.
 - The executor SHALL refuse a `send` step without a `send_record`, and any
   other step with one, before replay, with `invalid_runtime_input`/
   `invalid-value` as a wire-shape defect of the counterexample (FR-183-AC-6).
@@ -121,9 +113,7 @@ causes, and the report counts as a refutation only then.
 - For `kind: UndefinedEvaluation` whose `where.locus` names a state
   constraint (FR-158), the executor SHALL replay by FR-128's
   constraint-locus rule: it SHALL read the constraint from the locus and
-  never from the request, refuse `stale_dependency`/`content-mismatch`,
-  naming the locus, when the recompiled package has no `constraint` clause
-  there, re-execute the prefix through `ProtocolSystem`, and evaluate the
+  never from the request, re-execute the prefix through `ProtocolSystem`, and evaluate the
   constraint at every replayed state in order over that state's model state
   as FR-158 "Protocol subjects" reads it, checking no fairness and no
   formula. The first replayed state where the constraint is `Undefined`
@@ -151,14 +141,14 @@ causes, and the report counts as a refutation only then.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-217-AC-1 | The deadlock counterexample of ADR-027 §7 (`fork(Both)`, `attempt(A)`) replays: both post-state keys match, no step is enabled at s2, its instance is live, the recomputed blocked threads equal FR-211-AC-2's, and the result is `reproduced-with-evaluated-witness`. The envelope's steps serialize with protocol transition identities and the blocked list. | Test (TC-662) |
-| FR-217-AC-2 | Changing the second step's post-state key refuses `stale_dependency`/`content-mismatch`, naming the step and both state keys. Replacing the second step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-662) |
+| FR-217-AC-2 | Replacing the second step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-662) |
 | FR-217-AC-3 | A deadlock envelope whose blocked list drops `right` settles `inconclusive`, `ReplayParity`. An envelope whose prefix runs on to s6, which holds no live instance, with `kind: Deadlock` settles `inconclusive`, `ReplayParity`. | Test (TC-662) |
 | FR-217-AC-4 | The adversarial lasso of FR-212-AC-2 replays against the adversarial `Chatter` package and settles `reproduced-with-evaluated-witness`. The same lasso with the scheduler constraints added to its fairness set, replayed against the default `Chatter` package, refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled at every loop state and takes no step. | Test (TC-662) |
-| FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. Changing the recorded `outcome` refuses `stale_dependency`/`content-mismatch`, naming the step and both records. | Test (TC-662) |
+| FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. | Test (TC-662) |
 | FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses `invalid_runtime_input`/`invalid-value` before replay as a wire-shape defect and runs no step. | Test (TC-662) |
 | FR-217-AC-7 | Under a bounded profile, a fair protocol lasso whose loop has one counted step replays to `inconclusive` with cause `NoValue`, and the same lasso made unfair for a scheduler constraint refuses `invalid_runtime_input`/`invalid-value` as unfair. | Test (TC-662) |
 | FR-217-AC-8 | FR-209-AC-6's lasso, which holds one live instance at a time, replays to `reproduced-with-evaluated-witness` with `max_live_instances` 1 and with it unset (3). A hand-built prefix over FR-209-AC-1's protocol holding two `activate(Tick)` steps before any `finish` re-executes with `max_live_instances` 2, and with 1 refuses `invalid_runtime_input`/`invalid-value` at the second `activate`. FR-209-AC-7's lasso, whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, with `activate` enabled at every loop state and never taken, replays to `reproduced-with-evaluated-witness` under `max_live_instances` 1. Replay reads that `activate` as enabled, and it is in no fairness class (FR-212), so the loop is fair and is not refused as unfair. | Test (TC-1230) |
-| FR-217-AC-9 | Over ADR-025 §10's `SB` under `sc`, with `constraint Edge using v on M::Cell at current { 6 mod (1 - self.v) >= 0 }` named by the request and §10's claim, the run settles `Violated` with cause `UndefinedEvaluation`: `Edge` holds at the initial state (both cells at 0) and is undefined at the first reached state with a cell at 1, so the counterexample is one store step (`Sx` or `Sy`) with `where.locus` naming `Edge` and cause `division-by-zero`. It replays through a request that selects no reduction to `reproduced-with-evaluated-witness` with that `UndefinedEvaluation` value. The same payload with its store removed, which ends at the initial state where `Edge` holds, and with `cause` changed to another reason, each settle `inconclusive`, `ReplayParity`; the payload in an envelope over the unit where `Edge` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-662) |
+| FR-217-AC-9 | Over ADR-025 §10's `SB` under `sc`, with `constraint Edge using v on M::Cell at current { 6 mod (1 - self.v) >= 0 }` named by the request and §10's claim, the run settles `Violated` with cause `UndefinedEvaluation`: `Edge` holds at the initial state (both cells at 0) and is undefined at the first reached state with a cell at 1, so the counterexample is one store step (`Sx` or `Sy`) with `where.locus` naming `Edge` and cause `division-by-zero`. It replays through a request that selects no reduction to `reproduced-with-evaluated-witness` with that `UndefinedEvaluation` value. The same payload with its store removed, which ends at the initial state where `Edge` holds, and with `cause` changed to another reason, each settle `inconclusive`, `ReplayParity`. | Test (TC-662) |
 
 ## Dependencies
 

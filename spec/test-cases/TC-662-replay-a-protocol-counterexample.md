@@ -17,21 +17,19 @@ Scope: FR-217-AC-1 to FR-217-AC-7, FR-217-AC-9.
 ## Test Procedure
 
 1. Replay `Fill`'s deadlock counterexample; serialize its envelope.
-2. Replay with a changed state key and with `join(Both)` as the second step.
+2. Replay with `join(Both)` as the second step.
 3. Replay with a blocked list missing `right`, and with a prefix that runs
    to s6.
 4. Replay FR-212-AC-2's lasso against the adversarial package, and with
    scheduler constraints against the default package.
-5. Replay FR-217-AC-5's counterexample, then with the recorded `outcome`
-   changed, with the `send_record` removed, and with one added to an
-   `attempt` step.
+5. Replay FR-217-AC-5's counterexample, then with the `send_record`
+   removed, and with one added to an `attempt` step.
 6. Under a bounded profile, replay a fair protocol lasso whose loop has one
    counted step, and the same lasso unfair for a scheduler constraint.
 7. Run FR-217-AC-9's `SB` under `sc` with the constraint `Edge` named by
    the request, and replay its counterexample through a request that
    selects no reduction; then with its store removed; then with `cause`
-   changed; then in an envelope over the unit declaring `Edge` as an
-   `invariant`, with that unit's `package_id`.
+   changed.
 
 Tag the tests `#[trace("TC-662", "FR-217-AC-n")]`.
 
@@ -39,17 +37,14 @@ Tag the tests `#[trace("TC-662", "FR-217-AC-n")]`.
 
 - Step 1: `reproduced-with-evaluated-witness`; protocol identities and
   the blocked list in the envelope.
-- Step 2: `stale_dependency`/`content-mismatch` naming the step and both
-  state keys; `invalid_runtime_input`/`invalid-value`.
+- Step 2: `invalid_runtime_input`/`invalid-value`.
 - Step 3: `inconclusive`, `ReplayParity`, both times.
 - Step 4: `reproduced-with-evaluated-witness`; then
   `invalid_runtime_input`/`invalid-value` as unfair.
 - Step 5: `send_record` on the `send` step only, absent from the key and
-  the identity, and replayed; `stale_dependency`/`content-mismatch` naming
-  the step and both records; a pre-replay `invalid_runtime_input`/`invalid-value` refusal for the missing
+  the identity, and replayed; a pre-replay `invalid_runtime_input`/`invalid-value` refusal for the missing
   and for the extra member, with no step run.
 - Step 6: `inconclusive` with cause `NoValue`; then `invalid_runtime_input`/`invalid-value` as unfair.
 - Step 7: `Violated`, cause `UndefinedEvaluation`, one store step, `where.locus`
   naming `Edge`, cause `division-by-zero`; `reproduced-with-evaluated-witness`;
-  `inconclusive`, `ReplayParity`, twice; refused
-  `stale_dependency`/`content-mismatch` naming the locus.
+  `inconclusive`, `ReplayParity`, twice.

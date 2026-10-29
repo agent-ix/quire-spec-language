@@ -92,7 +92,6 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   no range violation.
 - Step 8: `invalid_runtime_input`/`unknown-member` at `/replay/function`,
   then at `/replay/frame_operation`, each naming the target,
-  `replay_state_clause` and `state_clause`; `stale_dependency`/
-  `content-mismatch` naming both targets; the same three refusals with the
+  `replay_state_clause` and `state_clause`; `invalid-request` naming both targets; the same three refusals with the
   source that does not compile; `missing_import`/`missing-selection` for
   each with the provision entry removed.

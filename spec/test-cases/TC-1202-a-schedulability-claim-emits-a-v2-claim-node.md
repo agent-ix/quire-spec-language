@@ -33,8 +33,7 @@ with `jitter 0 ms` on `a`; a unit declaring `CtlFp`'s claim twice.
 3. Resolve `CtlFp`'s triple in the recompiled package; resolve an unknown
    NodeId, a `claim`/`state_graph` node's NodeId and another ordinal through
    the schedulability lookup; give `CtlFp`'s triple to the temporal and
-   state-graph lookups; settle a request with an unresolved triple; check
-   `CtlFp`'s outcome against `CtlEdf`'s triple.
+   state-graph lookups; settle a request with an unresolved triple.
 4. Edit `CtlFp`'s node (policy `rate-monotonic`; tasks `b`, `a`, `c`; `a`'s
    period `0`) and feed each to the I2 reader.
 
@@ -49,6 +48,6 @@ Tag the tests `#[trace("TC-1202", "FR-454-AC-n")]`.
   `jitter 0 ms` variants keep `CtlFp`'s node id; the doubled claim is one
   node with ordinals 0 and 1.
 - Step 3: the claim and its task set; `clause-root-unresolved` for each bad
-  triple and for the other lookups; `Failed` with no evidence checked; `stale_dependency`/`content-mismatch` naming both obligation identities.
+  triple and for the other lookups; `Failed` with no evidence checked.
 - Step 4: `invalid_package`/`invalid-value`; `invalid_semantic_graph` at
   `tasks`; `invalid_timed_model`/`invalid-task-set` at `a`'s aggregate.

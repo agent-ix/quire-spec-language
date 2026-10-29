@@ -62,7 +62,7 @@ Whitespace and object field order may differ from the constructor's encoding.
 ArtifactUsage continues to describe the actual construction pass, including its
 encoded byte count; it is not a count of the retained external bytes. Input byte
 preflight and construction apply the same ceiling independently. Structural
-limits retain resource_exhausted; identity mismatches use stale_dependency;
+limits retain resource_exhausted;
 malformed JSON or body data use invalid_runtime_input. No failed read yields a
 partial artifact. Serde's default recursion limit remains enabled.
 

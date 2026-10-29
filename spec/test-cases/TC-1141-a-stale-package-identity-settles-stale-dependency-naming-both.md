@@ -1,6 +1,6 @@
 ---
 id: TC-1141
-title: "Retired: a stale package identity settles stale-dependency naming both identities"
+title: "Retired: the package-identity staleness check is withdrawn"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-169
@@ -14,7 +14,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-339
     type: verifies
 ---
-# TC-1141: Retired: a stale package identity settles stale-dependency naming both identities
+# TC-1141: Retired: the package-identity staleness check is withdrawn
 
 ## Description
 

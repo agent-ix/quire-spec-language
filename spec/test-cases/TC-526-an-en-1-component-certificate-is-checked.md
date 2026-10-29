@@ -65,7 +65,7 @@ Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
   branch `w`; then `WitnessFails` three times.
 - Step 7: `Violated`; `LivenessNeedsComponents` and `failed`; `proved`,
   `certified`; `NotLiveness`; accepted, `BackwardEdge`, `NotPartition`,
-  `PackageMismatch`, `LivenessNeedsComponents`, `NotLiveness`.
+  `LivenessNeedsComponents`, `NotLiveness`.
 - Step 8: the diagnostic is not a component certificate and is refused as
   such; the ordinary certificate still resolves and checks all members of
   the original fairness set, including `memory` members.

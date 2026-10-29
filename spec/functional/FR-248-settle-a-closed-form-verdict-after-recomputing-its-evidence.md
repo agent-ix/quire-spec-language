@@ -55,8 +55,7 @@ pub fn check_closed_form(
 
 `ClosedFormResult` carries the originating obligation identity alongside the
 outcome FR-247 produced for it. The caller SHALL retain the identity resolved
-for the analysis claim; the checker verifies it against both `item` and the
-identity of the claim resolved from the recompiled package.
+for the analysis claim.
 
 ## Outputs
 
@@ -73,13 +72,6 @@ The FR-331 terminal record of the claim.
   check no evidence, and the settlement SHALL settle the item `Failed`: the
   unresolved root is a fault of the request, not of the evidence, as FR-410
   states for a state-graph triple.
-- If `result.originating_obligation` differs from `item` or from the identity
-  of the claim `claim` resolves to, then the checker SHALL refuse
-  `stale_dependency`/`content-mismatch`, naming the originating identity and
-  each differing expected identity, as
-  [FR-245](./FR-245-check-a-zone-certificate-in-the-qualified-core.md) does.
-  Each identity is keyed from its claim's FR-454 node, so two claims with
-  different nodes have different identities.
 - For `Schedulable` with fixpoints, the checker SHALL check that each
   stated `R` satisfies the recurrence exactly, that no smaller value does,
   and that `R + J_i <= D_i`.
@@ -122,8 +114,8 @@ The FR-331 terminal record of the claim.
 | FR-248-AC-1 | `schedulable CtlFp on Ctl under fixed_priority;` settles `proved`, `Proved{ClosedForm{FixedPriorityRta}, Certified}`, with fixpoints `(1, 3, 12)` in the record; `schedulable CtlEdf on Ctl under edf;` settles `Proved{ClosedForm{EdfQpa}, Certified}`. With the third WCET 6 both settle `refuted` with their evidence. | Test (TC-703) |
 | FR-248-AC-2 | An outcome with the fixpoint 12 replaced by 11 settles `inconclusive`, `ReplayParity`; a miss whose last iterate 13 is replaced by 12 settles `inconclusive`, `ReplayParity`. For `a` (`C = 1`, `T = D = 2`, priority 1) and `b` (`C = 1`, `T = 3`, `D = 1`, blocking 1, priority 2), evidence naming `b`'s job 2 with iterates `4, 6, 7, 8` settles `inconclusive`, `ReplayParity`, naming job 1, whose completion 6 does not exceed `2 · 3`; the evidence naming job 0 with the iterate `2` settles `refuted`. | Test (TC-703) |
 | FR-248-AC-3 | FR-247-AC-3's `C(HI) = 6` result settles `inconclusive`, `SufficientTestFailed`; its base result settles `Proved{ClosedForm{AmcRtb}, Certified}`. | Test (TC-703) |
-| FR-248-AC-4 | A `ClosedFormResult` carrying `CtlFp`'s obligation identity and fixed-priority outcome, checked against `CtlEdf`'s item and claim triple, refuses `stale_dependency`/`content-mismatch` naming both identities, keyed from their FR-454 nodes whose `policy` differs; the checker reads the task set from the recompiled package, so a caller cannot supply one. | Test (TC-703) |
-| FR-248-AC-5 | A `ClosedFormResult` carrying `CtlFp`'s obligation identity and fixed-priority outcome, checked with `claim` the triple FR-454 returns for `CtlFp`, reads `Ctl` from the recompiled package and settles as AC-1 states; with `claim` naming an unknown NodeId, `CtlFp`'s node with another ordinal, or a `claim`/`state_graph` node, the checker returns `clause-root-unresolved`, checks no evidence, and the item settles `failed`, `unavailable`, `Failed`; with `claim` the triple of `CtlEdf`, it refuses `stale_dependency`/`content-mismatch` naming the identities of `CtlFp` and `CtlEdf`. | Test (TC-703) |
+| FR-248-AC-4 | **RETIRED (staleness check withdrawn).** The checker no longer compares `originating_obligation` with the item or with the identity of the resolved claim; no QSL check could fail on it. The checker still reads the task set from the recompiled package, so a caller cannot supply one. | Test (TC-703), retired |
+| FR-248-AC-5 | A `ClosedFormResult` carrying `CtlFp`'s obligation identity and fixed-priority outcome, checked with `claim` the triple FR-454 returns for `CtlFp`, reads `Ctl` from the recompiled package and settles as AC-1 states; with `claim` naming an unknown NodeId, `CtlFp`'s node with another ordinal, or a `claim`/`state_graph` node, the checker returns `clause-root-unresolved`, checks no evidence, and the item settles `failed`, `unavailable`, `Failed`. | Test (TC-703) |
 
 ## Dependencies
 

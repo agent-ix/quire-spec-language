@@ -292,7 +292,7 @@ identify original model declarations where relevant.
 New phases are validate and evaluate. New codes are invalid_runtime_input,
 dangling_reference, incomplete_population, unavailable_observation,
 population_delta_mismatch, frame_violation, cancelled and runtime_invariant.
-Existing wrong_snapshot, stale_dependency, invalid_model_binding and
+Existing wrong_snapshot, invalid_model_binding and
 resource_exhausted retain their distinctions. Cancelled, resource_exhausted,
 incomplete_population and unavailable_observation are incomplete conditions.
 The separate per-diagnostic classification is retained when defects coexist.

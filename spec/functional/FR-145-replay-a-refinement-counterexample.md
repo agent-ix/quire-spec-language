@@ -71,8 +71,7 @@ count.
   `F_C` and `F_A` from the recompiled node.
 - It SHALL re-admit both subjects, the abstract one with the derived
   universes (ADR-020 RM-2), and re-execute the concrete prefix and loop by
-  FR-128's rules, with FR-128's refusals for a step not enabled, a
-  post-state that differs from the recorded one, an `initial` index out of
+  FR-128's rules, with FR-128's refusals for a step not enabled, an `initial` index out of
   range and a loop that does not close.
 - While the concrete side is a protocol subject, the executor SHALL
   re-execute through `ProtocolSystem` with ADR-027 PX-2's refusals.

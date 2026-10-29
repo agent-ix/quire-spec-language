@@ -306,11 +306,11 @@ third representation that only its own test uses
 (`frame_subjects_resolve_only_through_the_recorded_correspondence`, TC-248,
 FR-088-AC-2). TK-3 fixes it (§6).
 
-#### PF-6 Staleness
+#### PF-6 Document identity
 
-| Input | Identity carrier | Check | Effect of a change |
+| Input | Identity carrier | Check | Effect of a mismatch |
 | --- | --- | --- | --- |
-| Snapshots and invocation | Document `identity` label (FR-106) | byte provision keyed by that identity, checked at admission | `stale_dependency`/`content-mismatch` |
+| Snapshots and invocation | Document `identity` label (FR-106) | byte provision keyed by that identity, checked at admission | `invalid-request` |
 
 #### PF-7 No protocol-internal redesign
 

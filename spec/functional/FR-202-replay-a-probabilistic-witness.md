@@ -167,8 +167,7 @@ No guessed QSpec wire spelling is adopted by this semantic contract.
   `refuted`. A sum at or below the bound, paths that are not prefix-free, an
   event that evaluates the other way, or an unfair/TS-5-inadmissible witness SHALL settle
   `inconclusive`, `ReplayParity`.
-- A post-state with no matching successor SHALL refuse `stale_dependency`/
-  `content-mismatch`; a step that is not enabled, a value outside its
+- A step that is not enabled, a value outside its
   support, or a choice the scheduler gives probability 0 SHALL refuse
   `invalid_runtime_input`/`invalid-value`.
 
@@ -177,7 +176,7 @@ No guessed QSpec wire spelling is adopted by this semantic contract.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-202-AC-1 | §15.4's `Deliver`: a one-path set (`send_b` lost, `send_b` lost) with scheduler `send_b` at both live states replays `refuted` with path probability `1/25 > 3/100`. §15.2 at `2 ms`: the one-path set (`request`, `attempt` with `d = 3 ms`, `outcome = Ok`) replays with probability `343/5000 > 1/20`. | Test (TC-637) |
-| FR-202-AC-2 | §15.4's path with its second step changed to `send_a` refuses `invalid_runtime_input`/`invalid-value` (not the scheduler's choice); with `lost` drawn as a value outside `{true, false}` it refuses the same; with a post-state altered it refuses `stale_dependency`/`content-mismatch`; the path listed twice settles `inconclusive`, `ReplayParity` (not prefix-free). | Test (TC-637) |
+| FR-202-AC-2 | §15.4's path with its second step changed to `send_a` refuses `invalid_runtime_input`/`invalid-value` (not the scheduler's choice); with `lost` drawn as a value outside `{true, false}` it refuses the same; the path listed twice settles `inconclusive`, `ReplayParity` (not prefix-free). | Test (TC-637) |
 | FR-202-AC-3 | §15.3's per-window claim is refuted with subsystem evidence: a dyadic `Lower` certificate for `Pr(not E)` with value above `1/100`, which replay accepts through FR-201's checker. FR-200-AC-2's `Coin2` witness replays `refuted` and passes the fairness check; the same witness with the scheduler taking `wait` at the live state forever fails the fairness check and settles `inconclusive`, `ReplayParity`. With no authored fairness, FR-196's capped x2 policy chooses IdleDelay3/4 and IdleObserve1/4, gives elapsed value5>3 and replays the threshold refutation; the same choice distribution after each observation supplies almost-sure continuation. A delay-only recurrent policy fails derived observation admissibility. Observe from idle-ready or its operation-identity alias refuses invalid-value; replacing Observe by Delay cannot reproduce its letter/post-key/elapsed. | Test (TC-637) |
 | FR-202-AC-4 | With `max_witness_paths` 0, §15.4's refutation carries subsystem evidence instead of a path set and still replays `refuted`. Replaying one envelope twice gives equal outcomes. | Test (TC-637) |
 | FR-202-AC-6 | Over the two-point model (`M` 1 or 3, probability 1/2 each), the path to `M = 1` (`V = 1/2`, `N = 0`) replays `refuted` for `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) (equality refutes), and settles `inconclusive`, `ReplayParity` for `quantile 0.9 of (M) >= 3`, which holds. Over its variant that activates with probability 1/2 (`M` 1 or 3 with probability 1/4 each), the path set of the `M = 1` path and the not-activated path (`V = 1/4`, `N = 1/2`) replays `refuted` for `quantile 0.5 of (M) >= 3`, and the `M = 1` path alone settles `inconclusive`, `ReplayParity`. | Test (TC-637) |

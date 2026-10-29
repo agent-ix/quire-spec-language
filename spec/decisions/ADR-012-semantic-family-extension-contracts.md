@@ -1297,7 +1297,7 @@ that produce one. None adds a category.
 | admission (FR-106) | a document over a reader limit | incomplete | `stage_limit_exceeded` |
 | admission (FR-106) | a re-run `model.*` walk past its `ModelNormalizationLimitsV1` ceiling | incomplete | `resource_exhausted` |
 | admission (FR-106) | a wrong format | refusal | `unknown_wire` |
-| admission (FR-106) | a label mismatch | refusal | `stale_dependency` |
+| admission (FR-106) | a label mismatch | refusal | `invalid-request` |
 | admission (FR-106) | a bad document, selection or value | refusal | `invalid_runtime_input`, `wrong_snapshot`, `invalid_model_binding` |
 | admission (FR-106) | a reference to a key absent from a complete population | refusal | `dangling_reference` |
 | admission (FR-106) | a required population declared incomplete | incomplete | `incomplete_population` |

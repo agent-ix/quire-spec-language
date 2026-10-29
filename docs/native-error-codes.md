@@ -40,7 +40,6 @@ reused; prose may change without changing classification.
 | unknown_wire | The native package or runtime-input format selector is unsupported. |
 | unknown_required_feature | A package feature is unknown or outside the consumer's declared support. |
 | missing_import | A selected formal package or native import alias is absent. |
-| stale_dependency | A known package has no exact selected identity and version. |
 | ambiguous_declaration | Multiple exact candidates or visible exports match; related formal loci are retained. |
 | missing_declaration | A required value, field, type or variant cannot be resolved. |
 | invalid_model_binding | An explicit context binding or clause name is invalid. |

@@ -74,8 +74,7 @@ on purpose.
   include that content either; each implementation SHALL render such an
   entry's identity label or a bounded descriptor only.
 - FR-069 through FR-072 SHALL type every refusal-cause field they define
-  (including the fields of the `stale_dependency`/`content-mismatch`
-  and bound-exceeded causes)
+  (including the fields of the bound-exceeded causes)
   to hold only an identity label, a locus, a category, or another bounded
   descriptor, so no refusal cause's `Debug`/`Display` rendering can expose
   unredacted transcript, byte-provision, or full concrete-value content.

@@ -12,8 +12,7 @@ relationships:
 
 Verify both entries of FR-358. Both recompile the original proving context,
 select the claimed equality node, derive the operand
-domains and positions, refuse defective bounds and a mismatched O-09
-identity ahead of any settlement, and carry the obligation identity on
+domains and positions, refuse defective bounds ahead of any settlement, and carry the obligation identity on
 every outcome, the full claim (the observation too). `replay_composite_parity` compares exact equality and the
 pair count with the retained shadow, and never settles `Refuted`.
 `settle_verified_shadow` applies the coverage rule and settles by rows V-1
@@ -25,8 +24,7 @@ Scope: FR-358-AC-1 to FR-358-AC-9.
 
 Use FR-358's unit and its names `E`, `N`, `B`, `f`, `g`, `h` and `k`. Build
 each request from the unit's spine compile. Unless a step says otherwise,
-each request's `obligation_identity` is FR-358 step 6's structural identity of that
-call's harness bounds.
+each request carries an `obligation_identity` that the replay carries unchanged.
 
 1. Falsified, row F-7, with `refinement: Exhausted`, at `E`, with operands
    `Q { x: 1, s: [2] }` and `Q { x: 1, s: [3] }` and `native` `Completed`
@@ -50,8 +48,7 @@ call's harness bounds.
    `function` replay target; with a `node` the package does not hold; with
    the node of `h`'s body while the `function` replay target names `f`; with `operator`
    `NotEqual`; with an `occurrence` the node does not have in `f`'s body and
-   with one of another function; and with an `obligation_identity` over
-   `[0, 9]` on the first `x` while the harness bound is `[0, 8]`.
+   with one of another function.
 4. Verified, `success_checks` 4: at `E` with `Exhausted` and `B`; with
    `[-1, 10]` on the first `x`; at `N` with `Exhausted` and `B`'s left half;
    at `k` with `DeclaredDomain`s of cardinality 5 on each `s` and harness
@@ -81,12 +78,8 @@ call's harness bounds.
 
 9. Occurrences, at `d(a: Q, b: Q): Boolean { (a = b) and (a = b) }`: each
    of the node's two occurrences, under its own identity, through both
-   entries; occurrence 2's claim under occurrence 1's identity.
-10. Identity, written independently: the canonical O-09 text for `f` over
-    `B` and for `g`, built as a tuple in the test, equals the request's identity; a
-    composite literal operand's argument is `graph_child` over its own node
-    id with the empty `bounds` domain; at `h`, the argument's text holds the
-    depth the harness drew, for depth 3 and for depth 4.
+   entries.
+10. (Retired with the identity tie.)
 11. Full claim: for each outcome of steps 2 and 3 and of rows V-1 to V-5,
     `report.claim()` equals the identity built from what was sent, and
     equals no identity built from a changed `shadow` pair count, `native`,
@@ -126,9 +119,8 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
     (`Incomplete(ResourceExhausted)`). The F-4, F-5 and F-6 reports differ in
     their stage.
 - Step 3: in order, `UnknownFunction` (`missing-name`), three `ScalarIdentity`
-  (`content-mismatch`) refusals each with its own cause, two
-  `ScalarIdentity::Occurrence` refusals, and `ScalarIdentity::Obligation`
-  naming both identities. Each report carries the full claim.
+  (`invalid-request`) refusals each with its own cause and two
+  `ScalarIdentity::Occurrence` refusals. Each report carries the full claim.
 - Step 4: `Proved { basis: Checks { success_checks: 4 }, certification: Certified }`, success, for each (row V-4).
 - Step 5: `Tested`, success and never `Proved`, for each (row V-5).
 - Step 6: `Failed` for both `refinement: Disagreed` calls (row V-1);
@@ -139,10 +131,8 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
   the key.
 - Step 8: `Disagreed` (`Failed`, never `Refuted`) for each case.
 - Step 9: `Agrees` for both occurrences through the falsified entry and
-  `Proved` through the verified one; occurrence 2 under occurrence 1's
-  identity refuses `ScalarIdentity::Obligation`.
-- Step 10: every identity equals the hand-built tuple; two drawn depths give
-  two identities.
+  `Proved` through the verified one.
+- Step 10: none; retired.
 - Step 11: equal for the sent claim and unequal for each changed member.
 - Step 12: `LimitAboveReader` under the default, a settlement when raised.
 - Step 13: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming `replay_composite_parity` and `function` (FR-358-AC-9).

@@ -49,8 +49,7 @@ constructor validation. Altering any included declaration changes this import's
 artifact bytes; no external package closure is guessed.
 
 Resolve all imports in source order. A package absent from the supplied inventory
-returns missing_import. A known package with no exact revision returns
-stale_dependency.
+returns missing_import.
 Multiple exact candidates refuse as ambiguous_declaration; no input order wins.
 Distinct imports may share an alias. Context/enum lookup considers all exact
 imports under that alias, chooses one matching export or reports missing_declaration
@@ -98,7 +97,7 @@ no externally observable partially constructed LinkedPackage and caches no
 request state for later calls.
 
 The existing Diagnostic gains a link phase and codes missing_import,
-stale_dependency, ambiguous_declaration, missing_declaration and
+ambiguous_declaration, missing_declaration and
 invalid_model_binding. Structured related formal declaration locations and a
 canonicalization upstream diagnostic, when it fails, are retained as typed
 sibling fields on `LinkingError` (ADR-011 §6.1: the foundation-layer
