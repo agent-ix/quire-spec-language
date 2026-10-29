@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit: <sha removed> (branch `task/211-type-ownership`), file
+Round 1. Reviewed commit: 660aa25 (branch `task/211-type-ownership`), file
 `spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md` and its
 index row in `spec/spec.md`.
 
@@ -63,7 +63,7 @@ concrete fix.
 
 ## Method
 
-- Read ADR-013 at <sha removed> in full, and the `spec/spec.md` diff.
+- Read ADR-013 at 660aa25 in full, and the `spec/spec.md` diff.
 - Read the bodies of #211, #209, #210, #213, #229, #231, #185, #222, #186,
   #212, #215, #226, #131, #217 and #188 (`gh issue view`).
 - Read accepted AD-016 at `quire-specification` `origin/main`: the System
@@ -129,11 +129,11 @@ New finding introduced by the revision:
 Round-2 verdict: ACCEPT WITH FINDINGS. No high finding remains. FND-010
 (medium) is new.
 
-## Round 3 (commit <sha removed>)
+## Round 3 (commit 4152eb8)
 
-PR #236 re-review of the delta <sha removed>..<sha removed>, against ADR-011 at <sha removed>
-and ADR-012 at <sha removed>. The full finding table is in
-[base.md](base.md) Round 3. ADR-013 line numbers are at <sha removed>.
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
 
 - FND-010 stays resolved. QC-8 now lists the `ReplaySource` variant, the
   `QualifiedName`, the #231 envelope members and the executor pin.

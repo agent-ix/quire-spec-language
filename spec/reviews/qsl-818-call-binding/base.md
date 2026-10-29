@@ -3,7 +3,7 @@ id: SR-11762
 title: "Base review of FR-367 and TC-1053 (QSL-818, PR #915)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/test-cases/TC-1053-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/spec.md"
+scope: "agent-ix/quire-spec-language@35042dc696ecfa1a71a62ecbb58f10529b8fb0f4; spec/functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/test-cases/TC-1053-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/spec.md"
 review_set: subset
 ---
 # Base review of FR-367 and TC-1053
@@ -26,4 +26,4 @@ FIX. ID formats valid, FR-367-AC-1..AC-9 each have a TC-1053 procedure step and 
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | <sha removed> |
+| FND-001 | fixed | 530ecc8c4 |

@@ -3,14 +3,14 @@ id: SR-11763
 title: "Integrity review of FR-367 and TC-1053 (QSL-818, PR #915)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/test-cases/TC-1053-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/spec.md"
+scope: "agent-ix/quire-spec-language@35042dc696ecfa1a71a62ecbb58f10529b8fb0f4; spec/functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/test-cases/TC-1053-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md, spec/spec.md"
 review_set: subset
 ---
 # Integrity review of FR-367 and TC-1053
 
 ## Summary
 
-Ticket: QSL-818. PR quire-spec-language#915, head <sha removed>. Checked FR-367's Behavior against its own Outputs and ACs, against Contract IR origin/main `scalar_application_operands` (crates/quire-contract-model/src/checked_package/v2/scalar_operands.rs) and the planned `parameter_declaration` (IR FR-038 "Typed parameter declaration", AC-258..261), and against QSL's own lowering (qsl-semantics/src/check/lowering.rs). Three internal contradictions: the inline-literal path is unreachable for QSL-compiled packages so AC-2/AC-6/AC-7/AC-8 contradict Behavior step 4; AC-7 contradicts Behavior step 6 on an out-of-i64 range endpoint; and AC-8's `Incomplete` has no arm in the declared return type.
+Ticket: QSL-818. PR quire-spec-language#915, head 35042dc69. Checked FR-367's Behavior against its own Outputs and ACs, against Contract IR origin/main `scalar_application_operands` (crates/quire-contract-model/src/checked_package/v2/scalar_operands.rs) and the planned `parameter_declaration` (IR FR-038 "Typed parameter declaration", AC-258..261), and against QSL's own lowering (qsl-semantics/src/check/lowering.rs). Three internal contradictions: the inline-literal path is unreachable for QSL-compiled packages so AC-2/AC-6/AC-7/AC-8 contradict Behavior step 4; AC-7 contradicts Behavior step 6 on an out-of-i64 range endpoint; and AC-8's `Incomplete` has no arm in the declared return type.
 
 ## Findings
 
@@ -26,7 +26,7 @@ FIX. Operand order and arity match IR (wire argument order, one entry per argume
 
 ## New findings (disposition pass 1)
 
-Reviewed at agent-ix/quire-spec-language@<sha removed> (`git diff <sha removed>..<sha removed>).
+Reviewed at agent-ix/quire-spec-language@530ecc8c4 (`git diff 35042dc..530ecc8`).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
@@ -37,8 +37,8 @@ Reviewed at agent-ix/quire-spec-language@<sha removed> (`git diff <sha removed>.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | <sha removed> |
-| FND-002 | fixed | <sha removed> |
-| FND-003 | fixed | <sha removed> |
-| FND-004 | fixed | <sha removed> |
-| FND-005 | fixed | <sha removed> |
+| FND-001 | fixed | 530ecc8c4 |
+| FND-002 | fixed | 530ecc8c4 |
+| FND-003 | fixed | 530ecc8c4 |
+| FND-004 | fixed | a844450cd |
+| FND-005 | fixed | a844450cd |

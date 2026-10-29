@@ -3,7 +3,7 @@ id: SR-17227
 title: "spec-review of the hyper query request, FR-315 amendment (quire-spec-language PR 1564)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; git diff origin/main...<sha removed> (PR 1564, branch qsl-1010-fr315-seam-2): spec/functional/FR-315-encode-the-smt-lib-transition-relation.md, spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md, spec/test-cases/TC-1120-the-hyper-self-composition-smt-queries-are-canonical.md, spec/test-cases/TC-1190-the-hp-2-product-identity-binds-each-smt-outcome-to-its-item.md, spec/test-cases/TC-1264-hyper-atoms-and-match-conjuncts-are-lowered-and-evaluated.md"
+scope: "agent-ix/quire-spec-language@7b12b96a7ae63f280f7d58db025668034e82a909; git diff origin/main...7b12b96a7 (PR 1564, branch qsl-1010-fr315-seam-2): spec/functional/FR-315-encode-the-smt-lib-transition-relation.md, spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md, spec/test-cases/TC-1120-the-hyper-self-composition-smt-queries-are-canonical.md, spec/test-cases/TC-1190-the-hp-2-product-identity-binds-each-smt-outcome-to-its-item.md, spec/test-cases/TC-1264-hyper-atoms-and-match-conjuncts-are-lowered-and-evaluated.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-315
@@ -22,7 +22,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1010. One folded pass (spec-review with the EARS, integrity, evidence and failure-domain checks) over `git diff origin/main...<sha removed>. The branch merges cleanly with main (<sha removed>, whose only spec change is a wording fix in FR-488). `quire validate` reports no error for the five files. Read against merged FR-487, FR-488, FR-176, FR-182, FR-336, FR-315-AC-7 to AC-13, AC-43 and AC-45, and against the code on main.
+Ticket: QSL-1010. One folded pass (spec-review with the EARS, integrity, evidence and failure-domain checks) over `git diff origin/main...7b12b96a7`. The branch merges cleanly with main (49a3396c9, whose only spec change is a wording fix in FR-488). `quire validate` reports no error for the five files. Read against merged FR-487, FR-488, FR-176, FR-182, FR-336, FR-315-AC-7 to AC-13, AC-43 and AC-45, and against the code on main.
 
 Code on main, checked symbol by symbol:
 

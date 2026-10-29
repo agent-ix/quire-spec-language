@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit <sha removed> on `task/210-family-extension`. ADR-012 is a
+Round 1. Reviewed commit 048deb3 on `task/210-family-extension`. ADR-012 is a
 design record with no AC rows. Its obligations are the rules it states in
 §1–§12, and the tickets it hands them to. This review asks, for each rule,
 which verification method would show it holds, and whether the record names
@@ -43,7 +43,7 @@ correct. The gaps are in the evidence.
 - **#212:** the record gives evidence for only three of the seven gate
   scenarios.
 
-Verdict: **ACCEPT WITH FINDINGS** (round 2, commit <sha removed>). Round 1 was
+Verdict: **ACCEPT WITH FINDINGS** (round 2, commit 8fb238b). Round 1 was
 also ACCEPT WITH FINDINGS. The revision resolves most findings. FND-005
 (solver-absence test) and FND-008 (§12 change-set measurement) stay open at
 medium; see "Round 2".
@@ -96,7 +96,7 @@ medium; see "Round 2".
 ## Evidence
 
 - **Sources read:**
-  - ADR-012 at <sha removed>;
+  - ADR-012 at `048deb3`;
   - `spec/spec.md` lines 39–40 (`contains` edge) and 388 (index row);
   - ADR-010, sections §2.1, §4.3, §4.4 and the Evidence convention;
   - AD-016 at `quire-specification` `origin/main`;
@@ -115,7 +115,7 @@ medium; see "Round 2".
 
 ## Round 2
 
-Reviewed ADR-012 at <sha removed> (diff from <sha removed>). Round-1 verdict: ACCEPT WITH
+Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: ACCEPT WITH
 FINDINGS.
 
 | ID | Round-1 severity | Status | Note |
@@ -159,10 +159,10 @@ names the owner that holds the remaining work.
 | FND-009 | Fixed: §12.1 tests include the QSpec #115 sum and `case` vectors (FR-143, FR-146). |
 | FND-014 | Fixed: §9 scopes the `xtask string-edge` scan to non-test code with an allow-list for value comparisons. #214 owns it, and Contract IR #141, Codegen #86 and the RT ticket run it (§14.2). |
 
-## PR review (QSL PR #234, delta <sha removed>..<sha removed>)
+## PR review (QSL PR #234, delta 43677c9..10664aa)
 
 The PR reviewer checked the author-closure lines above against ADR-012 at
-<sha removed>. FND-001, FND-003, FND-004, FND-005, FND-007, FND-008, FND-009 and
+10664aa. FND-001, FND-003, FND-004, FND-005, FND-007, FND-008, FND-009 and
 FND-014 are confirmed fixed. For FND-008, every §12.1 and §12.2 row names a
 module or path, and every RT, CG, IR and QSpec path exists at `origin/main`.
 No new evidence finding. The open PR findings are in SR-474.

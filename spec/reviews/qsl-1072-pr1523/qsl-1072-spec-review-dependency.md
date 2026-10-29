@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1072. PR: quire-spec-language#1523 (head <sha removed>). This lens checks the new edges: FR-315 depends_on FR-487, and FR-487 implements US-021, depends_on ADR-023/FR-104/FR-107/FR-172, references FR-337, and traces_to FR-175/FR-176/FR-315. No depends_on cycle forms. FR-487 traces_to FR-315 and does not depend on it, and none of FR-104, FR-107 or FR-172 depends on FR-315. Enablement is separated from feature work: QSL-1072 (lowering and seams) comes before QSL-1010 (`encode_hyper_query`, which consumes it) and QSL-1071 (emission into the `hyperproperty` node). The merged #1521 (QSL-867) is a prerequisite and is already on main.
+Ticket: QSL-1072. PR: quire-spec-language#1523 (head 56043f5ba). This lens checks the new edges: FR-315 depends_on FR-487, and FR-487 implements US-021, depends_on ADR-023/FR-104/FR-107/FR-172, references FR-337, and traces_to FR-175/FR-176/FR-315. No depends_on cycle forms. FR-487 traces_to FR-315 and does not depend on it, and none of FR-104, FR-107 or FR-172 depends on FR-315. Enablement is separated from feature work: QSL-1072 (lowering and seams) comes before QSL-1010 (`encode_hyper_query`, which consumes it) and QSL-1071 (emission into the `hyperproperty` node). The merged #1521 (QSL-867) is a prerequisite and is already on main.
 
 Examined units: FR-487 relationships and Dependencies, and FR-315 relationships and Dependencies (examined). US-021 was read for context only.
 
@@ -28,7 +28,7 @@ Sound ordering and no cycles. One low finding on missing edges.
 
 ## Dispositions
 
-Round 1, head <sha removed> (fix commit <sha removed>).
+Round 1, head bd9361749 (fix commit be4e0bad6).
 
 | FND | outcome | reason |
 | --- | --- | --- |

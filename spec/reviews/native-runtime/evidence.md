@@ -5,6 +5,7 @@ type: SpecReview
 analysis: evidence
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
+evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -109,7 +110,7 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Reviewed <sha removed>. Re-ran the installed
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. Re-ran the installed
 quoin advise --json and catalog methods --json; complete current outputs are
 reviews/data/native-runtime/input-setup-advice.json and input-setup-methods.json.
 All seven FR-018 records retain Test-class matches with mismatch, uncatalogued

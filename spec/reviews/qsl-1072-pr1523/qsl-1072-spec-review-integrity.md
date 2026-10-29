@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1072. PR: quire-spec-language#1523 (head <sha removed>). This lens checks completeness, consistency and atomicity inside the change, and whether TC-1264 covers each criterion. Because criterion-strength could not run (no Jev client), each AC was also read for whether it can fail.
+Ticket: QSL-1072. PR: quire-spec-language#1523 (head 56043f5ba). This lens checks completeness, consistency and atomicity inside the change, and whether TC-1264 covers each criterion. Because criterion-strength could not run (no Jev client), each AC was also read for whether it can fail.
 
 Examined units: FR-487 (statement, Outputs, Behavior), FR-487-AC-1 to FR-487-AC-8, FR-315-AC-43, and TC-1264 (procedure steps 1 to 9 and expected results). Coverage map: AC-1 is step 1; AC-2 is steps 1 and 2; AC-3 is step 3; AC-4 is step 4; AC-5 is step 5; AC-6 is step 6; AC-7 is step 7; AC-8 is step 8; FR-315-AC-43 is step 9. Every criterion has a procedure step and an expected result. Each AC names concrete inputs and outputs, and none is vacuous except where noted below.
 
@@ -33,7 +33,7 @@ Conditionally acceptable on integrity: the change is internally consistent, ids 
 
 ## Dispositions
 
-Round 1, head <sha removed> (fix commit <sha removed>).
+Round 1, head bd9361749 (fix commit be4e0bad6).
 
 | FND | outcome | reason |
 | --- | --- | --- |

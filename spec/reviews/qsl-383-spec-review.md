@@ -3,16 +3,16 @@ id: SR-1050
 title: "Spec review of PR #584 (sum types and case, QSL-383)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/decisions/ADR-012-semantic-family-extension-contracts.md, spec/functional/FR-046, FR-106, FR-315 to FR-324, spec/test-cases/TC-464, TC-815 to TC-834, spec/usecase/US-032, spec/spec.md, spec/tests.md"
+scope: "agent-ix/quire-spec-language@91eafc29b2fd21deb0d098def857cb07857c77e4; spec/decisions/ADR-012-semantic-family-extension-contracts.md, spec/functional/FR-046, FR-106, FR-315 to FR-324, spec/test-cases/TC-464, TC-815 to TC-834, spec/usecase/US-032, spec/spec.md, spec/tests.md"
 review_set: subset
 ---
 
 ## Summary
 
-Ticket: QSL-383. Review of `git diff origin/main...HEAD` at <sha removed> (the
+Ticket: QSL-383. Review of `git diff origin/main...HEAD` at 91eafc29 (the
 head includes the ADR-012 "ledger" rewording) against the wave-B and wave-C
 owner rulings and the QSpec counterparts on QSpec branch
-`spec/wave-b-q6-sumtypes` at <sha removed>: FR-440, FR-441, FR-143, FR-144,
+`spec/wave-b-q6-sumtypes` at 36fb68cd: FR-440, FR-441, FR-143, FR-144,
 FR-146 ("Case result type"), FR-046-AC-7 and FR-208-AC-13.
 
 Lenses applied: integrity (cross-FR and FR-to-ADR consistency), QSpec
@@ -65,17 +65,17 @@ FR-318.
 
 ## New findings (disposition pass 2)
 
-Delta reviewed: <sha removed>..<sha removed> (<sha removed> FR-324 positive profile rule; <sha removed> ADR-012 §16.10 rewritten as the QSpec rules §16 relies on).
+Delta reviewed: 6643a381..c9c549c2 (1d6c4bde FR-324 positive profile rule; c9c549c2 ADR-012 §16.10 rewritten as the QSpec rules §16 relies on).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-009 | medium | ADR-012 §16.3's closing paragraph says SC-R3's admission refusals, SC-R2, SC-R4 and SC-R5 "can be tested in process before those spellings land", and the §16.4 "S3 lowering" row's dependency cell reads "spelling proposed with SC-G1 to SC-G3 (§16.10)". <sha removed> rewrote §16.10 to state QSpec FR-440 and FR-441 as the rules §16 relies on, with no proposal, so both still describe a QSpec proposal that has not landed and point at a section that no longer has one. State the dependency as QSpec FR-440/FR-441 and drop "before those spellings land". | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1543-1545, 1563 |
-| FND-010 | medium | Pin and version-tracking wording remains in §16. The §16.4 S4 row says a node "the pinned IR cannot decode" is omitted, and §16.9's Catalog bullet compares revision `1-draft.4` with "the revision QSL claims (`1-draft.8`)" and concludes "No catalog re-pin is needed". <sha removed> removed "the pinned IR" from §16.8's Identity row and §16.10 but left these two. Write the S4 row as "a node whose (tag, form) the IR cannot decode", as §16.10's closing paragraph does, and delete the re-pin comparison (the catalog code exists; state that, if anything). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1564, 1822-1824 |
+| FND-009 | medium | ADR-012 §16.3's closing paragraph says SC-R3's admission refusals, SC-R2, SC-R4 and SC-R5 "can be tested in process before those spellings land", and the §16.4 "S3 lowering" row's dependency cell reads "spelling proposed with SC-G1 to SC-G3 (§16.10)". c9c549c2 rewrote §16.10 to state QSpec FR-440 and FR-441 as the rules §16 relies on, with no proposal, so both still describe a QSpec proposal that has not landed and point at a section that no longer has one. State the dependency as QSpec FR-440/FR-441 and drop "before those spellings land". | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1543-1545, 1563 |
+| FND-010 | medium | Pin and version-tracking wording remains in §16. The §16.4 S4 row says a node "the pinned IR cannot decode" is omitted, and §16.9's Catalog bullet compares revision `1-draft.4` with "the revision QSL claims (`1-draft.8`)" and concludes "No catalog re-pin is needed". c9c549c2 removed "the pinned IR" from §16.8's Identity row and §16.10 but left these two. Write the S4 row as "a node whose (tag, form) the IR cannot decode", as §16.10's closing paragraph does, and delete the re-pin comparison (the catalog code exists; state that, if anything). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1564, 1822-1824 |
 | FND-011 | low | The rewritten §16.10 table's "QSpec rule" column restates each QSpec rule (FR-440's tag and form spellings and `member: null`, FR-441's preimage fields and domain, FR-143's `composite.result-retain` charge and order, FR-144's union key composition, FR-146's result-type rule) instead of citing it. The owner rule is that QSL cites QSpec and restates none of it; FR-318 to FR-324 already cite these FRs. Reduce each cell to the citation (QSpec FR and section name). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1833-1839 |
 
 ## New findings (disposition pass 3)
 
-Delta reviewed: <sha removed>..<sha removed> (<sha removed> fixes FND-009 to FND-011). QSpec FR-440 and FR-441 are on QSpec main (`spec/objects/interfaces/FR-440-checked-package-union-and-case-nodes.md`, `FR-441-union-member-key.md`).
+Delta reviewed: c9c549c2..b1c1f749 (b1c1f749 fixes FND-009 to FND-011). QSpec FR-440 and FR-441 are on QSpec main (`spec/objects/interfaces/FR-440-checked-package-union-and-case-nodes.md`, `FR-441-union-member-key.md`).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
@@ -83,29 +83,29 @@ Delta reviewed: <sha removed>..<sha removed> (<sha removed> fixes FND-009 to FND
 
 ## Dispositions
 
-Round 1, reviewed at <sha removed> (fix commit <sha removed>).
+Round 1, reviewed at 6643a381 (fix commit 6643a381).
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | <sha removed> |
-| FND-002 | fixed | <sha removed> |
-| FND-003 | fixed | <sha removed> |
-| FND-004 | fixed | <sha removed> |
+| FND-001 | fixed | 6643a381 |
+| FND-002 | fixed | 6643a381 |
+| FND-003 | fixed | 6643a381 |
+| FND-004 | fixed | 6643a381 |
 | FND-005 | still-open | The hedge is gone and QSpec FR-143 "Value profile" is cited, but the description still says the compiler "SHALL add no profile identity, profile version or per-feature edition gate", which names what is not; QSpec FR-143 and FR-324's own Behavior state the positive rule (the same profile and definition selections as for records and tuples). |
-| FND-006 | fixed | <sha removed> |
-| FND-007 | fixed | <sha removed> |
-| FND-008 | fixed | <sha removed> |
+| FND-006 | fixed | 6643a381 |
+| FND-007 | fixed | 6643a381 |
+| FND-008 | fixed | 6643a381 |
 
-Round 2, reviewed at <sha removed> (fix commit <sha removed>).
-
-| FND | Outcome | sha/reason |
-| --- | --- | --- |
-| FND-005 | fixed | <sha removed> |
-
-Round 3.
+Round 2, reviewed at c9c549c2 (fix commit 1d6c4bde).
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-009 | fixed | <sha removed>: §16.3 and the §16.4 S3 lowering row cite QSpec FR-440 and FR-441, with no proposal wording. |
-| FND-010 | fixed | <sha removed>: The S4 row says "the IR cannot decode"; the Catalog bullet reads "`unproved-exhaustiveness` is in the catalog". |
-| FND-011 | fixed | <sha removed>: §16.10 cites each QSpec requirement by number and title. |
+| FND-005 | fixed | 1d6c4bde |
+
+Round 3, reviewed at b1c1f749cb486594edd6ac03ff3e687e1813c758.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed | b1c1f749: §16.3 and the §16.4 S3 lowering row cite QSpec FR-440 and FR-441, with no proposal wording. |
+| FND-010 | fixed | b1c1f749: The S4 row says "the IR cannot decode"; the Catalog bullet reads "`unproved-exhaustiveness` is in the catalog". |
+| FND-011 | fixed | b1c1f749: §16.10 cites each QSpec requirement by number and title. |

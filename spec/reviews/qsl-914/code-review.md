@@ -3,7 +3,7 @@ id: SR-17020
 title: "Code review of QSL-914 refinement rows and whole-model roles"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; QSL-914 diff from <sha removed>: qsl-semantics/src/check/{check.rs,mod.rs,protocol_clause/{coverage.rs,mod.rs,types.rs},protocol_controls.rs,protocol_slots.rs,refinement.rs}, qsl-semantics/tests/it/{refinement_declarations.rs,refinement_protocol.rs}"
+scope: "agent-ix/quire-spec-language; QSL-914 diff from df8d6739: qsl-semantics/src/check/{check.rs,mod.rs,protocol_clause/{coverage.rs,mod.rs,types.rs},protocol_controls.rs,protocol_slots.rs,refinement.rs}, qsl-semantics/tests/it/{refinement_declarations.rs,refinement_protocol.rs}"
 review_set: subset
 ---
 

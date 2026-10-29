@@ -5,6 +5,7 @@ type: SpecReview
 analysis: evidence
 scope: "FR-013, formal-environment-linking.md, TC-020–024, TC-030–034 and IT-005 linking seam"
 review_set: all
+evaluated_revision: "c78792a"
 review_date: "2026-09-08"
 ---
 
@@ -37,10 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
-IT-005 consistency re-review at <sha removed>: PASS for the corrected specification.
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
 Existing unsigned-counter results are insufficient for the explicitly selected IT-005 positive fixture. Rerun the real linker tests with signed bounds before retaining final qualification.
 
 
-Evaluated <sha removed> before continuing the corrected qualification implementation.
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 The first attempted tests failed during setup on source/package identifiers and then on the reserved value field; these runs do not qualify linkage. Corrected fixture tests must reach the real API before any case is marked passed.

@@ -16,7 +16,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1072. PR: quire-spec-language#1523 (head <sha removed>, diff `origin/main...HEAD`, merge-base <sha removed>). Spec-only. This is the base review: consistency with merged FRs and whether the text can be implemented against the real code. Code read: qsl-semantics/src/check/hyper_clause.rs and check.rs/typing.rs as of origin/main <sha removed>, which includes the merged #1521 (QSL-867). Also read qsl-semantics/src/check/temporal_clause/condition.rs, qsl-eval/src/hyper/seam.rs, joint.rs, qsl-eval/src/smt/monitor.rs, automaton/translate.rs, simulation/model/letters.rs and value/expression/mod.rs. Review set: base plus integrity, ears-conformance, dependency, evidence, failure-domain and gap-analysis, the subset the dispatching brief chose. criterion-strength was skipped: it needs a Jev client and none is installed. AC strength was instead judged by reading, under integrity (SR-17181).
+Ticket: QSL-1072. PR: quire-spec-language#1523 (head 56043f5ba, diff `origin/main...HEAD`, merge-base 0d1a9e580). Spec-only. This is the base review: consistency with merged FRs and whether the text can be implemented against the real code. Code read: qsl-semantics/src/check/hyper_clause.rs and check.rs/typing.rs as of origin/main 0d0c67b0b, which includes the merged #1521 (QSL-867). Also read qsl-semantics/src/check/temporal_clause/condition.rs, qsl-eval/src/hyper/seam.rs, joint.rs, qsl-eval/src/smt/monitor.rs, automaton/translate.rs, simulation/model/letters.rs and value/expression/mod.rs. Review set: base plus integrity, ears-conformance, dependency, evidence, failure-domain and gap-analysis, the subset the dispatching brief chose. criterion-strength was skipped: it needs a Jev client and none is installed. AC strength was instead judged by reading, under integrity (SR-17181).
 
 Examined units: FR-487 (statement and Behavior), FR-487-AC-1 to FR-487-AC-8, FR-315 (Joint steps, Property, Product identity refusal order), FR-315-AC-43, TC-1264, all examined. Read for context only: FR-172 (Indexed atoms and step labels, Match, Body expressions), FR-172-AC-5, FR-315-AC-7, FR-315-AC-10, FR-315-AC-12, FR-315-AC-13, FR-107, FR-104, FR-337, FR-176-AC-1/AC-4/AC-5, and QSpec FR-395 "Step labels".
 
@@ -48,7 +48,7 @@ Sequencing: rebase this PR on main, since #1521 has landed with no spec conflict
 
 ## Dispositions
 
-Round 1, head <sha removed> (fix commit <sha removed>), checked against origin/main <sha removed>.
+Round 1, head bd9361749 (fix commit be4e0bad6), checked against origin/main f8cfd238d.
 
 | FND | outcome | reason |
 | --- | --- | --- |
@@ -57,4 +57,4 @@ Round 1, head <sha removed> (fix commit <sha removed>), checked against origin/m
 | FND-003 | fixed | FR-172 "Match" and FR-487 "Calls" now check a declared call as a value call, with arguments under the `match` rules and a state-reading argument refused at the read. Covered by FR-172-AC-7 and FR-487-AC-11. |
 | FND-004 | fixed | FR-487's Description and "Label constants" bullet state that this requirement delivers FR-172-AC-5 and that `check_match` refuses `ExprNode::Name` today. |
 | FND-005 | fixed | Dependencies now says the lowering replaces the S3 hyper typing roots on either base, keeps FR-172-AC-6, and gives the sequencing. A residual inaccuracy is FND-006. |
-| FND-006 | fixed | Round 2, head <sha removed>: Dependencies now describes each base separately. Main's `hyper_typing::type_condition` is a forward `Ty` pass with real label types, no `HyperType` markers and no kept node; the reverted QSL-867 route is described apart from it; and the lowering replaces either. |
+| FND-006 | fixed | Round 2, head b23f84fdd: Dependencies now describes each base separately. Main's `hyper_typing::type_condition` is a forward `Ty` pass with real label types, no `HyperType` markers and no kept node; the reverted QSL-867 route is described apart from it; and the lowering replaces either. |

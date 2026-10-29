@@ -14,7 +14,7 @@ relationships:
 ## Summary
 
 Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (QSL
-`main` at <sha removed>) against QSpec `origin/main` at <sha removed>. Each
+`main` at `99e9b6c7`) against QSpec `origin/main` at `4634f5f`. Each
 decision area was scored for technical risk and for volatility:
 
 | Area | Tech risk | Volatility | Drivers |

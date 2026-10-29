@@ -13,9 +13,9 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit <sha removed> (branch `spec/17-boundedness-adr`), the new
+Round 1. Reviewed commit `bbe92fec` (branch `spec/17-boundedness-adr`), the new
 ADR-014 and `git diff origin/main -- spec/`. QSpec authority: `main` at
-<sha removed>, read-only. CG code was read at `origin/main` <sha removed> to check the
+`eb4234f`, read-only. CG code was read at `origin/main` `e2a5671` to check the
 negotiation boundary.
 
 The question: does ADR-014 decide only what #222 owns (Q222-1 to Q222-3, the

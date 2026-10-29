@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Ticket: IR-878. PR: quire-spec-language#1472 (head <sha removed>, diff `origin/main...HEAD`). Reviewer pass (ears-conformance) over the spec-only re-derivation of closed #995 as FR-485. Review set: base plus integrity, ears-conformance, evidence, scope-boundary, failure-domain (subset chosen by the dispatching brief; no AssuranceProfile in spec/).
+Ticket: IR-878. PR: quire-spec-language#1472 (head 5e56adbb7, diff `origin/main...HEAD`). Reviewer pass (ears-conformance) over the spec-only re-derivation of closed #995 as FR-485. Review set: base plus integrity, ears-conformance, evidence, scope-boundary, failure-domain (subset chosen by the dispatching brief; no AssuranceProfile in spec/).
 
 Examined units: FR-485 (examined), FR-485 (examined), FR-485-AC-1 (context_only), FR-485-AC-2 (context_only), FR-485-AC-3 (context_only).
 
@@ -31,5 +31,5 @@ Description and ACs name a subject and response. The Behavior section has one am
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | Verified in <sha removed> against origin/main. |
-| FND-002 | fixed | Verified in <sha removed> against origin/main. |
+| FND-001 | fixed | Verified in dbb95abc5 against origin/main. |
+| FND-002 | fixed | Verified in dbb95abc5 against origin/main. |

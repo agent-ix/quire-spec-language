@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Ticket: IR-878. PR: quire-spec-language#1472 (head <sha removed>, diff `origin/main...HEAD`). Reviewer pass (base) over the spec-only re-derivation of closed #995 as FR-485. Review set: base plus integrity, ears-conformance, evidence, scope-boundary, failure-domain (subset chosen by the dispatching brief; no AssuranceProfile in spec/).
+Ticket: IR-878. PR: quire-spec-language#1472 (head 5e56adbb7, diff `origin/main...HEAD`). Reviewer pass (base) over the spec-only re-derivation of closed #995 as FR-485. Review set: base plus integrity, ears-conformance, evidence, scope-boundary, failure-domain (subset chosen by the dispatching brief; no AssuranceProfile in spec/).
 
 Examined units: FR-485 (examined), FR-485 (examined), FR-485-AC-1 (examined), FR-485-AC-2 (examined), FR-485-AC-3 (examined), FR-485 (examined), spec/spec.md (examined), TC-459 (examined), TC-460 (examined), spec/reviews/ir878/dependency.md (examined).
 
@@ -33,14 +33,14 @@ Request changes. quire validate and make check-spec-validation pass, the hash/di
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-004 | medium | The committed copies of the reviewer SR files are not the reviewer's files. They were renumbered from SR-17028..17033 to SR-17048..17053, which breaks the link to the IR-878 tracker comments keyed on those ids. FR-485 was also search-replaced to FR-486 inside the original Findings rows, so integrity FND-001 now falsely says #1470 adds an FR-486 file. Replace them verbatim with the reviewer's current files (ids SR-17028..17033, original rows untouched, Dispositions appended). | spec/reviews/ir878/pr1472-review-*.md:2-10 |
-| FND-005 | low | The PR's own base review (SR-17040) is stale at <sha removed>. It says all criteria use Test, but FR-486-AC-2 is Inspection. It says TC-459 and TC-460 drop their FR-104-AC-9 links, but those links are now restored. | spec/reviews/ir878/base.md:16-22 |
+| FND-005 | low | The PR's own base review (SR-17040) is stale at dbb95abc5. It says all criteria use Test, but FR-486-AC-2 is Inspection. It says TC-459 and TC-460 drop their FR-104-AC-9 links, but those links are now restored. | spec/reviews/ir878/base.md:16-22 |
 
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Companion drafts quire-semantic-value#66 and quire-exact#83 retarget all four upstream sites (plus QSV TC-908) to FR-486. Both are open drafts and must merge together with #1472. |
-| FND-002 | fixed | Verified in <sha removed> against origin/main. |
-| FND-003 | fixed | Verified in <sha removed> against origin/main. |
-| FND-004 | fixed | Round 2: verified in <sha removed>. |
-| FND-005 | fixed | Round 2: verified in <sha removed>. |
+| FND-002 | fixed | Verified in dbb95abc5 against origin/main. |
+| FND-003 | fixed | Verified in dbb95abc5 against origin/main. |
+| FND-004 | fixed | Round 2: verified in 4bbc6e37a. |
+| FND-005 | fixed | Round 2: verified in 4bbc6e37a. |

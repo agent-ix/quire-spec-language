@@ -26,4 +26,4 @@ textual instance API unchanged.
 - [x] Implement request v2 production and strict reading with canonical binary encoding.
 - [x] Implement result v2 evaluation and strict reading tied to the exact request bytes.
 - [x] Prove version separation, mutation refusal and absence of field substitution.
-- [x] Run local Rust gates and PR-time reviews.
+- [x] Run local Rust gates and PR-time reviews; then update the QProtocol pin.

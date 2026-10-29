@@ -184,7 +184,7 @@ complete and partial counts are therefore the same over both row sets.
 - [ ] **TC-047, TC-182/183, TC-230/231, IT-070/071/076 / QSL #123:**
   authority-bound diagnostic catalog/causes, canonical manifest and extension
   compatibility, failure-stage and complete attributable qualification over all
-  Agent-A rows.
+  Agent-A rows and exact dependency pins.
 
 ## Atomic capability allocation
 
@@ -294,7 +294,7 @@ concrete evidence owner; task files may require additional boundary cases.
 
 ```text
 A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
-        \------ external producer/consumer releases merge before use ------/
+        \------ external producer/consumer pins merge before use ------/
 ```
 
 ## Task File Mapping
@@ -313,7 +313,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
 ## Coordination Rules
 
 - One issue and one PR at a time from a fresh default-branch worktree.
-- Shared interfaces are consumed only from merged producer releases through Cargo.toml and Cargo.lock; no lane edits
+- Shared interfaces are consumed only from merged pinned revisions; no lane edits
   another producer's repository or redefines a central payload.
 - Rust only for first-party implementation, tests, fixtures, generators and
   audits. Crates remain `publish = false`.

@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Ticket: IR-878. PR: quire-spec-language#1472 (head <sha removed>, diff `origin/main...HEAD`). Reviewer pass (evidence) over the spec-only re-derivation of closed #995 as FR-485. Review set: base plus integrity, ears-conformance, evidence, scope-boundary, failure-domain (subset chosen by the dispatching brief; no AssuranceProfile in spec/).
+Ticket: IR-878. PR: quire-spec-language#1472 (head 5e56adbb7, diff `origin/main...HEAD`). Reviewer pass (evidence) over the spec-only re-derivation of closed #995 as FR-485. Review set: base plus integrity, ears-conformance, evidence, scope-boundary, failure-domain (subset chosen by the dispatching brief; no AssuranceProfile in spec/).
 
 Examined units: FR-485-AC-1 (examined), FR-485-AC-2 (examined), FR-485-AC-3 (examined).
 
@@ -36,6 +36,6 @@ AC-2 and AC-3 fit Test. AC-1 needs splitting. Scoped matrix rows untagged as exp
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | Verified in <sha removed> against origin/main. |
+| FND-001 | fixed | Verified in dbb95abc5 against origin/main. |
 | FND-002 | still-open | The fail condition is now concrete and the criterion can fail, but the inspection points at the wrong crate for the debit sites. The supplied caller and its budgets are not under qsl-eval/src/value/; they are in qsl-replay. qsl-replay/src/execute/argument.rs:685 and :706 call try_contains_bounded(&value, bits, &cancel), and qsl-replay/src/supplied_limits.rs owns admission_work_units and conversion_work_units. The evaluator charge site in qsl-eval/src/value/expression/evaluate.rs:355 (ChargePoint::FunctionCall) is correct. Inspected as written, AC-2 finds no debit site under qsl-eval/src/value/, so it fails for a locus reason rather than a behavioural one. Name the qsl-replay supplied-argument admission path by responsibility, with the current file as an example, and keep the qsl-eval evaluator charge sites. |
-| FND-002 | fixed | Round 3: verified in <sha removed>; AC-2 now names the qsl-replay supplied-argument path (argument.rs, supplied_limits.rs, limits.rs) and the qsl-eval evaluate.rs FunctionCall charge site, all present, with a concrete fail condition. |
+| FND-002 | fixed | Round 3: verified in bc0a40399; AC-2 now names the qsl-replay supplied-argument path (argument.rs, supplied_limits.rs, limits.rs) and the qsl-eval evaluate.rs FunctionCall charge site, all present, with a concrete fail condition. |

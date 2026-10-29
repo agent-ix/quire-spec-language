@@ -3,14 +3,14 @@ id: SR-1030
 title: "Spec review of PR #582 (StateModel family hook, S3 dispatch, model correspondence, abstraction relation)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-300 to FR-307, spec/test-cases/TC-790 to TC-809, spec/usecase/US-012, spec/usecase/US-031, spec/spec.md, spec/tests.md"
+scope: "agent-ix/quire-spec-language@18fed69d16de8665787314052900aab5cbe1c240; spec/functional/FR-300 to FR-307, spec/test-cases/TC-790 to TC-809, spec/usecase/US-012, spec/usecase/US-031, spec/spec.md, spec/tests.md"
 review_set: subset
 ---
 
 ## Summary
 
 Ticket: QSL-382 (pointer on QSL-388). Review of `git diff origin/main...HEAD`
-at <sha removed> against ADR-016 §2, §7 and §9 (G-2a to G-2c, G-7, G-8), ADR-017
+at 18fed69d against ADR-016 §2, §7 and §9 (G-2a to G-2c, G-7, G-8), ADR-017
 §3 (AR-1 to AR-7), ADR-020 §7 (on open PR #564), the wave-B and wave-C owner
 rulings, and the QSpec counterparts FR-353, FR-450 and FR-451 on QSpec branch
 `spec/wave-b-q7-adr017` (QSpec PR #171).
@@ -64,7 +64,7 @@ FR-353-AC-3/AC-5. Merge order: FR-304 cites ADR-020 §7, which is on open PR
 
 ## New findings (disposition pass 2)
 
-Delta reviewed: <sha removed>..<sha removed> (<sha removed> ADR-017 AR-3 names `RustReceiver`; <sha removed> TC-808 on QSL fixtures; <sha removed> FR-307 drops the driver SHALLs).
+Delta reviewed: c608c0a2..63b7a058 (0a9eee4b ADR-017 AR-3 names `RustReceiver`; 102ac65c TC-808 on QSL fixtures; 63b7a058 FR-307 drops the driver SHALLs).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
@@ -73,27 +73,27 @@ Delta reviewed: <sha removed>..<sha removed> (<sha removed> ADR-017 AR-3 names `
 
 ## Dispositions
 
-Round 1.
+Round 1, reviewed at c608c0a26baab69d95c7461046544f3e1c9172d8 (fix commit c608c0a2).
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | <sha removed> |
-| FND-002 | fixed | <sha removed> |
-| FND-003 | fixed | <sha removed> |
-| FND-004 | fixed | <sha removed>. A few stale ADR-017 lines remain and are merge follow-ups: :687 (AR-6 "Q-2 relation node"), :697 (§4 "Q-1, Q-2"), :789-790 (§8 "Q-1 and Q-2 block #198's feature slice") and :801 (Consequences). #583 and #586 edit the same lines. Also :626, where the AR-3 malformed-segment bullet does not name `RustReceiver`. FR-304 is normative and cites QSpec FR-450, so none of these changes behaviour. |
-| FND-005 | fixed | <sha removed> |
-| FND-006 | fixed | <sha removed> |
-| FND-007 | fixed | <sha removed> |
-| FND-008 | fixed | <sha removed> |
-| FND-009 | fixed | <sha removed> |
-| FND-010 | fixed | <sha removed> |
-| FND-011 | fixed | <sha removed> |
+| FND-001 | fixed | c608c0a2 |
+| FND-002 | fixed | c608c0a2 |
+| FND-003 | fixed | c608c0a2 |
+| FND-004 | fixed | c608c0a2. A few stale ADR-017 lines remain and are merge follow-ups: :687 (AR-6 "Q-2 relation node"), :697 (§4 "Q-1, Q-2"), :789-790 (§8 "Q-1 and Q-2 block #198's feature slice") and :801 (Consequences). #583 and #586 edit the same lines. Also :626, where the AR-3 malformed-segment bullet does not name `RustReceiver`. FR-304 is normative and cites QSpec FR-450, so none of these changes behaviour. |
+| FND-005 | fixed | c608c0a2 |
+| FND-006 | fixed | c608c0a2 |
+| FND-007 | fixed | c608c0a2 |
+| FND-008 | fixed | c608c0a2 |
+| FND-009 | fixed | c608c0a2 |
+| FND-010 | fixed | c608c0a2 |
+| FND-011 | fixed | c608c0a2 |
 
-Round 2. No finding had a still-open or missing outcome before this round, so no row is added. FND-012 and FND-013 are new and have no outcome yet.
+Round 2, reviewed at 63b7a058b8c150c4bbb411eb1d366f01ef3bc53d. No finding had a still-open or missing outcome before this round, so no row is added. FND-012 and FND-013 are new and have no outcome yet.
 
-Round 3.
+Round 3, reviewed at 02a1b790cb0dc5773ed12aa860e7ba2e458526f3.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-012 | fixed | <sha removed>: FR-307-AC-6 is deleted; FR-307-AC-1 (TC-806) covers the bound and refused export. |
-| FND-013 | fixed | <sha removed>: TC-808 is deleted with its index rows; no reference to it remains. |
+| FND-012 | fixed | 02a1b790: FR-307-AC-6 is deleted; FR-307-AC-1 (TC-806) covers the bound and refused export. |
+| FND-013 | fixed | 02a1b790: TC-808 is deleted with its index rows; no reference to it remains. |

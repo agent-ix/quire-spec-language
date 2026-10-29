@@ -5,10 +5,11 @@ type: SpecReview
 analysis: ears-conformance
 scope: "Requirement statements in FR-035 and FR-036"
 review_set: all
+evaluated_revision: "fa07b07"
 ---
 ## Summary
 
-Reviewed the twenty-three requirement statements in FR-035/036 at <sha removed>.
+Reviewed the twenty-three requirement statements in FR-035/036 at `fa07b07`.
 The deterministic engine reports both documents grammar-clean; semantic review
 found no trigger, subject or measurable-response defect in these statements.
 
@@ -20,7 +21,7 @@ found no trigger, subject or measurable-response defect in these statements.
 
 ## Engine evidence
 
-Quire is `0.31.0` (CLI <sha removed>, engine `0.46.0@<sha removed>). The scoped command
+Quire is `0.31.0` (CLI `4f6ed024`, engine `0.46.0@ca7362d4`). The scoped command
 was `quire validate --scope /home/peter/dev/worktrees/quire-language-composed-spec
 'spec/functional/FR-035-parse-composed-native-units.md'
 'spec/functional/FR-036-link-composed-native-packages.md' --summary`.
@@ -60,7 +61,7 @@ resource-accounting prerequisites.
 
 ## Correction recheck
 
-Targeted semantic reread of <sha removed> found the added FR-036 edition-agreement
+Targeted semantic reread of `d5047a8` found the added FR-036 edition-agreement
 statement uses the unwanted-condition pattern correctly: If disagreeing source
 headers, then the named linker refuses namespace admission with the conflicting
 selections and loci. It adds one unwanted-condition statement to the original
@@ -72,5 +73,5 @@ not to a new full review or execution run.
 ## Verdict
 
 PASS for the scoped EARS lens at the evaluated revision and the targeted
-semantic correction recheck at <sha removed>. Standard acceptance, implementation
+semantic correction recheck at `d5047a8`. Standard acceptance, implementation
 and execution evidence remain outstanding; no new build or test run is claimed.

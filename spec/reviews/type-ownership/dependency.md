@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit <sha removed> on `task/211-type-ownership`: ADR-013 and its
+Round 1. Reviewed commit 660aa25 on `task/211-type-ownership`: ADR-013 and its
 `spec/spec.md` index row and `contains` edge. ADR-013 is the Layer 1 design for
 #211. It decides the items that ADR-010 routes to #211 and hands the
 implementation to #213 and #231. This pass checks four things:
@@ -155,14 +155,14 @@ decisions, and the §3 owners form no cycle. Q209-4 correctly sends the
 | FND-004 | medium | Ordering cycle #212 ↔ #222. #212 gate scenario 5 ("submit an unsupported unbounded proof request") must be placed against O-20 and O-21. Those items defer the absent-bound meaning, trace position, interval, horizon and the infinite-trace facet to #222, and Q210-2 sends the proof-mode vocabulary to "#210 with #222". But #222 depends on #212 and cannot be accepted before QSpec #112 and #113 merge (both open). §8 has tables for #209, #210 and the owner, but none for #222, and it never names QSpec #112 or #113 as prerequisites of #213's bound types. Fix: add a "Questions for #222" table with its QSpec #112 and #113 prerequisites. State which parts of O-20 and O-21 are decided now and are enough for #212 scenario 5: the owner per bound kind, four distinct types, no implicit narrowing, and `requires-bound` as the single predicate. State that only #213 waits on #222's semantics. Split Q210-2 so that #210 owns the mode vocabulary and #222 owns the bound semantics. | ADR-013 O-20, O-21, §8 Q210-2 · #212 scenario 5 · #222 header · #205 Dependency graph · QSpec #112, #113 |
 | FND-005 | medium | Q210-1 sends "wire spelling and version of capability values" to #210, but that is #229's written scope ("Define canonical spelling, identity, ordering/non-ordering semantics, serialization authority, and version behavior"). O-19's own chain says #229 owns the vocabulary. #213 consumes #229, not #210 ("Implement the canonical Rust `Capability` value type from #229"). As routed, #213 would depend on a #210 decision that #210's scope does not cover. Fix: send the spelling and version to #229. Keep only the backend-identity carrier (packet and FR-323 request) with #210, or give it to #229 as well. | ADR-013 O-19, §8 Q210-1 · #229 Scope · #213 Scope · #210 Required design |
 | FND-006 | medium | The §3 and §7 ticket assignments disagree, and some fall outside the named ticket's scope. (a) The §7 #213 row leaves out O-03, O-07, O-08, O-10, O-11 and O-14, which §3 assigns to #213. (b) O-23 says "#213 removes QSL's restated revision literals (OBS-022)", but #213's scope covers identity, typestate, outcomes, bounds and Capability, not pins. The pin lane is #215, so the §7 #215/#226 row should carry it. (c) O-23 says "CG removes its own literals (OBS-034)" and names no ticket. (d) §7 gives "FR-322 code completeness (OBS-035)" to IR #137 / PR #139, but IR #137's body is the FR-031 witness defect only. Fix: make §7 the complete inverse of §3's implementing-ticket rows. Move OBS-022 to #215 or add it to #213's scope explicitly. Name or open CG and IR issues for OBS-034 and OBS-035. | ADR-013 O-03, O-07, O-08, O-10, O-11, O-14, O-17, O-23, §7 · #213, #215 Scope · IR #137 body |
-| FND-007 | medium | O-01, O-03 and the Consequences describe the state before QSL PR #200, and the order they imply puts feature work before enablement. `DomainPackageRef` is already on QSL main (`src/model/domain_package.rs:359`), with public fields and no `digest_domain`. PR #200 head <sha removed> already has `ValueTypeRef{Native, Package}`, and its doc comment rules out "a synthetic `DeclarationKey` under a made-up 'quire/native' package". So the Consequence "PR #200 must encode native references as `ValueTypeRef::Native` before it merges" is already met. It is also a merge condition set by a record that #212 accepts only after #200 is likely to merge. O-03 names #213 in §3 and #131 / PR #200 in §7. O-01 says "#213 builds the identity type". Because #131 does not depend on #213, #213 will in fact change the existing type (adding `digest_domain` and intake-only construction) after #131 lands. Fix: restate O-01 and O-03 against main and PR #200 head <sha removed>. Say that #131 is not blocked by ADR-013. Assign the `DomainPackageRef` changes and the migration of the #131 intake to #213, and drop the stale Consequence. | ADR-013 O-01, O-03, §7, Consequences · QSL origin/main `src/model/domain_package.rs:359` · PR #200 head <sha removed> `src/model/domain_package.rs:132-143`, `src/model/intake.rs:97-109` · #131 body |
-| FND-008 | low | IR PR #139 is open (head <sha removed>, "PR 1 of 2"), and O-25, C-10 and OQ-3 (a) are built on it. At that head, `Witness` has the single public field `transcript` (`src/kani/witness.rs:101-107`) and derived accessors (`:167-180`, `:343`), so the witness fact is correct. But §7 does not say that #139 must merge at a recorded SHA before #231. It also does not name the follow-up CG PR ("Codegen changes follow in a separate PR"), which carries the C-11 reconstruction. Fix: in §7, add "IR PR #139 merges before #231" and name the CG follow-up as the C-11 owner. | ADR-013 Context witness fact, O-25, §4 C-10, C-11, §7 · IR PR #139 head <sha removed> body and `src/kani/witness.rs` |
+| FND-007 | medium | O-01, O-03 and the Consequences describe the state before QSL PR #200, and the order they imply puts feature work before enablement. `DomainPackageRef` is already on QSL main (`src/model/domain_package.rs:359`), with public fields and no `digest_domain`. PR #200 head 9e59dde already has `ValueTypeRef{Native, Package}`, and its doc comment rules out "a synthetic `DeclarationKey` under a made-up 'quire/native' package". So the Consequence "PR #200 must encode native references as `ValueTypeRef::Native` before it merges" is already met. It is also a merge condition set by a record that #212 accepts only after #200 is likely to merge. O-03 names #213 in §3 and #131 / PR #200 in §7. O-01 says "#213 builds the identity type". Because #131 does not depend on #213, #213 will in fact change the existing type (adding `digest_domain` and intake-only construction) after #131 lands. Fix: restate O-01 and O-03 against main and PR #200 head 9e59dde. Say that #131 is not blocked by ADR-013. Assign the `DomainPackageRef` changes and the migration of the #131 intake to #213, and drop the stale Consequence. | ADR-013 O-01, O-03, §7, Consequences · QSL origin/main `src/model/domain_package.rs:359` · PR #200 head 9e59dde `src/model/domain_package.rs:132-143`, `src/model/intake.rs:97-109` · #131 body |
+| FND-008 | low | IR PR #139 is open (head 417ec86, "PR 1 of 2"), and O-25, C-10 and OQ-3 (a) are built on it. At that head, `Witness` has the single public field `transcript` (`src/kani/witness.rs:101-107`) and derived accessors (`:167-180`, `:343`), so the witness fact is correct. But §7 does not say that #139 must merge at a recorded SHA before #231. It also does not name the follow-up CG PR ("Codegen changes follow in a separate PR"), which carries the C-11 reconstruction. Fix: in §7, add "IR PR #139 merges before #231" and name the CG follow-up as the C-11 owner. | ADR-013 Context witness fact, O-25, §4 C-10, C-11, §7 · IR PR #139 head 417ec86 body and `src/kani/witness.rs` |
 | FND-009 | medium | Three decisions depend on cells that AD-016 still marks `OPEN — decided in WP9`, and ADR-013 names no ticket or order for them. (a) The O-16 category table maps the `refusal` and `internal failure` proof rows "per the IR map", which is AD-016 WP9 `OPEN`. So the FR-331 category of `Refused`, `InvalidInput`, `IncompleteInput`, `Unavailable` and `Inconclusive` is undecided. #231 must nevertheless show that "outcome categories [do not] collapse", and #212 scenario 6 needs a result category. (b) O-27's parity carrier field is WP9 `OPEN`. (c) O-02 and Q209-3 rely on the WP6 module path. Fix: name the IR ticket that decides the WP9 `KaniOutcomeKind` → FR-331 map and the parity field, and place it before #231. Alternatively, decide the category of each of the five kinds in O-16 now and leave only the catalog-code table to WP9. | ADR-013 O-16, O-24, O-27, §8 Q209-3 · QSpec AD-016 arrow 6 and 7 `OPEN — decided in WP9` · #231 Acceptance · #212 scenario 6 |
 | FND-010 | low | OQ-1 (does `run` keep producing `native-run-result/1`?) is open, but feature ticket #186's exit criterion already assumes that both versions are produced: "`/1` output unchanged for cases without a witness". The owner answer to OQ-1 is therefore a prerequisite of #186 that neither record states. Fix: in OQ-1, say that it must be answered before #186 starts, and that #186's exit criterion is amended if the answer is `/2` only. | ADR-013 §5, §8 OQ-1, O-27 · #186 Exit |
 
 ## Method
 
-- Read ADR-013 at <sha removed> in full, and the diff `8170101..<sha removed> -- spec/spec.md`
+- Read ADR-013 at 660aa25 in full, and the diff `8170101..660aa25 -- spec/spec.md`
   (index row and `contains` edge).
 - Read QSpec AD-016 at `origin/main`: Owner decisions, Shared-type row, arrows
   1–7, the `OPEN — decided in WP<n>` cells and the Exit criteria. Confirmed
@@ -172,8 +172,8 @@ decisions, and the §3 owners form no cycle. Q209-4 correctly sends the
 - Read the bodies and states, as of 2026-09-19, of QSL #131, #185, #186, #188,
   #189, #205 (its dependency graph), #209–#217, #222, #226, #229 and #231, IR
   #137, and QSpec #112, #113, #114 and #116 (closed).
-- Checked IR PR #139 at head <sha removed> (`src/kani/witness.rs` struct and
-  accessors) and QSL PR #200 at head <sha removed> (`ValueTypeRef`,
+- Checked IR PR #139 at head 417ec86 (`src/kani/witness.rs` struct and
+  accessors) and QSL PR #200 at head 9e59dde (`ValueTypeRef`,
   `DomainPackageRef`, native `typeRef` prefix). Checked QSL `origin/main`
   8170101 for `DomainPackageRef`, `quire-exact`/`crates/`, a v2 emitter and
   `object_keys`.
@@ -186,7 +186,7 @@ decisions, and the §3 owners form no cycle. Q209-4 correctly sends the
 Re-read ADR-013 at 0042691 in full: §7 "Waits on" column, the #213 slices
 S-1 to S-6, the unowned-work list, §8 QC-1 to QC-7, Q222 and Q229, OQ-3 (a) to
 (e) and OQ-4. Re-checked the bodies of #131, #213, #215, #222, #226, #231 and CG
-#50, QSL PR #200 at <sha removed>, and FCD PR #200. The author cannot open issues, so
+#50, QSL PR #200 at 9e59dde, and FCD PR #200. The author cannot open issues, so
 work that no ticket owns is recorded in §7 and OQ-4, and QSpec changes are
 recorded as QC-n with the work each one blocks. For FND-001 to FND-003 this
 review accepts that as the resolution.
@@ -199,7 +199,7 @@ review accepts that as the resolution.
 | FND-004 | resolved differently | A Q222 table (Q222-1 taxonomy and derivations, Q222-2 absent-bound meaning) is added. #222's §7 row waits on #212 and QSpec #112 and #113. S-6 waits on "#222 accepted". O-21 now assigns owners only to existing representations and leaves the taxonomy to #222. The Status clause "a #209, #210, #222 or #229 decision that contradicts a §3 cell reopens that cell and no other" lets #212 place scenario 5 against O-20 (`requires-bound` single predicate) and C-25 (never narrows), with #222 able to reopen those cells later. Q210-2 still reads "with #222". That is acceptable now that the reopen rule covers it. |
 | FND-005 | resolved | Q229-1 sends wire spelling and version to #229. Q210-1 now asks only about the selection contract. |
 | FND-006 | resolved | Every O-item that names #213 appears in a slice: O-03 in S-2, O-07 in S-4, O-08, O-10, O-11 and O-14 in S-3. OBS-022 and OBS-034 move to #215. OBS-035 is listed as unowned IR work. |
-| FND-007 | resolved | O-01 and O-03 now build on the `DomainPackageRef` already on main and on PR #200 at <sha removed>. S-2 reworks the key "after #131 merges". The stale Consequence is replaced. One new ordering side effect is FND-012. |
+| FND-007 | resolved | O-01 and O-03 now build on the `DomainPackageRef` already on main and on PR #200 at 9e59dde. S-2 reworks the key "after #131 merges". The stale Consequence is replaced. One new ordering side effect is FND-012. |
 | FND-008 | resolved | #231 waits on "IR PR #139 merged at a recorded sha". C-11 goes to CG #50. |
 | FND-009 | resolved | The O-16 proof column now maps all ten `KaniOutcomeKind`s to one category each. OQ-3 (d) asks QSpec to adopt it. QC-7 carries the WP9 parity field and blocks #231's result type and CG #50 parity. |
 | FND-010 | resolved | §5 and OQ-1 record #186's assumption, and #186's §7 row waits on OQ-1 and OQ-2. |
@@ -211,15 +211,15 @@ New findings from the revision:
 | FND-011 | medium | §7 gives CG #50 the C-11 widening, the C-12 reconstruction and the parity comparison, but CG #50's body does not match that assignment in two ways. (a) It says it will "Implement the canonical typed counterexample envelope for all values, state/trace identities, claims, bounds and source maps". That reads as a second canonical owner of the O-25 envelope that #231 builds. (b) Its exit is replay "through runtime::execute", which is the native-v1 path. AD-016 arrow 7 and O-26 exclude that path as a replay target and use the complete-V1 executor. As written, CG #50 can close against a different executor and envelope owner than ADR-013 decides. Fix: in the CG #50 row of §7, state that CG #50 consumes #231's envelope as its layer-owned reconstruction input (no second canonical envelope), and that it targets the OQ-4 executor entry, not `runtime::execute`. List that body amendment as an owner action next to OQ-4. | ADR-013 O-25, O-26, §7 CG #50 row · CG #50 body and Exit · QSpec AD-016 arrow 7 |
 | FND-012 | medium | QC-5 (a refusal code for a second selection of the same domain-package identity) lists "#213 S-2, #131" under Blocks. But O-01 gives the single-selection rule to #213 S-2 ("#213 S-2 then adds the single-selection rule"), and the §7 #131 row waits only on FCD PR #200. The in-flight feature PR #200 therefore picks up a QSpec dependency that its own §7 row does not show. That dependency also contradicts FND-007's resolution that #131 is not blocked by ADR-013. Fix: remove #131 from QC-5's Blocks, since the rule is S-2 work. Otherwise, add QC-5 to #131's "Waits on" and move the rule into O-01's #131 half. | ADR-013 O-01, §7 #131 row, §8 QC-5 |
 | FND-013 | low | Unlike the QC table, OQ-3 names no blocked work for three of its five amendments: (b) selecting by node id blocks the OQ-4 executor entry, (d) the WP9 category mapping blocks IR C-09 and #231 C-23, and (e) listing node ids in the kernel row only blocks #213 S-1. §7 gates only (a) and (c). Fix: give each OQ-3 item a Blocks entry, and add (e) to S-1's gate and (d) to #231's "Waits on". | ADR-013 §7, §8 OQ-3, OQ-4 |
-| FND-014 | low | O-03 and the Consequences add a new condition to the open QSL PR #200: "#131 adds an adverse test for that refusal before PR #200 merges". ADR-013 is Proposed and is accepted at #212, and PR #200 is expected to merge before then, so the ADR cannot enforce this. Fix: word it as a request to #131, or put the adverse test in #213 S-2 alongside the O-03 rework. | ADR-013 O-03, C-01, Consequences · QSL PR #200 head <sha removed> |
+| FND-014 | low | O-03 and the Consequences add a new condition to the open QSL PR #200: "#131 adds an adverse test for that refusal before PR #200 merges". ADR-013 is Proposed and is accepted at #212, and PR #200 is expected to merge before then, so the ADR cannot enforce this. Fix: word it as a request to #131, or put the adverse test in #213 S-2 alongside the O-03 rework. | ADR-013 O-03, C-01, Consequences · QSL PR #200 head 9e59dde |
 
 Round-2 verdict: ACCEPT WITH FINDINGS. No finding is high. FND-011 and FND-012 are medium and do not block.
 
-## Round 3 (commit <sha removed>)
+## Round 3 (commit 4152eb8)
 
-PR #236 re-review of the delta <sha removed>..<sha removed>, against ADR-011 at <sha removed>
-and ADR-012 at <sha removed>. The full finding table is in
-[base.md](base.md) Round 3. ADR-013 line numbers are at <sha removed>.
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
 
 Dependency edges checked in the delta:
 
@@ -238,8 +238,8 @@ New findings:
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| PR2-H1 | high | The kernel `NodeKey` and `EffectiveId` constructors are `pub`, and no check covers their callers. ADR-011 T-12 checks only CG → QSL. RT and CG depend on `quire-exact` and can mint. | ADR-013 166, 178 · ADR-011@<sha removed> 383, 865 |
-| PR2-M1 | medium | The `PackageNodeKey` field type differs between ADR-013 T-3 and ADR-011 E3. | ADR-013 651 · ADR-011@<sha removed> 297 |
+| PR2-H1 | high | The kernel `NodeKey` and `EffectiveId` constructors are `pub`, and no check covers their callers. ADR-011 T-12 checks only CG → QSL. RT and CG depend on `quire-exact` and can mint. | ADR-013 166, 178 · ADR-011@22fa948 383, 865 |
+| PR2-M1 | medium | The `PackageNodeKey` field type differs between ADR-013 T-3 and ADR-011 E3. | ADR-013 651 · ADR-011@22fa948 297 |
 | PR2-L2 | low | O-04 cites "ADR-011 M-3" for dependency compile. M-3 is the S2 `forms` move, and the rule is ADR-011 E4 and I2. | ADR-013 168 |
 
 Round-3 verdict: CHANGES (PR2-H1).

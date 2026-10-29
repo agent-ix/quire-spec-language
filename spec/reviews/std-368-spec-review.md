@@ -3,7 +3,7 @@ id: SR-16210
 title: "Spec review of STD-368 guarded TP-4 liveness (QSL PR #1310)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md, spec/functional/FR-338-check-an-en-1-closure-certificate.md, spec/functional/FR-339-check-an-en-1-component-certificate.md, spec/test-cases/TC-521-explicit-state-model-check.md, spec/test-cases/TC-525-an-en-1-closure-certificate-is-checked.md, spec/test-cases/TC-526-an-en-1-component-certificate-is-checked.md, spec/test-cases/TC-1085-liveness-model-only-pass-and-unsupported-refusals.md"
+scope: "agent-ix/quire-spec-language@a4e6ae2d22fc954f3ad3d5e947b2c0412d8ae162; spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md, spec/functional/FR-338-check-an-en-1-closure-certificate.md, spec/functional/FR-339-check-an-en-1-component-certificate.md, spec/test-cases/TC-521-explicit-state-model-check.md, spec/test-cases/TC-525-an-en-1-closure-certificate-is-checked.md, spec/test-cases/TC-526-an-en-1-component-certificate-is-checked.md, spec/test-cases/TC-1085-liveness-model-only-pass-and-unsupported-refusals.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-338
@@ -21,7 +21,7 @@ relationships:
 
 ## Summary
 
-Ticket: STD-368. The diff is `origin/main...<sha removed> (main <sha removed> is an ancestor of the head). It is spec only, so `code-review` and `gap-analysis` were skipped. The reviewer checked it against FR-126, FR-128, FR-130, FR-338, FR-339 and ADR-018 on main, against merged PR #1271 (STD-296, SR-16090), and against the heads of all other open QSL PRs.
+Ticket: STD-368. The diff is `origin/main...a4e6ae2d2` (main c21bc57a5 is an ancestor of the head). It is spec only, so `code-review` and `gap-analysis` were skipped. The reviewer checked it against FR-126, FR-128, FR-130, FR-338, FR-339 and ADR-018 on main, against merged PR #1271 (STD-296, SR-16090), and against the heads of all other open QSL PRs.
 
 These claims hold:
 
@@ -57,7 +57,7 @@ The construction is sound. It reduces the clause to a correct liveness check and
 
 ## Dispositions
 
-Round 1 is at head <sha removed>. Main is an ancestor of the head. `QSPEC_DIR=~/dev/quire-specification make check-spec-validation` exits 0, with no diagnostic in a changed file.
+Round 1 is at head 9d50011be. Main is an ancestor of the head. `QSPEC_DIR=~/dev/quire-specification make check-spec-validation` exits 0, with no diagnostic in a changed file.
 
 The stutter-activation rule is sound for past operators. Under infinite-trace stutter extension, every stutter position is a real position of the infinite word. So activating there, with past memory advanced through the repeated letter, is the faithful `on each` reading. Every past-memory entry is a Boolean flag or a counter saturated at `b+1`, so the stutter self-loop reaches a fixed point and the product stays finite.
 

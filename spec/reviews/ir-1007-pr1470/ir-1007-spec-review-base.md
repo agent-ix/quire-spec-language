@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-Ticket IR-1007; quire-spec-language PR #1470 frozen at <sha removed>. base reviewed FR-485 and TC-1263 against linked requirements and the public QSL/leaf contracts. An independent Claude Opus semantic audit was consulted; all findings were checked against the source.
+Ticket IR-1007; quire-spec-language PR #1470 frozen at 20fd130e5b66c37745bbc16a26f21089033bfc73. base reviewed FR-485 and TC-1263 against linked requirements and the public QSL/leaf contracts. An independent Claude Opus semantic audit was consulted; all findings were checked against the source.
 
 ## Verdict
 
@@ -41,7 +41,7 @@ Ticket IR-1007; quire-spec-language PR #1470 frozen at <sha removed>. base revie
 | --- | --- | --- |
 | FND-001 | fixed | AC-6 and TC-1263 now distinguish cancellation before Begin from cancellation after a successful Begin and state the leaf outcomes. |
 
-## Incremental review: root-site amendment at <sha removed>
+## Incremental review: root-site amendment at 586ac2ec849d6c6f20a5ef455af5c0ae7883b17a
 
 The frozen amendment changed FR-262, FR-485 and TC-1263 after the original review and three dispositions. This same reviewer examined FR-262-AC-13, FR-485 Behavior 3/4/6 and AC-6, and TC-1263 steps/expected results 5 against QSL `PackageClosure`, `CheckedGraph`, `Location`, and quire-eval `Registry`/`Session`. The earlier FND outcomes remain fixed. Quire validation of the three changed spec files passed. No acceptance criterion was narrowed; the root-site failure is typed and leaves Begin open; pre-Begin cancellation remains distinct from post-Begin denial; the leaf change precedes the facade; one evaluator path and T12-A remain specified.
 

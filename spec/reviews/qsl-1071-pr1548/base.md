@@ -3,7 +3,7 @@ id: SR-17221
 title: "spec-review of hyper emission FR-488 and TC-1266 (quire-spec-language PR 1548)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@<sha removed>; spec/functional/FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md; spec/test-cases/TC-1266-a-hyper-clause-emits-a-hyperproperty-claim-node.md; spec/functional/FR-315-encode-the-smt-lib-transition-relation.md; spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md"
+scope: "agent-ix/quire-spec-language@c809786cb; spec/functional/FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md; spec/test-cases/TC-1266-a-hyper-clause-emits-a-hyperproperty-claim-node.md; spec/functional/FR-315-encode-the-smt-lib-transition-relation.md; spec/functional/FR-487-lower-hyper-atoms-and-match-conjuncts-to-checked-nodes.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-488
@@ -18,7 +18,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1071. One spec-review pass over `git diff origin/main...<sha removed>, with the EARS, integrity, dependency, evidence and failure-domain checks folded into this one file. `quire validate` passes for FR-488 and TC-1266. Checked against merged FR-315 ("Product identity", AC-12), FR-487, FR-337, FR-093, FR-172, FR-322 (parameter node key: name, level, type), FR-383-style lookup refusals (FR-337, FR-410, FR-454) and QSpec FR-402, FR-370, FR-322.
+Ticket: QSL-1071. One spec-review pass over `git diff origin/main...c809786cb`, with the EARS, integrity, dependency, evidence and failure-domain checks folded into this one file. `quire validate` passes for FR-488 and TC-1266. Checked against merged FR-315 ("Product identity", AC-12), FR-487, FR-337, FR-093, FR-172, FR-322 (parameter node key: name, level, type), FR-383-style lookup refusals (FR-337, FR-410, FR-454) and QSpec FR-402, FR-370, FR-322.
 
 What holds: the seven-binding order matches FR-402-AC-1; the lookup refusal pattern copies FR-337/FR-410; the six wrapper arguments match FR-370 item order; FR-315's `clause()` and FR-487's "Slots" and site schemes are consistent with FR-488's outputs; source-order merge of the two `match` parts is the right reading of FR-402 "in source order"; FR-315's `subjects()` and `instance()` members cover the obligation-identity members the node leaves out; FR-488 adds no wire-visible refusal code. Q-1 is accurate: FR-370 "Placement and profile fit" refuses a reference to a `temporal`/`fairness` node from any node but a `temporal_clause` fairness argument, so FR-402's "references to its fairness constraints" cannot be written, and the inline aggregate is the only form admitted today. Q-2, Q-4 and Q-5 are accurate. The list is incomplete (FND-001, FND-002, FND-008). No high defect; five medium and four low findings need a fix round.
 
