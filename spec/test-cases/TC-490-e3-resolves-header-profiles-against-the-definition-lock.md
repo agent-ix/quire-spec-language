@@ -38,11 +38,13 @@ identity from the catalog, never from a literal.
 5. Compile a unit with profiles `v` (`R`'s identity), `w` (the
    `ieee_profile` row's identity) and `x` (`test:unknown-profile`). Then
    compile a unit with profiles `v` and `u`, both `R`'s identity.
-6. Read the header-selectable layer rows in QSpec's complete-value lock
-   from the QSpec checkout. For each row, compile a unit whose one profile
-   `v` names that layer and whose one declaration uses only its admitted
-   forms. Read each emitted lock and compare its selections with the row's
-   `requires` closure.
+6. Compile six units, each with one profile `v` naming, in turn,
+   `quire.state.core/v1`, `quire.state.queries/v1`,
+   `quire.state.graph/v1`, `quire.value.complete/v1`,
+   `quire.model.complete/v1` and `quire.temporal.complete/v1`; each unit's
+   declaration uses only forms admitted by that profile. Compare each
+   emitted `definition_selections` with the fixed literal closure listed
+   below, independent of the lock read by the implementation.
 7. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
    declaration calls a named predicate, then one that declares a named
    predicate; then both units with `v` naming `quire.state.queries/v1`.
@@ -91,9 +93,20 @@ criteria each step backs.
   before E3, with no package.
 - Step 5's first unit refuses with exactly two refusals, `w`'s then `x`'s,
   and no package. Its second unit compiles.
-- Step 6: each unit compiles; each lock's `definition_selections` hold the
-  layer and exactly the layers in its `requires` closure, derived from the
-  QSpec lock read in step 6.
+- Step 6: all six units compile, and their `definition_selections` contain
+  exactly these literal layer identities, respectively: `quire.state.core/v1`
+  → [`quire.state.core/v1`]; `quire.state.queries/v1` →
+  [`quire.state.queries/v1`, `quire.state.core/v1`];
+  `quire.state.graph/v1` → [`quire.state.graph/v1`,
+  `quire.state.queries/v1`, `quire.state.core/v1`];
+  `quire.value.complete/v1` → [`quire.value.complete/v1`,
+  `quire.state.core/v1`]; `quire.model.complete/v1` →
+  [`quire.model.complete/v1`, `quire.state.graph/v1`,
+  `quire.state.queries/v1`, `quire.value.complete/v1`,
+  `quire.state.core/v1`]; `quire.temporal.complete/v1` →
+  [`quire.temporal.complete/v1`, `quire.model.complete/v1`,
+  `quire.state.graph/v1`, `quire.state.queries/v1`,
+  `quire.value.complete/v1`, `quire.state.core/v1`].
 - Step 7: the call refuses `unsupported_construct`/`expression-form` at the
   call's span and the predicate declaration refuses
   `unsupported_construct`/`declaration-form` at the declaration's span,
@@ -106,4 +119,4 @@ criteria each step backs.
 - Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
 - Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every `qualification_catalog` identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
-- Step 12: the unit compiles; its `definition_selections` hold the six layers of FR-110-AC-13 and the `package_selection` rows of the three locks, written out as a literal; every equality compiles (FR-110-AC-13).
+- Step 12: the unit compiles; its `definition_selections` contain exactly [`quire.temporal.complete/v1`, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1`, `quire.state.core/v1`], and its `package_selection` rows equal the literal package rows assigned to the temporal layer by the three source-of-truth locks; every equality compiles (FR-110-AC-13).
