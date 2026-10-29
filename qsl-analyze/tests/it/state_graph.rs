@@ -299,6 +299,84 @@ fn symmetry_reduction_quotients_state_graph_and_marks_the_proof_reduced() {
     );
 }
 
+/// FR-168-AC-14 (TC-593): the engine rewrites an exhaustive `Holds` result to
+/// `HoldsReduced` when symmetry was selected, with no possible-only witness.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn always_possible_under_symmetry_returns_holds_reduced_without_witnesses() {
+    let world = crate::graph_world::symmetric_config_world_over(
+        "",
+        "always possible AlwaysTrue using v { true }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(
+        &["a", "b", "c"],
+        vec![world.item("AlwaysTrue")],
+        no_samples(),
+    );
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let result = run(request);
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::HoldsReduced {
+            ref reductions,
+            witnesses: None,
+        } if matches!(reductions.as_slice(), [qsl_replay::AppliedReduction::Symmetry { .. }])
+    ));
+}
+
+/// FR-168-AC-14 (TC-593): applied reductions are reported in the specified
+/// symmetry-then-partial-order order when both reduce the shared graph.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn combined_reductions_are_reported_in_canonical_order() {
+    let world = crate::graph_world::symmetric_config_world_over(
+        "pre CanAdvance using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 2 }\n",
+        "possible Anything using v { true }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(
+        &["a", "b", "c"],
+        vec![world.item("Anything")],
+        no_samples(),
+    );
+    request.reductions.partial_order = true;
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let result = run(request);
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::HoldsReduced { ref reductions, .. }
+            if matches!(reductions.as_slice(), [
+                qsl_replay::AppliedReduction::Symmetry { .. },
+                qsl_replay::AppliedReduction::PartialOrder {
+                    proviso: qsl_replay::Proviso::BreadthFirstRevisit,
+                },
+            ])
+    ));
+}
+
 /// The state at each position of `path`, re-executed from its initial
 /// state: each step's post-state is the successor of its transition whose
 /// digest it records.
