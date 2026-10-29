@@ -216,6 +216,7 @@ fn ir_lowering(package: &CheckedPackageV2, id: &CheckedNodeId) -> CompleteLoweri
             authority: "test".into(),
             identity: "qsl-extent-agreement".into(),
         },
+        required_source_selections: Vec::new(),
         supported_tags: CheckedNodeTag::ALL.iter().copied().collect(),
         require_bounds: true,
         work_limit: u64::MAX,
