@@ -111,6 +111,14 @@ impl SymbolicOperation<'_> {
 }
 
 impl SymbolicOperation<'_> {
+    /// Whether this is the operation `key` declares: its declaration text
+    /// is the identity text of `key`, as FR-120 matches an abstract
+    /// application to its operation.
+    pub(crate) fn is(&self, key: &DeclarationKey) -> bool {
+        super::encode::declaration_text(key, quire_canonical::Limits::new(u64::MAX))
+            .is_ok_and(|text| text == self.text)
+    }
+
     /// The operation applied to `arguments` as a refusal names it:
     /// `receiver.name(a, b)`, without the receiver when `receiver` is `None`.
     pub(crate) fn label(&self, receiver: Option<&str>, arguments: &[Value]) -> String {
@@ -140,6 +148,8 @@ pub(crate) struct SymbolicObject<'a> {
     pub(crate) key: String,
     /// The object's most-specific type's effective identity.
     pub(crate) type_id: EffectiveId,
+    /// The object's most-specific type's declaration key.
+    pub(crate) type_key: DeclarationKey,
     /// The object's reference.
     pub(crate) reference: ObjectReference,
     /// The type's fields in ascending name order.
@@ -297,6 +307,7 @@ impl<'a> ModelSystem<'a> {
                 population: population.clone(),
                 key: key.clone(),
                 type_id,
+                type_key: type_key.clone(),
                 reference,
                 fields,
                 operations,

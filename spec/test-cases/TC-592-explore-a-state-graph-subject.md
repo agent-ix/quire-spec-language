@@ -15,7 +15,7 @@ under each limit and an undecided expansion, the deadlock-freedom item on
 the same exploration, the reduction pre-check, the manifests, and
 determinism.
 
-Scope: FR-167-AC-1 to FR-167-AC-5.
+Scope: FR-167-AC-1 to FR-167-AC-6.
 
 ## Test Procedure
 
@@ -33,9 +33,12 @@ state; a subject with an unbounded population root.
 3. The deadlock-freedom item over §7.2 with no `terminal` declaration; the
    subject with no initial state; the unbounded subject.
 4. `possible`, `always possible` and `unique path` items over one subject
-   with partial-order reduction selected; a `unique path` item with
-   symmetry selected. Read the EN-1 and trace-monitor manifests.
+   with partial-order reduction selected; `possible`, `always possible` and
+   `unique path` items with symmetry selected. Read the EN-1 and trace-monitor
+   manifests.
 5. Step 1's §7.2 request twice.
+6. ADR-021 §7.1's `config_history` subject, the `ReachesTwo` instance `c = a`,
+   first without symmetry and then with its admitted symmetry declaration.
 
 Tag the tests `#[trace("TC-592", "FR-167-AC-n")]`.
 
@@ -50,9 +53,14 @@ Tag the tests `#[trace("TC-592", "FR-167-AC-n")]`.
   `UndecidedSuccessor` and every other reachable node expanded.
 - Step 3: violation at `Lost` with path `play, lose`; `NoInitialState`;
   `RequiresBound` with no node explored.
-- Step 4: the `always possible` and `unique path` items settle
-  `ReductionNotPreserving` before expansion and the `possible` item is
-  explored; `ReductionNotPreserving`; the EN-1 manifest's `state_graph_forms`
-  has `possible`, `always-possible` and `unique-path`, and the trace monitor
+- Step 4: with partial-order reduction, `always possible` and `unique path`
+  settle `ReductionNotPreserving` before their item expansion and `possible`
+  is explored under POR. With symmetry, `possible` and `always possible` are
+  explored over the quotient and `unique path` settles
+  `ReductionNotPreserving`. The EN-1 manifest's `state_graph_forms` has
+  `possible`, `always-possible` and `unique-path`, and the trace monitor
   manifest has no `state_graph_forms` member.
 - Step 5: byte-equal graphs, labels and open sets.
+- Step 6: 27 states without symmetry and 18 states under the stabiliser of
+  `c = a`; every retained edge's target is canonical and its permutation
+  maps the concrete successor to that target, with labels for `c = a`.

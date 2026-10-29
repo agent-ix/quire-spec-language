@@ -81,7 +81,7 @@ fn assert_calls(root: &Path, checkout: &Path, count: usize) {
 }
 
 #[test]
-fn default_and_caller_checkouts_with_spaces_and_dollars_reach_every_child_absolute() {
+fn caller_checkout_with_spaces_and_dollars_reaches_every_child_absolute() {
     let root = crate::test_support::tempdir();
     let workspace = root.path();
     let checkout_path = workspace.join("main clone parent with spaces/$qspec checkout");
@@ -111,10 +111,13 @@ fn missing_empty_and_invalid_checkouts_refuse_before_cargo() {
         Some(OsStr::new("absent")),
         Some(invalid.as_os_str()),
     ] {
-        assert!(matches!(
-            resolve(input, workspace),
-            Err(Error::ConformanceInput { .. })
-        ));
+        let error = resolve(input, workspace).expect_err("invalid checkout must refuse");
+        assert!(matches!(&error, Error::ConformanceInput { .. }));
+        if input.is_none() {
+            assert!(error.to_string().contains(
+                "QSPEC_DIR must point to an available QSpec checkout; no default is used"
+            ));
+        }
     }
     assert!(!workspace.join("calls").exists());
 }
@@ -124,7 +127,7 @@ fn each_selection_refuses_missing_evidence_or_failure() {
     for (index, _) in CHECKS.iter().enumerate() {
         for mode in ["zero-tests", "ignored", "skip", "no-summary", "nonzero"] {
             let root = crate::test_support::tempdir();
-            let checkout_path = root.path().join("quire-specification");
+            let checkout_path = root.path().join("qspec-checkout");
             checkout(&checkout_path);
             assert!(matches!(
                 run_case(root.path(), checkout_path.as_os_str(), mode, index),
@@ -138,7 +141,7 @@ fn each_selection_refuses_missing_evidence_or_failure() {
 #[test]
 fn zero_operation_vectors_refuse() {
     let root = crate::test_support::tempdir();
-    let checkout_path = root.path().join("quire-specification");
+    let checkout_path = root.path().join("qspec-checkout");
     checkout(&checkout_path);
     assert!(matches!(
         run_case(root.path(), checkout_path.as_os_str(), "zero-vectors", 0),
@@ -147,79 +150,12 @@ fn zero_operation_vectors_refuse() {
 }
 
 #[test]
-fn make_exports_raw_default_and_command_line_override() {
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    for override_value in [None, Some("caller checkout $qspec with spaces")] {
-        let mut command = Command::new("make");
-        command
-            .current_dir(workspace)
-            .args([
-                "--no-print-directory",
-                "-rR",
-                "-f",
-                "Makefile",
-                "-f",
-                "-",
-                "export-probe",
-            ])
-            .env_remove("QSPEC_DIR")
-            .env_remove("SIBLINGS")
-            .env_remove("MAKEFLAGS")
-            .env_remove("MFLAGS")
-            .env_remove("MAKEFILES")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped());
-        if let Some(value) = override_value {
-            command.arg(format!("QSPEC_DIR={value}"));
-        }
-        let mut child = command.spawn().unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(b"export-probe:\n\t@printenv QSPEC_DIR\n")
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let exported = String::from_utf8(output.stdout).unwrap();
-        if let Some(value) = override_value {
-            assert_eq!(exported.trim_end(), value);
-        } else {
-            let path = Path::new(exported.trim_end());
-            assert!(path.is_absolute() && path.ends_with("quire-specification"));
-        }
-    }
-}
-
-#[test]
-fn make_exports_default_checkout_from_a_main_clone_parent_with_spaces() {
-    let root = crate::test_support::tempdir();
+fn make_never_invents_a_qspec_checkout_when_the_environment_is_unset() {
+    let workspace = crate::test_support::tempdir();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    fs::copy(source.join("Makefile"), root.path().join("Makefile")).unwrap();
-    let siblings = root.path().join("main clone parent with spaces");
-    let main = siblings.join("main-clone");
-    fs::create_dir_all(&main).unwrap();
-    let init = Command::new("git")
-        .args(["init", "--quiet"])
-        .arg(&main)
-        .output()
-        .unwrap();
-    assert!(init.status.success());
-    let worktree_git = main.join(".git/worktrees/recipe");
-    fs::create_dir_all(&worktree_git).unwrap();
-    fs::write(worktree_git.join("commondir"), "../..\n").unwrap();
-    fs::write(worktree_git.join("HEAD"), "ref: refs/heads/recipe\n").unwrap();
-    fs::write(
-        root.path().join(".git"),
-        format!("gitdir: {}\n", worktree_git.display()),
-    )
-    .unwrap();
+    fs::copy(source.join("Makefile"), workspace.path().join("Makefile")).unwrap();
     let mut child = Command::new("make")
-        .current_dir(root.path())
+        .current_dir(workspace.path())
         .args([
             "--no-print-directory",
             "-rR",
@@ -230,7 +166,6 @@ fn make_exports_default_checkout_from_a_main_clone_parent_with_spaces() {
             "export-probe",
         ])
         .env_remove("QSPEC_DIR")
-        .env_remove("SIBLINGS")
         .env_remove("MAKEFLAGS")
         .env_remove("MFLAGS")
         .env_remove("MAKEFILES")
@@ -245,15 +180,8 @@ fn make_exports_default_checkout_from_a_main_clone_parent_with_spaces() {
         .write_all(b"export-probe:\n\t@printenv QSPEC_DIR\n")
         .unwrap();
     let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap().trim_end(),
-        siblings.join("quire-specification").to_str().unwrap()
-    );
+    assert!(!output.status.success(), "Make must not invent QSPEC_DIR");
+    assert!(output.stdout.is_empty(), "no checkout path was exported");
 }
 
 #[test]
@@ -262,7 +190,7 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
     let workspace = root.path();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     fs::copy(source.join("Makefile"), workspace.join("Makefile")).unwrap();
-    let checkout_path = workspace.join("real checkout $qspec");
+    let checkout_path = workspace.join("qspec-checkout");
     checkout(&checkout_path);
     let alias = workspace.join("linked checkout");
     std::os::unix::fs::symlink(&checkout_path, &alias).unwrap();

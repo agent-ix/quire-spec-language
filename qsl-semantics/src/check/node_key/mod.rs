@@ -63,10 +63,6 @@
 //! is a fixed-depth match and every preimage nests a depth the grammar fixes,
 //! whatever the expression's depth (ADR-030 D-2, FR-258).
 //!
-//! Conformance against QSpec's own published `operation_vectors` is the
-//! opt-in `conformance` test (`make conformance` with `QSPEC_DIR` pointing at
-//! a quire-specification checkout). QSpec is not public yet, so nothing of it
-//! is copied here; the test reads the vectors at run time.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -460,11 +456,10 @@ pub struct TupleTerm {
     pub members: Vec<TupleMember>,
 }
 
-/// The value of a [`MemberTerm`] binding: a Leaf, a Group or a Tuple. A
-/// binding never holds another binding (FR-322 "Body grammar"): FR-092 gives
-/// an optional record field as `f` bound to the Group `{optional:
-/// reference}`, and FR-093 a fold's step as the accumulator bound to the
-/// Group `{x: reference}`.
+/// The value of a [`MemberTerm`] binding: a Leaf, a Group, a Tuple, or a
+/// closed nested aggregate where a QSpec body production requires one (for
+/// example FR-477's execution-entry bindings). Other bindings retain the
+/// FR-322 grammar's existing strata.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(untagged)]
@@ -475,6 +470,9 @@ pub enum BindingValue {
     Group(GroupTerm),
     /// A Tuple.
     Tuple(TupleTerm),
+    /// An aggregate with member-level bindings. This is needed by nested
+    /// closed body productions such as FR-477's execution entries.
+    Aggregate(AggregateTerm),
     /// The accepted `ClauseBinding.execution_point` of an `operation_anchor`
     /// body's `execution_point` binding (QSpec FR-342): the IR's closed
     /// four-variant shape, which is not a term and holds no node reference.
@@ -1014,6 +1012,11 @@ impl BindingValue {
             Self::Leaf(leaf) => vec![leaf],
             Self::Group(group) => group.leaves().collect(),
             Self::Tuple(tuple) => tuple.leaves(),
+            Self::Aggregate(aggregate) => aggregate
+                .members
+                .iter()
+                .flat_map(MemberTerm::leaves)
+                .collect(),
             Self::ExecutionPoint(_) => Vec::new(),
         }
     }
@@ -1023,6 +1026,13 @@ impl BindingValue {
             Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
             Self::Group(group) => Self::Group(group.map_keys(map)),
             Self::Tuple(tuple) => Self::Tuple(tuple.map_keys(map)),
+            Self::Aggregate(aggregate) => Self::Aggregate(AggregateTerm {
+                members: aggregate
+                    .members
+                    .iter()
+                    .map(|member| member.map_keys(map))
+                    .collect(),
+            }),
             Self::ExecutionPoint(point) => Self::ExecutionPoint(point.clone()),
         }
     }
@@ -1062,6 +1072,14 @@ impl MemberTerm {
                 binding.value.map_keys(map),
             )),
         }
+    }
+}
+
+impl AggregateTerm {
+    /// An aggregate whose members may bind leaves, groups, tuples or further
+    /// aggregates, as required by closed nested body productions.
+    pub(crate) fn new(members: Vec<MemberTerm>) -> Self {
+        Self { members }
     }
 }
 
@@ -2593,6 +2611,13 @@ impl Walk<'_> {
                     BindingValue::Leaf(leaf) => self.leaf(leaf)?,
                     BindingValue::Group(group) => self.group(group)?,
                     BindingValue::Tuple(tuple) => self.tuple(tuple)?,
+                    BindingValue::Aggregate(aggregate) => PreimageTerm::Aggregate {
+                        members: aggregate
+                            .members
+                            .iter()
+                            .map(|member| self.member(member))
+                            .collect::<Result<_, _>>()?,
+                    },
                     BindingValue::ExecutionPoint(point) => PreimageTerm::ExecutionPoint(point),
                 };
                 Self::binding(&binding.name, value)

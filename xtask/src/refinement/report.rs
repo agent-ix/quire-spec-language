@@ -16,7 +16,7 @@ use super::compare::CaseResult;
 
 /// The verdict of one run: the highest-severity result present (QSpec FR-301's
 /// order, lowest first).
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, serde::Deserialize)]
 pub enum Verdict {
     /// Every result holds or does not apply.
     #[serde(rename = "success")]

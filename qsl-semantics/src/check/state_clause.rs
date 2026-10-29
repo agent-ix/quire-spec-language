@@ -692,6 +692,40 @@ pub(crate) fn populations_overlapping(
     found.into_iter().map(|(_, domain)| domain).collect()
 }
 
+/// The object a reachability `node` walks, when it is one: a field edge's
+/// operand type, or an end's near end type `E` (FR-365 "The population a
+/// reachability walks").
+fn walked_object(node: CheckedNode<'_>, scope: &Scope) -> Option<EffectiveId> {
+    match node.kind() {
+        NodeKind::Reaches { source, .. } => match node.at(*source).value_type() {
+            ValueType::Reference(object) => Some(*object),
+            _ => None,
+        },
+        NodeKind::ReachesEnd {
+            relationship, near, ..
+        } => scope.relationships().end_object(relationship, *near),
+        _ => None,
+    }
+}
+
+/// The population each reachability under `root` walks among `models`
+/// (FR-104 "Requirements", FR-146 "Claim extent"), or the populations of
+/// the first walked object that more than one covers, ascending by
+/// `DeclarationKey`.
+pub(crate) fn walked_populations(
+    root: CheckedNode<'_>,
+    models: &[AdmittedModel],
+    scope: &Scope,
+) -> Result<BTreeSet<PopulationDomain>, Vec<DeclarationKey>> {
+    let mut walked = BTreeSet::new();
+    for node in root.descendants() {
+        if let Some(object) = walked_object(node, scope) {
+            walked.extend(population_of(models, object, scope.types())?);
+        }
+    }
+    Ok(walked)
+}
+
 /// The domain and authored bound of each population of `named` that the
 /// checked `root` names (FR-391 "Requirements").
 pub(crate) fn named_domains(
@@ -909,19 +943,7 @@ fn check_clause_in(
     // authored bound (FR-380), to be linked to that bound below.
     let mut linked = Vec::new();
     for node in body.root().descendants() {
-        // The objects walked: a field edge's operand type, and an end's near
-        // end type `E` (FR-365 "The population a reachability walks").
-        let walked_object = match node.kind() {
-            NodeKind::Reaches { source, .. } => match node.at(*source).value_type() {
-                ValueType::Reference(object) => Some(*object),
-                _ => None,
-            },
-            NodeKind::ReachesEnd {
-                relationship, near, ..
-            } => input.scope.relationships().end_object(relationship, *near),
-            _ => None,
-        };
-        if let Some(object) = walked_object {
+        if let Some(object) = walked_object(node, input.scope) {
             let end_form = matches!(node.kind(), NodeKind::ReachesEnd { .. });
             let walked =
                 population_of(input.models, object, input.scope.types()).map_err(|keys| {
@@ -1035,6 +1057,12 @@ impl CheckedStateClause {
         self.kind
     }
 
+    /// Whether the clause is an invariant, the kind a refinement's per-step
+    /// records take as hypotheses (FR-146).
+    pub fn is_invariant(&self) -> bool {
+        self.kind == StateClauseKind::Invariant
+    }
+
     /// The observation the clause's own reads take (FR-104, FR-107):
     /// `current` for an invariant, `pre` for a precondition, `post` for a
     /// postcondition.
@@ -1128,7 +1156,7 @@ impl CheckedStateClause {
 /// ADR-014 §4 classifies, FR-097) and its population domains, each keyed
 /// by its member object type's model node and its ordinal. The record's
 /// result is the clause's `Boolean`.
-fn record(
+pub(crate) fn record(
     roots: &[(NodeKey, &ValueType)],
     root_prefix: Option<NodeKey>,
     populations: &[(PopulationDomain, NodeKey)],
@@ -1202,7 +1230,7 @@ fn record(
 
 /// The declaring object type and name of `operation`, as a record
 /// references it (ADR-017 AR-4).
-fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
+pub(crate) fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
     (operation.declaring, operation.declaration.name().to_owned())
 }
 
@@ -1231,7 +1259,7 @@ pub(crate) fn population_key(
 /// rather than hand-built, so a state clause's or an attempt's
 /// resource-exhausted refusal carries the same kind and region a
 /// function's would.
-fn classify_refusal(failure: ClassifyFailure, location: &Location) -> CheckRefusal {
+pub(crate) fn classify_refusal(failure: ClassifyFailure, location: &Location) -> CheckRefusal {
     match failure {
         ClassifyFailure::Limit(exceeded) => CheckRefusal {
             location: location.clone(),

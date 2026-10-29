@@ -5,18 +5,18 @@
 //! subject, and the deadlock-freedom and time-lock-freedom items derived
 //! from them. An item over an untimed subject keeps its candidates.
 
-use std::collections::BTreeSet;
-
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::zone_check::manifest as en6;
 use qsl_replay::node_occurrence;
-use qsl_route::deadlock::{deadlock_freedom_items, time_lock_freedom_items, ModelTemporalItem};
+use qsl_route::deadlock::ModelTemporalItem;
 use qsl_route::request::items_from_requirements;
+use qsl_route::request::ItemKind;
 use qsl_route::{CandidateOutcome, ManifestDigest, ProviderOrigin, Registry};
-use qsl_semantics::check::{Capability, TimedPropertyForm};
+use qsl_semantics::check::TimedPropertyForm;
 
-use crate::timed_world::{document, world, World};
+use crate::derived_request::derived_items;
+use crate::timed_world::{document, world, World, PACKAGE};
 use crate::zone_search::{rpc_claim, INFINITE, TIMED};
 
 /// EN-1 and EN-6, each registered from its own manifest.
@@ -54,9 +54,8 @@ struct Routes {
     candidates: Vec<String>,
     /// Whether the clause's record is marked dense.
     dense: bool,
-    /// The dense mark and candidates of the deadlock-freedom item, then of
-    /// the time-lock-freedom item, when each is derived.
-    derived: Vec<(bool, Vec<String>)>,
+    /// The kind and candidates of each derived item, in request order.
+    derived: Vec<(ItemKind, Vec<String>)>,
 }
 
 fn routes(world: &World) -> Routes {
@@ -71,7 +70,7 @@ fn routes(world: &World) -> Routes {
         .get(&occurrence)
         .expect("the clause's record")
         .requirements()
-        .dense_time();
+        .timed();
     let items = items_from_requirements(records, &registry, None);
     let item = items
         .iter()
@@ -83,26 +82,14 @@ fn routes(world: &World) -> Routes {
         subject: &subject,
         package: graph,
     }];
-    let derived_route = |dense: bool| {
-        ids(&registry.restrict_to_dense_time(
-            registry.candidates_for_temporal_dynamics(
-                Capability::TemporalSatisfaction,
-                None,
-                &BTreeSet::new(),
-                &BTreeSet::new(),
-                false,
-            ),
-            dense,
-        ))
-    };
-    let derived = deadlock_freedom_items(&temporal, &[], &[], |_| vec!["M".to_owned()])
+    let derived = derived_items(&temporal, &[], &[], &[PACKAGE])
         .iter()
-        .map(|item| (item.dense_time(), derived_route(item.dense_time())))
-        .chain(
-            time_lock_freedom_items(&temporal, &[], |_| vec!["M".to_owned()])
-                .iter()
-                .map(|item| (item.dense_time(), derived_route(item.dense_time()))),
-        )
+        .map(|(item, _)| {
+            (
+                item.item_kind().expect("a derived kind"),
+                ids(item.candidates().expect("its candidates")),
+            )
+        })
         .collect();
     Routes {
         candidates: ids(item.candidates()),
@@ -165,8 +152,8 @@ fn timed_items_over_a_dense_subject_route_to_en6_alone() {
         assert_eq!(
             derived,
             [
-                (true, vec![en6::BACKEND_ID.to_owned()]),
-                (true, vec![en6::BACKEND_ID.to_owned()])
+                (ItemKind::DeadlockFreedom, vec![en6::BACKEND_ID.to_owned()]),
+                (ItemKind::TimeLockFreedom, vec![en6::BACKEND_ID.to_owned()])
             ],
             "{form:?}: the deadlock-freedom and time-lock-freedom items"
         );
@@ -195,7 +182,7 @@ fn an_item_over_an_untimed_subject_keeps_its_candidates() {
     assert_eq!(
         derived,
         [(
-            false,
+            ItemKind::DeadlockFreedom,
             vec![en1::BACKEND_ID.to_owned(), en6::BACKEND_ID.to_owned()]
         )]
     );
@@ -317,7 +304,7 @@ fn an_untimed_refinement_record_routes_to_explicit_state_alone() {
         .get(occurrence)
         .expect("its record")
         .requirements()
-        .dense_time());
+        .timed());
     let items = items_from_requirements(records, &registry(), None);
     let item = items
         .iter()
@@ -364,7 +351,7 @@ fn a_mixed_package_routes_each_record_by_its_own_subject() {
             .get(occurrence)
             .expect("its record")
             .requirements()
-            .dense_time();
+            .timed();
         let item = items
             .iter()
             .find(|item| item.occurrence() == occurrence)

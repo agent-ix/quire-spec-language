@@ -108,11 +108,13 @@ enum Fixture {
     Terminal,
     /// TC-1187, TC-1220: [`HYBRID_UNIT`], hybrid models and their claims.
     Hybrid,
+    /// FR-180 / FR-477: an HP-1 relation over two ConfigVersion executions.
+    StepRelation,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 28] = [
+    const ALL: [Self; 29] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -141,6 +143,7 @@ impl Fixture {
         Self::StateGraphClaim,
         Self::Terminal,
         Self::Hybrid,
+        Self::StepRelation,
     ];
 }
 
@@ -417,6 +420,10 @@ impl Fixture {
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::Hybrid => text(HYBRID_UNIT),
+            Self::StepRelation => Emitted::placed_owned(
+                CheckedPackage::link(super::step_relation::checked_graph()),
+                vec![super::step_relation::document().to_vec()],
+            ),
             Self::ConfigVersion => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
                 let unit = config_version_unit::unit_text(&document_digest(document));
@@ -698,6 +705,7 @@ fn rows() -> Vec<Row> {
         row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
         row(K::Claim(ClaimForm::Hyperproperty), F::HyperClause),
         row(K::Claim(ClaimForm::StateGraph), F::StateGraphClaim),
+        row(K::Claim(ClaimForm::StepRelation), F::StepRelation),
         row(K::Temporal(TemporalForm::Terminal), F::Terminal),
         row(K::Hybrid(HybridForm::Model), F::Hybrid),
         row(K::Hybrid(HybridForm::Mode), F::Hybrid),
@@ -1767,6 +1775,25 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
                     // shape; its row terms are checked by the V2 reader's
                     // refinement grammar, not the ordinary term stratum.
                     assert_eq!(node["body"]["term"], "refinement");
+                    continue;
+                }
+                if node["node_tag"] == "claim" && node["semantic_form"] == "step_relation" {
+                    // FR-477 defines a closed claim body with nested
+                    // execution aggregates; it is checked by the step
+                    // relation reader, not the ordinary term stratum.
+                    assert_eq!(node["body"]["term"], "aggregate");
+                    let members = node["body"]["members"]
+                        .as_array()
+                        .expect("the FR-477 body members");
+                    let names: Vec<_> = members
+                        .iter()
+                        .map(|member| member["name"].as_str().expect("member name"))
+                        .collect();
+                    assert_eq!(names, ["subjects", "executions", "invariants", "body"]);
+                    assert_eq!(members[0]["value"]["term"], "aggregate");
+                    assert_eq!(members[1]["value"]["term"], "aggregate");
+                    assert_eq!(members[2]["value"]["term"], "aggregate");
+                    assert_eq!(members[3]["value"]["term"], "reference");
                     continue;
                 }
                 assert!(

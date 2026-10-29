@@ -8,16 +8,15 @@
 use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_route::deadlock::{
-    deadlock_freedom_items, ItemObligation, ModelStateGraphItem, ModelTemporalItem, ObligationKind,
-};
-use qsl_route::request::ExtentClassification;
+use qsl_route::deadlock::{ItemObligation, ModelStateGraphItem, ModelTemporalItem, ObligationKind};
+use qsl_route::request::{ExtentClassification, ItemKind};
 use qsl_semantics::check::Capability;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Origin, Role};
 use quire_semantic_value::fairness::PropertyForm;
 
-use crate::counter::{document, package, Documents, CONTRACT};
+use crate::counter::{document, package, Documents, CONTRACT, PACKAGE};
+use crate::derived_request::derived_items;
 
 /// The `Counter` subject: universe `{c}`, initial value 0.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,10 +25,8 @@ struct Subject {
     initial: DocumentRef,
 }
 
-/// Every subject here ranges over the one model `M`.
-fn over_m<S>(_: &S) -> Vec<String> {
-    vec!["M".to_owned()]
-}
+/// Every subject here reads the one model `M`'s selection.
+const OVER_M: &[&str] = &[PACKAGE];
 
 fn occurrence(byte: u8) -> OccurrenceKey {
     OccurrenceKey::new(
@@ -62,10 +59,11 @@ fn derived(terminal: &str) -> (Vec<ItemObligation<Subject>>, Vec<ItemObligation<
         },
     ];
     let authored = items.iter().map(ModelTemporalItem::obligation).collect();
-    let derived = deadlock_freedom_items(&items, &[], &[], over_m);
-    for item in &derived {
-        assert_eq!(item.subject(), &subject);
-        assert_eq!(item.property_form(), PropertyForm::ReachableInvariant);
+    let derived = derived_items(&items, &[], &[], OVER_M);
+    for (item, obligation) in &derived {
+        assert_eq!(item.item_kind(), Some(ItemKind::DeadlockFreedom));
+        assert_eq!(obligation.subject, subject);
+        assert_eq!(item.property_form(), Some(PropertyForm::ReachableInvariant));
         assert_eq!(item.kind(), Capability::TemporalSatisfaction);
         assert_eq!(
             item.extent(),
@@ -73,11 +71,14 @@ fn derived(terminal: &str) -> (Vec<ItemObligation<Subject>>, Vec<ItemObligation<
                 finite_bound_available: false
             }
         );
-        assert_eq!(item.obligation().kind, ObligationKind::DeadlockFreedom);
+        assert_eq!(obligation.kind, ObligationKind::DeadlockFreedom);
     }
     (
         authored,
-        derived.iter().map(|item| item.obligation()).collect(),
+        derived
+            .into_iter()
+            .map(|(_, obligation)| obligation)
+            .collect(),
     )
 }
 
@@ -127,13 +128,10 @@ fn state_graph_items_share_the_subject_deadlock_item() {
         package: checked.graph(),
     }];
 
-    let derived = deadlock_freedom_items(&temporal, &[], &state_graph, over_m);
+    let derived = derived_items(&temporal, &[], &state_graph, OVER_M);
     assert_eq!(derived.len(), 1, "equal subjects share one derived item");
-    assert_eq!(derived[0].subject(), &subject);
-    assert_eq!(
-        derived[0].obligation().kind,
-        ObligationKind::DeadlockFreedom
-    );
+    assert_eq!(derived[0].1.subject, subject);
+    assert_eq!(derived[0].1.kind, ObligationKind::DeadlockFreedom);
 
     let graph_only_subject = Subject {
         universe: vec!["other"],
@@ -143,13 +141,13 @@ fn state_graph_items_share_the_subject_deadlock_item() {
         subject: &graph_only_subject,
         package: checked.graph(),
     }];
-    let graph_only_derived = deadlock_freedom_items(&[], &[], &graph_only, over_m);
+    let graph_only_derived = derived_items(&[], &[], &graph_only, OVER_M);
     assert_eq!(
         graph_only_derived.len(),
         1,
         "graph-only subjects contribute"
     );
-    assert_eq!(graph_only_derived[0].subject(), &graph_only_subject);
+    assert_eq!(graph_only_derived[0].1.subject, graph_only_subject);
 
     let opted_out = package(
         &documents.document,
@@ -159,5 +157,5 @@ fn state_graph_items_share_the_subject_deadlock_item() {
         subject: &subject,
         package: opted_out.graph(),
     }];
-    assert!(deadlock_freedom_items(&[], &[], &graph_only, over_m).is_empty());
+    assert!(derived_items(&[], &[], &graph_only, OVER_M).is_empty());
 }

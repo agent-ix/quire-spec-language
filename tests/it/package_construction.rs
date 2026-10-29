@@ -15,12 +15,11 @@ mod inventory;
 mod limits;
 use crate::support::native_rule_model;
 use crate::support::package_vector_setup;
+use crate::support::package_vector_setup::vectors;
 #[path = "../package_construction_cases/schema.rs"]
 mod schema;
 #[path = "../package_construction_cases/static_changes.rs"]
 mod static_changes;
-#[path = "../package_construction_cases/vectors.rs"]
-mod vectors;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, SourceIdentity};

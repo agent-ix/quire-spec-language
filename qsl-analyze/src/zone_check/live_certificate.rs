@@ -40,7 +40,7 @@ impl Run<'_, '_, '_> {
             .sum();
         let mut nodes = Vec::with_capacity(total);
         let mut edges = Vec::new();
-        let mut initial = Vec::new();
+        let mut initials = Vec::new();
         let mut components = Components {
             numbering: vec![None; total],
             reasons: Vec::new(),
@@ -70,7 +70,7 @@ impl Run<'_, '_, '_> {
                     }),
                 });
                 if vertex.initial.is_some() {
-                    initial.push(offset + index);
+                    initials.push(offset + index);
                 }
             }
             let mut at = vec![usize::MAX; product.edges.len()];
@@ -102,7 +102,7 @@ impl Run<'_, '_, '_> {
             },
             nodes,
             edges,
-            initial,
+            initials,
             components: Some(components),
             divergence: None,
             admitted,

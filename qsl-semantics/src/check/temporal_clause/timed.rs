@@ -166,16 +166,16 @@ fn model_of<'a>(
     Some((name, source))
 }
 
-/// Whether a clause whose `over` parameter has type `over` is over a model
-/// that declares `time dense` (FR-243): its item is EN-6's, under any
-/// profile.
-pub(crate) fn over_dense_time(over: &ValueType, declarations: &TemporalDeclarations<'_>) -> bool {
+/// Whether a clause whose `over` parameter has type `over` is over a timed
+/// model, one with a `time` member of either source, `dense` or `tick`
+/// (FR-243): its item is EN-6's, under any profile.
+pub(crate) fn over_timed(over: &ValueType, declarations: &TemporalDeclarations<'_>) -> bool {
     let ValueType::Reference(object) = over else {
         return false;
     };
     model_of(declarations, *object)
         .and_then(|(_, source)| source)
-        .is_some_and(|source| source.source == TimeSourceKind::Dense)
+        .is_some()
 }
 
 /// The clause's `model-time` binding under the timed profile (FR-233,

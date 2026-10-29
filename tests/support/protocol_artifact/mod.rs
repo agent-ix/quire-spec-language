@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::support::native_rule_model;
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
@@ -72,7 +73,7 @@ impl Fixture {
                 revision: "draft:1".into(),
             },
             "native-rule-model.json",
-            include_bytes!("../../fixtures/native-rule-model.json"),
+            native_rule_model::fixture().as_bytes(),
             qsl_foundation::source::MAX_SOURCE_BYTES,
         )
         .unwrap();

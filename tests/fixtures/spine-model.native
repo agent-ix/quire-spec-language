@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Complete-V1 compile fixture with a domain package (FR-027-AC-9, FR-056-AC-9):
-// `model M` selects `spine-model.semantic-ir.json` by its sha256-jcs digest.
+// `model M` selects `spine-model.semantic-ir.json` by its sha256-jcs digest,
+// computed and filled in by tests/support/spine_model.rs.
 // The profile is the `root` row of the DefinitionLock catalog (FR-110).
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
-model M = "acme/orders" version "1.0.0" digest "sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114";
+model M = "acme/orders" version "1.0.0" digest "sha256-jcs:{model_digest}";
 function keep using v(g: M::Gadget): M::Gadget pure { g }
 function held using v(w: Reference<M::Widget>): Boolean pure { true }
 function code using v(g: M::Gadget): Integer pure { deref(g).code }

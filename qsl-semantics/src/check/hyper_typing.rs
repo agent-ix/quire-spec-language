@@ -159,7 +159,7 @@ pub(crate) fn type_condition(
     env: &Env<'_>,
     expression: &Expression,
     spans: &ExpressionSpans,
-) -> Vec<BodyFault> {
+) -> (Vec<BodyFault>, Vec<Ty>) {
     let mut located: Vec<Option<Span>> = vec![None; expression.len()];
     walk(expression, spans, |visit| {
         if let Some(slot) = located.get_mut(visit.node.id().index()) {
@@ -446,7 +446,7 @@ pub(crate) fn type_condition(
             span: span_of(expression.root().id().index()),
         });
     }
-    faults
+    (faults, types)
 }
 
 /// The nodes of `expression` with every node after its operands and a

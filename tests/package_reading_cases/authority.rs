@@ -65,11 +65,11 @@ fn ordered_import_occurrence_and_observation_claims_cannot_be_permuted() {
 #[trace("TC-085", "TC-082", "FR-020-AC-6", "FR-020-AC-10")]
 fn equal_length_authored_conflicts_and_reordered_wire_clauses_refuse() {
     let models = [model()];
-    let [_, _, vector] = package_vector_setup::cases();
+    let [_, _, vector] = package_vector_setup::cases(&models[0]);
     let bindings = package_vector_setup::checked(&vector, &models)
         .bindings()
         .clone();
-    let original: Value = serde_json::from_slice(vector.artifact).unwrap();
+    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
     let mut duplicate_name = bindings.clone();
     duplicate_name.clauses[1].name = duplicate_name.clauses[0].name.clone();
     let mut duplicate_identity = bindings.clone();
@@ -94,11 +94,11 @@ fn equal_length_authored_conflicts_and_reordered_wire_clauses_refuse() {
 #[trace("TC-085", "FR-020-AC-5", "FR-020-AC-6")]
 fn source_and_authored_axes_are_checked_against_external_bindings() {
     let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases();
+    let [vector, _, _] = package_vector_setup::cases(&models[0]);
     let bindings = package_vector_setup::checked(&vector, &models)
         .bindings()
         .clone();
-    let original: Value = serde_json::from_slice(vector.artifact).unwrap();
+    let original: Value = serde_json::from_slice(&vector.artifact).unwrap();
     for (pointer, value, code) in [
         (
             "/source/identity",
@@ -189,7 +189,7 @@ fn source_and_authored_axes_are_checked_against_external_bindings() {
 fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
     let original_model = native_rule_model::parts().model();
     let changed = native_rule_model::from_text(
-        &(native_rule_model::FIXTURE.to_owned() + " "),
+        &(native_rule_model::fixture().to_owned() + " "),
         "changed.native-model",
         "draft:1",
     )

@@ -10,13 +10,16 @@
 //! of the subject a verdict is about. A verdict over one universe joins only
 //! its own request index, never another universe's.
 
+use std::collections::BTreeSet;
+
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
-use qsl_package::EmitRefusal;
+use qsl_package::{CheckedPackage, EmitRefusal};
 use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal};
 use qsl_route::deadlock::{ModelRefinementItem, ModelTemporalItem};
 use qsl_route::model_request::ModelRequest;
+use qsl_route::request::AbstractSubject;
 use qsl_semantics::check::{CheckedRefinement, TemporalClauseNode};
 use qsl_semantics::model::observation::DocumentRef;
 
@@ -48,6 +51,9 @@ pub enum RequestRefusal {
 pub struct SubjectContext<'s, 'a> {
     subject: &'s ModelSubject<'a>,
     identity: SubjectIdentity,
+    /// The `model_selections` rows the subject reads: the domain packages
+    /// of the populations its universes cover (QSpec FR-361, FR-368).
+    selections: BTreeSet<&'s str>,
 }
 
 impl<'s, 'a> SubjectContext<'s, 'a> {
@@ -63,6 +69,12 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             identity: SubjectIdentity::of(subject).map_err(|refusal| match refusal {
                 SubjectIdentityRefusal::Package(refusal) => RequestRefusal::Package(refusal),
             })?,
+            selections: subject
+                .simulation
+                .universes
+                .iter()
+                .map(|universe| universe.population.package.as_str())
+                .collect(),
         })
     }
 
@@ -102,27 +114,31 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             subject: &self.identity,
             package,
         };
-        Ok(request.authored(&item, record.requirements()))
+        Ok(request.authored(&item, record.requirements(), &self.selections))
     }
 
     /// Write the item of the checked `refinement` (FR-144), with this subject
-    /// as its concrete subject and `abstract_initial` as the abstract
-    /// subject's initial snapshots, into `request` and return its index.
+    /// as its concrete subject and `abstract_package` with
+    /// `abstract_initial` as the abstract subject, into `request` and return
+    /// its index.
     ///
     /// The item's record is the refinement's own, read from the subject's
-    /// checked package. Its obligation is the subject's identity, the
-    /// refinement's occurrence and the abstract initial snapshots, so the
-    /// same refinement against other abstract initial states is another
-    /// item.
+    /// checked package. It carries the abstract subject as the abstract
+    /// package's id and the initial snapshots (QSpec FR-368-AC-19). Its
+    /// obligation is the subject's identity, the refinement's occurrence and
+    /// the abstract initial snapshots, so the same refinement against other
+    /// abstract initial states is another item.
     ///
     /// # Errors
     ///
     /// [`RequestRefusal::NoRefinementRecord`] when the package has no record
-    /// for the refinement.
+    /// for the refinement, and [`RequestRefusal::Package`] when the abstract
+    /// package has no canonical identity.
     pub fn author_refinement(
         &self,
         request: &mut ModelRequest<SubjectIdentity>,
         refinement: &CheckedRefinement,
+        abstract_package: &CheckedPackage,
         abstract_initial: &[DocumentRef],
     ) -> Result<RequestIndex, RequestRefusal> {
         let package = self.subject.simulation.package.graph();
@@ -139,8 +155,14 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             abstract_initial,
             package,
         };
+        let abstract_subject = AbstractSubject {
+            package_id: qsl_package::emit_checked(abstract_package)?
+                .package()
+                .package_id(),
+            initial_states: abstract_initial.to_vec(),
+        };
         request
-            .refinement(&item, record.requirements())
+            .refinement(&item, record.requirements(), abstract_subject)
             .ok_or_else(missing)
     }
 }

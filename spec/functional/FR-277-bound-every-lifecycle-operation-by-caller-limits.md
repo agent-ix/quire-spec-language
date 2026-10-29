@@ -180,14 +180,16 @@ counts; helper traversal events SHALL NOT redefine converted nodes.
 
 ### Applicability of existing validation accounting
 
-NFR-009 governs one `state::evaluate` or `state::evaluate_v2` call under
-`quire.state.evaluation-work/1`, including its input validation. Its node,
-aggregate-entry, text and other counters SHALL keep their specified units,
-default values and before-inspection/retention charge points. NFR-006
-governs the historical native artifact construction, validation request and
-reference evaluation through FR-018/007/008; its arena-node/child-edge,
-validation-visit and text rules SHALL remain unchanged. Neither accounting
-identity is reinterpreted as `quire.value.accounting/v1` or as QSV membership.
+NFR-009 governs checked-term evaluation under the caller's
+`quire.value.accounting/v1` meter. The applicable counters, units, defaults and
+settings are FR-255's shared accounting table; FR-046/047/107/390 own their
+charge points. Snapshot/invocation document bytes, objects and values remain
+FR-106 admission limits, and model normalization remains FR-056's limits; these
+are not evaluation-meter charges. NFR-006 governs historical native artifact
+construction, validation request and reference evaluation through
+FR-018/007/008; its arena-node/child-edge, validation-visit and text rules
+remain unchanged. The retired `quire.state.evaluation-work/1` identity is not
+reinterpreted as `quire.value.accounting/v1` or as QSV membership.
 
 The present settlement governs supplied-value admission to the S6a Value
 checked-call seam and replay witness conversion (FR-090/098/321/322). It

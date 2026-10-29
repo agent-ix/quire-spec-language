@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-120: explicit rational producer profiles through the public source/model APIs.
 
+use crate::support::native_rule_model;
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span, Spanned};
 use quire_contract_model as ir;
@@ -127,13 +128,9 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
     )
     .unwrap();
     let v1 = old.admit(ModelLimits::default()).unwrap();
-    let frozen: Value = serde_json::from_slice(include_bytes!(
-        "../fixtures/native-package/minimal.package.json"
-    ))
-    .unwrap();
     assert_eq!(
         v1.artifact_bytes(),
-        frozen["models"][0]["artifact"].as_str().unwrap().as_bytes()
+        crate::support::historical_model_artifact()
     );
     assert_eq!(direct.artifact_bytes(), v1.artifact_bytes());
     let selected = read(source(text), FORMAT_V2, ModelSourceLimits::default()).unwrap();
@@ -175,7 +172,7 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
 #[test]
 #[trace("TC-120", "FR-041-AC-1", "FR-041-AC-4", "FR-041-AC-6")]
 fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
-    let text = include_str!("../fixtures/native-rule-model.json");
+    let text = native_rule_model::fixture();
     let old = read(source(text), FORMAT, ModelSourceLimits::default()).unwrap();
     let selected = read(source(text), FORMAT_V2, ModelSourceLimits::default()).unwrap();
     assert_eq!(old.profile(), NativeModelProfile::V1);
@@ -221,7 +218,7 @@ fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
 #[test]
 #[trace("TC-120", "FR-041-AC-1", "FR-041-AC-6")]
 fn replacing_public_draft_payloads_cannot_retag_the_selected_profile() {
-    let legacy = include_str!("../fixtures/native-rule-model.json");
+    let legacy = native_rule_model::fixture();
     let rational_text = document(RATIONAL, "", AMOUNT);
     let mut old = read(source(legacy), FORMAT, ModelSourceLimits::default()).unwrap();
     let mut selected = draft(&rational_text);
@@ -636,8 +633,7 @@ fn every_rational_site_requires_one_consistent_role() {
 #[test]
 #[trace("TC-120", "FR-041-AC-4", "FR-041-AC-6")]
 fn mixed_existing_roles_and_rational_artifact_identity_are_preserved() {
-    let mut document: Value =
-        serde_json::from_str(include_str!("../fixtures/native-rule-model.json")).unwrap();
+    let mut document: Value = serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["scalars"]
         .as_array_mut()
         .unwrap()

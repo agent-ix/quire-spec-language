@@ -12,7 +12,6 @@ use qsl_replay::{
 use serde_json::{json, Value};
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
-const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-model.native");
 const PROFILE: &str = "quire.protocol.finite-global/v1";
 
 const PROTOCOL: &str = "protocol Fill using v over (input: M::Gadget) on origin {\n\
@@ -28,7 +27,7 @@ fn unit(profile: Option<&str>, declarations: &str) -> String {
     let header = profile.map_or_else(String::new, |identity| {
         format!("profile p = \"{identity}\";\n")
     });
-    let fixture = FIXTURE.replace(
+    let fixture = crate::spine_model::unit().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         &format!("profile v = \"quire.model.complete/v1\";\n{header}"),
     );
