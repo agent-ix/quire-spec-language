@@ -1075,8 +1075,9 @@ fn reduced_candidates(
 /// The candidate outcome of one item's `requirements`: backends of its
 /// capability kind that advertise every fairness kind it uses (FR-134) and,
 /// for a timed item ([`Requirements::timed`]), decide timed items (FR-243);
-/// a refinement record that is not marked timed goes to the explicit-state
-/// engines alone (FR-144, FR-430). An item the writer disposes `Unsupported` has no
+/// a refinement record that is not marked timed goes to the engines that do
+/// not decide timed items, EN-1 and SMT unrolling (FR-144, FR-146, FR-430,
+/// ADR-020 RE-3). An item the writer disposes `Unsupported` has no
 /// candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,

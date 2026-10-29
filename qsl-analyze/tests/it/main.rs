@@ -62,6 +62,8 @@ mod refinement_certificate;
 #[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;
 mod refinement_liveness;
+#[path = "../../../tests/support/refinement_smt_proofs.rs"]
+mod refinement_proofs;
 mod refinement_protocol;
 mod refinement_reads;
 mod refinement_replay;
@@ -81,6 +83,7 @@ mod state_graph_settle;
 mod statistical_manifest;
 mod statistical_model;
 mod statistical_witness_replay;
+mod step_simulation;
 mod strong_fairness;
 mod strong_hint;
 mod time_lock_item;

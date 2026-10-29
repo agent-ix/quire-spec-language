@@ -1574,9 +1574,9 @@ impl Registry {
 
     /// FR-144 and QSpec FR-430: `outcome`, a candidate set computed for a
     /// refinement record over an untimed or `time tick` concrete subject,
-    /// restricted to the explicit-state engines: those that do not decide
-    /// timed items, since EN-6's refinement product reads only a dense
-    /// concrete subject. An unknown named backend is returned
+    /// restricted to the engines that do not decide timed items (EN-1, and
+    /// SMT unrolling by ADR-020 RE-3), since EN-6's refinement product reads
+    /// only a dense concrete subject. An unknown named backend is returned
     /// unchanged.
     pub fn restrict_to_untimed_refinement(&self, outcome: CandidateOutcome) -> CandidateOutcome {
         self.keep_candidates(outcome, |descriptor| !descriptor.decides_timed())

@@ -2,240 +2,29 @@
 //! FR-315 "Refinement queries" (TC-900) and FR-314 "Refinement certificates"
 //! (TC-893, TC-1165): `encode_refinement_query` and
 //! `check_refinement_smt_proof` over ADR-020 §8's `CasRefinesCounter`, with
-//! hand-written Alethe refutations of its queries.
+//! hand-written Alethe refutations of its queries; and FR-146's settlement of
+//! the per-step simulation records and the safety half from them (TC-551).
 
 use ix_trace_rs::trace;
-use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::smt::{
-    encode_refinement_query, RefinementCertificateRequest, RefinementQueryKind, Refusal,
-    SmtEncodingRefusal,
+    RefinementCertificateRequest, RefinementQueryKind, Refusal, SmtEncodingRefusal,
 };
 use qsl_replay::{
-    check_refinement_smt_proof, CertificateCheckLimits, CertificateLocus, CertificateRejection,
-    CertificateRule, IncompleteCause, ModelCheckLimit, ProofFormat, QueryPart,
-    RefinementSmtCertificate, RefutedQuery, SmtProofCheck,
+    certify_step_records, check_refinement_smt_proof, settle_step_records, CertificateCheckLimits,
+    CertificateLocus, CertificateRejection, CertificateRule, Certification, IncompleteCause,
+    InconclusiveCause, ItemLabel, ModelCheckLimit, OtherBackendResult, ProofBasis, ProofFormat,
+    QueryPart, RefinementFailure, RefinementSmtCertificate, RefinementTraceSettlement,
+    SettlementBasis, SmtProofCheck, StepCertification, StepRecordVerdict, StepRecordsSettlement,
+    TerminalValue, UnavailabilityCause,
 };
 use quire_exact::Cancel;
 
 use crate::refinement_fixture::{
-    cas_refines_counter, cas_refines_counter_add, mutated, Variant, World, SPEC, UNLIMITED,
+    cas_refines_counter, cas_refines_counter_add, mutated, Variant, World,
 };
-
-/// The subjects of `world`'s refinement.
-fn subjects(world: &World) -> (ModelSubject<'_>, ModelSubject<'_>) {
-    let concrete = ModelSubject {
-        simulation: world.concrete_request(UNLIMITED),
-        proof_bounds: Vec::new(),
-    };
-    let abstract_ = ModelSubject {
-        simulation: world.request(SPEC, vec![world.abstract_initial()], UNLIMITED),
-        proof_bounds: Vec::new(),
-    };
-    (concrete, abstract_)
-}
-
-/// Run `body` with the refinement request of `world`.
-fn with_request<T>(world: &World, body: impl FnOnce(&RefinementCertificateRequest<'_>) -> T) -> T {
-    let (concrete, abstract_) = subjects(world);
-    let request = RefinementCertificateRequest {
-        package: world.package(),
-        refinement: world
-            .refinement()
-            .v2_emission()
-            .expect("the refinement emits")
-            .identity,
-        concrete: &concrete,
-        abstract_: &abstract_,
-    };
-    body(&request)
-}
-
-/// The position in the `steps` array of the row whose class is spelled
-/// `spelling`.
-fn row_of(world: &World, spelling: &str) -> u64 {
-    let refinement = world.refinement();
-    let sources = refinement.v2_emission().expect("emits").step_sources;
-    let position = sources
-        .iter()
-        .position(|source| refinement.steps()[*source].spelling().ends_with(spelling))
-        .expect("the row exists");
-    u64::try_from(position).expect("a small position")
-}
-
-fn encode(
-    request: &RefinementCertificateRequest<'_>,
-    kind: RefinementQueryKind,
-) -> Result<String, SmtEncodingRefusal> {
-    encode_refinement_query(request, kind)
-        .map(|bytes| String::from_utf8(bytes).expect("a script is UTF-8"))
-}
-
-/// The terms of `query`'s assertions, in order.
-fn assertions(query: &str) -> Vec<&str> {
-    query
-        .lines()
-        .filter_map(|line| line.strip_prefix("(assert ")?.strip_suffix(')'))
-        .collect()
-}
-
-/// `(step id (cl conjunct) :rule and :premises (premise) :args (k))`,
-/// `k` the position of `conjunct` among the operands of `whole`.
-fn and_step(id: &str, conjunct: &str, premise: &str, whole: &str) -> String {
-    let k = operands(whole)[1..]
-        .iter()
-        .position(|operand| *operand == conjunct)
-        .unwrap_or_else(|| panic!("{conjunct} is a conjunct of {whole}"));
-    format!("(step {id} (cl {conjunct}) :rule and :premises ({premise}) :args ({k}))")
-}
-
-const RANGE: &str = "(and (<= 0 s0.c.value) (<= s0.c.value 2))";
-
-/// The steps that refute the `(not true)` of a refuted `(or (not D) (not
-/// R))` whose `D` is `true`: `tautology` over `not_not`'s clause, whose two
-/// literals are complementary.
-const TRUE: &str = "(step u0 (cl (not (not (not true))) true) :rule not_not)\n\
-     (step u1 (cl true) :rule tautology :premises (u0))\n";
-
-/// A refutation of the `Initial` query: its initial predicate fixes
-/// `s0.c.value` at 0, which `(or (not true) (not (= s0.c.value 0)))` denies.
-fn initial_proof(query: &str) -> String {
-    let asserted = assertions(query);
-    let [.., initial, negation] = asserted.as_slice() else {
-        panic!("an initial query has two assertions after its ranges");
-    };
-    let t0 = and_step("t0", "(= s0.c.value 0)", "a0", initial);
-    format!(
-        "(assume a0 {initial})\n\
-         (assume a1 {negation})\n\
-         {t0}\n\
-         (step t1 (cl (not true) (not (= s0.c.value 0))) :rule or :premises (a1))\n\
-         {TRUE}\
-         (step t2 (cl) :rule resolution :premises (t1 u1 t0))\n"
-    )
-}
-
-const UNCHANGED: &str = "(= s1.c.value s0.c.value)";
-
-/// A refutation of a `stutter` row's query `(and ... Q ... (or (not true)
-/// (not Q)))`, `Q` the frame equality of `value`.
-fn stutter_proof(assertion: &str) -> String {
-    let t0 = and_step("t0", UNCHANGED, "a0", assertion);
-    let refuted = format!("(or (not true) (not {UNCHANGED}))");
-    let t1 = and_step("t1", &refuted, "a0", assertion);
-    format!(
-        "(assume a0 {assertion})\n\
-         {t0}\n\
-         {t1}\n\
-         (step t2 (cl (not true) (not {UNCHANGED})) :rule or :premises (t1))\n\
-         {TRUE}\
-         (step t3 (cl) :rule resolution :premises (t2 u1 t0))\n"
-    )
-}
-
-/// A refutation of worker `w`'s `commit` row query: the concrete commit
-/// writes `value = tmp + 1` with `tmp = value`, so `inc` holds over the
-/// mapped pair, by linear arithmetic over the range of `s0.c.value`.
-fn commit_proof(assertion: &str, w: char) -> String {
-    let rng = "(and (<= 0 (+ s0.c.value 1)) (<= (+ s0.c.value 1) 2))";
-    let k = "(and (< s0.c.value 2) (= s1.c.value (+ s0.c.value 1)))";
-    let implication = format!("(=> (< s0.c.value 2) {rng})");
-    let m = format!("(and {implication} {k})");
-    let n = format!("(and (< s0.c.value 2) {m})");
-    let tmp = format!("s0.c.tmp{w}");
-    let busy = format!("s0.c.busy{w}");
-    let pre = format!("(and (and {busy} (= {tmp} s0.c.value)) (< s0.c.value 2))");
-    let written = format!("(and (and (< {tmp} 2) (= s1.c.value (+ {tmp} 1))) (not s1.c.busy{w}))");
-    let post =
-        format!("(and (=> (< {tmp} 2) (and (<= 0 (+ {tmp} 1)) (<= (+ {tmp} 1) 2))) {written})");
-    let v1 = "s1.c.value";
-    let v = "s0.c.value";
-    [
-        format!("(assume a0 {assertion})"),
-        format!("(assume r {RANGE})"),
-        and_step("c0", &format!("(or (not true) (not {n}))"), "a0", assertion),
-        format!("(step c1 (cl (not true) (not {n})) :rule or :premises (c0))"),
-        and_step("c2", &pre, "a0", assertion),
-        and_step("c3", &post, "a0", assertion),
-        and_step("c4", &format!("(< {v} 2)"), "c2", &pre),
-        and_step("c5", &format!("(and {busy} (= {tmp} {v}))"), "c2", &pre),
-        and_step("c6", &format!("(= {tmp} {v})"), "c5", &format!("(and {busy} (= {tmp} {v}))")),
-        and_step("c7", &written, "c3", &post),
-        and_step("c8", &format!("(and (< {tmp} 2) (= {v1} (+ {tmp} 1)))"), "c7", &written),
-        and_step("c9", &format!("(= {v1} (+ {tmp} 1))"), "c8", &format!("(and (< {tmp} 2) (= {v1} (+ {tmp} 1)))")),
-        and_step("c10", &format!("(<= 0 {v})"), "r", RANGE),
-        format!(
-            "(step c11 (cl (= {v1} (+ {v} 1)) (not (<= {v1} (+ {v} 1))) (not (<= (+ {v} 1) {v1}))) :rule la_disequality)"
-        ),
-        format!(
-            "(step c12 (cl (<= {v1} (+ {v} 1)) (not (= {v1} (+ {tmp} 1))) (not (= {tmp} {v}))) :rule la_generic :args (1 (- 1) (- 1)))"
-        ),
-        format!(
-            "(step c13 (cl (<= (+ {v} 1) {v1}) (not (= {v1} (+ {tmp} 1))) (not (= {tmp} {v}))) :rule la_generic :args (1 1 1))"
-        ),
-        format!("(step c14 (cl (= {v1} (+ {v} 1))) :rule resolution :premises (c11 c12 c13 c9 c6))"),
-        format!("(step c15 (cl (<= 0 (+ {v} 1)) (not (<= 0 {v}))) :rule la_generic :args (1 1))"),
-        format!("(step c16 (cl (<= (+ {v} 1) 2) (not (< {v} 2))) :rule la_generic :args (1 1))"),
-        format!("(step c17 (cl (<= 0 (+ {v} 1))) :rule resolution :premises (c15 c10))"),
-        format!("(step c18 (cl (<= (+ {v} 1) 2)) :rule resolution :premises (c16 c4))"),
-        format!(
-            "(step c19 (cl {rng} (not (<= 0 (+ {v} 1))) (not (<= (+ {v} 1) 2))) :rule and_neg)"
-        ),
-        format!("(step c20 (cl {rng}) :rule resolution :premises (c19 c17 c18))"),
-        format!("(step c21 (cl {implication} (not {rng})) :rule implies_neg2)"),
-        format!("(step c22 (cl {implication}) :rule resolution :premises (c21 c20))"),
-        format!("(step c23 (cl {k} (not (< {v} 2)) (not (= {v1} (+ {v} 1)))) :rule and_neg)"),
-        format!("(step c24 (cl {k}) :rule resolution :premises (c23 c4 c14))"),
-        format!("(step c25 (cl {m} (not {implication}) (not {k})) :rule and_neg)"),
-        format!("(step c26 (cl {m}) :rule resolution :premises (c25 c22 c24))"),
-        format!("(step c27 (cl {n} (not (< {v} 2)) (not {m})) :rule and_neg)"),
-        format!("(step c28 (cl {n}) :rule resolution :premises (c27 c4 c26))"),
-        TRUE.trim_end().to_owned(),
-        "(step c29 (cl) :rule resolution :premises (c28 c1 u1))".to_owned(),
-    ]
-    .join("\n")
-}
-
-/// A refutation of a step row's query, by the row's kind.
-fn step_proof(query: &str) -> String {
-    let assertion = *assertions(query).last().expect("a step query asserts");
-    if assertion.contains("(= s1.c.value (+ s0.c.tmpA 1))") {
-        commit_proof(assertion, 'A')
-    } else if assertion.contains("(= s1.c.value (+ s0.c.tmpB 1))") {
-        commit_proof(assertion, 'B')
-    } else {
-        stutter_proof(assertion)
-    }
-}
-
-fn part(query: String, proof: String) -> RefutedQuery {
-    RefutedQuery {
-        query: query.into_bytes(),
-        proof: proof.into_bytes(),
-    }
-}
-
-/// The certificate of `request` with every part's FR-315 query and a
-/// hand-written refutation; a part whose query FR-315 refuses carries
-/// `refused`.
-fn certificate(request: &RefinementCertificateRequest<'_>, rows: u64) -> RefinementSmtCertificate {
-    let base = encode(request, RefinementQueryKind::Initial).expect("the initial query encodes");
-    let steps = (0..rows)
-        .map(
-            |row| match encode(request, RefinementQueryKind::Step { row }) {
-                Ok(query) => {
-                    let proof = step_proof(&query);
-                    part(query, proof)
-                }
-                Err(_) => part(String::new(), String::new()),
-            },
-        )
-        .collect();
-    RefinementSmtCertificate {
-        format: ProofFormat::Alethe,
-        base: part(base.clone(), initial_proof(&base)),
-        steps,
-    }
-}
+use crate::refinement_proofs::{
+    assertions, certificate, encode, operands, part, row_of, with_request,
+};
 
 fn check(
     request: &RefinementCertificateRequest<'_>,
@@ -526,38 +315,6 @@ fn counter2(clauses: &str) -> World {
     )
 }
 
-/// The top-level operands of the S-expression `(head a b ...)`.
-fn operands(term: &str) -> Vec<&str> {
-    let inner = &term[1..term.len() - 1];
-    let mut operands = Vec::new();
-    let (mut depth, mut start) = (0_usize, None);
-    for (at, character) in inner.char_indices() {
-        match character {
-            '(' => {
-                if depth == 0 && start.is_none() {
-                    start = Some(at);
-                }
-                depth += 1;
-            }
-            ')' => depth -= 1,
-            ' ' if depth == 0 => {
-                if let Some(from) = start.take() {
-                    operands.push(&inner[from..at]);
-                }
-            }
-            _ => {
-                if start.is_none() {
-                    start = Some(at);
-                }
-            }
-        }
-    }
-    if let Some(from) = start {
-        operands.push(&inner[from..]);
-    }
-    operands
-}
-
 /// The command heads of `script`, in order.
 fn heads(script: &str) -> Vec<&str> {
     script
@@ -775,6 +532,275 @@ fn a_refused_initial_query_rejects_the_base_part() {
     });
 }
 
+fn proved(certification: Certification) -> TerminalValue {
+    TerminalValue::Proved {
+        basis: ProofBasis::Inductive { depth: 1 },
+        certification,
+    }
+}
+
+fn no_replay() -> Result<RefinementTraceSettlement, qsl_replay::ReplayRefusal> {
+    panic!("only an initial counterexample is replayed")
+}
+
+/// The values of `settled`'s records.
+fn values(settled: &StepRecordsSettlement) -> Vec<TerminalValue> {
+    settled
+        .records
+        .iter()
+        .map(|record| record.value.clone())
+        .collect()
+}
+
+/// TC-551, the certificate part of FR-146-AC-4: every record of
+/// `CasRefinesCounter` whose obligation holds settles `Certified` exactly when
+/// FR-314 verifies the refinement's certificate, `Uncertified` with no
+/// certificate, and every record of `CasRefinesCounterAdd`, whose `_` row
+/// FR-315 refuses to encode, `Uncertified`.
+#[trace("TC-551", "FR-146-AC-4")]
+#[test]
+fn step_records_are_certified_only_by_a_verified_certificate() {
+    let holds = vec![StepRecordVerdict::Holds; 8];
+    let world = World::new(&cas_refines_counter());
+    with_request(&world, |request| {
+        let valid = certificate(request, 7);
+        let limits = CertificateCheckLimits::default();
+        let cancel = Cancel::new();
+        for (certificate, certification) in [
+            (Some(&valid), Certification::Certified),
+            (None, Certification::Uncertified),
+        ] {
+            let checked = certify_step_records(request, certificate, 7, &limits, &cancel);
+            let settled = settle_step_records(&holds, &checked, &[], no_replay);
+            assert_eq!(values(&settled), vec![proved(certification); 8]);
+            assert!(settled
+                .records
+                .iter()
+                .all(|record| record.basis == SettlementBasis::DecisiveWitness));
+            assert_eq!(settled.safety.value, proved(certification));
+            assert_eq!(settled.safety.basis, SettlementBasis::DecisiveWitness);
+        }
+    });
+
+    let add = World::with(Variant::ADD, &cas_refines_counter_add());
+    let bump = usize::try_from(row_of(&add, "bump")).expect("small");
+    with_request(&add, |request| {
+        let mut unencodable = certificate(request, 8);
+        unencodable.steps[bump] = part("anything".to_owned(), "(not a proof".to_owned());
+        let checked = certify_step_records(
+            request,
+            Some(&unencodable),
+            8,
+            &CertificateCheckLimits::default(),
+            &Cancel::new(),
+        );
+        let settled =
+            settle_step_records(&vec![StepRecordVerdict::Holds; 9], &checked, &[], no_replay);
+        assert_eq!(
+            values(&settled),
+            vec![proved(Certification::Uncertified); 9]
+        );
+        assert_eq!(settled.safety.value, proved(Certification::Uncertified));
+    });
+}
+
+/// FR-146-AC-7 (TC-551): the settlement map fed FR-314's results directly.
+/// A rejection at a part makes that part's record `CertificateRejected`
+/// with FR-314's rule and locus, never `proved`, and every other record
+/// `Uncertified`; an unverifiable certificate leaves every holding record
+/// `Proved{Inductive{1}, Uncertified}`.
+#[trace("TC-551", "FR-146-AC-7")]
+#[test]
+fn a_rejected_part_rejects_only_its_record() {
+    let holds = vec![StepRecordVerdict::Holds; 8];
+    let uncertified = proved(Certification::Uncertified);
+    for (part, record) in [(QueryPart::Base, 0), (step_part(2), 3)] {
+        let at = CertificateLocus::ProofStep { part, index: 3 };
+        let rejection = CertificateRejection {
+            rule: CertificateRule::ProofStepInvalid,
+            at: at.clone(),
+        };
+        let checked = StepCertification::of_check(Some(Err(rejection)), 7);
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        let wrong = TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ProofStepInvalid,
+            at,
+        });
+        let mut expected = vec![uncertified.clone(); 8];
+        expected[record] = wrong.clone();
+        assert_eq!(values(&settled), expected, "rejected at {part:?}");
+        assert_eq!(settled.records[record].basis, SettlementBasis::Unsettled);
+        assert_eq!(settled.safety.value, wrong);
+    }
+
+    // A shape mismatch past the last row names no record: every record is
+    // `Uncertified`, and the half is still rejected.
+    let at = CertificateLocus::Query { part: step_part(7) };
+    let checked = StepCertification::of_check(
+        Some(Err(CertificateRejection {
+            rule: CertificateRule::ShapeMismatch,
+            at: at.clone(),
+        })),
+        7,
+    );
+    let settled = settle_step_records(&holds, &checked, &[], no_replay);
+    assert_eq!(values(&settled), vec![uncertified.clone(); 8]);
+    assert_eq!(
+        settled.safety.value,
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ShapeMismatch,
+            at,
+        })
+    );
+
+    for check in [
+        SmtProofCheck::Unverifiable {
+            part: step_part(1),
+            step: 3,
+        },
+        SmtProofCheck::Unencodable { part: step_part(1) },
+    ] {
+        let checked = StepCertification::of_check(Some(Ok(check)), 7);
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        assert_eq!(values(&settled), vec![uncertified.clone(); 8]);
+    }
+}
+
+/// TC-551, QSpec FR-468 "Settlement": the safety half takes the first rule
+/// that applies, in the order initial counterexample, hypothesis item not
+/// `proved`, step counterexample, certificate shown wrong, other backend
+/// result, then the proof, `Certified` only when every record and every
+/// hypothesis item is.
+#[trace("TC-551", "FR-146-AC-8")]
+#[test]
+fn the_safety_half_settles_by_the_first_rule_that_applies() {
+    let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
+    let certified = proved(Certification::Certified);
+    let uncertified = proved(Certification::Uncertified);
+    let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
+    let rejected = StepCertification::of_check(
+        Some(Err(CertificateRejection {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query { part: step_part(4) },
+        })),
+        7,
+    );
+    let holds = vec![StepRecordVerdict::Holds; 8];
+    let mut step_failed = holds.clone();
+    step_failed[5] = StepRecordVerdict::Counterexample;
+    let mut initial_failed = holds.clone();
+    initial_failed[0] = StepRecordVerdict::Counterexample;
+    let mut absent = holds.clone();
+    absent[2] = StepRecordVerdict::NoCandidate;
+    let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    let not_established =
+        TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
+            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            result: ItemLabel::Inconclusive,
+        });
+    let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    let safety = |verdicts: &[StepRecordVerdict],
+                  certification: &StepCertification,
+                  item: &TerminalValue| {
+        settle_step_records(
+            verdicts,
+            certification,
+            &[(hypothesis, item.clone())],
+            no_replay,
+        )
+        .safety
+        .value
+    };
+
+    assert_eq!(safety(&holds, &verified, &certified), certified);
+    assert_eq!(safety(&holds, &verified, &uncertified), uncertified);
+    assert_eq!(safety(&holds, &verified, &unproved), not_established);
+    assert_eq!(safety(&step_failed, &verified, &unproved), not_established);
+    assert_eq!(safety(&step_failed, &verified, &certified), induction);
+    assert_eq!(safety(&step_failed, &rejected, &certified), induction);
+    assert_eq!(
+        safety(&absent, &verified, &certified),
+        TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+    );
+    assert!(matches!(
+        safety(&holds, &rejected, &certified),
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { .. })
+    ));
+
+    // An initial counterexample comes first, and settles `refuted` only
+    // through its replay.
+    let reproduced = settle_step_records(
+        &initial_failed,
+        &verified,
+        &[(hypothesis, unproved.clone())],
+        || {
+            Ok(RefinementTraceSettlement::Reproduced {
+                failure: RefinementFailure::InitialNotAbstract { initial: 0 },
+                mapped: Vec::new(),
+            })
+        },
+    );
+    assert_eq!(reproduced.safety.value, TerminalValue::Refuted);
+    assert_eq!(
+        reproduced.safety.basis,
+        SettlementBasis::DecisiveCounterexample
+    );
+    // The `Initial` record itself never settles `refuted`.
+    assert_eq!(reproduced.records[0].value, induction);
+}
+
+/// TC-551, QSpec FR-468 "Other backend results": a backend result that
+/// neither holds nor fails settles its record as FR-331 records it, and the
+/// safety half takes the first such record's result in record order, after
+/// every rule before it.
+#[trace("TC-551", "FR-146-AC-8")]
+#[test]
+fn other_backend_results_settle_the_record_and_the_half() {
+    let solver = TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+        trace: None,
+        replay: None,
+    });
+    let timeout = TerminalValue::Incomplete(IncompleteCause::TimedOut);
+    let mut verdicts = vec![StepRecordVerdict::Holds; 8];
+    verdicts[2] = StepRecordVerdict::of_backend(&timeout).expect("an other result");
+    verdicts[5] = StepRecordVerdict::of_backend(&solver).expect("an other result");
+    verdicts[6] = StepRecordVerdict::NoCandidate;
+    let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
+    let settled = settle_step_records(&verdicts, &verified, &[], no_replay);
+    assert_eq!(settled.records[2].value, timeout);
+    assert_eq!(settled.records[2].basis, SettlementBasis::Unavailable);
+    assert_eq!(settled.records[5].value, solver);
+    assert_eq!(settled.records[5].basis, SettlementBasis::Unsettled);
+    assert_eq!(
+        settled.records[6].value,
+        TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+    );
+    assert_eq!(settled.safety.value, timeout);
+
+    // A step counterexample comes before any other result.
+    verdicts[7] = StepRecordVerdict::Counterexample;
+    assert_eq!(
+        settle_step_records(&verdicts, &verified, &[], no_replay)
+            .safety
+            .value,
+        TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 })
+    );
+
+    assert_eq!(
+        StepRecordVerdict::of_backend(&proved(Certification::Uncertified)),
+        Some(StepRecordVerdict::Holds)
+    );
+    assert_eq!(
+        StepRecordVerdict::of_backend(&TerminalValue::Refuted),
+        Some(StepRecordVerdict::Counterexample)
+    );
+    assert_eq!(
+        StepRecordVerdict::of_backend(&TerminalValue::Failed),
+        Some(StepRecordVerdict::Other(OtherBackendResult::Failed))
+    );
+    assert_eq!(StepRecordVerdict::of_backend(&TerminalValue::Tested), None);
+}
+
 /// SR-1788001 FND-001 (TC-893): a certificate whose every proof is the
 /// numerals' forgery (`0`, `1` and `2` read as Booleans through
 /// `equiv_neg1` and `equiv_neg2`), which assumes nothing, is rejected
@@ -818,4 +844,201 @@ fn a_proof_over_ill_sorted_literals_is_rejected() {
             )
         );
     });
+}
+
+/// TC-551, FR-314 "Outputs" settlement rule: a certificate check that a
+/// limit or a cancellation stops settles every holding record V-7 with its
+/// cause, and one that faults settles them `failed`, never `Uncertified`;
+/// the safety half takes the first record's result.
+#[trace("TC-551", "FR-146-AC-8")]
+#[test]
+fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
+    let holds = vec![StepRecordVerdict::Holds; 8];
+    let limit = IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::CertificateMaxBytes,
+        value: 1,
+    };
+    let fault = quire_semantic_value::catalog::InternalFault::new("smt", "broken");
+    for (check, value) in [
+        (
+            SmtProofCheck::Stopped(limit),
+            TerminalValue::Incomplete(limit),
+        ),
+        (SmtProofCheck::Fault(fault), TerminalValue::Failed),
+    ] {
+        let checked = StepCertification::of_check(Some(Ok(check)), 7);
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        assert_eq!(values(&settled), vec![value.clone(); 8]);
+        assert!(settled
+            .records
+            .iter()
+            .all(|record| record.basis == SettlementBasis::Unavailable));
+        assert_eq!(settled.safety.value, value);
+    }
+}
+
+/// FR-146-AC-4's refused-`Initial` part and FR-314-AC-9 (TC-551): over
+/// `CasRefinesCounter` with a mapping row outside `QF_LIA`, the checker
+/// rejects the base part `QueryMismatch` at `Base`, so the `Initial` record
+/// is `CertificateRejected{QueryMismatch, Base}`, every other record
+/// `Uncertified`, and the safety half `CertificateRejected`.
+#[trace("TC-551", "FR-146-AC-4")]
+#[test]
+fn a_refused_initial_query_rejects_the_initial_record() {
+    let world = World::new(&mutated(
+        &cas_refines_counter(),
+        "value = self.value;",
+        "value = if self.value * self.tmpA = 0 then self.value else self.tmpA;",
+    ));
+    with_request(&world, |request| {
+        let certificate = RefinementSmtCertificate {
+            format: ProofFormat::Alethe,
+            base: part(String::new(), String::new()),
+            steps: (0..7).map(|_| part(String::new(), String::new())).collect(),
+        };
+        let checked = certify_step_records(
+            request,
+            Some(&certificate),
+            7,
+            &CertificateCheckLimits::default(),
+            &Cancel::new(),
+        );
+        let settled =
+            settle_step_records(&vec![StepRecordVerdict::Holds; 8], &checked, &[], no_replay);
+        let wrong = TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query {
+                part: QueryPart::Base,
+            },
+        });
+        let mut expected = vec![proved(Certification::Uncertified); 8];
+        expected[0] = wrong.clone();
+        assert_eq!(values(&settled), expected);
+        assert_eq!(settled.safety.value, wrong);
+    });
+}
+
+/// TC-551 and FR-146-AC-8, by QSpec FR-468 "Settlement" as STD-570 fixes it
+/// (QSpec FR-468-AC-11 to AC-18): the half takes the first rule in rule
+/// order whatever the position of the queries that trigger it, and within
+/// a rule the first query (initial, then step rows in `steps` order).
+#[trace("TC-551", "FR-146-AC-8")]
+#[test]
+fn the_rule_order_outranks_the_query_order() {
+    let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
+    let unknown = StepRecordVerdict::Other(OtherBackendResult::Inconclusive(
+        InconclusiveCause::SolverInconclusive {
+            trace: None,
+            replay: None,
+        },
+    ));
+    let timeout =
+        StepRecordVerdict::Other(OtherBackendResult::Incomplete(IncompleteCause::TimedOut));
+    let solver = TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+        trace: None,
+        replay: None,
+    });
+    let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    let certified = proved(Certification::Certified);
+    let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
+    let rejection = CertificateRejection {
+        rule: CertificateRule::QueryMismatch,
+        at: CertificateLocus::Query { part: step_part(4) },
+    };
+    let rejected = StepCertification::of_check(Some(Err(rejection.clone())), 7);
+    let wrong = TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+        rule: rejection.rule,
+        at: rejection.at.clone(),
+    });
+    let half = |verdicts: &[StepRecordVerdict],
+                certification: &StepCertification,
+                hypotheses: &[(quire_exact::NodeKey, TerminalValue)]| {
+        settle_step_records(verdicts, certification, hypotheses, no_replay)
+            .safety
+            .value
+    };
+    // Record 0 is `Initial`; record `r + 1` is row `r`.
+    let with = |changes: &[(usize, StepRecordVerdict)]| {
+        let mut verdicts = vec![StepRecordVerdict::Holds; 8];
+        for (index, verdict) in changes {
+            verdicts[*index] = verdict.clone();
+        }
+        verdicts
+    };
+
+    // AC-11: an unknown at row 1 (or at the initial query) and a
+    // counterexample at row 3: the counterexample's rule wins.
+    let early_unknown = with(&[(2, unknown.clone()), (4, StepRecordVerdict::Counterexample)]);
+    assert_eq!(half(&early_unknown, &verified, &[]), induction);
+    let initial_unknown = with(&[(0, unknown.clone()), (4, StepRecordVerdict::Counterexample)]);
+    assert_eq!(half(&initial_unknown, &verified, &[]), induction);
+    // AC-12: a counterexample at row 1 and a timeout at row 3.
+    let late_timeout = with(&[(2, StepRecordVerdict::Counterexample), (4, timeout.clone())]);
+    assert_eq!(half(&late_timeout, &verified, &[]), induction);
+    // AC-13: with no counterexample, unproved hypothesis or rejection, the
+    // half takes the first other result in query order.
+    let two_others = with(&[(2, unknown.clone()), (4, timeout.clone())]);
+    assert_eq!(
+        half(&two_others, &verified, &[(hypothesis, certified.clone())]),
+        solver
+    );
+    // AC-14: an unproved hypothesis item outranks the initial query's
+    // unknown.
+    let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    assert_eq!(
+        half(
+            &with(&[(0, unknown.clone())]),
+            &verified,
+            &[(hypothesis, unproved)]
+        ),
+        TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
+            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
+            result: ItemLabel::Inconclusive,
+        })
+    );
+    // AC-15: a rejected certificate outranks any query's other result.
+    assert_eq!(half(&two_others, &rejected, &[]), wrong);
+    assert_eq!(half(&with(&[(0, timeout.clone())]), &rejected, &[]), wrong);
+    // AC-16: a step counterexample outranks a rejected certificate.
+    assert_eq!(
+        half(
+            &with(&[(7, StepRecordVerdict::Counterexample)]),
+            &rejected,
+            &[]
+        ),
+        induction
+    );
+    // AC-17: a stopped or faulted check is no rejection: it takes the other
+    // results' rule, below a step counterexample and in query order.
+    let limit = IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::CertificateMaxBytes,
+        value: 1,
+    };
+    let stopped = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(limit))), 7);
+    assert_eq!(
+        half(&with(&[]), &stopped, &[]),
+        TerminalValue::Incomplete(limit)
+    );
+    assert_eq!(
+        half(
+            &with(&[(3, StepRecordVerdict::Counterexample)]),
+            &stopped,
+            &[]
+        ),
+        induction
+    );
+    assert_eq!(half(&with(&[(0, unknown)]), &stopped, &[]), solver);
+    // AC-18: counterexamples at rows 1 and 3 settle `induction-not-closed`
+    // with depth 1 and no row member.
+    assert_eq!(
+        half(
+            &with(&[
+                (2, StepRecordVerdict::Counterexample),
+                (4, StepRecordVerdict::Counterexample)
+            ]),
+            &verified,
+            &[]
+        ),
+        induction
+    );
 }
