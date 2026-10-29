@@ -558,6 +558,12 @@ impl SlotSelection {
         &self.binder
     }
 
+    /// Whether the condition reads only the selected element's presence,
+    /// `present(e)`.
+    pub fn presence_condition(&self) -> bool {
+        matches!(self.condition, Some((_, true)))
+    }
+
     /// The data predicate over the element; `None` selects every held
     /// slot.
     pub fn predicate(&self) -> Option<&CheckedTimedPredicate> {
@@ -1206,6 +1212,9 @@ impl TimedModel {
                 let span = written.drop_spans.first().copied().unwrap_or(written.span);
                 return Some((Excluded(ExcludedClauseForm::PresenceDrop), span));
             }
+            // QSpec FR-322 `CW-05` keeps the requirement in the
+            // postcondition as a `presence_read`; the evaluator reads a
+            // postcondition's presence only through `requires` today.
             if !written.requires.is_empty() {
                 return Some((Unwritten(Member::PresenceRequirement), written.span));
             }
@@ -1218,12 +1227,18 @@ impl TimedModel {
                     .map_or(0, |clock| clock.slots().count());
                 let omission = match &reset.selection {
                     None if slots == 0 => continue,
+                    // A condition reading the element's presence alone is
+                    // the `presence_read` of its place (QSpec `SD-02`).
+                    Some(SlotSelection {
+                        condition: Some((_, true)),
+                        ..
+                    }) if slots == 1 => continue,
                     Some(SlotSelection {
                         condition: Some((span, presence)),
                         ..
                     }) => {
                         return Some(if *presence {
-                            (Unwritten(Member::PresenceSelection), *span)
+                            (Unwritten(Member::ElementReset), *span)
                         } else {
                             (Excluded(ExcludedClauseForm::ElementDataSelection), *span)
                         });
@@ -2864,16 +2879,18 @@ fn resets(
         .collect();
     // A quantifier reading its elements' presences in a form this slice
     // does not read: a requirement, never a write (QSpec FR-415-AC-21).
+    let top = conjuncts(located);
     if let Some(query) = located
         .form
         .expression
         .iter()
-        .find_map(|node| located.unread(node.id()))
+        .filter_map(|node| located.unread(node.id()))
+        .find(|query| !(top.contains(query) && quantified::presence_selection(located, *query)))
     {
         return Err(located.outside(query));
     }
     let mut cut = ResetCut::default();
-    for conjunct in conjuncts(located) {
+    for conjunct in top {
         if !located.reads_clock(conjunct) {
             continue;
         }
@@ -4545,13 +4562,27 @@ pub(crate) fn check(
                         condition: predicate,
                     }) => {
                         let condition = predicate.as_ref().map(|(form, span)| {
+                            // `present(e)` of the selected element alone.
                             let presence = form
                                 .expression
                                 .get(form.expression.root_id())
-                                .is_some_and(|root| matches!(root.node(), ExprNode::Present(_)));
+                                .is_some_and(|root| match root.node() {
+                                    ExprNode::Present(operand) => matches!(
+                                        root.at(*operand).node(),
+                                        ExprNode::Name(read)
+                                            if read.segments.len() == 1 && read.name == name
+                                    ),
+                                    _ => false,
+                                });
                             (*span, presence)
                         });
-                        let predicate = match predicate.map(|(form, _)| form) {
+                        // A presence condition is the element place's
+                        // `presence_read`, not a data predicate to type.
+                        let presence_only = matches!(condition, Some((_, true)));
+                        let predicate = match predicate
+                            .map(|(form, _)| form)
+                            .filter(|_| !presence_only)
+                        {
                             None => None,
                             Some(form) => {
                                 let element =

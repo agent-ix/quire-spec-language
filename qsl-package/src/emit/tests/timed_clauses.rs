@@ -587,7 +587,7 @@ fn assert_presence<'w>(wire: &'w Value, read: &Value, place: &Value) -> &'w Valu
         target(wire, &json!({"target": read["body"]["result_type"]}))["semantic_form"],
         "boolean"
     );
-    let [template, owner] = read["body"]["arguments"]
+    let [template, owner, ..] = read["body"]["arguments"]
         .as_array()
         .expect("arguments")
         .as_slice()
@@ -910,6 +910,86 @@ fn an_indexed_element_write_is_refused() {
     );
     let span = refusal.span.expect("a span");
     assert_eq!(&unit[span.start..span.end], "self.ts[0]");
+}
+
+/// [`dropping_document`] with `q: Sequence<Option<Clock>>[0, 2]`, which
+/// `attemptUpdate`'s frame names too.
+fn slot_presence_document() -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(&dropping_document()).expect("JSON");
+    let config = &mut document["types"][1];
+    let owner = config["identity"].as_str().expect("an identity").to_owned();
+    let fields = config["fields"].as_array_mut().expect("fields");
+    let mut q = fields
+        .iter()
+        .find(|field| field["name"] == "v")
+        .expect("v")
+        .clone();
+    let identity = format!("{owner}/q");
+    q["identity"] = json!(identity);
+    q["name"] = json!("q");
+    q["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    q["origin"]["generated"]["generatorIdentity"] = json!(identity);
+    q["origin"]["generated"]["inputIdentities"] = json!([identity]);
+    fields.push(q);
+    config["operations"][0]["frame"]["modifies"]
+        .as_array_mut()
+        .expect("modifies")
+        .push(json!(identity));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// QSpec FR-322-AC-267 `SD-02`: `forall(e in self.q: present(e) implies e
+/// = 0 ms)` over `q: Sequence<Option<Clock>>[0, 2]` is one `clock_reset`
+/// of `q`'s element place whose one binder `e` is its slot term and whose
+/// condition is the `presence_read` of that place at `self` and `e`.
+#[trace("TC-685", "FR-230-AC-54", "QSpec-FR-322-AC-267", "QSpec-FR-322-AC-155")]
+#[test]
+fn a_reset_selected_by_presence_conditions_on_its_presence_read() {
+    let (unit, wire) = emitted(
+        &slot_presence_document(),
+        "post R using v on Config::ConfigVersion::attemptUpdate { \
+         forall(e in self.q: present(e) implies e = 0 ms) }\n",
+    );
+    let [reset] = timed(&wire, "clock_reset")[..] else {
+        panic!("one reset");
+    };
+    let place = target(&wire, member(&reset["body"], "place"));
+    assert_eq!(place, place_of(&wire, "q"));
+    let binders = &member(&reset["body"], "binders")["members"];
+    assert_eq!(binders, &member(&reset["body"], "slots")["members"]);
+    let [binder] = binders.as_array().expect("binders").as_slice() else {
+        panic!("one binder");
+    };
+    let condition = target(&wire, member(&reset["body"], "condition"));
+    assert_self(
+        &wire,
+        &json!({"target": assert_presence(&wire, condition, place)["node_id"]}),
+    );
+    assert_eq!(condition["body"]["arguments"][2], *binder);
+    assert_eq!(
+        located(&wire, reset, &unit),
+        "forall(e in self.q: present(e) implies e = 0 ms)"
+    );
+    assert_declared_order(&wire);
+}
+
+/// QSpec FR-322-AC-267 `CW-05`: `post present(self.v)` is a postcondition
+/// `presence_read` with no clause node. S3 keeps the requirement out of the
+/// lowered postcondition (the evaluator reads it through the reset's
+/// `requires`), so the model is refused `not-yet-implemented` at the
+/// postcondition rather than emitted without the requirement.
+#[trace("TC-685", "FR-230-AC-50", "QSpec-FR-322-AC-267")]
+#[test]
+fn a_postcondition_presence_requirement_is_not_written_yet() {
+    let (member, text) = unwritten(
+        &dropping_document(),
+        "post P using v on Config::ConfigVersion::attemptUpdate { present(self.v) }\n",
+    );
+    assert_eq!(
+        member,
+        qsl_semantics::check::UnwrittenTimedMember::PresenceRequirement
+    );
+    assert!(text.starts_with("post P"), "{text}");
 }
 
 /// [`presence_document`] whose `attemptUpdate` frame names `v`.

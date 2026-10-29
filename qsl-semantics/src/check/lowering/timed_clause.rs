@@ -180,13 +180,30 @@ impl Lowering<'_> {
                     },
                     None => {
                         let owner = self.timed_self(context, location)?;
-                        let condition = self.timed_true(location)?;
                         let binders = match reset.selection() {
                             None => Vec::new(),
                             Some(selection) => {
                                 let integer = self.type_node(&ValueType::Integer, location)?;
                                 vec![self.parameter(selection.binder(), 0, integer, location)?]
                             }
+                        };
+                        // A selection by `present(e)` resets the held
+                        // elements that are present: its condition is the
+                        // `presence_read` of the element's place (QSpec
+                        // `SD-02`); every other reset holds under `true`.
+                        let condition = match reset.selection() {
+                            Some(selection) if selection.presence_condition() => {
+                                let clock =
+                                    model.clocks().get(reset.clock().index()).ok_or_else(|| {
+                                        super::fault(location, KeyFault::UnkeyableRequirements)
+                                    })?;
+                                let place =
+                                    self.timed_place(clock.owner(), clock.path()).ok_or_else(
+                                        || super::fault(location, KeyFault::UnkeyableRequirements),
+                                    )?;
+                                self.presence_read(place, owner, &binders, location)?
+                            }
+                            _ => self.timed_true(location)?,
                         };
                         ResetTargetNodes::Place {
                             clock: reset.clock(),
@@ -582,6 +599,37 @@ impl Lowering<'_> {
             .map(|place| place.node)
     }
 
+    /// The `presence_read` of the place `place` at the owner term `owner`
+    /// and one slot term for each slot step (QSpec FR-322 "Presence"): the
+    /// application of `quire.op.option.present`, typed `Boolean`.
+    fn presence_read(
+        &mut self,
+        place: NodeKey,
+        owner: NodeKey,
+        slots: &[NodeKey],
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let boolean = self.type_node(&ValueType::Boolean, location)?;
+        let mut arguments = vec![
+            MemberTerm::Leaf(LeafTerm::reference(place)),
+            MemberTerm::Leaf(LeafTerm::reference(owner)),
+        ];
+        arguments.extend(
+            slots
+                .iter()
+                .map(|slot| MemberTerm::Leaf(LeafTerm::reference(*slot))),
+        );
+        self.typed_application(
+            location,
+            boolean,
+            Operator::Present,
+            Operation::plain("quire.op.option.present"),
+            arguments,
+        )?
+        .key()
+        .ok_or_else(|| super::fault(location, KeyFault::UnkeyableRequirements))
+    }
+
     /// The `presence_read` of each of `presences`, a place of `self`, an
     /// object of `context`, with whether present: the application of
     /// `quire.op.option.present` over the place's template and the owner
@@ -602,19 +650,7 @@ impl Lowering<'_> {
                 .ok_or_else(unplaced)?;
             let owner = self.timed_self(context, location)?;
             let boolean = self.type_node(&ValueType::Boolean, location)?;
-            let read = self
-                .typed_application(
-                    location,
-                    boolean,
-                    Operator::Present,
-                    Operation::plain("quire.op.option.present"),
-                    vec![
-                        MemberTerm::Leaf(LeafTerm::reference(place)),
-                        MemberTerm::Leaf(LeafTerm::reference(owner)),
-                    ],
-                )?
-                .key()
-                .ok_or_else(unplaced)?;
+            let read = self.presence_read(place, owner, &[], location)?;
             reads.push(if *present {
                 read
             } else {

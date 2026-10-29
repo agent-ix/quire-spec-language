@@ -1253,10 +1253,6 @@ pub enum UnwrittenTimedMember {
     /// A postcondition's requirement on a clock place's presence, which no
     /// FR-322 clause form carries.
     PresenceRequirement,
-    /// A reset by selection whose condition reads only the element's
-    /// presence (`present(e) implies e = 0 ms`, QSpec `SD-02`), whose
-    /// `condition` S3 does not lower yet.
-    PresenceSelection,
     /// A reset of an element clock that no single binder selects: a clock
     /// below two collections, or an element named by position.
     ElementReset,
@@ -1276,9 +1272,6 @@ impl UnwrittenTimedMember {
                 "a predicate reading a clock collection's element presences waits on STD-554"
             }
             Self::PresenceRequirement => "a postcondition requiring a clock presence",
-            Self::PresenceSelection => {
-                "a reset by selection whose condition reads the element's presence"
-            }
             Self::ElementReset => "a reset of an element clock no single binder selects",
         }
     }
