@@ -14,8 +14,11 @@
 
 use serde_json::{json, Value};
 
-fn hex(text: &str) -> String {
-    qsl_foundation::ByteDigest::of(text.as_bytes())
+/// The lower-case hex SHA-256 of the RFC 8785 bytes of `preimage`, through
+/// `quire-canonical` (the only canonical encoder in QSL).
+fn hex(preimage: &Value) -> String {
+    quire_canonical::sha256(preimage, quire_canonical::Limits::new(1 << 20))
+        .expect("a preimage encodes canonically")
         .as_bytes()
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -36,7 +39,7 @@ fn rational(numerator: &str, denominator: &str) -> Value {
 
 /// The key of the node whose preimage is `preimage`.
 fn key_of(preimage: &Value) -> String {
-    hex(&serde_json::to_string(preimage).expect("a preimage serialises"))
+    hex(preimage)
 }
 
 fn dimension(name: &str, terms: &[(&str, &str)]) -> String {
