@@ -267,7 +267,7 @@ pub(crate) fn unit_text(body: &str) -> String {
 }
 
 /// [`unit_text`] with the further `profiles` lines in its header.
-fn unit_text_with(profiles: &str, body: &str) -> String {
+pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -285,8 +285,11 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
 /// The checked package of `body` that also selects the protocol profile,
 /// so each protocol clause the package writes has its node.
 pub(crate) fn protocol_profiled_package(body: &str) -> CheckedPackage {
-    package_with("profile pp = \"quire.protocol.finite-global/v1\";\n", body)
+    package_with(PROTOCOL_PROFILE, body)
 }
+
+/// The header line selecting the protocol profile.
+pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
 
 /// The checked package of `body` under the header's further `profiles`.
 fn package_with(profiles: &str, body: &str) -> CheckedPackage {

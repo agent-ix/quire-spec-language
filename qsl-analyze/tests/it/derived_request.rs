@@ -109,12 +109,20 @@ pub(crate) fn derived_items<S: Clone + Eq>(
 pub(crate) fn protocol_request<S: Clone + Eq>(
     items: &[ProtocolTemporalItem<'_, S>],
 ) -> WrittenRequest<S> {
+    protocol_request_under(items, &DerivedLimits::default())
+}
+
+/// [`protocol_request`] with the caller's derived-item settings `limits`.
+pub(crate) fn protocol_request_under<S: Clone + Eq>(
+    items: &[ProtocolTemporalItem<'_, S>],
+    limits: &DerivedLimits,
+) -> WrittenRequest<S> {
     let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
     let mut request = ModelRequest::new();
     for item in items {
         request.protocol(item, &record);
     }
-    request.derived(&registry(), None, &DerivedLimits::default())
+    request.derived(&registry(), None, limits)
 }
 
 /// The items of `written` of kind `kind`, each with its obligation.
@@ -183,7 +191,7 @@ fn kinds(written: &WrittenRequest<SubjectIdentity>) -> Vec<Option<ItemKind>> {
 }
 
 /// The backend and value `record` settled.
-fn settled(record: &AnalyzeRecord) -> (String, TerminalValue) {
+pub(crate) fn settled(record: &AnalyzeRecord) -> (String, TerminalValue) {
     let terminal = record.terminal().expect("a terminal record");
     (
         terminal
