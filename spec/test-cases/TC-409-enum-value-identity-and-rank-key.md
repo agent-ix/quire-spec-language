@@ -21,8 +21,8 @@ equality use the `VariantId` only, and a rank is a function of its
 `VariantId` through the enum shape. Scope: FR-088-AC-11.
 
 This catches five faults: a `VariantId` minted over a private preimage
-instead of the FR-141 member node key; a set ordered by `VariantId` digest
-(`quire-exact/src/key.rs:103`); an unordered enum ordered by declaration
+instead of the FR-141 member node key; a set ordered by the `VariantId` key
+rather than its rank (`quire-exact/src/key.rs:103`); an unordered enum ordered by declaration
 position; a rank that disagrees with its `VariantId`; and a declaration key
 accepted as a `VariantId` (ADR-013 C-30).
 
@@ -30,10 +30,10 @@ accepted as a `VariantId` (ADR-013 C-30).
 
 1. Check a package that declares the ordered enum
    `ordered enum E { b, a, c }` and read `E`'s node key.
-2. For each case, compute the expected `VariantId` independently: SHA-256
-   over the RFC 8785 JCS bytes of
+2. For each case, compute the expected `VariantId` independently: build
+   the tuple
    `{version: quire.enum-member-node/v1, declaration_node_id: E's node key, case}`.
-   Compare with the `VariantId` C-26 produces for that variant.
+   Compare it by equality with the `VariantId` C-26 produces for that variant.
 3. Build the kernel values `E::b`, `E::a` and `E::c`, read each rank, and
    form the kernel set `{E::c, E::a, E::b}`. Record the visiting order.
 4. Repeat steps 1 to 3 with the unordered enum `enum U { b, a, c }`.

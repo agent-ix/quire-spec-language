@@ -24,7 +24,7 @@ Scope: FR-342-AC-1 to FR-342-AC-5.
    function returning `Integer`; dangling-parent; a `Function` selection
    of `sameIdentity` with an argument named `c`.
 3. Run incomplete-population; run exhausted-work (work budget zero); build a `Compile` disposition holding a check refusal whose type admission reached a ceiling.
-4. Build `StalePackage`, `UnknownLanguage`, `Admit(Fault)` and
+4. Build `UnknownLanguage`, `Admit(Fault)` and
    `EvaluateFault` dispositions.
 5. Run missing-model (no package supplied).
 

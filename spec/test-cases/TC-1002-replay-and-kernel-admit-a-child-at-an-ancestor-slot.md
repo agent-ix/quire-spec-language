@@ -25,7 +25,7 @@ Catches a decoder that reads the child's fields against the parent's field list,
 
 ## Expected Results
 
-- Step 1 admits every slot, round-trips to the same typed observation and digest, and the re-encoded `type` still names `TaxedMoney`.
+- Step 1 admits every slot, round-trips to the same typed observation, and the re-encoded `type` still names `TaxedMoney`.
 - Step 2 admits both `GiftTaxedMoney` slots and refuses `wrong-value-kind` for the `TaxedMoney` at the `GiftTaxedMoney` slot.
 - Step 3 refuses `invalid_runtime_input`/`wrong-value-kind` at the first path reached in field order.
 - Step 4 refuses `missing-member` for the `TaxedMoney` payload and admits the `Money` payload.

@@ -235,8 +235,7 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
   only when `qsl-replay` is built with `quire-extraction` (ADR-011 §7.3 X-4).
   A build without that feature refuses the `extraction` member as
   `invalid-request` at the request stage.
-- `package`: optional FR-028 selection, a closed object naming the package file
-  and canonical SHA-256 digest. When present, the verified package is executed
+- `package`: optional FR-028 selection, a closed object naming the package file. When present, the package is executed
   without fallback to source compilation.
 - `models`: zero or more `semantic-ir/2.0.0` domain package documents, each
   read and handed to spine `compile` as FR-056's
@@ -270,7 +269,7 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
 The public entry SHALL admit declared Boolean, Integer/Int and Reference
 results. Other result kinds retain `unsupported_construct` before a call.
 A completed Reference SHALL retain the actual returned identity triple in
-`CallValue::Reference`, without dereferencing, re-hashing or narrowing it.
+`CallValue::Reference`, without dereferencing or narrowing it.
 An unexpected completed kind remains an internal invariant failure.
 
 Where a completed Reference is serialized in the existing function outcome
@@ -291,11 +290,11 @@ whose `result` member carries the completed value, undefined reason or
 exhausted limit this document's `outcome` member carries. Its members are:
 
 - `format`: `"spine-run-result/1"`.
-- `package_id`: the compiled package's `package_id`, lowercase hex, equal
-  to the one the FR-278 composition computes for the same source and
-  inputs.
+- `package_id`: the compiled package's identity and version as the object
+  `{"identity": identity, "version": version}`, equal to the one the FR-278
+  composition declares for the same source and inputs.
 - `source`: the program source as native-run-result/1 renders one: its two
-  FR-001 labels, its `sha256:` source digest and its authored path.
+  FR-001 labels, and its authored path.
 - `function`: the `function` string of the request.
 - `outcome`: exactly one of
   - `{"kind": "completed", "value": V}`, where `V` is
@@ -462,10 +461,8 @@ exits with that code's exit status:
 In these rows, `P` is the declared parameter's zero-based position. `D`
 uses the existing DeclarationKey shape `{"package": package, "node": node}`
 with the cause's exact strings. `E` uses the existing DomainPackageRef
-shape `{"identity": identity, "version": version,
-"digest_domain": "sha256-jcs", "digest": digest}`, with the cause's exact
-identity/version and its actual 32-byte digest as 64 lowercase hex
-characters. Each row preserves the original `ModelRefusal.detail` as the
+shape `{"identity": identity, "version": version}`, with the cause's exact
+identity/version. Each row preserves the original `ModelRefusal.detail` as the
 message. No row reads expected/supplied values from prose, replaces an
 offered population key by a guessed package, uses a fallback cause, or
 adds a top-level locus outside FR-267's closed command-error envelope.
@@ -596,7 +593,7 @@ session's frame stack (FR-262), which already holds one frame per open call.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` has exit code 0 and an outcome carrying no refusal envelope and one result document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test |
+| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` has exit code 0 and an outcome carrying no refusal envelope and one result document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition declares for the same source, whose `source` names the request's two labels and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test |
 | FR-100-AC-2 | A program declaring `edition "0-draft"`, one declaring `edition "0-draft"` whose request carries `call` and `libraries`, and one declaring `edition "7-draft"` each refuse `unknown_edition` at stage `profile`, exit 20, no result document, with a `message` naming the file and the edition. A program with no header refuses `invalid_syntax` at stage `source`, exit 20, no result document. | Test |
 | FR-100-AC-3 | A `1-draft` function-run request carrying each forbidden member refuses `invalid-request` at stage `request`, exit 20, no result document, before model or library reads; a program `extraction` member with no feature refuses `invalid-request`, while the same `call` request in a build with `quire-extraction` refuses `extraction-requires-run`. A feature-enabled FR-031 clause-run request with one `clauses` binding is admitted to extraction; no-feature, package-bearing, missing-clause and duplicate-clause variants refuse as FR-031-AC-6 specifies. A request carrying neither `call` nor the FR-031 clause-run form refuses `invalid-request`. Values in `call.accounting` of `18446744073709551616`, `-1` or `1.5`, and a legacy `work_units` member directly in `call`, each refuse the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a selected domain package runs successfully. | Test (TC-450, TC-109) |
 | FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, no result document, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test |
@@ -674,9 +671,7 @@ only. Accounting setting member semantics are owned by QSL-656; this branch
 does not duplicate that amendment or TC-951. No implementation branch is
 created by this spec.
 
-A source selection carries no `sha256:` source digest and the command checks
-no file against one (FR-312); the command reads each named file's bytes as
-they are.
+The command reads each named file's bytes as they are (FR-312).
 
 Implemented. `qsl_replay::spine::run` and `command`'s `run` render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,

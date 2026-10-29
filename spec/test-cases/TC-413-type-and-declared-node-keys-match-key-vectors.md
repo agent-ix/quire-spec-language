@@ -1,12 +1,12 @@
 ---
 id: TC-413
-title: "Type and declared record nodes key to the structural-node golden vectors, scoped only by owner"
+title: "Type and declared record nodes key to the structural-node vectors, scoped only by owner"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092
     type: verifies
 ---
-# TC-413: Type and declared record nodes key to the structural-node golden vectors, scoped only by owner
+# TC-413: Type and declared record nodes key to the structural-node vectors, scoped only by owner
 
 ## Description
 
@@ -36,12 +36,12 @@ selection whose alias is `v`.
 1. Build, through `check`, the type nodes of `Boolean`, `Integer`, the text
    scalar base, `Int[0, 9]`, `Option<Int[0, 9]>`, `Sequence<Int[0, 9]>`,
    `Sequence<Int[0, 9]>[0, 5]` and `Text[0, 64; nfc]`. Read each node's
-   preimage bytes and key.
+   preimage, which is its key.
 2. Check a unit with `function g1 using v(x: Int[0, 9]): Boolean pure { true }`
    under owner (`a`, `u`) and again under (`a`, `w`). Read the key of `x`'s
    type node each time.
 3. Check `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`)
-   twice and under (`a`, `w`) once. Read `Point`'s key and preimage bytes.
+   twice and under (`a`, `w`) once. Read `Point`'s key, which is its preimage.
 4. Check `type Digit = Int[0, 9];` with
    `function g using v(x: Digit): Boolean pure { true }`. Read the semantic
    type of `x`'s parameter node, and list every node's `declaration`.
@@ -59,8 +59,8 @@ selection whose alias is `v`.
 6. Read in place from the QSpec checkout the `enum-status` and
    `enum-status-ready` vectors at
    `proposals/checked-package-v2/node-identity-vectors.json`, `vectors`;
-   key their preimages and compare the minted keys to their recorded
-   `sha256` values (the opt-in `make conformance` gate).
+   key their preimages and compare them to the recorded preimages (the
+   opt-in `make conformance` gate).
 7. Build the type nodes of `Rational[-9, 9; 1, 9]`,
    `Decimal[-100000, 100000; 2, 2; nearest-even]`,
    `tuple Pair(Int[0, 9], Int[0, 9]);` and the two `record Opt` declarations
@@ -73,8 +73,8 @@ selection whose alias is `v`.
    `record Tree { kids: Sequence<Tree>[0, 3]; }`, and `ping` with `pong`.
    Check `ping` and `pong` again with `pong` declared first. Check
    `function one using v(): Integer pure { 1 }`. Key G1's node
-   through the key function. Read each member's preimage bytes and key and
-   each group's digest.
+   through the key function. Read each member's preimage, which is its key, and
+   each group's group key.
 10. Build `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`)
     through a `CompositeDeclaration` whose key is 32 bytes of `0x11`, and
     again with 32 bytes of `0x22`. Read `Point`'s node key, its checked type
@@ -104,13 +104,13 @@ cause's code is always `stage_limit_exceeded` and its cause the limit kind's
   The 30-record chain checks, alone and with the equality, and the thread
   completes. The 1,000-record chain checks, alone and with the equality,
   and the thread completes. No outcome names a depth.
-- Step 6: each key equals the recorded `sha256`, and each preimage's
+- Step 6: each key equals the recorded preimage, and each preimage's
   `version` is its nominal one.
 - Step 7: T10 and T9, T12 and T11, D5, D3, D4 (differing from D3), and L3
   for both literals, spelled `"1/2"`.
 - Step 8: no `_` arm.
 - Step 9: G1 to G15, L5 and E11 to E13, byte for byte, L6 from the unit
-  whose body is `1`, and the group digests FR-092 lists; `pong` first gives the same keys. G9's
+  whose body is `1`, and the group keys FR-092 lists; `pong` first gives the same keys. G9's
   `semantic_type` is `{term: "group_reference", ordinal: 1}`.
 - Step 10: D1 both times, the checked type node's id is D1 both times, and
   no supplied key appears.

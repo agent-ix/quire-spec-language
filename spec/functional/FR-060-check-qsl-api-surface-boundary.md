@@ -25,7 +25,7 @@ construction site:
 - The kernel `EffectiveId` constructor (ADR-013 O-05, today at its pre-kernel
   location) is only called by the `model` stage.
 - The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21;
-  `quire-exact`'s `PopulationId::from_digest`) is only called by the `model`
+  `quire-exact`'s `PopulationId` mint constructor) is only called by the `model`
   stage (ADR-011 §7.1 T-12(d)).
 
 The `quire-exact` kernel crate is ADR-011 §6.1 layer K
@@ -92,15 +92,18 @@ seven rules:
 | T12-G | Qsl | The checked-term constructors: every function of the `quire_checked::construct` module (ADR-011 FB-14, [FR-400](FR-400-separate-checked-terms-from-the-checker.md)), compiled only under the `construct` feature that only `qsl-semantics` enables | `qsl-semantics`' `check` and every descendant module; `library` for the `PackageId` constructor and `value::definition` for the `AdmittedIntegerDivision` constructor; no debt list | the `construct` module's source in the resolved `quire-checked` checkout |
 
 A rule's call patterns SHALL include every textual spelling that constructs
-the protected value, not only its primary constructor name.
-T12-C's pattern matches `EffectiveId::from_digest`, called or passed as a
-function value. T12-D's pattern matches `PopulationId::from_digest`, the kernel
+the protected value, not only its primary constructor name. In a pattern,
+`<mint>` stands for each public constructor of the protected kernel type that
+mints a value from a node's structural key, read from the resolved `quire-exact`
+source.
+T12-C's pattern matches `EffectiveId::<mint>`, called or passed as a
+function value. T12-D's pattern matches `PopulationId::<mint>`, the kernel
 `PopulationId`'s one public constructor, called or passed as a function
 value. T12-E's pattern is the bare name `attest_ir_admitted_v2`, which
 matches it through the type, through `Self` or as a function value; its own
 definition is not a call. T12-F's pattern matches `NodeKey::decode_admitted`, called or
 passed as a function value; it is not a T12-B mint, and T12-B's pattern stays
-`NodeKey::from_digest`. T12-G's pattern is any path through `quire_checked::construct`, as a `use`
+`NodeKey::<mint>`. T12-G's pattern is any path through `quire_checked::construct`, as a `use`
 tree leaf, a call or a function value; a crate alias or glob import of the
 module counts as a reference. T12-E runs on the repository's own tree in `cargo
 test --workspace` (`tc_arch_lint_api_surface_024`), and T12-F likewise
@@ -114,18 +117,18 @@ are `check` and every module under it, because ADR-013 O-04 says only
 `check` calls the `NodeKey` constructor. `check::family`'s
 `mint_declaration_identity` and `mint_call_identity`, and
 `check::checked_dispatch`, are allowed under that prefix. `value::enumeration`
-and `value::unit` compute node-identity preimage digests in
+and `value::unit` compute node-identity preimages in
 `value::semantic_node` and never construct a `NodeKey`; a preimage node id
 they read stays a `WireNodeId` until a lookup resolves it.
 
 T12-B's patterns SHALL match every reference to a `NodeKey` constructor in
 shipped code, whether it is called or passed as a function value:
-`NodeKey::from_digest` (the kernel constructor). T12-B also matches calls
+`NodeKey::<mint>` (the kernel constructor). T12-B also matches calls
 of `node_key_of`, the name of the crate-internal helper that wrapped the
 constructor until it was deleted (#249 review R1), so a reintroduced
 helper of that name is caught; a `fn node_key_of(` definition line is not a
 mint. A reference passed as a function value, such as
-`.map(NodeKey::from_digest)`, is a mint.
+`.map(NodeKey::<mint>)`, is a mint.
 
 ### T12-B and T12-C: shipped code and debt lists
 
@@ -184,11 +187,11 @@ A rule with no call site outside its allowed callers SHALL report **passing**.
 ### Scanning method and its stated limitations
 
 T12-B, T12-C and T12-D SHALL match each call pattern against the source
-file's tokens, not its text: `NodeKey::from_digest` is the token sequence
-`NodeKey`, `::`, `from_digest`. A comment or doc comment is not a token and a
+file's tokens, not its text: `NodeKey::<mint>` is the token sequence
+`NodeKey`, `::`, `<mint>`. A comment or doc comment is not a token and a
 string literal is a single token, so a pattern named inside either never
 matches. A call split across lines, a constructor passed as a function
-value, a qualified-path spelling (`<NodeKey>::from_digest`) and a call
+value, a qualified-path spelling (`<NodeKey>::<mint>`) and a call
 inside a macro invocation's arguments all match. The three rules scan
 shipped code only: items under `#[cfg(test)]` are excluded (Behavior,
 "T12-B and T12-C: shipped code and debt lists"). T12-D has no debt list, so
@@ -199,7 +202,7 @@ comment or string literal is reported (a possible false positive), not
 excluded.
 
 No rule resolves an import alias of the protected type (`use
-quire_exact::NodeKey as K;` followed by `K::from_digest`); a call reached
+quire_exact::NodeKey as K;` followed by `K::<mint>`); a call reached
 only through a renamed import is a known limitation of this check, not a
 silent pass. The check's own report SHALL state these limitations (#249
 review, MEDIUM-5).
@@ -254,7 +257,7 @@ each list can only shrink.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and rules T12-B, T12-C and T12-D are still evaluated and reported; rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
+| FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and rules T12-B, T12-C and T12-D are still evaluated and reported; rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::<mint>)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::<mint>(`). | Test (TC-157) |
 | FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes and `package_id` equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
 | FR-060-AC-6 | `qsl_replay::compile_package` refuses as the spine does: a malformed source refuses `ReplayRefusal::Recompile` with the spine refusal's catalog code and stage; a library whose source has the unit's owner refuses `ReplayRefusal::DependencyInput`; an S1 `text_input_bytes` limit below the source's size refuses `stage_limit_exceeded`; and an S1 limit above the reader limit refuses `LimitAboveReader`. | Test (TC-908) |
 | FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes and `package_id` of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |

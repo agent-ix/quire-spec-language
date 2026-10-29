@@ -23,7 +23,7 @@ canonical semantic state keys.
 
 ## Subtasks
 
-- [ ] Pin accepted temporal/protocol consumer artifacts and write TC-209/210 first.
+- [ ] Write TC-209/210 first.
 - [ ] Complete clause execution while preserving authored nondeterminism and exact traces.
 - [ ] Implement bounded enumeration/sampling, seeds, frontiers, cancellation and replay.
 - [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-052.

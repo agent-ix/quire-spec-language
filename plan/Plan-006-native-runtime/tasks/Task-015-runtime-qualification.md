@@ -57,7 +57,7 @@ asserted by this status update.
 
 Handoff: language #4 comment 5601317618; remaining work: language #3 comment
 5601318368, specification #4 comment 5601318700, language #5 comment
-5601319178 and language #6 comment 5601319633. The exact review/source pins
-and local execution commands are retained in SR-099.
+5601319178 and language #6 comment 5601319633. The local execution commands are
+retained in SR-099.
 
 Run one Cargo phase at a time using nice -n 10, -j 1, --locked --offline, an explicit existing target directory and --test-threads=1. Wait for actual exit before another phase. No additional agents, producer-language runs, public publication or B/C/TL/Filament edits.

@@ -41,14 +41,14 @@ layer-4 I2 reader builds the package source map from a verified
 ## Outputs
 
 - `OccurrenceKey`: (wire node id, role, ordinal).
-- QSL's `RawSourceRef` (authority, identity, `quire.source.bytes/v1` digest)
+- QSL's `RawSourceRef` (authority, identity)
   and
   `SourceRegion` (`RawSourceRef`, byte start, byte end), with the value rules
   below.
 - `PackageSourceMap`: occurrence key → ordered, non-empty regions, carried
   by the I2 reader's verified outcome.
 - `Locus`: `Region(SourceRegion)`, `Occurrence(Location)` or
-  `Artifact{digest, pointer}`, with an RFC 6901 `JsonPointer`.
+  `Artifact{identity, pointer}`, with an RFC 6901 `JsonPointer`.
 
 ## Behavior
 
@@ -60,12 +60,12 @@ owns the wire members, occurrence-key shape and half-open interval. QSL owns
 the following provenance value rules and their conformance checks, which
 FR-322 does not define:
 
-- `RawSourceRef` SHALL carry a non-empty authority and identity, a source
-  bytes digest, and no revision.
+- `RawSourceRef` SHALL carry a non-empty authority and identity, and no
+  revision.
 - `SourceRegion` SHALL be a half-open byte interval `[start, end)` with
   `start <= end`; an empty region is a point.
-- Two `SourceRegion` values SHALL be equal exactly when their source digest,
-  start and end are equal, regardless of the authority and identity.
+- Two `SourceRegion` values SHALL be equal exactly when their authority, identity,
+  start and end are equal.
 
 ### The package source map is the wire's, keyed by occurrence
 
@@ -96,9 +96,9 @@ RFC 6901 JSON pointer.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-095-AC-1 | QSL's occurrence-key, raw-source-reference and source-region types satisfy these rules: keys differing only in node id, role or ordinal are unequal; an empty authority, empty identity or `quire.definition.bytes/v1` digest is refused with its own cause; and a region with start 5 and end 4 is refused while start 5 and end 5 is admitted. QSL's source-map production also gives every node of the semantic graph of a checked package holding a one-parameter function and a caller that calls it inside a conditional at least one source occurrence. | Test (TC-420) |
-| FR-095-AC-2 | QSL's source-region equality and ordering are: a region over digest `d`, start 4, end 9 equals and orders equal to a region with the same three members under another authority and identity, and is unequal to regions that change only the digest, only the start or only the end. | Test (TC-420) |
-| FR-095-AC-3 | A verified read of a wire holding two declarations, one of whose entries has two regions, carries a package source map conforming to QSpec FR-322: each entry's key maps to exactly its wire regions in wire order, each with the wire's authority, identity and source digest, and each node's occurrences are exactly its one entry. The map refuses an entry with no region and a key mapped twice. An entry with a reversed region or a non-hex node id refuses as `invalid_source_map`. Over QSpec's published positive `quire.checked-package/v2` fixtures, every `source_map` entry of each IR-admitted fixture looks up to exactly its wire regions and each node's occurrence count equals its entry count. | Test (TC-421) |
+| FR-095-AC-1 | QSL's occurrence-key, raw-source-reference and source-region types satisfy these rules: keys differing only in node id, role or ordinal are unequal; an empty authority or empty identity is refused with its own cause; and a region with start 5 and end 4 is refused while start 5 and end 5 is admitted. QSL's source-map production also gives every node of the semantic graph of a checked package holding a one-parameter function and a caller that calls it inside a conditional at least one source occurrence. | Test (TC-420) |
+| FR-095-AC-2 | QSL's source-region equality and ordering are: a region over authority `a`, identity `i`, start 4, end 9 equals and orders equal to a region with the same four members, and is unequal to regions that change only the authority, only the identity, only the start or only the end. | Test (TC-420) |
+| FR-095-AC-3 | A verified read of a wire holding two declarations, one of whose entries has two regions, carries a package source map conforming to QSpec FR-322: each entry's key maps to exactly its wire regions in wire order, each with the wire's authority and identity, and each node's occurrences are exactly its one entry. The map refuses an entry with no region and a key mapped twice. An entry with a reversed region or a non-hex node id refuses as `invalid_source_map`. Over QSpec's published positive `quire.checked-package/v2` fixtures, every `source_map` entry of each IR-admitted fixture looks up to exactly its wire regions and each node's occurrence count equals its entry count. | Test (TC-421) |
 | FR-095-AC-4 | A location tag of a mapped occurrence resolves to its regions; a tag naming a node the map does not hold refuses with the unknown-node cause, and one naming a mapped node at an unmapped ordinal with the unknown-occurrence cause. A wire whose `source_map` entry names a node absent from its semantic graph refuses at the read as `invalid_source_map`. | Test (TC-421) |
 | FR-095-AC-5 | A region locus denotes exactly its region; an occurrence locus denotes the two regions its mapped key holds, and an unmapped one refuses with the map's unknown-occurrence cause; an artifact locus refuses as naming no source region. | Test (TC-422) |
 | FR-095-AC-6 | `""`, `/`, `/source_map/0/regions` and `/a~1b/c~0d` parse as JSON pointers and keep their text; `source_map` refuses for a missing leading `/`, and `/a~2b` and `/a~` refuse for the `~` at byte 2. | Test (TC-422) |

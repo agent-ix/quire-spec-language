@@ -25,7 +25,7 @@ Scope: FR-105-AC-13 to FR-105-AC-17.
 
 ## Test Procedure
 
-1. Against a lock that selects the protocol profile, spine-compile a unit
+1. Against a package that selects the protocol profile, spine-compile a unit
    over object type `Switch` with required `Boolean` fields `on` and `lit`,
    `armed: Option<Boolean>`, `count: Integer`, `seq: Sequence<Boolean>`, and
    operation `set(flag: Boolean)` whose frame modifies all five, with
@@ -45,7 +45,7 @@ Scope: FR-105-AC-13 to FR-105-AC-17.
    `armed`; `seq`; `count`; postconditions `self.peer.on`,
    `let s = self in s.on`, `result.on` and one reading `on` only inside
    `pre(...)`; a pre/post clause with an execution point; `post QS on
-   M::SubSwitch::set { self.on }`; a lock with no protocol profile; and
+   M::SubSwitch::set { self.on }`; a package with no protocol profile; and
    FR-105-AC-1's ConfigVersion package.
 5. Add `lit` to `Q3 { self.lit }` with the same preconditions. Compile twice;
    compare bytes and the derived precondition's node id across subjects.

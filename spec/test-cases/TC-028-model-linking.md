@@ -17,7 +17,7 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-Under the separately qualified rule-model declarations, check the pinned ambiguous-literals expression 1 + 2 = 3 and size-needs-context expression size(self.items) = 2. Compare size-preserves-duplicates, which supplies the explicit compatible Count context.
+Under the separately qualified rule-model declarations, check the ambiguous-literals expression 1 + 2 = 3 and size-needs-context expression size(self.items) = 2. Compare size-preserves-duplicates, which supplies the explicit compatible Count context.
 
 ## Expected Results
 

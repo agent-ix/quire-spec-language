@@ -57,7 +57,7 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
   `result_inner` as its leaf source, the checker SHALL derive its leaves by
   [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)'s
   text-leaf walk, including every union member's positional payload and
-  pinned text profile. Leaf order follows type declaration order and
+  text profile. Leaf order follows type declaration order and
   payload position order; it does not follow a collection's runtime element
   order. The `result_inner` source applies only to set, bag and ordered-set
   results, as FR-093 defines.

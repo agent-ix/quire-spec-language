@@ -44,17 +44,14 @@ independent `expected()` oracle.
   `AGPL-3.0-only`; one example keeps one licence.
 - One `1-draft` unit, generated with the fixtures. Its header selects the
   `root` profile FR-110 resolves, `quire.value.complete/v1`, by identity,
-  and the domain package by its identifier and the canonical content digest
-  the supplied document is checked against (refusing
-  `stale_dependency`/`content-mismatch`, QSpec FR-272 as amended by
-  quire-specification#174). The `model` line is QSpec's shared-grammar
-  `model` production, with no `version`:
+  and the domain package by its identity (QSpec FR-272). The `model` line is
+  QSpec's shared-grammar `model` production, with no `version`:
 
 ```text
 // SPDX-License-Identifier: AGPL-3.0-only
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
-model Config = "example/config-version" digest "sha256-jcs:<the package's digest>";
+model Config = "example/config-version";
 invariant ParentOrder using v on Config::ConfigVersion at current { present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }
 invariant NoCycle using v on Config::ConfigVersion at current { not reaches(self, self, parent) }
 post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }

@@ -19,7 +19,7 @@ and quantity target, inside or outside an equality. Lowering writes the
 
 - the `text_profile` law for a text operand only;
 - the `ieee_profile` law for an IEEE target;
-- the `rounding` mode the target pins;
+- the `rounding` mode the target fixes;
 - the target as `type_argument`.
 
 Every other target refuses.

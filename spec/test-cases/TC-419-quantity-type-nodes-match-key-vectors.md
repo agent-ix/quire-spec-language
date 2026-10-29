@@ -1,12 +1,12 @@
 ---
 id: TC-419
-title: "A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors"
+title: "A declared unit's quantity type is its unit node, and a compound unit's keys to the key vectors"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-094
     type: verifies
 ---
-# TC-419: A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors
+# TC-419: A declared unit's quantity type is its unit node, and a compound unit's keys to the key vectors
 
 ## Description
 
@@ -24,7 +24,8 @@ Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-
 ## Test Procedure
 
 The unit table admits QSpec's `dimension-length`, `dimension-time`,
-`unit-metre` and `unit-second` preimages from `node-identity-vectors.json`,
+`unit-metre` and `unit-second` preimages from `node-identity-vectors.json`
+(their preimage members only),
 read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
 
 1. Check a parameter typed as a quantity of the declared unit `metre`. Read
@@ -65,7 +66,7 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 - Step 1: the semantic type is QSpec's `unit-metre` key, and the
   graph holds no `compound_unit` node. It holds the `metre` node, a
   `scalar_type`/`unit` node carrying its `quire.unit-node/v1` preimage, whose
-  bytes hash to that key, typed by the `dimension-length` node, which it also
+  preimage bytes are that key, typed by the `dimension-length` node, which it also
   holds as a `scalar_type`/`dimension` node.
 - Step 2: `a * a`'s result type is U1; the three formed units key to U2
   (whose first term names metre), U3 and U4, byte for byte. U4 differs from
@@ -85,11 +86,11 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
   `d / rational(-3, 1) ms` and `d / -(3 ms)` have one node whose body is `aggregate{[]}`. None
   of the nodes is the `m` unit node.
 - Step 7: one `scalar_type`/`dimension_equivalence` node with no
-  `declaration`, self-typed, preimage ids in ascending digest order, key
-  the QSpec vector's and `root_scale` 1/1 under QSpec's vector owner, exactly the two
+  `declaration`, self-typed, preimage ids in ascending key order, key
+  the vector's preimage and `root_scale` 1/1 under QSpec's vector owner, exactly the two
   package `Time` keys as dependencies and one `anchor` occurrence of ordinal 0; the
   reversed spelling gives the same key; the added `R::Time ~ Time` is a second node of
-  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 and the QSpec vector's key in
+  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 and the vector's preimage as key in
   both spellings; the `Time` nodes keep their keys; the node is emitted with no
   quantity type naming either dimension; IR admits each package and refuses each
   changed `root_scale` with `invalid_semantic_graph`.

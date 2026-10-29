@@ -1,12 +1,12 @@
 ---
 id: TC-418
-title: "Clause function nodes key to the golden vectors with the operation member's ModelOwner"
+title: "Clause function nodes key to the structural-key vectors with the operation member's ModelOwner"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-094
     type: verifies
 ---
-# TC-418: Clause function nodes key to the golden vectors with the operation member's ModelOwner
+# TC-418: Clause function nodes key to the structural-key vectors with the operation member's ModelOwner
 
 ## Description
 
@@ -24,7 +24,7 @@ Scope: FR-094-AC-5, FR-094-CON-1, FR-094-CON-2.
 
 ## Test Procedure
 
-The domain package is `acme/orders` of FR-094's Golden vectors section, with
+The domain package is `acme/orders` of FR-094's Vector index section, with
 the query operations `Order.size(): Integer` and `Order.count(): Integer`.
 The receiver parameter of each candidate is `self: Reference<M::Order>`.
 

@@ -23,7 +23,7 @@ Scope: FR-127-AC-1 to FR-127-AC-5, FR-127-AC-7 to FR-127-AC-10 and FR-127-AC-16.
 2. Read `TerminalValue::category` for each value of FR-127-AC-2.
 3. Settle FR-126-AC-1's outcomes: the weak `each` proof; the counterexample
    under the constraint with no granularity, with its replay; that
-   counterexample with one post-state digest altered; in an envelope for
+   counterexample in an envelope for
    the weak `each` clause; with its last step removed; one whose formula
    evaluates `true` on replay; one whose replay returns `InternalFault`
    through a replay stand-in.
@@ -58,8 +58,8 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 - Step 2: inconclusive `KaniVacuousProof`; success five times, each value
   keeping its certification; inconclusive four times.
 - Step 3: `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success;
-  `refuted`, `decisive-counterexample`, violation; `inconclusive`,
-  `ReplayRefused`; `inconclusive`, `ReplayParity` (the unfair lasso);
+  `refuted`, `decisive-counterexample`, violation;
+  `inconclusive`, `ReplayParity` (the unfair lasso);
   `inconclusive`, `ReplayRefused`; `inconclusive`, `ReplayParity`;
   `failed`, category failed.
 - Step 4: `incomplete`, `unavailable`,

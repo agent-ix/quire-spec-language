@@ -190,7 +190,7 @@ requested surrounding-execution closure; it SHALL NOT claim to authenticate a
 parameter map that is not an input to mapping classification.
 
 The progress ledger identity used by `evaluate_with_progress_v2` SHALL include
-the admitted package digest, declaration, definition identity/revision and exact
+the admitted package identity, declaration, definition identity/revision and exact
 clock configuration. Progress recorded for `/1`, another `/2` artifact or a
 different authenticated clock configuration SHALL NOT settle this evaluation.
 

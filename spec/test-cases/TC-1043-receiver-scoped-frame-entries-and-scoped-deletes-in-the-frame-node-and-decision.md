@@ -32,8 +32,7 @@ named by its own postcondition clause (`DoneBump`, `DoneMerge`, `DoneNoop`,
 package holds its frame node. Node identity strings are written with the prefix
 `ix://test/counters/` as `Counter/value`, `Counter/step`, `Gauge/d`, `Flow/x`, `Counter`,
 `Gauge` and `Supersedes`. In the wire vectors `<Counter>` stands for the NodeRef
-object `{"digest":"<digest of Counter>","domain":"quire.checked-semantic-node/v1"}`
-of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
+(QSpec FR-322 node id) of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
 `#[trace("TC-1043", "FR-154-AC-n")]`, `#[trace("TC-1043", "FR-105-AC-7")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 
@@ -102,12 +101,7 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    build from the one fixture). Step 2b uses fixture R, which holds no scoped member, and is reachable today.
 
 4. For each of X1 to X9, copy the emitted package, edit the named frame node
-   body, and re-key it: compute the edited frame node's key, replace the key
-   in the `state`/`operation_anchor` node body that references it, re-key that
-   anchor and every node that depends on the anchor, and recompute the
-   `package_id`. Without the re-keying, FR-322's node-key check refuses the
-   copy `invalid_package`/`stale-node-key` (FR-320-AC-4) before the frame step
-   runs. Then read the copy with the I2 reader. X1 is W1 with the `step`
+   body. Then read the copy with the I2 reader. X1 is W1 with the `step`
    entry's `scope` removed; X2 is W1 with `scope` `"all"`; X3 is W1 without
    `deletes_scoped`; X4 is W2 with `deletes_scoped` `[parameter a, receiver,
    parameter b]`; X5 is W2 with `deletes_scoped` `[receiver, parameter b,

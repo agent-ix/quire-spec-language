@@ -34,8 +34,8 @@ declaration's `composite_type` node (FR-092-AC-12), which is what the
 emitted package and a contract IR document name. This requirement extends
 the `AdmittedContext` that `compile_admitted` returns (FR-394) with the
 record, tuple and union table, so the consumer looks a declaration up by its
-`composite_type` node's wire id and reads its kernel key, and never decodes,
-hashes or builds one.
+`composite_type` node's wire id and reads its kernel key, and never decodes
+or builds one.
 
 ## Inputs
 
@@ -91,13 +91,13 @@ hashes or builds one.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-396-AC-1 | A consumer that names only the `qsl_replay` root, the kernel (`quire-exact`) and the QSV declaration API, compiling a unit that declares a record and a tuple through `compile_admitted`, finds both through `composite_declaration` with forms `Record` and `Tuple`, and builds from their keys a closed `TypeEnvironment` with a record field of the tuple's `ValueType::Composite` type and a record value it admits, without decoding, hashing or constructing a key. | Test (TC-1090) |
+| FR-396-AC-1 | A consumer that names only the `qsl_replay` root, the kernel (`quire-exact`) and the QSV declaration API, compiling a unit that declares a record and a tuple through `compile_admitted`, finds both through `composite_declaration` with forms `Record` and `Tuple`, and builds from their keys a closed `TypeEnvironment` with a record field of the tuple's `ValueType::Composite` type and a record value it admits, without decoding or constructing a key. | Test (TC-1090) |
 | FR-396-AC-2 | Over a unit with two same-shaped records, tuples and unions, the context's table equals, per declaration, the spine's own checked package read independently of its checked type nodes: the `composite_type` semantic node's id, the key its checked `TypeEnvironment` gives the declaration, its name and form. A function parameter of a record's type is declared `ValueType::Composite` of that record's admitted key, which differs from its node id. Every declaration's key differs, and a repeated lookup and a recompile return the same declarations. | Test (TC-1090) |
 | FR-396-AC-3 | `composite_declaration` refuses `Unknown` for an id no package admitted, `WrongKind` for the unit's enum declaration and function, and `Foreign` naming the library's `package_id` for a library record or union imported directly or through an intermediate library, while every own record, tuple and union is found. | Test (TC-1090) |
 | FR-396-AC-4 | FR-394-AC-1 to FR-394-AC-5 still hold: the enum table, its lookups and refusals, and the `Package` / `Resource` / `Fault` compile refusals are unchanged. | Test (TC-1090) |
 | FR-396-AC-5 | A replay witness whose record and tuple values name the admitted kernel keys replays on both arms, and the same witness naming the `composite_type` node ids refuses. | Test (TC-1090) |
 | FR-396-AC-6 | Over a unit with a union with a record payload and a union with a union payload, each union is found by its `composite_type` node id with form `Union`, and its members equal, in declared order, the producer's own: the `VariantId` of the FR-441 member key over the union's settled node, the sealed `TypeEnvironment` binding of the member, and literal payload types (a record or union position is `ValueType::Composite` of that declaration's admitted key). | Test (TC-1090) |
-| FR-396-AC-7 | A consumer naming only the `qsl_replay` root, the kernel (`quire-exact`) and the QSV declaration API declares a union's `CompositeDeclaration` from its admitted key and payloads, seals it with `seal_union_verified` over the admitted bindings (`AdmittedUnionMember::member`), and constructs and admits a value of every member, a member holding another union included, without decoding, hashing or constructing a key. | Test (TC-1090) |
+| FR-396-AC-7 | A consumer naming only the `qsl_replay` root, the kernel (`quire-exact`) and the QSV declaration API declares a union's `CompositeDeclaration` from its admitted key and payloads, seals it with `seal_union_verified` over the admitted bindings (`AdmittedUnionMember::member`), and constructs and admits a value of every member, a member holding another union included, without decoding or constructing a key. | Test (TC-1090) |
 | FR-396-AC-8 | Two same-shaped unions have distinct kernel keys, no `VariantId` is shared by two members of the unit's unions, and a repeated lookup and a recompile return the same declarations and members. | Test (TC-1090) |
 | FR-396-AC-9 | A replay witness whose union value names the union's `composite_type` node id and an admitted member replays on both arms, and the same witness naming the union's kernel key refuses. | Test (TC-1090) |
 

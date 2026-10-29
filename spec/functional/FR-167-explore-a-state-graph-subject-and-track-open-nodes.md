@@ -63,7 +63,7 @@ pub struct ExploredStateGraph {
 }
 
 pub struct GraphNode {
-    pub key: DigestRecord,                  // quire.simulation.state-key/v1
+    pub key: StateKey,                      // quire.simulation.state-key/v1: canonical RFC 8785 bytes of the state
     pub depth: u64,
     pub labels: Vec<PredicateLabel>,        // per item, instance and predicate
 }

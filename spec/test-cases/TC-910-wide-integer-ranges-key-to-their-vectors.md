@@ -37,8 +37,8 @@ Scope: FR-092-AC-14, FR-092-AC-15.
 1. The type nodes' preimage bytes and keys equal T13, T14, T15, T16 and T4
    exactly; every bound is a decimal string.
 2. Every existing vector is unchanged.
-3. Each key equals its QSpec FR-322 published expected key.
+3. Each key equals its QSpec FR-322 published preimage.
 4. For both counter fields, the preimages encode `9007199254740991` as a JSON
    number and `9007199254740992` as a canonical decimal string; each key is
-   the SHA-256 of the RFC 8785 bytes of its encoded preimage. No encoding
+   the RFC 8785 byte string of its encoded preimage. No encoding
    refuses, and `NodeKeyRefusal` has no magnitude variant.

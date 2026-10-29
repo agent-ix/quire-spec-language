@@ -29,7 +29,7 @@ the same selected Semantic IR domain package and checked spine package.
   retains its IR node identity. The QSpec FR-322 record-node schemas are
   selected for checked-package emission.
 - Snapshot and invocation documents use FR-106's `quire.state.snapshot/v1`
-  and `quire.state.invocation/v1` forms with selected `sha256-jcs` digests.
+  and `quire.state.invocation/v1` forms, addressed by their document identity.
 
 ## Test Procedure
 
@@ -66,7 +66,7 @@ the same selected Semantic IR domain package and checked spine package.
 - Step 2 refuses the identity field, operation and wrong-meaning `typeRef`
   with FR-208/FR-154's respective named causes before assembly. The finite
   recursive declaration admits with its optional edge.
-- Step 3 admits the same typed observation and digest for member-order
+- Step 3 admits the same typed observation for member-order
   variants; each record retains its most-specific type and exact nested
   FR-207 path, under object and invocation roots respectively.
 - Step 4 refuses with `invalid_runtime_input` and respectively

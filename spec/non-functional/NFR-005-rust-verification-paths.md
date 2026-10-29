@@ -43,5 +43,5 @@ second trace grammar is introduced.
 
 ## Dependencies
 
-- [NFR-002](NFR-002-reproduce-native-builds.md) retains the pinned native build contract.
+- [NFR-002](NFR-002-reproduce-native-builds.md) retains the native build reproducibility contract.
 - [NFR-004](NFR-004-preserve-implementation-rights.md) governs dependency and fixture rights.
