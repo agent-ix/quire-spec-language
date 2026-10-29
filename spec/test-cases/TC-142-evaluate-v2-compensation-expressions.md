@@ -22,7 +22,11 @@ input and accounting cases; this test adds the emitted-bytes/read-back path.
 
 Compile the real compensation fixture used by TC-1070 through the supported
 checked source pipeline, emit its checked-package V2 bytes and admit them with
-the strict version-exact reader. From the admitted checked package, select the
+the strict version-exact reader. Confirm the admitted package exposes the
+identity derived and admitted by that reader, and that neither a missing nor a
+caller-substituted artifact identity can be supplied to the evaluation entry
+point; there is no `UnpublishedArtifact` runtime branch in this checked-package
+path. From the admitted checked package, select the
 registration/activation captures, trigger guard, retry relation and recovery
 predicate by their exact protocol slots. Supply the corresponding `ProtocolSlot`
 and typed `ProtocolSupply` cases from TC-1070 and evaluate through

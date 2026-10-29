@@ -9,7 +9,7 @@ review_set: subset
 
 ## Summary
 
-Checked completeness, consistency, atomicity and testability for the FR-049 replacement map. The criteria retain the old capabilities while assigning each to an existing checked-term, family, observation or shared-meter owner.
+Checked completeness, consistency, atomicity and testability for the FR-049 replacement map. Each surviving capability has an owning checked-term, family, observation or shared-meter contract; behavior tied only to the retired artifact-graph inputs is identified explicitly as retired.
 
 ## Findings
 
