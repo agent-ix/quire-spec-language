@@ -1003,13 +1003,12 @@ The counterexample packet and the #231 envelope carry, for deterministic replay:
   function (ADR-017 Q-4);
 - the occurrence key of the failing node (O-07, QC-8);
 - the `package_id` of the package the harness was generated from, and the
-  `RawSourceRef` labels in its lock;
+  `RawSourceRef` labels in its `sources`;
 - the semantic profile selections of the proving run (QSL FR-071's closed
   known set, role `replay.semantic_profile_selections`). They are not the
-  v2 `lock`'s `profile_selections` entries: each entry is a clause-profile
-  law (a role and a `DefinitionRef`), a member of the package-id preimage
-  that the packet binds through `package_id`, and no packet member copies
-  it. A packet with no proving run (a function-value parity claim, QSL
+  package's `profile_selections` entries: each entry is a clause-profile
+  law (a role and a `DefinitionRef`) that the packet binds through
+  `package_id`, and no packet member copies it. A packet with no proving run (a function-value parity claim, QSL
   FR-484) carries the empty list;
 - the proof bounds and declared domains;
 - the `backend` member (O-19);
@@ -1234,7 +1233,7 @@ direction is S-3's, not a gate on S-2 (Consequences).
 | S-2 | Identities: O-01 single selection, O-02, O-03 rework, O-05, O-06, O-18 retired | S-1, #131 merged, QC-15 (adds `EffectiveId` and the reference identities to the kernel), QC-3, QC-5 |
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus`. Landed (#399). | S-3 |
-| S-4b | Source references: FR-001's four-label `SourceIdentity` for every source admission, spine and native-v1, and the `RawSourceRef` S0 mints from it; S0's refusal regions (FR-001-AC-8); FR-010's `parse` and `format` grammar; the native-v1 request wire, native-run-result/1, native-linked-package/1 and native-state-input/1 with their schemas and test vectors, each carrying the four labels (FR-026, FR-027, FR-031, FR-018, FR-024), with `docs/native-runtime-inputs.md`; the consumers of those labels, the verified package reader and its bindings (FR-020) and the static package identity, whose manifest source identity gains two labels (FR-021); package declarations and the `CheckedGraph` carrying the unit's `RawSourceRef`, their `SourceOwner` taken from it, for the M-4 emitter to emit as the lock `sources` entry; O-12's `LocatedSpan` replacement in the canonical S0 to S2 diagnostics; C-21. The replay executor's recompilation under the reference's labels (FR-001) is TK-01's (the replay recompilation, ADR-011 §2 S8), not S-4b's. | S-4 |
+| S-4b | Source references: FR-001's four-label `SourceIdentity` for every source admission, spine and native-v1, and the `RawSourceRef` S0 mints from it; S0's refusal regions (FR-001-AC-8); FR-010's `parse` and `format` grammar; the native-v1 request wire, native-run-result/1, native-linked-package/1 and native-state-input/1 with their schemas and test vectors, each carrying the four labels (FR-026, FR-027, FR-031, FR-018, FR-024), with `docs/native-runtime-inputs.md`; the consumers of those labels, the verified package reader and its bindings (FR-020) and the static package identity, whose manifest source identity gains two labels (FR-021); package declarations and the `CheckedGraph` carrying the unit's `RawSourceRef`, their `SourceOwner` taken from it, for the M-4 emitter to emit as the `sources` entry; O-12's `LocatedSpan` replacement in the canonical S0 to S2 diagnostics; C-21. The replay executor's recompilation under the reference's labels (FR-001) is TK-01's (the replay recompilation, ADR-011 §2 S8), not S-4b's. | S-4 |
 | S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258). | S-1, QC-11 |
 | S-5b | Refusals and readers (FR-096): O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22's I2 reader — all carry `Locus` (T-5). The check-stage loci resolve through the unit's `RawSourceRef` (S-4b) and the forms' spans (FR-091-AC-10). The I2 reader's loci need `Locus::Artifact{identity, pointer}` (S-2) and three IR reader changes (FR-096 Dependencies). | S-5a (landed, #258), S-4 (landed, #399), S-4b (landed, #408), FR-091-AC-10 (landed, #413), QC-11 (met), QC-28 (met) |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, and the #222 bound types (O-21) that ADR-014 §11 names | S-1, ADR-014 (#222) accepted, agent-ix/quire-specification#134 |
@@ -1264,7 +1263,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5a (the internal-fault code) and S-5b (each limit-kind code) |
 | QC-12 | A QSpec wire for the candidate set: per `request_index`, a sorted list of `backend` members or the unknown-backend mark (T-7). FR-331 `candidates` defines both alternatives; the member layout is agent-ix/quire-specification#134 scope item 4. | #185, CG negotiation input |
 | QC-13 | AD-016 amendment: the Replay-ownership `Witness` row stores `transcript` only, with the other four facts derived. | #231 |
-| QC-14 | AD-016 amendment: the obligation identity is the structural tuple O-09 states (clause node key, clause occurrence key, obligation kind, arguments as parameter node key and domain; source span excluded); the AD-016 seed vector is replaced by tuple equality. Landed by agent-ix/quire-specification#140. BLOCKED-BY STD-583 (unassigned; planner relay). | CG obligation conformance (TK-05) |
+| QC-14 | AD-016 amendment: the obligation identity is the structural tuple O-09 states (clause node key, clause occurrence key, obligation kind, arguments as parameter node key and domain; source span excluded); the AD-016 seed vector is replaced by tuple equality. Landed by agent-ix/quire-specification#140. BLOCKED-BY STD-583 (owner: planner titan:QSL:plan). | CG obligation conformance (TK-05) |
 | QC-15 | AD-016 amendment: the kernel row gains exactly these `Value` component types and no other: `EffectiveId` (O-05), and the opaque structural-key newtypes `UniverseId` and `ObjectId` (reference), `UnitId` (quantity), `VariantId` (enum and sum) and `MemberId` (record member). Each has one public constructor from its key, which QSL builds; none depends on `check` or `model` (T-6). QC-22 amends the shapes of `ObjectId`, `UnitId` and `VariantId` and the domain of `UniverseId`. | #213 S-1 edge cuts and S-2 |
 | QC-16 | AD-016 amendment: the WP9 category mapping of the ten `KaniOutcomeKind`s is the O-16 proof column. | CG C-09, #231 C-23 |
 | QC-17 | AD-016 amendment: node ids are listed in the kernel row only, reconciling two AD-016 rows. No rename. | nothing; #213 S-1 follows the kernel row |

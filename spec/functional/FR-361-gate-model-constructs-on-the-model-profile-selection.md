@@ -83,11 +83,8 @@ declarations names the identity of the layer table's `quire.model.complete/v1` l
    no catalog holds refuses `unknown_profile`/`unsupported-selection`, while
    a qualification definition only refuses
    `unknown_profile`/`wrong-selection-role`.
-3. **Emitted selections.** A unit whose header profiles resolve to the model
-   layer SHALL emit, in `definition_selections`, the layer, every layer its
-   `requires` closure names (FR-110), and the qualification definitions the
-   QSpec definition prose selects for that union (FR-110 "Emitted definition
-   selections").
+3. **No selection rows.** The emitter writes no row for a selected layer
+   (FR-110 "Emitted profile selections and law definitions").
 4. **Closure.** Selecting the model layer admits the forms of the layers its
    `requires` closure names (FR-110 "Layer selection"). A unit that selects
    the model profile therefore needs no second header profile to use
@@ -195,7 +192,7 @@ declarations names the identity of the layer table's `quire.model.complete/v1` l
     selection, and an importer's selection does not give its library the
     selection.
 15. **No produced package.** A unit with a model-construct refusal produces
-    no checked package, no lock and no bytes (ADR-011 §2.3, S3 row).
+    no checked package and no bytes (ADR-011 §2.3, S3 row).
 
 ### Admission under the selection
 
@@ -240,12 +237,6 @@ declarations names the identity of the layer table's `quire.model.complete/v1` l
     profile (item 1) and admits the forms of the model layer's `requires`
     closure (item 4), and a unit needs no second header profile for model
     constructs or value-complete forms.
-    A unit whose header profiles resolve to the temporal layer SHALL emit, in
-    `definition_selections`, the layer, every layer its `requires` closure
-    names (the model layer, `quire.state.graph/v1`, `quire.state.queries/v1`,
-    `quire.value.complete/v1` and `quire.state.core/v1`), and the
-    qualification definitions the QSpec definition prose selects for the
-    union, and no layer that requires the temporal layer.
     The selection of the temporal layer is the unit's header and nothing
     else, as for the model profile (item 1). The model gate evaluates the
     selected-layer union including `requires` closure, so a unit selecting
@@ -265,13 +256,13 @@ declarations names the identity of the layer table's `quire.model.complete/v1` l
 | FR-361-AC-5 | A unit that holds a `model` declaration and `pre`, `post` and `invariant` clauses against its alias, and whose header profile is each of `quire.state.core/v1`, `quire.state.queries/v1`, `quire.state.graph/v1` and `quire.value.complete/v1`, compiles with no model-gate refusal. | Test (TC-1016) |
 | FR-361-AC-6 | A value-profile unit holding a construct of every family of item 5 refuses once per construct, in source order, every refusal retaining the selected layers and the required layer; a construct inside a declaration nothing uses is refused too. A library that selects the model profile imported by a unit that does not, and the reverse, each give the lacking unit its refusals; the importing unit's own forms written against the library's import alias are refused. | Test (TC-1017) |
 | FR-361-AC-7 | The selection is the header and nothing else: a unit with no header profile naming the model identity, a `model` declaration, a supplied domain package and a model construct refuses the construct and never compiles. | Test (TC-1017) |
-| FR-361-AC-8 | A header profile naming `quire.model.complete/v1` resolves; its emitted lock's `definition_selections` hold the model layer, `quire.state.graph/v1`, `quire.value.complete/v1` and the layers they require, the qualification definitions FR-110 selects for the union, and no layer that requires the model layer. | Test (TC-1017) |
+| FR-361-AC-8 | **RETIRED (the layer selection rows are withdrawn).** The criterion asserted the layer rows only; no replacement. | Test (TC-1017), retired |
 | FR-361-AC-9 | In a unit that also holds model constructs, a header profile naming a qualification definition (for example the `ieee_profile` identity) refuses `unknown_profile`/`wrong-selection-role`, and one naming `test:unknown-profile` (held by no catalog) refuses `unknown_profile`/`unsupported-selection`; the E3 refusal is the only one reported. An identity a clause family's catalog holds routes to that catalog (FR-110, ADR-011) and is not covered here. | Test (TC-1017) |
-| FR-361-AC-10 | **RETIRED (no layer-table comparison).** QSL no longer compares the model layer of its layer table with QSpec's definition files; AC-8 asserts the emitted rows. | Test (TC-1017), retired |
+| FR-361-AC-10 | **RETIRED (no layer-table comparison).** QSL no longer compares the model layer of its layer table with QSpec's definition files. | Test (TC-1017), retired |
 | FR-361-AC-11 | In a value-profile unit, S2 builds the forms of all four families and reports no refusal; the refusals of AC-1 to AC-3 are S3's. | Test (TC-1017) |
 | FR-361-AC-12 | A `body ... using V` where `V` resolves to `quire.value.complete/v1` in a unit that selects only that profile receives one refusal (the family refusal of item 11), not two; the same declaration in a unit that also selects the model profile through another alias receives FR-110's layer refusal alone. | Test (TC-1017) |
 | FR-361-AC-13 | A declaration that writes a `deref` and a declaration that writes a `reaches`, each with a `using` alias that resolves to `quire.value.complete/v1`, are each refused once by FR-110's layer rule naming that layer and retain no family of item 5; the same declarations with an alias that resolves to `quire.state.graph/v1` and with one that resolves to `quire.model.complete/v1` compile, and a declaration whose alias resolves to `quire.value.complete/v1` is still refused in a unit whose header also selects `quire.state.graph/v1` through a second alias. | Test (TC-1015) |
-| FR-361-AC-14 | A unit whose only header profile names `quire.temporal.complete/v1`, with a `model` declaration and a `body` declaration, a dispatched call, a `lookup` and an `abstraction-decl`, compiles with no model-gate refusal because its selected-layer union contains `quire.model.complete/v1` through the temporal layer's `requires` closure; the same unit whose header profile names only `quire.value.complete/v1` refuses each construct as AC-1 to AC-3 state. A unit that selects `quire.model.complete/v1` and holds a `time` member is refused it by FR-230's gate and is not refused its model constructs. Its emitted lock's `definition_selections` hold the layer, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1` and `quire.state.core/v1`, the qualification definitions FR-110 selects for the union, and a unit that selects only `quire.model.complete/v1` emits no layer that requires the model layer. | Test (TC-1017) |
+| FR-361-AC-14 | A unit whose only header profile names `quire.temporal.complete/v1`, with a `model` declaration and a `body` declaration, a dispatched call, a `lookup` and an `abstraction-decl`, compiles with no model-gate refusal because its selected-layer union contains `quire.model.complete/v1` through the temporal layer's `requires` closure; the same unit whose header profile names only `quire.value.complete/v1` refuses each construct as AC-1 to AC-3 state. A unit that selects `quire.model.complete/v1` and holds a `time` member is refused it by FR-230's gate and is not refused its model constructs. | Test (TC-1017) |
 | FR-361-AC-15 | **RETIRED (no layer-table comparison).** QSL no longer compares the temporal layer of its layer table with QSpec's definition files; AC-14 asserts the emitted rows. | Test (TC-1017), retired |
 | FR-361-AC-16 | In a unit selecting `quire.model.complete/v1`, helper functions `isDog` and `ageOK` whose `using` alias selects `quire.value.complete/v1`, where `isDog` performs the population lookup disjunction and `ageOK` reads a model field, are admitted with their declaration and any `decreases` measure checked under `quire.value.complete/v1` and their bodies checked under the derived `quire.model.complete/v1` family. The guarded property of FR-125-AC-17 proves, and the unguarded property refutes `undefined-evaluation`/`absent-key`. Without a selected model profile, the model constructs in those helper bodies receive the S3 refusal of item 11. A body construct that still cannot resolve or assemble retains its ordinary located refusal. | Test (TC-520) |
 
@@ -280,7 +271,7 @@ declarations names the identity of the layer table's `quire.model.complete/v1` l
 - FR-110 states header profile resolution, the header-selectable
   layers and the layer rule; the model layer is one of its six layers and this
   requirement adds the unit-level model test.
-  FR-110's layer selection (FR-110-AC-1, AC-7, AC-8) is built; this
+  FR-110's layer selection (FR-110-AC-1, AC-8) is built; this
   requirement reads it (items 2 to 4).
 - FR-102 and FR-302 state the `operation-body` form and its dispatch linking,
   which this requirement gates. FR-304 states the abstraction

@@ -33,7 +33,7 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 
 1. How spine `compile`, the CLI and `replay` are given dependency sources,
    and the four FR-001 labels that name them. The labels fix each
-   dependency's `SourceOwner` and so its lock `sources` row.
+   dependency's `SourceOwner` and so its `sources` row.
 2. How an import names its library. An import names the library by
    identity alone; the library is bound by the identity, version and `package_id`
    its compile yields, and ADR-013 O-02 forbids taking them from the caller.
@@ -147,7 +147,7 @@ causes above; it no longer refuses every import.
 
 The complete-V1 import is `import "L" [as a];`. Any token after the identity
 string other than `as` is a syntax error at S1. The library is selected by
-identity, and the lock's selection is the library's checked package, named
+identity, and the selection is the library's checked package, named
 by its identity, version and `package_id` (ADR-013 O-02). `ImportDeclaration` and E4's `Import`
 hold the identity only.
 
@@ -168,10 +168,10 @@ The in-process replay request's package reference is
 `{package_id, sources, dependencies}`, QSpec FR-323's reference without
 the wire's `contract_version`, which the in-process request does not
 carry (ADR-013 O-26). `sources` is the
-proved package's own lock `sources`. `dependencies` holds one entry per
+proved package's own `sources`. `dependencies` holds one entry per
 entry of the proved package's `dependency_selections`, in order, each
 `{identity, package_id, sources}`, where `sources` is that
-dependency's own lock `sources`. CG copies them from the proved package
+dependency's own `sources`. CG copies them from the proved package
 and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).
 
@@ -208,7 +208,7 @@ run before the recompile:
    (ADR-013 O-26; QSpec FR-323), else the existing `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`). An edited
    dependency source changes the proved package's `package_id` too, so rules
    6 and 7 run first and name the stale dependency. What that identity is
-   rests on QSpec's structural identity, BLOCKED-BY STD-583 (unassigned; planner relay).
+   rests on QSpec's structural identity, BLOCKED-BY STD-583 (owner: planner titan:QSL:plan).
 6. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`).

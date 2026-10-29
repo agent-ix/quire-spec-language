@@ -452,8 +452,8 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
 5. **Replay of a temporal counterexample.** A backend returns QSpec FR-331
    `refuted` with a lasso. The #231 envelope `WitnessEnvelope<P>` carries the
    obligation identity, occurrence key, `package_id` (which binds the
-   clause's temporal profile: the lock's `temporal_profile`
-   `profile_selections` row is a package-id preimage member, and no
+   clause's temporal profile: the package's `temporal_profile`
+   `profile_selections` row, and no
    semantic profile selection names it, ADR-013 O-25), the semantic profile
    selections of the proving run (FR-071), `trace_position` (TR-2) and the
    TemporalTrace `FamilyPayload`, `TemporalCounterexample`, defined in

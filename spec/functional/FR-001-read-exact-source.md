@@ -125,8 +125,8 @@ is the one value every later stage names this source by:
 
 - A region in this source is a `SourceRegion` under this `RawSourceRef`
   (ADR-013 O-12).
-- The checked package's lock lists this `RawSourceRef` among its `sources`
-  (QSpec FR-322 `PackageLock`).
+- The checked package's `sources` list this `RawSourceRef` (QSpec FR-322;
+  BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)).
 - A declaration of this source is owned by
   `SourceOwner{authority, identity}`, taken from this `RawSourceRef`
   ([FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md),

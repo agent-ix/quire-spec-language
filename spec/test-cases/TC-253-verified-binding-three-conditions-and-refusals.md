@@ -28,14 +28,14 @@ source. Scope: FR-087-AC-3.
    schema version, all else held equal. Confirm `library` refuses with a
    named "unsupported version" cause and produces no `VerifiedPackage`
    (not a partial one with the unsupported version silently accepted).
-3. (Retired: the lock-content equality check is withdrawn.)
+3. (Retired: the content-equality check is withdrawn.)
 4. Condition 3 (requested-set membership): construct the same package,
    valid version, but omit its identity from the requested set. Confirm
    `library` refuses with a named "not listed" cause and produces no
    `VerifiedPackage`.
-5. (Retired: withdrawn with the lock-content comparison.)
-6. (Retired: withdrawn with the lock-content comparison.)
-7. (Retired: withdrawn with the lock-content comparison.)
+5. (Retired: withdrawn with the content comparison.)
+6. (Retired: withdrawn with the content comparison.)
+7. (Retired: withdrawn with the content comparison.)
 8. Confirm each of steps 2 and 4 fails independently: combining two failure
    conditions in one input still refuses cleanly (not a crash, not an
    admission, no partial `VerifiedPackage`), and the refusal's cause

@@ -133,7 +133,7 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
 - Step 7: IR admits each emitted package, and each compared member equals
   the fixture's. The compared members are exactly those FR-093-AC-13
   names.
-- Step 8: the lock and the identity preimage carry the same two entries,
+- Step 8: the package carries the two entries,
   `test/geometry` then `test/units`, each with the `package_id` the emitted library carries (a wire member, QSpec FR-322);
   the package reads back Verified; the chain's closure is `test/b`, `test/c`, `test/units`,
   with paths `[b]`, `[b, c]` and `[b, c, units]`; `test/\u{FF61}` is
@@ -141,11 +141,9 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   and each order vector gets its recorded outcome and locus.
 - Step 9: `diagnostics.catalog` is exactly authority `agent-ix` and
   identity `quire.native.diagnostics/v1`, with no other member, and IR
-  admits the package (FR-093-AC-17). The lock's `edition` and each
-  `definition_selections` row are exactly the catalog row's `authority` and
+  admits the package (FR-093-AC-17). The package's `edition` is exactly the catalog row's `authority` and
   `identity`, and a `Float64` addition's `ieee_profile` law `definition` is
-  the same two-member row and a member of `definition_selections`
-  (FR-093-AC-20).
+  the same two-member row (FR-093-AC-20).
 - Step 10: every package emits with nothing omitted. Each member node's
   occurrences are exactly one `generated` occurrence, ordinal 0, whose
   region text is `a < b`, `a = b`, or `Status` when no function names the

@@ -289,7 +289,7 @@ domain:
   nominal preimage when that preimage, rebuilt under the checked unit's own
   `SourceOwner`, has the admitted bytes; a node another owner declares
   carries none, and the emission omits it as a nominal node whose owner
-  the lock does not select.
+  the package does not select.
 - **Compound unit.** The type node is `scalar_type` / `compound_unit`, its own
   semantic type, with no `declaration` and no `owner`. Its body is an
   `aggregate` of one term per compound-unit term, in the order of the unit's

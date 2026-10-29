@@ -251,7 +251,7 @@ binder SHALL NOT charge an ancestor path's length for an acyclic package.
 expansion. An effective type's identity is built in phase 3, before
 phase 4, because phase 4's charge order uses it. That key holds only the type's own key and its direct edges,
 each already admitted by a `normalize.fact` and a `normalize.cycle-check`
-charge. QSL meters no hash: the QSpec limit name `hashed_bytes` is QSpec's, BLOCKED-BY STD-583 (unassigned; planner relay).
+charge. QSL meters no hash: the QSpec limit name `hashed_bytes` is QSpec's, BLOCKED-BY STD-583 (owner: planner titan:QSL:plan).
 
 The phase-4 charges are unchanged in kind and count a type's derivation facts
 as its retained facts, its qualify fact and one inherit fact per direct

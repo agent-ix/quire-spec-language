@@ -47,7 +47,7 @@ retaining its structured phase/code/source/path/span/message fields and existing
 code spellings. The Copy Code enum exposes as_str, all and from_code; unknown
 spellings return None. The repository owns a stable native-code catalog.
 The source labels are the members of
-the source's `RawSourceRef` (FR-001), the reference the checked package's lock
+the source's `RawSourceRef` (FR-001), the reference the checked package's `sources`
 and source regions name the source by.
 
 Retain the public `source: SourceIdentity` field as diagnostic provenance, not

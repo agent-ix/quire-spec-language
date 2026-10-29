@@ -34,7 +34,7 @@ Compile or read one unit or graph per row and assert the stated result.
 | --- | --- | --- |
 | 1 | **W**'s checked graph with the required temporal clause's key re-keyed after binding | `missing_declaration`/`missing-name` at the `requires temporal` member, naming the bound key; no protocol node, no package |
 | 2 | the same with the model relationship key, then with an attempt's operation anchor key | `missing_declaration`/`missing-name` at the relationship member, then at the attempt; no package |
-| 3 | **W** with an `await`, then a unit with only a `compensate`, in a package whose lock selects no `temporal_profile` | `missing_declaration`/`missing-selection` at the first such construct; no package |
+| 3 | **W** with an `await`, then a unit with only a `compensate`, in a package that selects no `temporal_profile` | `missing_declaration`/`missing-selection` at the first such construct; no package |
 | 4 | **W** in a unit that selects no protocol profile | no protocol node and no refusal for the declaration |
 | 5 | a unit holding **W** and a protocol whose join names a missing branch | the S3 refusal (`missing_declaration`/`missing-name` at the label); no protocol node of either protocol; **W** alone emits |
 
@@ -57,7 +57,7 @@ Compile or read one unit or graph per row and assert the stated result.
 | 8f | `Orders`' model target replaced with a record type node | `invalid_model_binding`/`malformed-declaration` at the target |
 | 8g | a `Done` condition that reads `view` (model state) | `ill_typed`/`operator-ineligible` at the read |
 | 8h | `Outcome`'s case list in descending label order | `invalid_semantic_graph` |
-| 8i | the package's lock without a `temporal_profile` while `Refund` stays | `missing_declaration`/`missing-selection` |
+| 8i | the package without a `temporal_profile` while `Refund` stays | `missing_declaration`/`missing-selection` |
 
 QSL's conformance run reads the QSpec protocol vectors file
 `protocol-node-vectors.json` (under `proposals/checked-package-v2/fixtures`),

@@ -95,7 +95,7 @@ requirements that S4 derives from these nodes.
   temporal clauses, captures, activation, compensation templates, `terminal`
   and `scheduling` members, binders with their scopes), each optional member
   present or absent as written.
-- The package's lock evidence: the `protocol_profile` row of
+- The package's clause profile selections: the `protocol_profile` row of
   `profile_selections`, and its `temporal_profile` row when the protocol
   holds an `await` or a `compensate`.
 - The nodes of the same graph the protocol names: its model and relationship
@@ -111,7 +111,7 @@ Under the approved Option A cycle decision below, a node outside a cyclic
 reference component has `recursion` `null`; every node in a cyclic component
 uses FR-322's existing recursion-group encoding. Every body is one
 `quire.op.protocol.control`
-application whose `protocol_profile` law equals the lock's row, whose member
+application whose `protocol_profile` law equals the package's row, whose member
 is `{kind: "profile_operator", operator}` and whose arguments are the
 operator's bindings in the order QSpec FR-464, FR-465 or FR-466 fixes. `P` is
 the protocol's qualified name.
@@ -332,7 +332,7 @@ FR-105).
   is stale. S4 SHALL refuse it with `missing_declaration`/`missing-name` at
   the construct that bound it, naming the bound key, and SHALL NOT look the
   name up again (FR-218).
-- A protocol that holds an `await` or a `compensate` in a package whose lock
+- A protocol that holds an `await` or a `compensate` in a package that
   selects no `temporal_profile` is refused with `missing_declaration`/
   `missing-selection` at the first such construct.
 - A unit that selects no protocol profile emits no protocol node and no
@@ -365,7 +365,7 @@ FR-105).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-383-AC-1 | Compiling TC-1061's fixture **W** emits, for protocol `OrderFlow`, exactly one `protocol_clause`, one `role` node for each of its three roles, one `channel`, one `queue`, one `finish` and one `terminal` `obligation`, one `control` node for each of the 15 controls of its `run` tree, one `compensation` node and the binder and expression nodes they reference. Every body is a `quire.op.protocol.control` application with one `protocol_profile` law equal to the lock's row, a `profile_operator` member naming the node's operator, `null` mode and empty leaves; every `semantic_type` is the Boolean scalar type node; the clause has `owner_model` equal to its exact model declaration node in the clause's dependencies and key preimage; and the IR v2 reader admits the package. | Test (TC-1061) |
+| FR-383-AC-1 | Compiling TC-1061's fixture **W** emits, for protocol `OrderFlow`, exactly one `protocol_clause`, one `role` node for each of its three roles, one `channel`, one `queue`, one `finish` and one `terminal` `obligation`, one `control` node for each of the 15 controls of its `run` tree, one `compensation` node and the binder and expression nodes they reference. Every body is a `quire.op.protocol.control` application with one `protocol_profile` law equal to the package's row, a `profile_operator` member naming the node's operator, `null` mode and empty leaves; every `semantic_type` is the Boolean scalar type node; the clause has `owner_model` equal to its exact model declaration node in the clause's dependencies and key preimage; and the IR v2 reader admits the package. | Test (TC-1061) |
 | FR-383-AC-2 | The clause node of **W** has the thirteen arguments in order. With `activation on origin` it carries `origin`, no trigger and no guard; with `on each` it carries the trigger binder node and, only when a guard is written, the guard; `on each` with no guard and `on each ... when (true)` emit different clause keys. `relationships` holds the model relationship node and no alias, `requirements` holds the temporal clause node, `terminal` and `scheduling` are present exactly when written, and a protocol with none of them has empty sets and absent optionals. | Test (TC-1061) |
 | FR-383-AC-3 | A static role of **W** emits an empty `replication` Group and a model node of its model; in variants of **W**, replicated roles with lifetime `workflow`, `scope` and `until` emit the population text, `max`, the binder node, the lifetime text and, for `until` only, the `until` term; the three replicated roles and the static role have four different keys. | Test (TC-1061) |
 | FR-383-AC-4 | In **W** and its variants, each channel emits `from`, `to`, `carries`, an `unordered` ordering with no binder or key or a `fifo` ordering with the message binder node and the key term, and the delivery text for each of `unknown`, `at-most-once`, `at-least-once` and `exactly-once-premise`; there is one `queue` for each channel, with a `literal` capacity value or a `symbolic` capacity name, overflow `reject`, `block` or `loss`, and a fourth `loss` argument exactly for `loss`, with `head`, `tail` and `new` giving three different queue keys; a queue has no `declaration` and one `generated` occurrence at its channel's region. | Test (TC-1061) |
@@ -381,7 +381,7 @@ FR-105).
 | FR-383-AC-14 | Reformatting **W**, adding a comment and adding a second `protocol OrderFlow` reference leave every protocol node unchanged; renaming a role, retargeting a reference, changing one literal, changing a capacity, a selector, a join policy or a loop-proof term, changing the clause's `owner_model`, and adding `scheduling adversarial` each change the changed node and the clause node that reaches it. | Test (TC-1062) |
 | FR-383-AC-15 | Emitting **W** twice, and in a unit that declares an unrelated protocol before it and one after it, gives the same protocol nodes and bytes for **W**; the clause node changes when, and only when, any node it reaches changes. | Test (TC-1062) |
 | FR-383-AC-16 | No emitted node carries a causal edge, a relationship alias, a runtime subject, an instance, an ordinal, a delivery or clock observation or an `internal`/`external` member. The causal relation derived from **W**'s emitted nodes by QSpec FR-464's rules holds the same (source port, target port) pairs as the compiled edge relation of **W**'s checked clause, back edges of the `repeat` included. | Test (TC-1062) |
-| FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package whose lock selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a requirement cycle never reaches S4 (FR-218-AC-25). | Test (TC-1063) |
+| FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package that selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a requirement cycle never reaches S4 (FR-218-AC-25). | Test (TC-1063) |
 | FR-383-AC-18 | A protocol with an S3 refusal (a join naming a missing branch) in a unit that also holds a good protocol emits no node of either protocol and no package; emitting the good protocol alone succeeds. | Test (TC-1063) |
 | FR-383-AC-19 | Reading **W**'s package through QSL's I2 reader admits it and returns every protocol node with the key, tag, form, type, declaration, body, dependencies and occurrences emitted; the protocol rebuilt from the read-back nodes equals the protocol rebuilt from the in-process checked clause in keys, set order, ordered lists, binder levels, channel premises, queue bounds and derived causal relation. | Test (TC-1063) |
 | FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending node-id order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |

@@ -71,7 +71,7 @@ are listed in "Open QSpec questions".
   their checked conditions, `align_skip()`, the body `CheckedFormula`, the
   atom slots with their checked conditions and component records, and the
   profile.
-- The package's lock evidence (`profile_selections`) and the node keys
+- The package's clause profile selections (`profile_selections`) and the node keys
   FR-092 mints.
 - `CheckedHyperClause::conjuncts() -> Vec<(MatchPart, usize)>`, which this
   requirement adds beside FR-487's accessors: both parts' conjuncts in
@@ -298,7 +298,7 @@ deterministic and injective:
 - The emitter SHALL write the body of the clause as one
   `temporal`/`temporal_clause` node (the **body wrapper**) whose body is a
   `quire.op.temporal.clause` application, with one `temporal_profile` law
-  equal to the lock's `profile_selections` row of role
+  equal to the package's `profile_selections` row of role
   `temporal_profile` for the clause's profile and the six arguments of QSpec FR-370, in order:
   1. `over`: a reference to the slot node `<p>@<t>` of slot 0;
   2. `clock`: the `text` literal `model-steps`;
@@ -420,7 +420,7 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | FR-488-AC-1 | Compiling `NonInterference` emits one `claim`/`hyperproperty` node of Boolean `semantic_type` whose body is an aggregate of exactly the seven bindings `domain`, `subjects`, `parameters`, `quantifiers`, `match`, `align_skip`, `body`, in that order. | Test (TC-1266) |
 | FR-488-AC-2 | In AC-1's node, `domain` is the text `behaviours`; `subjects` is one binding `V` to the `model` node of `Vault`; `parameters` is one binding `v` to the same node; `quantifiers` is a Tuple of exactly two quantifier Groups, `a` then `b`, each binding `kind` `quantifier`, `variable`, `quantifier` `forall` and `alias` `V`, and no fairness Group; `align_skip` is empty; `body` references a `temporal`/`temporal_clause` node. | Test (TC-1266) |
 | FR-488-AC-3 | The I2 reader admits AC-1's package and returns the clause's `claim` triple and the body wrapper's NodeId. | Test (TC-1266) |
-| FR-488-AC-4 | The body wrapper of `NonInterference` is a `quire.op.temporal.clause` application with one `temporal_profile` law equal to the lock's row and the arguments `over` a reference to the `value`/`parameter` node `slot_sv_sa` at level 0, clock `model-steps`, activation binding `kind` to `origin` alone, empty captures, empty fairness, and `formula` a reference to a `quire.op.temporal.always` node with a `null` interval whose operand is a `holds` node. | Test (TC-1266) |
+| FR-488-AC-4 | The body wrapper of `NonInterference` is a `quire.op.temporal.clause` application with one `temporal_profile` law equal to the package's row and the arguments `over` a reference to the `value`/`parameter` node `slot_sv_sa` at level 0, clock `model-steps`, activation binding `kind` to `origin` alone, empty captures, empty fairness, and `formula` a reference to a `quire.op.temporal.always` node with a `null` interval whose operand is a `holds` node. | Test (TC-1266) |
 | FR-488-AC-5 | The `holds` operand of AC-4 is the equality of the field read `l` of `slot_sv_sa` (level 0) and of `slot_sv_sb` (level 1), with no term for `@`; the slot nodes have `expression` occurrences at `hyper 0 slot 0` and `hyper 0 slot 1` and `type` occurrences of their type node. | Test (TC-1266) |
 | FR-488-AC-6 | `SavesPower` emits `subjects` with two bindings `S` and `N` in order of first naming, each to the `model` node of its alias's first object parameter's type, `parameters` `d` and `e` in declaration order, slot nodes `slot_sd_ss` and `slot_se_sn`, and a `holds` operand reading `used` of `slot_sd_ss` and of `slot_se_sn`. | Test (TC-1266) |
 | FR-488-AC-7 | `NonInterference`'s `match` aggregate holds, in source order, a reference to the equality of the `parameter` nodes `op_sa` and `op_sb` (levels 0 and 1, `String`), then a reference to the equality of `arg_sa_sVault_sstep_si` and `arg_sb_sVault_sstep_si` (`Option<Int[0, 1]>`), with each conjunct root's `expression` occurrence at `hyper 0 match <k>`. | Test (TC-1266) |

@@ -141,7 +141,7 @@ key or request `over` member on that arm.
   with no corresponding entry SHALL refuse at construction rather than
   admitting an incomplete provision for a later consumer to discover.
 - The closed known set of semantic profiles is exactly the one profile
-  identifier `quire.profile.v1`; a v2 lock's clause-profile definition
+  identifier `quire.profile.v1`; a package's clause-profile definition
   identities (such as `quire.temporal.infinite-trace/v1` or
   `quire.protocol.finite-global/v1`) are not members, since those bind
   through `package_id` (ADR-013 O-25).

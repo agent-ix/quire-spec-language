@@ -130,8 +130,7 @@ Measured on main when this was written.
   through `parse_with_cancel`, `build_unit`, `assemble` and `check`.
 - *Type path:* binding and typing become S3 phases over the S2 forms of the
   same `ParsedUnit`. They resolve a profile alias by identity alone, as the
-  graph side does, through the layer table and the spine's
-  `LockEvidence`. The type phase takes no caller definition inventory. The
+  graph side does, through the layer table. The type phase takes no caller definition inventory. The
   composed binder's per-profile revision matching
   (`linking/composed/definitions.rs`) is deleted, not ported.
 - *Order:* ADR-011 M-6e deletes one composed family per implementing PR. A
@@ -180,7 +179,7 @@ Measured on main when this was written.
 - *Several source units (amended 2026-10-22 by FR-480):* a package compiled from several source
   units has one `spine::CheckedUnit` per source unit, each reading its own
   `Source` once with the one grammar and carrying that source's reference; the shared
-  checked graph lists every unit in `lock.sources`. "One source text" holds
+  checked graph lists every unit in `sources`. "One source text" holds
   for each unit, and a package is not limited to one unit, because QSpec
   FR-151 and FR-322 define a package of linked source units, each with its
   own source owner.
@@ -240,7 +239,7 @@ text. These points follow from it and are decided.
 - **Profile selection.** A source selects a profile by identity alone
   (FR-110). A profile line that states `version` after the
   identity is not the single grammar and is refused. The type phase resolves
-  profiles through the layer table and the spine's `LockEvidence`;
+  profiles through the layer table;
   there is no caller definition inventory parameter, and the source never
   carries a revision.
 - **Refusal and exhaustion.** A unit the S3 type phase refuses is an error

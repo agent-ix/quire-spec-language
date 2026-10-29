@@ -29,7 +29,7 @@ the layer table's root definition identity; the test reads it from the
 table, never from a literal.
 
 1. Compile the unit whose one profile is `v` with `R`'s identity. Read the
-   emitted lock.
+   emitted package.
 2. Compile it with the identity `test:unknown-profile`.
 3. Compile it with the `ieee_profile` definition's identity, then with the
    `edition` definition's.
@@ -42,9 +42,7 @@ table, never from a literal.
    `quire.state.core/v1`, `quire.state.queries/v1`,
    `quire.state.graph/v1`, `quire.value.complete/v1`,
    `quire.model.complete/v1` and `quire.temporal.complete/v1`; each unit's
-   declaration uses only forms admitted by that profile. Compare each
-   emitted `definition_selections` with the fixed literal closure listed
-   below, independent of the layer table the implementation reads.
+   declaration uses only forms admitted by that profile.
 7. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
    declaration calls a named predicate, then one that declares a named
    predicate; then both units with `v` naming `quire.state.queries/v1`.
@@ -76,11 +74,7 @@ criteria each step backs.
 
 ## Expected Results
 
-- Step 1 compiles. `profile_selections` is empty, and
-  `definition_selections` holds `quire.value.complete/v1`,
-  `quire.state.core/v1` and the qualification definitions the
-  package-selection rules select for the unit, and no other layer, written
-  out as a literal in the test.
+- Step 1 compiles. `profile_selections` is empty.
 - Step 2 refuses `unknown_profile`/`unsupported-selection` at the identity
   literal's span, naming `v`, the selection and required role `root`. No
   package.
@@ -90,20 +84,7 @@ criteria each step backs.
   before E3, with no package.
 - Step 5's first unit refuses with exactly two refusals, `w`'s then `x`'s,
   and no package. Its second unit compiles.
-- Step 6: all six units compile, and their `definition_selections` contain
-  exactly these literal layer identities, respectively: `quire.state.core/v1`
-  → [`quire.state.core/v1`]; `quire.state.queries/v1` →
-  [`quire.state.queries/v1`, `quire.state.core/v1`];
-  `quire.state.graph/v1` → [`quire.state.graph/v1`,
-  `quire.state.queries/v1`, `quire.state.core/v1`];
-  `quire.value.complete/v1` → [`quire.value.complete/v1`,
-  `quire.state.core/v1`]; `quire.model.complete/v1` →
-  [`quire.model.complete/v1`, `quire.state.graph/v1`,
-  `quire.state.queries/v1`, `quire.value.complete/v1`,
-  `quire.state.core/v1`]; `quire.temporal.complete/v1` →
-  [`quire.temporal.complete/v1`, `quire.model.complete/v1`,
-  `quire.state.graph/v1`, `quire.state.queries/v1`,
-  `quire.value.complete/v1`, `quire.state.core/v1`].
+- Step 6: all six units compile.
 - Step 7: the call refuses `unsupported_construct`/`expression-form` at the
   call's span and the predicate declaration refuses
   `unsupported_construct`/`declaration-form` at the declaration's span,
@@ -113,4 +94,4 @@ criteria each step backs.
 - Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
 - Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every qualification definition identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
-- Step 12: the unit compiles; its `definition_selections` contain exactly [`quire.temporal.complete/v1`, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1`, `quire.state.core/v1`], and its qualification definitions equal the literal package rows the QSpec definition prose assigns to the temporal layer; every equality compiles (FR-110-AC-13).
+- Step 12: the unit compiles; every equality compiles (FR-110-AC-13).

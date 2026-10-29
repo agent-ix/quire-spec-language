@@ -23,7 +23,7 @@ both successors exist"; ruling on QSL-229):
 - **Dependency half.** Spine `compile`'s S4 source resolution against I2
   import views (FR-099, ADR-015 D-1). Implemented.
 - **Header-selection half.** E3's resolution of header profiles against
-  the `DefinitionLock` catalog, and of `model` declarations through I1
+  the layer table, and of `model` declarations through I1
   (FR-110, FR-056). Implemented.
 
 ## Test Procedure

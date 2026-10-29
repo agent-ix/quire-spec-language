@@ -164,6 +164,5 @@ ordering and arithmetic, and the lowering of each admitted form.
   `quire.op.bytes.length` with result `Integer`, `concat` to
   `quire.op.bytes.concat` with result `bytes`; the literals lower to
   `value`/`literal` nodes of `value_kind` `bytes` and `json_object` with the
-  canonical text as `value`; no text-profile definition is in the lock
-  evidence.
+  canonical text as `value`; no text-profile definition is referenced.
 - Step 7: each S-row gives its stated outcome.

@@ -15,7 +15,7 @@ value member for member, that `call_site` mints the identity of a non-`Boolean`
 function and none for a predicate, and that `replay_value_parity` checks
 the request's occurrence key and obligation identity against the
 recompiled package and carries every retained input into its claim, with
-the semantic profile selections fixed empty whatever the lock selects.
+the semantic profile selections fixed empty whatever clause profiles the package selects.
 
 Scope: FR-484-AC-1 to FR-484-AC-13.
 
@@ -52,7 +52,7 @@ Scope: FR-484-AC-1 to FR-484-AC-13.
   function inc using v(x: Int[0, 9]): Integer pure { x + 1 }
   ```
 
-  Its lock's `profile_selections` holds one `temporal_profile` and one
+  Its `profile_selections` holds one `temporal_profile` and one
   `protocol_profile` row.
 
 ## Test Procedure
@@ -69,7 +69,7 @@ Scope: FR-484-AC-1 to FR-484-AC-13.
 | VP-08 | Two VP-05 claims differing only in the occurrence key, replayed to `Agrees`, `Diverged`, `RefusedInput` (`x` = 12) and an `Obligation` refusal | The claims are unequal; a `ValueClaim` has no content identity (removed) | FR-484-AC-8 |
 | VP-09 | Over `U'`, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each member filled as FR-484 "The input-arm packet" names, `backend` `generator-under-test`; reconstruct, serialize and read back; build the request from the admitted envelope and replay `grow` against 42 and `inc` against 5 | Both reconstruct with `declared_domains` `[]`, `profile_selections` `[]`, `trace_position` none, `clause_node` the function node and the `declaration` occurrence; every member round-trips; `Agrees` for `grow`, `Diverged` for `inc` | FR-484-AC-9 |
 | VP-10 | `wide` at `m` = 2^40 with B 4096, B 40 and B omitted, each against generated 1099511627777; `grow` at `n` = 2^40 with B 40 against 1099511627777; two `wide` claims differing only in A, then only in H | `Agrees`; `PreCallIncomplete` (`Incomplete(ResourceExhausted)`) with the limit cause on `supplied.numeric_magnitude_bits`, limit 40, nothing compared, and a `claim()` differing only in B; a `claim()` equal to the B 4096 one; `Agrees` for `grow`; the A-only and H-only pairs unequal | FR-484-AC-10 |
-| VP-11 | `UC` emitted; the RFC 8785 text of each lock `profile_selections` entry; the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 filled by "The input-arm packet"; reconstruct; build and decode the request from the envelope; replay against 4 and 5; the same packet over `U` | Exactly the two rows `{"definition":{"authority":"agent-ix","identity":"quire.temporal.infinite-trace/v1"},"role":"temporal_profile"}` and `{"definition":{"authority":"agent-ix","identity":"quire.protocol.finite-global/v1"},"role":"protocol_profile"}`; packet `profile_selections` `[]`; the envelope admitted; the request decodes; `Agrees`, `Diverged`, each `claim()` holding `UC`'s package reference; over `U` the same `profile_selections` `[]` | FR-484-AC-11 |
+| VP-11 | `UC` emitted; the RFC 8785 text of each `profile_selections` entry; the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 filled by "The input-arm packet"; reconstruct; build and decode the request from the envelope; replay against 4 and 5; the same packet over `U` | Exactly the two rows `{"definition":{"authority":"agent-ix","identity":"quire.temporal.infinite-trace/v1"},"role":"temporal_profile"}` and `{"definition":{"authority":"agent-ix","identity":"quire.protocol.finite-global/v1"},"role":"protocol_profile"}`; packet `profile_selections` `[]`; the envelope admitted; the request decodes; `Agrees`, `Diverged`, each `claim()` holding `UC`'s package reference; over `U` the same `profile_selections` `[]` | FR-484-AC-11 |
 | VP-12 | VP-05's request with `profile_selections` `[("quire.profile.v1", "x")]`, against 4 and 5, then with the all-zero `obligation_identity`, then with a stale package reference; a request with `[("quire.profile.unknown/v1", "x")]`; requests with `[("quire.temporal.infinite-trace/v1", "temporal_profile")]` and `[("quire.protocol.finite-global/v1", "protocol_profile")]` | `UnusedProfileSelections` (`invalid_runtime_input`/`unknown-member`) holding the one selection, display text ``invalid_runtime_input/unknown-member: `profile_selections` is supplied for a function-value parity claim, which has no proving run``, no recompile, call or charge, `Inconclusive(ReplayRefused(invalid_runtime_input))` with the claim carried, for each of the first four; `unknown_profile`/`unsupported-selection` at decode for the last three | FR-484-AC-12 |
 | VP-13 | VP-12's request with `[("quire.profile.v1", "x")]` retargeted to `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and to `state_clause` (`VersionUnchanged`) | The FR-357-AC-20 refusal, `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause` naming the target, the entry and `function`, not `UnusedProfileSelections`, before the recompile | FR-484-AC-13 |
 
@@ -82,9 +82,9 @@ Scope: FR-484-AC-1 to FR-484-AC-13.
 - VP-05 to VP-10: the stated settlements, each with the claim identity
   carried unchanged, and VP-09's packets admitted with no member chosen by
   the producer.
-- VP-11: a claim over a package whose lock selects temporal and protocol
+- VP-11: a claim over a package that selects temporal and protocol
   profiles builds, admits and replays with the empty semantic profile
-  selections, and no lock entry reaches the packet or the request.
+  selections, and no package profile entry reaches the packet or the request.
 - VP-12: a value-parity request carrying any semantic profile selection is
-  refused before the recompile, and a lock entry is no admissible selection.
+  refused before the recompile, and a package profile entry is no admissible selection.
 - VP-13: the replay-target check comes before the profile-selection check.

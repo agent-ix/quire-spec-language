@@ -44,8 +44,7 @@ comparing copied source references.
    source-map contract follows QSpec FR-322.
 3. **One producer, one `CheckedUnit`.** The producer is the spine front end
    (parse, build, assemble, check over one `Source`) extended by the type
-   phase. It takes the source, the selected formal identity, the spine's
-   `LockEvidence` and the stage limits, and returns the checked unit or
+   phase. It takes the source, the selected formal identity and the stage limits, and returns the checked unit or
    the typed refusal of the first stage that refused. Exactly one public
    `CheckedUnit` type exists: the spine's, which carries the graph's
    requirement records, the type report, the formal identity and the source's
@@ -67,8 +66,7 @@ comparing copied source references.
    fields.
 7. **Profile selection.** A source selects a profile by identity alone
    (FR-110). The one grammar refuses a profile line that carries any clause
-   after the identity. Profiles resolve through the `DefinitionLock`
-   and the spine's `LockEvidence`; a revision never belongs to the
+   after the identity. Profiles resolve through the layer table; a revision never belongs to the
    source.
 8. **Moved families.** The producer admits a family only once its
    type phase runs in S3 over S2 forms. S2 builds a form for a `relation`
@@ -112,7 +110,7 @@ comparing copied source references.
 11. **Several source units.** A package of several source units (FR-480) has
     one checked unit per source unit. Each carries its own source reference and
     the type report of its own parse. The shared graph lists every unit's
-    source reference in `lock.sources` (FR-001); each entry conforms to the
+    source reference in `sources` (FR-001); each entry conforms to the
     source-reference shape in QSpec FR-322. Each type report covers one unit by
     construction.
 

@@ -40,8 +40,8 @@ call shape (ADR-029 OP-1):
   `Staged<AdmittedModels>`.
 - `check` checks and links (S3, S4). It takes every unit's `ParsedSource`,
   in request order (FR-480), the
-  `AdmittedModels`, the dependency input (ADR-015 D-1, FR-099) and the lock
-  evidence (ADR-011 §2.4), and returns `Staged<CheckedPackage>`.
+  `AdmittedModels`, the dependency input (ADR-015 D-1, FR-099) and the package
+  selections (ADR-011 §2.4), and returns `Staged<CheckedPackage>`.
 - `package` emits the checked package (E4). It takes `&CheckedPackage` and
   returns `Staged<EmittedPackage>`: the `quire.checked-package/v2` bytes with
   the source provision, keyed by source identity, another party needs to import (I2)
@@ -74,9 +74,9 @@ the refusing stage's own typed causes.
   `AdmittedModels` and the dependency input, and return the
   `CheckedPackage` or S3's or S4's refusal.
 - The `check` operation shall check each library of the dependency closure
-  independently of the unit that imports it, under the default lock evidence
+  independently of the unit that imports it, under the default package selections
   and never the importer's, so a library's recomputed `package_id` does not
-  depend on who imports it; the lock evidence it takes applies to the unit
+  depend on who imports it; the package selections it takes apply to the unit
   itself.
 - The `package` operation shall emit the `CheckedPackage` as
   `quire.checked-package/v2` bytes with its source provision.
@@ -95,7 +95,7 @@ the refusing stage's own typed causes.
 ## Dependencies
 
 - ADR-029 OP-1: the operation rows.
-- ADR-011 §2.1, §2.4: the stage path and the lock evidence.
+- ADR-011 §2.1, §2.4: the stage path and the package selections.
 - ADR-015 D-1: the dependency input.
 - [FR-275](FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md): the call shape.
 - [FR-027](FR-027-export-compiled-native-package.md): the command encoding.

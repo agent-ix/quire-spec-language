@@ -59,7 +59,7 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
 
 - Step 1: D10's results (`absent-key`, then `precondition-false`) with equal
   charges in every order and placement; byte-equal packages for both
-  orders of each placement; `lock.sources` in canonical unit order; the
+  orders of each placement; `sources` in canonical unit order; the
   shared `false` node's occurrences numbered `U1`'s first in both orders.
 - Step 2: checks, `px`'s parameter typed by `A`'s `Point`;
   `ambiguous_declaration`/`ambiguous-name` naming both declarations; FR-099's

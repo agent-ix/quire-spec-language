@@ -52,8 +52,8 @@ semantic forms its qualification tests fix.
   measure (`check::ir::Node` trees), and its declared result type.
 - The type, parameter and function nodes of
   [FR-092](FR-092-key-type-parameter-and-declared-nodes.md).
-- The package's lock evidence (ADR-011 §2.4): each law's `DefinitionRef`,
-  `{authority, identity}`, the layer table's definition of its role.
+- The layer table (FR-110): each law's `DefinitionRef`, `{authority, identity}`,
+  the QSpec definition prose's definition of its role.
 
 ## Outputs
 
@@ -322,7 +322,7 @@ or an ordering over these types (`ill_typed`/`operator-ineligible`) before
 lowering (FR-056), so lowering sees only same-type pairs; a pair that
 nevertheless reaches it refuses `ill_typed`/`operator-ineligible` at the
 comparison, and no node is built.
-No text-profile lock evidence is needed to lower these identities.
+These identities reference no text-profile definition.
 
 A checked quantity type, `ValueType::Quantity(UnitId)`, has an exact
 rational magnitude and no numeric domain, so the rounding mode it fixes is
@@ -344,12 +344,12 @@ inside or outside an `Equality`.
 It is a `convert`, so its `rounding` mode is fixed by the target type alone
 (QSpec FR-322 `type_pinned_modes`): a decimal or IEEE target's declared mode,
 `exact` for a quantity, and no mode for an integer or rational target. A
-`Text[..]` operand gives its `text_profile` law, with the lock's text-profile
+`Text[..]` operand gives its `text_profile` law, with the layer table's text-profile
 definition as for every text identity, and its profile is read from the
 operand's type node, not from a `text_profile` mode. A `String` operand takes
 no `text_profile` law, as for `quire.op.string.eq`, and lowering selects a
 `quire.op.string.to_*` identity for it, never a `quire.op.text.*` one. An IEEE
-target adds the `ieee_profile` law, whose lock evidence is FR-397's selection.
+target adds the `ieee_profile` law, whose definition is FR-397's.
 The operand's text-leaf list is unchanged. In a pure function body a
 `ConvertText` carries no obligation (QSpec FR-146). Its undefined outcome for
 text that is not a number, and its refusals for a number outside `T` or a
@@ -391,15 +391,13 @@ A `binding` names its binder with the source name, and the binder's parameter
 node (FR-092) has that name and the binder's level. For `fold` and `reduce`,
 the outer binding names the accumulator and the inner binding the element.
 
-A law's `definition` is the `DefinitionRef` the package's lock evidence
-selects for its role (ADR-011 §2.4): for `text_profile` and `ieee_profile`,
-the layer table's definition of that role, exactly `{authority,
-identity}`, with no revision. The lock evidence for `ieee_profile` is the package selection
-[FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)
-states. A node whose operation or
-leaf needs a law that the lock evidence does not supply refuses with
-`missing_declaration`/`missing-selection` naming the law role and the node's
-region, and yields no node. `check` writes no law from a constant.
+A law's `definition` is the `DefinitionRef` `{authority, identity}` of the QSpec
+definition prose for that role (FR-110's layer table; ADR-011 §2.4), with no
+revision and no selection rows: for `text_profile` and
+`ieee_profile`, the layer table's definition of that role. The `ieee_profile`
+law is
+[FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)'s.
+`check` writes no law from a constant.
 
 The `Pre` row is the node of a checked `Pre`. `pre(...)` is legal only in
 an operation postcondition (`ClauseKind::Postcondition`), and ADR-012 §4.3
@@ -507,8 +505,7 @@ The list has these properties:
 A recursion leaf carries no law: each text leaf it stands for carries its
 own. A type from which a `Text` type is reachable has at least one text leaf
 in its list, because the shortest walk from the type to a `Text` type
-enters no composite twice. The `missing-selection` refusal of a node whose
-leaf needs the text-profile law therefore holds for recursive types too.
+enters no composite twice.
 
 Each appended leaf, text or recursion, costs one unit of the check stage's
 node limit (`CheckingLimits`), because the list is bounded per path but not
@@ -518,8 +515,7 @@ is finite by default, and each leaf's key bytes are charged to the work
 budget ([NFR-011](../non-functional/NFR-011-bound-value-checking-work.md)). A walk that would
 pass the limit stops with a stage limit of kind node count, reported as
 `stage_limit_exceeded`/`node-count-exceeded` (FR-096), and yields no node. `check` completes the walk, or
-stops on a limit, before it reads any leaf's law, so a stage limit comes
-before `missing-selection`.
+stops on a limit.
 
 These rules apply equally to union payloads reached from `operand:0`,
 `inner:0` and `result_inner`: the selected type starts at the empty path,
@@ -543,8 +539,8 @@ chain of `next` fields.
 ### Union text-leaf vectors
 
 These vectors fix the leaf list independently of node identity preimages.
-The lock selects the same text definition as the Recursive text-leaf
-vectors: `{authority: "agent-ix", identity: "quire.value.text.unicode-17.0.0/v1"}`.
+The text definition is the Recursive text-leaf
+vectors': `{authority: "agent-ix", identity: "quire.value.text.unicode-17.0.0/v1"}`.
 In the table, `N(p)` is exactly
 `{"path":p,"laws":[{"role":"text_profile","definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"}}],"mode":{"kind":"text_profile","value":"nfc"}}`;
 `B(p)` is the same object with mode value `"binary-utf8"`; `R(p)` is exactly
@@ -594,9 +590,9 @@ nominal node, a node keyed by `quire.application-node/v1` and every
 undeclared node that is not model-owned carry no `owner`. The node's
 `owner` is not carried in a separate projection; the wire carries no `identity_projection`. A reader therefore re-derives every structural key, in-group
 keys and group labels included, from the emitted package alone, and reads
-no owner from the source map. The lock's `sources` holds each emitted
+no owner from the source map. The package's `sources` holds each emitted
 `SourceOwner`'s (`authority`, `identity`), and each emitted `ModelOwner`'s
-`identity` joins to a `model_root` node, the joins FR-322 checks.
+`identity` joins to a `model_root` node, the joins FR-322 checks (BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)).
 
 A recursion group's members carry one `recursion_group`
 label, the group label (FR-092), and the emission
@@ -679,7 +675,7 @@ QSpec's v2 positive fixtures carry placeholders: the all-`1` `quire-edition`
 edition (ADR-011 §2.4), the diagnostics `catalog` reference, and a
 placeholder key for every node whose body holds no application. Each
 fixture application key holds placeholder operand keys. The emission's
-`edition`, `definition_selections`, law `definition`s, `node_id`s, node keys
+`edition`, law `definition`s, `node_id`s, node keys
 in bodies and `dependencies`, `semantic_type`s, `identity_preimage`,
 `package_id`, `source_map` and `diagnostics` are therefore outside the
 comparison.
@@ -711,7 +707,7 @@ for the named node, under owner (`a`, `u`), from these declarations:
 - `function eqo using v(a: Option<Node>, b: Option<Node>): Boolean pure { a = b }`
   (E17), whose recursion leaf's prefix is `inner`, one segment.
 
-The lock evidence selects QSpec's text definition
+The text definition is QSpec's
 `quire.value.text.unicode-17.0.0/v1`, the `DefinitionRef`
 `{agent-ix, quire.value.text.unicode-17.0.0/v1}`; every text leaf carries it as its `text_profile` law. The leaves
 are:
@@ -726,7 +722,7 @@ T1 to T3 are FR-092's. The QSpec `structural-eq-record` and `collection-contains
 fix the leaf spelling.
 
 The `digest` and `domain` members of a node-id object in the vectors below
-are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (unassigned; planner relay)).
+are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)).
 
 | Vector | Node | Key |
 |---|---|---|
@@ -952,36 +948,36 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
 | FR-093-AC-3 | For each row of the application table whose checked node the `Value` family builds in a function body (every row except `Attribute`, `Navigate`, `AllInstances`, `Lookup`, `Dispatch` and `Pre`), a fixture function whose body holds that checked node lowers to one `expression` node with the row's `operator`, `semantic_form`, `operation.identity`, member, mode, laws, leaves and argument shape, and its `result_type` is the type node of the checked node's `value_type`. | Test (TC-415) |
 | FR-093-AC-4 | `function c1 using v(x: Int[0, 9]): Int[0, 10] pure { x }` builds no convert node: `c1`'s `body` binding references `x`'s parameter node. `function c2 using v(): Int[0, 9] pure { 3 }` lowers its body to a `convert` node with `quire.op.numeric.narrow` and member `type_argument` naming `Int[0, 9]`'s node, over the literal `3`. `function c3 using v(x: Int[0, 9]): Rational[0, 9; 1, 1] pure { convert<Rational[0, 9; 1, 1]>(x) }` lowers to `quire.op.numeric.convert`. `function fm using v(s: Sequence<Sequence<Int[0, 9]>[0, 2]>[0, 3]): Sequence<Int[0, 9]>[0, 6] pure { flatMap(x in s: x) }` lowers its body to one `quire.op.collection.flat_map` node and no map node. | Test (TC-415) |
 | FR-093-AC-5 | In `function q using v(s: Sequence<Int[0, 9]>[0, 5]): Boolean pure { forall(x in s: exists(y in s: x = y)) and exists(z in s: true) }`, `x`'s parameter node has level 1, `y`'s level 2 and `z`'s level 1. The `forall` argument list is `[reference(s's node), binding{name: "x", value: reference(the exists node)}]`. | Test (TC-415) |
-| FR-093-AC-6 | A text equality whose package lock evidence supplies the text-profile definition carries law `text_profile` with that `DefinitionRef` and mode `text_profile` equal to the operands' profile. The same source, lowered with no text-profile definition in the lock evidence, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node. | Test (TC-415) |
+| FR-093-AC-6 | A text equality carries law `text_profile` with the layer table's text-profile `DefinitionRef` and mode `text_profile` equal to the operands' profile. | Test (TC-415) |
 | FR-093-AC-7 | For every node of a checked package holding `both`, `nb`, `h`, `f` and `t`, the preimage rebuilt from the node as the v2 emission arm writes it (the FR-322 application-node rule, or FR-092's structural-node rule with the owner read from the node's own `owner` member) equals the node's key. The `package` crate's non-test code names no `SemanticTerm` constructor and no key function. For a package holding the recursive `f` of FR-092 vectors G4 to G6, the three members carry the `recursion_group` label `<FR-092 group G4...>`, their graph order is G5, G6, G4, and the keys rebuilt from that graph order are G4 to G6. | Test (TC-416) |
 | FR-093-AC-8 | In functions over a `Population<M::Order>[3]` parameter `p` and a `Reference<M::Order>` parameter `r` (FR-094 vectors E4 to E9), and in a clause function (FR-094) that holds a dispatched call (QSpec FR-151, QSpec TC-196 D06), a checked `Attribute`, `AllInstances`, `Lookup` and `Dispatch` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
 | FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `expression` occurrence over `a: Boolean` (QSpec FR-341-AC-10) and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
-| FR-093-AC-10 | With lock evidence that selects the text definition the Recursive text-leaf vectors name, `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
-| FR-093-AC-11 | Structural equality over `record R { t: Text[0, 64; nfc]?; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
+| FR-093-AC-10 | `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
+| FR-093-AC-11 | Structural equality over `record R { t: Text[0, 64; nfc]?; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
 | FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending node id order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, G6 and E11, and G6 lists E13 and G4. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |
 | FR-093-AC-13 | For each application node of QSpec's `positive-operation-identities.json` and `positive-control-operations.json` whose `operation.identity` a row of the application table lowers, the node emitted for a function whose body holds that operation equals the fixture node in `node_tag`, `semantic_form`, `operator`, `operation.identity`, law roles in order, `mode`, member `kind` and `name`, leaf `path`s and modes, and argument term kinds and binding names, and IR's v2 reader admits the emitted package. The comparison reads none of the members Comparison with QSpec's v2 positive fixtures places outside it. The rows AC-3 excludes (`Attribute`, `Navigate`, `AllInstances`, `Lookup`, `Dispatch`, `Pre`) are outside the comparison. | Test (TC-416) |
 | FR-093-AC-14 | On a thread with a 512 KiB stack, at the default limits, a function body of the longest nested `a and (…)` chain the default S1 limits admit checks with no outcome naming a depth. Each nested form TC-415 step 10 lists, nested 1,000 deep with S1 and S3 limits raised to fit it, checks or refuses on its own unproved obligation, the same way it does nested 2 deep. A postcondition `pre(…)` over 1,000 nested `a and (…)` refuses as a forbidden pre-read. | Test (TC-415) |
 | FR-093-AC-15 | With the alias `Total = Integer` and parameters `x: Int[0, 9]` and `s: Sequence<Int[0, 9]>[0, 5]`, reading `v` after `let v = x in v`, `count<Total>(v in s: v < 5)`, `sum<Total>(v in s: v)`, `forall(v in s: v < 5)` or `fold<Total>(acc, v in s: acc + v, identity: 0)` refuses with `missing_declaration`/`missing-name` naming `v`, and reading `acc` after that `fold` refuses naming `acc`. Each of those forms beside a copy of itself that binds the same name checks. After `f`'s four parameters, `let v = x in ((let w = x in w) + (let u = x in v + u))` lowers `v` at level 4 and both `w` and `u` at level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. `if a then value(o) else 0` and `if a then 0 else value(o)`, over `o: Option<Int[0, 9]>`, each refuse with `undefined_expression`/`unproved-presence` alone. `if present(o) then value(o) else 0` checks. | Test (TC-415) |
-| FR-093-AC-16 | The v2 emission arm writes only direct imports from `CheckedPackage::dependency_selections` as FR-322 `dependency_selections`: one `{identity, package_id}` entry per directly imported library identity (no `version`: a selection binds by identity, QSpec FR-322-AC-35), in ascending UTF-8 byte order of `identity` (`test/\u{FF61}` before `test/\u{1F600}`, the reverse of UTF-16 order), identical in the lock and the identity preimage. A package linked with two imports reads back Verified through QSL's I2 read with exactly those entries in both members. QSL's I2 read over QSpec's `dependency-selection-vectors.json` refuses each authored entry mutation at the mutated entry, and gives each order vector its recorded outcome at its last recorded locus, since IR's refusal carries one path (`make conformance`). | Test (TC-416) |
+| FR-093-AC-16 | The v2 emission arm writes only direct imports from `CheckedPackage::dependency_selections` as FR-322 `dependency_selections`: one `{identity, package_id}` entry per directly imported library identity (no `version`: a selection binds by identity, QSpec FR-322-AC-35), in ascending UTF-8 byte order of `identity` (`test/\u{FF61}` before `test/\u{1F600}`, the reverse of UTF-16 order). A package linked with two imports reads back Verified through QSL's I2 read with exactly those entries in both members. QSL's I2 read over QSpec's `dependency-selection-vectors.json` refuses each authored entry mutation at the mutated entry, and gives each order vector its recorded outcome at its last recorded locus, since IR's refusal carries one path (`make conformance`). | Test (TC-416) |
 | FR-093-AC-17 | The v2 emission of a checked package holding `t` writes `diagnostics.catalog` with authority `agent-ix` and identity `quire.native.diagnostics/v1`, and no other member, and IR's v2 reader admits the package. | Test (TC-416) |
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
 | FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, as emitted. | Test (TC-416) |
-| FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the lock's `edition` and each `definition_selections` row as the layer table's definition of that role, exactly `{authority, identity}` with no revision. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row, and the lock's `definition_selections` holds it. IR's v2 reader admits both packages. | Test (TC-416) |
+| FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the package's `edition` as the layer table's definition of that role, exactly `{authority, identity}` with no revision. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row. IR's v2 reader admits both packages. | Test (TC-416) |
 | FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and the wire carries no `identity_projection`: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The preimage of every emitted structural node rebuilt from the wire node alone, its `owner` included, equals its key, and each `Tree` group's label rebuilds from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
 | FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; IR's v2 reader admits both. QSL writes the declarations with the qualified names `["Point"]` and `["List"]` (FR-092 D1), so these `Point`, `List` and `Integer` nodes are the corresponding nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
 | FR-093-AC-23 | Structural equality and inequality over each Union text-leaf vector U1 to U7 carry exactly that vector's complete ordered leaf list, with the selected text definition and stated profiles. U2's rename, member reorder, payload swap and source arm reorder give exactly the changes the vectors state. | Test |
 | FR-093-AC-24 | For each `K` of `Set`, `Bag` and `OrderedSet`, structural equality over `K<Choice>` (U2) carries U2's leaves with one leading `inner` on every path; `contains` over that collection carries U2's leaves without that prefix (`inner:0`). A catalogued `result_inner` operation yielding `K<Choice>` carries U2's leaves without that prefix, while one yielding `Sequence<Choice>` carries `[]`. Structural equality over `Sequence<Choice>` still carries U2's leaves with one leading `inner`. | Test |
-| FR-093-AC-25 | U2 and U4 with no selected text-profile definition refuse `missing_declaration`/`missing-selection` naming `text_profile` and yield no node; U2 still refuses when both compared values select `Empty`. When a selected node or work ceiling is exhausted by these walks, checking stops with `stage_limit_exceeded` and the corresponding `node-count-exceeded` or `work-budget-exceeded` cause before resolving leaf laws, yielding no node; every appended text or recursion leaf costs one node, every entered union costs composite work, and every leaf's full path bytes count toward work. | Test |
+| FR-093-AC-25 | When a selected node or work ceiling is exhausted by these walks, checking stops with `stage_limit_exceeded` and the corresponding `node-count-exceeded` or `work-budget-exceeded` cause before resolving leaf laws, yielding no node; every appended text or recursion leaf costs one node, every entered union costs composite work, and every leaf's full path bytes count toward work. | Test |
 | FR-093-AC-26 | Cancelling a lifecycle `check` during a Union text-leaf walk stops at the next charge with `StageFailure::Cancelled` retaining the requested cause and no output artifact (FR-276). Existing AC-10 and AC-11 Record/Tuple and optional-inner vectors remain byte-identical. | Test |
 | FR-093-AC-27 | For a selected model alias whose package declares an unreferenced relationship and has no function or frame naming it, `check` emits the `relation`/`relationship` node and records exactly one `generated` occurrence at that alias's declaration-site/source span. It never uses the fallback `generated_location` or emits an `UnlocatedOccurrence`. | Test (TC-417) |
-| FR-093-AC-28 | `function e1 using v(a: String, b: String): Boolean pure { a = b }`, the same over `UUID` and over `Timestamp`, and each with `!=`, lower to one `expression` node whose operation is `quire.op.string.eq`, `.ne`, `quire.op.uuid.eq`, `.ne`, `quire.op.timestamp.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, no mode, no member and no leaves, with no text-profile definition in the lock evidence and no `missing-selection` refusal. The same functions with a `Text[0, 8; nfc]` operand against a `String`, or `String` against `UUID`, refuse `ill_typed`/`type-mismatch` and build no node for the declaration. | Test (TC-1028) |
-| FR-093-AC-29 | `function s1 using v(): String pure { "a\u00e9" }`, `function u1 using v(): UUID pure { UUID("00112233-4455-6677-8899-aabbccddeeff") }` and `function t1 using v(): Timestamp pure { Timestamp(-5) }` each lower the body to one `value`/`literal` node whose `semantic_type` and body `type` are the `string`, `uuid` or `timestamp` type node, with `value_kind` `string`, `uuid` or `timestamp` and `value` `"a\u00e9"` as JSON, `"00112233-4455-6677-8899-aabbccddeeff"` and `"-5"`. `Timestamp(0)` and `Timestamp(-0)` lower to one shared node of value `"0"`; two `"abc"` in one unit lower to one shared node. In `function e2 using v(a: String): Boolean pure { a = "abc" }` the comparison is one `quire.op.string.eq` node with arguments `[ref(a's node), ref(the literal's node)]`, no law, mode, member or leaves, and no text-profile definition in the lock evidence; the `uuid` and `timestamp` counterparts use `quire.op.uuid.eq` and `quire.op.timestamp.eq`. | Test (TC-1052) |
+| FR-093-AC-28 | `function e1 using v(a: String, b: String): Boolean pure { a = b }`, the same over `UUID` and over `Timestamp`, and each with `!=`, lower to one `expression` node whose operation is `quire.op.string.eq`, `.ne`, `quire.op.uuid.eq`, `.ne`, `quire.op.timestamp.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, no mode, no member and no leaves. The same functions with a `Text[0, 8; nfc]` operand against a `String`, or `String` against `UUID`, refuse `ill_typed`/`type-mismatch` and build no node for the declaration. | Test (TC-1028) |
+| FR-093-AC-29 | `function s1 using v(): String pure { "a\u00e9" }`, `function u1 using v(): UUID pure { UUID("00112233-4455-6677-8899-aabbccddeeff") }` and `function t1 using v(): Timestamp pure { Timestamp(-5) }` each lower the body to one `value`/`literal` node whose `semantic_type` and body `type` are the `string`, `uuid` or `timestamp` type node, with `value_kind` `string`, `uuid` or `timestamp` and `value` `"a\u00e9"` as JSON, `"00112233-4455-6677-8899-aabbccddeeff"` and `"-5"`. `Timestamp(0)` and `Timestamp(-0)` lower to one shared node of value `"0"`; two `"abc"` in one unit lower to one shared node. In `function e2 using v(a: String): Boolean pure { a = "abc" }` the comparison is one `quire.op.string.eq` node with arguments `[ref(a's node), ref(the literal's node)]`, no law, mode, member or leaves; the `uuid` and `timestamp` counterparts use `quire.op.uuid.eq` and `quire.op.timestamp.eq`. | Test (TC-1052) |
 | FR-093-AC-30 | Over `x: Int[0, 9]`, the bodies `x + 1`, `1 + x`, `x - 1`, `x * 2` and `-5`, and over `x: Integer` the bodies `x == 1` and `1 != x`, each lower to one application whose integer literal operand is a `literal{type, value_kind: integer, value}` term in the application's `arguments`, typed at the builtin `Integer` node, and the checked graph holds no node for that literal. In `2 * (x + 1)` each literal is inline in its own application and the inner application is a reference in the outer. Over `x: Int[0, 9]`, `x == 1` compares `x` with a `numeric.narrow` application of the literal's node, which FR-358 step 6 identifies as `graph_child`. `x > 0` and `a == true` (with `a: Boolean`) keep a reference to their literal node, and a function whose body is the literal `1` holds the `value`/`literal` node L6. | Test (TC-415) |
 | FR-093-AC-31 | `function f using v(a: Int[-100,100], b: Decimal[-100,100;0,0;nearest-even]): Boolean pure { convert<Decimal[-100,100;0,0;nearest-even]>(a) = b }` lowers to one `quire.op.numeric.convert` node over `a`'s parameter node, whose `result_type` is `b`'s type node, and one `quire.op.decimal.eq` whose arguments are `[ref(convert), ref(b)]`. `!=` gives `quire.op.decimal.ne`, and `b = convert<..>(a)` puts the convert node second. `convert<Decimal[..]>(a) = convert<Decimal[..]>(c)` builds one convert per operand. A conversion between Rational, Decimal and Int types in either direction, and a Quantity conversion `convert<Km>(q) = r` (`quire.op.quantity.convert` with mode `rounding` = `exact`, then `quire.op.quantity.eq`), each lowers a convert node and the equality of the converted type. `a = b` over two `Int[-100,100]` parameters builds no convert node and gives `quire.op.integer.eq` over the two parameters. IR's v2 reader admits each package, and evaluating each equality gives the result of comparing the converted values. | Test (TC-415) |
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
 | FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
-| FR-093-AC-35 | Over `t: Text[0, 8; nfc]`, each of `convert<Int[0, 99]>(t)`, `convert<Decimal[0, 1000; 0, 2; nearest-even]>(t)`, `convert<Rational[-9, 9; 1, 9]>(t)`, `convert<Float32[toward-zero]>(t)`, `convert<Float64>(t)` and, with FR-091-AC-44's units, `convert<Quantity<ms>>(t)` as a pure function body lowers to one `convert` node over `[ref(t)]` with member `type_argument` naming the target type node. The identities are `quire.op.text.to_integer`, `to_decimal`, `to_rational`, `to_float32`, `to_float64` and `to_quantity`. Each carries law `text_profile` with the lock's `quire.value.text.unicode-17.0.0/v1` definition; `to_float32` and `to_float64` also carry law `ieee_profile`. The modes are: none for `to_integer` and `to_rational`, `{"kind":"rounding","value":"nearest-even"}` for `to_decimal`, `toward-zero` for `to_float32`, `exact` for `to_float64` and `exact` for `to_quantity`. No node carries a `text_profile` mode. Over `s: String` the same six bodies lower to `quire.op.string.to_integer` to `quire.op.string.to_quantity` with the same members and modes, the `ieee_profile` law for the two IEEE targets and no `text_profile` law. No function carries a body obligation. | Test (TC-1196) |
+| FR-093-AC-35 | Over `t: Text[0, 8; nfc]`, each of `convert<Int[0, 99]>(t)`, `convert<Decimal[0, 1000; 0, 2; nearest-even]>(t)`, `convert<Rational[-9, 9; 1, 9]>(t)`, `convert<Float32[toward-zero]>(t)`, `convert<Float64>(t)` and, with FR-091-AC-44's units, `convert<Quantity<ms>>(t)` as a pure function body lowers to one `convert` node over `[ref(t)]` with member `type_argument` naming the target type node. The identities are `quire.op.text.to_integer`, `to_decimal`, `to_rational`, `to_float32`, `to_float64` and `to_quantity`. Each carries law `text_profile` with the layer table's `quire.value.text.unicode-17.0.0/v1` definition; `to_float32` and `to_float64` also carry law `ieee_profile`. The modes are: none for `to_integer` and `to_rational`, `{"kind":"rounding","value":"nearest-even"}` for `to_decimal`, `toward-zero` for `to_float32`, `exact` for `to_float64` and `exact` for `to_quantity`. No node carries a `text_profile` mode. Over `s: String` the same six bodies lower to `quire.op.string.to_integer` to `quire.op.string.to_quantity` with the same members and modes, the `ieee_profile` law for the two IEEE targets and no `text_profile` law. No function carries a body obligation. | Test (TC-1196) |
 | FR-093-AC-47 | `function g using v(t: Text[0, 8; nfc]): Boolean pure { convert<Integer>(t) = 3 }` lowers the comparison to `quire.op.integer.eq` with arguments `[ref(the convert node), ref(the literal 3)]`, where the convert node is `quire.op.text.to_integer` over `[ref(t)]` and no `ConvertScalar` or `quire.op.numeric.convert` node is built. Over the same `t`, `convert<Boolean>(t)`, `convert<Text[0, 4; nfc]>(t)`, `convert<String>(t)` and, for `s: String`, `convert<Text[0, 8; nfc]>(s)` each refuse `ill_typed`/`operator-ineligible` at the `convert` and build no node; `convert<Text[0, 8; nfc]>(t)` builds no node. | Test (TC-1196) |
 | FR-093-AC-48 | A checked present-option value is lowered under the carrier contract in QSpec FR-322; QSL's I2 reader (FR-264) returns `Verified`, and the test asserts that the emitted package id equals the package id the reader computes from that package's checked contents. S3 refuses a `Some(e)` whose checked type differs from the option result's element type as `ill_typed`/`type-mismatch` at the `Some(e)` expression; S4 emits no package for it. | Test (TC-1273) |
 
@@ -996,7 +992,7 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
   [FR-322](ix://agent-ix/quire-specification/FR-322): union nodes, the
   catalog's leaf sources and the shared leaf path vocabulary.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
-  §2.2 E3 (keys minted at E3), §2.4 (lock evidence and law `DefinitionRef`s),
+  §2.2 E3 (keys minted at E3), §2.4 (package selections and law `DefinitionRef`s),
   §3 FB-13, §6.1 (a family's emission arm under `package`).
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-04, O-07 (occurrences), QC-24.
@@ -1007,8 +1003,8 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
   `Reference`, `Population` and quantity type nodes.
 - QSpec: the definitions the QSpec definition prose names (ADR-011 §2.4),
   which the layer table names by identity. A node whose
-  operation needs a law the lock evidence does not supply refuses (AC-6);
-  nodes without laws are keyed. The two-name `fold`/`reduce` binder and the
+  operation needs no law is keyed with no law;
+  every law's `definition` is the layer table's. The two-name `fold`/`reduce` binder and the
   `bound` of a nested binding are QSL proposals (ADR-013 QC-24).
 - QSpec FR-322 `dependencies`: FR-322 gives the rule for an application
   node, a nominal node and (FR-340) a frame node. Rules 1 and 3 for every
@@ -1017,8 +1013,8 @@ G18-G21, recursion group label (QSpec FR-322 `recursion.group`):
   `expression`/`reference` node `eeee…` and the `correspondence` node
   `7070…`, whose bodies reference `dddd…`, and for the `bounded_domain`
   node `cccc…`; QSL asks QSpec to correct them.
-- QSpec FR-322 `owner` (QSL-638): the node member the emission writes and
-  the lock joins a reader checks it against (FR-322-AC-51 to AC-53). IR's
+- QSpec FR-322 `owner` (QSL-638): the node member the emission writes
+  (the reader's joins over it, FR-322-AC-51 to AC-53, are BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)). IR's
   v2 node type carries it once IR-646 adds `owner` to
   `CheckedSemanticNodeV2`; AC-21 and AC-22 ("IR's v2 reader admits") cannot
   pass before that lands.

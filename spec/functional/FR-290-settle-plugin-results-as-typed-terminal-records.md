@@ -391,10 +391,10 @@ builds the `ReplayRequestWire` for one counterexample. It takes:
 
 | `ReplayRequestWire` member | Value | Source |
 | --- | --- | --- |
-| `profile_selections` | empty: the checked package's lock `profile_selections` rows are clause-profile laws (a role and a definition), not FR-071 semantic profile selections, so the context carries none | ADR-013 O-25, FR-071 |
+| `profile_selections` | empty: the checked package's `profile_selections` rows are clause-profile laws (a role and a definition), not FR-071 semantic profile selections, so the context carries none | ADR-013 O-25, FR-071 |
 | `package_id` | the emitted package's `package_id`, in `quire.package.semantic/v2` | FR-071, FR-098 |
 | `sources` | the unit's own source reference, the one source the recompile reads | FR-071, FR-098 |
-| `dependencies` | one entry per resolved library selection of the checked package (the lock's direct `dependency_selections` and the libraries they import in turn, which the replay's recompile also needs), in ascending identity order: its `identity`, its `package_id`, and as `sources` the reference of the library source that `check` resolved for it (`CheckedUnit::libraries`) | FR-071, ADR-015 D-4 |
+| `dependencies` | one entry per resolved library selection of the checked package (the package's direct `dependency_selections` and the libraries they import in turn, which the replay's recompile also needs), in ascending identity order: its `identity`, its `package_id`, and as `sources` the reference of the library source that `check` resolved for it (`CheckedUnit::libraries`) | FR-071, ADR-015 D-4 |
 | `selected_function` | for a function-contract item, the qualified name of the function whose `declaration` occurrence the item names; for an application item, its record's owner | ADR-013 O-09, FR-062, FR-098, FR-121 |
 | `occurrence_key` | the routed item's `OccurrenceKey`, its node as a `WireNodeId` | ADR-013 O-25, FR-071, FR-098 |
 | `source` | `ReplaySource::Input(assignments)` | ADR-029 PL-7, ADR-013 O-25 |

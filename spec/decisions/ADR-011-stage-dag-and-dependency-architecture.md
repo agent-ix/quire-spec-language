@@ -257,7 +257,7 @@ distinct nominal type with private constructors in its stage module.
 |---|---|---|---|---|
 | E1 | S0 → S1 | Source bytes, `SourceIdentity`, limits | Lossless CST | QSL `cst` |
 | E2 | S1 → S2 | A CST with no error or recovery node | Parsed forms | QSL `forms`; family form builders (ADR-012 §2) |
-| E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, each imported dependency's `CheckedGraph`, compiled from source, for typing imported declarations (ADR-015 D-5), and the package's lock evidence (§2.4) | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
+| E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, each imported dependency's `CheckedGraph`, compiled from source, for typing imported declarations (ADR-015 D-5), and the package's selections (§2.4) | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
 | E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its source through S1 to S4 (ADR-015 D-1) (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
 | E5 | S4 → S5 | `quire.checked-package/v2` bytes only, and beside them the expected `package_id` the driver received in E4's `EmittedPackage`. IR's reader enforces conditions 1 and 2 of the §4 verified binding (supported version; the declared `package_id` member names the package's identity and version) under FR-322 (IR TC-048), and the driver compares the read `package_id` with that expected `package_id` | IR `CheckedPackageV2`, then IR nodes | IR reader. The wire contract is QSpec's. |
 | E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` carrying a `FamilyOutcome` | QSL `value::expression`, behind the layer-E `quire-eval` interface that defines `Evaluation` (FR-401) |
@@ -359,7 +359,7 @@ by design, and no later stage may recover it.
 |---|---|---|---|---|---|
 | E1 | Minted, lossless | Minted: spans against `SourceIdentity` and revision; I3 adds the document `SourceMap` | none | Edition read from source | none |
 | E2 | Dropped | Carried: each form holds the span of its CST node | none: forms carry position only | Edition and the unit's profile, import and model selections carried; each form's `using` alias carried as written | Declared bounds and extents carried as syntax |
-| E3 | none | Carried: QSL, the only span minter, keys the source map by occurrence key (node id, role, ordinal; ADR-013 O-07) | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201). A node bound to a domain-package declaration carries that declaration's `DeclarationKey{package, node}`, which the domain package assigns and I1 intake admits; QSL never mints one (ADR-013 O-03, C-02). AD-016 arrow 1 is stale here. Remaining work: agent-ix/quire-specification#141. Node ids are content-addressed over the ADR-013 O-04 preimage. Structurally identical nodes share one id, and each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). The node-identity preimage names the node's owner: `SourceOwner` or `DefinitionOwner` (`{authority, identity}`) for a source- or definition-declared node, and the domain package identity and IR node, with no version, for a `ModelOwner` node (QC-18). Package scope comes only from that owner; a node's FR-322 `declaration` is package-local and contributes its qualified name to the content key (ADR-013 O-04). A declared record, tuple or function carries its owner, so only packages of one owner share its id, and declared nodes of distinct owners never share a `NodeKey`. Builtin and anonymous structural types (`scalar_type`, `bounded_domain` and anonymous composite types) carry no owner and share one id across packages (OQ-7 ruling). The lock evidence (§2.4) is admitted here, because the FR-322 application-node key includes each operation's law `DefinitionRef`s, each `{authority, identity}`. A reference into an I2 view is `PackageNodeKey{package: package_id, node: WireNodeId}` in `library` (ADR-013 T-3); it names the view's node without making a `NodeKey` from wire bytes. | Lock evidence admitted (§2.4); dependency and domain-package identities resolved and recorded | Bounds and extents typed. Each checked item that has `Requirements` gets one requirement record, made without negotiation and keyed by its occurrence key, holding the item's one capability kind (the #134 vocabulary, FR-057), the declared extent and the authored bound. `request_index` is the bytewise order of those keys, so two identical claims stay distinct. The record holds kind, extent and bound only (ADR-012 §13.5). AD-016 arrow 1's `capability_report` wording is stale here: the v2 `capability_report` is FR-322's feature-level report (E4). |
+| E3 | none | Carried: QSL, the only span minter, keys the source map by occurrence key (node id, role, ordinal; ADR-013 O-07) | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201). A node bound to a domain-package declaration carries that declaration's `DeclarationKey{package, node}`, which the domain package assigns and I1 intake admits; QSL never mints one (ADR-013 O-03, C-02). AD-016 arrow 1 is stale here. Remaining work: agent-ix/quire-specification#141. Node ids are content-addressed over the ADR-013 O-04 preimage. Structurally identical nodes share one id, and each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). The node-identity preimage names the node's owner: `SourceOwner` or `DefinitionOwner` (`{authority, identity}`) for a source- or definition-declared node, and the domain package identity and IR node, with no version, for a `ModelOwner` node (QC-18). Package scope comes only from that owner; a node's FR-322 `declaration` is package-local and contributes its qualified name to the content key (ADR-013 O-04). A declared record, tuple or function carries its owner, so only packages of one owner share its id, and declared nodes of distinct owners never share a `NodeKey`. Builtin and anonymous structural types (`scalar_type`, `bounded_domain` and anonymous composite types) carry no owner and share one id across packages (OQ-7 ruling). The package selections (§2.4) are admitted here, because the FR-322 application-node key includes each operation's law `DefinitionRef`s, each `{authority, identity}`. A reference into an I2 view is `PackageNodeKey{package: package_id, node: WireNodeId}` in `library` (ADR-013 T-3); it names the view's node without making a `NodeKey` from wire bytes. | Package selections admitted (§2.4); dependency and domain-package identities resolved and recorded | Bounds and extents typed. Each checked item that has `Requirements` gets one requirement record, made without negotiation and keyed by its occurrence key, holding the item's one capability kind (the #134 vocabulary, FR-057), the declared extent and the authored bound. `request_index` is the bytewise order of those keys, so two identical claims stay distinct. The record holds kind, extent and bound only (ADR-012 §13.5). AD-016 arrow 1's `capability_report` wording is stale here: the v2 `capability_report` is FR-322's feature-level report (E4). |
 | E4 | none | Carried: source map by occurrence key, in the package | Carried verbatim | **Minted**: package identity and version, v2 schema version | Carried as v2 `bounded_domain` and `model_population`. The per-item requirement records are carried in the in-process `CheckedPackage`, not in the v2 bytes. The v2 `capability_report` follows FR-322: one `{feature, disposition}` entry per `required_features` entry and per selected model capability. A function-only `Value` package has `required_features = ["quire.value.complete/v1"]` and one entry for it with disposition `available`. |
 | E5 | none | Carried as `CheckedSourceMapEntry`, never re-minted | Carried read-only as `CheckedNodeId` and `CheckedDomainPackageRef` | Checked: an unsupported v2 contract version refuses | Carried; `requires-bound` derived once from the IR table |
 | E6 | none | Carried: `Evaluation.location` from the node id | Carried | Package identity bound to the evaluation | none |
@@ -481,28 +481,30 @@ outside the #205 gates is a cross-repository rule, proposed to QSpec as an NFR
 agent-ix/quire-contract-codegen#60 and #73 are defects in CG's generated-harness
 gate, not the gate itself.
 
-### 2.4 Lock evidence
+### 2.4 Package selections
 
-A package's lock evidence is the FR-322 `lock` content: edition, profile
-selections, definition selections, model selections, sources, required
-features and dependency selections. Every member except `sources` enters
-`package_id` through the identity preimage. It enters at E3, where node
-identity is minted, and not at E4. The inputs it is derived from are the
-source bytes, the QSL build, and the domain and dependency sources, because
-E9 recompiles from those alone (ADR-013 O-26) and must reproduce `package_id`.
+A package's selections are its edition, clause profile selections, model
+selections, sources, required features and dependency selections. They are
+admitted at E3, where node identity is minted, and not at E4. The inputs they
+are derived from are the source bytes, the QSL build, and the domain and
+dependency sources, because E9 recompiles from those alone (ADR-013 O-26).
+The wire members that carry them are QSpec's FR-322 members: BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan).
+The package holds no definition rows; a law's
+`DefinitionRef` is the QSpec definition prose's `{authority, identity}` for
+that role (FR-110's layer table).
 
 | Member | Source |
 |---|---|
 | `edition` | The edition `agent-ix` / `ix:native`, named by its definition identity in QSpec's definition prose (agent-ix/quire-specification). The source header's `language "ix:native" edition "1-draft";` names it, and E3 matches it to the `edition` role. The edition in QSpec's v2 positive fixtures (`quire-edition`) is a placeholder, not an edition. |
-| `profile_selections` | The clause profile rows FR-322 defines (`temporal_profile`, `protocol_profile`), one per header `profile` that selects a clause profile; the clause family owning that role resolves it in its catalog and writes the row (ADR-012 §2; `TemporalTrace`, `ProtocolClause`, #218). A header `profile` the `Value` family resolves selects the layer table's `root` row (`quire.value.complete/v1`) by identity alone, matching QSpec's `profile v = "<id>";` header grammar, or refuses, and writes no row: `root` is an always-selected `definition_selections` entry (FR-110, amended 2026-09-26). |
-| `definition_selections` and each law `DefinitionRef` | The definition identity of each layer table row the package selects: the definition the QSL build implements, named by its authority and identity. |
+| `profile_selections` | The clause profile rows FR-322 defines (`temporal_profile`, `protocol_profile`), one per header `profile` that selects a clause profile; the clause family owning that role resolves it in its catalog and writes the row (ADR-012 §2; `TemporalTrace`, `ProtocolClause`, #218). A header `profile` the `Value` family resolves selects the layer table's `root` row (`quire.value.complete/v1`) by identity alone, matching QSpec's `profile v = "<id>";` header grammar, or refuses, and writes no row (FR-110, amended 2026-09-26). |
+| each law `DefinitionRef` | The `{authority, identity}` of the QSpec definition prose for that role, from FR-110's layer table: the definition the QSL build implements. |
 | `model` declarations | The source header's `model` declarations, matched to the domain packages admitted at I1, and the model is recorded by its `model_root` node only, with no lock row and no version (QSpec #510). Spine `compile` (§5) runs I1 over the unit's `model` declarations (amended 2026-09-25). |
 | `sources` | `RawSourceRef` (authority and identity) of the sources E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
 | `dependency_selections` | One `{identity, package_id}` entry per directly imported library identity: the identity each import names and the dependency's own `package_id`; a selection binds by identity and carries no version (QSpec FR-322-AC-35) |
 
 **Amended (2026-09-24).** The emitter takes the edition and
-definition selections from the layer table
+each law's `DefinitionRef` from the layer table
 (`qsl-semantics/src/value/definition.rs`), by definition identity. The
 catalog names each definition the QSL build implements and holds no copy of
 a QSpec document. The diagnostics catalog reference is
@@ -513,18 +515,16 @@ profile by identity alone (amended 2026-09-26).
 A `dependency_selections` entry is a QSpec `DependencySelection`
 `{identity, package_id}`: the library identity an
 `import "L"` names, and the dependency's own
-`quire.package.semantic/v2` `package_id` (FR-322, QSpec STD-105). The lock
-and the identity preimage hold the same entries, one per directly imported library identity,
-in strictly ascending UTF-8 byte order of `identity`, so each dependency's
-`package_id` enters the importing package's. E4
+`quire.package.semantic/v2` `package_id` (FR-322, QSpec STD-105). The package holds one entry per directly imported library identity,
+in strictly ascending UTF-8 byte order of `identity`. E4
 (`CheckedPackage::link_with`) builds the closure from the direct imports and
 each dependency's own closure, refusing two selections of one identity whose
 `package_id`s differ (FR-307's diamond rule,
 `invalid_package`/`conflicting-definition`). An import names its library by
 identity alone, so E4 records each dependency's `package_id` as selected.
-The emitter writes only direct selections
-in both members. The I2 reader derives the closure recursively from those
-entries and each admitted dependency's own direct lock entries.
+The emitter writes only direct selections.
+The I2 reader derives the closure recursively from those
+entries and each admitted dependency's own direct entries.
 
 **Amended (2026-09-25).** The QSpec schema defect this section
 recorded is fixed (QSpec STD-105; IR-287 types the entry as
@@ -612,7 +612,7 @@ re-walks them against the scenarios.
   one the request carries for that entry (QSpec FR-323) and otherwise refuses
   with `DependencyIdentityMismatch`, catalog code
   `stale_dependency` (ADR-013 O-26, C-13), yielding no verdict. What that
-  identity is rests on QSpec's structural identity, BLOCKED-BY STD-583 (unassigned; planner relay). The dependency source bytes, and the
+  identity is rests on QSpec's structural identity, BLOCKED-BY STD-583 (owner: planner titan:QSL:plan). The dependency source bytes, and the
   verified view E3 resolves against, come from:
   1. an ordinary compile: the S4 source resolution (ADR-015 D-1), which
      compiles each supplied library's source and builds the verified view
@@ -684,7 +684,7 @@ its own repository, agent-ix/quire-driver.
   a native-compile/1 request whose program source declares `1-draft`, with
   no clause bindings and only `semantic-ir/2.0.0` domain package models
   (FR-027), and writes the `quire.checked-package/v2` bytes to stdout. The
-  lock evidence comes from the source header and the definition
+  the package selections come from the source header and the definition
   catalog (§2.4). E3 resolves the header
   profiles against that catalog after I1 and the S4 source resolution,
   before the FR-091 assembler (FR-110). It takes FR-056's package input
@@ -1529,7 +1529,7 @@ sections it names.
 - **OQ-2: spine `compile` input.** Complete-V1 source, as §8, §2.1 E1 and I1,
   and US-014 already state. The request is a native-compile/1 request
   routed by the program's declared edition (FR-027), returning v2 bytes,
-  with the source header as the lock (§5, §2.4). Amended 2026-09-26.
+  with the source header as the selections (§5, §2.4). Amended 2026-09-26.
 - **OQ-3: `NativePackage`, `lowering`, `runtime` and IT-010.** `lowering`
   and IT-010 are deleted in the last M-6a change, which runs only once the
   skeleton spine is green: QSL #243 with
@@ -1555,17 +1555,16 @@ sections it names.
   native `run` does not need formatted input. The exception covers `format`
   only; native `run` stays until M-6c (OQ-1).
 - **OQ-5: `dependency_selections`.** Each entry is
-  `{identity, package_id}`, one per directly imported library identity,
-  identical in the lock and the identity preimage (QSpec
-  STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). Spine
+  `{identity, package_id}`, one per directly imported library identity
+  (QSpec STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). Spine
   `compile` and `replay` derive the closure recursively from admitted
-  dependencies' direct locks and resolve imports against a dependency input
-  (ADR-015). It is not a prerequisite of the lock-evidence work.
-- **OQ-6: edition and definition selections.** The edition is `ix:native`;
-  the fixtures' `quire-edition` edition is a placeholder. Edition and
-  definition selections come from the definition identity of each
+  dependencies' direct entries and resolve imports against a dependency input
+  (ADR-015). It is not a prerequisite of the package-selections work.
+- **OQ-6: edition and law definitions.** The edition is `ix:native`;
+  the fixtures' `quire-edition` edition is a placeholder. The edition and
+  each law's `DefinitionRef` come from the definition identity of each
   layer table row (§2.4).
-- **SG-1: where lock evidence enters.** At E3, not E4 (§2.2, §2.4). Reason:
+- **SG-1: where package selections enter.** At E3, not E4 (§2.2, §2.4). Reason:
   node identity is minted at E3, and the FR-322 application-node key includes
   law `DefinitionRef`s.
 - **OQ-7: type-node keys.** Node keys are content keys scoped only by

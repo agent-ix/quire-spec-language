@@ -71,7 +71,7 @@ reader returns.
   property form and checked formula. For an `on each (q: T) [when (g)]`
   activation, the parameter `q` with its resolved type `T` and, when `g` is
   written, the typed guard (§ "`on each` activation at S3").
-- The package's lock evidence (`profile_selections`) and the node keys
+- The package's clause profile selections (`profile_selections`) and the node keys
   FR-092 mints.
 
 ## Outputs
@@ -98,7 +98,7 @@ reader returns.
 ## Behavior
 
 - The emitter SHALL write the body as one `quire.op.temporal.clause`
-  application with one `temporal_profile` law, equal to the lock's
+  application with one `temporal_profile` law, equal to the package's
   `profile_selections` row of that role, and the six arguments over, clock,
   activation, captures, fairness and formula, in that order (QSpec FR-370).
 - The emitter SHALL write each temporal operator of the formula as an
