@@ -484,24 +484,13 @@ fn dimension_equivalences_are_decided_by_fr_142_steps() {
     assert_eq!(admitted(&reordered).len(), 3);
 }
 
-/// FR-091's vector table row `id` (`Q12`): its digest, read from the spec in
-/// this repository, never copied.
+#[path = "../../src/check/lowering/fr091_vectors.rs"]
+mod fr091_vectors;
+
+/// FR-091's vector `id` (`Q12`): its key, recomputed from the preimage
+/// content the spec states for it and never recorded.
 fn fr_091_vector(id: &str) -> String {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md"
-    );
-    let spec = std::fs::read_to_string(path).expect("FR-091 is in the repository");
-    let row = spec
-        .lines()
-        .find(|line| line.starts_with(&format!("| {id} |")))
-        .unwrap_or_else(|| panic!("FR-091 has a vector row {id}"));
-    row.split('`')
-        .skip(1)
-        .step_by(2)
-        .find(|span| span.len() == 64 && span.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .unwrap_or_else(|| panic!("row {id} carries a digest"))
-        .to_owned()
+    fr091_vectors::key(id)
 }
 
 /// QSpec's node-identity vectors by name: `name -> sha256`, from the

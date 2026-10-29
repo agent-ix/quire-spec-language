@@ -15,10 +15,8 @@
 //! it with QSpec's published vector when `QSPEC_DIR` is set.
 
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 const SPECS: [(&str, &str); 3] = [
     (
@@ -40,7 +38,7 @@ const SPECS: [(&str, &str); 3] = [
 ];
 
 /// A vector's `(key, preimage)`, both resolved.
-pub(in crate::check::lowering) type Vector = (String, String);
+pub type Vector = (String, String);
 
 type Name = (String, String);
 
@@ -94,15 +92,12 @@ fn parse(tag: &str, spec: &str, raw: &mut Raw) {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex_of(qsl_foundation::ByteDigest::of(bytes).as_bytes())
 }
 
 /// The key QSpec publishes for its nominal vector `name`, read from
 /// `$QSPEC_DIR`; `None` while it is unset.
-pub(in crate::check::lowering) fn published_key(name: &str) -> Option<String> {
+pub fn published_key(name: &str) -> Option<String> {
     let dir = std::env::var_os("QSPEC_DIR")?;
     let path =
         std::path::Path::new(&dir).join("proposals/checked-package-v2/node-identity-vectors.json");
@@ -129,7 +124,7 @@ fn hex_of(digest: [u8; 32]) -> String {
 /// The key of QSpec's nominal vector `name` (`dimension-length`,
 /// `dimension-time`, `unit-metre`, `unit-second`), recomputed from the
 /// hand-written preimage; no published key is recorded.
-pub(in crate::check::lowering) fn local_key(name: &str) -> Option<String> {
+pub fn local_key(name: &str) -> Option<String> {
     use crate::value::semantic_node::NodeIdentityPreimage;
     use crate::value::unit::{DimensionPreimage, UnitPreimage};
     let limits = qsl_foundation::IdentityLimits::default();
@@ -246,15 +241,13 @@ impl Resolver<'_> {
         self.resolve(tag, raw)
     }
 
-    fn group_digest(&mut self, tag: &str, first: &str) -> Option<String> {
-        let id = (tag.to_owned(), first.to_owned());
-        if let Some(known) = self.group_digests.get(&id) {
-            return known.clone();
-        }
+    /// The group-local preimage digests of the group first named `first`,
+    /// by ordinal: each member's preimage without its `group` member.
+    fn member_signatures(&mut self, tag: &str, first: &str) -> Option<Vec<String>> {
         let members = self
             .raw
             .groups
-            .get(&id)
+            .get(&(tag.to_owned(), first.to_owned()))
             .unwrap_or_else(|| panic!("{tag} publishes no group {first}"))
             .clone();
         let marker = format!("\"group\":\"<group digest of {first}>\",");
@@ -264,42 +257,44 @@ impl Resolver<'_> {
             let local = raw.replacen(&marker, "", 1);
             locals.push(self.resolve(tag, &local).map(|local| hex(local.as_bytes())));
         }
-        let digest = locals
-            .into_iter()
-            .collect::<Option<Vec<_>>>()
-            .map(|locals| {
-                let array = format!(
-                    "[{}]",
-                    locals
-                        .iter()
-                        .map(|local| format!("\"{local}\""))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                );
-                hex(array.as_bytes())
-            });
+        locals.into_iter().collect()
+    }
+
+    fn group_digest(&mut self, tag: &str, first: &str) -> Option<String> {
+        let id = (tag.to_owned(), first.to_owned());
+        if let Some(known) = self.group_digests.get(&id) {
+            return known.clone();
+        }
+        let digest = self.member_signatures(tag, first).map(|locals| {
+            let array = format!(
+                "[{}]",
+                locals
+                    .iter()
+                    .map(|local| format!("\"{local}\""))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            hex(array.as_bytes())
+        });
         self.group_digests.insert(id, digest.clone());
         digest
     }
 }
 
-fn raw() -> &'static Raw {
-    static RAW: OnceLock<Raw> = OnceLock::new();
-    RAW.get_or_init(|| {
-        let mut raw = Raw::default();
-        for (tag, spec) in SPECS {
-            parse(tag, spec, &mut raw);
-        }
-        raw
-    })
+fn raw() -> Raw {
+    let mut raw = Raw::default();
+    for (tag, spec) in SPECS {
+        parse(tag, spec, &mut raw);
+    }
+    raw
 }
 
 /// `tag`'s vectors by name, `(key, preimage)`, resolved. A vector that
 /// names a QSpec key has it recomputed.
-pub(in crate::check::lowering) fn vectors(tag: &str) -> BTreeMap<String, Vector> {
+pub fn vectors(tag: &str) -> BTreeMap<String, Vector> {
     let raw = raw();
     let mut resolver = Resolver {
-        raw,
+        raw: &raw,
         keys: BTreeMap::new(),
         group_digests: BTreeMap::new(),
     };
@@ -315,7 +310,7 @@ pub(in crate::check::lowering) fn vectors(tag: &str) -> BTreeMap<String, Vector>
 
 /// The raw `(first member, members by ordinal)` recursion groups `tag`'s
 /// tables publish.
-pub(in crate::check::lowering) fn group_tables(tag: &str) -> Vec<(String, Vec<String>)> {
+pub fn group_tables(tag: &str) -> Vec<(String, Vec<String>)> {
     raw()
         .groups
         .iter()
@@ -325,6 +320,19 @@ pub(in crate::check::lowering) fn group_tables(tag: &str) -> Vec<(String, Vec<St
 }
 
 /// A vector's preimage as the spec writes it, placeholders unresolved.
-pub(in crate::check::lowering) fn raw_preimage(tag: &str, name: &str) -> String {
+pub fn raw_preimage(tag: &str, name: &str) -> String {
     raw().preimages[&(tag.to_owned(), name.to_owned())].clone()
+}
+
+/// The digest of the recursion group `tag` publishes first naming `first`,
+/// recomputed from its members' preimages; `None` while a member needs an
+/// unavailable QSpec key.
+pub fn group_digest(tag: &str, first: &str) -> Option<String> {
+    let raw = raw();
+    let mut resolver = Resolver {
+        raw: &raw,
+        keys: BTreeMap::new(),
+        group_digests: BTreeMap::new(),
+    };
+    resolver.group_digest(tag, first)
 }

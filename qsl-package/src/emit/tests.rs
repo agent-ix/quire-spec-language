@@ -727,23 +727,20 @@ fn recursion_group_members_are_written_in_ordinal_order() {
     }
 }
 
-/// FR-092's G4-G6 group digest, read from the spec in this repository.
-fn fr_092_g4_to_g6_group_digest() -> &'static str {
-    include_str!("../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md")
-        .split("G4-G6, group digest `")
-        .nth(1)
-        .and_then(|rest| rest.split('`').next())
-        .expect("FR-092 states the G4-G6 group digest")
+/// FR-092's G4-G6 group digest, recomputed from the group's hand-written
+/// member preimages in the spec in this repository.
+fn fr_092_g4_to_g6_group_digest() -> String {
+    qsl_semantics::check::spec_vectors::group_digest("FR-092", "G4")
+        .expect("FR-092 states the G4-G6 group members")
 }
 
-/// FR-092's declared-node vector table row `id` (`D1`): its key, read from
-/// the spec in this repository.
-fn fr_092_vector_key(id: &str) -> &'static str {
-    include_str!("../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md")
-        .lines()
-        .find(|line| line.starts_with(&format!("| {id} |")))
-        .and_then(|row| row.split('`').nth(1))
-        .unwrap_or_else(|| panic!("FR-092 has a vector row {id}"))
+/// FR-092's declared-node vector `id` (`D1`): its key, recomputed from the
+/// vector's hand-written preimage in the spec in this repository.
+fn fr_092_vector_key(id: &str) -> String {
+    qsl_semantics::check::spec_vectors::vectors("FR-092")
+        .remove(id)
+        .unwrap_or_else(|| panic!("FR-092 has a vector {id}"))
+        .0
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
@@ -991,7 +988,7 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
             json!([{"role": "declaration", "ordinal": 0}]),
             "{name}"
         );
-        assert_eq!(exports.get(name).map(String::as_str), Some(digest));
+        assert_eq!(exports.get(name).map(String::as_str), Some(digest.as_str()));
     }
 }
 

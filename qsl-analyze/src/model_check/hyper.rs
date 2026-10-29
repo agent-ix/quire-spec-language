@@ -1268,6 +1268,7 @@ impl<'a> Run<'_, 'a> {
                 }),
                 None,
             ),
+            Halt::AutomatonKey(error) => return Err(HyperRefusal::Automaton(error).into()),
             Halt::Atom(stop) => return Err(atom_halt(stop)),
             Halt::Encoding(refusal) => return Err(ModelCheckRefusal::Encoding(refusal)),
             Halt::Fault(internal) => return Err(ModelCheckRefusal::Fault(internal)),
@@ -1368,6 +1369,7 @@ impl<'a> Run<'_, 'a> {
         group: &SymmetryGroup,
         cap: Option<usize>,
         totals: &Totals,
+        take_halt: impl FnOnce() -> Option<Halt>,
     ) -> Result<GraphExploration<HyperState, HyperTransition, HyperFinding>, ModelCheckRefusal>
     where
         P: TransitionSystem<
@@ -1376,7 +1378,7 @@ impl<'a> Run<'_, 'a> {
             Finding = HyperFinding,
         >,
     {
-        retain_reduced(
+        let retained = retain_reduced(
             product,
             group,
             None,
@@ -1384,13 +1386,16 @@ impl<'a> Run<'_, 'a> {
             IdentityLimits::default(),
             cap,
             || self.cancel.poll() && self.cancel.cause().is_some(),
-        )
-        .map_err(|error| {
-            ModelCheckRefusal::Encoding(qsl_eval::simulation::EncodingRefusal::of(
-                &error,
-                IdentityLimits::default(),
-            ))
-        })
+        );
+        match retained {
+            Ok(graph) => Ok(graph),
+            Err(error) => match take_halt() {
+                Some(Halt::AutomatonKey(error)) => Err(HyperRefusal::Automaton(error).into()),
+                _ => Err(ModelCheckRefusal::Encoding(
+                    qsl_eval::simulation::EncodingRefusal::of(&error, IdentityLimits::default()),
+                )),
+            },
+        }
     }
 
     /// Explore `instance`'s product. `Err(outcome)` is a run that ended
@@ -1413,9 +1418,15 @@ impl<'a> Run<'_, 'a> {
             SymmetryGroup::default()
         };
         let exploration = match &product {
-            Built::Universal(product) => self.retained(product, &group, cap, totals)?,
-            Built::Witness(product) => self.retained(product, &group, cap, totals)?,
-            Built::Projected(product) => self.retained(product, &group, cap, totals)?,
+            Built::Universal(product) => {
+                self.retained(product, &group, cap, totals, || product.take_halt())?
+            }
+            Built::Witness(product) => {
+                self.retained(product, &group, cap, totals, || product.take_halt())?
+            }
+            Built::Projected(product) => {
+                self.retained(product, &group, cap, totals, || product.take_halt())?
+            }
         };
         let transitions = match &exploration.outcome {
             Outcome::Exhaustive(stats) => stats.transitions,
