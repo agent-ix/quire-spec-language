@@ -568,16 +568,6 @@ pub(crate) fn select<'a>(
                         compensation.trigger.value_type.clone(),
                     )];
                     frame.extend(
-                        protocol_input(protocol)
-                            .into_iter()
-                            .map(|source| (source.name, source.value_type)),
-                    );
-                    frame.extend(
-                        protocol_captures(protocol)
-                            .into_iter()
-                            .map(|source| (source.name, source.value_type)),
-                    );
-                    frame.extend(
                         capture_entries(protocol, &compensation.registration_captures)
                             .into_iter()
                             .map(|source| (source.name, source.value_type)),

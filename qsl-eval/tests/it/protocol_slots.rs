@@ -14,6 +14,13 @@ use quire_semantic_value::checking::CheckingLimits;
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
+#[path = "../../../qsl-semantics/tests/support/child_composite.rs"]
+#[allow(
+    clippy::duplicate_mod,
+    reason = "the shared domain fixture is used by the QSL package tests too"
+)]
+mod compensation_model;
+
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
@@ -65,6 +72,97 @@ fn package() -> CheckedPackage {
         .check(CheckingLimits::default())
         .expect("the package checks"),
     )
+}
+
+fn compensation_package() -> CheckedPackage {
+    let model = serde_json::to_vec(&compensation_model::document())
+        .expect("the compensation model fixture serializes");
+    let package_input = qsl_semantics::model::intake::package_input([model.as_slice()]);
+    let digest = package_input
+        .keys()
+        .next()
+        .expect("the model fixture has one package");
+    let digest = qsl_semantics::model::key::hex(digest);
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         model M = {:?} version \"1\" digest \"sha256-jcs:{}\";\n\
+         protocol P using p over (input: M::Ledger) on origin {{\n\
+           role R on M::Ledger;\n\
+           compensate Refund for Main::Applied as (fwd: M::Money)\n\
+             by R on M::Ledger::pay using t clock \"refund-clock\" {{\n\
+             capture saved: M::Money = fwd;\n\
+             activate first (trigger: M::Money) when {{ trigger.amount_minor < saved.amount_minor }} {{\n\
+               capture activated: Boolean = trigger.amount_minor > 0;\n\
+             }}\n\
+             within [0,10]; attempts 1 of M::Money;\n\
+             retry (earlier: M::Money, later: M::Money) {{\n\
+               earlier.amount_minor < later.amount_minor and saved.amount_minor >= 0 and not activated\n\
+             }};\n\
+             commit never;\n\
+             recover (recovered: M::Money) {{ recovered.amount_minor = saved.amount_minor and not activated }};\n\
+           }}\n\
+           run sequence Main {{\n\
+             attempt Update by R on M::Ledger::pay contracts [] as (tried: M::Money) {{ true }};\n\
+             effect Applied of Update as (applied: M::Money) {{ true }};\n\
+           }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n",
+        compensation_model::PACKAGE,
+        digest
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("protocol-slots", "unit.native", "git", "1"),
+        "unit.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the compensation fixture");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the compensation unit");
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        &package_input,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("I1 admits the compensation model");
+    CheckedPackage::link(
+        PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            unit,
+            models,
+            Vec::new(),
+        )
+        .expect("the compensation unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the compensation unit checks"),
+    )
+}
+
+fn money(package: &CheckedPackage, amount: i64) -> Value {
+    let types = package.graph().scope().types();
+    let declaration = types
+        .composites()
+        .find(|composite| composite.name() == "M::Money")
+        .expect("the selected model declares Money")
+        .key();
+    types
+        .record(
+            declaration,
+            vec![
+                (
+                    "amount_minor",
+                    quire_exact::FieldValue::Present(Value::Integer(amount.into())),
+                ),
+                (
+                    "currency",
+                    quire_exact::FieldValue::Present(Value::Integer(978_i64.into())),
+                ),
+            ],
+        )
+        .expect("the money value has every required field")
 }
 
 #[test]
@@ -335,6 +433,166 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         evaluation.outcome,
         FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(true)))
+    ));
+}
+
+#[test]
+#[trace("TC-142", "FR-049-AC-9", "FR-390-AC-1", "FR-390-AC-2")]
+fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes() {
+    let package = compensation_package();
+    let keys = package
+        .graph()
+        .protocol_node_keys("P")
+        .expect("the protocol's emitted identity map");
+    let binder = |name: &str| {
+        keys.binders
+            .iter()
+            .find(|binder| binder.name == name)
+            .unwrap_or_else(|| panic!("the protocol emits binder {name}"))
+            .node
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let saved = match package
+        .evaluate_protocol_slot(
+            &ProtocolSlot {
+                node: keys.compensations[0],
+                member: "registration_captures".to_owned(),
+                index: Some(0),
+            },
+            &ProtocolSupply {
+                binders: vec![(binder("fwd"), SuppliedValue::Value(money(&package, 5)))],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("the registration capture initializer evaluates")
+    {
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)),
+            ..
+        }) => value,
+        other => panic!("the capture returns its frozen value: {other:?}"),
+    };
+    assert_eq!(
+        quire_exact::compare_keys(&saved, &money(&package, 5)),
+        Some(std::cmp::Ordering::Equal)
+    );
+
+    let trigger = package
+        .evaluate_protocol_slot(
+            &ProtocolSlot {
+                node: keys.compensations[0],
+                member: "trigger.guard".to_owned(),
+                index: None,
+            },
+            &ProtocolSupply {
+                binders: vec![
+                    (binder("trigger"), SuppliedValue::Value(money(&package, 3))),
+                    (binder("saved"), SuppliedValue::Value(saved.clone())),
+                ],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("the trigger guard evaluates over its exact sources");
+    assert!(matches!(
+        trigger,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
+    ));
+
+    let activation = package
+        .evaluate_protocol_slot(
+            &ProtocolSlot {
+                node: keys.compensations[0],
+                member: "activation_captures".to_owned(),
+                index: Some(0),
+            },
+            &ProtocolSupply {
+                binders: vec![(binder("trigger"), SuppliedValue::Value(money(&package, 3)))],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("the activation capture evaluates");
+    assert!(matches!(
+        activation,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
+    ));
+
+    let retry = package
+        .evaluate_protocol_slot(
+            &ProtocolSlot {
+                node: keys.compensations[0],
+                member: "retry.relation".to_owned(),
+                index: None,
+            },
+            &ProtocolSupply {
+                binders: vec![
+                    (binder("earlier"), SuppliedValue::Value(money(&package, 1))),
+                    (binder("later"), SuppliedValue::Value(money(&package, 2))),
+                    (binder("saved"), SuppliedValue::Value(saved.clone())),
+                    (
+                        binder("activated"),
+                        SuppliedValue::Value(Value::Boolean(false)),
+                    ),
+                ],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("the retry relation evaluates from supplied attempt and capture values");
+    assert!(matches!(
+        retry,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
+    ));
+
+    let recovery = package
+        .evaluate_protocol_slot(
+            &ProtocolSlot {
+                node: keys.compensations[0],
+                member: "recovery.predicate".to_owned(),
+                index: None,
+            },
+            &ProtocolSupply {
+                binders: vec![
+                    (
+                        binder("recovered"),
+                        SuppliedValue::Value(money(&package, 5)),
+                    ),
+                    (binder("saved"), SuppliedValue::Value(saved)),
+                    (
+                        binder("activated"),
+                        SuppliedValue::Value(Value::Boolean(false)),
+                    ),
+                ],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("the recovery predicate evaluates from its supplied capture");
+    assert!(matches!(
+        recovery,
+        ProtocolSlotEvaluation::Evaluated(quire_eval::Evaluation {
+            outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                true
+            ))),
+            ..
+        })
     ));
 }
 
