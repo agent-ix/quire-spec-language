@@ -101,7 +101,7 @@ impl Steps {
         let mut counted = Vec::with_capacity(size);
         let mut total = 0_i128;
         for index in 0..len {
-            meter.charge(Charge::new(ChargePoint::GraphExpand))?;
+            meter.charge(Charge::new(ChargePoint::TemporalVisit))?;
             total += i128::from(index > 0 && counts(index));
             counted.push(total);
         }

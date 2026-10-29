@@ -13,6 +13,7 @@ mod runtime_test_setup;
 pub mod checking;
 pub mod command;
 pub mod complete;
+pub mod emit_checked_v2;
 pub mod formal_source;
 pub mod linking;
 pub mod located_json;

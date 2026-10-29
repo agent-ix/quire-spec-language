@@ -86,7 +86,7 @@ the printed script.
     `commitB` query and solve it for each of the two pre-states; encode a row
     with one application and a row with none.
 27. Request the refinement queries of FR-315-AC-55's refusal cases and read
-    each refusal's code, locus and FR-314 `Unencodable` part.
+    each refusal's code, locus and FR-314 `Unencodable` part, and for the `Initial` refusal of case (6) FR-314's `QueryMismatch` at `Base`.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 

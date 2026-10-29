@@ -16,12 +16,12 @@ Scope: FR-351-AC-3, FR-351-AC-4.
 
 ## Test Procedure
 
-1. Take TC-877's corpus and set its `results` member to record `passed` for `CAP-B`'s failing vector; run.
+1. Take TC-877's corpus and add a recorded `passed` result for `CAP-B`'s failing vector to its `results` member; run.
 2. Run TC-877's corpus scoped to `CAP-A` and `CAP-E`.
 3. Run it scoped to `CAP-Z`, which the corpus does not list.
 4. Repeat step 2 with `CAP-A` supplied twice; observe vector invocation
    counts through the runner's subject boundary as well as the report.
-5. Explicitly select only the monitor-only `CAP-F`, with recorded passing
+5. Explicitly select only the monitor-only `CAP-F`, with a recorded passing
    results for its vectors.
 
 Tag the tests `#[trace("TC-878", "FR-351-AC-n")]`.

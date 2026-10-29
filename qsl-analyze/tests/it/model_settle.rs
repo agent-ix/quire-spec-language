@@ -930,8 +930,8 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     assert_eq!(
         stale.value,
         TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: elsewhere,
-            recompiled: case.package_id,
+            requested: qsl_replay::StaleIdentity::Package(elsewhere),
+            recompiled: qsl_replay::StaleIdentity::Package(case.package_id),
         })
     );
 

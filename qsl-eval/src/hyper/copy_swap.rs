@@ -181,10 +181,8 @@ impl HyperProduct<'_, '_> {
                 return Err(self.fault("a-self-composition-state-has-a-self-composition-property"))
             }
         };
-        let state = HyperState {
-            components,
-            property,
-        };
+        let property_key = self.property_key(&property);
+        let state = HyperState::new(components, property).with_property_key(property_key);
         let key = self.key_bytes(&state)?;
         Ok(member.after(generator, state, key))
     }
@@ -248,7 +246,7 @@ impl HyperProduct<'_, '_> {
     fn key_bytes(&self, state: &HyperState) -> Result<Vec<u8>, ExpansionStop> {
         let identity = IdentityLimits::default();
         quire_canonical::to_vec(
-            &HyperKey::of(&self.joint.systems, state, &self.automaton.borrow()),
+            &HyperKey::of(&self.joint.systems, state, Some(&self.automaton.borrow())),
             quire_canonical::Limits::new(identity.input_bytes),
         )
         .map_err(|error| {

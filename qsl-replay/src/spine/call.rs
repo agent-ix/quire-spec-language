@@ -884,6 +884,12 @@ pub(crate) fn convert_call_failure(failure: quire_eval::CallFailure) -> Box<RunR
             "call",
             "spine-run-supplies-admitted-name-and-arity",
         ))),
+        // The spine's function call path supplies a checked name/argument
+        // vector and does not select a protocol slot or binder map.
+        CallFailure::Admission(_) => Box::new(RunRefusal::Fault(InternalFault::new(
+            "call",
+            "spine-function-call-has-no-protocol-slot-admission",
+        ))),
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
         // `run` uses the checked interpreter, not a registered host body;
         // the public application facade returns body failures unchanged.

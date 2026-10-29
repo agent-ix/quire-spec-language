@@ -768,6 +768,7 @@ mod tests {
             item,
             instance: 0,
             over: None,
+            model_instance: None,
             predicates: vec![(PredicateRole::Target, None)],
         }
     }

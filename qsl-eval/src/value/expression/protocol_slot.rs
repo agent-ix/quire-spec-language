@@ -8,6 +8,8 @@ use quire_semantic_value::location::Location;
 
 use qsl_semantics::model::observation::Observation;
 
+pub(crate) mod resolve;
+
 /// Select one expression member of an emitted protocol node (FR-390).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolSlot {
@@ -53,4 +55,45 @@ pub enum ProtocolSlotEvaluation {
         /// The checked expression read that encountered the binder.
         location: Location,
     },
+}
+
+/// Reference values nested in one supplied aggregate, in deterministic
+/// depth-first order. The explicit worklist keeps admission independent of
+/// the value's nesting depth.
+pub(crate) fn references(value: &Value) -> Vec<quire_exact::ObjectReference> {
+    let mut references = Vec::new();
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Reference(reference) => references.push(reference.clone()),
+            Value::Option(option) => pending.extend(option.payload()),
+            Value::Composite(composite) => {
+                pending.extend(
+                    composite
+                        .slots()
+                        .iter()
+                        .rev()
+                        .filter_map(|slot| match slot {
+                            quire_exact::FieldValue::Present(value) => Some(value),
+                            quire_exact::FieldValue::Absent | quire_exact::FieldValue::Null => None,
+                        }),
+                );
+            }
+            Value::Collection(collection) => pending.extend(collection.elements().iter().rev()),
+            Value::Union(union) => pending.extend(union.payload().iter().rev()),
+            Value::Boolean(_)
+            | Value::Integer(_)
+            | Value::Rational(_)
+            | Value::Decimal(_)
+            | Value::Float(_)
+            | Value::Quantity(_)
+            | Value::String(_)
+            | Value::Text(_)
+            | Value::Enum(_)
+            | Value::Population(_)
+            | Value::Uuid(_)
+            | Value::Timestamp(_) => {}
+        }
+    }
+    references
 }

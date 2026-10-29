@@ -12,21 +12,19 @@ relationships:
 
 ## Description
 
-Verify that the runner runs each vector through its subject's public entry point and compares the result with the expected disposition, including the code and cause of a refusal.
+Verify QSL's corpus adapter, dispatch and typed-result settlement through the public entry points. QSpec FR-336 owns the corpus schema, input encodings and expected-result vocabulary; this test uses its contract through a test helper and does not maintain a second schema or vector definition.
 
 Scope: FR-350-AC-1, FR-350-AC-2, FR-350-AC-8, FR-350-AC-9, FR-350-AC-10.
 
 ## Test Procedure
 
-Build a fixture corpus in the test's temporary directory in the QSpec FR-336 vector shape, holding:
+1. Use the shared test helper and QSpec FR-336 contract to prepare QSL-applicable positive vectors for compile, run with object context, replay and format. Include call inputs that exercise scalar and object-context arguments, and a replay input whose byte provisions are available to the vector.
+2. Include a refusal vector for an ill-typed unit operation, one copy whose expected refusal differs from QSL's actual refusal, and one expected refusal over source QSL admits.
+3. Run the qualification entry point over this corpus and inspect each per-vector outcome and the public-operation invocation records.
 
-1. a positive compile vector whose expected disposition is the checked package identity of a two-function unit; run vectors with one `source`, a positional `call` file exercising Boolean, Integer, Reference and named Population values and all ten accounting counters, plus a `population` FR-106 snapshot with named object and population fixtures; a `replay` vector with a `replay-request` file containing every FR-071 `ReplayRequestWire` field and byte-provision rows pointing by `bytes_path` to listed sibling `bytes` files; a `format` vector with its expected bytes;
-2. a refusal vector whose source adds a `Meter` to a `Second` and which expects `ill_typed`/`unit-mismatch`; the same vector expecting `ill_typed`/`type-mismatch`; a refusal vector expecting `ill_typed`/`type-mismatch` over source QSL admits.
-
-Run the runner over the corpus. Tag its tests
-`#[trace("TC-875", "FR-350-AC-1", "FR-350-AC-2", "FR-350-AC-8", "FR-350-AC-9", "FR-350-AC-10", "FR-336-AC-7")]`.
+Tag the tests `#[trace("TC-875", "FR-350-AC-1", "FR-350-AC-2", "FR-350-AC-8", "FR-350-AC-9", "FR-350-AC-10", "QSpec-FR-336-AC-4", "QSpec-FR-336-AC-7", "QSpec-FR-336-AC-8")]`.
 
 ## Expected Results
 
-- Step 1: each positive outcome is `passed`. Positional call argument `i` maps to the selected function's formal parameter `i` and its tagged value maps to the typed FR-100 `Call`; a short array exercises the API's unbound-parameter result, and a value beyond the formal list is an adapter refusal. Each named Population resolves only to its actual FR-084/FR-089 admitted binding; native-run/1 remains without a Population argument wire. Replay's same-named request fields map to FR-071 `ReplayRequestWire`; every `bytes_path` is relative to the replay-request directory, matches exactly one listed sibling `bytes` path, and supplies raw bytes for its digest record. The typed request has no filesystem path and reaches FR-098. Each result equals the result of the corresponding existing public entry point, and replay agreement is represented by FR-072.
+- Step 1: each positive vector is `passed` by the corresponding public operation. The run operation receives the typed `Call` and the object context admitted for that vector; replay reaches FR-098 with its supplied bytes and settles under FR-072. No vector is routed through an internal operation that its caller cannot reach.
 - Step 2: `passed`; `failed` holding expected `ill_typed`/`type-mismatch` and actual `ill_typed`/`unit-mismatch`; `failed` holding the expected refusal and the actual success.

@@ -259,6 +259,34 @@ prints the checked package as `quire.checked-package/v2` JSON:
 target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
 ```
 
+**Emit package bytes from a source file.** `compile` needs a request file with
+source digests. For a downstream reader that wants the bytes of one `1-draft`
+source, the `emit_checked_v2` example takes the files directly and calls the
+same producer (`qsl_replay::compile_package`), so the bytes follow the
+producer and nothing is frozen. Pass each domain package document the
+source's `model` declarations select with `--model`, and each imported library
+as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
+Every failure (usage, unreadable file, write failure, refusal) writes no
+bytes, prints a diagnostic on stderr that tells them apart, and exits with the
+refusal category's code 20, as `quire-spec` does; a producer refusal whose
+catalog code is in another category (for example incomplete) exits with that
+category's code (22). The emitted bytes embed the source path exactly as given
+(the `source:<path>` label feeds the source digest labels and the
+`package_id`), so pass an identical, fixed, cwd-relative path on every
+invocation to get stable bytes. The source is read under the source-size ceiling (a longer source is the
+producer's size refusal, exit 22, with its `--limit` hint removed because this
+tool has no such flag); a `--model` or `--library` file over the ceiling is an
+explicit refusal naming the file (exit 20), never truncated.
+
+```sh
+cargo run --locked --example emit_checked_v2 -- \
+  --model tests/fixtures/spine-model.semantic-ir.json \
+  tests/fixtures/spine-model.native > package.json
+```
+
+The package is read back with the same domain documents as evidence
+(`CheckedPackageEvidence::insert_domain_package_document`).
+
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
 and incomplete runs. `run` can also evaluate one pure function;

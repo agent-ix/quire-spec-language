@@ -1711,26 +1711,10 @@ fn unordered_and_not_unique_selects_bag() {
 // Enums and predicates (TC-481)
 // ----------------------------------------------------------------------
 
-/// FR-091's vector table row `id` (`N1`, `Q7`): its digest, the SHA-256 of
-/// the RFC 8785 preimage bytes, read from the spec in this repository at run
-/// time and never copied into the tests.
-fn fr_091_vector(id: &str) -> &'static str {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md"
-    );
-    let spec = std::fs::read_to_string(path).expect("FR-091 is in the repository");
-    let row = spec
-        .lines()
-        .find(|line| line.starts_with(&format!("| {id} |")))
-        .unwrap_or_else(|| panic!("FR-091 has a vector row {id}"));
-    let digest = row
-        .split('`')
-        .skip(1)
-        .step_by(2)
-        .find(|span| span.len() == 64 && span.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .unwrap_or_else(|| panic!("row {id} carries a digest"));
-    Box::leak(digest.to_owned().into_boxed_str())
+/// FR-091's vector `id` (`N1`, `Q7`): its key, recomputed from the preimage
+/// content the spec states for it and never recorded.
+fn fr_091_vector(id: &str) -> String {
+    crate::check::fr091_vectors::key(id)
 }
 
 const STATUS: &str = "ordered enum Status { READY, DONE }\n";
@@ -2042,10 +2026,10 @@ fn predicate_and_enum_nodes_lower_to_their_fr_092_forms() {
             .find(|node| node.key().to_string() == key)
             .unwrap_or_else(|| panic!("the checked graph holds {key}"))
     };
-    let declaration = by_key(fr_091_vector("N1"));
+    let declaration = by_key(&fr_091_vector("N1"));
     assert_eq!(declaration.node_tag(), NodeTag::ScalarType);
     assert_eq!(declaration.semantic_form(), "enum");
-    let member = by_key(fr_091_vector("N2"));
+    let member = by_key(&fr_091_vector("N2"));
     assert_eq!(member.node_tag(), NodeTag::Value);
     assert_eq!(member.semantic_form(), "enum_value");
 }
@@ -2084,7 +2068,8 @@ fn the_preimage_constructors_apply_the_reader_checks() {
 
 /// FR-091 vectors Q1 to Q10, from the spec's table (see [`fr_091_vector`]).
 static Q: std::sync::LazyLock<[&'static str; 10]> = std::sync::LazyLock::new(|| {
-    ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"].map(fr_091_vector)
+    ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"]
+        .map(|id| &*Box::leak(fr_091_vector(id).into_boxed_str()))
 });
 
 const Q_SOURCES: &str = "dimension Length;\n\
