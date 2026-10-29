@@ -110,7 +110,7 @@ binding receipt when CG consumes the serialized result.
 - If the unit is an I3 extracted source whose declared language is not
   `ix:native`, then the entry SHALL report stage `compile`, category
   `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing.
-- If an expected `package_id` is given and the recompiled one differs (lock content: identity, version, selections, source labels), then
+- If an expected `package_id` is given and the recompiled one differs), then
   the entry SHALL report stage `compile`, category `refusal`,
   `stale_dependency`, naming both identities, with no admission or
   evaluation (FR-098's stale package rule).

@@ -35,7 +35,7 @@ Implement the reviewed flat Snapshot/Invocation input artifacts and exact emitte
 
 ## Deliverables
 
-Public input constructors/references and standard Rust errors; complete emitted bytes/digests; independent structural/budget tests and measured evidence. No external reader, portable authority or runtime-validity claim.
+Public input constructors/references and standard Rust errors; independent structural/budget tests and measured evidence. No external reader, portable authority or runtime-validity claim.
 
 ## Notes
 

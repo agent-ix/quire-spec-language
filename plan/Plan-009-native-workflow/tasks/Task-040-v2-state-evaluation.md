@@ -37,5 +37,4 @@ inputs, deterministic accounting and fresh retries. Formatting, strict Clippy,
 the focused evaluator suites and the full default- and all-feature Cargo suites
 pass with the isolated `target-codex-backends` directory. SR-432 records the
 passing Rust review after both findings were fixed, and SR-433 records the
-passing targeted gap analysis. Issue closure and the dependent quire-protocol
-pin follow the admin merge.
+passing targeted gap analysis. Issue closure follows the admin merge.

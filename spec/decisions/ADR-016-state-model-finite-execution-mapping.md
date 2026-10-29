@@ -194,7 +194,7 @@ S3 admits, S6a completes with the same truth value. With different
 configured values, S6a may stop at its own ceiling, and that stop is a
 resource refusal, never a different truth value. A generalization cycle or
 an unknown supertype never reaches S6a: S6a re-normalizes each domain
-package from provision bytes keyed by the `model_selections`
+package from provision bytes keyed by the model
 identity the package was checked against (FR-106), and normalization refuses
 both.
 
@@ -211,7 +211,7 @@ refusal cites the row of ADR-012 §15.6 or FR-098 that fixes its code.
 
 | ID | Identity | Minted by | Execute (S6a, simulation) | Proof handoff (E5 to E8) | Replay (E9) | Equality | Oracle |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ID-1 | Original declaration: `DeclarationKey{package, node}` | the domain package; admitted at I1 (ADR-013 O-03) | Carried in `StateObject.type_identity`, the `semantic` map keys and FR-120's declaration identity text | Reached from a `NodeKey` only through the model correspondence (ID-3) | Re-admitted from the QC-1 byte provision; a re-admitted lock content that differs from the `model_selections` row refuses `stale_dependency`/`content-mismatch` (ADR-013 O-01; QSpec FR-154, FR-272) | declared | FR-081 tests; TC-469 step 6, one package identity across every case (`config_version_spine.rs:806`) |
+| ID-1 | Original declaration: `DeclarationKey{package, node}` | the domain package; admitted at I1 (ADR-013 O-03) | Carried in `StateObject.type_identity`, the `semantic` map keys and FR-120's declaration identity text | Reached from a `NodeKey` only through the model correspondence (ID-3) | Re-admitted from the QC-1 byte provision; a re-admitted document that changed is caught by the `package_id` recompute (QSpec FR-154-AC-38; ADR-013 O-01) | declared | FR-081 tests; TC-469 step 6, one package identity across every case (`config_version_spine.rs:806`) |
 | ID-2 | Effective declaration: `EffectiveId` | `model` normalization only (O-05) | The type component of every `ObjectReference`; FR-120 encodes it as `object_type` | Absent from v2 (O-05) | Recomputed by re-normalization; a reference whose type is no `EffectiveId` of the bound universe refuses at FR-106 admission, `invalid_runtime_input` (ADR-012 §15.6) | normalized | FR-081 tests; FR-120-AC-4 (G-4) |
 | ID-3 | Checked node of a model declaration: `NodeKey` over `ModelOwner` | `check` only (O-04, C-02), recorded in `ModelCorrespondence` | S6a selects clauses, anchors and frames by `NodeKey` | Written as `WireNodeId` | `WireNodeId` → `NodeKey` by lookup in the recompiled package (O-04) | normalized | TC-417 to TC-419 (FR-094) |
 | ID-4 | Reference: `ObjectReference{UniverseId, EffectiveId, ObjectId}` | `model` at admission (O-05) | Keys `ObjectEnvironment`; QSpec FR-181 triple in state keys | Only as a witness value decoded by `Witness::decode` (C-11) | Admitted again from the replay input; a foreign universe refuses `foreign_reference` (FR-096) | declared over the triple | FR-084 tests (`model_population.rs`) |

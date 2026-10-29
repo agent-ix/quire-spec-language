@@ -20,10 +20,9 @@ FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
    (`quire.meaning.model.object-type/v1`) with a field member, a field member
    typed by an object type, an operation member and a relationship member with a
    declared name; one value type; one variant type; and one population.
-   Pass the lifted bytes and a ModelSelection naming their identity and version to the intake seam.
+   Pass the lifted bytes and a ModelSelection naming their identity to the intake seam.
 2. Offer, one at a time: a package input with no bytes under the selected
-   identity; bytes whose own identity differs from the selection; bytes
-   whose own `version` differs from the selection's.
+   identity; bytes whose own identity differs from the selection.
 3. Offer bytes `agent-ix-semantic-ir` refuses. Then parse documents carrying
    a lone high surrogate escape, a lone low surrogate escape, a reversed pair,
    a lone surrogate in a member name. Parse documents carrying `1e400`,
@@ -31,7 +30,7 @@ FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
    admission. Parse and offer `{"a":1,"a":2,"n":1e400}`,
    `[1e400`, `{"a":1,"a":2,"n":1e-400}` and `{"x":[1e-400,1e400]}`, and
    `1` and 400 zeros then `.5` and `e-1`. Offer a lone-surrogate
-   document, and `not json` with an empty identity and version. Offer a document over `intake.input_bytes`.
+   document, and `not json` with an empty identity. Offer a document over `intake.input_bytes`.
    Parse documents carrying, at `/package/count`, `18446744073709551616`,
    `-18446744073709551616`, `1e20`, `9.007199254740993e15`,
    `9007199254740993` and `-9007199254740993`; one carrying `1e20` at
@@ -81,8 +80,7 @@ FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
   one `scalar` naming the value type and its native value type; one `enum` with
   its `variant` records; and one `population`.
 - Step 2 refuses with `missing_import`/`missing-selection`,
-  `invalid_model_binding`/`wrong-model-selection` and
-  `stale_dependency`/`content-mismatch` (naming both versions) respectively,
+  `invalid_model_binding`/`wrong-model-selection` respectively,
   with no declaration.
 - Step 3 admits no declaration and retains every reader diagnostic with its IR
   node, artifact id and span. The parse refuses each surrogate case. It refuses `1e400` and `-1e400`

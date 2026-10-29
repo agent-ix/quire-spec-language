@@ -46,7 +46,7 @@ function's `QualifiedName`, ADR-013 O-11 and the OQ-5 ruling; a frame's
 clause's own declared `QualifiedName`), never by a bare string. This requirement builds
 the request type and its round trip only; it does not build the executor
 that consumes it (ADR-013 C-13, TK-01 executor entry, is #243's), and it
-performs no recompilation, no lock-content comparison, and no function
+performs no recompilation and no function
 call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 
 The FR-170 `ModelGraph` source is the sole exception: it carries no generic
@@ -115,9 +115,7 @@ key or request `over` member on that arm.
 - Each package-reference source entry SHALL carry FR-001's two source labels
   (authority and identity) and no digest, so the executor (FR-098) recompiles
   a source under exactly the labels the proving run used (ADR-013 §7 S-4b).
-  The executor compares the recompiled package's lock content (identity,
-  version, selections and source labels) with the request's package reference
-  (FR-098); this requirement checks no source byte.
+  This requirement checks no source byte.
 - The request decoder SHALL NOT read the bytes of any byte-provision entry:
   every entry is keyed by labels or an identity. A domain package document is
   read by intake (FR-056) when the executor recompiles, and a refusal of that
@@ -246,7 +244,7 @@ key or request `over` member on that arm.
   parallel name type.
 - **Downstream**: agent-ix/quire-contract-codegen#50 builds this request
   from the IR packet (ADR-013 C-12); the QSL replay executor (#243, TK-01,
-  ADR-013 C-13) consumes it to recompile, compare the recompiled package's lock content with the request's package reference, and select the function — that recompilation-time
-  staleness check, and the function call itself, are explicitly out of this
+  ADR-013 C-13) consumes it to recompile and select the function; recompilation and the
+  function call itself are explicitly out of this
   requirement's scope. Its QSpec FR-323 `byte_provision` entries
   are keyed by labels or document identity.

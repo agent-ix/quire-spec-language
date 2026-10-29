@@ -166,7 +166,7 @@ FR-243 basis, O-16 category and method.
 | V-7 | `Stopped(Cancelled, None)`; SMT `Cancelled{source}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
 | — | SMT `BackendFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | — | SMT `EncodingRefused` carrying `SmtEncodingRefusal::Fault`, or `HyperProductIdentity::of(item)` returning `Fault` (FR-315 "Internal faults") | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
-| V-7 | SMT `TimedOut` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)`, written `timed-out` (FR-293, QSpec FR-331) | incomplete |
+| V-7 | SMT `TimedOut` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)`, written `timed-out` (QSpec FR-331) | incomplete |
 | V-7 | SMT `EncodingRefused` with `too-large`, a request encoding limit reached (FR-315 "Size limits") | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` naming the measure's limit and its `smt_encoding.*` setting | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace; SMT `EncodingRefused` with `hyper-body`, a field sort or an out-of-fragment construct | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
@@ -266,7 +266,7 @@ FR-243 basis, O-16 category and method.
        A host that enforces a `deadline_ms` overrun on the backend enforces
        the backend's own wall clock, which is this rule, as QSpec FR-363
        settles that overrun `timed-out`. It settles V-7
-       `Incomplete(TimedOut)` (FR-293), QSpec FR-331's `timed-out`, never
+       `Incomplete(TimedOut)`, QSpec FR-331's `timed-out`, never
        `LimitReached` or `InductionNotClosed`;
     3. `LimitStopped{limit}`, when a `ModelCheckLimit` the request names,
        and that bounds the SMT run, stopped the solver. It settles V-7

@@ -50,11 +50,10 @@ declarations come from one lowering of the same artifacts.
 ## Inputs
 
 - One ModelSelection (Quire specification FR-321): the source `model`
-  declaration's domain package identity, and the version the lock's
-  `model_selections` row records for it. Each selection names exactly one
-  domain package.
-- The package input: a map from domain package identity (and version) to
-  domain package bytes.
+  declaration's domain package identity. The selection carries no
+  version; the model is recorded by its `model_root` node. Each selection names exactly one domain package.
+- The package input: a map from domain package identity to domain package
+  bytes.
 - The selected `quire.model.complete/v1` definition and the Quire meaning ids
   of Quire specification FR-208.
 - `ModelNormalizationLimitsV1` of `quire.value.accounting/v1`.
@@ -96,7 +95,7 @@ I-JSON, RFC 7493). A package that does not parse is refused
 `invalid_model_binding`/`malformed-declaration` with no declaration admitted,
 and no package identity is read from it. No digest of the document is
 computed, selected, compared or recorded: the package is selected by identity
-and version alone (FR-154).
+alone (FR-154).
 
 A number with no finite IEEE 754 double value (such as `1e400`) is refused by
 the reader with its RFC 6901 pointer and exact source text, and the compiler
@@ -181,12 +180,9 @@ The compiler SHALL apply FR-154's admission checks in FR-154's order before
 reading any declaration: `missing_import`/`missing-selection` (no package is
 supplied for the selection's identity) and
 `invalid_model_binding`/`wrong-model-selection` (the package's own identity
-differs from the selection's). Staleness is decided by version against the
-lock row alone (QSpec quire-specification#510): a supplied package whose
-`version` differs from the row's version is refused
-`stale_dependency`/`content-mismatch` naming both versions. The lock row
-carries no digest, so there is no comparison of the document's content with
-anything: a package edited without a new `version` is not detected.
+differs from the selection's). The compiler compares no version and no
+document content: a changed document is caught by the `package_id` recompute
+(QSpec FR-154-AC-38).
 
 If `agent-ix-semantic-ir` refuses the selected bytes, then the compiler SHALL end
 intake with no declaration and SHALL retain every reader diagnostic with its IR
@@ -591,7 +587,7 @@ origin, or a package built without the reader. The refusal keeps the origin of
 the node it names, so an operation an event type declares is located at the
 operation and a scalar type's bad `constraints` at the scalar type. Two
 refusals carry no declaration origin by design, because no IR node exists to
-name: a model selection with an empty identity or version (the selection is a
+name: a model selection with an empty identity (the selection is a
 field of the package reference, not a declaration) and a declaration key with an
 empty package or node component (the key names no node). The refusals intake
 raises about the package document itself, at node `$`, likewise have no
@@ -906,7 +902,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-056-AC-1 | Lifted bytes of a valid domain package passed to the intake seam are read by `agent-ix-semantic-ir` and yield exactly one original declaration per IR node, ascending by (domain package identity, IR node identity), each with its bound meaning, export records and artifact id and span. | Test (TC-145) |
-| FR-056-AC-2 | A missing package and a package whose identity differs each refuse with FR-154's named cause, in FR-154's order, before any declaration (a package whose `version` differs from the lock row's refuses `stale_dependency`/`content-mismatch` naming both versions); a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name. It refuses `1e400` and `-1e400` `noncanonical_wire`/`inexact-integer` and `1e-400` `noncanonical_wire`/`inexact-number`, each with `document_pointer` naming it, at any depth, through intake and through admission, never `stale_dependency`. A lone-surrogate document, and unparseable bytes, refuse `invalid_model_binding`/`malformed-declaration`; bytes intake refuses at one of its limits refuse `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound. | Test (TC-145) |
+| FR-056-AC-2 | A missing package and a package whose identity differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name. It refuses `1e400` and `-1e400` `noncanonical_wire`/`inexact-integer` and `1e-400` `noncanonical_wire`/`inexact-number`, each with `document_pointer` naming it, at any depth, through intake and through admission, never `stale_dependency`. A lone-surrogate document, and unparseable bytes, refuse `invalid_model_binding`/`malformed-declaration`; bytes intake refuses at one of its limits refuse `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound. | Test (TC-145) |
 | FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration`, reported in FR-154's declaration refusal order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
 | FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations; the valid artifact id `sys-pump` is admitted with type key `ix://<package identity>/sys-pump`, while an id outside FR-154's rule refuses `invalid_model_binding`/`malformed-declaration` with node, artifact and span, a reference to that node reports no `missing_declaration`/`missing-name`, and a second failing check on that node reports after the id refusal (FR-154-AC-8). | Test (TC-145) |
 | FR-056-AC-5 | Each relationship member uses FR-154's canonical relationship-slot identity and yields one `relationship` export with its name and span; a relationship member missing either identity or source span refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |

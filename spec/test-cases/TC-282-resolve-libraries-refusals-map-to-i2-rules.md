@@ -14,56 +14,52 @@ Verify the complete, honest classification FR-087's owner ruling on
 QSL-158 (2026-09-21) states (Description, item 3, owner ruling (e)): every
 `LibraryRefusal` variant `resolve_libraries` (relocated into `library`) can
 return classifies to exactly one of: an ADR-011 I2 "Package import graph
-rule" (`:203-210`), the §4 binding's condition 2 (lock-content
+rule" (`:203-210`), the §4 binding's condition 2 (preimage
 admission, `verify_package`), or E3 name resolution — except
 `DuplicatePackageId`, the one stated exception, which lies outside all
 three. Scope: FR-087-AC-12.
 
 ## Test Procedure
 
-1. Enumerate every variant `LibraryRefusal` defines today: `PackageIdMismatch`,
-   `InvalidPreimage`, `UndeclaredExport`, `InvalidQualifier`,
+1. Enumerate every variant `LibraryRefusal` defines: `InvalidPreimage`,
+   `UndeclaredExport`, `InvalidQualifier`,
    `ConflictingDefinition`, `ImportCycle`, `MissingImport`, and
-   `DuplicatePackageId` — eight variants, plus any variant its refusal type
-   gains after relocation.
+   `DuplicatePackageId` — seven variants, plus any variant its refusal type
+   gains after relocation. (`PackageIdMismatch` is retired with the
+   lock-content comparison.)
 2. For each variant, read the code path that raises it and classify it
    against this fixed table (not the earlier, incomplete "one for one with
    an I2 rule" claim):
 
    | Variant | Classification | Why (read from the code) |
    | --- | --- | --- |
-   | `PackageIdMismatch` | §4 condition 2 | Raised inside `verify_package`'s own lock-content recomputation and equality comparison — condition 2 itself. |
-   | `InvalidPreimage` | Per-package admission within `verify_package` | Raised after condition 2's comparison already completed (the recompiled lock content equals the declared lock content); validates the declared lock content's own structure. Grouped with condition 2 only because the same reused `verify_package` call raises it, not because condition 2 depends on it. |
-   | `UndeclaredExport` | Per-package admission within `verify_package` | Raised by the same `verify_package` call, after the structure check, comparing the package's own declared exports against its own projected declarations. Per-package admission, not an import-graph or name question, and not part of condition 2's comparison either. |
+   | `InvalidPreimage` | §4 condition 2 (preimage admission) | Raised inside `verify_package`; validates the preimage's own structure. |
+   | `UndeclaredExport` | §4 condition 2 (preimage admission) | Raised by the same `verify_package` call, after the structure check, comparing the package's own declared exports against its own projected declarations. Per-package admission, not an import-graph or name question. |
    | `InvalidQualifier` | E3 name resolution | Validates an `as` qualifier used only for binding `a::Name` references; moves conceptually with `resolve_name` to E3. |
    | `ConflictingDefinition` | I2 rule 2 | Two supplied packages claim one library identity, so the identity has no one selection — I2's second rule. |
    | `ImportCycle` | I2 rule 3 | An import-graph cycle — I2's third rule exactly. |
    | `MissingImport` | I2 rule 1 | No supplied package matches the import's identity at all — "an import is missing," I2's first rule. |
-   | `DuplicatePackageId` | Named exception (none of the three) | Raised only after both supplied packages have already, independently, passed `verify_package`'s comparison — so each one's declared lock content already equals its recompiled lock content. Two packages sharing one package identity and version therefore share equal lock content; they can only still differ in the `LibraryPackage` fields the lock excludes (`imports`, `exports`) — conflicting metadata over identical identity content. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is an identity precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
+   | `DuplicatePackageId` | Named exception (none of the three) | Raised only after both supplied packages have already, independently, passed `verify_package`'s admission. Two packages sharing one package identity can only still differ in the `LibraryPackage` fields the preimage excludes (`imports`, `exports`) — conflicting metadata over identical identity content. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is an identity precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
 
 3. Confirm every variant in step 1 receives exactly the classification step
    2's table states; a variant classified to a different bucket than the
    table (for example `DuplicatePackageId` mapped to I2 rule 2 instead of
    the named exception), or left unclassified, fails this step.
-4. Construct one concrete fixture per row in step 2's table (eight
+4. Construct one concrete fixture per row in step 2's table (seven
    fixtures, one per row, each varying exactly the one fault its row
-   names: a package whose declared lock content does not equal the lock content
-   recompiled from its own declarations, all else valid, for
-   `PackageIdMismatch` — `resolve_libraries` has no schema-version check to
-   combine this with, so the fixture is a lock-content mismatch only, not a
-   second, unrelated fault; a structurally malformed lock for
+   names: a structurally malformed preimage for
    `InvalidPreimage`; a package whose declared export matches no
    declaration for `UndeclaredExport`; a malformed `as` qualifier for
    `InvalidQualifier`; two supplied packages of one identity for
    `ConflictingDefinition`; a two-package import cycle for `ImportCycle`; no supplied package under the
    imported identity at all for `MissingImport`; and two supplied packages
-   sharing one package identity and version with equal lock content (each independently passing its own comparison) but
+   sharing one package identity (each independently passing its own admission) but
    differing in `imports` or `exports` for `DuplicatePackageId`)
    and
    confirm `resolve_libraries` refuses each with exactly the variant its
    row names.
 5. Confirm this criterion does not require a new refusal variant:
-   `resolve_libraries`' existing eight-variant refusal set, unchanged in
+   `resolve_libraries`' existing seven-variant refusal set, unchanged in
    shape by this requirement (Description, item 3, owner ruling (a)), is
    sufficient to cover every classification, including the
    `DuplicatePackageId` exception.
@@ -74,7 +70,7 @@ three. Scope: FR-087-AC-12.
   2's table states; an unclassified variant, or one classified to the
   wrong bucket (including forcing `DuplicatePackageId` into an I2 rule),
   fails this step and names the variant.
-- Step 4: each of the eight fixtures refuses with exactly its table-predicted variant; a different
+- Step 4: each of the seven fixtures refuses with exactly its table-predicted variant; a different
   variant, or an admission, fails this step.
 - Step 5: no new refusal variant is required; a passing implementation
   needs no change to `LibraryRefusal`'s variant set beyond relocation.

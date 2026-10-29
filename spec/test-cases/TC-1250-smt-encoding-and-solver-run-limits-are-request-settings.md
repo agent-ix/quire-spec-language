@@ -61,7 +61,7 @@ settlement, not the solver.
    replay with the `stage_limits` entry `smt_encoding.max_constants` at 8.
 6. Build FR-315-AC-42's `ModelCheckRequest`s with no SMT setting, with
    `smt_encoding.max_constants` 7 and 8, and with `smt.max_solver_time` 5
-   and 10; compute their request identities and cache keys; settle an SMT
+   and 10; compute their request identities; settle an SMT
    proof of the first and read its `CertificateRequest.smt_encoding`.
 
 Tag the tests `#[trace("TC-1250", "<criterion id>")]`.

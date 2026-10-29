@@ -1,17 +1,17 @@
 ---
 id: TC-490
-title: "E3 resolves header profile selections against the DefinitionLock catalog"
+title: "E3 resolves header profile selections against the layer table"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-110
     type: verifies
 ---
-# TC-490: E3 resolves header profile selections against the DefinitionLock catalog
+# TC-490: E3 resolves header profile selections against the layer table
 
 ## Description
 
 Verify that spine `compile` admits a header profile only when its identity
-is a `header_selectable_layers` row's, refuses every other header profile
+is a header-selectable layer's, refuses every other header profile
 with its catalogued code and cause, and restricts each declaration to its
 selected layer's forms. Scope: FR-110-AC-1 to FR-110-AC-3 and FR-110-AC-5
 to FR-110-AC-13.
@@ -25,18 +25,18 @@ at the first refusing profile.
 Every unit starts with `language "ix:native" edition "1-draft";`, then its
 header profiles, each `profile <alias> = "<identity>";`, then
 `function f using v(): Boolean pure { true }`. `R` is
-`DefinitionLock::builtin().entry(CatalogRole::Root)`; the test reads its
-identity from the catalog, never from a literal.
+the layer table's root definition identity; the test reads it from the
+table, never from a literal.
 
 1. Compile the unit whose one profile is `v` with `R`'s identity. Read the
    emitted lock.
 2. Compile it with the identity `test:unknown-profile`.
-3. Compile it with the `ieee_profile` row's identity, then with the
-   `edition` row's.
+3. Compile it with the `ieee_profile` definition's identity, then with the
+   `edition` definition's.
 4. Compile it with one further token, the word `version`, after the
    profile's identity string and before its `;`.
 5. Compile a unit with profiles `v` (`R`'s identity), `w` (the
-   `ieee_profile` row's identity) and `x` (`test:unknown-profile`). Then
+   `ieee_profile` definition's identity) and `x` (`test:unknown-profile`). Then
    compile a unit with profiles `v` and `u`, both `R`'s identity.
 6. Compile six units, each with one profile `v` naming, in turn,
    `quire.state.core/v1`, `quire.state.queries/v1`,
@@ -44,12 +44,12 @@ identity from the catalog, never from a literal.
    `quire.model.complete/v1` and `quire.temporal.complete/v1`; each unit's
    declaration uses only forms admitted by that profile. Compare each
    emitted `definition_selections` with the fixed literal closure listed
-   below, independent of the lock read by the implementation.
+   below, independent of the layer table the implementation reads.
 7. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
    declaration calls a named predicate, then one that declares a named
    predicate; then both units with `v` naming `quire.state.queries/v1`.
 
-8. (Retired with FR-110-AC-9: no comparison of the built-in catalog with QSpec's lock.)
+8. (Retired with FR-110-AC-9: no layer-table comparison.)
 9. For each layer FR-110-AC-10 names, compile a unit whose profile `v`
    names the layer and whose declaration holds one equality of each
    FR-110-AC-10 operand family, then the `r = 1` unit under
@@ -60,12 +60,12 @@ identity from the catalog, never from a literal.
     `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with
     a `Reference<Order>` field (FR-110-AC-11).
 11. Build `complete::header_profile_catalog()`. Call `contains` with each
-    identity of `DefinitionLock::builtin().layers()`, with
-    `test:unknown-profile` and with each `qualification_catalog` row's
+    identity of the layer table's layers, with
+    `test:unknown-profile` and with each qualification definition's
     identity. For each layer step 6 names, run `complete::parse_with_catalog`
     with that catalog over the unit whose one profile `v` names the layer;
     then over the unit with `test:unknown-profile`, and over the unit with
-    the `ieee_profile` row's identity (FR-110-AC-12).
+    the `ieee_profile` definition's identity (FR-110-AC-12).
 
 12. Compile a unit whose profile `v` names `quire.temporal.complete/v1` and
     whose declarations hold one equality of each FR-110-AC-10 operand
@@ -78,7 +78,7 @@ criteria each step backs.
 
 - Step 1 compiles. `profile_selections` is empty, and
   `definition_selections` holds `quire.value.complete/v1`,
-  `quire.state.core/v1` and the `qualification_catalog` rows the
+  `quire.state.core/v1` and the qualification definitions the
   package-selection rules select for the unit, and no other layer, written
   out as a literal in the test.
 - Step 2 refuses `unknown_profile`/`unsupported-selection` at the identity
@@ -112,5 +112,5 @@ criteria each step backs.
 - Step 8: retired.
 - Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
-- Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every `qualification_catalog` identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
-- Step 12: the unit compiles; its `definition_selections` contain exactly [`quire.temporal.complete/v1`, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1`, `quire.state.core/v1`], and its `package_selection` rows equal the literal package rows assigned to the temporal layer by the three source-of-truth locks; every equality compiles (FR-110-AC-13).
+- Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every qualification definition identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
+- Step 12: the unit compiles; its `definition_selections` contain exactly [`quire.temporal.complete/v1`, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1`, `quire.state.core/v1`], and its qualification definitions equal the literal package rows the QSpec definition prose assigns to the temporal layer; every equality compiles (FR-110-AC-13).

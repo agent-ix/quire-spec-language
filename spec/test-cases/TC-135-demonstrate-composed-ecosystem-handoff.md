@@ -43,9 +43,9 @@ without making A's local evidence claim B/F semantics.
 5. Treat the composed run as a separate D-owned integration gate under
    [quire-research#39](https://github.com/agent-ix/quire-research/issues/39) and
    [IN01 #49](https://github.com/agent-ix/quire-research/issues/49). Until an
-   integration repository transfer is approved, #49 owns the version-lock
-   manifest, Rust driver and aggregate record; no local A fixture substitutes.
-   That driver selects accepted B #6/#11/#12 and F revisions, binds concrete O1/O2
+   integration repository transfer is approved, #49 owns the Rust
+   driver and aggregate record; no local A fixture substitutes.
+   That driver consumes B #6/#11/#12 and F outputs, binds concrete O1/O2
    instances, obtains F's record/correlation/availability/membership/
    completeness/progress/closure handoff under the domain package's declaration
    identities, and records B's
@@ -65,9 +65,8 @@ none.
 
 These assertions discharge only A's compilation, preservation and handoff
 contribution. Campaign acceptance remains Planned under D's research #39/#49
-until that owner records one version-locked run in which F supplies the admitted
+until that owner records one run in which F supplies the admitted
 runtime facts, B #6/#12 owns the conformance/result classifications, and batch/
-incremental results agree. As of 2026-09-11 no accepted B #6/#12 plus F consumer
-revision set exists to select; branch or unreviewed snapshots cannot fill that slot.
+incremental results agree.
 That external record may reference this passing compiler leg; this TC cannot by
 itself mark PT02, observation adequacy or the composed campaign complete.

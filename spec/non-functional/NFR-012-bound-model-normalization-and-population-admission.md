@@ -41,18 +41,11 @@ ceiling therefore bounds the work done, not only the result:
 
 - Phase 4 prices every redefinition group and charges every phase-4 fact
   and conflict check before it resolves any dominance contest.
-- Each effective member's `normalize.hash`, and the view's, is charged from
-  a length counted from the preimage's parts, before the preimage is
-  encoded or hashed.
-- An effective type's identity is hashed in phase 3, before its phase-5
-  `normalize.hash`, because phase 4's charge order uses it. Its encoding
-  holds its own key and one direct-supertype edge with that parent's identity
-  per parent, each edge already admitted by a `normalize.fact` and a
-  `normalize.cycle-check` charge. No encoding holds an ancestor path longer
-  than one edge, so hashed bytes grow with the type count plus the edge count
-  (for the 83 to 87 byte keys of TC-1025, about 903 bytes per type and 608
-  per edge, counting each preimage once on its own and once inside the view),
-  not with the number of ancestor paths.
+- An effective type's identity is built in phase 3, before phase 4, because
+  phase 4's charge order uses it. Its key holds its own key and one
+  direct-supertype edge with that parent's identity per parent, each edge
+  already admitted by a `normalize.fact` and a `normalize.cycle-check`
+  charge. No key holds an ancestor path longer than one edge.
 - A diamond lattice is walked and stored once per edge. The cycle check
   charges one unit per direct edge for an acyclic package; a path-length
   charge applies only to the walk that reports a specialization cycle.
@@ -77,7 +70,6 @@ per-charge record, so its memory does not grow with the work it bounds.
 | Derivation facts | At most the selected ceiling (default 1600000) per normalization | 1600000 facts by default | negative-abuse-testing |
 | Effective declarations | At most the selected ceiling (default 1600000) per normalization | 1600000 declarations by default | negative-abuse-testing |
 | Dispatch candidates | At most the selected ceiling (default 1600000) per dispatch link | 1600000 candidates by default | negative-abuse-testing |
-| Hashed preimage bytes | At most the selected ceiling (default 268435456 bytes) per normalization | 268435456 bytes by default | negative-abuse-testing |
 | Normalization work | At most the selected ceiling (default 16777216 work units) per normalization | 16777216 units by default | negative-abuse-testing |
 | Ancestor steps | At most the selected ceiling (default 16777216 edges) per conformance walk | 16777216 edges by default | negative-abuse-testing |
 | Family steps | At most the selected ceiling (default 16777216 edges) per dispatch-family link | 16777216 edges by default | negative-abuse-testing |
@@ -104,25 +96,19 @@ per-charge record, so its memory does not grow with the work it bounds.
   ceiling does not bind before the fact ceiling. A dispatch candidate pairs
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
-- **Hashed bytes, 268435456.** Sixteen times NFR-011's preimage-byte
-  default (16777216). With about 903 bytes per effective type and 608 per direct edge
-  (keys of 83 to 87 bytes), it admits a single-inheritance chain up to the
-  100000 record ceiling (99999 edges, 151633328 bytes) and about 426000 direct
-  edges over 10001 types. A chain whose every type declares one field has
-  (n+1)(n+2)/2 effective members and is refused beyond 584 edges on this
-  ceiling and beyond 1786 on the effective-declaration ceiling; those are member counts, which identity
-  chaining does not reduce. Each effective declaration's preimage is hashed once and again
-  inside the view preimage, and the view holds those preimages, so this also
-  bounds the view's retained size.
+- **Hashed bytes.** The QSpec limit `hashed_bytes` is QSpec's; QSL computes
+  no hash and meters none. BLOCKED-BY STD-583 (QSpec limit name).
+  A chain whose every type declares one field has (n+1)(n+2)/2 effective
+  members and is refused beyond 1786 edges on the effective-declaration
+  ceiling; those are member counts, which identity chaining does not reduce.
 - **Work, 16777216.** NFR-011's default work ceiling. Each record, fact,
-  declaration, hash and direct-edge cycle check charges one unit, which is
+  declaration and direct-edge cycle check charges one unit, which is
   linear in the facts. The phase-4 `normalize.redefinition-check` (`m + r` per
   redefining member) and `normalize.conflict-check` charges are quadratic, so
   the work ceiling binds before the fact ceiling when many members are
   redefined: a type of 2,600 fields and a subtype of 2,600 fields each
-  redefining one of them hold about 13,000 facts but charge 16,898,700 work
-  units. Without redefinitions, and for types only, the fact and hashed-byte
-  ceilings bind first.
+  redefining one of them hold about 13,000 facts but charge quadratic work.
+  Without redefinitions, and for types only, the fact ceiling binds first.
 - **Ancestor and family steps, 16777216 edges.** The work default above,
   NFR-011's S3 work default. Both count edges followed, a unit of work: a
   walk follows each edge of a type's closure at most once, so the default
@@ -140,12 +126,10 @@ TC-434 covers the defaults and the bound on work:
   records the defaults, or a caller's limits as given.
 - Every normalization fixture has the same outcome at the defaults as
   without a limit.
-- A package past `effective_declarations`, `derivation_facts` or
-  `hashed_bytes` is refused after work bounded by the limit, whatever the
-  package's size.
+- A package past `effective_declarations` or `derivation_facts` is refused
+  after work bounded by the limit, whatever the package's size.
 - A 10000-edge single-inheritance chain completes at the defaults with 20001
-  retained facts, 15104845 hashed bytes and 60006 work units (TC-1025), and a diamond ladder with exponentially many
-  paths completes at the defaults (TC-1024).
+  retained facts (TC-1025).
 - The first denied charge decides the outcome: a `declaration_records`
   charge denied before the walk exhausts `ancestor_steps` stops on
   `declaration_records`, and otherwise the walk stops `Incomplete` on

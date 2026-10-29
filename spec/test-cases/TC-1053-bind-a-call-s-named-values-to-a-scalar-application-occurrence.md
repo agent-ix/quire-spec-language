@@ -106,5 +106,5 @@ once with `read_checked_package` under `admission_evidence`, then call
 - Step 8: equal results; `values()` equals the claim's ordered operand values.
 - Step 9: `[7, 2]`, bound with no emitted byte left to read.
 - Step 10: `Refused(AdmittedPackage)` with the first unit's and the second
-  unit's package identities and versions, `stale_dependency`/`content-mismatch`; then
+  unit's `package_id`s, `stale_dependency`/`content-mismatch`; then
   `[7, 2]`.

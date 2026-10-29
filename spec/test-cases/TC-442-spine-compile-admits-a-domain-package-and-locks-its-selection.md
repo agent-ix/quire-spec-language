@@ -41,8 +41,7 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    `Widget` and `Gadget` generalize each other.
 4. Compile the fixture through `command` with `deref(g).nope`; with `g = w`
    over `w: M::Rock`; with `Reference<M::Nope>`; with no
-   model; with a document of the same package whose version differs; and with
-   a clause after the declaration's identity.
+   model; and with a clause after the declaration's identity.
 
 Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1,
 including its two field-access and conforming-equality cases),
@@ -53,13 +52,12 @@ including its two field-access and conforming-equality cases),
 ## Expected Results
 
 - Step 1: nothing is omitted; `M::Gadget` and `M::Widget` are declared object
-  types and `Gadget` conforms to `Widget`, not the reverse; the lock and the
-  identity preimage `model_selections` are
-  `[{"identity": "acme/orders", "version": <the document's version>}]`; a
+  types and `Gadget` conforms to `Widget`, not the reverse; the lock's
+  `model_selections` are `[{"identity": "acme/orders"}]`; a
   model node is emitted; without `code` and `same` the read is Verified and
   exports `keep` and `held`. With `code` only, the read is
   Verified and exports `code`: IR-285 and QSpec STD-100 resolve the field
-  member through the lock-selected domain package. With `same` only, the
+  member through the selected domain package. With `same` only, the
   read is Verified and exports `same`: IR-285's QVC checked-operation
   catalog (STD-101/102) admits conforming operands for
   `quire.op.reference.eq`.
@@ -74,7 +72,6 @@ including its two field-access and conforming-equality cases),
 - Step 4: exit 20 and no package bytes each time; stage `check` with
   `ill_typed` at `deref(g).nope` and at `g = w`; stage `assembly` with
   `missing_declaration` at `M::Nope`; stage `intake` with `missing_import`
-  for the absent model and `stale_dependency`/`content-mismatch` for the
-  document whose version differs, each at the `model`
+  for the absent model, at the `model`
   declaration; `invalid_syntax` at the clause after the identity; every
   message is readable text.

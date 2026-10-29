@@ -24,7 +24,7 @@ relationships:
 
 ## Description
 
-QSpec's lock catalog names the IEEE definition `quire.value.ieee754-2019-default/v1`
+The QSpec definition prose names the IEEE definition `quire.value.ieee754-2019-default/v1`
 under the role `ieee_profile` (QSpec FR-148). The role is not header-selectable
 (FR-110-AC-3). QSpec's package selection makes it a conditional slot of the
 closed trigger `ieee_operation` (QSpec FR-201-AC-9), which a package raises when
@@ -40,7 +40,7 @@ FR-322 terms (FR-093) and its evaluation under QSpec FR-148.
 
 - A unit, with its supplied libraries, whose source may use `Float32[mode]` and
   `Float64[mode]` types (FR-092) and the float forms of this requirement.
-- The `DefinitionLock` catalog row of the role `ieee_profile`.
+- The layer table's definition of the role `ieee_profile`.
 
 A float value in a body comes from a declared parameter or field, from a bit
 constructor, from an IEEE arithmetic or intrinsic result, or from a conversion

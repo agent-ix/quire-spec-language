@@ -64,7 +64,7 @@ and S4 rows).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-320-AC-1 | A package with `Shape`, `area` (FR-318-AC-1) and a function returning `Shape::Rect(2, 3)` emits v2 nodes in QSpec's union spelling. After S4 emission and the I2 read, the union's node id and every member identity are unchanged (the `WireNodeId` equals the emitted id), and after replay's S1 to S4 recompile of the identity-addressed source the recompiled package's lock content (identity, version, selections, source labels) equals the emitted one's. | Test (TC-827) |
+| FR-320-AC-1 | A package with `Shape`, `area` (FR-318-AC-1) and a function returning `Shape::Rect(2, 3)` emits v2 nodes in QSpec's union spelling. After S4 emission and the I2 read, the union's node id and every member identity are unchanged (the `WireNodeId` equals the emitted id). | Test (TC-827) |
 | FR-320-AC-2 | Against an IR that cannot decode the union (tag, form), S4 omits the union node and every node naming it with `UnsupportedForm`, and the emitted body holds none of them. | Test (TC-827) |
 | FR-320-AC-3 | One `value-validity` item whose function body contains `case` is emitted and settles `unsupported` with its catalog code through the IR and CG arms, with no QSL settlement in between. | Test (TC-828) |
 | FR-320-AC-4 | For the independently fixed nullary and reference-payload vectors of FR-319-AC-4, the producer emits the specified aggregate bodies and expected application-preimage keys, and the I2 reader admits those same keys. Replacing a retained key with the key of a different node refuses `invalid_package`/`stale-node-key` at FR-322's node-key check. A producer/reader round trip alone is not the expected-byte or expected-key oracle. | Test |

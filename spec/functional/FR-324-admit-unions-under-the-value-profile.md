@@ -34,7 +34,7 @@ AD-015; ADR-012 §16.9 "Profiles").
 
 ## Outputs
 
-- Checked declarations that use unions, and the unit's definition lock.
+- Checked declarations that use unions, and the unit's emitted `definition_selections`.
 
 ## Behavior
 

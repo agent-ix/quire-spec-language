@@ -32,4 +32,4 @@ committed inventory and decoded manifest. Formatting, strict Clippy and the full
 test suites pass under both no-default and all-feature configurations; the
 minimal build, two fixture audits and parse/format smoke checks also pass. SR-422
 records the Rust review and SR-423 records the final targeted gap analysis.
-Issue closure and the dependent qprotocol pin follow the admin merge.
+Issue closure follows the admin merge.

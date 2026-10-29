@@ -87,7 +87,7 @@ applies only to the kinds selected by QSpec `model-complete.md`; a scalar,
 clause or population without a qualify rule remains an original without a
 fabricated effective entry or fact. Every effective entry and fact input SHALL
 refer to a key from this inventory. Retention introduces no additional
-effective-declaration or hash charge and no effective preimage member.
+effective-declaration charge and no effective preimage member.
 
 Each effective declaration's identity is the structural key
 `{version, owner_effective_type, original, derivation}` of the
@@ -161,12 +161,6 @@ add a dual reader, relabelling, compatibility shim or public API alias.
 The exact key grammar belongs to
 [FR-150](ix://agent-ix/quire-specification/FR-150) and the selected
 definition; this requirement does not create a second identity writer.
-
-Total key bytes admitted for the identities of a package with `V` effective
-types and `E` direct supertype edges and no members are linear in `V + E`
-(for the keys of TC-1025, 83 to 87 bytes, about 903 bytes per type and 608
-per edge; TC-1024 gives the exact formula in the key length), not in the
-number of ancestor paths or their length.
 
 ### Losing redefinitions are retained, not deleted
 
@@ -254,14 +248,10 @@ Each direct supertype edge SHALL be charged once, as one `normalize.fact` and
 one `normalize.cycle-check` unit, however many paths reach its target; the
 binder SHALL NOT charge an ancestor path's length for an acyclic package.
 `derivation_facts` counts the retained facts, not the path-form facts of their
-expansion. A key's length is counted from its parts, a parent reference
-being constant width in parts, and is charged to `hashed_bytes` before the key is
-encoded, with one exception that quire-specification does not need and that is QSL's
-alone: an effective type's identity is built in phase 3, before its phase-5
-`normalize.hash`, because phase 4's charge order uses it. That key holds only the type's own key and its direct edges,
+expansion. An effective type's identity is built in phase 3, before
+phase 4, because phase 4's charge order uses it. That key holds only the type's own key and its direct edges,
 each already admitted by a `normalize.fact` and a `normalize.cycle-check`
-charge. Every member, universe and view key is charged before it is
-encoded.
+charge. QSL meters no hash: the QSpec limit name `hashed_bytes` is QSpec's, BLOCKED-BY STD-583 (QSpec limit name).
 
 The phase-4 charges are unchanged in kind and count a type's derivation facts
 as its retained facts, its qualify fact and one inherit fact per direct
@@ -293,8 +283,8 @@ of `m + r` work units, and each (effective type, redefined member) reached by
 | FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
 | FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1022) |
 | FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1023) |
-| FR-081-AC-11 | Key bytes (`hashed_bytes`), `derivation_facts` and `work_units` of a chain, a width-2 diamond ladder and a dense multi-parent shape equal the closed formulas of the test case; a diamond ladder whose path count is exponential is admitted at the default limits. | Test (TC-1024) |
-| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types) run on a thread with a 524,288-byte (512 KiB) stack, normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, 15,104,845 hashed bytes (at most 16,777,216) and 60,006 work units (at most 100,000). | Test (TC-1025) |
+| FR-081-AC-11 | **RETIRED (QSL computes no hash).** The closed formulas of this criterion metered the bytes of every identity, universe and view preimage; QSL meters none. | Test (TC-1024), retired |
+| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types) run on a thread with a 524,288-byte (512 KiB) stack, normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts. | Test (TC-1025) |
 | FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1025) |
 | FR-081-AC-16 | Given a variant type with two cases, the effective view holds one effective type and two effective members of it, each derived from the key of its own declaration with one `qualify` fact; permuting the cases changes no effective identity or position. | Test (TC-1003) |
 | FR-081-AC-17 | Given K2 plus `ExpressLifecycle` (supertype `OrderLifecycle`, state `Expedited`, one transition `Placed` to `Expedited` triggered by its own operation `expedite`), `state_machine(ExpressLifecycle)` returns states `Expedited` (declared by `ExpressLifecycle`, position 0), followed by `OrderLifecycle`'s `Draft`, `Placed` and `Cancelled` (positions 0, 1, 2), and transitions `ExpressLifecycle` `[0]`, followed by `OrderLifecycle` `[0]`, `[1]`, `[2]`, each with its authored `from`, `to`, `trigger`, `guard` and `emits`; entries are ordered by declaring machine key bytes (`ix://test/orders/ExpressLifecycle` before `ix://test/orders/OrderLifecycle`) and by position within a machine. | Test (TC-1049) |
@@ -318,9 +308,9 @@ of `m + r` work units, and each (effective type, redefined member) reached by
   this requirement produces.
 - [TC-1022](../test-cases/TC-1022-model-identity-links-expand-to-exact-provenance.md),
   [TC-1023](../test-cases/TC-1023-model-identity-chain-is-unique-and-binds-ancestry.md),
-  [TC-1024](../test-cases/TC-1024-model-identity-cost-is-linear.md) and
+  [TC-1024](../test-cases/TC-1024-model-identity-cost-is-linear.md) (retired) and
   [TC-1025](../test-cases/TC-1025-full-size-model-identity-case.md) verify the
-  chain-link identity, its uniqueness and its cost.
+  chain-link identity, its uniqueness and its full-size case.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-03 and O-05 record QSL's ownership of original declaration identity and
   effective declaration identity; this requirement states their behavioral

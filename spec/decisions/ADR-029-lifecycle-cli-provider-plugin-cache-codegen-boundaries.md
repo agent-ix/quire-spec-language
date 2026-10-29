@@ -1,6 +1,6 @@
 ---
 id: ADR-029
-title: "Lifecycle, CLI, provider, plugin, cache and code-generation boundaries (ARCH-50)"
+title: "Lifecycle, CLI, provider, plugin and code-generation boundaries (ARCH-50)"
 type: ADR
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -50,7 +50,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-462
     type: relates_to
 ---
-# ADR-029: Lifecycle, CLI, provider, plugin, cache and code-generation boundaries (ARCH-50)
+# ADR-029: Lifecycle, CLI, provider, plugin and code-generation boundaries (ARCH-50)
 
 ## Context
 
@@ -76,7 +76,7 @@ Measured on QSL `main` and quire-driver `main` on 2026-10-01.
 - quire-driver is a library crate only (`src/drive.rs`, `registry.rs`,
   `handoff.rs`): S1 to S4, E4 emit, the `route` candidate step and CG
   negotiation. It has no binary.
-- There is no plugin host, no cache, no inspection view other than `format`
+- There is no plugin host, no inspection view other than `format`
   and the JSON outcomes, and no JIT. CG generates Rust from S5 IR for Kani
   harnesses, which is ahead-of-time generation in practice.
 
@@ -85,8 +85,8 @@ operations and requires limits and cancellation on every request. QSpec
 FR-301 fixes the exit codes and the severity order for multi-item output.
 QSpec FR-305 allows two plugin forms, compile-time Rust traits and a
 separate process speaking a canonical wire, and reads plugin output as
-untrusted input. QSpec FR-306 requires per-node negotiation before emission,
-cache keys over every meaning input, verification on read, and parity
+untrusted input. QSpec FR-306 requires per-node negotiation before emission
+and parity
 between compiled and native execution. QSpec FR-339-AC-3 requires that
 installing a backend never changes syntax.
 
@@ -207,7 +207,7 @@ their dependency closure:
 
 1. **No frontend in the core.** No core crate depends on an argument parser,
    a terminal or colour crate, a renderer other than the JSON serialization
-   of its own outcome types, the plugin host, the cache, an execution backend
+   of its own outcome types, the plugin host, an execution backend
    other than the S6a interpreter, or any crate outside CB-2. A direction
    check over `cargo tree` of each core crate enforces this, with the same
    tooling as ADR-011 T-12.
@@ -230,7 +230,7 @@ their dependency closure:
      renderers (§9). It depends on layers 6, 5, 4, 3, F, SV and K.
    - QSL layer X, crate `qsl-jit`: the JIT execution backend (§7). It
      depends on layers 5, 4, 3, F, SV, K and the chosen code generator.
-   - Driver repository: `quire-plugin-host` (§5), `quire-cache` (§6),
+   - Driver repository: `quire-plugin-host` (§5),
      `quire-aot` (§7) and the binary crate `quire-cli`.
 
    Nothing in CB-2 depends on any of them.
@@ -707,75 +707,19 @@ kills the process.
   `diagnostics` (CB-4), built with `OutcomeDiagnostic::new` from its code and
   cause, not in the terminal record.
 
-### 6. Cache
+### 6. Cache (retired)
 
-**CA-1 What is cached.** The cache holds results that are expensive and are a
-function of their key: `prove` terminal records, `analyze` terminal records
-and `generate` artifacts. Parsing, checking, packaging, execution and
-monitoring are cheap and deterministic and run every time.
+**CA-1 What is cached.** **RETIRED (QSpec #513 removes the result cache).**
+There is no result cache.
 
-**CA-2 Key.** The key is one structural value: QSpec FR-306's closed object
-`{operation, package_id, request, backend, manifest, target}`, and no other
-member, compared by equality and ordered by its canonical (RFC 8785) byte
-string:
+**CA-2 Key.** **RETIRED (QSpec #513 removes the result cache).**
 
-- `operation`: `prove`, `analyze` or `generate`;
-- `package_id`: the subject's package identity and version with its lock rows:
-  the source labels, profiles, model selections and each dependency's identity
-  and version;
-- `request`: the canonical request, the items by occurrence key, the claims, the
-  domains and bounds, the options that affect a result, and every
-  deterministic budget that can move a result to `incomplete` (work units,
-  state and transition budgets);
-- `backend`: the provider's `BackendId`, the identity string alone;
-- `manifest`: the provider manifest's identity, the provider's complete
-  QSpec FR-331 descriptor in canonical form, which layer R reads as the
-  manifest identity and compares by equality. A
-  change to any descriptor member changes the key. The tool version is the
-  descriptor's `tool.version`: every descriptor carries `tool` (QSpec FR-331
-  "Backend tool"), `{name, version}` of the executable a backend that fronts
-  an external tool invokes, queried from that executable at each invocation,
-  or of the crate that implements a pure in-process engine, at its version
-  in the producer's build, with `build`, the identity label of the provider
-  code's build that the producer's build records. A
-  tool upgrade, an engine release, and an engine code change under an
-  unchanged crate version therefore each change the manifest identity and the
-  key and leave the `BackendId` unchanged;
-- `target`: for `generate` only, the generation target and its options.
+**CA-3 Invalidation.** **RETIRED (QSpec #513 removes the result cache).**
 
-Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's
-`max_solver_time`), application version strings and the execution backend that
-ran are outside the key. Each either has no effect on the result or is already
-bound by a member above, except a wall-clock deadline and a wall-clock solver
-budget: they can change a result, but every result they limit is time-limited
-or cancelled and is never stored (CA-5), so the key never has to bind them.
+**CA-4 Store and read.** **RETIRED (QSpec #513 removes the result cache).**
 
-**CA-3 Invalidation.** Any change to a meaning input changes the key, so a
-changed input is a miss and a stale entry is never read. Nothing else
-invalidates entries. There is no index, manifest or ledger: the store is the
-set of entries, each named by its key.
-
-**CA-4 Store and read.** An entry holds the key and the
-stored value: the terminal records' result-identity members, or the artifact
-bytes with their source maps. A read accepts an entry only when the entry's
-name, its stored key and the requested key are equal, and
-the value parses with the same typed reader that reads a fresh result.
-Anything else is a miss. A writer writes to a temporary name and renames it
-into place. Two writers of one key write identical bytes, so a race is
-harmless. The store is a directory the caller names. Eviction keeps the
-store under the caller's size limit. For an item routed to a backend that
-fronts an external tool, the cache is read only after that item's QSpec
-FR-290 tool probe passes, and the probe passes only when the executable about
-to run reports the descriptor's `tool.version`; a failed probe settles the
-item `unsupported` with `tool-unavailable` and reads no entry. So a tool
-replaced on the host after the registry was built never returns an entry
-keyed by the old version (QSpec FR-306 "Read after the probe").
-
-**CA-5 What is never stored.** A result whose category is internal failure,
-a cancelled or deadline result, a time-limited `incomplete`, and any member
-that records wall time. A `tool-unavailable` result, whose outcome depends on
-the host's tool and not on the key, is not stored. A plugin's results are not
-stored (RU-5).
+**CA-5 What is never stored.** **RETIRED (QSpec #513 removes the result
+cache).**
 
 ### 7. Execution backends, AOT and JIT
 
@@ -928,7 +872,7 @@ as a bounded descriptor.
 ### 10. The first bounded slice
 
 **SL-1** The first slice is the smallest path that crosses the CLI, the
-library, a provider and the cache:
+library and a provider:
 
 - **Library.** The LC-2 request and outcome shape with LC-3 cancellation, for
   `check`, `package`, `execute` (interpreter only, through EB-1) and `prove`.
@@ -937,8 +881,6 @@ library, a provider and the cache:
   argument refusal. The `quire` CLI serves these verbs (CB-1).
 - **Provider.** The registry with one compile-time provider, the Kani backend
   through CG, and PV-2's front-end and order tests.
-- **Cache.** `prove` terminal records only, in a local directory, with CA-2
-  to CA-5.
 - **Input.** One `1-draft` source with Value-family function claims, with or
   without supplied libraries (FR-099).
 
@@ -956,7 +898,7 @@ The owner ruled on the five questions the draft left open (RU-1 to RU-5) on
 | RU-2 | Whether `analyze` is in the qualified core | **Inside, through its certificate checkers only**: the zone certificate checker (ADR-026 CF-*), the EN-5 certificate checker (ADR-028 CE-*) and closure checks such as ADR-022's trap re-exploration. The engines stay outside. A `proved` is `certified` only once the in-core checker accepts its certificate | A checker reads only the certificate and recomputes it with its own code, so it is small enough to qualify, and it makes the engine's soundness irrelevant to the verdict | LC-1, CB-2, CB-3, OP-2 |
 | RU-3 | Which engines `analyze` covers | **QSL's in-process engines only.** SMT engines are IR's backend and run through the driver | QSL has no SMT code; the SMT backend negotiates and runs like any other provider under `prove` | OP-2 |
 | RU-4 | Whether plugins need kernel confinement | **The plugin rights model is deleted.** No rights declarations and no confinement. A plugin's `proved` stays labelled `trusted` | A user installs the plugin, so it is trusted like any program they install. A `proved` from it still cannot be replayed | PL-1, PL-7 |
-| RU-5 | Whether plugin results are cached | **No.** | The host cannot show that a third-party run is a function of the cache key | CA-5 |
+| RU-5 | **RETIRED (QSpec #513 removes the result cache).** | | | CA-5 |
 | RU-6 | How a proof from a native engine with no core certificate checker settles | **`proved`, labelled `uncertified`**, never `inconclusive` | The engine did prove the claim; the label says no core checker confirmed it | OP-2 |
 
 ## Consequences
@@ -971,8 +913,6 @@ The owner ruled on the five questions the draft left open (RU-1 to RU-5) on
   model: an installed plugin is a trusted program.
 - `analyze` proofs count in the qualified core through small certificate
   checkers, so the search engines stay outside it.
-- The cache needs no maintenance records. A key is the content's identity,
-  so invalidation is automatic.
 - AOT and JIT can be added without changing any caller, and replay keeps one
   executor.
 - The depth ceiling in `quire-semantic-value` is deleted; node, byte and
@@ -1005,8 +945,7 @@ except the ADR-011 amendment, which is applied in place.
 - `quire-semantic-value` `checking`: `MAX_CHECKING_DEPTH` and
   `DepthAboveMaximum` are deleted, with no depth setting in their place
   (LC-4, ADR-030 RU-1).
-- QSpec FR-306: its JIT and AOT rows follow EB-4, and the cache key follows
-  CA-2. QSpec FR-305: the manifest binding follows PL-4 and PL-5, and its
+- QSpec FR-306: its JIT and AOT rows follow EB-4. QSpec FR-305: the manifest binding follows PL-4 and PL-5, and its
   effects and rights members and rights-mismatch refusal are removed
   (RU-4).
 - ADR-013 O-25, C-09, QC-8 and QC-20: a `ReplaySource::Input`
@@ -1035,11 +974,6 @@ except the ADR-011 amendment, which is applied in place.
   part worth qualifying.
 - **Compile-time plugins only.** Rejected. A third party would have to
   rebuild the host to add a provider.
-- **Invalidate cache entries by tracking file and tool versions.** Rejected.
-  A content key misses on every meaning change by construction, and a
-  version ledger adds records that can drift.
-- **Cache every stage.** Rejected. Parsing, checking and execution are cheap
-  and deterministic, so caching them adds a failure mode and saves little.
 - **Let the JIT or AOT backend fall back to the interpreter silently.**
   Rejected. QSpec FR-301 forbids fallback targets, and a silent switch hides
   which engine ran. The caller chooses.

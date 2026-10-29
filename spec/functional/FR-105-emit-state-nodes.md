@@ -121,7 +121,7 @@ source map (FR-095).
   many clauses name the operation and from whichever subtype
   they name it, and none for an operation no clause and no protocol attempt
   (FR-114) names. The anchor's `frame` is the node of that operation's
-  frame. A frame node's key hashes its body and its `semantic_type`, so
+  frame. A frame node's key holds its body and its `semantic_type`, so
   operations of one declaring object type whose frames are equal have one
   frame node, referenced by each of their anchors and holding one `generated`
   occurrence per operation; a frame node is never referenced by the anchors of

@@ -135,8 +135,7 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   names.
 - Step 8: the lock and the identity preimage carry the same two entries,
   `test/geometry` then `test/units`, each with the `package_id` the emitted library carries (a wire member, QSpec FR-322);
-  the package reads back Verified and its lock content differs from the
-  unlinked graph's; the chain's closure is `test/b`, `test/c`, `test/units`,
+  the package reads back Verified; the chain's closure is `test/b`, `test/c`, `test/units`,
   with paths `[b]`, `[b, c]` and `[b, c, units]`; `test/\u{FF61}` is
   written before `test/\u{1F600}` and reads back Verified. Each entry mutation refuses at its entry
   and each order vector gets its recorded outcome and locus.

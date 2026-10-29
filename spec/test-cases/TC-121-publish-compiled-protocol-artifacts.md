@@ -57,7 +57,7 @@ observations belong only to the later consumer fixture.
    malformed, unreduced, wrong-domain, bare-number and structural-number mutants.
 3. Mutate each reference component independently, retaining the expected
    accepted selection. Include native versus formal source revisions, rule
-   bytes, domain package identity, version and declaration keys, manifest/lock closure,
+   bytes, domain package identity and declaration keys,
    baseline, inner versus outer profile, feature omission/addition and unknown
    optional feature. Substitute source, domain package `sha256-jcs`, IR and
    result-JCS digests into the external package and source byte slots; require

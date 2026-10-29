@@ -99,8 +99,8 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   then with cause `NoValue`, replayed verdict `incomplete` and no value;
   `flag(0)` agrees and `flag(1)` is `inconclusive` with value `true`; `lt`
   is `5 < 3`, `false`, and agrees.
-- Step 3: `stale_dependency`/`content-mismatch` naming both lock contents; the edit keeps the
-  `package_id` and lock content and replays; no byte-level mismatch is checked.
+- Step 3: `stale_dependency`/`content-mismatch` naming both package identities; the edit keeps the
+  `package_id` and replays; no byte-level mismatch is checked.
 - Step 4: agreement with the document; stage `intake`, `missing_import`
   without it.
 - Step 5: in order, `UnknownFunction` naming the

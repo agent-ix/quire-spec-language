@@ -108,7 +108,7 @@ the package means the same whichever order the two files are listed in.
   edition check of FR-027 runs first, before any unit reaches the spine, so a
   command request that mixes `1-draft` and `0-draft` units refuses
   `unknown_edition` there and never reaches this check.
-- FR-110's lock rows are therefore one set for the package: each unit gives
+- FR-110's definition selections are therefore one set for the package: each unit gives
   the same `definition_selections`.
 
 ### Selections and imports

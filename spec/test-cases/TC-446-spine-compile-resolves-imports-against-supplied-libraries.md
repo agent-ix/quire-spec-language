@@ -87,7 +87,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 - Step 2: both identity-only imports admit and name `test/geometry`; the
   import with a `version` token refuses at S1 as a
   syntax error and records no selection; the changed source compiles and the
-  lock's selection holds the recompiled library's identity and version.
+  lock's selection holds the recompiled library's identity.
 - Step 3: `missing_import`/`missing-selection` at the import's identity
   string, stage `intake`;
   `invalid_package`/`conflicting-definition` from the dependency input
@@ -107,8 +107,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   `ill_typed`/`operator-ineligible` at the use. The `g::f(3)` unit's
   package holds the `Int[0, 9]` type node typing the conversion of `3` to
   `f`'s parameter, as a local call's does.
-- Step 6: `p`'s call node id and the package's lock content both differ
-  from step 5's.
+- Step 6: `p`'s call node id differs from step 5's.
 - Step 7: the outcome's package bytes are exactly the bytes spine `compile` returns for step 5's
   unit and library, exit 0; the `0-draft` request refuses with
   `unknown_edition` at stage `profile`, and a `libraries` entry with an

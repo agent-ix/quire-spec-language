@@ -34,7 +34,7 @@ When a complete-V1 unit declares an `import`, spine `compile`
 (the FR-278 composition) SHALL resolve it against the dependency
 input its caller supplies, compile each imported library from its source
 through S1 to S4, bind each import to the library's recompiled
-lock selection (identity, version), type every use of an imported name from the library's checked
+dependency selection (its identity), type every use of an imported name from the library's checked
 graph, and emit the importing package with the library closure and its
 cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
@@ -154,7 +154,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   compiling a library as `CompileRefusal::Dependency { path, refusal }`,
   carrying the library's own stage and a region in the library's source.
 - The resolution SHALL recompile each library by emitting its
-  checked package and bind its identity and version as the library's selection in the lock.
+  checked package and bind its identity as the library's selection.
 - The resolution SHALL read each library's emitted bytes through the I2
   reader, for that one selection, into its `ImportView` (ADR-011 §4).
 - E3 SHALL resolve `a::Name` through the import's `ImportView` (FR-087-AC-13)

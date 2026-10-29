@@ -795,8 +795,8 @@ observation contracts without taking over their authority.
 ### 2.2 Out of Scope
 
 The standard and E own temporal/protocol/message meaning; B owns PT02 protocol
-conformance and results; D owns configuration and the version-locked
-ecosystem integration; F owns concrete observation admission, replay and
+conformance and results; D owns configuration and the ecosystem
+integration; F owns concrete observation admission, replay and
 completeness; C owns engineering assurance. Spec artifacts own the domain
 model, quire-rs owns artifact extraction, and filament-core-data owns the
 Semantic IR lowering and reader; this compiler parses no artifact Markdown. This compiler does not execute

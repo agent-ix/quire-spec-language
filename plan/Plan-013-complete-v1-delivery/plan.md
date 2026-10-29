@@ -86,7 +86,7 @@ evidence state.
 - [ ] **AD-008, FR-180/181:** complete native reference execution and bounded
   deterministic finite simulation in QSL #121.
 - [ ] **FR-300/301/305/306:** expose lifecycle APIs, CLI, isolated Rust plugins
-  and exact compilation/cache behavior in QSL #122.
+  and exact compilation behavior in QSL #122.
 - [ ] **FR-307:** deliver reusable semantic libraries in QSL #119.
 - [ ] **FR-311/336, I18/I19:** qualify every Agent-A inventory row in
   QSL #123 without promoting missing consumer evidence.
@@ -175,7 +175,7 @@ complete and partial counts are therefore the same over both row sets.
 ### Lifecycle tooling (#122)
 
 - [ ] **TC-220/221 and TC-225/226:** API/CLI parity, plugin containment and exact
-  native/AOT/JIT/cache parity.
+  native/AOT/JIT parity.
 - [ ] **TC-180 backend-install repeat:** complement Task-047's authority-free
   parser type proof with a before/after installation-state integration vector.
 
@@ -184,7 +184,7 @@ complete and partial counts are therefore the same over both row sets.
 - [ ] **TC-047, TC-182/183, TC-230/231, IT-070/071/076 / QSL #123:**
   authority-bound diagnostic catalog/causes, canonical manifest and extension
   compatibility, failure-stage and complete attributable qualification over all
-  Agent-A rows and exact dependency pins.
+  Agent-A rows.
 
 ## Atomic capability allocation
 
@@ -294,7 +294,6 @@ concrete evidence owner; task files may require additional boundary cases.
 
 ```text
 A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
-        \------ external producer/consumer pins merge before use ------/
 ```
 
 ## Task File Mapping
@@ -313,7 +312,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
 ## Coordination Rules
 
 - One issue and one PR at a time from a fresh default-branch worktree.
-- Shared interfaces are consumed only from merged pinned revisions; no lane edits
+- Shared interfaces are consumed only from merged revisions; no lane edits
   another producer's repository or redefines a central payload.
 - Rust only for first-party implementation, tests, fixtures, generators and
   audits. Crates remain `publish = false`.

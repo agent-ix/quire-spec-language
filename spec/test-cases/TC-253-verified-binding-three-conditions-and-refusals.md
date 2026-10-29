@@ -12,38 +12,31 @@ relationships:
 
 Verify `library`'s verified binding (ADR-011 §4): a `VerifiedPackage` is
 constructed from v2 wire bytes only when all three named conditions hold —
-(1) the schema version is a supported v2 version, (2) the package's lock content
-(identity, version, selections and source labels) recompiled from the supplied
-sources equals the declared lock content, and (3) that identity is listed in
-the consumer's library lock or request — and that each of the three failure
-modes refuses independently, with a named cause and no partial output, never
-falling back to a comparison of the file bytes, the lock file, or the source. Scope:
-FR-087-AC-3.
+(1) the schema version is a supported v2 version, (2) the package's preimage
+is admitted (exercised by TC-282's `InvalidPreimage` and `UndeclaredExport`
+fixtures), and (3) that identity is listed in the consumer's requested set —
+and that a failure of condition 1 or 3 refuses independently, with a named
+cause and no partial output, never falling back to the file bytes or the
+source. Scope: FR-087-AC-3.
 
 ## Test Procedure
 
-1. Construct a valid v2-encoded package whose declared lock content equals
-   the lock content recompiled from its own sources, at a supported
-   schema version, and listed in the test's library lock. Confirm `library`
-   admits it as a `VerifiedPackage`.
+1. Construct a valid v2-encoded package at a supported schema version, with
+   an admitted preimage, and listed in the test's requested set. Confirm
+   `library` admits it as a `VerifiedPackage`.
 2. Condition 1 (version): construct the same package at an unsupported
    schema version, all else held equal. Confirm `library` refuses with a
    named "unsupported version" cause and produces no `VerifiedPackage`
    (not a partial one with the unsupported version silently accepted).
-3. Condition 2 (lock-content equality): construct the same package with its
-   declared lock content altered so it no longer equals the
-   recompiled lock content, all else held equal.
-   Confirm `library` refuses with the named `stale_dependency`/`content-mismatch`
-   cause and produces no `VerifiedPackage`.
-4. Condition 3 (lock/request membership): construct the same package,
-   valid version and matching lock content, but omit its identity from the
-   library lock and request. Confirm `library` refuses with a named
-   "not listed" cause and produces no `VerifiedPackage`.
-5. (Retired with FR-087-AC-3 condition 2: the lock-content comparison has no
-   file-byte value to substitute for it.)
-6. (Retired with FR-087-AC-3 condition 2: no lock-file value substitutes.)
-7. (Retired with FR-087-AC-3 condition 2: no source value substitutes.)
-8. Confirm each of steps 2-4 fails independently: combining two failure
+3. (Retired: the lock-content equality check is withdrawn.)
+4. Condition 3 (requested-set membership): construct the same package,
+   valid version, but omit its identity from the requested set. Confirm
+   `library` refuses with a named "not listed" cause and produces no
+   `VerifiedPackage`.
+5. (Retired: withdrawn with the lock-content comparison.)
+6. (Retired: withdrawn with the lock-content comparison.)
+7. (Retired: withdrawn with the lock-content comparison.)
+8. Confirm each of steps 2 and 4 fails independently: combining two failure
    conditions in one input still refuses cleanly (not a crash, not an
    admission, no partial `VerifiedPackage`), and the refusal's cause
    identifies at least one of the failing conditions. This step does not
@@ -66,10 +59,10 @@ FR-087-AC-3.
 ## Expected Results
 
 - Step 1: the valid input is admitted as a `VerifiedPackage`.
-- Steps 2-4: each of the three conditions, failed independently, produces a
+- Steps 2 and 4: each of conditions 1 and 3, failed independently, produces a
   named refusal and no `VerifiedPackage`; an admission (partial or full)
   for any of these inputs fails this test.
-- Steps 5-7: retired.
+- Steps 3 and 5-7: retired.
 - Step 8: a doubly-failing input still refuses cleanly, with no partial
   output and no crash; the number of refusals recorded is not itself
   scored by this step.

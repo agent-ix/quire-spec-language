@@ -227,7 +227,7 @@ choreography emission.
 owns artifact intake, [#6](https://github.com/agent-ix/quire-protocol/issues/6)
 owns PT02 conformance, and
 [#12](https://github.com/agent-ix/quire-protocol/issues/12) owns the temporal/
-observation integration. D owns the version-lock manifest, Rust integration
+observation integration. D owns the Rust integration
 driver and aggregate campaign record under
 [quire-research#39](https://github.com/agent-ix/quire-research/issues/39) and
 [IN01 #49](https://github.com/agent-ix/quire-research/issues/49) until an

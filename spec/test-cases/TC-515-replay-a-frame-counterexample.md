@@ -31,7 +31,7 @@ the domain package and the invocation documents in the byte provision.
    invocation whose `created` lists `child`.
 3. forbidden-parent-change with the frame identity taken from a package
    whose `attemptUpdate` frame also modifies `parent`; with a source edit
-   that changes the package's lock content; with the request's `frame_operation` naming operation `missing`; with
+   that changes the package's identity; with the request's `frame_operation` naming operation `missing`; with
    a request whose source does not compile, once with a consistent
    envelope, once with the envelope's `clause_node` replaced by the other
    package's frame node, and once with its `occurrence_key` at another
@@ -66,7 +66,7 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
   (`child`, `versionNumber`) and the replay's (`child`, `parent`);
   `inconclusive`, `NoValue`.
 - Step 3: `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) naming both frame
-  identities, with no admission; FR-098's stale lock-content refusal;
+  identities, with no admission; FR-098's stale package identity refusal;
   `missing_declaration`/`missing-name`; the consistent envelope refuses at
   the recompile, and the other two refuse `stale_dependency`/
   `content-mismatch` naming the envelope's and the payload's frame node,

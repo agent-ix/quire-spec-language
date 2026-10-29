@@ -40,6 +40,6 @@ FR-081-AC-2 forbids.
 ## Expected Results
 
 Step 4's identities differ. Step 5 finds two distinct correspondence entries.
-A mutant that hashes only declared shape produces equal identities in step 4
+A mutant that builds the identity from the declared shape only produces equal identities in step 4
 and a correspondence with one entry silently representing both original
 declarations, failing step 5.

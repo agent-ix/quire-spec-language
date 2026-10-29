@@ -30,7 +30,7 @@ Verify NFR-012:
    at the defaults and without a limit, and compare the outcomes.
 3. Normalize type `A` with `n` fields and type `B` generalizing `A`, for
    `n` = 100 and 1000:
-   - at `effective_declarations` 6, counting member identity hashes;
+   - at `effective_declarations` 6, counting member identities;
    - at `derivation_facts` `2 + n + 3`, counting inherited members.
 4. Normalize a lattice of two types per level, each generalizing both types
    of the level above, 10 and 18 levels deep, at `derivation_facts` 200, and
@@ -50,7 +50,7 @@ Verify NFR-012:
 2. Every fixture's view identity and declarations, or its refusals, are the
    same at the defaults as without a limit.
 3. Both sizes are incomplete at the same charge point and counter. The
-   declaration run hashes 4 member identities and the fact run takes 4
+   declaration run admits 4 member identities and the fact run takes 4
    steps, for either `n`.
 4. Both lattices complete at 200 with one fact per edge, 56 and 104
    retained facts (two qualify facts per level, four edges per level
