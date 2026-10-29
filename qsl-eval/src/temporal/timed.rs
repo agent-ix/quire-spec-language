@@ -47,8 +47,9 @@ use super::outcome::{
 use super::plan::fault;
 use super::position::{PositionRefusal, TemporalPosition};
 
-/// The named point every unit of work charges, as the step evaluator does.
-const VISIT: ChargePoint = ChargePoint::GraphExpand;
+/// The named point every unit of work charges, as the step evaluator does:
+/// `temporal.visit`.
+const VISIT: ChargePoint = ChargePoint::TemporalVisit;
 
 /// A finite timed trace (FR-231 "Inputs"): the time stamp of each position,
 /// in the clause binding's unit, non-negative and non-decreasing. It is a
