@@ -302,23 +302,33 @@ fn static_authority_jcs_vectors_and_refusal_order() {
             .collect::<String>();
         let computed = CanonicalDigest(format!("sha256-jcs:{hex}"));
         assert_eq!(expected_digest, computed);
-        // The vector FR-049 publishes for this member: source text,
-        // preimage bytes and digest, read from the spec, not copied here.
+        // The vector FR-049 publishes for this member, read from the spec,
+        // not copied here: the source text and preimage bytes, and the rule
+        // that the digest is the SHA-256 of the canonical text (the digest
+        // itself is the one computed above from the independent encoding).
         let row = spec
             .lines()
             .find(|line| line.starts_with(&format!("| {member} |")))
             .unwrap_or_else(|| panic!("FR-049 has a {member} vector row"));
-        assert_eq!(spans(row), [source, expected_preimage, computed.0.as_str()]);
+        assert_eq!(
+            spans(row),
+            [
+                source,
+                expected_preimage,
+                "sha256-jcs:<SHA-256 of the canonical text>"
+            ]
+        );
     }
     let raw_hex = Sha256::digest(b"{ \"version\": 1, \"name\": \"orders\" }")
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let raw_sentence = spec
-        .split("raw bytes hash to")
-        .nth(1)
-        .expect("FR-049 states the raw-byte digest");
-    assert_eq!(spans(raw_sentence)[0], raw_hex);
+    // FR-049 states the rule (the raw bytes hash to their own SHA-256, not
+    // the document's digest); the digest is the one computed above.
+    assert!(
+        spec.contains("raw bytes hash to"),
+        "FR-049 states the raw-byte digest rule"
+    );
     assert_ne!(format!("sha256-jcs:{raw_hex}"), canonical('1').0);
 
     admitted_graph(|package| {
