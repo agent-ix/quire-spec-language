@@ -75,6 +75,11 @@ pub enum ReductionKind { Symmetry, PartialOrder, StateConstraint }
 
 ## Behavior
 
+QSpec FR-385 owns the terminal-record vocabulary named in the QSpec columns
+below. This table specifies QSL's mapping from reduced-run outcomes to its
+`TerminalValue` and category; the QSpec column values point to that source
+contract.
+
 - **Map rows.** FR-127's map SHALL gain these rows, with no `_` arm:
 
 | Input | QSpec FR-360 label | QSpec FR-243 basis | QSpec FR-385 proof basis or cause | `TerminalValue` | O-16 category |

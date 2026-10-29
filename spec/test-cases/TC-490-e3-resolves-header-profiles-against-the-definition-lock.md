@@ -38,12 +38,11 @@ identity from the catalog, never from a literal.
 5. Compile a unit with profiles `v` (`R`'s identity), `w` (the
    `ieee_profile` row's identity) and `x` (`test:unknown-profile`). Then
    compile a unit with profiles `v` and `u`, both `R`'s identity.
-6. For each QSpec AD-003 layer (`quire.state.core/v1`,
-   `quire.state.queries/v1`, `quire.state.graph/v1`,
-   `quire.value.complete/v1`, `quire.model.complete/v1`,
-   `quire.temporal.complete/v1`), compile a unit
-   whose one profile `v` names the layer and whose one declaration uses
-   only that layer's forms. Read each emitted lock.
+6. Read the header-selectable layer rows in QSpec's complete-value lock
+   from the QSpec checkout. For each row, compile a unit whose one profile
+   `v` names that layer and whose one declaration uses only its admitted
+   forms. Read each emitted lock and compare its selections with the row's
+   `requires` closure.
 7. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
    declaration calls a named predicate, then one that declares a named
    predicate; then both units with `v` naming `quire.state.queries/v1`.
@@ -93,8 +92,8 @@ criteria each step backs.
 - Step 5's first unit refuses with exactly two refusals, `w`'s then `x`'s,
   and no package. Its second unit compiles.
 - Step 6: each unit compiles; each lock's `definition_selections` hold the
-  layer and every layer its `requires` closure names and no layer that
-  requires it, written out per layer as a literal in the test.
+  layer and exactly the layers in its `requires` closure, derived from the
+  QSpec lock read in step 6.
 - Step 7: the call refuses `unsupported_construct`/`expression-form` at the
   call's span and the predicate declaration refuses
   `unsupported_construct`/`declaration-form` at the declaration's span,
