@@ -88,8 +88,7 @@ its `std`-disabled runtime for (RT FR-275-AC-9) and the target the shared
 leaves `quire-exact`, `quire-semantic-value` and `quire-canonical` build for
 in their own gates. Its sysroot has no `std`, so a build that reaches `std`
 fails there instead of passing on the host. It has pointer-width atomics, so
-`alloc::sync::Arc` is available. The compiler is the one
-`rust-toolchain.toml` selects (its channel lists this target), the
+`alloc::sync::Arc` is available. The compiler is the default toolchain with this target installed, at or above the
 floor RT sets in FR-275-AC-20; this requirement adds no second toolchain.
 
 ### Tiers
@@ -225,7 +224,7 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| NFR-015-AC-1 | `qsl-foundation` declares a `std` feature with `default = ["std"]`, and `cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi` succeeds on the toolchain `rust-toolchain.toml` pins. | Test (TC-1110) |
+| NFR-015-AC-1 | `qsl-foundation` declares a `std` feature with `default = ["std"]`, and `cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi` succeeds on the default toolchain. | Test (TC-1110) |
 | NFR-015-AC-2 | `cargo tree --locked -p qsl-foundation --no-default-features -e normal --depth 1 --target thumbv7em-none-eabi` lists exactly `quire-exact`, `quire-semantic-value` (from ADR-011 X-13 or X-14, whichever lands first), `serde`, `sha2`, `thiserror` and the `ix-trace-rs` proc macro, and the full `cargo tree --locked -p qsl-foundation --no-default-features -e normal,features --target thumbv7em-none-eabi` lists no `std` feature of `serde`, `sha2` or `thiserror`. | Test (TC-1110) |
 | NFR-015-AC-3 | `cargo test --locked -p qsl-foundation` and `cargo test --locked -p qsl-foundation --no-default-features` both pass on the host, and every workspace test lane passes with `qsl-foundation`'s default features. | Test (TC-1110) |
 | NFR-015-AC-4 | `qsl-package` declares a `std` feature with `default = ["std"]` that enables `dep:quire-contract-model` and `qsl-foundation/std`; `cargo check --locked -p qsl-package --no-default-features` succeeds on the host with the crate root `no_std`; and the full `cargo tree --locked -p qsl-package --no-default-features -e normal -i quire-contract-model` finds no path to `quire-contract-model`. | Test (TC-1111) |

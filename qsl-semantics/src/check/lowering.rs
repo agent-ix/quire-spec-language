@@ -2964,7 +2964,7 @@ impl<'a> Lowering<'a> {
             // The member's content outside the group, as a later build of
             // the same type or node would write it.
             let body = bodies[at].map_keys(&mut to_key);
-            let semantic_type = types[at].map(&mut to_key);
+            let semantic_type = types[at].map(to_key);
             let rebuilt = node_key(
                 &NodeInput {
                     owner: draft.content.owner.as_ref(),

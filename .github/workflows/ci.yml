@@ -8,7 +8,7 @@ jobs:
   syntax:
     runs-on: ubuntu-latest
     # Raised from 10 (PR #305 review round 2, finding 5): this job now also
-    # installs cargo-deny 0.19.8 from source (a cold-cache release build
+    # installs cargo-deny from source (a cold-cache release build
     # measured locally at ~2 minutes with a warm crates.io index; a fresh
     # runner with a cold index and no local download cache is slower), on
     # top of two clippy passes, two test passes,
@@ -21,8 +21,8 @@ jobs:
         run: tools/check-no-committed-binaries.sh
       - name: Install toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy && rustup default stable
-      - name: Install pinned cargo-deny
-        run: cargo install cargo-deny --version 0.19.8 --locked
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Lints with minimal features
