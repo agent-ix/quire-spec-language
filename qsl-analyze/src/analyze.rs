@@ -32,6 +32,7 @@
 
 mod items;
 
+use qsl_eval::simulation::protocol::ProtocolTransition;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample};
@@ -45,13 +46,15 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
+pub use crate::value_check::value_item;
 pub use items::{
-    hyper_form_item, model_item, statistical_item, timed_refinement_item, zone_item, ModelItem,
-    RefinementReplayFn, TimedItem, TimedRefinementItem,
+    derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
+    protocol_item, statistical_item, timed_refinement_item, zone_item, DerivedItemMismatch,
+    ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 
 use crate::zone_check::ZoneCheckRecord;
-use crate::{model_check, statistical, zone_check};
+use crate::{model_check, statistical, value_check, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
@@ -93,6 +96,33 @@ impl Engine {
     /// Only if the registry's admission rules refuse EN-4's own manifest.
     pub fn statistical() -> Result<Self, RegistrationRefusal> {
         statistical::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+    }
+
+    /// The value-validity check arm (QSpec FR-483, FR-484).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the arm's own manifest.
+    pub fn value_check() -> Result<Self, RegistrationRefusal> {
+        value_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+    }
+
+    /// The value-validity arm publishing `max_cases` as its default case
+    /// budget (QSpec FR-483 "Descriptor modes, domains and registration").
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the arm's manifest.
+    pub fn value_check_with_max_cases(
+        max_cases: std::num::NonZeroU64,
+    ) -> Result<Self, RegistrationRefusal> {
+        value_check::manifest::descriptor_with(ProviderOrigin::Linked, linked_digest(), max_cases)
+            .map(Self::new)
+    }
+
+    /// The default `max_cases` this engine's descriptor publishes.
+    pub(crate) fn max_cases(&self) -> Option<std::num::NonZeroU64> {
+        self.descriptor.max_cases()
     }
 
     /// The engine's backend identity.
@@ -152,6 +182,7 @@ impl Engines {
                 Engine::model_check()?,
                 Engine::statistical()?,
                 Engine::zone_check()?,
+                Engine::value_check()?,
             ],
         })
     }
@@ -264,8 +295,13 @@ pub struct Disposed {
 pub(crate) enum EngineReport {
     /// EN-1's record, settled by `settle_model_check`.
     Model(Box<ModelCheckRecord>),
+    /// EN-1's record over a protocol subject, settled by
+    /// `settle_protocol_check`.
+    Protocol(Box<ModelCheckRecord<ProtocolTransition>>),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
+    /// The value-validity arm's finding.
+    Value(Box<value_check::ValueReport>),
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
     Zone(Box<ZoneCheckRecord>),
@@ -290,7 +326,7 @@ pub(crate) enum Refusal {
 }
 
 /// The work an engine runs for one item.
-type Work<'a> = Box<dyn FnOnce(&Cancel) -> EngineReport + 'a>;
+type Work<'a> = Box<dyn FnOnce(&Cancel, &Engine) -> EngineReport + 'a>;
 
 /// One item to analyze: its request index, its claim, its settled
 /// disposition and the work an engine runs for it, when the claim kind has an
@@ -313,6 +349,25 @@ impl<'a> AnalyzeItem<'a> {
         mode: Mode,
         backend: &str,
         work: impl FnOnce(&Cancel) -> EngineReport + 'a,
+    ) -> Self {
+        Self {
+            index,
+            kind,
+            mode,
+            disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
+            diagnostic: None,
+            work: Some(Box::new(move |cancel, _| work(cancel))),
+        }
+    }
+
+    /// As [`Self::new`], for work that reads the engine's descriptor: the
+    /// value-validity arm takes its `max_cases` default from it.
+    pub(crate) fn new_with_engine(
+        index: RequestIndex,
+        kind: Capability,
+        mode: Mode,
+        backend: &str,
+        work: impl FnOnce(&Cancel, &Engine) -> EngineReport + 'a,
     ) -> Self {
         Self {
             index,
@@ -365,8 +420,13 @@ pub struct AnalyzeRecord {
     pub settlement: Settlement,
     /// EN-1's full record, carrying the counterexample of a `refuted` item.
     pub model_check: Option<Box<ModelCheckRecord>>,
+    /// EN-1's full record over a protocol subject, carrying the
+    /// counterexample of a `refuted` item.
+    pub protocol_check: Option<Box<ModelCheckRecord<ProtocolTransition>>>,
     /// EN-6's full record, carrying the counterexample of a `refuted` item.
     pub zone_check: Option<Box<ZoneCheckRecord>>,
+    /// The value-validity arm's counterexample, carried by a `refuted` item.
+    pub value_check: Option<Box<value_check::ValueCounterexample>>,
 }
 
 /// How an item settled.
@@ -400,6 +460,13 @@ impl AnalyzeRecord {
             })
     }
 
+    /// The counterexample a `refuted` item over a protocol subject carries.
+    pub fn protocol_counterexample(&self) -> Option<&TemporalCounterexample<ProtocolTransition>> {
+        self.protocol_check
+            .as_ref()
+            .and_then(|record| record.counterexample.as_ref())
+    }
+
     /// The outcome item (FR-286) this record writes. An item refuted by a
     /// claim evaluation undefined at a state is `refuted`, category
     /// violation, with cause `undefined-evaluation` naming that state and
@@ -408,15 +475,34 @@ impl AnalyzeRecord {
     /// from its own disposition and diagnostic.
     pub fn outcome_item(&self) -> Option<OutcomeItem> {
         let terminal = self.terminal()?;
-        let undefined =
-            self.counterexample()
-                .and_then(|counterexample| match &counterexample.kind {
-                    CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
-                    CounterexampleKind::Formula
-                    | CounterexampleKind::Deadlock
-                    | CounterexampleKind::Race(_)
-                    | CounterexampleKind::TimeLock => None,
-                });
+        if let (Some(value), TerminalValue::Refuted) = (&self.value_check, terminal.value()) {
+            if let Some(undefined) = &value.reproduced.violation().undefined {
+                return Some(OutcomeItem::undefined_evaluation(
+                    self.request_index,
+                    format!(
+                        "node {}, occurrence {}/{}",
+                        undefined.locus.node(),
+                        undefined.locus.origin().role().as_str(),
+                        undefined.locus.origin().ordinal()
+                    ),
+                    undefined.reason,
+                ));
+            }
+        }
+        let kind = self
+            .counterexample()
+            .map(|counterexample| &counterexample.kind)
+            .or_else(|| {
+                self.protocol_counterexample()
+                    .map(|counterexample| &counterexample.kind)
+            });
+        let undefined = kind.and_then(|kind| match kind {
+            CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
+            CounterexampleKind::Formula
+            | CounterexampleKind::Deadlock
+            | CounterexampleKind::Race(_)
+            | CounterexampleKind::TimeLock => None,
+        });
         Some(match undefined {
             Some(evaluation) if matches!(terminal.value(), TerminalValue::Refuted) => {
                 undefined_item(self.request_index, evaluation)
@@ -467,7 +553,9 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         request_index: index,
         settlement,
         model_check: None,
+        protocol_check: None,
         zone_check: None,
+        value_check: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -517,7 +605,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
             IncompleteCause::Cancelled { source },
         )));
     }
-    settle(index, kind, engine, work(cancel))
+    settle(index, kind, engine, work(cancel, engine))
 }
 
 fn terminal(record: TerminalRecord) -> Settlement {
@@ -540,7 +628,9 @@ fn settle(
         request_index: index,
         settlement,
         model_check,
+        protocol_check: None,
         zone_check: None,
+        value_check: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -563,6 +653,26 @@ fn settle(
             ),
             Some(model),
         ),
+        EngineReport::Value(report) => {
+            let (settled_record, counterexample) = value_check::settle(*report, index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.value_check = counterexample.map(Box::new);
+            settled
+        }
+        EngineReport::Protocol(protocol) => AnalyzeRecord {
+            request_index: index,
+            // A refuted value without its reproduced counterexample is an
+            // engine fault, never a verdict.
+            settlement: terminal(
+                protocol
+                    .to_terminal(index, backend.clone())
+                    .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
+            ),
+            model_check: None,
+            protocol_check: Some(protocol),
+            zone_check: None,
+            value_check: None,
+        },
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
@@ -580,7 +690,9 @@ fn settle(
                 .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
             ),
             model_check: None,
+            protocol_check: None,
             zone_check: Some(zone),
+            value_check: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
@@ -681,10 +793,10 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4", "en-6"]
+            ["en-1", "en-4", "en-6", "value-checker"]
         );
-        let [en1, en4, _en6] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4 and EN-6");
+        let [en1, en4, _en6, value] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the value arm");
         };
         assert!(registrations
             .iter()
@@ -695,6 +807,9 @@ mod tests {
         assert!(en4
             .advertises()
             .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
+        assert!(value
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ValueValidity));
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as

@@ -71,6 +71,7 @@ pub mod statistical;
 mod supplied_limits;
 mod target;
 mod timed;
+pub mod value_check;
 mod witness;
 
 pub use admitted::{
@@ -114,6 +115,9 @@ pub use certificate::simulation::{
     check_simulation_certificate, CertifiedEdge, CertifiedPosition, EvaluationOutcome, FailedStep,
     IncompleteLimit, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
     UndeterminedStep,
+};
+pub use certificate::smt::{
+    check_refinement_smt_proof, ProofFormat, RefinementSmtCertificate, RefutedQuery, SmtProofCheck,
 };
 pub use certificate::state_graph::{
     check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
@@ -227,9 +231,13 @@ pub use model_check::state_graph::{
     ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
     StateGraphPropertyForm, TrapClosure, WitnessPath, WitnessSource,
 };
+pub use model_check::step_safety::{
+    certify_step_records, settle_step_records, StepCertification, StepRecordVerdict,
+    StepRecordsSettlement,
+};
 pub use model_check::step_settle::{
-    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
-    STEP_INDUCTION_DEPTH,
+    settle_step_simulation, BackendCertificate, OtherBackendResult, StepBackendOutcome,
+    StepSimulationSettlement, STEP_INDUCTION_DEPTH,
 };
 pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
 pub use monitor_plan::{
@@ -237,6 +245,7 @@ pub use monitor_plan::{
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
 };
+
 pub use refinement::{
     abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
     step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
@@ -266,8 +275,8 @@ pub use proof_result::{
     ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
     ReportedInconclusiveCause, SettlementBasis, StaleIdentity, StatedInstanceBound,
     StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
-    WeakAccessFailure,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    ValueCheckUnsupported, ValueFault, WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

@@ -1274,7 +1274,11 @@ fn equal(left: Expression, right: Expression) -> Expression {
     "QSpec-V1-TYPE-022",
     "QSpec-FR-009-AC-1",
     "QSpec-FR-009-AC-3",
-    "QSpec-V1-EXPR-017"
+    "QSpec-V1-EXPR-017",
+    "TC-129",
+    "TC-136",
+    "FR-047-AC-2",
+    "FR-049-AC-5"
 )]
 fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
     let scenario = scenario();
@@ -1334,7 +1338,15 @@ fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
 /// V1-TYPE-022: a surviving object keeps its identity when the same
 /// population is read through pre and post observations.
 #[test]
-#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-2", "QSpec-V1-EXPR-017")]
+#[trace(
+    "QSpec-V1-TYPE-022",
+    "QSpec-FR-009-AC-2",
+    "QSpec-V1-EXPR-017",
+    "TC-129",
+    "TC-136",
+    "FR-047-AC-3",
+    "FR-049-AC-5"
+)]
 fn a_surviving_object_compares_equal_across_pre_and_post() {
     let scenario = l07_scenario();
     let package = package(&scenario);

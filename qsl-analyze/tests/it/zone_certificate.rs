@@ -85,7 +85,7 @@ fn without_node(certificate: &Certificate, removed: usize) -> Certificate {
     if let Some(components) = &mut tampered.components {
         components.numbering.remove(removed);
     }
-    tampered.initial = certificate.initial.iter().map(|&n| renumber(n)).collect();
+    tampered.initials = certificate.initials.iter().map(|&n| renumber(n)).collect();
     tampered.admitted.start = renumber(certificate.admitted.start);
     tampered.admitted.path = certificate
         .admitted
@@ -137,7 +137,7 @@ fn the_search_certificates_are_accepted() {
 fn each_tampering_is_rejected_at_its_rule_and_locus() {
     let (world, certificate) = no_late_reply();
     let last = certificate.nodes.len() - 1;
-    assert!(!certificate.initial.contains(&last));
+    assert!(!certificate.initials.contains(&last));
     assert_eq!(certificate.admitted.target, DivergentTarget::Quiescent(0));
     let removed = without_node(&certificate, last);
     assert_eq!(
@@ -192,7 +192,7 @@ fn each_tampering_is_rejected_at_its_rule_and_locus() {
     );
 
     let mut misplaced = certificate.clone();
-    misplaced.initial = vec![target];
+    misplaced.initials = vec![target];
     let CertificateLocus::ModelState(digest) = (match verdict(&world, &misplaced) {
         ZoneCertificateVerdict::Rejected(CertificateRejection {
             rule: CertificateRule::InitialMissing,
@@ -320,7 +320,7 @@ fn a_locked_node_is_checked_for_divergence() {
         .find(|(step, _)| step.operation().contains("Call/go\""))
         .expect("`go` is enabled");
     let b = key(gone.discrete());
-    let old_a = certificate.nodes[certificate.initial[0]].state_key;
+    let old_a = certificate.nodes[certificate.initials[0]].state_key;
     let mut reset_bounds = certificate.clone();
     for listed in &mut reset_bounds.nodes {
         listed.state_key = if listed.state_key == old_a { a } else { b };
@@ -699,7 +699,7 @@ fn a_zeno_set_is_bounded_by_its_own_invariants() {
         transition(start.discrete(), "go"),
         transition(gone.discrete(), "ping"),
     );
-    let initial_key = certificate.nodes[certificate.initial[0]].state_key;
+    let initial_key = certificate.nodes[certificate.initials[0]].state_key;
     let mut moved = retarget(certificate, &resetting);
     for listed in &mut moved.nodes {
         listed.state_key = if listed.state_key == initial_key {
@@ -916,4 +916,73 @@ fn a_refused_certificate_check_settles_stale_or_failed() {
         settle(qsl_replay::ZoneCertificateRefusal::UnsupportedItem),
         TerminalValue::Failed
     );
+}
+
+/// QSpec FR-418-AC-10 (TC-700): every certificate lists `initials`, never
+/// empty; one whose `initials` is empty is `malformed` at the member
+/// `initials`.
+#[trace("TC-700", "QSpec-FR-418-AC-10")]
+#[test]
+fn a_certificate_with_no_initials_is_malformed_at_initials() {
+    let (world, certificate) = no_late_reply();
+    assert_eq!(
+        verdict(&world, &certificate),
+        ZoneCertificateVerdict::Accepted
+    );
+    let mut tampered = certificate;
+    tampered.initials.clear();
+    assert_eq!(
+        verdict(&world, &tampered),
+        rejected(
+            CertificateRule::Malformed,
+            CertificateLocus::CertificateMember(CertificateMember::Initials)
+        )
+    );
+}
+
+/// QSpec FR-331-AC-46 (TC-1197): the certificate-member locus names
+/// exactly the 50 members of QSpec's backend-provider schema, in its order,
+/// each by its FR-331 spelling. The schema is read in place from
+/// `$QSPEC_DIR`, which the test requires; `initial` is no member.
+#[trace("TC-1197", "QSpec-FR-331-AC-46")]
+#[test]
+fn the_certificate_members_are_the_schemas_fifty_names() {
+    let qspec = std::env::var_os("QSPEC_DIR")
+        .expect("QSPEC_DIR names the QSpec checkout whose schema this reads");
+    let path = std::path::PathBuf::from(qspec).join("proposals/backend-provider-v1/schema.json");
+    let schema: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("the schema reads"))
+            .expect("the schema is JSON");
+    let branches = schema["$defs"]["CertificateRejected"]["oneOf"]
+        .as_array()
+        .expect("the rejection branches");
+    let [malformed] = branches
+        .iter()
+        .filter(|branch| {
+            branch["properties"]["rule"]["const"] == "malformed"
+                && branch["properties"]["at"]["required"] == serde_json::json!(["member"])
+        })
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one `malformed` branch at a certificate member");
+    };
+    let names: Vec<&str> = malformed["properties"]["at"]["properties"]["member"]["enum"]
+        .as_array()
+        .expect("the member enum")
+        .iter()
+        .map(|name| name.as_str().expect("a member name"))
+        .collect();
+    let written: Vec<&str> = CertificateMember::ALL
+        .iter()
+        .map(|member| member.as_str())
+        .collect();
+    assert_eq!(written.len(), 50);
+    assert_eq!(written, names);
+    assert!(!written.contains(&"initial"));
+    for member in CertificateMember::ALL {
+        assert_eq!(
+            serde_json::to_value(CertificateLocus::CertificateMember(*member)).expect("a locus"),
+            serde_json::json!({"member": member.as_str()})
+        );
+    }
 }

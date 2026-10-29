@@ -500,8 +500,8 @@ fn braking2_restored_nodes_match_qspec_vectors() {
         println!("skipped: QSPEC_DIR not set");
         return;
     };
-    let path = std::path::PathBuf::from(qspec)
-        .join("proposals/checked-package-v2/hybrid-node-vectors.json");
+    let qspec = std::path::PathBuf::from(qspec);
+    let path = qspec.join("proposals/checked-package-v2/hybrid-node-vectors.json");
     let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("QSpec vectors"))
         .expect("QSpec vector JSON");
     let expected = fixture["restored_nodes"]

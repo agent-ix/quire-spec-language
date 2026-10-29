@@ -75,7 +75,7 @@
 //! badness (`InitialMismatch`, `StepFails`, `PostDiffers`); the locked
 //! region, entered only by a failing step into a `locked` entry node, is
 //! read on concrete steps alone; and `admitted` starts at a positioned
-//! initial node. FR-244's `initials` is the certificate's `initial`.
+//! initial node of the certificate's `initials` (QSpec FR-418).
 
 mod divergence;
 mod product;
@@ -95,7 +95,7 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{CheckedPackage, EmitRefusal};
 use qsl_semantics::check::{
@@ -137,9 +137,11 @@ pub struct ZoneCertificate<O> {
     /// step's guard (spec gap STD-493: FR-244 names one edge per transition
     /// identity).
     pub edges: Vec<CertEdge>,
-    /// The node that holds each initial symbolic state, one per initial
-    /// state that admits a valuation (spec gap STD-493: FR-244 names one).
-    pub initial: Vec<usize>,
+    /// QSpec FR-418 `initials`, nonempty: the node that covers each
+    /// initial state's symbolic state, one per initial state that admits a
+    /// valuation, in the subject's initial-state order. FR-418 names no
+    /// `initial` member; FR-244's single initial node is `initials[0]`.
+    pub initials: Vec<usize>,
     /// FR-244's Büchi part (ADR-026 CF-2): for a claim decided on FR-240's
     /// liveness product, each node's component and each component's
     /// reason; `None` for a reachability proof.
@@ -159,14 +161,13 @@ pub struct ZoneCertificate<O> {
 /// refinement product, each node's `automaton_state` an index into
 /// `positions`, or `positions.len()` for a node of the locked region.
 ///
-/// FR-244's `initials` is the certificate's `initial`, which already lists
-/// one node per concrete initial state that admits a valuation, in index
-/// order (spec gap STD-493: FR-244 names one `initial` and a separate
-/// `initials`).
+/// The concrete initial states' nodes are the certificate's own
+/// [`ZoneCertificate::initials`] (QSpec FR-418): the part lists no
+/// `initials` of its own.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementPart {
-    /// The refinement's declared name, as FR-149's certificate names it.
-    pub refinement: String,
+    /// QSpec FR-418 `refinement_node`: the refinement node's id.
+    pub refinement_node: WireNodeId,
     /// The package of the concrete subject.
     pub concrete_package: PackageId,
     /// The package holding the abstract model.
@@ -181,8 +182,8 @@ pub struct RefinementPart {
 /// What FR-245 compares a refinement part's identity by.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementIdentity {
-    /// The refinement's declared name.
-    pub refinement: String,
+    /// The refinement node's id.
+    pub refinement_node: WireNodeId,
     /// The concrete subject's package.
     pub concrete_package: PackageId,
     /// The abstract model's package.
@@ -827,13 +828,21 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     .map(|emission| emission.package().package_id())
                     .map_err(|refusal| ZoneCertificateRefusal::Package(Box::new(refusal)))
             };
+            // The refinement node is the recompiled record's occurrence's,
+            // which the identity check above found.
+            let ItemIdentity::Refinement { occurrence, .. } = &recompiled else {
+                return Err(ZoneCertificateRefusal::IdentityMismatch {
+                    certificate: Box::new(named),
+                    recompiled: Box::new(recompiled),
+                });
+            };
             let recompiled = RefinementIdentity {
-                refinement: refinement.name().to_owned(),
+                refinement_node: occurrence.node(),
                 concrete_package: package_id(request.simulation.package)?,
                 abstract_package: package_id(abstract_package)?,
             };
             let listed = RefinementIdentity {
-                refinement: part.refinement.clone(),
+                refinement_node: part.refinement_node,
                 concrete_package: part.concrete_package,
                 abstract_package: part.abstract_package,
             };
@@ -1290,8 +1299,12 @@ impl<O> Checker<'_, '_, O> {
                     _ => false,
                 }
         };
+        // QSpec FR-418: `initials` is nonempty.
+        if certificate.initials.is_empty() {
+            return malformed(CertificateMember::Initials);
+        }
         if !certificate.nodes.iter().all(node_ok)
-            || certificate.initial.iter().any(|&node| node >= nodes)
+            || certificate.initials.iter().any(|&node| node >= nodes)
             || certificate.admitted.start >= nodes
         {
             return malformed(CertificateMember::Nodes);
@@ -1518,7 +1531,7 @@ impl<O> Checker<'_, '_, O> {
                 continue;
             }
             let mut covered = None;
-            for &node in &certificate.initial {
+            for &node in &certificate.initials {
                 let listed = &certificate.nodes[node];
                 if listed.state_key == digest
                     && zone.alu_covered_by(&listed.zone, &self.cover)?
@@ -1557,7 +1570,7 @@ impl<O> Checker<'_, '_, O> {
         let certificate = self.certificate;
         let reserved = part.positions.len();
         self.known = vec![None; reserved];
-        let mut listed = certificate.initial.iter();
+        let mut listed = certificate.initials.iter();
         for (index, start) in self.timed.initial().iter().enumerate() {
             self.poll()?;
             let state = start.discrete().clone();
@@ -1762,7 +1775,7 @@ impl<O> Checker<'_, '_, O> {
             for (_, q, mark, zone) in starts {
                 let cell = self.cell_zone_of(&state, &zone)?;
                 let mut covered = None;
-                for &node in &certificate.initial {
+                for &node in &certificate.initials {
                     let listed = &certificate.nodes[node];
                     if listed.state_key == digest
                         && listed.product == Some(mark)
@@ -2344,7 +2357,7 @@ impl<O> Checker<'_, '_, O> {
         let witness = &self.certificate.admitted;
         let mut at = witness.start;
         let fails = |at: usize| reject(CertificateRule::WitnessFails, at_node(at));
-        if !self.certificate.initial.contains(&at) || self.states[at].is_none() {
+        if !self.certificate.initials.contains(&at) || self.states[at].is_none() {
             return fails(at);
         }
         // A refinement form's witness starts at a positioned initial node: a
@@ -2808,7 +2821,7 @@ fn certificate_bytes<O>(certificate: &ZoneCertificate<O>) -> u64 {
         parts = parts.saturating_add(witness_bytes(witness));
     }
     if let Some(part) = &certificate.refinement {
-        let mut refined = u64::try_from(part.refinement.len()).unwrap_or(u64::MAX);
+        let mut refined = 32_u64;
         for position in &part.positions {
             let history = u64::try_from(position.history.len()).unwrap_or(u64::MAX);
             let states = u64::try_from(position.abstract_states.len()).unwrap_or(u64::MAX);

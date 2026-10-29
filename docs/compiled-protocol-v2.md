@@ -133,11 +133,13 @@ configuration. The producer matches those selections to the proof report rather
 than accepting a same-named declaration or shape. `AdmissionV2` exposes
 canonical bytes, their digest and a strict admitted view, never a freely
 constructible external artifact authority token. Its enclosing `Report` owns
-usage and effective limits. L3/L4 add `state::evaluate_v2` over a strictly read
-v2 package's inherited value graph and retained model schema. A compiler-local
-package without an independently selected published artifact identity returns
-`state::Refusal::UnpublishedArtifact`; it is never assigned synthetic runtime
-authority. L5 adds `temporal::evaluate_v2`,
+usage and effective limits. L3/L4 add no native `state` evaluator: the artifact-graph `state::evaluate_v2`
+path and its `state::Refusal::UnpublishedArtifact` were retired under FR-049
+(ADR-011 §7.3 M-6c, FR-405 item 1). A strictly read v2 package is evaluated
+through the checked-term entry points of `qsl-eval`
+(`CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}` and the
+checked-family functions), with the package identity established by its
+compile/read path; no caller-supplied artifact identity can be substituted. L5 adds `temporal::evaluate_v2`,
 `evaluate_with_progress_v2` and `mapping_support_v2` over the v2 admitted type;
 the existing `/1` signatures remain unchanged. The v2 trace-evaluation entry
 points compare the trace's profile, revision,
@@ -172,9 +174,9 @@ that retains this contract and names the exact public surface it consumes:
   AdmittedPackage, read, encode_candidate}` and
   `protocol_artifact::v2::wire::{Package, TemporalBinding,
   ClockConfiguration}`;
-- `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`; and
-- `state::{evaluate_v2, EvaluationRequest, StateView, Limits,
-  EvaluationReport}`; and
+- `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`;
+- the `qsl-eval` checked-term entry points
+  `CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}`; and
 - `temporal::{AuthenticatedSelection, Classification, evaluate_v2,
   evaluate_with_progress_v2, mapping_support_v2}`.
 

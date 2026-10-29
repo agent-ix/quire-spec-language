@@ -209,17 +209,17 @@ fn run_with(
     Ok(String::new())
 }
 
-/// Validate the checkout and run every required exact QSpec vector selection.
-pub fn run(workspace: &Path) -> Result<String> {
-    let input: Option<OsString> = std::env::var_os("QSPEC_DIR");
-    run_with(Path::new("cargo"), workspace, input.as_deref(), &[])
-}
-
 /// Validate the checkout before other local CI lanes begin.
 pub fn check_input(workspace: &Path) -> Result<String> {
     let input = std::env::var_os("QSPEC_DIR");
     resolve(input.as_deref(), workspace)?;
     Ok(String::new())
+}
+
+/// Validate the checkout and run every required exact QSpec vector selection.
+pub fn run(workspace: &Path) -> Result<String> {
+    let input: Option<OsString> = std::env::var_os("QSPEC_DIR");
+    run_with(Path::new("cargo"), workspace, input.as_deref(), &[])
 }
 
 fn run_ci_with(

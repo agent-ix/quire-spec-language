@@ -60,7 +60,8 @@ fn reowner(input: &mut Parts, requirement: &str) {
 }
 
 fn authored_model(edit: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
-    let mut authored: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut authored: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
     edit(&mut authored);
     let text = serde_json::to_string(&authored).unwrap();
     native_rule_model::from_text(&text, "native-link-variant.json", "draft:1")

@@ -56,6 +56,26 @@ pub(crate) const REPLAY_REFUSED_KIND: &str = "replay-refused";
 /// The wire spelling of `kani-vacuous-proof`.
 pub(crate) const KANI_VACUOUS_PROOF_KIND: &str = "kani-vacuous-proof";
 
+/// Why the value-validity arm does not decide an element (QSpec FR-483
+/// `unsupported`, whose `detail.reason` names it).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ValueCheckUnsupported {
+    /// A parameter whose type the arm does not enumerate.
+    ParameterDomain,
+    /// The evaluator refused a result.
+    EvaluationRefused,
+}
+
+impl ValueCheckUnsupported {
+    /// The reason's wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ParameterDomain => "parameter-domain-not-enumerable",
+            Self::EvaluationRefused => "evaluation-refused",
+        }
+    }
+}
+
 /// FR-127: how a proof established its claim, independently of certification.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -456,6 +476,14 @@ pub enum UnavailabilityCause {
         /// The punctual interval's span.
         span: qsl_foundation::Span,
     },
+    /// QSpec FR-483 arm outcome `unsupported`: the value-validity arm does
+    /// not decide the claim's form or an element it reads.
+    ValueCheck {
+        /// The claim form.
+        form: crate::value_check::ClaimForm,
+        /// The reason.
+        reason: ValueCheckUnsupported,
+    },
 }
 
 /// One wire failure in FR-220's `WeakAccessShape.failures` list.
@@ -537,6 +565,7 @@ impl UnavailabilityCause {
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::RecoveryView { .. } => "recovery-view",
             Self::PunctualInterval { .. } => "punctual-interval",
+            Self::ValueCheck { .. } => "unsupported-requested-capability",
         }
     }
 
@@ -559,7 +588,8 @@ impl UnavailabilityCause {
             | Self::UnsupportedHyperForm { .. }
             | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
-            | Self::StatisticalRequest(_) => Some("unsupported_projection"),
+            | Self::StatisticalRequest(_)
+            | Self::ValueCheck { .. } => Some("unsupported_projection"),
         }
     }
 
@@ -605,6 +635,15 @@ pub enum InconclusiveCause {
     InductionNotClosed {
         /// Attempted induction depth.
         depth: u64,
+    },
+    /// QSpec FR-468: a hypothesis item of a refinement's per-step
+    /// simulation obligations is not `proved`, so no step query's refutation
+    /// can settle the safety half `proved`.
+    HypothesesNotEstablished {
+        /// The invariant clause's node, as its wire id.
+        hypothesis: qsl_foundation::digest::WireNodeId,
+        /// The result its item settled.
+        result: crate::outcome::ItemLabel,
     },
     /// A successor's contract conjunction could not be decided.
     UndecidedSuccessor,
@@ -828,6 +867,7 @@ impl InconclusiveCause {
         match self {
             Self::BoundReached { .. } => "bound-reached",
             Self::InductionNotClosed { .. } => "induction-not-closed",
+            Self::HypothesesNotEstablished { .. } => "hypotheses-not-established",
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
             Self::RefutedIgnoringConstraints => "refuted-ignoring-constraints",
@@ -862,6 +902,7 @@ impl InconclusiveCause {
         match self {
             Self::BoundReached { .. }
             | Self::InductionNotClosed { .. }
+            | Self::HypothesesNotEstablished { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
             | Self::RefutedIgnoringConstraints
@@ -1235,6 +1276,30 @@ impl TerminalRecord {
                 certification: Certification::Certified,
             },
         )
+    }
+
+    /// QSpec FR-483: a `proved` record for a finite domain every assignment
+    /// of which was evaluated: basis `exhaustive`, `uncertified` because the
+    /// method has no core certificate checker.
+    pub fn exhaustive(request_index: RequestIndex, backend: BackendId) -> Self {
+        Self::with_backend(
+            request_index,
+            backend,
+            TerminalValue::Proved {
+                basis: ProofBasis::Exhaustive,
+                certification: Certification::Uncertified,
+            },
+        )
+    }
+
+    /// QSpec FR-483: a `refuted` record whose violating assignment the
+    /// native replay reproduced. The token is the only evidence accepted.
+    pub fn refuted_by_assignment(
+        request_index: RequestIndex,
+        backend: BackendId,
+        _reproduced: &crate::value_check::ReproducedViolation,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Refuted)
     }
 
     /// Build a tested record with the producing backend identity.
@@ -1847,7 +1912,11 @@ mod tests {
             CertificateRule::ProofStepInvalid,
             CertificateRule::NotRefutation,
         ] {
-            for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
+            for part in [
+                QueryPart::Unrolling,
+                QueryPart::Base,
+                QueryPart::Step { row: None },
+            ] {
                 for at in [
                     CertificateLocus::Query { part },
                     CertificateLocus::ProofStep { part, index: 0 },

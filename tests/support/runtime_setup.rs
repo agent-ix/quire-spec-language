@@ -229,7 +229,7 @@ pub(crate) fn input(snapshot: Snapshot) -> RuntimeInput {
 }
 
 pub(crate) fn authored_model(change: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
-    let mut data = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut data = serde_json::from_str(native_rule_model::fixture()).unwrap();
     change(&mut data);
     native_rule_model::from_text(
         &serde_json::to_string_pretty(&data).unwrap(),

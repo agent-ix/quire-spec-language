@@ -81,6 +81,8 @@ mod refinement_populations;
 #[cfg(feature = "test-support")]
 mod refinement_protocol;
 #[cfg(feature = "test-support")]
+mod refinement_step_simulation;
+#[cfg(feature = "test-support")]
 mod relationship_extents;
 #[cfg(feature = "test-support")]
 mod relationship_navigation;

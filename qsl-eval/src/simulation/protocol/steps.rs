@@ -21,6 +21,7 @@ use qsl_semantics::check::{
     AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
 };
 use quire_exact::Value;
+use quire_semantic_value::model_transition::ModelTransition;
 
 use super::access::{
     EnabledApplication, EnabledReader, InstanceAccess, StateWeakAccesses, ThreadAttempt,
@@ -339,6 +340,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     ) -> Result<StateWeakAccesses, ExpansionStop> {
         let mut applications = Vec::new();
         let mut readers = Vec::new();
+        let empty_transitions = BTreeSet::new();
         for (instance_ordinal, instance) in &state.instances {
             for (path, thread) in &instance.threads {
                 if thread.disposition == Disposition::Cancelled {
@@ -408,6 +410,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 .observe(&state.memory, &observation_path, &state.model);
                         let mut observations = vec![(probe.clone(), None)];
                         let mut read_locations = BTreeSet::new();
+                        let mut selected_by_location = BTreeMap::new();
                         if let Some(potential) = self.potential.of(node) {
                             let mut locations = BTreeSet::new();
                             for candidate in &potential.instances {
@@ -422,6 +425,24 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 {
                                     locations.extend(shape.iter().cloned());
                                 }
+                            }
+                            for location in &locations {
+                                let selected = potential
+                                    .instances
+                                    .iter()
+                                    .filter(|candidate| match &candidate.access {
+                                        InstanceAccess::Access {
+                                            class: AccessClass::Load | AccessClass::Rmw,
+                                            location: Some(candidate_location),
+                                        } => candidate_location == location,
+                                        InstanceAccess::Shape { locations } => {
+                                            locations.contains(location)
+                                        }
+                                        _ => false,
+                                    })
+                                    .map(|candidate| candidate.transition.clone())
+                                    .collect::<BTreeSet<_>>();
+                                selected_by_location.insert(location.clone(), selected);
                             }
                             for location in locations {
                                 let Some(cell) = self.potential.cell(&location) else {
@@ -449,14 +470,43 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             }
                         }
                         for (observed, read_location) in observations {
-                            let applied = self
-                                .model
-                                .apply_operation(&observed, &operation, &select, budget)?;
-                            for applied in applied.successors {
+                            let selected_transitions = read_location.as_ref().map(|location| {
+                                selected_by_location
+                                    .get(location)
+                                    .unwrap_or(&empty_transitions)
+                            });
+                            let enabled: Vec<(ModelTransition, Option<Value>)> =
+                                if attempt.constraint.is_some() {
+                                    self.model
+                                        .apply_operation_matching(
+                                            &observed,
+                                            &operation,
+                                            &select,
+                                            selected_transitions,
+                                            budget,
+                                        )?
+                                        .successors
+                                        .into_iter()
+                                        .map(|applied| (applied.transition, applied.result))
+                                        .collect()
+                                } else {
+                                    self.model
+                                        .enabled_transitions_matching(
+                                            &observed,
+                                            &operation,
+                                            &select,
+                                            selected_transitions,
+                                            budget,
+                                        )?
+                                        .into_iter()
+                                        .map(|transition| (transition, None))
+                                        .collect()
+                                };
+                            for (transition, result) in enabled {
                                 let potential_access = self
                                     .potential
                                     .of(node)
-                                    .and_then(|potential| potential.instance(&applied.transition));
+                                    .and_then(|potential| potential.instance(&transition));
                                 let potential_read = match potential_access {
                                     Some(InstanceAccess::Access {
                                         class: AccessClass::Load | AccessClass::Rmw,
@@ -479,7 +529,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 if let Some(constraint) = attempt.constraint {
                                     let mut frame = self.frame(instance, &observation_path, node);
                                     if let (Some(slot), Some(result)) =
-                                        (self.program.binder_of.get(&node), &applied.result)
+                                        (self.program.binder_of.get(&node), &result)
                                     {
                                         if let Some(entry) = frame.get_mut(*slot) {
                                             *entry = Some(result.clone());
@@ -494,10 +544,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 }
                                 let footprint = self
                                     .model
-                                    .footprint_selecting(
-                                        &applied.transition,
-                                        Some(&attempt.contracts),
-                                    )
+                                    .footprint_selecting(&transition, Some(&attempt.contracts))
                                     .map_err(|_| {
                                         ProtocolRefusal::Unsupported(
                                             super::Unsupported::AccessFootprint,
@@ -518,7 +565,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         path: observation_path.clone(),
                                         node,
                                     },
-                                    transition: applied.transition,
+                                    transition,
                                     reads: model_only(footprint.reads),
                                     writes: model_only(footprint.writes),
                                 });

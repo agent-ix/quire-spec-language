@@ -58,6 +58,7 @@ mod protocol_controls;
 mod protocol_function_bodies;
 mod protocol_graph;
 mod protocol_reference;
+mod protocol_requirements;
 mod protocol_terminal;
 mod reachability;
 mod receiver_frames;
@@ -65,6 +66,7 @@ mod refinement_adverse;
 mod refinement_rows;
 mod state_graph_claim;
 mod state_transition;
+mod step_relation;
 mod temporal_clause;
 mod terminal;
 mod timed_source;
@@ -1027,7 +1029,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
             (candidate.id.clone(), candidate)
         })
         .collect();
-    let omitted = omissions(&candidates, graph.source(), &ir_decodes);
+    let omitted = omissions(&candidates, graph.source(), &ir_decodes, &BTreeSet::new());
     assert_eq!(
         omitted,
         [OmittedNode {

@@ -105,7 +105,7 @@ is written `bounds`.
   automaton and its badness test by `check_step` (FR-141) on each edge, its
   own code, run on the positions the certificate lists. It SHALL:
   - run `check_initial` on each concrete initial state `i`, in index order,
-    against its initial node (`refinement.initials[i]`, FR-244), and reject
+    against its initial node (`initials[i]`, FR-244), and reject
     `InitialMismatch` at the `ZoneNode` of that node unless either
     `check_initial` passes with exactly that node's position and the node is
     not `locked`, or `check_initial` fails and that node is a `locked` entry

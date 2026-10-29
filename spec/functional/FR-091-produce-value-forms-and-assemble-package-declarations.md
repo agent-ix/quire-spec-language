@@ -105,22 +105,13 @@ The requirement carries testable criteria for decisions already taken:
   and an integer-division reading of `/` remain refused; FR-149 permits exact
   integer-to-rational promotion for rational `/` with an expected rational type
   only under `quire.value.complete/v1`.
-  `spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md`:
-  an enum declaration's key hashes
-  `{version: "quire.enum-declaration-node/v1", owner, qualified_declaration,
-  ordered, members}`, whose `members` are in declaration order for an
-  `ordered enum` and sorted by case name otherwise; a member's key hashes
-  `{version: "quire.enum-member-node/v1", declaration_node_id, case}`; the
-  optional display string of a member enters neither preimage and never
-  takes part in equality or ordering.
-  `spec/functional/type-model/FR-142-evaluate-quantities-and-units.md`: a
-  dimension's key hashes `{version: "quire.dimension-node/v1", owner,
-  qualified_declaration, terms}` over base-dimension terms with nonzero
-  exponents; a unit's hashes `{version: "quire.unit-node/v1", owner,
-  qualified_declaration, dimension_node_id, target_unit_node_id, scale,
-  offset}` with reduced rationals; an edge means `target_value = scale ×
-  source_value + offset`; a dimension's units have one targetless root with
-  scale one and offset zero, and no target cycle or cross-dimension target.
+  `spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md` owns
+  enum declaration/member identity, display-string exclusion and enum order;
+  QSL maps those identities into `VariantId` and the kernel enum shape below.
+  `spec/functional/type-model/FR-142-evaluate-quantities-and-units.md` owns
+  dimension and unit identity and unit-graph semantics; QSL's lowering and
+  kernel mapping are specified here. FR-142-AC-8 owns the compound-unit
+  identity vectors used by the QSL conformance checks.
   `shared-grammar.md`: a predicate
   reads only its explicit parameters and pure lexical values. The
   checked-package-v2 `schema.json` `FunctionNode` admits the

@@ -152,12 +152,6 @@ pub struct Edge {
     pub child: HeaderLayer,
 }
 
-/// The concrete corpus directory that ships with QSL.
-pub const REAL_CORPUS: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../tests/fixtures/refinement/layering/"
-);
-
 /// One source descriptor in an entry file.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -983,7 +977,15 @@ fn witness_result(
         };
     };
     let graph = checked.package().graph();
-    let [clause] = graph.state_clauses() else {
+    // The witness item is the unit's one `invariant` clause (QSpec
+    // FR-453-AC-8): the temporal witness also holds its guard and reset as
+    // `pre` and `post` state clauses.
+    let invariants: Vec<&CheckedStateClause> = graph
+        .state_clauses()
+        .iter()
+        .filter(|clause| clause.is_invariant())
+        .collect();
+    let [clause] = invariants[..] else {
         return WitnessResult {
             class: "admitted",
             codes: compilation
@@ -993,8 +995,8 @@ fn witness_result(
                 .collect(),
             candidates: Vec::new(),
             reason: Some(format!(
-                "witness unit has {} compiled state clauses; expected exactly one",
-                graph.state_clauses().len()
+                "witness unit has {} compiled invariant clauses; expected exactly one",
+                invariants.len()
             )),
             result: CaseResult::ToolFailure,
         };
@@ -1265,12 +1267,27 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["en-4"]
         );
-        for kind in [Capability::ValueValidity, Capability::OperationContract] {
-            let CandidateOutcome::Candidates(candidates) = first.candidates(kind) else {
-                panic!("an unregistered kind returns its empty candidate set");
-            };
-            assert!(candidates.is_empty(), "unexpected provider for {kind:?}");
-        }
+        let CandidateOutcome::Candidates(value) = first.candidates(Capability::ValueValidity)
+        else {
+            panic!("the value-validity arm gives a candidate set");
+        };
+        assert_eq!(
+            value
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["value-checker"]
+        );
+        let CandidateOutcome::Candidates(contract) =
+            first.candidates(Capability::OperationContract)
+        else {
+            panic!("an unregistered kind returns its empty candidate set");
+        };
+        assert!(
+            contract.is_empty(),
+            "unexpected provider for OperationContract"
+        );
     }
 
     /// FR-489-AC-3/6: a source failure or refused registration returns a

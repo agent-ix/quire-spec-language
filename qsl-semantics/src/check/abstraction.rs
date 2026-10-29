@@ -407,6 +407,13 @@ pub(super) struct ModelNames {
     exports: BTreeMap<Identifier, DeclarationKey>,
 }
 
+impl ModelNames {
+    /// The identity of the domain package the alias selects.
+    pub(super) fn package(&self) -> &str {
+        &self.package
+    }
+}
+
 /// The names of each admitted model, by alias.
 pub(super) fn model_names(models: &[AdmittedModel]) -> BTreeMap<String, ModelNames> {
     models

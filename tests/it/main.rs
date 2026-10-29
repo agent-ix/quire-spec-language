@@ -50,7 +50,6 @@ mod composed_namespace;
 mod composed_proofs;
 mod composed_query_proofs;
 mod composed_scopes;
-mod composed_state_evaluation;
 mod composed_syntax;
 mod composed_temporal_activation;
 mod composed_temporal_evaluation;

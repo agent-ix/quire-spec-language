@@ -2322,7 +2322,14 @@ mod tests {
     /// admits the `DefinitionLock` catalog's `root` row and refuses every
     /// other identity with its catalogued code and cause, all of them in
     /// source order.
-    #[trace("TC-490", "FR-110-AC-1", "FR-110-AC-2", "FR-110-AC-3", "FR-110-AC-6")]
+    #[trace(
+        "TC-490",
+        "FR-110-AC-1",
+        "FR-110-AC-2",
+        "FR-110-AC-3",
+        "FR-110-AC-6",
+        "FR-049-AC-10"
+    )]
     #[test]
     fn a_header_profile_resolves_by_identity_against_the_root_row() {
         let lock = DefinitionLock::pinned();
