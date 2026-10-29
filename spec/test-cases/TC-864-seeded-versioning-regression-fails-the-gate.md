@@ -17,9 +17,10 @@ relationships:
 Verify the gate end to end over a test-only corpus that the gate's real run
 does not read: one real pair whose superseding revision tightens a
 ConfigVersion clause is a violation naming exactly the seeded case, while
-the rest of the corpus holds. Verify also that the real corpus, generated at run time from the model
-file, passes `make refinement-versioning`, fails once the seed is added,
-follows an edit to the model file, and needs no committed digest.
+the rest of the corpus holds. Verify also that the real corpus, generated at
+run time from the model file, passes `make refinement-versioning`, fails
+once the seed is added, follows an edit to the model file, and needs no
+committed digest.
 
 Scope: FR-340-AC-6 to FR-340-AC-9, FR-343-AC-2 to FR-343-AC-4, FR-344-AC-5.
 
@@ -45,7 +46,7 @@ Build the test corpus from FR-108's ConfigVersion fixtures:
    seed pair to a copy of that generated corpus and run
    `cargo run --package xtask -- refinement versioning` over the copy.
 5. In a repository root holding only the model file, edit the model's
-   package version, generate the corpus from it and run the gate over the
+   package version and identity, generate the corpus from it and run the gate over the
    result.
 
 Each expected result is a literal in the test. Tag the tests
@@ -66,6 +67,6 @@ Each expected result is a literal in the test. Tag the tests
 - Step 4: the generated real corpus exits 0 (FR-340-AC-6); the copy with
   the seed exits 10 and the step fails (FR-340-AC-7).
 - Step 5: the generated units and both snapshots carry the edited version and
-  a digest different from the unedited model's, and no other digest
+  identity and a digest different from the unedited model's, and no other digest
   (FR-340-AC-8); the gate exits 0 although the root holds no other file
   (FR-340-AC-9).

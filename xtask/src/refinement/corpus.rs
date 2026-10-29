@@ -18,7 +18,6 @@ use crate::error::{Error, Result};
 const MODEL: &str = "examples/config-version/model.semantic-ir.json";
 const AUTHORITY: &str = "agent-ix";
 const IDENTITY: &str = "ix://example/config-version/spine/unit";
-const POPULATION: &str = "ix://example/config-version/config_history";
 const CLAUSE: &str = "present(self.parent) implies";
 /// A meaning-preserving revision of [`CLAUSE`] (the superseding unit).
 const CLAUSE_REVISED: &str = "not not present(self.parent) implies";
@@ -86,13 +85,13 @@ fn snapshot(model: &Model, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Va
         .map(|(key, version, parent)| {
             let parent = match parent {
                 Some(parent) => {
-                    json!({"present": {"reference": {"population": POPULATION, "key": parent}}})
+                    json!({"present": {"reference": {"population": population(model), "key": parent}}})
                 }
                 None => json!({"absent": {}}),
             };
             json!({
                 "key": key,
-                "type": "ix://example/config-version/ConfigVersion",
+                "type": format!("ix://{}/ConfigVersion", model.identity),
                 "fields": {"versionNumber": {"integer": version.to_string()}, "parent": parent},
             })
         })
@@ -112,16 +111,16 @@ fn snapshot(model: &Model, name: &str, rows: &[(&str, i64, Option<&str>)]) -> Va
             "version": model.version,
             "digest": format!("sha256-jcs:{}", model.digest),
         },
-        "populations": [{"population": POPULATION, "complete": true, "objects": objects}],
+        "populations": [{"population": population(model), "complete": true, "objects": objects}],
     })
 }
 
-fn clause_case(observation: &str) -> Value {
+fn clause_case(model: &Model, observation: &str) -> Value {
     json!({
         "selection": {"clause": {
             "name": "ParentOrder",
             "observation": observation,
-            "self": {"population": POPULATION, "key": "child"},
+            "self": {"population": population(model), "key": "child"},
             "anchor": {"kind": "handler", "name": "validate"},
         }},
         "observations": {observation: format!("{observation}.json")},
@@ -144,7 +143,7 @@ pub fn generate(root: &Path, out: &Path) -> Result<()> {
         "superseding": {"path": "superseding.native", "authority": AUTHORITY, "identity": IDENTITY},
         "packages": [format!("repo:{MODEL}")],
         "dependencies": [],
-        "cases": [clause_case("healthy-parent"), clause_case("violating-parent")],
+        "cases": [clause_case(&model, "healthy-parent"), clause_case(&model, "violating-parent")],
     });
     let dir = out.join("config-version-revision");
     let write = |name: &str, text: String| {
@@ -173,4 +172,9 @@ pub fn generate(root: &Path, out: &Path) -> Result<()> {
     );
     write("healthy-parent.json", healthy.to_string())?;
     write("violating-parent.json", violating.to_string())
+}
+
+/// The ConfigVersion population's identity, under the model's package identity.
+fn population(model: &Model) -> String {
+    format!("ix://{}/config_history", model.identity)
 }

@@ -685,11 +685,15 @@ fn the_generated_corpus_follows_the_model_file() {
     let model = "examples/config-version/model.semantic-ir.json";
     fs::create_dir_all(root.path().join("examples/config-version")).unwrap();
     let original = fs::read_to_string(repository().join(model)).unwrap();
-    let edited = original.replacen(
-        "\"identity\": \"example/config-version\",\n    \"version\": \"1.0.0\"",
-        "\"identity\": \"example/config-version\",\n    \"version\": \"1.0.7\"",
-        1,
-    );
+    // Move the package version and the package identity wherever the model
+    // names it (its own `identity`, module references and `ix://` type ids).
+    let edited = original
+        .replacen(
+            "\"version\": \"1.0.0\",\n    \"manifestDigest\"",
+            "\"version\": \"1.0.7\",\n    \"manifestDigest\"",
+            1,
+        )
+        .replace("example/config-version", "example/config-version-b");
     assert_ne!(edited, original, "the model edit applies");
     fs::write(root.path().join(model), &edited).unwrap();
 
@@ -721,6 +725,10 @@ fn the_generated_corpus_follows_the_model_file() {
         assert!(
             text.contains("1.0.7") && !text.contains("1.0.0"),
             "{name} names the edited package version"
+        );
+        assert!(
+            text.contains("example/config-version-b"),
+            "{name} names the edited package identity"
         );
     }
     // The root holds only the model file: no committed digest is read.
