@@ -78,6 +78,16 @@ fn assertions(query: &str) -> Vec<&str> {
         .collect()
 }
 
+/// `(step id (cl conjunct) :rule and :premises (premise) :args (k))`,
+/// `k` the position of `conjunct` among the operands of `whole`.
+fn and_step(id: &str, conjunct: &str, premise: &str, whole: &str) -> String {
+    let k = operands(whole)[1..]
+        .iter()
+        .position(|operand| *operand == conjunct)
+        .unwrap_or_else(|| panic!("{conjunct} is a conjunct of {whole}"));
+    format!("(step {id} (cl {conjunct}) :rule and :premises ({premise}) :args ({k}))")
+}
+
 const RANGE: &str = "(and (<= 0 s0.c.value) (<= s0.c.value 2))";
 
 /// The steps that refute the `(not true)` of a refuted `(or (not D) (not
@@ -93,10 +103,11 @@ fn initial_proof(query: &str) -> String {
     let [.., initial, negation] = asserted.as_slice() else {
         panic!("an initial query has two assertions after its ranges");
     };
+    let t0 = and_step("t0", "(= s0.c.value 0)", "a0", initial);
     format!(
         "(assume a0 {initial})\n\
          (assume a1 {negation})\n\
-         (step t0 (cl (= s0.c.value 0)) :rule and :premises (a0))\n\
+         {t0}\n\
          (step t1 (cl (not true) (not (= s0.c.value 0))) :rule or :premises (a1))\n\
          {TRUE}\
          (step t2 (cl) :rule resolution :premises (t1 u1 t0))\n"
@@ -108,10 +119,13 @@ const UNCHANGED: &str = "(= s1.c.value s0.c.value)";
 /// A refutation of a `stutter` row's query `(and ... Q ... (or (not true)
 /// (not Q)))`, `Q` the frame equality of `value`.
 fn stutter_proof(assertion: &str) -> String {
+    let t0 = and_step("t0", UNCHANGED, "a0", assertion);
+    let refuted = format!("(or (not true) (not {UNCHANGED}))");
+    let t1 = and_step("t1", &refuted, "a0", assertion);
     format!(
         "(assume a0 {assertion})\n\
-         (step t0 (cl {UNCHANGED}) :rule and :premises (a0))\n\
-         (step t1 (cl (or (not true) (not {UNCHANGED}))) :rule and :premises (a0))\n\
+         {t0}\n\
+         {t1}\n\
          (step t2 (cl (not true) (not {UNCHANGED})) :rule or :premises (t1))\n\
          {TRUE}\
          (step t3 (cl) :rule resolution :premises (t2 u1 t0))\n"
@@ -138,17 +152,17 @@ fn commit_proof(assertion: &str, w: char) -> String {
     [
         format!("(assume a0 {assertion})"),
         format!("(assume r {RANGE})"),
-        format!("(step c0 (cl (or (not true) (not {n}))) :rule and :premises (a0))"),
+        and_step("c0", &format!("(or (not true) (not {n}))"), "a0", assertion),
         format!("(step c1 (cl (not true) (not {n})) :rule or :premises (c0))"),
-        format!("(step c2 (cl {pre}) :rule and :premises (a0))"),
-        format!("(step c3 (cl {post}) :rule and :premises (a0))"),
-        format!("(step c4 (cl (< {v} 2)) :rule and :premises (c2))"),
-        format!("(step c5 (cl (and {busy} (= {tmp} {v}))) :rule and :premises (c2))"),
-        format!("(step c6 (cl (= {tmp} {v})) :rule and :premises (c5))"),
-        format!("(step c7 (cl {written}) :rule and :premises (c3))"),
-        format!("(step c8 (cl (and (< {tmp} 2) (= {v1} (+ {tmp} 1)))) :rule and :premises (c7))"),
-        format!("(step c9 (cl (= {v1} (+ {tmp} 1))) :rule and :premises (c8))"),
-        format!("(step c10 (cl (<= 0 {v})) :rule and :premises (r))"),
+        and_step("c2", &pre, "a0", assertion),
+        and_step("c3", &post, "a0", assertion),
+        and_step("c4", &format!("(< {v} 2)"), "c2", &pre),
+        and_step("c5", &format!("(and {busy} (= {tmp} {v}))"), "c2", &pre),
+        and_step("c6", &format!("(= {tmp} {v})"), "c5", &format!("(and {busy} (= {tmp} {v}))")),
+        and_step("c7", &written, "c3", &post),
+        and_step("c8", &format!("(and (< {tmp} 2) (= {v1} (+ {tmp} 1)))"), "c7", &written),
+        and_step("c9", &format!("(= {v1} (+ {tmp} 1))"), "c8", &format!("(and (< {tmp} 2) (= {v1} (+ {tmp} 1)))")),
+        and_step("c10", &format!("(<= 0 {v})"), "r", RANGE),
         format!(
             "(step c11 (cl (= {v1} (+ {v} 1)) (not (<= {v1} (+ {v} 1))) (not (<= (+ {v} 1) {v1}))) :rule la_disequality)"
         ),
@@ -730,5 +744,33 @@ fn refinement_queries_print_in_the_normative_order() {
                 )
             );
         }
+    });
+}
+
+/// FR-314: a refused initial query has no expected query, so the base part
+/// is rejected `QueryMismatch`, never `Unencodable`.
+#[trace("TC-893")]
+#[test]
+fn a_refused_initial_query_rejects_the_base_part() {
+    let world = World::new(&mutated(
+        &cas_refines_counter(),
+        "value = self.value;",
+        "value = if self.value * self.tmpA = 0 then self.value else self.tmpA;",
+    ));
+    with_request(&world, |request| {
+        let certificate = RefinementSmtCertificate {
+            format: ProofFormat::Alethe,
+            base: part("(check-sat)\n".to_owned(), String::new()),
+            steps: (0..7).map(|_| part(String::new(), String::new())).collect(),
+        };
+        assert_eq!(
+            check(request, &certificate),
+            rejected(
+                CertificateRule::QueryMismatch,
+                CertificateLocus::Query {
+                    part: QueryPart::Base
+                }
+            )
+        );
     });
 }

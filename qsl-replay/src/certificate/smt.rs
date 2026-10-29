@@ -12,7 +12,8 @@
 //!    the refinement has step rows;
 //! 2. `QueryMismatch`: a carried query differs, byte for byte, from the one
 //!    FR-315 encodes for its part; a row whose query FR-315 refuses has no
-//!    expected query, and its part is neither compared nor checked;
+//!    expected query, and its part is neither compared nor checked, and a
+//!    refused initial query rejects the base part;
 //! 3. the proof rules of [`alethe`](super::alethe): `Malformed`,
 //!    `NotRefutation` for a proof of no command, `ProofStepInvalid`, then
 //!    `NotRefutation` for a last command that does not conclude the empty
@@ -252,6 +253,16 @@ fn check(
                 }
                 Some(read_query(&expected).ok_or_else(|| fault("a printed query reads back"))?)
             }
+            // A refused row has no expected query (FR-315 "Refinement
+            // queries"); a refused initial query rejects the base part
+            // `QueryMismatch`, as FR-314 rejects any part FR-315 prints no
+            // query for.
+            Err(SmtEncodingRefusal::Refused(_)) if part == QueryPart::Base => {
+                return Err(reject(
+                    CertificateRule::QueryMismatch,
+                    CertificateLocus::Query { part },
+                ));
+            }
             Err(SmtEncodingRefusal::Refused(_)) => None,
             Err(SmtEncodingRefusal::Fault(fault)) => {
                 return Err(Halt::Check(SmtProofCheck::Fault(fault)));
@@ -323,10 +334,10 @@ fn check(
         if part.query.is_none() {
             return Ok(SmtProofCheck::Unencodable { part: part.part });
         }
-        let Some((_, _, proof)) = checked.next() else {
+        let Some((_, query, proof)) = checked.next() else {
             return Err(fault("every encodable part has a proof"));
         };
-        if let ProofOutcome::Unverifiable { step } = proof.outcome() {
+        if let ProofOutcome::Unverifiable { step } = proof.outcome(query) {
             return Ok(SmtProofCheck::Unverifiable {
                 part: part.part,
                 step,

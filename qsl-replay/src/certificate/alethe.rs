@@ -17,15 +17,19 @@
 //! command (`assume`, `step`, `anchor`, `define-fun`) and every command
 //! inside a subproof, its closing step included, taking the next number.
 //!
-//! Terms are compared syntactically after the `:named` and `define-fun`
-//! proxies are expanded, and modulo the orientation of equalities (the
-//! Alethe specification's "implicit reordering of equalities"): a binary
-//! `=` is held with its arguments in a canonical order.
+//! Terms are compared syntactically after the `:named`, `define-fun` and
+//! `let` abbreviations are expanded, modulo the orientation of equalities
+//! (the Alethe specification's "implicit reordering of equalities"): a
+//! binary `=` is held with its arguments in a canonical order. A step's
+//! conclusion is also kept as written, because in a non-empty context its
+//! equality is oriented.
 //!
-//! Not checked yet, and so `Unverifiable` wherever a proof uses them
-//! (FR-314's checked set names them; each is remaining work): a subproof
-//! whose anchor carries a context (`:args`), every command inside it and the
-//! `bind` rule that closes it, and a `define-fun` with parameters.
+//! An anchor's `:args` extend the context `Γ`; `refl`, `trans` and `cong`
+//! are checked under `subst(Γ)`, up to the renaming of bound variables, and
+//! `bind` against the subproof it closes. A rule that requires an empty
+//! context, used in a non-empty one, is not decided, and neither is a
+//! subproof closed by a rule other than `subproof` or `bind`, or a
+//! `resolution` whose pivots the bounded search cannot settle.
 
 #![allow(
     clippy::mutable_key_type,
@@ -128,8 +132,15 @@ pub(crate) enum Term {
     /// order, except that a binary `=` holds its arguments in canonical
     /// order (implicit reordering of equalities).
     App(Rc<str>, Vec<Rc<Term>>),
-    /// A form this checker reads only syntactically (a binder, an indexed
-    /// identifier).
+    /// A binder (`forall`, `exists`, `lambda`, `choice`): its sorted
+    /// variables, each with its sort's text, and its body.
+    Binder {
+        quantifier: Rc<str>,
+        vars: Vec<(Rc<str>, Rc<str>)>,
+        body: Rc<Term>,
+    },
+    /// A form this checker reads only syntactically (an indexed identifier,
+    /// a sort ascription).
     Other(Rc<str>),
 }
 
@@ -179,11 +190,22 @@ fn polarity(literal: &Rc<Term>) -> (&Rc<Term>, bool) {
     (base, negative)
 }
 
+/// A `define-fun` with parameters: its parameter names and its body.
+type Function = (Vec<Rc<str>>, Rc<Term>);
+
+/// A conclusion clause.
+type Clause = Rc<[Rc<Term>]>;
+
 /// The proxies a query or proof defines: `:named` annotations and
-/// `define-fun` commands without parameters.
+/// `define-fun` commands without parameters, and the `define-fun` commands
+/// with parameters, which an application expands.
 #[derive(Default)]
 struct Names {
     terms: HashMap<Rc<str>, Rc<Term>>,
+    functions: HashMap<Rc<str>, Function>,
+    /// The variables of the binders being read, innermost last: a bound
+    /// variable shadows a proxy of its name.
+    bound: Vec<Rc<str>>,
 }
 
 impl Names {
@@ -221,9 +243,43 @@ impl Names {
                         }
                         Some(term)
                     }
-                    "forall" | "exists" | "let" | "lambda" | "choice" | "_" | "as" => {
-                        Some(Rc::new(Term::Other(render(sexpr).into())))
+                    "forall" | "exists" | "lambda" | "choice" => {
+                        let [Sexpr::List(declared), body] = rest else {
+                            return None;
+                        };
+                        let vars = sorted_vars(declared)?;
+                        let depth = self.bound.len();
+                        self.bound.extend(vars.iter().map(|(name, _)| name.clone()));
+                        let body = self.term(body);
+                        self.bound.truncate(depth);
+                        Some(Rc::new(Term::Binder {
+                            quantifier: head.clone(),
+                            vars,
+                            body: body?,
+                        }))
                     }
+                    "let" => {
+                        // `let` is read as the substitution it abbreviates.
+                        let [Sexpr::List(bindings), body] = rest else {
+                            return None;
+                        };
+                        let mut map = HashMap::new();
+                        for binding in bindings {
+                            let Sexpr::List(pair) = binding else {
+                                return None;
+                            };
+                            let [Sexpr::Atom(name), value] = pair.as_slice() else {
+                                return None;
+                            };
+                            map.insert(name.clone(), self.term(value)?);
+                        }
+                        let depth = self.bound.len();
+                        self.bound.extend(map.keys().cloned());
+                        let body = self.term(body);
+                        self.bound.truncate(depth);
+                        Some(substitute(&body?, &map))
+                    }
+                    "_" | "as" => Some(Rc::new(Term::Other(render(sexpr).into()))),
                     _ => {
                         let args = rest
                             .iter()
@@ -254,6 +310,15 @@ impl Names {
                                 }
                             }
                         }
+                        if !self.bound.contains(head) {
+                            if let Some((parameters, body)) = self.functions.get(head) {
+                                if parameters.len() != args.len() {
+                                    return None;
+                                }
+                                let map = parameters.iter().cloned().zip(args).collect();
+                                return Some(substitute(body, &map));
+                            }
+                        }
                         Some(Term::app(head, args))
                     }
                 }
@@ -262,6 +327,9 @@ impl Names {
     }
 
     fn atom(&self, atom: &Rc<str>) -> Rc<Term> {
+        if self.bound.contains(atom) {
+            return Rc::new(Term::Symbol(atom.clone()));
+        }
         if let Some(term) = self.terms.get(atom) {
             return term.clone();
         }
@@ -270,6 +338,154 @@ impl Names {
         }
         Rc::new(Term::Symbol(atom.clone()))
     }
+}
+
+/// `((x S) ...)`: each variable with its sort's text.
+fn sorted_vars(declared: &[Sexpr]) -> Option<Vec<(Rc<str>, Rc<str>)>> {
+    declared
+        .iter()
+        .map(|var| match var {
+            Sexpr::List(pair) => match pair.as_slice() {
+                [Sexpr::Atom(name), sort] => Some((name.clone(), render(sort).into())),
+                _ => None,
+            },
+            Sexpr::Atom(_) => None,
+        })
+        .collect()
+}
+
+/// The symbols that occur free in `term`.
+fn free_symbols(term: &Term, bound: &mut Vec<Rc<str>>, free: &mut HashSet<Rc<str>>) {
+    match term {
+        Term::Symbol(name) => {
+            if !bound.contains(name) {
+                free.insert(name.clone());
+            }
+        }
+        Term::App(_, args) => {
+            for arg in args {
+                free_symbols(arg, bound, free);
+            }
+        }
+        Term::Binder { vars, body, .. } => {
+            let depth = bound.len();
+            bound.extend(vars.iter().map(|(name, _)| name.clone()));
+            free_symbols(body, bound, free);
+            bound.truncate(depth);
+        }
+        Term::Number { .. } | Term::Other(_) => {}
+    }
+}
+
+fn is_free_in(name: &str, term: &Term) -> bool {
+    let mut free = HashSet::new();
+    free_symbols(term, &mut Vec::new(), &mut free);
+    free.contains(name)
+}
+
+/// `term` with each free symbol of `map`'s domain replaced by its image,
+/// renaming a bound variable that an image would capture.
+fn substitute(term: &Rc<Term>, map: &HashMap<Rc<str>, Rc<Term>>) -> Rc<Term> {
+    if map.is_empty() {
+        return term.clone();
+    }
+    match &**term {
+        Term::Symbol(name) => map.get(name).cloned().unwrap_or_else(|| term.clone()),
+        Term::App(head, args) => {
+            Term::app(head, args.iter().map(|arg| substitute(arg, map)).collect())
+        }
+        Term::Binder {
+            quantifier,
+            vars,
+            body,
+        } => {
+            let mut inner = map.clone();
+            for (name, _) in vars {
+                inner.remove(name);
+            }
+            let mut captured = HashSet::new();
+            for image in inner.values() {
+                free_symbols(image, &mut Vec::new(), &mut captured);
+            }
+            let mut renamed = Vec::with_capacity(vars.len());
+            let mut avoid = captured.clone();
+            free_symbols(body, &mut Vec::new(), &mut avoid);
+            for (name, sort) in vars {
+                if captured.contains(name) {
+                    let mut fresh = format!("{name}'");
+                    while avoid.contains(fresh.as_str()) {
+                        fresh.push('\'');
+                    }
+                    let fresh: Rc<str> = fresh.into();
+                    avoid.insert(fresh.clone());
+                    inner.insert(name.clone(), Rc::new(Term::Symbol(fresh.clone())));
+                    renamed.push((fresh, sort.clone()));
+                } else {
+                    renamed.push((name.clone(), sort.clone()));
+                }
+            }
+            Rc::new(Term::Binder {
+                quantifier: quantifier.clone(),
+                vars: renamed,
+                body: substitute(body, &inner),
+            })
+        }
+        Term::Number { .. } | Term::Other(_) => term.clone(),
+    }
+}
+
+/// Whether `left` and `right` are equal up to the renaming of bound
+/// variables (and the orientation of equalities).
+fn alpha_equal(left: &Term, right: &Term) -> bool {
+    fn equal(left: &Term, right: &Term, pairs: &mut Vec<(Rc<str>, Rc<str>)>) -> bool {
+        match (left, right) {
+            (Term::Symbol(x), Term::Symbol(y)) => {
+                match pairs.iter().rev().find(|(a, b)| a == x || b == y) {
+                    Some((a, b)) => a == x && b == y,
+                    None => x == y,
+                }
+            }
+            (Term::App(f, xs), Term::App(g, ys)) => {
+                f == g
+                    && xs.len() == ys.len()
+                    && (xs.iter().zip(ys).all(|(x, y)| equal(x, y, pairs))
+                        || (&**f == "="
+                            && xs.len() == 2
+                            && equal(&xs[0], &ys[1], pairs)
+                            && equal(&xs[1], &ys[0], pairs)))
+            }
+            (
+                Term::Binder {
+                    quantifier: q,
+                    vars: xs,
+                    body: a,
+                },
+                Term::Binder {
+                    quantifier: r,
+                    vars: ys,
+                    body: b,
+                },
+            ) => {
+                if q != r
+                    || xs.len() != ys.len()
+                    || xs.iter().zip(ys).any(|((_, s), (_, t))| s != t)
+                {
+                    return false;
+                }
+                let depth = pairs.len();
+                pairs.extend(
+                    xs.iter()
+                        .zip(ys)
+                        .map(|((x, _), (y, _))| (x.clone(), y.clone())),
+                );
+                let same = equal(a, b, pairs);
+                pairs.truncate(depth);
+                same
+            }
+            _ => left == right,
+        }
+    }
+    equal(left, right, &mut Vec::new())
 }
 
 /// A numeric literal: an integer numeral (optionally negative), a decimal,
@@ -503,9 +719,37 @@ struct Command {
     /// Whether every premise and discharged assumption names a command
     /// earlier in a scope still open at this command.
     premises_visible: bool,
-    /// Whether the command lies in a subproof whose anchor carries a
-    /// context, which this checker does not read.
-    in_context: bool,
+    /// The context `Γ` of the command: the arguments of every enclosing
+    /// anchor, outermost first.
+    context: Rc<[Entry]>,
+}
+
+/// One element of a context: a fixed variable, or a variable mapped to a
+/// term.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Entry {
+    name: Rc<str>,
+    sort: Rc<str>,
+    value: Option<Rc<Term>>,
+}
+
+/// `subst(Γ)`: a fixed variable maps to itself, shadowing an earlier
+/// mapping; a mapping composes with the substitution before it, so
+/// `subst([x ↦ 7, x ↦ g(x)]) = {x ↦ g(7)}`.
+fn substitution(context: &[Entry]) -> HashMap<Rc<str>, Rc<Term>> {
+    let mut map = HashMap::new();
+    for entry in context {
+        match &entry.value {
+            None => {
+                map.remove(&entry.name);
+            }
+            Some(value) => {
+                let value = substitute(value, &map);
+                map.insert(entry.name.clone(), value);
+            }
+        }
+    }
+    map
 }
 
 #[derive(Debug)]
@@ -513,19 +757,27 @@ enum CommandKind {
     /// `(assume id φ)`; `local` inside a subproof.
     Assume { term: Rc<Term>, local: bool },
     /// `(step id (cl …) :rule r …)`.
-    Step(Step),
-    /// `(anchor :step id [:args …])`; `context` when it carries `:args`.
-    Anchor { context: bool },
-    /// `(define-fun …)`; `parameters` when it takes any.
-    Define { parameters: bool },
+    Step(Box<Step>),
+    /// `(anchor :step id [:args …])`.
+    Anchor,
+    /// `(define-fun …)`.
+    Define,
 }
+
+/// An equality as written, its sides in their source order: the
+/// conclusion of a step with a non-empty context is oriented.
+type Oriented = Option<(Rc<Term>, Rc<Term>)>;
 
 #[derive(Debug)]
 struct Step {
     clause: Vec<Rc<Term>>,
+    /// The clause's single literal, when it is an equality, as written.
+    oriented: Oriented,
     rule: Rc<str>,
     /// Each premise's conclusion clause.
     premises: Vec<Rc<[Rc<Term>]>>,
+    /// Each premise's single equality as written.
+    premises_oriented: Vec<Oriented>,
     args: Vec<Rc<Term>>,
     /// For a step that closes a subproof: the subproof's assumptions, in
     /// the order of `:discharge`, whether `:discharge` names exactly the
@@ -538,6 +790,10 @@ struct Subproof {
     discharged: Vec<Rc<Term>>,
     discharges_exactly: bool,
     last: Option<Rc<[Rc<Term>]>>,
+    /// The last command's single equality as written.
+    last_oriented: Oriented,
+    /// The anchor's own arguments.
+    arguments: Vec<Entry>,
 }
 
 /// A part's proof, read into numbered commands.
@@ -568,11 +824,73 @@ pub(crate) enum Reading {
 /// An open subproof while the proof is read.
 struct Frame {
     closing: Rc<str>,
-    context: bool,
+    /// The anchor's arguments.
+    arguments: Vec<Entry>,
     /// The ids defined in this subproof, removed from view when it closes.
     defined: Vec<Rc<str>>,
     assumptions: Vec<(Rc<str>, Rc<Term>)>,
-    last: Option<Rc<[Rc<Term>]>>,
+    last: Option<(Rc<[Rc<Term>]>, Oriented)>,
+}
+
+/// The context the open `frames` give.
+fn context_of(frames: &[Frame]) -> Rc<[Entry]> {
+    frames
+        .iter()
+        .flat_map(|frame| frame.arguments.iter().cloned())
+        .collect()
+}
+
+/// An anchor's `:args`: each `(x S)` fixes `x`, each `(:= (x S) t)` maps it.
+fn anchor_arguments(value: Option<&Sexpr>, names: &mut Names) -> Option<Vec<Entry>> {
+    let Some(value) = value else {
+        return Some(Vec::new());
+    };
+    let Sexpr::List(items) = value else {
+        return None;
+    };
+    items
+        .iter()
+        .map(|item| {
+            let Sexpr::List(parts) = item else {
+                return None;
+            };
+            match parts.as_slice() {
+                [Sexpr::Atom(name), sort] => Some(Entry {
+                    name: name.clone(),
+                    sort: render(sort).into(),
+                    value: None,
+                }),
+                [Sexpr::Atom(assign), Sexpr::List(var), term] if &**assign == ":=" => {
+                    let [Sexpr::Atom(name), sort] = var.as_slice() else {
+                        return None;
+                    };
+                    Some(Entry {
+                        name: name.clone(),
+                        sort: render(sort).into(),
+                        value: Some(names.term(term)?),
+                    })
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The single literal of `(cl l)` as written, when it is an equality.
+fn oriented_literal(clause: &Sexpr, names: &mut Names) -> Oriented {
+    let Sexpr::List(items) = clause else {
+        return None;
+    };
+    let [_, Sexpr::List(literal)] = items.as_slice() else {
+        return None;
+    };
+    let [Sexpr::Atom(head), left, right] = literal.as_slice() else {
+        return None;
+    };
+    if &**head != "=" {
+        return None;
+    }
+    Some((names.term(left)?, names.term(right)?))
 }
 
 /// Read `bytes` as an Alethe proof of `query`, numbering its commands.
@@ -592,10 +910,11 @@ pub(crate) fn read_proof(
     };
     let mut names = Names {
         terms: query.names.clone(),
+        ..Names::default()
     };
     let mut defined: HashSet<Rc<str>> = HashSet::new();
-    // Each visible id's conclusion clause.
-    let mut visible: HashMap<Rc<str>, Rc<[Rc<Term>]>> = HashMap::new();
+    // Each visible id's conclusion clause, and its equality as written.
+    let mut visible: HashMap<Rc<str>, (Clause, Oriented)> = HashMap::new();
     let mut frames: Vec<Frame> = Vec::new();
     let mut commands = Vec::with_capacity(sexprs.len());
     for sexpr in &sexprs {
@@ -606,7 +925,7 @@ pub(crate) fn read_proof(
             return Reading::Malformed;
         };
         let attributes = |from: usize| attributes(items.get(from..).unwrap_or_default());
-        let in_context = frames.iter().any(|frame| frame.context);
+        let context = context_of(&frames);
         let cost = match &**head {
             "step" => match attributes(3) {
                 Some(attrs) => {
@@ -632,13 +951,13 @@ pub(crate) fn read_proof(
                 if let Some(frame) = frames.last_mut() {
                     frame.defined.push(id.clone());
                     frame.assumptions.push((id.clone(), term.clone()));
-                    frame.last = Some(clause.clone());
+                    frame.last = Some((clause.clone(), None));
                 }
-                visible.insert(id.clone(), clause);
+                visible.insert(id.clone(), (clause, None));
                 commands.push(Command {
                     kind: CommandKind::Assume { term, local },
                     premises_visible: true,
-                    in_context,
+                    context,
                 });
             }
             ("anchor", _) => {
@@ -648,39 +967,52 @@ pub(crate) fn read_proof(
                 let Some(Sexpr::Atom(closing)) = attrs.get(":step") else {
                     return Reading::Malformed;
                 };
-                let context = attrs.has(":args");
+                let Some(arguments) = anchor_arguments(attrs.get(":args"), &mut names) else {
+                    return Reading::Malformed;
+                };
                 frames.push(Frame {
                     closing: closing.clone(),
-                    context,
+                    arguments,
                     defined: Vec::new(),
                     assumptions: Vec::new(),
                     last: None,
                 });
                 commands.push(Command {
-                    kind: CommandKind::Anchor { context },
+                    kind: CommandKind::Anchor,
                     premises_visible: true,
-                    in_context,
+                    context,
                 });
             }
             ("define-fun", [Sexpr::Atom(name), Sexpr::List(parameters), _sort, body]) => {
+                let Some(parameters) = sorted_vars(parameters) else {
+                    return Reading::Malformed;
+                };
+                let depth = names.bound.len();
+                names
+                    .bound
+                    .extend(parameters.iter().map(|(parameter, _)| parameter.clone()));
+                let body = names.term(body);
+                names.bound.truncate(depth);
+                let Some(body) = body else {
+                    return Reading::Malformed;
+                };
                 if parameters.is_empty() {
-                    let Some(term) = names.term(body) else {
-                        return Reading::Malformed;
-                    };
-                    names.terms.insert(name.clone(), term);
+                    names.terms.insert(name.clone(), body);
+                } else {
+                    let parameters = parameters.into_iter().map(|(name, _)| name).collect();
+                    names.functions.insert(name.clone(), (parameters, body));
                 }
                 commands.push(Command {
-                    kind: CommandKind::Define {
-                        parameters: !parameters.is_empty(),
-                    },
+                    kind: CommandKind::Define,
                     premises_visible: true,
-                    in_context,
+                    context,
                 });
             }
             ("step", [Sexpr::Atom(id), clause, ..]) => {
                 let Some(attrs) = attributes(3) else {
                     return Reading::Malformed;
                 };
+                let oriented = oriented_literal(clause, &mut names);
                 let Some(clause) = read_clause(clause, &mut names) else {
                     return Reading::Malformed;
                 };
@@ -721,14 +1053,14 @@ pub(crate) fn read_proof(
                     return Reading::Malformed;
                 }
                 let mut premises_visible = true;
-                let premises: Vec<Rc<[Rc<Term>]>> = premise_ids
+                let (premises, premises_oriented): (Vec<_>, Vec<_>) = premise_ids
                     .iter()
                     .filter_map(|premise| {
                         let found = visible.get(premise).cloned();
                         premises_visible &= found.is_some();
                         found
                     })
-                    .collect();
+                    .unzip();
                 let clause: Rc<[Rc<Term>]> = Rc::from(clause);
                 let closes = if frames.last().is_some_and(|frame| frame.closing == *id) {
                     let Some(frame) = frames.pop() else {
@@ -753,10 +1085,13 @@ pub(crate) fn read_proof(
                     let discharges_exactly = named.len() == discharge_ids.len()
                         && named.len() == assumed.len()
                         && assumed.keys().all(|id| named.contains(id));
+                    let (last, last_oriented) = frame.last.unzip();
                     Some(Subproof {
                         discharged,
                         discharges_exactly,
-                        last: frame.last,
+                        last,
+                        last_oriented: last_oriented.flatten(),
+                        arguments: frame.arguments,
                     })
                 } else {
                     if !discharge_ids.is_empty() {
@@ -766,19 +1101,27 @@ pub(crate) fn read_proof(
                 };
                 if let Some(frame) = frames.last_mut() {
                     frame.defined.push(id.clone());
-                    frame.last = Some(clause.clone());
+                    frame.last = Some((clause.clone(), oriented.clone()));
                 }
-                visible.insert(id.clone(), clause.clone());
+                visible.insert(id.clone(), (clause.clone(), oriented.clone()));
+                // A closing step stands in the context outside its subproof.
+                let context = if closes.is_some() {
+                    context_of(&frames)
+                } else {
+                    context
+                };
                 commands.push(Command {
-                    kind: CommandKind::Step(Step {
+                    kind: CommandKind::Step(Box::new(Step {
                         clause: clause.to_vec(),
+                        oriented,
                         rule: rule.clone(),
                         premises,
+                        premises_oriented,
                         args,
                         closes,
-                    }),
+                    })),
                     premises_visible,
-                    in_context,
+                    context,
                 });
             }
             _ => return Reading::Malformed,
@@ -825,10 +1168,6 @@ impl<'s> Attributes<'s> {
     /// The value of `key`, if it has one.
     fn get(&self, key: &str) -> Option<&'s Sexpr> {
         self.0.get(key).copied().flatten()
-    }
-
-    fn has(&self, key: &str) -> bool {
-        self.0.contains_key(key)
     }
 }
 
@@ -877,11 +1216,7 @@ impl Proof {
 
     /// FR-314's `ProofStepInvalid` rule over every command, in order.
     pub(crate) fn invalid_step(&self, query: &Query) -> Option<u64> {
-        self.commands
-            .iter()
-            .zip(0_u64..)
-            .find(|(command, _)| !command.valid(query))
-            .map(|(_, index)| index)
+        self.first(query, Check::Fails)
     }
 
     /// FR-314's last-command rule: the index of a last command that does
@@ -892,62 +1227,59 @@ impl Proof {
         (!refutes).then(|| u64::try_from(self.commands.len() - 1).unwrap_or(u64::MAX))
     }
 
-    /// FR-314's `Unverifiable` rule: the first command this checker does
-    /// not check.
-    pub(crate) fn first_unchecked(&self) -> Option<u64> {
+    /// The outcome of a proof no rule rejects: `Unverifiable` at the first
+    /// command this checker does not decide.
+    pub(crate) fn outcome(&self, query: &Query) -> ProofOutcome {
+        match self.first(query, Check::Undecided) {
+            Some(step) => ProofOutcome::Unverifiable { step },
+            None => ProofOutcome::Refutes,
+        }
+    }
+
+    fn first(&self, query: &Query, wanted: Check) -> Option<u64> {
         self.commands
             .iter()
             .zip(0_u64..)
-            .find(|(command, _)| !command.checked())
+            .find(|(command, _)| command.check(query) == wanted)
             .map(|(_, index)| index)
     }
+}
 
-    /// The outcome of a proof no rule rejects.
-    pub(crate) fn outcome(&self) -> ProofOutcome {
-        match self.first_unchecked() {
-            Some(step) => ProofOutcome::Unverifiable { step },
-            None => ProofOutcome::Refutes,
+/// What the checker finds of one command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Check {
+    /// The command follows by its rule.
+    Holds,
+    /// The command's rule is checked and its conclusion does not follow,
+    /// or a premise is not an earlier visible command.
+    Fails,
+    /// The command's rule is outside the checked set, or this checker does
+    /// not decide it here.
+    Undecided,
+}
+
+impl From<bool> for Check {
+    fn from(holds: bool) -> Self {
+        if holds {
+            Self::Holds
+        } else {
+            Self::Fails
         }
     }
 }
 
 impl Command {
-    /// Whether this checker checks the command's rule.
-    fn checked(&self) -> bool {
-        if self.in_context {
-            return false;
-        }
-        match &self.kind {
-            CommandKind::Assume { .. } => true,
-            CommandKind::Anchor { context } => !context,
-            CommandKind::Define { parameters } => !parameters,
-            CommandKind::Step(step) => match checked_rule(&step.rule) {
-                None | Some(Rule::Bind) => false,
-                // A closing step of a subproof is checked as `subproof`
-                // only.
-                Some(Rule::Subproof) => step.closes.is_some(),
-                Some(_) => step.closes.is_none(),
-            },
-        }
-    }
-
-    /// FR-314's `ProofStepInvalid` test of one command: its premises are
-    /// earlier visible commands, and, for a checked rule, its conclusion
-    /// follows by the rule.
-    fn valid(&self, query: &Query) -> bool {
+    /// FR-314's test of one command.
+    fn check(&self, query: &Query) -> Check {
         if !self.premises_visible {
-            return false;
-        }
-        if !self.checked() {
-            return true;
+            return Check::Fails;
         }
         match &self.kind {
-            CommandKind::Assume { term, local } => *local || query.assertions.contains(term),
-            CommandKind::Anchor { .. } | CommandKind::Define { .. } => true,
-            CommandKind::Step(step) => match checked_rule(&step.rule) {
-                Some(rule) => step.follows(rule, query),
-                None => true,
-            },
+            CommandKind::Assume { term, local } => {
+                (*local || query.assertions.contains(term)).into()
+            }
+            CommandKind::Anchor | CommandKind::Define => Check::Holds,
+            CommandKind::Step(step) => step.check(&self.context, query),
         }
     }
 }
@@ -963,6 +1295,144 @@ fn is_clause(clause: &[Rc<Term>], expected: &[Rc<Term>]) -> bool {
 }
 
 impl Step {
+    /// FR-314's test of the step in `context`.
+    fn check(&self, context: &[Entry], query: &Query) -> Check {
+        let Some(rule) = checked_rule(&self.rule) else {
+            return Check::Undecided;
+        };
+        match (&self.closes, rule) {
+            (Some(subproof), Rule::Subproof) if subproof.arguments.is_empty() => {
+                self.follows(Rule::Subproof, query).into()
+            }
+            (Some(subproof), Rule::Bind) => self.binds(subproof, context).into(),
+            // A subproof closed by another rule, or `subproof` over a
+            // context, is not decided here.
+            (Some(_), _) => Check::Undecided,
+            (None, Rule::Subproof | Rule::Bind) => Check::Fails,
+            (None, rule) if !context.is_empty() => match rule {
+                Rule::Refl | Rule::Trans | Rule::Cong => {
+                    self.follows_in(rule, &substitution(context)).into()
+                }
+                // A rule that requires an empty context.
+                _ => Check::Undecided,
+            },
+            (None, Rule::Resolution) => resolution(&self.premises, &self.clause, &self.args),
+            (None, rule) => self.follows(rule, query).into(),
+        }
+    }
+
+    /// `refl`, `trans` and `cong` in a non-empty context, whose substitution
+    /// is `subst`: the conclusion's equality is oriented, its left side the
+    /// original term, and `refl` holds when `subst` takes the left side to
+    /// the right up to the renaming of bound variables.
+    fn follows_in(&self, rule: Rule, subst: &HashMap<Rc<str>, Rc<Term>>) -> bool {
+        let Some((left, right)) = &self.oriented else {
+            return false;
+        };
+        if self.clause.len() != 1 {
+            return false;
+        }
+        let premises: Option<Vec<(Rc<Term>, Rc<Term>)>> = self
+            .premises
+            .iter()
+            .zip(&self.premises_oriented)
+            .map(|(clause, oriented)| (clause.len() == 1).then(|| oriented.clone()).flatten())
+            .collect();
+        let Some(premises) = premises else {
+            return false;
+        };
+        let renames = |from: &Rc<Term>, to: &Rc<Term>| alpha_equal(&substitute(from, subst), to);
+        match rule {
+            Rule::Refl => premises.is_empty() && renames(left, right),
+            Rule::Trans => {
+                let mut at = left.clone();
+                for (from, to) in &premises {
+                    if *from != at {
+                        return false;
+                    }
+                    at = to.clone();
+                }
+                !premises.is_empty() && at == *right
+            }
+            Rule::Cong => {
+                let (Term::App(f, xs), Term::App(g, ys)) = (&**left, &**right) else {
+                    return false;
+                };
+                if f != g || xs.len() != ys.len() {
+                    return false;
+                }
+                let mut next = premises.iter().peekable();
+                for (x, y) in xs.iter().zip(ys) {
+                    if next.peek().is_some_and(|(from, to)| from == x && to == y) {
+                        next.next();
+                    } else if !renames(x, y) {
+                        return false;
+                    }
+                }
+                next.next().is_none()
+            }
+            _ => false,
+        }
+    }
+
+    /// `bind` (Alethe rule 18): the subproof's anchor fixes `y1 … yn` and
+    /// maps `x1 ↦ y1 … xn ↦ yn`, its last step concludes `φ ≈ φ'`, and this
+    /// step concludes `Q x1 … xn. φ ≈ Q y1 … yn. φ'`, with no `yi` free in
+    /// the left side or named in the outer context.
+    fn binds(&self, subproof: &Subproof, outer: &[Entry]) -> bool {
+        let Some((left, right)) = &self.oriented else {
+            return false;
+        };
+        let (
+            Term::Binder {
+                quantifier: q,
+                vars: xs,
+                body: phi,
+            },
+            Term::Binder {
+                quantifier: r,
+                vars: ys,
+                body: phi_prime,
+            },
+        ) = (&**left, &**right)
+        else {
+            return false;
+        };
+        let n = xs.len();
+        let arguments = &subproof.arguments;
+        let fixed_then_mapped = n > 0
+            && ys.len() == n
+            && arguments.len() == 2 * n
+            && arguments[..n].iter().zip(ys).all(|(entry, (y, sort))| {
+                entry.value.is_none() && entry.name == *y && entry.sort == *sort
+            })
+            && arguments[n..]
+                .iter()
+                .zip(xs.iter().zip(ys))
+                .all(|(entry, ((x, sort), (y, _)))| {
+                    entry.name == *x
+                        && entry.sort == *sort
+                        && entry
+                            .value
+                            .as_deref()
+                            .is_some_and(|value| value.is_symbol(y))
+                });
+        let fresh = ys
+            .iter()
+            .all(|(y, _)| !is_free_in(y, left) && !outer.iter().any(|entry| entry.name == *y));
+        let inner = subproof
+            .last_oriented
+            .as_ref()
+            .is_some_and(|(from, to)| from == phi && to == phi_prime);
+        q == r
+            && matches!(&**q, "forall" | "exists")
+            && self.clause.len() == 1
+            && self.premises.is_empty()
+            && fixed_then_mapped
+            && fresh
+            && inner
+    }
+
     /// The single premise's clause, for a one-premise rule.
     fn premise(&self) -> Option<&[Rc<Term>]> {
         match self.premises.as_slice() {
@@ -980,15 +1450,15 @@ impl Step {
     }
 
     /// The argument `k` as an index.
-    fn index_arg(&self) -> Option<Option<usize>> {
+    /// The one integer argument `k` of `and`, `not_or`, `and_pos` and
+    /// `or_neg`, which the Alethe rules require.
+    fn index_arg(&self) -> Option<usize> {
         match self.args.as_slice() {
-            [] => Some(None),
             [arg] => match &**arg {
-                Term::Number { value, real: false } => value
+                Term::Number { value, real: false } if value.is_integer() => value
                     .numerator()
                     .to_u64()
-                    .and_then(|k| usize::try_from(k).ok())
-                    .map(Some),
+                    .and_then(|k| usize::try_from(k).ok()),
                 _ => None,
             },
             _ => None,
@@ -1009,11 +1479,12 @@ impl Step {
                 expected.extend(last.iter().cloned());
                 subproof.discharges_exactly && is_clause(clause, &expected)
             }),
+            // Decided in `check`, against its subproof.
             Rule::Bind => false,
             Rule::Refl => match clause {
                 [literal] => literal
                     .args_of("=")
-                    .is_some_and(|args| matches!(args, [left, right] if left == right)),
+                    .is_some_and(|args| matches!(args, [left, right] if alpha_equal(left, right))),
                 _ => false,
             },
             Rule::EqReflexive => no_premises && self.follows(Rule::Refl, query),
@@ -1067,7 +1538,8 @@ impl Step {
                     && (congruent_pairwise(left, right, &equalities)
                         || congruent_pairwise(right, left, &equalities))
             }
-            Rule::Resolution => resolves(&self.premises, clause),
+            // Decided three ways in `check`.
+            Rule::Resolution => false,
             Rule::Contraction => self.premise().is_some_and(|premise| {
                 let mut seen = HashSet::new();
                 let distinct: Vec<&Rc<Term>> = premise
@@ -1126,10 +1598,7 @@ impl Step {
                         not(conjunct)
                     }
                 };
-                match k {
-                    Some(k) => conjuncts.get(k).is_some_and(|c| pick(c) == *literal),
-                    None => conjuncts.iter().any(|c| pick(c) == *literal),
-                }
+                conjuncts.get(k).is_some_and(|c| pick(c) == *literal)
             }
             Rule::Or => self
                 .premise_unit()
@@ -1274,8 +1743,7 @@ impl Step {
         match rule {
             Rule::AndPos => match (first.negated().and_then(|t| t.args_of("and")), rest) {
                 (Some(conjuncts), [literal]) => match k {
-                    Some(Some(k)) => conjuncts.get(k) == Some(literal),
-                    Some(None) => conjuncts.contains(literal),
+                    Some(k) => conjuncts.get(k) == Some(literal),
                     None => false,
                 },
                 _ => false,
@@ -1290,8 +1758,7 @@ impl Step {
                 .is_some_and(|disjuncts| rest == disjuncts),
             Rule::OrNeg => match (first.args_of("or"), rest) {
                 (Some(disjuncts), [literal]) => match k {
-                    Some(Some(k)) => disjuncts.get(k).is_some_and(|d| not(d) == *literal),
-                    Some(None) => disjuncts.iter().any(|d| not(d) == *literal),
+                    Some(k) => disjuncts.get(k).is_some_and(|d| not(d) == *literal),
                     None => false,
                 },
                 _ => false,
@@ -1459,53 +1926,125 @@ fn congruent_pairwise(
             .all(|((x, y), (a, b))| (a == x && b == y) || (a == y && b == x))
 }
 
-/// `resolution`: a chain of binary resolutions over the premises in order
-/// derives a clause whose literals all lie in `conclusion`. Each step
-/// resolves on a pivot whose base formula occurs with opposite polarities
-/// (leading negations merged) in the clause so far and the next premise,
-/// preferring a pivot that does not occur in the conclusion. Deriving a
-/// subset of the conclusion is sound: the conclusion follows by weakening.
-fn resolves(premises: &[Rc<[Rc<Term>]>], conclusion: &[Rc<Term>]) -> bool {
+/// The most pivot choices [`resolution`] explores for a step that names no
+/// pivots; past it the step is not decided.
+const MAX_RESOLUTION_NODES: usize = 1 << 12;
+
+/// `clause` resolved with `next` on the pivot `(base, negative)`: the
+/// literals of `clause` of that polarity and those of `next` of the other
+/// are removed, and the rest kept once each.
+fn resolve(
+    clause: &[Rc<Term>],
+    next: &[Rc<Term>],
+    (base, negative): (&Rc<Term>, bool),
+) -> Vec<Rc<Term>> {
+    let mut kept: Vec<Rc<Term>> = Vec::with_capacity(clause.len() + next.len());
+    let keep = |literal: &Rc<Term>, removed: bool, kept: &mut Vec<Rc<Term>>| {
+        if !removed && !kept.contains(literal) {
+            kept.push(literal.clone());
+        }
+    };
+    for literal in clause {
+        let (b, n) = polarity(literal);
+        keep(literal, b == base && n == negative, &mut kept);
+    }
+    for literal in next {
+        let (b, n) = polarity(literal);
+        keep(literal, b == base && n != negative, &mut kept);
+    }
+    kept
+}
+
+/// `resolution` and `th_resolution` (Alethe rules 6 and 7): the conclusion
+/// is, as a set of literals, the clause a chain of binary resolutions over
+/// the premises in order derives. Leading negations are merged when a
+/// pivot is matched.
+///
+/// A step whose `:args` name the pivots (`p1 b1 … pk bk`, `bi` `true` when
+/// `pi` occurs in the clause so far and `(not pi)` in the next premise) is
+/// checked on exactly those. A step with no `:args` holds when some choice
+/// of pivots derives its conclusion; the search stops undecided past
+/// [`MAX_RESOLUTION_NODES`].
+fn resolution(premises: &[Rc<[Rc<Term>]>], conclusion: &[Rc<Term>], args: &[Rc<Term>]) -> Check {
     let Some((first, rest)) = premises.split_first() else {
-        return false;
+        return Check::Fails;
     };
     if rest.is_empty() {
-        return false;
+        return Check::Fails;
     }
     let wanted = set(conclusion);
-    let mut current: Vec<Rc<Term>> = first.to_vec();
-    for next in rest {
-        let mut candidates = Vec::new();
-        for (i, left) in current.iter().enumerate() {
-            let (base_left, negative_left) = polarity(left);
-            for (j, right) in next.iter().enumerate() {
-                let (base_right, negative_right) = polarity(right);
-                if base_left == base_right && negative_left != negative_right {
-                    candidates.push((i, j));
-                }
-            }
+    if !args.is_empty() {
+        if args.len() != 2 * rest.len() {
+            return Check::Fails;
         }
-        let pick = candidates
-            .iter()
-            .find(|(i, j)| !wanted.contains(&current[*i]) && !wanted.contains(&next[*j]))
-            .or_else(|| candidates.first());
-        let Some(&(i, j)) = pick else {
-            return false;
-        };
-        let pivot_left = current[i].clone();
-        let pivot_right = next[j].clone();
-        let mut resolved: Vec<Rc<Term>> = current
-            .into_iter()
-            .filter(|literal| *literal != pivot_left)
-            .collect();
-        resolved.extend(
-            next.iter()
-                .filter(|literal| **literal != pivot_right)
-                .cloned(),
-        );
-        current = resolved;
+        let mut clause = first.to_vec();
+        for (next, pivot) in rest.iter().zip(args.chunks(2)) {
+            let [term, flag] = pivot else {
+                return Check::Fails;
+            };
+            let positive = if flag.is_symbol("true") {
+                true
+            } else if flag.is_symbol("false") {
+                false
+            } else {
+                return Check::Fails;
+            };
+            let (base, negative) = polarity(term);
+            let (left, right) = (negative != !positive, negative == !positive);
+            let occurs = |clause: &[Rc<Term>], negative: bool| {
+                clause.iter().any(|literal| {
+                    let (b, n) = polarity(literal);
+                    b == base && n == negative
+                })
+            };
+            if !occurs(&clause, left) || !occurs(next, right) {
+                return Check::Fails;
+            }
+            clause = resolve(&clause, next, (base, left));
+        }
+        return (set(&clause) == wanted).into();
     }
-    current.iter().all(|literal| wanted.contains(literal))
+    let mut budget = MAX_RESOLUTION_NODES;
+    search(first.to_vec(), rest, &wanted, &mut budget)
+}
+
+fn search(
+    clause: Vec<Rc<Term>>,
+    rest: &[Rc<[Rc<Term>]>],
+    wanted: &HashSet<&Rc<Term>>,
+    budget: &mut usize,
+) -> Check {
+    let Some((next, later)) = rest.split_first() else {
+        return (set(&clause) == *wanted).into();
+    };
+    let mut pivots: Vec<(&Rc<Term>, bool)> = Vec::new();
+    for literal in &clause {
+        let (base, negative) = polarity(literal);
+        let complemented = next.iter().any(|other| {
+            let (b, n) = polarity(other);
+            b == base && n != negative
+        });
+        if complemented && !pivots.contains(&(base, negative)) {
+            pivots.push((base, negative));
+        }
+    }
+    let mut undecided = false;
+    for pivot in pivots {
+        if *budget == 0 {
+            return Check::Undecided;
+        }
+        *budget -= 1;
+        match search(resolve(&clause, next, pivot), later, wanted, budget) {
+            Check::Holds => return Check::Holds,
+            Check::Undecided => undecided = true,
+            Check::Fails => {}
+        }
+    }
+    if undecided {
+        Check::Undecided
+    } else {
+        Check::Fails
+    }
 }
 
 /// A linear combination: each atom's coefficient, and the constant.
@@ -1880,7 +2419,7 @@ mod tests {
         if let Some(index) = proof.not_refutation() {
             return Err(format!("short {index}"));
         }
-        Ok(proof.outcome())
+        Ok(proof.outcome(&query))
     }
 
     /// FR-314's command numbering and its subproof, malformed and
@@ -1965,5 +2504,108 @@ mod tests {
              (step t1 (cl true) :rule tautology :premises (t0))\
              (step t2 (cl false) :rule tautology :premises (a0))";
         assert_eq!(verdict(tautology), Err("invalid 3".to_owned()));
+    }
+
+    /// `resolution` checks its conclusion exactly: named pivots are
+    /// matched as given, unnamed ones are searched for, and a clause other
+    /// than the one the chain derives is invalid.
+    #[trace("TC-893")]
+    #[test]
+    fn resolution_matches_its_pivots_exactly() {
+        let refutation = "(assume a0 (> x 0))(assume a1 (< x 1))\
+             (step t0 (cl (not (> x 0)) (not (< x 1))) :rule la_generic :args (1 1))\
+             (step t1 (cl) :rule resolution :premises (t0 a0 a1) \
+             :args ((> x 0) false (< x 1) false))";
+        assert_eq!(verdict(refutation), Ok(ProofOutcome::Refutes));
+        let wrong_flag = refutation.replace("(> x 0) false", "(> x 0) true");
+        assert_eq!(verdict(&wrong_flag), Err("invalid 3".to_owned()));
+        let short_args = refutation.replace(" (< x 1) false", "");
+        assert_eq!(verdict(&short_args), Err("invalid 3".to_owned()));
+        let premises = "(step h0 (cl p q) :rule hole)(step h1 (cl (not p) (not q)) :rule hole)";
+        for (conclusion, expected) in [
+            ("(cl q (not q))", "short 2"),
+            ("(cl p (not p))", "short 2"),
+            ("(cl p (not q))", "invalid 2"),
+            ("(cl q (not q) r)", "invalid 2"),
+        ] {
+            let proof =
+                format!("{premises}(step t0 {conclusion} :rule resolution :premises (h0 h1))");
+            assert_eq!(verdict(&proof), Err(expected.to_owned()), "{conclusion}");
+        }
+    }
+
+    /// `and`, `not_or`, `and_pos` and `or_neg` take their index argument.
+    #[trace("TC-893")]
+    #[test]
+    fn conjunct_rules_take_their_index() {
+        let premise = "(step h0 (cl (and p q)) :rule hole)";
+        assert_eq!(
+            verdict(&format!(
+                "{premise}(step t0 (cl q) :rule and :premises (h0) :args (1))"
+            )),
+            Err("short 1".to_owned())
+        );
+        for args in ["", ":args (0)", ":args (2)", ":args (1 1)"] {
+            assert_eq!(
+                verdict(&format!(
+                    "{premise}(step t0 (cl q) :rule and :premises (h0) {args})"
+                )),
+                Err("invalid 1".to_owned()),
+                "{args}"
+            );
+        }
+        assert_eq!(
+            verdict("(step t0 (cl (not (and p q)) q) :rule and_pos)"),
+            Err("invalid 0".to_owned())
+        );
+    }
+
+    /// A `define-fun` with parameters is expanded where it is applied.
+    #[trace("TC-893")]
+    #[test]
+    fn a_defined_function_expands_at_its_application() {
+        let proof = "(define-fun f ((z Int)) Bool (> z 0))\
+             (assume a0 (f x))(assume a1 (< x 1))\
+             (step t0 (cl (not (f x)) (not (< x 1))) :rule la_generic :args (1 1))\
+             (step t1 (cl) :rule resolution :premises (t0 a0 a1))";
+        assert_eq!(verdict(proof), Ok(ProofOutcome::Refutes));
+        let wrong = proof.replace("(assume a0 (f x))", "(assume a0 (f y))");
+        assert_eq!(verdict(&wrong), Err("invalid 1".to_owned()));
+    }
+
+    /// An anchor's context: `refl` and `cong` under `subst(Γ)`, and `bind`
+    /// closing the subproof (the Alethe specification's Example 4).
+    #[trace("TC-893")]
+    #[test]
+    fn an_anchor_context_renames_a_bound_variable() {
+        let renaming = "(anchor :step t5 :args ((y Int) (:= (x Int) y)))\
+             (step t3 (cl (= x y)) :rule refl)\
+             (step t4 (cl (= (> x 0) (> y 0))) :rule cong :premises (t3))\
+             (step t5 (cl (= (forall ((x Int)) (> x 0)) (forall ((y Int)) (> y 0)))) :rule bind)";
+        assert_eq!(verdict(renaming), Err("short 3".to_owned()));
+        // `refl` is checked under the context's substitution.
+        let unrenamed = renaming.replace("(cl (= x y)) :rule refl", "(cl (= x x)) :rule refl");
+        assert_eq!(verdict(&unrenamed), Err("invalid 1".to_owned()));
+        // The conclusion's equality is oriented in a non-empty context.
+        let reversed = renaming.replace("(cl (= x y)) :rule refl", "(cl (= y x)) :rule refl");
+        assert_eq!(verdict(&reversed), Err("invalid 1".to_owned()));
+        // `bind` binds the variables the anchor fixes and maps.
+        let other = renaming.replace("(forall ((y Int)) (> y 0))", "(forall ((z Int)) (> z 0))");
+        assert_eq!(verdict(&other), Err("invalid 3".to_owned()));
+        let free = renaming.replace("(forall ((x Int)) (> x 0))", "(forall ((x Int)) (> y 0))");
+        assert_eq!(verdict(&free), Err("invalid 3".to_owned()));
+        // A rule that needs an empty context is not decided inside one.
+        let context_free = format!(
+            "{}(step t6 (cl) :rule hole)",
+            renaming.replace(
+                "(step t4 (cl (= (> x 0) (> y 0))) :rule cong :premises (t3))",
+                "(step t2 (cl (not (not (not true))) true) :rule not_not)\
+                 (step t4 (cl (= (> x 0) (> y 0))) :rule cong :premises (t3))"
+            )
+        );
+        assert_eq!(
+            verdict(&context_free),
+            Ok(ProofOutcome::Unverifiable { step: 2 })
+        );
     }
 }
