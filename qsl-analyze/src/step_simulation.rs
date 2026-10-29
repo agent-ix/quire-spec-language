@@ -50,7 +50,8 @@ pub struct StepSimulationItem<'a> {
     /// The backend's certificate for the refinement, when it returned one.
     pub certificate: Option<RefinementSmtCertificate>,
     /// Each hypothesis item: the invariant clause's node and its item's
-    /// result, in the records' `hypotheses` order.
+    /// result, in the records' `hypotheses` order (FR-146: every record of a
+    /// refinement lists the same clauses, ascending by node key).
     pub hypotheses: Vec<(NodeKey, TerminalValue)>,
     /// The certificate checker's budgets.
     pub certificate_limits: CertificateCheckLimits,

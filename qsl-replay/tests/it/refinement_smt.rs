@@ -845,3 +845,75 @@ fn a_proof_over_ill_sorted_literals_is_rejected() {
         );
     });
 }
+
+/// TC-551, FR-314 "Outputs" settlement rule: a certificate check that a
+/// limit or a cancellation stops settles every holding record V-7 with its
+/// cause, and one that faults settles them `failed`, never `Uncertified`;
+/// the safety half takes the first record's result.
+#[trace("TC-551")]
+#[test]
+fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
+    let holds = vec![StepRecordVerdict::Holds; 8];
+    let limit = IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::CertificateMaxBytes,
+        value: 1,
+    };
+    let fault = quire_semantic_value::catalog::InternalFault::new("smt", "broken");
+    for (check, value) in [
+        (
+            SmtProofCheck::Stopped(limit),
+            TerminalValue::Incomplete(limit),
+        ),
+        (SmtProofCheck::Fault(fault), TerminalValue::Failed),
+    ] {
+        let checked = StepCertification::of_check(Some(Ok(check)), 7);
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        assert_eq!(values(&settled), vec![value.clone(); 8]);
+        assert!(settled
+            .records
+            .iter()
+            .all(|record| record.basis == SettlementBasis::Unavailable));
+        assert_eq!(settled.safety.value, value);
+    }
+}
+
+/// FR-146-AC-4's refused-`Initial` part and FR-314-AC-9 (TC-551): over
+/// `CasRefinesCounter` with a mapping row outside `QF_LIA`, the checker
+/// rejects the base part `QueryMismatch` at `Base`, so the `Initial` record
+/// is `CertificateRejected{QueryMismatch, Base}`, every other record
+/// `Uncertified`, and the safety half `CertificateRejected`.
+#[trace("TC-551")]
+#[test]
+fn a_refused_initial_query_rejects_the_initial_record() {
+    let world = World::new(&mutated(
+        &cas_refines_counter(),
+        "value = self.value;",
+        "value = if self.value * self.tmpA = 0 then self.value else self.tmpA;",
+    ));
+    with_request(&world, |request| {
+        let certificate = RefinementSmtCertificate {
+            format: ProofFormat::Alethe,
+            base: part(String::new(), String::new()),
+            steps: (0..7).map(|_| part(String::new(), String::new())).collect(),
+        };
+        let checked = certify_step_records(
+            request,
+            Some(&certificate),
+            7,
+            &CertificateCheckLimits::default(),
+            &Cancel::new(),
+        );
+        let settled =
+            settle_step_records(&vec![StepRecordVerdict::Holds; 8], &checked, &[], no_replay);
+        let wrong = TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query {
+                part: QueryPart::Base,
+            },
+        });
+        let mut expected = vec![proved(Certification::Uncertified); 8];
+        expected[0] = wrong.clone();
+        assert_eq!(values(&settled), expected);
+        assert_eq!(settled.safety.value, wrong);
+    });
+}

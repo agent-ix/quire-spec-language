@@ -13,7 +13,7 @@ use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
     CertificateCheckLimits, Certification, ProofBasis, SettlementBasis, TerminalValue,
 };
-use quire_exact::{Cancel, NodeKey};
+use quire_exact::Cancel;
 
 use crate::refinement_fixture::{cas_refines_counter, World};
 use crate::refinement_proofs::{certificate, with_request};
@@ -40,7 +40,16 @@ fn holding() -> Vec<StepRecordResult> {
 fn a_verified_certificate_settles_every_record_certified() {
     let world = World::new(&cas_refines_counter());
     let backend = BackendId::new("smt");
-    let hypothesis = NodeKey::from_digest([7; 32]);
+    // The hypothesis items are the invariant clauses the records list, each
+    // proved and certified.
+    let entries = world.refinement().step_simulations();
+    assert_eq!(entries.len(), 8);
+    let hypotheses: Vec<_> = entries[0]
+        .record()
+        .hypotheses
+        .iter()
+        .map(|clause| (*clause, proved(Certification::Certified)))
+        .collect();
     with_request(&world, |request| {
         let valid = certificate(request, 7);
         for (certificate, certification) in [
@@ -53,7 +62,7 @@ fn a_verified_certificate_settles_every_record_certified() {
                     backend: backend.clone(),
                     records: holding(),
                     certificate,
-                    hypotheses: vec![(hypothesis, proved(Certification::Certified))],
+                    hypotheses: hypotheses.clone(),
                     certificate_limits: CertificateCheckLimits::default(),
                     replay_initial: Box::new(|| panic!("no initial counterexample")),
                 },

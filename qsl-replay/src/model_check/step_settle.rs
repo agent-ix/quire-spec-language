@@ -37,6 +37,11 @@ pub enum BackendCertificate {
         /// Where the rule failed.
         at: CertificateLocus,
     },
+    /// A limit or a cancellation stopped the check (FR-314 `Stopped`): the
+    /// record settles V-7 with the cause, never `proved`.
+    Stopped(IncompleteCause),
+    /// The check faulted (FR-314 `Fault`): the record settles `failed`.
+    Fault,
 }
 
 /// What the SMT backend returned for one per-step simulation record.
@@ -96,6 +101,8 @@ impl StepSimulationSettlement {
 pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSettlement {
     match outcome {
         StepBackendOutcome::Holds { certificate } => match certificate {
+            BackendCertificate::Stopped(cause) => unavailable(TerminalValue::Incomplete(cause)),
+            BackendCertificate::Fault => unavailable(TerminalValue::Failed),
             BackendCertificate::Rejected { rule, at } => StepSimulationSettlement {
                 value: TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
                     rule,

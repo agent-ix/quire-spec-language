@@ -9,8 +9,11 @@
 //! when the check returns `Verified`. A check that rejects a part makes that
 //! part's record (`Base` the `Initial` record, `Step { row: Some(r) }` row
 //! `r`'s) `Inconclusive(CertificateRejected{rule, at})` and every other
-//! record `Uncertified`. Any other result, `Unencodable` included
-//! (FR-146-AC-4), leaves every record `Uncertified`.
+//! record `Uncertified`; a refused `Initial` query is such a rejection, at
+//! `Base`. `Unverifiable` and `Unencodable` (FR-146-AC-4) leave every
+//! holding record `Uncertified`. A check that a limit or cancellation stops
+//! settles every holding record V-7 with its cause, and one that faults
+//! settles them `failed` (FR-314 "Outputs", settlement rule).
 
 use quire_exact::{Cancel, NodeKey};
 
@@ -95,13 +98,10 @@ impl StepCertification {
         let standing = match &check {
             None => BackendCertificate::Absent,
             Some(Ok(SmtProofCheck::Verified)) => BackendCertificate::Verified,
-            Some(Ok(
-                SmtProofCheck::Unverifiable { .. }
-                | SmtProofCheck::Unencodable { .. }
-                | SmtProofCheck::Stopped(_)
-                | SmtProofCheck::Fault(_),
-            ))
+            Some(Ok(SmtProofCheck::Unverifiable { .. } | SmtProofCheck::Unencodable { .. }))
             | Some(Err(_)) => BackendCertificate::Unverifiable,
+            Some(Ok(SmtProofCheck::Stopped(cause))) => BackendCertificate::Stopped(*cause),
+            Some(Ok(SmtProofCheck::Fault(_))) => BackendCertificate::Fault,
         };
         let rejected = match check {
             Some(Err(rejection)) => {
@@ -227,14 +227,14 @@ fn safety_of(
     if let Some(row) = decisive_row(verdicts, certification, hypotheses, replay_initial) {
         return settled(row);
     }
-    let other = verdicts.iter().zip(records).find(|(verdict, _)| {
-        matches!(
-            verdict,
-            StepRecordVerdict::NoCandidate | StepRecordVerdict::Other(_)
-        )
-    });
-    match other {
-        Some((_, record)) => record.clone(),
+    // Every rule before it has passed, so a record that is not `proved` is
+    // another result: no candidate, a backend's other result, or a
+    // certificate check that a limit stopped or that faulted.
+    match records
+        .iter()
+        .find(|record| !matches!(record.value, TerminalValue::Proved { .. }))
+    {
+        Some(record) => record.clone(),
         None => settled(proof_row(records, hypotheses)),
     }
 }
