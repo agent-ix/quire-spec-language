@@ -803,6 +803,9 @@ fn product_halt_result(
             accounting_value(accounting, counter),
         )),
         Halt::Cancelled(cause) => return Err(ReplayRefusal::Cancelled(cause)),
+        Halt::AutomatonKey(error) => {
+            return Err(refused(ModelTraceRefusal::Automaton(error)));
+        }
         Halt::Encoding(_) | Halt::Fault(_) | Halt::Atom(_) | Halt::WitnessSet(_) => {
             return Err(fault("the-HP-5-product-stop-is-recoverable"));
         }

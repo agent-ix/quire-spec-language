@@ -267,8 +267,8 @@ fn a_certificate_from_another_package_is_stale_before_any_component_rule() {
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-            requested: foreign.record(),
-            recompiled: recompiled.record(),
+            requested: qsl_replay::StaleIdentity::Package(foreign.record()),
+            recompiled: qsl_replay::StaleIdentity::Package(recompiled.record()),
         })
     );
 }

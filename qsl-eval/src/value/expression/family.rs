@@ -366,15 +366,11 @@ mod family_contract_tests {
         .expect("f checks")
         .function_identity("f")
         .expect("f is declared");
-        // The vector's key, read from FR-092 in this repository.
-        let published = include_str!(
-            "../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md"
-        )
-        .split("**F1**:")
-        .nth(1)
-        .and_then(|rest| rest.split("Key: `").nth(1))
-        .and_then(|rest| rest.split('`').next())
-        .expect("FR-092 publishes vector F1's key");
+        // The vector's key, recomputed from FR-092's hand-written preimage.
+        let published = qsl_semantics::check::spec_vectors::vectors("FR-092")
+            .remove("F1")
+            .expect("FR-092 publishes vector F1")
+            .0;
         assert_eq!(expected.to_string(), published);
     }
 

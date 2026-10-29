@@ -113,6 +113,17 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
+// FR-092/093/094's golden vectors, resolved from the specs' hand-written
+// preimages; the package emitter's and the evaluator's tests recompute the
+// keys through it, so only `test-support` exposes it.
+#[cfg(any(test, feature = "test-support"))]
+#[path = "lowering/spec_vectors.rs"]
+pub mod spec_vectors;
+// FR-091's dimension, unit and enum key vectors, recomputed from the spec's
+// stated preimage content.
+#[cfg(any(test, feature = "test-support"))]
+#[path = "lowering/fr091_vectors.rs"]
+pub mod fr091_vectors;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 mod hybrid;
