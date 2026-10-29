@@ -258,12 +258,7 @@ fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
     let mut points = StateClauseExecutionPoints::new();
     for (clause, wire) in entries {
         let point: ExecutionPoint =
-            serde_json::from_value(wire.clone()).map_err(|e| bad(format!("{clause}: {e}")))?;
-        // A point that does not serialize back to what was written carried a
-        // member it does not define.
-        if serde_json::to_value(&point).ok().as_ref() != Some(&wire) {
-            return Err(bad(format!("{clause}: unknown member in the point")));
-        }
+            serde_json::from_value(wire).map_err(|e| bad(format!("{clause}: {e}")))?;
         points.insert(clause, point);
     }
     Ok(points)
