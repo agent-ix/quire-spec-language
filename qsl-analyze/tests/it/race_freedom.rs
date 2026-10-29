@@ -1278,10 +1278,10 @@ fn a_later_enabled_rmw_creates_the_race_freedom_item_under_ra_and_tso() {
 /// FR-224-AC-3 (TC-669), the `tso` half: a subject whose shared accesses are
 /// all atomic carries no `RaceFreedom` item under `tso`, nor does the AC-1
 /// shape under `sc`; two items over one subject give one item, whose identity
-/// differs between the `tso` and `ra` requests. The AC-1 shape's clause has
-/// no node, so its item is settled `unsupported` with no request item and
-/// is counted there; the identities are compared over two plain stores whose
-/// clause has one.
+/// differs between the `tso` and `ra` requests. The AC-1 shape's unit
+/// selects no protocol profile, so its item is settled `unsupported` with no
+/// request item (QSpec FR-368-AC-24) and is counted there; the identities are
+/// compared over two plain stores in a unit that selects the profile.
 #[trace("TC-669", "FR-224-AC-3")]
 #[test]
 fn the_race_freedom_item_is_derived_only_for_a_weak_subject_with_a_non_atomic_access() {
@@ -1588,67 +1588,70 @@ fn each_set_of_resolved_models_of_one_subject_gets_its_race_freedom_item() {
     assert!(written.unanchored().is_empty());
 }
 
-/// QSpec FR-368-AC-22's settlement for a protocol subject whose clause has
-/// no node (its unit selects no protocol profile): its deadlock-freedom and
-/// race-freedom items are written as no request item and settled
+/// QSpec FR-368-AC-24 and AC-25: a protocol subject of a unit that selects
+/// no protocol profile, whose checked clause has no node (FR-322
+/// "Properties"), has no anchor. Its deadlock-freedom item, and its
+/// race-freedom item exactly where FR-438 derives it (a weak resolved model
+/// with a non-atomic access), are written as no request item and settled
 /// `unsupported` with `unsupported_projection`/
-/// `unsupported-requested-capability`, cause `NoProtocolNode`, each detail
-/// naming the item kind and the missing node. QSpec FR-368 states no anchor
-/// for such a clause; this is QSL's reading, by FR-331's unemitted package.
-#[trace("QSpec-TC-431")]
+/// `unsupported-requested-capability`, each detail naming the item kind and
+/// that the unit selects no protocol profile. Under `sc`, or with every
+/// access atomic, there is no race-freedom item at all, and in no case is
+/// there a time-lock-freedom item, written or settled.
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-24")]
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
 #[test]
-fn a_protocol_subject_whose_clause_has_no_node_gets_no_derived_request_item() {
+fn a_protocol_subject_of_a_unit_with_no_protocol_profile_is_settled_unsupported() {
     let case = unit(&message_passing("", "release", "acquire"), &MP);
-    let subject = case.subject(&ra());
-    let models = models_of(&subject);
     let graph = case.checked().graph();
     let protocol = graph.protocol("SB").expect("SB");
     assert_eq!(protocol.node(), None);
     let clause = node_occurrence(&graph.temporal_clauses()[0]);
-    let written = protocol_request(&[ProtocolTemporalItem {
-        occurrence: &clause,
-        subject: &subject.protocol,
-        protocol,
-        models: &models,
-        non_atomic_access: true,
-    }]);
-    let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
-    assert_eq!(kinds, [Some(ItemKind::Formula)]);
-    let unanchored: Vec<_> = written
-        .unanchored()
-        .iter()
-        .map(|item| {
-            (
-                item.subject.as_str(),
-                item.kind,
-                item.cause,
-                item.catalog_code(),
-                item.detail(),
-            )
-        })
-        .collect();
     let code = CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
-    assert_eq!(
-        unanchored,
-        [
-            (
-                "SB",
-                ItemKind::DeadlockFreedom,
-                NoAnchor::NoProtocolNode,
-                code,
-                "the deadlock-freedom item's protocol subject's clause has no node, \
-                 so it has no anchor"
-                    .to_owned()
-            ),
-            (
-                "SB",
-                ItemKind::RaceFreedom,
-                NoAnchor::NoProtocolNode,
-                code,
-                "the race-freedom item's protocol subject's clause has no node, \
-                 so it has no anchor"
-                    .to_owned()
-            ),
-        ]
-    );
+    let sc = [select("SB::Main::Both", MemoryModelName::Sc)];
+    let cases: [(&[MemorySelection], bool, &[ItemKind]); 3] = [
+        (
+            &ra(),
+            true,
+            &[ItemKind::DeadlockFreedom, ItemKind::RaceFreedom],
+        ),
+        (&sc, true, &[ItemKind::DeadlockFreedom]),
+        (&ra(), false, &[ItemKind::DeadlockFreedom]),
+    ];
+    for (selection, non_atomic_access, expected) in cases {
+        let subject = case.subject(selection);
+        let models = models_of(&subject);
+        let written = protocol_request(&[ProtocolTemporalItem {
+            occurrence: &clause,
+            subject: &subject.protocol,
+            protocol,
+            models: &models,
+            non_atomic_access,
+        }]);
+        let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
+        assert_eq!(kinds, [Some(ItemKind::Formula)], "{selection:?}");
+        let unanchored: Vec<_> = written
+            .unanchored()
+            .iter()
+            .map(|item| {
+                assert_eq!(item.subject, "SB");
+                assert_eq!(item.cause, NoAnchor::NoProtocolProfile);
+                assert_eq!(item.catalog_code(), code);
+                let detail = match item.kind {
+                    ItemKind::DeadlockFreedom => {
+                        "the deadlock-freedom item's protocol subject has no anchor: \
+                         the unit selects no protocol profile"
+                    }
+                    ItemKind::RaceFreedom => {
+                        "the race-freedom item's protocol subject has no anchor: \
+                         the unit selects no protocol profile"
+                    }
+                    other => panic!("no {other:?} item is derived here"),
+                };
+                assert_eq!(item.detail(), detail);
+                item.kind
+            })
+            .collect();
+        assert_eq!(unanchored, expected, "{selection:?} {non_atomic_access}");
+    }
 }

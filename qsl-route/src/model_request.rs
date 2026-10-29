@@ -20,8 +20,10 @@
 //! caller's item. Each derived item's claim is its subject's anchor: a
 //! protocol subject's clause node, any other model subject's `model_root`.
 //! A model subject that reads no `model_selections` row or several has none,
-//! nor does a protocol subject whose clause has no node, and its derived
-//! items are settled `unsupported` with no request item ([`UnanchoredItem`]).
+//! nor does a protocol subject of a unit that selects no protocol profile
+//! (QSpec FR-368-AC-24), and its derived items are settled `unsupported`
+//! with no request item ([`UnanchoredItem`]). Such a protocol subject gets
+//! no `time-lock-freedom` item (FR-368-AC-25).
 
 use std::collections::BTreeSet;
 
@@ -356,7 +358,9 @@ impl<S: Eq> WrittenRequest<S> {
 
 /// A derived item over a subject with no anchor (QSpec FR-361-AC-17,
 /// FR-368-AC-22): a model subject that reads no `model_selections` row or
-/// several, or a protocol subject whose clause has no node, so the producer settles the item `unsupported` with
+/// several, or (FR-368-AC-24) a protocol subject of a unit that selects no
+/// protocol profile, whose clause has no node (FR-322 "Properties"), so the
+/// producer settles the item `unsupported` with
 /// `unsupported_projection`/`unsupported-requested-capability` and writes
 /// no request item for it. It is settled here, before any request is
 /// negotiated or run, so before any `requires-bound`, `no-initial-state`
@@ -388,8 +392,8 @@ impl<S> UnanchoredItem<S> {
             NoAnchor::SeveralSelections { rows } => format!(
                 "the {kind} item's subject reads {rows} model selections, so it has no anchor"
             ),
-            NoAnchor::NoProtocolNode => format!(
-                "the {kind} item's protocol subject's clause has no node, so it has no anchor"
+            NoAnchor::NoProtocolProfile => format!(
+                "the {kind} item's protocol subject has no anchor: the unit selects no protocol profile"
             ),
         }
     }

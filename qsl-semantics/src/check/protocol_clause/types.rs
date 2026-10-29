@@ -196,8 +196,9 @@ pub struct CheckedProtocol {
 impl CheckedProtocol {
     /// The clause's own node: the anchor of its protocol subject's derived
     /// items (QSpec FR-368 "Claim and anchor of a derived or refinement
-    /// item"). `None` for a clause the package writes no node for, such as
-    /// one whose package selects no protocol profile.
+    /// item"). `None` for a checked clause of a unit that selects no
+    /// protocol profile, which writes no node for it (QSpec FR-322
+    /// "Properties", FR-368-AC-24).
     pub fn node(&self) -> Option<quire_exact::NodeKey> {
         self.node
     }

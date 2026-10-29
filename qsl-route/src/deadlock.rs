@@ -285,7 +285,7 @@ impl SubjectReading {
             return protocol
                 .node
                 .map(OccurrenceKey::declaration)
-                .ok_or(NoAnchor::NoProtocolNode);
+                .ok_or(NoAnchor::NoProtocolProfile);
         }
         let mut roots = self.roots.iter();
         match (roots.next(), roots.next()) {
@@ -298,9 +298,10 @@ impl SubjectReading {
     }
 }
 
-/// Why a model subject has no anchor for its derived items (QSpec
-/// FR-361-AC-17, FR-368-AC-22): it reads not exactly one `model_selections`
-/// row.
+/// Why a subject has no anchor for its derived items: a model subject
+/// reads not exactly one `model_selections` row (QSpec FR-361-AC-17,
+/// FR-368-AC-22), or a protocol subject's unit selects no protocol profile
+/// (FR-368-AC-24).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NoAnchor {
     /// The subject reads no row: no universe of it covers a population of a
@@ -311,9 +312,10 @@ pub enum NoAnchor {
         /// The number of rows it reads.
         rows: usize,
     },
-    /// The protocol subject's clause has no node, as when its package
-    /// selects no protocol profile.
-    NoProtocolNode,
+    /// The protocol subject's unit selects no protocol profile, so its
+    /// checked clause has no node (QSpec FR-368-AC-24, FR-322
+    /// "Properties").
+    NoProtocolProfile,
 }
 
 /// The subjects of `readings`, in the order each first occurs, each with
@@ -384,7 +386,9 @@ impl<S: Clone> ProtocolTemporalItem<'_, S> {
     /// its clause's node, whether the clause declares `terminal any`, and,
     /// when a resolved model is weak and an access is non-atomic, the
     /// models the race-freedom item is over. A protocol subject is never
-    /// read as timed, and its model's `terminal` is not read.
+    /// read as timed, so it gets no `time-lock-freedom` item (QSpec
+    /// FR-368-AC-25 for a unit that selects no protocol profile), and its
+    /// model's `terminal` is not read.
     pub fn reading(&self) -> SubjectReading {
         let weak = self.models.iter().any(|(_, model)| model.is_weak());
         SubjectReading {
