@@ -32,9 +32,7 @@ snapshot and source in the byte provision and its universe in the request.
    carrying the identities of the `Counter` unit whose `When` member covers
    value 3; the original payload truncated to end at value 2.
 3. Replay each defective envelope of FR-128-AC-3.
-4. Replay a lasso of `upd(a)` steps bound to `c = a`; replay after a source
-   edit that changes the `package_id`; with `clause_node` naming another
-   clause; step 1's lasso twice.
+4. Replay a lasso of `upd(a)` steps bound to `c = a`; step 1's lasso twice.
 
 Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
 
@@ -47,5 +45,4 @@ Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
 - Step 2: `reproduced-with-evaluated-witness`; `inconclusive`, `ReplayParity`;
   `inconclusive`, `ReplayParity`.
 - Step 3: each refuses as FR-128-AC-3 states, with no result.
-- Step 4: `inconclusive`, `ReplayParity`; FR-098's stale `package_id` refusal;
-  `stale_dependency`/`content-mismatch`; equal results.
+- Step 4: `inconclusive`, `ReplayParity`; equal results.

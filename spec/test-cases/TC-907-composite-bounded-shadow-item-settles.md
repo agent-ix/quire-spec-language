@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify both entries of FR-358. Both recompile the original proving context,
-tie the package, select the claimed equality node, derive the operand
+select the claimed equality node, derive the operand
 domains and positions, refuse defective bounds and a mismatched O-09
 identity ahead of any settlement, and carry the obligation identity on
 every outcome, the full claim (the observation too). `replay_composite_parity` compares exact equality and the
@@ -46,7 +46,7 @@ call's harness bounds.
      `refinement: Exhausted` and again with `CeilingReached`.
    - F-6: at `E` with `refinement: CeilingReached`, admitted operands, a
      `Completed` native and enough limits.
-3. Both entries, at `E`: call with an edited source; with an undeclared
+3. Both entries, at `E`: call with an undeclared
    `function` replay target; with a `node` the package does not hold; with
    the node of `h`'s body while the `function` replay target names `f`; with `operator`
    `NotEqual`; with an `occurrence` the node does not have in `f`'s body and
@@ -77,7 +77,7 @@ call's harness bounds.
 8. Falsified, row F-1, with `refinement: Disagreed` at `E`: replay with a
    diverging shadow; with an agreeing shadow; with left `x: 12`; with
    `native` `ExecutionFault`; with limits too small for the exact
-   evaluation; and with an edited source.
+   evaluation.
 
 9. Occurrences, at `d(a: Q, b: Q): Boolean { (a = b) and (a = b) }`: each
    of the node's two occurrences, under its own identity, through both
@@ -125,8 +125,7 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
   - F-6: `Incomplete { stage: RefinementCeiling }`
     (`Incomplete(ResourceExhausted)`). The F-4, F-5 and F-6 reports differ in
     their stage.
-- Step 3: in order, the package-tie refusal (`stale_dependency`/`content-mismatch`),
-  `UnknownFunction` (`missing-name`), three `ScalarIdentity`
+- Step 3: in order, `UnknownFunction` (`missing-name`), three `ScalarIdentity`
   (`content-mismatch`) refusals each with its own cause, two
   `ScalarIdentity::Occurrence` refusals, and `ScalarIdentity::Obligation`
   naming both identities. Each report carries the full claim.
@@ -138,8 +137,7 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
   `kani_vacuous_proof` (row V-3).
 - Step 7: each refuses with no settlement row, at 4 checks and at 0, naming
   the key.
-- Step 8: `Disagreed` (`Failed`, never `Refuted`) for the first five cases.
-  The edited source still refuses with the package-tie refusal.
+- Step 8: `Disagreed` (`Failed`, never `Refuted`) for each case.
 - Step 9: `Agrees` for both occurrences through the falsified entry and
   `Proved` through the verified one; occurrence 2 under occurrence 1's
   identity refuses `ScalarIdentity::Obligation`.

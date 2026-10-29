@@ -46,8 +46,7 @@ the raw bytes the caller supplies; FR-030's `Selection` (the authored
 clause id, the authored package and the body's own `SourceIdentity`);
 FR-030's `Limits` for the original document; and the other
 `ClauseRunRequest` members (FR-109): FR-056's package input, FR-099's
-dependency input, the snapshot and invocation provisions, the selection, an
-optional expected `package_id`, and the spine, observation and evaluation
+dependency input, the snapshot and invocation provisions, the selection, and the spine, observation and evaluation
 limits.
 
 Through the command, the request is FR-312's clause-run request with these
@@ -146,9 +145,7 @@ compile with `unknown_language`, exit 20, with no `package_id`
 compile with `extraction-clause-count`, `details` `{"actual": n}` for the
 number of clauses the body declares, with no `package_id`. A selection that
 names a clause the body does not declare refuses at `select` with FR-109's
-`missing_declaration`. An expected `package_id` that the body does not
-compile to shall refuse at compile with `stale_dependency`, naming both
-identities (FR-109-AC-2).
+`missing_declaration`.
 
 ### Original-region correspondence
 
@@ -178,7 +175,7 @@ start at zero.
 | FR-031-AC-1 | An LF and a CRLF Markdown document whose one selected fence holds FR-108's healthy-parent unit run through `run_clause` report `success`, exit 0, with the `package_id` of the body compiled alone; violating-parent reports `violation`, exit 10; missing-model reports `compile`, `missing_import`/`missing-selection`, exit 20, with no `package_id`. | Test (TC-109) |
 | FR-031-AC-2 | A selected clause the document does not hold and an unavailable extraction each end with FR-030's error, retaining the original identity, the selection and Quire's actual outcome, with no compile, no `package_id` and no truth; a body in an `ix:formal` fence refuses at compile with `unknown_language`, exit 20. | Test (TC-109) |
 | FR-031-AC-3 | An original over its byte or line limit, a body run with `work_units` 0, and a body compiled under `SpineLimits` whose checking limit is one below the body's checking work each report incomplete with that limit's typed cause; the same request with default limits then succeeds. | Test (TC-109) |
-| FR-031-AC-4 | The report of AC-1's healthy run names the body identity (`agent-ix`, its body identity) and the original document identity, and its extraction record holds Quire's unchanged `ClausesOutcome` and the verified map; an expected `package_id` of another unit refuses at compile with `stale_dependency`, naming both. | Test (TC-109) |
+| FR-031-AC-4 | The report of AC-1's healthy run names the body identity (`agent-ix`, its body identity) and the original document identity, and its extraction record holds Quire's unchanged `ClausesOutcome` and the verified map. | Test (TC-109) |
 | FR-031-AC-5 | Through the command built with `--features qsl-replay/quire-extraction`, a `1-draft` clause-run request whose `extraction` body record names `authority` `agent-ix`, `identity` `b`, and `document` `B` runs, and its `/2` document's `extraction` member renders the native identity (`agent-ix`, `b`) and the formal identity (`B`). The same request without the body's `authority`, or without its `document`, refuses `invalid-request` at stage `request`, exit 20. The same first request through the command built with no features refuses `invalid-request` at stage `request`, naming `extraction`, exit 20, empty stdout. | Test (TC-430) |
 | FR-031-AC-6 | With every model file the request names absent, a request carrying `extraction` and `package` refuses `extraction-package-conflict`; one with no `clauses` binding and one with two refuse `extraction-clause-count` with `details` `{"actual": 0}` and `{"actual": 2}`; one carrying `call` in place of `clause`, and a compile request carrying `extraction`, refuse `extraction-requires-run`; each at stage `request`, exit 20, empty stdout, with no file read beyond the request. A `null` `extraction`, a positional `body` and an unknown member in `body` each refuse `invalid-request` naming the member. | Test (TC-109) |
 | FR-031-AC-7 | A clause-only context that Quire's validator rejects refuses `invalid-quire-context` at stage `quire-context`, exit 20, with Quire's producer diagnostics unchanged in `details`; an unavailable extraction through the command writes the command-error envelope at stage `quire` retaining the original identity, the binding and Quire's outcome. | Test (TC-109) |

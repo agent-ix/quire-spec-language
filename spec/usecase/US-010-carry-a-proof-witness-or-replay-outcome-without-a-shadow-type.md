@@ -61,18 +61,9 @@ building the executor itself is explicitly out of scope here.
   possibly-disagreeing copy, and nothing about the round trip depends on
   parsing rendered text.
 
-### US-010-EX-3: A stale package fails closed, not open
+### US-010-EX-3: RETIRED (staleness check withdrawn)
 
-"Stale package identity" is one check, owned by #243's executor: no source check is carried at decode (FR-071-AC-6 is retired).
-
-- **Given** a replay request naming a `package_id` that no longer matches
-  the source the byte provision recompiles to.
-- **When** #243's executor (a later ticket) recompiles that source and
-  compares the result's `package_id` against the request's declared one.
-- **Then** the executor refuses with a structured
-  `DependencyIdentityMismatch`/`stale_dependency` cause; this ticket builds
-  the request type the executor reads to do that comparison, but performs
-  no recompilation and makes no `package_id` comparison itself.
+**RETIRED (staleness check withdrawn).** This example described a replay executor refusing a request whose `package_id` no longer matched the recompiled source. The check is withdrawn. The id is kept and not reused.
 
 ### US-010-EX-4: A new family plugs in without touching the shared envelope
 

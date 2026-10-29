@@ -46,7 +46,7 @@ over operands drawn from `[0, 100]` with result range `[-200, 200]`:
    exact limits starved with a matching native value.
 9. An operand of 101; a literal operand with its singleton range.
 10. The terminal value of an agreement and of a divergence.
-11. An `add` claim with a stale `package_id`, a node the package does not
+11. An `add` claim with a node the package does not
     hold, a `mul` node under `inc`, a `mul` claim on the `+` node, and an
     undeclared enclosing function; each checked for the request's obligation
     identity.
@@ -97,7 +97,7 @@ the encoded-size bound.
 - Step 10: `Inconclusive(ScalarAgrees)` and `Failed`; no result settles
   `Refuted`. The envelope round-trips the agreement and refuses the oversized
   one.
-- Step 11: `PackageIdMismatch` (`content-mismatch`); `ScalarIdentity`
+- Step 11: `ScalarIdentity`
   (`content-mismatch`) with cause `Node`, `Function` and `Operator`;
   `UnknownFunction` (`missing-name`); each carries the obligation identity.
 

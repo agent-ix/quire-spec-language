@@ -29,8 +29,7 @@ FR-031-AC-4, FR-031-AC-6 to FR-031-AC-10 and FR-267-AC-17.
    line limit one below its line count; run healthy-parent with `work_units`
    0, and compile it under `SpineLimits` whose checking limit is one below
    the body's checking work; repeat each with default limits.
-4. Read step 1's healthy report's source and extraction record; run it
-   again with an expected `package_id` taken from compiling another unit.
+4. Read step 1's healthy report's source and extraction record.
 5. Through the binary, with every model file the request names absent:
    `extraction` with `package`; `extraction` with no `clauses` binding and
    with two; `extraction` with `call` in place of `clause`; a compile request
@@ -67,8 +66,7 @@ AC-4 and steps 5 to 9 for AC-6 to AC-10 (AC-5 is TC-430 step 5); step 9 also
   cause; each default run succeeds.
 - Step 4: the source names the body identity with the extracted body's
   identity and the original identity, and the extraction
-  record holds Quire's unchanged outcome and the verified map; the second
-  run refuses `stale_dependency`, naming both identities.
+  record holds Quire's unchanged outcome and the verified map.
 - Step 5: `extraction-package-conflict`; `extraction-clause-count` with
   `{"actual": 0}` and `{"actual": 2}`; `extraction-requires-run` twice;
   `invalid-request` naming the member three times; each at stage `request`,

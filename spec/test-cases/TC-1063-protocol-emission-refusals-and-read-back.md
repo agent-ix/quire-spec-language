@@ -71,7 +71,7 @@ traced only once that file exists.
 | --- | --- | --- |
 | 9 | a protocol whose controls outnumber `i2.nodes`, emitted with the limit raised | emitted; read under the default limit it returns `StageFailure::Limit` of kind node count, setting `i2.nodes`; read with the setting raised it verifies |
 | 10 | a `parallel` inside a `repeat` inside a branch of another `parallel`; a `sequence` of 5,000 children | each emits with no limit or depth refusal at S4 |
-| 11 | a protocol whose `over` input is `Boolean`, `Option<M::T>` or `Sequence<M::T>`; a clause with its `owner_model` removed, copied to a `role`, written as an external key, left out of `dependencies`, pointed at a Boolean scalar node, retargeted without rebuilding its key | the first is refused `unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` and writes no clause; the reader refuses the rest `malformed_wire`, `malformed_wire`, `malformed_wire`, `invalid_semantic_graph`, `ill_typed`/`operator-ineligible` and `invalid_package`/`stale-node-key` |
+| 11 | a protocol whose `over` input is `Boolean`, `Option<M::T>` or `Sequence<M::T>`; a clause with its `owner_model` removed, copied to a `role`, written as an external key, left out of `dependencies`, pointed at a Boolean scalar node | the first is refused `unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` and writes no clause; the reader refuses the rest `malformed_wire`, `malformed_wire`, `malformed_wire`, `invalid_semantic_graph`, and `ill_typed`/`operator-ineligible` |
 
 ## Expected Results
 

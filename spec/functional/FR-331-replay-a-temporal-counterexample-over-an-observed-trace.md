@@ -77,15 +77,10 @@ formula is false on it.
 
 ## Behavior
 
-- FR-098 SHALL complete its common decode, dependency validation, recompile
-  and package-identity checks once before dispatch. This path SHALL use the
+- FR-098 SHALL complete its common decode, dependency validation and
+  recompile once before dispatch. This path SHALL use the
   resulting checked package and SHALL NOT repeat that prelude.
 - This path SHALL resolve the occurrence key to the clause's operator node.
-- The facade SHALL require the request's `state_clause` target, envelope
-  replay target, clause node and occurrence key to resolve to the same
-  recompiled clause and occurrence. A mismatch SHALL refuse
-  `stale_dependency`/`content-mismatch`, naming the differing member, before
-  observed-document admission.
 - The facade SHALL resolve the request's `over` reference in the first
   observed document and use that object when evaluating the clause. It SHALL
   refuse an absent object as `invalid_runtime_input`/`wrong-role-mapping`.
@@ -145,7 +140,7 @@ formula is false on it.
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome (`always[0,2] holds(3 mod (2 - c.value) >= 0)`, an interval-carrying clause, with the undefined-evaluation envelope and no interval check) with `trace_position` 2 settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` 1 settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 | FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), whose packet fairness set equals the recompiled clause's, refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
 | FR-331-AC-6 | An observed temporal replay request for AC-1 carries `over` `{"reference":{"population":"Counters","key":"c1"}}`; decoding and re-encoding preserves both values, and the replay resolves that object in the first observed document before evaluation. A request that carries `over` for a function or frame target refuses `invalid_runtime_input`/`unknown-member` at `/replay/over`. | Test (TC-841) |
-| FR-331-AC-7 | An observed request whose `clause_node` resolves to a different clause from its state-clause target refuses `stale_dependency`/`content-mismatch`, naming `clause_node`, before any observed document is admitted. | Test (TC-847) |
+| FR-331-AC-7 | **RETIRED (staleness check withdrawn).** The clause-node identity check is deleted. | Test (TC-847), retired |
 | FR-331-AC-8 | An undefined-evaluation packet whose replayed `Undefined` has the same position but a different source locus or catalogued cause settles `inconclusive`, `ReplayParity`, and preserves the actual typed undefined value. A packet whose replayed outcome is `InsufficientData` or `Incomplete` likewise settles `inconclusive`, `ReplayParity`, preserving the complete outcome fields or charge point. | Test (TC-847) |
 | FR-331-AC-9 | Replay an observed temporal `UndefinedEvaluation` packet for FR-125-AC-18's Counter clause `always holds(true) on each (q: M::Counter) when (6 mod (2 - c.value) = 0)` over its prefix `0 -inc-> 1 -inc-> 2`, with `trace_position` 2 and `locus` naming the clause's `holds(true)` atom. The checked activation guard is undefined at position 2 with cause `division-by-zero`, so replay settles `inconclusive`, `ReplayParity`, retaining the typed `Undefined` at position 2; the atom locus does not identify the activation guard. | Test (TC-847) |
 

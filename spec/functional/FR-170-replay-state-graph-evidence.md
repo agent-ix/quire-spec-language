@@ -119,8 +119,7 @@ pub enum GraphEvidence {
   arguments, request occurrence key or observed `over` member. The executor
   SHALL resolve the state-graph or single-existential claim by the envelope's
   claim node and occurrence key.
-- The executor SHALL recompile and check the package, verify the envelope's
-  package and obligation identities against the request, resolve the claim
+- The executor SHALL recompile and check the package, resolve the claim
   by its `claim_node` and `occurrence_key`, and build the subject's
   `ModelSystem` by FR-128's rules and in FR-128's order, with FR-128's
   refusals.

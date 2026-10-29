@@ -12,8 +12,8 @@ relationships:
 
 Verify replay of a `WitnessEnvelope<StateClauseCounterexample>`: a clause
 that evaluates `false` reproduces, a clause that holds or completes no value
-is inconclusive, a precondition replays over its pre state alone, a stale
-envelope identity refuses before admission, and an admission failure
+is inconclusive, a precondition replays over its pre state alone, an unknown
+`state_clause` name refuses before admission, and an admission failure
 settles no result.
 
 Scope: FR-122-AC-1 to FR-122-AC-8.
@@ -34,11 +34,7 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
 2. `VersionUnchanged` over unchanged-version; `ParentOrder` over
    healthy-parent; `ParentOrder` over violating-parent with the request's
    evaluation budget at zero.
-3. `VersionUnchanged` over changed-version with the envelope's
-   `clause_node` set to `ParentOrder`'s node; with its `occurrence_key` at
-   ordinal 1; with both; each again with the invocation removed from the
-   provision;
-   with a source edit that changes the `package_id`; with the request's
+3. `VersionUnchanged` over changed-version with the request's
    `state_clause` naming `Absent`; with it naming `sameIdentity`.
 4. `ReachesTarget` with `PreCall` over the chain's pre snapshot, `self`
    `a`, `target` `a`; with `self` `a`, `target` `c`. Form mismatches, each
@@ -74,12 +70,7 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 - Step 2: `inconclusive`, `Verdicts` (`violation`, `success`) twice, each
   holding the evaluated `true` and no QSpec FR-351 record;
   `inconclusive`, `NoValue`.
-- Step 3: `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) naming the envelope's and
-  the recompiled clause node, then both occurrences, then both clause
-  nodes again (the node goes first), each with no admission, and the same
-  three refusals with the invocation removed;
-  FR-098's stale `package_id` refusal; `missing_declaration`/`missing-name`
-  twice, each naming the target.
+- Step 3: `missing_declaration`/`missing-name` twice, each naming the target.
 - Step 4: `reproduced-with-evaluated-witness`, holding the one pre
   snapshot's identity, no post snapshot, and `self` `a` and
   `target` `a`; `inconclusive`, `Verdicts` (`violation`, `success`); each

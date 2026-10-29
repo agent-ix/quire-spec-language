@@ -24,10 +24,8 @@ relationships:
 
 ## Context
 
-ADR-011 §4 says E4 and the layer-6 `replay` facade check every dependency
-of a package against the `package_id` recorded for it, and that an
-ordinary compile gets each dependency's source from "the S4 source
-resolution". The E4 closure exists (`CheckedPackage::link_with`,
+ADR-011 §4 says an ordinary compile gets each dependency's source from
+"the S4 source resolution". The E4 closure exists (`CheckedPackage::link_with`,
 FR-087-AC-14). Five questions were still open, so E3 refused every
 `import`:
 
@@ -41,9 +39,8 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
    segments only; FR-322 admits any non-empty string, and QSpec's vectors
    use `test/geometry`.
 4. How `replay` knows which of its sources is the proved package and which
-   is which dependency. FR-098 required exactly one source. With a stale
-   dependency, no source recompiles to the recorded id, so nothing says
-   which source was meant to be that dependency.
+   is which dependency. FR-098 required exactly one source, so
+   nothing said which source is a dependency.
 5. How E3 types a use of an imported name, such as `l::f(x)`, when an
    `ImportView` carries names only; and how a reference into a dependency
    enters a node's identity (ADR-013 QC-27, FR-087-AC-13, TC-379).
@@ -176,8 +173,7 @@ and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).
 
 `replay` refuses with the first of these rules, each rule applied over all
-entries, in entry order, before the next rule, except that rules 6 and 7 apply
-before rule 5. It uses QSpec FR-323's codes
+entries, in entry order, before the next rule. It uses QSpec FR-323's codes
 for the rules FR-323 states; the one-source rule and the dependency-input
 rule (rules 2 and 3) are QSL's own preconditions on its request, and both
 run before the recompile:
@@ -204,23 +200,12 @@ run before the recompile:
    When that import is in a library, not in the proved unit, the refusal
    arrives wrapped in `CompileRefusal::Dependency` with the library's path
    (D-1).
-5. After rules 6 and 7, the recompiled package's `package_id` equals the request's
-   (ADR-013 O-26; QSpec FR-323), else the existing `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`). An edited
-   dependency source changes the proved package's `package_id` too, so rules
-   6 and 7 run first and name the stale dependency. What that identity is
-   rests on QSpec's structural identity, BLOCKED-BY STD-583 (owner: planner titan:QSL:plan).
-6. Every entry's identity is held by the recompiled package's
+5. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`).
-7. Every entry's `package_id` equals the closure's selection of its
-   identity, else `ReplayRefusal::DependencyIdentityMismatch { identity,
-   requested, recompiled }` (`stale_dependency`/`content-mismatch`),
-   where `requested` is the entry's package identity and `recompiled` the
-   closure's selection, named as `PackageIdMismatch` names its fields.
 
-The entry, not the recompile, says which source was meant to be which
-dependency, so a stale dependency is named by its identity even though
-nothing recompiles to its recorded id. Every refusal yields no verdict.
+The entry says which source is which dependency. Every refusal yields no
+verdict.
 
 ### D-5 E3 types an imported name from the dependency's checked graph
 
@@ -316,7 +301,6 @@ stays acyclic.
 - A compile reads each library's source every time; nothing reads a
   dependency's v2 bytes as authority. The v2 bytes a compile emits for a
   library are only read back to build its import view.
-- `replay` can name a stale dependency by identity.
 - The CLI request gains an optional member; a request with no `libraries`
   compiles as before.
 - IR's `quire-contract-model` reader admits the `dependency_reference` term

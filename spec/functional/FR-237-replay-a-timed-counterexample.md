@@ -55,7 +55,7 @@ refutation.
 
 ## Behavior
 
-- Replay SHALL apply FR-128's recompile, identity, fairness-set and
+- Replay SHALL apply FR-128's recompile, fairness-set and
   admission rules unchanged.
 - The executor SHALL start every clock of the subject at 0.
 - For each step, the executor SHALL:

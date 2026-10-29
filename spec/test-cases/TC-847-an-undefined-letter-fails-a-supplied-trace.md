@@ -29,7 +29,7 @@ that it maps to violation with cause `UndefinedEvaluation`; that a bounded
 undefined value at its position.
 
 Scope: FR-327-AC-5, FR-327-AC-7, FR-328-AC-5, FR-329-AC-6, FR-330-AC-5,
-FR-330-AC-8, FR-331-AC-4, FR-331-AC-5, FR-331-AC-7, FR-331-AC-8,
+FR-330-AC-8, FR-331-AC-4, FR-331-AC-5, FR-331-AC-8,
 FR-331-AC-9, FR-071-AC-8,
 FR-072-AC-6, FR-098-AC-28.
 
@@ -52,7 +52,7 @@ refusal.
 5. Construct, encode and decode both FR-331-AC-4 requests, assert the decoded
    state-clause target and envelope node/occurrence identify the same clause,
    then replay the two undefined-evaluation packets through
-   `qsl_replay::replay`; submit an altered clause-node packet and replay an
+   `qsl_replay::replay`; replay an
    observed-lasso packet for `ReachesFair` whose fairness set matches the
    clause under FR-331-AC-5. Submit a packet with `ReplaySource::Input` and
    one whose `WitnessEnvelope` position differs from its payload position.
@@ -85,9 +85,7 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   locus and cause settles `reproduced-with-evaluated-witness` and carries
   decoded position 2 and the typed undefined value; the packet with position
   1 retains that packet position separately from the evaluator's undefined
-  value at position 2 and settles `inconclusive`, `ReplayParity`. The altered
-  clause-node packet refuses `stale_dependency`/`content-mismatch` naming
-  `clause_node` before admission. `ReachesFair` refuses
+  value at position 2 and settles `inconclusive`, `ReplayParity`. `ReachesFair` refuses
   with `ReplayRefusal::MissingFairnessPremise`, naming `fair weak whole inc`,
   catalog code `unsupported_projection`/`missing-fairness-premise`, O-16
   unsupported, before formula evaluation and with no result. The

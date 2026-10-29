@@ -18,8 +18,8 @@ relationships:
 
 Verify `run_clause`'s `Frame` selection: a frame-respecting invocation
 succeeds, a change outside the frame is a violation with its frame witness,
-and stale or
-missing inputs refuse before evaluation.
+and missing
+inputs refuse before evaluation.
 
 Scope: FR-115-AC-1 to FR-115-AC-7, FR-109-AC-10, FR-267-AC-11 and
 QSpec FR-352-AC-9.
@@ -33,8 +33,7 @@ Config::ConfigVersion::attemptUpdate, invocation: ... }` unless stated.
 1. changed-version.
 2. forbidden-parent-change; a post snapshot that adds object `c2` to
    `config_history`; an invocation declaring `created: [child]`.
-3. changed-version with an expected `package_id` from another unit; with its
-   another `model` identity; with `operation` `probe`.
+3. changed-version with another `model` identity; with `operation` `probe`.
 4. `operation: Config::ConfigVersion::missing`; a package operation that no
    clause or attempt names; `operation: Nope::ConfigVersion::attemptUpdate`,
    an alias no `model` declaration binds; `operation:
@@ -66,7 +65,7 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
   `frame_violation`/`unauthorized-change`; `violation` with a witness naming
   the creation of `c2`; `evaluate`, `refusal`,
   `population_delta_mismatch`/`delta-disagreement`, exit 20.
-- Step 3: `compile`, `stale_dependency`, naming both; `admit`, `invalid_model_binding`/
+- Step 3: `admit`, `invalid_model_binding`/
   `wrong-model-selection`; `admit`, `wrong_snapshot`/`wrong-invocation`.
   None reaches `evaluate`.
 - Step 4: `select`, `missing_declaration`/`missing-name`, four times;

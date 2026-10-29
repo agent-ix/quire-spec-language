@@ -97,7 +97,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   value, pointer). A library compiled for an import resolves its own value in
   its own S3, the same way.
 - The emitter SHALL write the package member `refinement_internals` that QSpec
-  FR-322 defines (FR-322-AC-77; BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)) from the resolved list of the package being
+  FR-322 defines (FR-322-AC-77) from the resolved list of the package being
   emitted alone, in FR-322's canonical order: the unit's package holds only the
   unit's own list, and each library's package holds that library's own list,
   since entries are keyed by refinement name and QSpec FR-323 and FR-307 give

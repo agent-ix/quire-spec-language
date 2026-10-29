@@ -43,7 +43,7 @@ needed. Names below are part of this contract.
 NativePackage::new(checked: CheckedPackage<'model>, limits: PackageLimits)
     -> Result<NativePackage<'model>, Box<PackageError>>
 NativePackage::read_verified(
-    bytes: &[u8], expected: NativePackageRef,
+    bytes: &[u8],
     bindings: CheckBindings, models: &'model [NativeModel],
     support: &PackageSupport, limits: PackageReadLimits,
 ) -> Result<NativePackage<'model>, Box<PackageError>>
@@ -349,9 +349,8 @@ Canonical encoding is a separately bounded/reported pass under NFR-007 before
 the final artifact encoding pass. Both successful and refused work retain their
 own actual counters. The reader selects the canonical domain/version with
 unknown_profile for an unsupported selection, then compares the canonical content of
-its reconstructed checked package with the wire content and with the expected
-NativePackageRef identity. A mismatch with the expected reference is
-stale_dependency; any other mismatching or substituted content is invalid_package.
+its reconstructed checked package with the wire content. Mismatching or
+substituted content is invalid_package.
 Native canonical equality never skips full manifest
 comparison: forged excluded projections still refuse.
 

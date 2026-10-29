@@ -36,8 +36,7 @@ with `jitter 0 ms` on `a`; a unit declaring `CtlFp`'s claim twice.
    state-graph lookups; settle a request with an unresolved triple; check
    `CtlFp`'s outcome against `CtlEdf`'s triple.
 4. Edit `CtlFp`'s node (policy `rate-monotonic`; tasks `b`, `a`, `c`; `a`'s
-   period `0`), recompute the node key and `package_id`, and feed each to
-   the I2 reader.
+   period `0`) and feed each to the I2 reader.
 
 Tag the tests `#[trace("TC-1202", "FR-454-AC-n")]`.
 

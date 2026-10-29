@@ -321,7 +321,7 @@ below takes its request, its limits and `&Cancel`.
 | `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`, a `QualifiedName` or clause selection, arguments, `ObjectEnvironment`, accounting limits, the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
 | `monitor` | Check a supplied trace offline | QSL layer A | `&CheckedPackage`, clause selections, a trace (§3 OP-3) | `Staged<MonitorOutcome>` |
 | `analyze` | Decide claims over every behaviour with an in-process engine | QSL layer A | `&CheckedPackage`, claim items, subject binding, engine limits | `Staged<AnalyzeOutcome>` |
-| `lower` | Read the emitted package into target-neutral IR | Driver, with the IR reader (E5) | `EmittedPackage` and its expected `package_id` | IR nodes, or IR's typed refusal |
+| `lower` | Read the emitted package into target-neutral IR | Driver, with the IR reader (E5) | `EmittedPackage` | IR nodes, or IR's typed refusal |
 | `generate` | Emit backend artifacts from IR | Driver, with CG and RT | IR nodes, the routed `BackendId` per item, the generation target (proof harness, AOT crate, runtime monitor) | FR-331 `artifacts` with source maps; an unsupported item emits nothing |
 | `prove` | Negotiate, generate, run, replay and settle | Driver | the `CheckedPackage` from the same run's `check` and, when `package` emits it, the `EmittedPackage`; claim items, subject binding, the registry value, provider limits | `Staged<ProveOutcome>`: one FR-331 terminal record per item |
 | `replay` | Re-execute a counterexample | QSL layer 6 | `ReplayRequest` with its byte provision (ADR-013 O-26) | `Staged<ReplayResult>` (ADR-013 O-27) |
@@ -593,8 +593,7 @@ kills the process.
   and CPU-time limits where the platform provides them. They bound a run;
   they grant or withhold nothing.
 - **Typed output.** Every `result` is read with the typed FR-331 reader.
-  A plugin never produces a checked object: it receives v2 bytes, and IR's
-  reader revalidates the `package_id` (ADR-011 §4).
+  A plugin never produces a checked object: it receives v2 bytes.
 - **Failures.** A crash, a non-zero exit, a malformed or non-canonical frame,
   a wrong protocol identity, an oversized frame, a result for an item that
   was not routed to it, a result for a kind it did not advertise, or a
@@ -698,10 +697,8 @@ kills the process.
 - **Refused request body.** A plugin that refuses a `request` body runs no
   item. It answers with one `result` that settles every routed item FR-331
   `failed`, with the refusal as the entry's `diagnostic` (QSpec
-  FR-462-AC-7): `stale_dependency`/`content-mismatch` for a decoded package
-  whose `package_id` differs from the body's, and
-  `invalid_runtime_input`/`invalid-value` for a `package` that is not the
-  canonical spelling. The driver reads each entry as a `failed` terminal
+  FR-462-AC-7): `invalid_runtime_input`/`invalid-value` for a `package` that
+  is not the canonical spelling. The driver reads each entry as a `failed` terminal
   record naming the plugin's `BackendId`; `TerminalValue::Failed` carries no
   cause. The plugin's diagnostic goes in the outcome document's
   `diagnostics` (CB-4), built with `OutcomeDiagnostic::new` from its code and
@@ -778,8 +775,7 @@ FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
 **EB-2 Checked-only input.** `prepare` takes `&CheckedPackage`, which only S4
 constructs (ADR-011 §4), so every backend admits checked input only, by
 type. `generate` takes the `EmittedPackage` that the same run's `check`
-produced, and the IR reader checks it against that run's expected
-`package_id` (ADR-011 E5). Bytes read from a file are never a `generate` or
+produced (ADR-011 E5). Bytes read from a file are never a `generate` or
 `prepare` input. A `compile_fail` test for each entry type is the evidence,
 as for ADR-011 FB-03 and FB-04.
 

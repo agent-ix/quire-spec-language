@@ -77,7 +77,7 @@ FR-267 writer writes these as the report holds them and derives none.
 
 ## Behavior
 
-- The entry SHALL compile, check the expected `package_id`, and report
+- The entry SHALL compile and report
   compile results exactly as FR-109 states.
 - The entry SHALL resolve the name in the compiled package's temporal
   clauses. When it resolves to none, the entry SHALL report stage `select`,

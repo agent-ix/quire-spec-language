@@ -42,8 +42,7 @@ Independently remove, duplicate and append an emitted temporal selection and a
 reader `ExpectedTemporal`; substitute its source, declaration span, definition
 or one clock field without changing the compiled source.
 
-Run the `/1` emitter and strict reader over the pre-extension fixture and
-compare its bytes to the frozen expected artifact. Offer `/1` to the `/2` reader
+Run the `/1` emitter and strict reader over the pre-extension fixture. Offer `/1` to the `/2` reader
 and `/2` to the `/1` reader. For every added work dimension, take the successful `/2` run's measured
 amount (its byte work is at least the emitted bytes) and retry with exact,
 one-short and raised-above-default limits.

@@ -88,8 +88,7 @@ another run's package is refused.
   `PluginReplayRefusal` (FR-290). This requirement adds two variants to
   `PluginReplayRefusal`:
   - `ForeignRun`, `stale_dependency`/`content-mismatch`, retaining the
-    received `package_id` and the run's: the code FR-098 gives a request whose
-    `package_id` is not the recompiled one;
+    received `package_id` and the run's: a pairing key from another run;
   - `NotACallItem`, `missing_declaration`/`missing-name`, retaining the
     request index: the code FR-290 gives an occurrence the package does not
     hold.

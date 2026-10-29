@@ -138,24 +138,11 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
      both targets.
 - The executor SHALL recompile and check the package by FR-098's rules, in
   FR-098's order, before it resolves the request's `state_clause`.
-- If the recompiled `package_id` differs from the request's or the
-  envelope's, then the executor SHALL refuse by FR-098's stale `package_id`
-  rule.
 - The executor SHALL resolve `state_clause` in the recompiled package's one
   name table of state clauses and functions (FR-109). If it names no state
   clause, a function's name included, then the executor SHALL refuse
   `missing_declaration`/`missing-name` naming the target (QSpec
   FR-323-AC-21).
-- If the resolved declaration's `state`/`state_clause` node identity differs
-  from the envelope's `clause_node`, then the executor SHALL refuse
-  `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) before any admission, naming the
-  envelope's and the recompiled node identity.
-- If the node identities agree and the declaration's `claim` occurrence key
-  differs from the envelope's `occurrence_key`, then the executor SHALL
-  refuse `stale_dependency`/`content-mismatch` before any admission,
-  naming the envelope's and the recompiled occurrence. The node goes first
-  because the occurrence key holds the node identity. No identity is
-  recovered from a display name.
 - If the observation's form does not match the resolved clause's kind
   (`PreCall` for a precondition, `Invocation` for a postcondition,
   `Current` for an invariant), then the executor SHALL refuse
@@ -225,7 +212,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 |----|----------|--------------|
 | FR-122-AC-1 | Over FR-108's ConfigVersion unit, an envelope for `VersionUnchanged` whose observation is the changed-version invocation settles `reproduced-with-evaluated-witness`, and the same payload on an `Input`-arm envelope settles `reproduced-without-witness`. An envelope for `ParentOrder` whose observation is violating-parent's current snapshot (anchor `handler validate`, self `child`) settles `reproduced-with-evaluated-witness`. Each result holds the source identity, the `package_id`, the request's `state_clause`, the envelope's `clause_node` and `occurrence_key`, and the identity of every document admission read: the invocation and both snapshots, or the one current snapshot. Neither clause reaches a decisive occurrence (FR-265), so each payload carries no `witness` and no result carries an QSpec FR-351 record; each result holds the evaluated `false`. | Test (TC-517) |
 | FR-122-AC-2 | The `VersionUnchanged` envelope over the unchanged-version invocation, and the `ParentOrder` envelope over healthy-parent's snapshot, each settle `inconclusive`, `Verdicts`, holding `violation` and `success`, the evaluated `true` and no QSpec FR-351 record. The `ParentOrder` violating-parent envelope replayed with the request's `quire.value.accounting/v1` evaluation budget at zero settles `inconclusive`, `NoValue`. | Test (TC-517) |
-| FR-122-AC-3 | Stale identity: the changed-version `VersionUnchanged` envelope whose `clause_node` names `ParentOrder`'s node refuses `stale_dependency`/`content-mismatch` naming the envelope's and the recompiled node identity, and names the nodes the same way when its `occurrence_key` is also at ordinal 1; with only its `occurrence_key` at ordinal 1 it refuses the same way naming both occurrences; none admits a document (its invocation absent from the byte provision changes none of these refusals). A source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule. A `state_clause` naming `Absent`, and one naming the function `sameIdentity`, each refuse `missing_declaration`/`missing-name` naming the target. | Test (TC-517) |
+| FR-122-AC-3 | Missing name: a `state_clause` naming `Absent`, and one naming the function `sameIdentity`, each refuse `missing_declaration`/`missing-name` naming the target. | Test (TC-517) |
 | FR-122-AC-4 | Precondition: over TC-466 step 3's `probe` unit (precondition `ReachesTarget`, `reaches(self, target, parent)`, over the chain `a -> b -> c`), an envelope whose observation is `PreCall` over the chain's pre snapshot with `self` `a` and `target` `a` settles `reproduced-with-evaluated-witness`, holding that one snapshot's identity and no post snapshot; with `target` `c` it settles `inconclusive`, `Verdicts`. The result holds `self` `a` and `target` `a` as the values it reproduced. Form mismatches refuse `wrong_snapshot`/`wrong-observation` with no admission (the observation's documents absent from the byte provision change none of these refusals): `ReachesTarget` with an `Invocation` observation over the `probe` invocation, `VersionUnchanged` with a `PreCall` observation, and `VersionUnchanged` with a `Current` observation over healthy-parent's snapshot. | Test (TC-517) |
 | FR-122-AC-5 | Admission refusals settle no result: the `VersionUnchanged` envelope over the forbidden-parent-change invocation refuses with FR-106's `frame_violation`/`unauthorized-change` record naming `child` and `parent`; the changed-version envelope with its pre snapshot absent from the byte provision refuses with FR-106's `unavailable_observation` record; the `ParentOrder` envelope over incomplete-population's snapshot (`complete: false`) refuses with FR-106's `Incomplete` `incomplete_population`/`incomplete-scope` record. | Test (TC-517) |
 | FR-122-AC-6 | Replaying one envelope twice gives equal results. `StateClauseCounterexample` implements `FamilyPayload`, the envelope carries it as its generic parameter with no string-keyed field, and its `observation` is a sum of the `PreCall`, `Invocation` and `Current` inputs, so a payload holds exactly one. The payload has no member naming the clause. | Test (TC-517) |

@@ -49,7 +49,7 @@ Replay needs no model checker and no solver. A sampled-witness counterexample
 over a package that S4 does not emit (FR-185) takes the checked subject
 instead of a package: FR-193's `replay_sampled_witness` applies these same
 re-execution, fairness and evaluation steps to that subject, recompiles
-nothing and compares no `package_id`.
+nothing.
 
 ## Use case
 
@@ -102,11 +102,9 @@ member of its own.
 ## Behavior
 
 - The executor SHALL recompile and check the package by FR-098's rules, in
-  FR-098's order, and refuse by FR-098's stale `package_id` rule on a
-  `package_id` mismatch.
+  FR-098's order.
 - The executor SHALL resolve the clause by its `clause_node` and
-  `occurrence_key`, and refuse `stale_dependency`/`content-mismatch`,
-  naming both identities, when either differs from the recompile.
+  `occurrence_key`.
 - The executor SHALL read the fairness set from the recompiled clause. A
   payload fairness set that differs from it SHALL refuse
   `stale_dependency`/`content-mismatch`, naming both sets.
@@ -251,7 +249,7 @@ member of its own.
 | FR-128-AC-1 | FR-126-AC-1's lasso under the weak constraint with no granularity replays to `reproduced-with-evaluated-witness` with `trace_position` 0. FR-126-AC-2's bounded prefix and FR-126-AC-3's stutter lasso each reproduce. Over the `Branch` subject (one object `x`, field `v: Int[0, 2]`, initial 0, and operation `step` with no precondition and postcondition `self.v != pre(self.v)`, so `step` from 0 has the two post-states 1 and 2 under one transition identity), for the clause `always holds(x.v != 2)`, a prefix whose one step records the state key of `v = 2` replays through that successor and reproduces with `trace_position` 1, and one recording a state key that no successor of `step` has refuses `stale_dependency`/`content-mismatch` naming the step and that state key. | Test (TC-523) |
 | FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `ReplayParity`. The original payload truncated to end at value 2 settles `inconclusive`, `ReplayParity`, since `inc` is enabled there. | Test (TC-523) |
 | FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`content-mismatch` naming both sets); one post-state key altered (`stale_dependency`/`content-mismatch` naming the step and the recorded state key); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial_state` of 1 over a one-snapshot subject; a `terminal-stutter` loop on a non-terminal state (naming the `terminal-stutter` step); AC-1's payload with `interval` set to `{lower: "0", upper: "2"}` for a clause with no interval (`stale_dependency`/`content-mismatch` naming `interval`); AC-1's payload with `trace: "observed"` (refused before recompiling). | Test (TC-523) |
-| FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `ReplayParity`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`content-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
+| FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `ReplayParity`. Replaying one envelope twice gives equal results. | Test (TC-523) |
 | FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: position 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `ReplayParity`, and so does the payload with `where.locus` naming another expression of the clause. | Test (TC-539) |
 | FR-128-AC-6 | FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 mod (3 - c.value) = 0`, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 3: the letter at the terminal state 3 holds the undefined `P`. The same prefix with `kind: Deadlock` also settles `reproduced-with-evaluated-witness` with value `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`, and the item settles `refuted`. Over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2, FR-126-AC-6's empty-prefix counterexample of the authored clause `always holds(true)` at value 2, with `kind: UndefinedEvaluation{where: position 0, locus: CanInc with the inc transition, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 0: the letter is defined, and the undefined `pre CanInc` of the expansion is the position's first undefined evaluation. The same payload with `where.locus` naming the clause's atom settles `inconclusive`, `ReplayParity`. | Test (TC-539) |
 | FR-128-AC-7 | Over FR-128-AC-6's deadlock-freedom subject under `terminal when 6 mod (3 - c.value) = 0` with the added `pre CanInc { 6 mod (3 - self.value) >= 0 }` on `inc`, which has no value at value 3, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, locus: CanInc with the inc transition, cause: division-by-zero}` replays to `reproduced-with-evaluated-witness` with `trace_position` 3. The same prefix with `where.locus` naming the `terminal when` predicate settles `inconclusive`, `ReplayParity`: the contract conjunction is read first, and its undefined value leaves the expansion undetermined, so value 3 is not shown terminal and `P` is not read. | Test (TC-539) |

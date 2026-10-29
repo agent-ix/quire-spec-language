@@ -466,10 +466,7 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    `null`) and its `fairness` names the clause's fairness constraints. At
    ADR-011 E9 the
    layer-6 `replay` facade recompiles from identity-addressed source and
-   resolves the occurrence key to the operator node. It refuses, with
-   `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics), when the recompiled clause's
-   interval, the profile selection or the fairness set differs from the
-   packet's. It refuses a malformed lasso (empty loop, position out of range)
+   resolves the occurrence key to the operator node. It refuses a malformed lasso (empty loop, position out of range)
    with `invalid_runtime_input`/`invalid-value`. The TemporalTrace evaluate
    hook then re-evaluates the formula over the lasso at the decoded
    `TemporalPosition` (A-4). Agreement settles

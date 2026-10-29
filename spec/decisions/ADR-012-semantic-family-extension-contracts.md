@@ -946,7 +946,7 @@ Tests: scoped anchor forms; anchor resolution through nested scopes; one
 refusal each for a missing anchor, an ambiguous name, a shadowing binder, a
 wrong target kind and a wrong channel; an attempt bound to its operation's
 frame with no second frame node; the frame run's success and violation
-verdicts; stale identity and version refusals; frame counterexample replay;
+verdicts; frame counterexample replay;
 a downstream `operation-contract` item settling `unsupported`; the backend-absence corpus case for
 `operation-contract`. No `Value` or `SumCase` module changes, and
 `TemporalTrace` and `Relation` do not change.

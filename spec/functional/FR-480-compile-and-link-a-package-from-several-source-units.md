@@ -73,7 +73,7 @@ the package means the same whichever order the two files are listed in.
 ## Outputs
 
 - One `CheckedPackage` whose `quire.checked-package/v2` `sources` list every
-  unit (BLOCKED-BY QSpec #510/STD-583 (owner: planner titan:QSL:plan)), with one checked unit (FR-362) per source unit.
+  unit, with one checked unit (FR-362) per source unit.
 - On refusal: one refusal with the stage, code, cause and locus this
   requirement or the one-unit rules give. Every locus names its unit's
   `RawSourceRef` (FR-096). No partial package is produced.
@@ -221,7 +221,7 @@ the package means the same whichever order the two files are listed in.
 | FR-480-AC-4 | Through the spine compile (FR-278's composition over the unit list, not FR-027's command), two `1-draft` units whose headers select the same two profiles in different orders refuse `invalid_package`/`conflicting-definition` at the later unit's header, naming both headers, and so do two units selecting different profile sets; two units spelling one profile's alias `v` and `w` check. An empty unit list refuses `invalid_package`/`invalid-value`, and two sources with one (authority, identity) refuse `invalid_package`/`conflicting-definition` before any parse. | Test |
 | FR-480-AC-5 | AC-2's package with `Point` moved from `A` to `B`, and `B` keeping `px`, has a `Point` node whose `owner` is `B`'s `SourceOwner`, a different `Point` node id and a different `package_id`. A source-map `declaration` region of `Point` names `B`'s source. | Test |
 | FR-480-AC-6 | QSpec TC-187 U11q through QSL: document 1 declares `dimension T;` and `unit z : T = rational(0, 1) * z2; unit z2 : T = rational(1, 1);`, and document 2 declares `dimension L;` and `unit u_self : L = rational(1, 1) * u_self;`. The list `[1, 2]` refuses row 1 at `z`, and `[2, 1]` refuses row 6 at `u_self` (FR-091, FR-142 source order). | Test |
-| FR-480-AC-7 | AC-1's package replays: an FR-098 request whose package reference lists `U1` and `U2` in canonical unit order, with both sources in the byte provision, recompiles to the same `package_id` and replays the D10 call. The same reference with the two sources reversed recompiles to the same `package_id` and replays; with one source repeated it refuses before any recompile, `invalid_package`/`invalid-value` at `/package/sources`. With `U2` dropped, `U1` alone recompiles to another `package_id`, and the executor refuses it on FR-098's `package_id` comparison (`stale_dependency`/`content-mismatch`). A reference naming a definition document refuses before any recompile. | Test |
+| FR-480-AC-7 | AC-1's package replays: an FR-098 request whose package reference lists `U1` and `U2` in canonical unit order, with both sources in the byte provision, recompiles to the same `package_id` and replays the D10 call. The same reference with the two sources reversed recompiles to the same `package_id` and replays; with one source repeated it refuses before any recompile, `invalid_package`/`invalid-value` at `/package/sources`. A reference naming a definition document refuses before any recompile. | Test |
 | FR-480-AC-8 | The spine returns two checked units for AC-2's package, each carrying its own source reference and a type report produced from that source unit's parse. The API does not accept an independently supplied type report or source for rebinding. | Test |
 
 ## Dependencies

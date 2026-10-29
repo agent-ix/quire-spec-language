@@ -181,8 +181,7 @@ reading any declaration: `missing_import`/`missing-selection` (no package is
 supplied for the selection's identity) and
 `invalid_model_binding`/`wrong-model-selection` (the package's own identity
 differs from the selection's). The compiler compares no version and no
-document content: a changed document is caught by the `package_id` recompute
-(QSpec FR-154-AC-38).
+document content.
 
 If `agent-ix-semantic-ir` refuses the selected bytes, then the compiler SHALL end
 intake with no declaration and SHALL retain every reader diagnostic with its IR

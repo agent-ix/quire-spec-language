@@ -16,7 +16,7 @@ from the node as written, equals the preimage `check` keyed, and `package` build
 term and calls no key function.
 
 This catches a second lowering in `package` that drifts from the one `check`
-keyed, which a reader would refuse as `stale-node-key`.
+keyed.
 
 It also verifies each node's `dependencies` against FR-093's Node
 dependencies rules, and the emission against QSpec's v2 positive fixtures by

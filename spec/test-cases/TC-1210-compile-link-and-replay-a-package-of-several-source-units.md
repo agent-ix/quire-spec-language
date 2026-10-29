@@ -45,7 +45,7 @@ the identities their step names.
    owner, node id, source-map region and the `package_id`.
 6. Compile FR-480-AC-6's two documents in both orders.
 7. Replay step 1's first package through FR-098 with the canonical
-   reference, the reversed reference, a repeated source, `U2` dropped and a
+   reference, the reversed reference, a repeated source and a
    definition document.
 8. Read AC-2's checked units and inspect the source reference and type report
    carried by each.
@@ -75,8 +75,7 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
 - Step 6: row 1 at `z`, then row 6 at `u_self`.
 - Step 7: the same `package_id` and the D10 call replays, for the
   canonical and the reversed reference; `invalid_package`/`invalid-value`
-  at `/package/sources` before any recompile for the repeated source; `stale_dependency`/`content-mismatch` on the
-  `package_id` comparison; a refusal before any recompile.
+  at `/package/sources` before any recompile for the repeated source; a refusal before any recompile for the definition document.
 - Step 8: two checked units, each carrying its own source reference and a type
   report from that source's parse; the API provides no separate report/source
   rebinding operation.

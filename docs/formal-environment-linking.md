@@ -46,8 +46,7 @@ renamed into this new binding profile.
 
 An environment is closed over its declared type dependencies by the existing IR
 constructor validation. Altering any included declaration changes this import's
-artifact bytes; no external package closure is guessed. This is the stale-closure
-control for this profile, not a claim to have decoded another model's lock format.
+artifact bytes; no external package closure is guessed.
 
 Resolve all imports in source order. A package absent from the supplied inventory
 returns missing_import. A known package with no exact revision returns
