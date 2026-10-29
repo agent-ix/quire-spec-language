@@ -213,10 +213,13 @@ fn settled(row: Row) -> StepSimulationSettlement {
     }
 }
 
-/// QSpec FR-468's rules, the first that applies: an initial counterexample,
-/// a hypothesis item not `proved`, a step counterexample, a certificate shown
-/// wrong, then another backend result (no candidate included), the first
-/// record's in record order taking the half, then the proof.
+/// QSpec FR-468's rules, the first that applies in rule order whatever the
+/// position of the queries that trigger them: an initial counterexample, a
+/// hypothesis item not `proved`, a step counterexample, a certificate shown
+/// wrong, then another backend result (no candidate, and a certificate
+/// check that stopped or faulted, included), then the proof. Within a rule
+/// the first query triggering it wins: the initial query, the hypothesis
+/// items, then the step rows in `steps` order.
 fn safety_of(
     verdicts: &[StepRecordVerdict],
     records: &[StepSimulationSettlement],
