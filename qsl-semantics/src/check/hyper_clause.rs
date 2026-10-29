@@ -37,8 +37,9 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
 use super::check::Signatures;
+use super::check::{HyperTyping, Typer};
 use super::hyper_typing::{type_condition, BodyFault, Env, ExecutionRoot, Root, Site, Ty};
-use super::ir::CheckedNode;
+use super::ir::{CheckedBody, CheckedNode};
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{population_of, PopulationDomain};
@@ -667,11 +668,24 @@ pub struct CheckedModelRelation {
     name: String,
     span: Span,
     executions: Vec<(String, OperationKey)>,
-    /// The typed body as S2 built it. FR-172 names a `CheckedExpression`;
-    /// lowering the typed body to the checked node is S4 work and remains.
+    /// The selected model alias for each execution, aligned with
+    /// `executions`.
+    execution_aliases: Vec<String>,
+    /// The source body, retained for diagnostics and source maps.
     body: Expression,
+    /// The body expression's source spans for S4 source-map entries.
+    body_spans: ExpressionSpans,
+    /// The typed value body that S4 lowers, with one local slot for every
+    /// execution's self, result (when present) and parameters.
+    typed_body: CheckedBody,
+    /// The body binder names and types in the slot order above.
+    body_parameters: Vec<(String, ValueType)>,
     claim: TemporalClaim,
     code_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
+    /// The S4 step-relation node key, once assembled.
+    identity: Option<quire_exact::NodeKey>,
+    /// Its `claim` occurrence, once assembled.
+    occurrence: Option<OccurrenceKey>,
 }
 
 /// The `operation-contract` requirement of a step relation's code claim
@@ -732,11 +746,31 @@ impl CheckedModelRelation {
         &self.executions
     }
 
+    /// The selected model alias for each execution, in source order.
+    pub(crate) fn execution_aliases(&self) -> &[String] {
+        &self.execution_aliases
+    }
+
     /// The relation's body, every read of which was typed under the value
     /// profile: a Boolean over each execution's arguments, result and
     /// receiver's pre-state and post-state. S4 lowers it to FR-322 terms.
     pub fn body(&self) -> &Expression {
         &self.body
+    }
+
+    /// The source spans of the checked relation body.
+    pub(crate) fn body_spans(&self) -> &ExpressionSpans {
+        &self.body_spans
+    }
+
+    /// The typed S3 body whose nodes S4 lowers.
+    pub(crate) fn typed_body(&self) -> &CheckedBody {
+        &self.typed_body
+    }
+
+    /// The typed body binders, in the order their local slots name them.
+    pub(crate) fn body_parameters(&self) -> &[(String, ValueType)] {
+        &self.body_parameters
     }
 
     /// The relation's form: always HP-1 (FR-173).
@@ -765,6 +799,26 @@ impl CheckedModelRelation {
             .then(|| OperationContractClaim {
                 domains: self.code_domains.clone(),
             })
+    }
+
+    /// The step-relation node key after S4 assembly.
+    pub fn identity(&self) -> Option<quire_exact::NodeKey> {
+        self.identity
+    }
+
+    /// The node's `claim` occurrence after S4 assembly.
+    pub fn occurrence(&self) -> Option<&OccurrenceKey> {
+        self.occurrence.as_ref()
+    }
+
+    pub(crate) fn assembled_at(
+        mut self,
+        identity: quire_exact::NodeKey,
+        occurrence: OccurrenceKey,
+    ) -> Self {
+        self.identity = Some(identity);
+        self.occurrence = Some(occurrence);
+        self
     }
 }
 
@@ -1139,7 +1193,7 @@ fn check_declaration<'a>(
         HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations, cx)
             .map(|clause| CheckedHyper::Behaviours(Box::new(clause))),
         HyperDeclaration::Finite(form) => Err(check_finite(form)),
-        HyperDeclaration::Relation(form) => check_relation(form, declarations)
+        HyperDeclaration::Relation(form) => check_relation(form, declarations, cx)
             .map(|relation| CheckedHyper::Relation(Box::new(relation))),
     }
 }
@@ -1280,6 +1334,7 @@ fn check_behaviours<'a>(
             };
             found.extend(
                 type_condition(&env, &condition.expression, &condition.spans)
+                    .0
                     .into_iter()
                     .map(body_fault),
             );
@@ -1331,6 +1386,7 @@ fn check_behaviours<'a>(
             };
             found.extend(
                 type_condition(&env, &block.expression, &block.spans)
+                    .0
                     .into_iter()
                     .map(body_fault),
             );
@@ -3081,11 +3137,15 @@ fn identity(
 fn check_relation(
     form: &ModelRelationForm,
     declarations: &HyperDeclarations<'_>,
+    cx: &mut CheckContext<'_, HyperDeclarations<'_>>,
 ) -> Result<CheckedModelRelation, StageFailure<CheckRefusal>> {
     let temporal = &declarations.temporal;
     let scope = temporal.scope;
     let mut found: Vec<Found> = Vec::new();
     let mut executions = Vec::with_capacity(form.executions.len());
+    let mut execution_aliases = Vec::with_capacity(form.executions.len());
+    let mut execution_fields = BTreeMap::new();
+    let mut body_parameters = Vec::new();
     let mut roots: Vec<ValueType> = Vec::new();
     let mut body_roots: BTreeMap<&str, Root> = BTreeMap::new();
     for binding in &form.executions {
@@ -3121,6 +3181,25 @@ fn check_relation(
                 .iter()
                 .map(|(_, value_type)| value_type.clone()),
         );
+        let mut fields = BTreeMap::new();
+        let self_slot = body_parameters.len();
+        let self_type = ValueType::Reference(operation.declaring_type());
+        fields.insert("self".to_owned(), (self_slot, self_type.clone()));
+        body_parameters.push((format!("{}.self", binding.variable.name), self_type));
+        if let Some(result) = declaration.result() {
+            let slot = body_parameters.len();
+            fields.insert("result".to_owned(), (slot, result.clone()));
+            body_parameters.push((format!("{}.result", binding.variable.name), result.clone()));
+        }
+        for (name, value_type) in declaration.parameters() {
+            let slot = body_parameters.len();
+            fields.insert(name.clone(), (slot, value_type.clone()));
+            body_parameters.push((
+                format!("{}.{}", binding.variable.name, name),
+                value_type.clone(),
+            ));
+        }
+        execution_fields.insert(binding.variable.name.clone(), fields);
         body_roots.insert(
             &binding.variable.name,
             Root::Execution(Box::new(ExecutionRoot {
@@ -3130,6 +3209,7 @@ fn check_relation(
             })),
         );
         executions.push((binding.variable.name.clone(), key));
+        execution_aliases.push(alias.to_owned());
     }
     let no_label = |_: &str, _: &StepLabelForm| None;
     let env = Env {
@@ -3139,12 +3219,34 @@ fn check_relation(
         site: Site::Body,
         label: &no_label,
     };
-    found.extend(
-        type_condition(&env, &form.body.expression, &form.body.spans)
-            .into_iter()
-            .map(body_fault),
-    );
+    let (body_faults, _) = type_condition(&env, &form.body.expression, &form.body.spans);
+    found.extend(body_faults.into_iter().map(body_fault));
     earliest(found)?;
+    let mut nodes_used = declarations.nodes_used.get();
+    let hyper_typing = HyperTyping {
+        executions: execution_fields,
+        ..HyperTyping::default()
+    };
+    let body_location = Location::root(Origin::TypeDeclaration {
+        name: format!("relation {} body", form.name.name),
+    });
+    let typed_body = Typer::new(
+        scope,
+        declarations.signatures,
+        declarations.checking_limits,
+        &mut nodes_used,
+        qsl_forms::ClauseKind::Invariant,
+    )
+    // FR-180 relation bodies read the receiver state through execution
+    // binders; they are checked in the model profile even though they are not
+    // a state-clause body.
+    .with_model_family(true)
+    .with_cancel(declarations.cancel)
+    .with_context(cx.reborrow(scope))
+    .with_hyper(hyper_typing)
+    .check_as(&form.body.expression, &ValueType::Boolean, &body_location)
+    .map_err(StageFailure::Refused)?;
+    declarations.nodes_used.set(nodes_used);
     let root_refs: Vec<&ValueType> = roots.iter().collect();
     let code_domains = classify_domains(&root_refs, scope.types(), temporal.position_limit)
         .map_err(|failure| match failure {
@@ -3157,33 +3259,20 @@ fn check_relation(
         name: form.name.name.clone(),
         span: form.span,
         executions,
+        execution_aliases,
         body: form.body.expression.clone(),
+        body_spans: form.body.spans.clone(),
+        typed_body,
+        body_parameters,
         claim: TemporalClaim::new(BTreeMap::new(), true, true),
         code_domains,
+        identity: None,
+        occurrence: None,
     })
 }
 
-/// The refusal for a clause that checks but that no S4 emission writes yet.
-pub(crate) fn not_emitted(name: String, span: Span) -> CheckRefusal {
-    CheckRefusal {
-        location: Location::root(Origin::Expression),
-        cause: CheckCause::Temporal(Box::new(TemporalCause::NotEmitted { name, span })),
-    }
-}
-
-impl CheckedHyper {
-    /// The declared name and span of the clause.
-    pub(crate) fn name_and_span(&self) -> (String, Span) {
-        match self {
-            Self::Behaviours(clause) => (clause.name.clone(), clause.span),
-            Self::Relation(relation) => (relation.name.clone(), relation.span),
-        }
-    }
-}
-
 /// Every `hyper` clause and `relation` of `package`, checked as the
-/// assembler's check would (test-support only: the production check refuses a
-/// clause that checks until S4 emits it).
+/// assembler's check would (test-support only).
 #[cfg(any(test, feature = "test-support"))]
 pub fn check_hyper_clauses(
     package: &crate::check::PackageDeclarations,
