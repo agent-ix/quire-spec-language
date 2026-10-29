@@ -33,12 +33,12 @@ The current linked production sources in `qsl_analyze::Engines::qsl()` are
 EN-1 (`temporal-satisfaction`), EN-4 (`probabilistic-satisfaction`) and EN-6
 (`temporal-satisfaction` over a dense-time subject, FR-243) under FR-281. No
 engine advertises either refinement-witness capability used
-by FR-345. The `ValueValidity` witness has no production provider; QSL-1200
-tracks its provider. The `OperationContract` witness has no production
+by FR-345. The `ValueValidity` witness is supplied by the value-validity check arm
+(`value-checker`, QSpec FR-483 and FR-484). The `OperationContract` witness has no production
 provider; QSL-1201 tracks its provider. QSL-905 supplies the operation-contract
 record needed by that path, but does not itself register or implement a
-provider. Until QSL-1200 and QSL-1201 land, the production snapshot SHALL
-return the empty candidate outcome for the corresponding witness capability,
+provider. Until QSL-1201 lands, the production snapshot SHALL
+return the empty candidate outcome for the `OperationContract` witness capability,
 and FR-345 SHALL report the empty candidate set according to its existing
 requirement. In particular, FR-345-AC-9, FR-345-AC-12 and FR-345-AC-13 are
 satisfied only after QSL-1200 supplies `ValueValidity` and QSL-1201 supplies
@@ -51,7 +51,7 @@ builder SHALL NOT insert a placeholder to change that outcome.
 |---|---|---|
 | `temporal-satisfaction` | EN-1 and EN-6 in `qsl_analyze::Engines::qsl()`; FR-281 owns the engine behavior and FR-288 owns conversion of each provider manifest into a descriptor. | Present; expose and register the existing EN-1 and EN-6 descriptors. |
 | `probabilistic-satisfaction` | EN-4 in `qsl_analyze::Engines::qsl()`; FR-281 owns the engine behavior and FR-288 owns conversion of its provider manifest into a descriptor. | Present; expose and register the existing EN-4 descriptor. |
-| `ValueValidity` | No current provider registration. QSL-1200 owns supplying one. | Absent until QSL-1200 lands. |
+| `ValueValidity` | The value-validity arm in `qsl_analyze::Engines::qsl()`; QSpec FR-483 and FR-484 own its behavior. | Present; expose and register its descriptor. |
 | `OperationContract` | No current provider registration. QSL-1201 owns supplying one; QSL-905 supplies a related operation-contract record, not a provider. | Absent until QSL-1201 lands. |
 
 The current `qsl_analyze::Engines::qsl()` API does not expose its engine
@@ -108,7 +108,7 @@ API and dependency changes, not claims about existing code.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-489-AC-1 | A production snapshot built from `qsl_analyze::Engines::qsl()` contains exactly the engine descriptors that collection exposes, including EN-1, EN-4 and EN-6, and no descriptor without its engine implementation. | Test (TC-1272) |
-| FR-489-AC-2 | Candidate queries over the production snapshot include EN-1 and EN-6 for `temporal-satisfaction` and EN-4 for `probabilistic-satisfaction` when the query supplies the evidence kind EN-4 advertises, as FR-075-AC-13 requires; where QSL has no production provider implementation for the FR-345 `ValueValidity` or `OperationContract` witness capability, the corresponding candidate outcome is empty. | Test (TC-1272) |
+| FR-489-AC-2 | Candidate queries over the production snapshot include EN-1 and EN-6 for `temporal-satisfaction` and EN-4 for `probabilistic-satisfaction` when the query supplies the evidence kind EN-4 advertises, as FR-075-AC-13 requires; where QSL has no production provider implementation for the FR-345 `OperationContract` witness capability, the corresponding candidate outcome is empty. | Test (TC-1272) |
 | FR-489-AC-3 | If the injected descriptor source fails or a production registration is refused, the factory returns a typed build error and the CLI reports tool failure; it never drops the descriptor and continues with a partial snapshot. | Test (TC-1272) |
 | FR-489-AC-4 | Two independently built production snapshots are equal, and the production builder uses no process-global registry state. | Test (TC-1272) |
 | FR-489-AC-5 | `Engines::registrations()` yields exactly the descriptors owned by the EN-1, EN-4 and EN-6 engines in `Engines::qsl()`; `xtask` declares `qsl-analyze` as a normal dependency and its production factory registers each yielded descriptor once. | Test (TC-1272) |

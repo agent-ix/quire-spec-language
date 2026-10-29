@@ -736,6 +736,9 @@ impl OutcomeItem {
                     UnavailabilityCause::RecoveryView { predicate } => {
                         item.predicate = Some(predicate.clone());
                     }
+                    UnavailabilityCause::ValueCheck { reason, .. } => {
+                        item.refusal = Some(reason.as_str());
+                    }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent
