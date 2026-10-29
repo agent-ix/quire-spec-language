@@ -13,7 +13,7 @@ relationships:
 Verify which `operation-contract` records the refinement's `requirements`
 hook writes, their hypotheses, and how their backend outcomes settle.
 
-Scope: FR-146-AC-1 to FR-146-AC-10.
+Scope: FR-146-AC-1 to FR-146-AC-10; step 9 also exercises FR-314-AC-9 through FR-146-AC-4.
 
 ## Test Procedure
 
