@@ -15,8 +15,8 @@ use qsl_replay::{
     ReplayRefusal, SubjectRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
     ZoneCertificateRequest,
 };
-use qsl_replay::{ModelCheckItem, ModelCheckLimits, ProtocolCertificateRequest};
-use qsl_route::deadlock::ObligationKind;
+use qsl_replay::{ModelCheckItem, ModelCheckLimits, ProtocolCertificateRequest, SubjectIdentity};
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::request::{DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem};
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, HyperForm};
@@ -274,7 +274,10 @@ pub enum DerivedItemMismatch {
         /// The request item's index.
         index: RequestIndex,
     },
-    /// The engine run decides another item than the request item's kind.
+    /// The engine run or its certificate check decides another item than
+    /// the request item's kind, or is over another subject, a protocol
+    /// subject's resolved models included (QSpec FR-425), than the request
+    /// item's obligation.
     #[error("the run decides another item than request item {index:?}'s {kind:?}")]
     OtherItem {
         /// The request item's index.
@@ -324,12 +327,16 @@ fn derived_graph_limits(limits: &DerivedLimits) -> qsl_eval::simulation::Limits 
 /// defaults, and no `max_depth`, since a derived item is an exhaustive
 /// search (QSpec FR-368-AC-20).
 ///
+/// `obligation` is `derived`'s obligation identity, as the written request
+/// gives it: the run and its certificate check must be over its subject.
+///
 /// # Errors
 ///
-/// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` item or
-/// `item` runs another item.
+/// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` item, or
+/// `item` runs another item or is over another subject than `obligation`'s.
 pub fn derived_model_item<'a>(
     derived: &RequestItem,
+    obligation: &ItemObligation<SubjectIdentity>,
     mut item: ModelItem<'a>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     let index = derived.index();
@@ -338,7 +345,17 @@ pub fn derived_model_item<'a>(
     else {
         return Err(DerivedItemMismatch::NotDerived { index });
     };
-    if !matches!(item.request.item, ModelCheckItem::DeadlockFreedom) {
+    // A subject whose package has no identity is no subject the request
+    // was written over.
+    let over = |subject: &qsl_eval::model_subject::ModelSubject<'_>| {
+        SubjectIdentity::of(subject).is_ok_and(|identity| identity == obligation.subject)
+    };
+    if !matches!(item.request.item, ModelCheckItem::DeadlockFreedom)
+        || !matches!(item.certificate.item, ModelCheckItem::DeadlockFreedom)
+        || obligation.kind != ObligationKind::DeadlockFreedom
+        || !over(&item.request.subject)
+        || !over(&item.certificate.subject)
+    {
         return Err(DerivedItemMismatch::OtherItem {
             index,
             kind: ItemKind::DeadlockFreedom,
@@ -359,13 +376,19 @@ pub fn derived_model_item<'a>(
 /// `max_live_instances` for both the run and its certificate check, an
 /// unset one keeping EN-1's default.
 ///
+/// `obligation` is `derived`'s obligation identity, as the written request
+/// gives it: its resolved models are part of the protocol subject (QSpec
+/// FR-425), so the run and its certificate check must be over exactly
+/// those models.
+///
 /// # Errors
 ///
 /// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` or
 /// `race-freedom` item, or `item`'s run or its certificate check decides
-/// another item.
-pub fn derived_protocol_item<'a>(
+/// another item or is over other resolved models than `obligation`'s.
+pub fn derived_protocol_item<'a, S>(
     derived: &RequestItem,
+    obligation: &ItemObligation<S>,
     mut item: ProtocolItem<'a>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     let index = derived.index();
@@ -379,7 +402,26 @@ pub fn derived_protocol_item<'a>(
             return Err(DerivedItemMismatch::NotDerived { index })
         }
     };
-    if !decides(&item.request.item) || !decides(&item.certificate.item) {
+    let models = match (&obligation.kind, kind) {
+        (ObligationKind::ProtocolDeadlockFreedom { models }, ItemKind::DeadlockFreedom)
+        | (ObligationKind::RaceFreedom { models }, ItemKind::RaceFreedom) => models,
+        _ => return Err(DerivedItemMismatch::OtherItem { index, kind }),
+    };
+    let over = |memory: &qsl_eval::simulation::protocol::ResolvedMemory| {
+        memory.parallels().len() == models.len()
+            && memory
+                .parallels()
+                .iter()
+                .zip(models)
+                .all(|(resolved, (parallel, model))| {
+                    resolved.parallel == *parallel && resolved.model == *model
+                })
+    };
+    if !decides(&item.request.item)
+        || !decides(&item.certificate.item)
+        || !over(&item.request.subject.memory)
+        || !over(&item.certificate.subject.memory)
+    {
         return Err(DerivedItemMismatch::OtherItem { index, kind });
     }
     item.request.limits.limits = derived_graph_limits(limits);

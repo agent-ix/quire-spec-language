@@ -552,6 +552,7 @@ fn an_untimed_subjects_deadlock_item_settles_on_en1() {
             [Some(ItemKind::Formula), Some(ItemKind::DeadlockFreedom)]
         );
         let derived = &written.items()[1];
+        let obligation = written.obligation(derived.index()).expect("its obligation");
         assert_eq!(
             derived.occurrence(),
             &root_claim(item.request.subject.simulation.package, "test/counter")
@@ -562,7 +563,7 @@ fn an_untimed_subjects_deadlock_item_settles_on_en1() {
         );
         let mut records = analyze(
             &Engines::qsl().expect("the layer-A manifests register"),
-            vec![derived_model_item(derived, item).expect("the deadlock-freedom run")],
+            vec![derived_model_item(derived, obligation, item).expect("the deadlock-freedom run")],
             &Cancel::new(),
         );
         let record = records.remove(0);
@@ -589,12 +590,43 @@ fn an_untimed_subjects_deadlock_item_settles_on_en1() {
     let written = written(&item.request.subject, &DerivedLimits::default());
     assert_eq!(kinds(&written), [Some(ItemKind::Formula)]);
     let formula = &written.items()[0];
+    let obligation = written.obligation(formula.index()).expect("its obligation");
     assert_eq!(
-        derived_model_item(formula, item).err(),
+        derived_model_item(formula, obligation, item).err(),
         Some(DerivedItemMismatch::NotDerived {
             index: formula.index()
         })
     );
+}
+
+/// SR-1826001 FND-001 for a model subject: the derived deadlock-freedom
+/// item is over its written subject, so a run or certificate check over
+/// another subject, here the Counter from another initial state, is refused
+/// as another item's run.
+#[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
+#[test]
+fn a_derived_model_item_refuses_a_run_over_another_subject() {
+    let written_case = case(&counter_body(DONE), &[0]);
+    let other_case = case(&counter_body(DONE), &[1]);
+    let item = written_case.model_item();
+    let written = written(&item.request.subject, &DerivedLimits::default());
+    let derived = &written.items()[1];
+    let obligation = written.obligation(derived.index()).expect("its obligation");
+    let mismatch = Some(DerivedItemMismatch::OtherItem {
+        index: derived.index(),
+        kind: ItemKind::DeadlockFreedom,
+    });
+    assert_eq!(
+        derived_model_item(derived, obligation, other_case.model_item()).err(),
+        mismatch
+    );
+    let mut mixed = written_case.model_item();
+    mixed.certificate = other_case.request();
+    assert_eq!(
+        derived_model_item(derived, obligation, mixed).err(),
+        mismatch
+    );
+    assert!(derived_model_item(derived, obligation, written_case.model_item()).is_ok());
 }
 
 /// QSpec FR-368-AC-22: a subject that reads the one selection `M` of a
