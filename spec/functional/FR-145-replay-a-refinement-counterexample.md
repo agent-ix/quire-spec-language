@@ -51,7 +51,7 @@ count.
 
 - FR-128's inputs, with these additions: the byte provision also holds the
   abstract subject's initial snapshots, and, when the abstract model is a
-  dependency's, that dependency's digest-addressed source (ADR-015).
+  dependency's, that dependency's identity-addressed source (ADR-015).
 - A `WitnessEnvelope<TemporalCounterexample>` whose source is
   `ReplaySource::ModelTrace` naming the refinement node, and whose payload's
   `refinement` member holds the recorded `RefinementFailure`.
@@ -66,16 +66,12 @@ count.
 
 - The executor SHALL recompile and check the concrete package by FR-098's
   rules and the abstract subject's package with it (the same package, or
-  the dependency by ADR-015), refusing by FR-098's stale `package_id` rule
-  on a mismatch.
-- It SHALL resolve the refinement node by the envelope's identity and
-  refuse `stale_dependency`/`content-mismatch`, naming both identities,
-  when it differs from the recompile. It SHALL read `F_C` and `F_A` from the
-  recompiled node, which the node identity binds.
+  the dependency by ADR-015).
+- It SHALL resolve the refinement node by the envelope's identity and read
+  `F_C` and `F_A` from the recompiled node.
 - It SHALL re-admit both subjects, the abstract one with the derived
   universes (ADR-020 RM-2), and re-execute the concrete prefix and loop by
-  FR-128's rules, with FR-128's refusals for a step not enabled, a
-  post-state that differs from the recorded one, an `initial` index out of
+  FR-128's rules, with FR-128's refusals for a step not enabled, an `initial` index out of
   range and a loop that does not close.
 - While the concrete side is a protocol subject, the executor SHALL
   re-execute through `ProtocolSystem` with ADR-027 PX-2's refusals.
@@ -123,7 +119,7 @@ count.
 | FR-145-AC-1 | FR-142-AC-2's lost-update counterexample replays, recomputing mapped values 0, 0, 0, 1, 1, to `reproduced-with-evaluated-witness` naming `AbstractStepRejected{position: 4, transition: inc(c), cause: Postcondition}`. FR-142-AC-3's `InitialNotAbstract` and `StutterChanged` counterexamples, FR-142-AC-4's broken history update and FR-142-AC-5's `Coin` frame failure each reproduce. | Test (TC-550) |
 | FR-145-AC-2 | FR-143-AC-1's divergence lasso reproduces `Divergence{constraint: inc}`; FR-143-AC-2's terminal-stutter lasso reproduces `Divergence`; FR-143-AC-3's lasso reproduces `AbstractUnfair{constraint: flipB}`. | Test (TC-550) |
 | FR-145-AC-3 | The lost-update counterexample with its recorded failure changed to position 3 settles `inconclusive`, `ReplayParity`; the divergence lasso with its recorded failure changed to `AbstractUnfair` settles `inconclusive`, `ReplayParity`; the divergence lasso replayed against the `CasRefinesCounter` envelope's fairness, carrying that refinement's node identity and `F_C`, refuses as unfair, since `beginA` is enabled and never taken at `(0, 0, f, 0, f)`. | Test (TC-550) |
-| FR-145-AC-4 | Refusals settle no result: an envelope naming another refinement node (`stale_dependency`/`content-mismatch` naming both identities); a lasso over `RegisterHistory` with `ensure fair weak Spec::Register::write`, stem `write(r, 1)` and loop `write(r, 1)`, whose loop returns to its entry concrete state (`value` 1) with `last` 0 at entry and 1 at its end (`invalid_runtime_input`/`invalid-value`); an abstract package source edit that changes its `package_id` (FR-098's stale rule). Replaying one envelope twice gives equal results. | Test (TC-550) |
+| FR-145-AC-4 | Refusals settle no result: a lasso over `RegisterHistory` with `ensure fair weak Spec::Register::write`, stem `write(r, 1)` and loop `write(r, 1)`, whose loop returns to its entry concrete state (`value` 1) with `last` 0 at entry and 1 at its end (`invalid_runtime_input`/`invalid-value`). Replaying one envelope twice gives equal results. | Test (TC-550) |
 | FR-145-AC-5 | FR-142-AC-8's counterexample replays to `reproduced-with-evaluated-witness`; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `ReplayParity`. | Test (TC-554) |
 | FR-145-AC-6 | Replaying a hand-built payload (a recorded `AbstractStepRejected` over `HeavyEnq`'s `put(1)` step, since `HeavyEnq` under B produces no counterexample) under the meter B settles V-7: execution `resource-incomplete`, `Incomplete(LimitReached{EvaluationMeter, B, setting})`, never `inconclusive`/`ReplayParity`. | Test (TC-550) |
 

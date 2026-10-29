@@ -40,11 +40,11 @@ display name or inferred unit is not a compiler clock configuration.
 
 ## Outputs
 
-Canonical `quire.compiled-protocol/2` bytes and their complete raw-byte digest,
-or FR-042's typed invalid, unsupported or resource-incomplete disposition with
-no partial package. The caller remains responsible for placing that digest in
-an independently authorized external `ArtifactRef`; the compiler does not mint
-its authority, identity or revision. A successful strict `/2` read returns a constructor-private
+Canonical `quire.compiled-protocol/2` bytes, or FR-042's typed invalid,
+unsupported or resource-incomplete disposition with no partial package. The
+caller supplies an independently selected external artifact identity reference;
+the compiler does not mint its authority, identity or revision. A successful
+strict `/2` read returns a constructor-private
 `protocol_artifact::v2::AdmittedPackage`; it does not authenticate `/1` bytes or
 produce a temporal/protocol assessment result.
 
@@ -68,25 +68,19 @@ tree.
 
 When a Rust consumer addresses the members of a written `/2` handoff, the
 compiler crate SHALL publish the exact
-member-name constants `PUBLISHED_OFFER_FILE`,
-`PUBLISHED_ARTIFACT_REFERENCE_FILE`, `PUBLISHED_SELECTION_FILE`,
+member-name constants `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`,
 `PUBLISHED_MUTATION_MANIFEST_FILE` and `MUTATION_MANIFEST_FORMAT`. Their values SHALL respectively name
-`compiled-protocol-v2.json`, `compiled-protocol-v2.ref.json`,
-`expected-v2.json`, `mutations/manifest.json` and
+`compiled-protocol-v2.json`, `expected-v2.json`, `mutations/manifest.json` and
 `quire.protocol.v2-mutations/1`. A consumer SHALL NOT require an environment
 variable or redeclare those producer-owned values to address the handoff.
-Where a consumer must compare the written sources with their authored
-originals, the compiler crate SHALL publish
-`protocol_artifact::handoff::SOURCE_ROOT`, the crate's manifest directory
-(`CARGO_MANIFEST_DIR`), beneath which the authored sources live. No constant names a committed
-handoff directory.
+No constant names a committed handoff directory.
 
 The producer's `temporal` input SHALL be a complete table of
 `native::TemporalSelection` records keyed by exact source `ArtifactRef` and
-declaration byte span, with expected definition identity/revision/artifact and
+declaration byte span, with expected definition identity/revision/artifact reference and
 one typed clock configuration.
 
-`AdmissionV2` SHALL expose immutable canonical bytes, digest and the strict `/2`
+`AdmissionV2` SHALL expose immutable canonical bytes and the strict `/2`
 admitted view while retaining the same constructor-private native authority as
 FR-042's producer. Its enclosing `Report<AdmissionV2>` SHALL expose effective
 limits and usage exactly once, following the existing FR-042 report pattern.
@@ -126,8 +120,9 @@ The binding's definition index SHALL equal the selected declaration's existing
 `profile` index.
 
 The selected `Definition` SHALL supply the exact identity and revision, and its
-`artifact` index SHALL select one exact dependency `ArtifactRef` whose digest
-matches the independently supplied original definition bytes.
+`artifact` index SHALL select one exact dependency `ArtifactRef`. The reader
+validates the independently supplied dependency bytes as part of its closed
+inventory and semantic admission; the reference carries no byte digest.
 
 The fixed-sample period SHALL be a positive reduced exact number representable
 by FR-038 without floating conversion, sign repair or zero substitution.
@@ -174,10 +169,6 @@ The strict `/2` reader SHALL reject a binding whose definition index differs
 from its declaration profile or whose configuration alternative differs from
 that exact registered profile.
 
-The strict `/2` reader SHALL recompute the selected definition dependency digest
-from the independently supplied original bytes rather than trust the offered
-artifact reference alone.
-
 The strict `/2` reader SHALL apply FR-042's canonical byte comparison, closed
 shape validation, complete inventory checks and charge-before-work limits to the
 new records without changing their existing accounting identity.
@@ -199,13 +190,13 @@ requested surrounding-execution closure; it SHALL NOT claim to authenticate a
 parameter map that is not an input to mapping classification.
 
 The progress ledger identity used by `evaluate_with_progress_v2` SHALL include
-the admitted package digest, declaration, definition identity/revision and exact
+the admitted package identity, declaration, definition identity/revision and exact
 clock configuration. Progress recorded for `/1`, another `/2` artifact or a
 different authenticated clock configuration SHALL NOT settle this evaluation.
 
 Changing a selected definition artifact, sequence authority, epoch, period,
-unit or timestamp unit SHALL change canonical `/2` bytes and the external
-artifact digest without changing the admitted native source.
+unit or timestamp unit SHALL change canonical `/2` bytes without changing the
+admitted native source.
 
 The compiler SHALL NOT interpret clock progress, settle temporal truth, map a TL
 formula, create observation records or emit a protocol result through this
@@ -215,18 +206,18 @@ extension.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity/revision/artifact digest and the matching event-position, fixed-sample or timestamped configuration. | Test (TC-138) |
+| FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity/revision/artifact reference and the matching event-position, fixed-sample or timestamped configuration. | Test (TC-138) |
 | FR-050-AC-2 | Missing, surplus, duplicate, reordered, foreign-owner and out-of-range bindings refuse independently; a definition/profile mismatch and every wrong clock alternative refuse without defaulting or shape-based selection. | Test (TC-138) |
-| FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and substituted definition identity/revision/artifact/bytes/digest produce their exact typed causes without a partial package. | Test (TC-138) |
+| FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and substituted definition identity/revision/artifact reference or dependency bytes produce their exact typed causes without a partial package. | Test (TC-138) |
 | FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138) |
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results, while the existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138) |
-| FR-050-AC-7 | The four member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, artifact reference, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
-| FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, artifact reference, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138) |
-| FR-050-AC-9 | In a git checkout, `git ls-files` lists no file under `artifacts/compiled-protocol-v2`. | Test (TC-138) |
-| FR-050-AC-10 | In a git checkout, `git ls-files` lists no checksum manifest of `/1` or `/2` handoff files. | Test (TC-138) |
-| FR-050-AC-11 | `protocol_artifact::handoff::SOURCE_ROOT` names the crate's manifest directory, and the authored sources the writers read exist beneath it. | Test (TC-138) |
-| FR-050-AC-12 | `protocol_artifact::handoff` exports none of `PUBLISHED_HANDOFF`, `PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, each asserted by name. | Test (TC-138) |
+| FR-050-AC-7 | The three member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
+| FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138) |
+| FR-050-AC-9 | Withdrawn: the generated-not-committed rule is stated in the Description; a git-tracking test caught no functional failure. | Withdrawn |
+| FR-050-AC-10 | Withdrawn: a file-name scan for checksum manifests caught no functional failure; the rule is stated in the Description. | Withdrawn |
+| FR-050-AC-11 | Withdrawn: a layout check of the manifest directory caught no failure the writers' own source reads do not. | Withdrawn |
+| FR-050-AC-12 | Withdrawn: the constants are deleted; an export-scan test caught no functional failure. | Withdrawn |
 
 ## Dependencies
 

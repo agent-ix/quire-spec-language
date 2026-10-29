@@ -50,7 +50,7 @@ general Filament model authority is introduced.
 | FR-005-AC-1 | An exact qualified import resolves to the selected formal environment's exported type identifier. | Test (TC-020) |
 | FR-005-AC-2 | A missing import receives missing_import. | Test (TC-021) |
 | FR-005-AC-3 | Ambiguous exports receive ambiguous_declaration. | Test (TC-022) |
-| FR-005-AC-4 | A stale package closure receives stale_dependency. | Test (TC-023) |
+| FR-005-AC-4 | **RETIRED (staleness check withdrawn).** The criterion asserted that a package closure whose recomputed package identity differs from the link request's identity refuses `stale_dependency`/`content-mismatch`; no replacement. | Test (TC-023), retired |
 | FR-005-AC-5 | A failed link yields no LinkedPackage. | Test (TC-024) |
 
 ## Dependencies

@@ -252,12 +252,6 @@ fn headers(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Resul
     }
     same_reference(&package.contract, expected.contract, work)?;
     same_reference(&package.baseline, expected.baseline, work)?;
-    // The producer's binary is Producer identity, checked here as a
-    // structurally valid reference (`reference`) equal to the caller's own
-    // expectation (`same_reference`) -- it is never one of the byte-sealed
-    // `dependencies`, so it is not looked up there.
-    reference(&expected.producer.binary)?;
-    same_reference(&package.producer.binary, &expected.producer.binary, work)?;
     name(&package.producer.implementation)?;
     revision(&package.producer.revision)?;
     name(&package.language.edition)?;

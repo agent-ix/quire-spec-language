@@ -44,8 +44,7 @@ disposition. These are compiler controls, not temporal-engine qualification.
 
 ## Expected Results
 
-Static comparisons use the declared semantic components, not an invented
-canonical hash. Assessment and backend changes do not change those components.
+Static comparisons use the declared semantic components. Assessment and backend changes do not change those components.
 Both requested pairs remain visible at their request indices, and the required
 `unsupported` pair makes complete aggregate success unavailable. On the state
 declaration, `operation-contract` is admitted and `finite-replay` is an

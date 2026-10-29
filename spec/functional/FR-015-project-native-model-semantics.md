@@ -29,7 +29,7 @@ Rust layouts or the historical abstract typing hypotheses treated as model wire.
 ## Outputs
 
 A NativeModel owning those declarations, validated roles, source correspondence
-and deterministic artifact bytes/digest. Failure returns the existing located
+and deterministic artifact bytes. Failure returns the existing located
 Box<Diagnostic>, with no model. link_native consumes a borrowed NativeModel slice
 and returns a LinkedPackage that retains the exact selected models and source.
 
@@ -80,9 +80,9 @@ complete supplied environment is validated, including unused declarations.
 The artifact includes existing canonical IR declaration bytes, sorted declaration
 loci, the native roles and the model source identity and revision. Changes to units,
 nominal identities, frames, model source identity/revision or any declaration affect
-the selected artifact. The raw SHA-256 ByteDigest is distinct from IR semantic
-CanonicalDigest and the original native-formal-environment/1 artifact. Existing link
-keeps its original digest and refusal behavior; new semantics require link_native.
+the selected artifact. The artifact is distinct from the IR semantic form and the original
+native-formal-environment/1 artifact. Existing link
+keeps its original refusal behavior; new semantics require link_native.
 
 ## Acceptance Criteria
 
@@ -90,7 +90,7 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 | --- | --- | --- |
 | FR-015-AC-1 | A real source-derived Rust rule model preserves Version 0..1000, Signed -10..10, Count 0..3, Wide i64 bounds, Distance/metre, Duration/second, Node reference fields, duplicate-preserving items and the step operation without enumerating runtime object IDs. | Test (TC-040) |
 | FR-015-AC-2 | Missing/duplicate scalar sites, mismatched representations, unsigned/saturating/rational declarations, missing text bounds and malformed object/operation/frame roles refuse without a model; at the default `sequence_maximum` of 10,000, sequence maxima 10,000 are admitted and 10,001 refuse with resource_exhausted naming `sequence_maximum` through both public Rust and source-draft admission, including nested and unused declarations, and 10,001 is admitted once the limit is raised to 10,001. | Test (TC-041) |
-| FR-015-AC-3 | Semantic, provenance and unused-declaration mutations change the model artifact; reordering set-like role/declaration inventories preserves it; a legacy or foreign digest cannot select the model. | Test (TC-042) |
+| FR-015-AC-3 | Semantic, provenance and unused-declaration mutations change the model artifact; reordering set-like role/declaration inventories preserves it; a legacy or foreign identity cannot select the model. | Test (TC-042) |
 | FR-015-AC-4 | False or foreign model source loci refuse, including constructor-valid IR coordinates; conflicting native bindings for one formal source identity or model owner cannot enter one linked inventory. | Test (TC-043) |
 | FR-015-AC-5 | link_native resolves actual dereference fields and operation roles while existing link retains its unsupported reference/operation behavior and original artifact identity. | Test (TC-044) |
 | FR-015-AC-6 | Exact lowered model/link limits succeed where the input fits; one required operation beyond a limit, including zero, returns resource_exhausted without partial output, and a limit raised above its default admits an input that fits it. | Test (TC-045) |

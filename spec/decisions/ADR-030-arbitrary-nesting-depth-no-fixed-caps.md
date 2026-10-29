@@ -327,7 +327,7 @@ fixed-depth path or the event API as D-4.4 states.
     refuses a lone surrogate escape itself.
   - The derived view (`PackageDocument::tree`) is the reader's arena tree,
     in place of a `serde_json::Value`, whose own `Drop` recurses.
-  - The `sha256-jcs` digest encodes that tree through the event API.
+  - The canonical-bytes encoding of that tree goes through the event API.
   - The semantic-IR crate's checks take the same tree (overlap item O-4), so
     the document is parsed once. QSL's lock on that crate moves to the
     revision that does this.
@@ -365,8 +365,8 @@ fixed-depth path or the event API as D-4.4 states.
 - **Redesign.** Replay inherits every change above: recompilation through
   D-4.1 to D-4.3, identities through D-4.4, values through D-4.7. Canonical
   assignment values decode into `quire_exact::Value` from `quire-canonical`'s
-  reader tree (D-4.5). Every identity and digest over a value encodes
-  through the event API.
+  reader tree (D-4.5). Every identity over a value is the value
+  itself and encodes, where canonical bytes are needed, through the event API.
 - **Limit.** The proving run's stage limits and accounting limits, carried in
   the request, every stage limit passed through (D-3), and the request's
   encoded-byte bound. Each is reported as the replay outcome FR-098 defines
@@ -398,12 +398,12 @@ fixed-depth path or the event API as D-4.4 states.
 - **Redesign.** Every QSL read of untrusted JSON that does not go through a
   typed reader uses `quire-canonical`'s reader and its arena tree (D-4.5):
   - library package identity (`library/package_identity.rs`);
-  - observation digest admission (`model/observation.rs`);
+  - observation admission (`model/observation.rs`);
   - the observation document reader (`model/observation/document.rs`).
   
   A parse failure becomes a malformed-input refusal and an over-limit input a
   limit refusal, each reported as what it is. Today these sites map
-  `serde_json`'s own depth refusal to "not an object" or to "no digest". The
+  `serde_json`'s own depth refusal to "not an object" or to "no identity". The
   observation document reader's nesting-depth limit is deleted.
 - **Limit.** The calling stage's input byte limit.
 - **Criterion.** Each site reads a 100,000-deep document and reports it on
@@ -496,7 +496,7 @@ it waits on.
   - `IDENTITY_LIMITS` loses its depth, and every identity preimage takes the
     fixed-depth path (D-4.4).
   - The state key moves to the event API (D-4.7).
-  - Replay value decoding and digests (D-4.8).
+  - Replay value decoding (D-4.8).
   - The three D-4.10 sites move onto the shared reader.
   - The D-3 setting names, the `LimitExceeded` setting field, replay's
     pass-through of every stage limit, and the settings operation the driver
@@ -514,7 +514,7 @@ D-2.
 - **O-1 IR.** The checked-package reader's maximum depth and the stack
   machinery behind it are IR's to remove. So are enforcing D-2 in term
   validation, the reader's recursive decode, admit and preimage, the
-  quadratic reference grouping, and moving its digest onto
+  quadratic reference grouping, and moving its package identity encoding onto
   `quire-canonical`. IR's reader reads through `quire-canonical`'s shared
   reader. QSL's D-4.9 waits on this.
 - **O-2 CG.** Generated-code analysis and rendering, and generated Rust whose

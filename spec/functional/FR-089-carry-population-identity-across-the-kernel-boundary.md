@@ -17,7 +17,7 @@ relationships:
 ## Description
 
 The `quire-exact` kernel `Value` type SHALL carry a `Population` variant
-whose payload is an opaque `PopulationId` digest, never a `PopulationBinding`
+whose payload is an opaque `PopulationId` key, never a `PopulationBinding`
 or any other `model::population` state. QSL `model` SHALL mint a
 `PopulationId` at binding-admission time and SHALL record the
 `PopulationId` → `PopulationBinding` correspondence it mints. The QSL
@@ -65,9 +65,9 @@ ID-5 decided the seven-member preimage the Behavior section now states.
 
 ## Behavior
 
-### PopulationId is opaque and content-addressed over the admission
+### PopulationId is opaque and structurally keyed over the admission
 
-`model` SHALL compute a binding's `PopulationId` as a 32-byte digest over the
+`model` SHALL compute a binding's `PopulationId` as the canonical byte string of the
 binding's own preimage: the domain package identity it was admitted against,
 the `population_key` declaring it, the binding's declared maximum, its
 member set, the `PopulationId` of its pre binding when it is a `Post`
@@ -85,7 +85,7 @@ package and `population_key`, which would otherwise carry an identical
 preimage under a two-state (`pre`/`post`-only) discriminator.
 
 The preimage is exactly this RFC 8785 object, encoded through
-`quire-canonical` and digested with SHA-256 under the unchanged
+`quire-canonical` and used directly, compared and ordered as a byte string, under the unchanged
 `POPULATION_ID_DOMAIN` version label ([ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
 ID-5):
 
@@ -96,11 +96,11 @@ ID-5):
 - `declared_maximum`: the maximum as a decimal string, or `null` when the
   population declares none;
 - `members`: an array with one object per member,
-  `{"universe": <64 lowercase hex>, "type": <64 lowercase hex of the
-  EffectiveId>, "object": <the authored object identity>, "declaration":
+  `{"universe": <the universe's structural key>, "type": <the
+  EffectiveId's structural key>, "object": <the authored object identity>, "declaration":
   <$defs.DeclarationKey preimage object>}`, in ascending order of each
   object's RFC 8785 bytes; `[]` for an empty population;
-- `pre`: for a `Post` binding, the 64 lowercase hex of its pre binding's
+- `pre`: for a `Post` binding, its pre binding's
   `PopulationId`; otherwise `null`.
 
 A binding's field values are not in its preimage: a `PopulationBinding`
@@ -110,7 +110,7 @@ typed `PopulationConflict` refusal for a second, unequal binding under an id
 already recorded; with this preimage it is reached only by two bindings that
 differ in their admission limits (`ancestor_steps`).
 `PopulationId` SHALL have exactly one public constructor, taking this
-preimage digest, defined in `quire-exact` and callable only from QSL
+preimage byte string, defined in `quire-exact` and callable only from QSL
 `model` -- mirroring `EffectiveId`'s O-05 constructor discipline (ADR-011
 T-12's API-surface check enforces both).
 

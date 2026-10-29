@@ -192,10 +192,6 @@ pub(super) fn lower(
             requires,
         });
     }
-    // The producer's own binary is identity, not a dependency: it is
-    // recorded and checked as a digest on `Producer.binary` (validated by
-    // `copy_reference` below), never as one of these exact-byte
-    // dependencies, so its bytes are never required here.
     for r in [selections.contract, selections.baseline] {
         dependency(&dependencies, r, work)?;
     }
@@ -568,7 +564,6 @@ pub(super) fn lower(
                 namespace: text(&selections.producer.revision.namespace, work)?,
                 value: text(&selections.producer.revision.value, work)?,
             },
-            binary: copy_reference(&selections.producer.binary, work)?,
         },
         baseline: copy_reference(selections.baseline, work)?,
         language,

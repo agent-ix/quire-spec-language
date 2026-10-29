@@ -69,7 +69,7 @@ FR-057-AC-10's value-function row.
    the limit configured to N, one greater and nothing else changed.
 8. Check a package holding `q(a: Length): Boolean { a * a == a * a }`,
    whose `metre^2` compound unit node names the `metre` unit node, owned by
-   a definition the emitted lock does not select, and `t`, which names no
+   a definition the layer table does not list, and `t`, which names no
    omitted node. Emit it with `emit_checked` and read the bytes back through
    QSL's I2 read. Emit the same package again through `emit_package` with a
    region conversion that places no occurrence.

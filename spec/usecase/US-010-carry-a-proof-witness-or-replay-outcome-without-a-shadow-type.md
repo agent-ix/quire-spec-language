@@ -61,28 +61,9 @@ building the executor itself is explicitly out of scope here.
   possibly-disagreeing copy, and nothing about the round trip depends on
   parsing rendered text.
 
-### US-010-EX-3: A stale package fails closed, not open
+### US-010-EX-3: RETIRED (staleness check withdrawn)
 
-"Stale package identity" splits into two checks, each owned by a different
-ticket, and this ticket owns only the first:
-
-- **Given** a replay request whose byte-provision entry's stored bytes do
-  not hash to that entry's own declared digest.
-- **When** this ticket's own decoder constructs the request.
-- **Then** construction refuses with a structured
-  `stale_dependency` cause (`byte-digest-mismatch` for raw bytes,
-  `content-mismatch` for a `sha256-jcs` document), before any recompilation
-  is attempted, and never returns a partial or best-effort request
-  (FR-071-AC-6).
-
-- **Given** a replay request naming a `package_id` that no longer matches
-  the source the byte provision recompiles to.
-- **When** #243's executor (a later ticket) recompiles that source and
-  compares the result's `package_id` against the request's declared one.
-- **Then** the executor refuses with a structured
-  `DependencyIdentityMismatch`/`stale_dependency` cause; this ticket builds
-  the request type the executor reads to do that comparison, but performs
-  no recompilation and makes no `package_id` comparison itself.
+**RETIRED (staleness check withdrawn).** This example described a replay executor refusing a request whose `package_id` no longer matched the recompiled source. The check is withdrawn. The id is kept and not reused.
 
 ### US-010-EX-4: A new family plugs in without touching the shared envelope
 
@@ -101,8 +82,8 @@ ticket, and this ticket owns only the first:
   through its ordinary `Debug`/`Display` rendering, rather than read through
   a typed accessor.
 - **Then** the rendered text carries no unredacted transcript or raw
-  byte-provision content — only a bounded descriptor such as a digest or
-  byte length — while the same content remains fully available to a caller
+  byte-provision content — only a bounded descriptor such as a byte
+  length — while the same content remains fully available to a caller
   that invokes the typed accessor directly.
 
 ## Priority and Risk (Informative)

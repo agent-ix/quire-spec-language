@@ -28,4 +28,4 @@ Tag the tests `#[trace("TC-884", "FR-354-AC-5")]`.
 - Step 1: equal checked package identities.
 - Step 2: equal checked package identities.
 - Step 3: the package is admitted.
-- Step 4: `unknown_required_capability` with no cause, never `unknown_required_feature`, naming the `Audit` node's `node_id`, at `Locus::Artifact` with the package's `raw-artifact-digest` record and the pointer `/semantic_graph/nodes/{i}/body/definition`; the bytes and `package_id` are those of step 3.
+- Step 4: `unknown_required_capability` with no cause, never `unknown_required_feature`, naming the `Audit` node's `node_id`, at `Locus::Artifact` with the package's artifact identity and the pointer `/semantic_graph/nodes/{i}/body/definition`; the bytes and `package_id` are those of step 3.

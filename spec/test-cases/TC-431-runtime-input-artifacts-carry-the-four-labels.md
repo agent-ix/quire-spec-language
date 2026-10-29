@@ -26,8 +26,8 @@ Scope: FR-018-AC-8, FR-024-AC-6.
 3. Read the step 1 bytes back under their reference, and validate them
    against the local schema.
 4. Remove `authority`, then `identity`, from the step 1 bytes,
-   and read each edited copy under a reference whose digest is that copy's
-   digest, so the read passes the selection stage.
+   and read each edited copy under the step 1 reference, so the read passes the
+   selection stage.
 
 Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 `#[trace("TC-431", "FR-024-AC-6")]`.
@@ -35,7 +35,7 @@ Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 ## Expected Results
 
 - Step 1: the bytes name the two labels and no other identity member; the
-  two snapshots differ in bytes and digest.
+  two snapshots differ in bytes.
 - Step 2: each refuses with `invalid_source_identity`, cause `blank-label`;
   field `label` is `authority`, then `identity`.
 - Step 3: the artifact's reference retains the two labels, and the schema

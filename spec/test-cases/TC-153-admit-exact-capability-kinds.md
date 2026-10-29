@@ -19,7 +19,7 @@ FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7 and FR-057-AC-10.
 ## Test Procedure
 
 1. Hold FR-057's v1 table (quire-specification FR-290 at the revision FR-057
-   pins) as a test constant. Parse each label, serialize the result, and compare the admitted
+   names) as a test constant. Parse each label, serialize the result, and compare the admitted
    set with the constant's set.
 2. Submit a requested pair with no label, then one whose label is JSON `null`.
 3. Submit, one at a time: `""`, the number `1`, `Global-Conformance`,

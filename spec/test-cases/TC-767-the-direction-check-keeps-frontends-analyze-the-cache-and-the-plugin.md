@@ -1,6 +1,6 @@
 ---
 id: TC-767
-title: "The direction check keeps frontends, analyze, the cache and the plugin host out of the qualified core"
+title: "The direction check keeps frontends, analyze and the plugin host out of the qualified core"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-284
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-280
     type: verifies
 ---
-# TC-767: The direction check keeps frontends, analyze, the cache and the plugin host out of the qualified core
+# TC-767: The direction check keeps frontends, analyze and the plugin host out of the qualified core
 
 ## Description
 

@@ -13,7 +13,7 @@ relationships:
 Verify that two runtime member records naming the same universe and object
 identity but different most-specific effective types refuse population
 admission with a conflicting-identity cause and admit no binding, while
-records with an equal key and an equal content digest correctly collapse
+records with an equal key and equal content correctly collapse
 into one member rather than being treated as a conflict. Scope: FR-084-AC-4.
 
 Catches an implementation that only compares object identity strings for
@@ -31,7 +31,7 @@ test that only supplies non-conflicting inputs or exact duplicates.
 2. Admit a population binding whose runtime member input includes both
    records.
 3. Construct a second admission input containing two records that are
-   genuinely identical (same key, same content digest).
+   genuinely identical (same key, same content).
 4. Admit a population binding for the second input.
 
 ## Expected Results

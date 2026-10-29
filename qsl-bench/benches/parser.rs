@@ -2,9 +2,9 @@
 //! Parser benchmarks: wall time of one `qsl_cst::parse` call.
 //!
 //! - `parser/depth/<outcome>/<d>`: one function whose body nests `d`
-//!   parenthesis pairs. At the baseline depth 5 and above is refused with
+//!   parenthesis pairs. At the configured depth 5 and above is refused with
 //!   `resource_exhausted`; a refused parse is still timed, because the cost
-//!   of reaching the refusal is part of the baseline.
+//!   of reaching the refusal is part of the measured outcome.
 //! - `parser/volume/<outcome>/<n>`: `n` one-line functions. 3,000 is
 //!   refused at the baseline (work budget).
 //!

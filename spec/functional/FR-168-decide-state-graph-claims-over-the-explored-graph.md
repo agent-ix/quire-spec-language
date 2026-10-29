@@ -171,7 +171,7 @@ Each carries its instance's `over` binding.
 - If a predicate evaluates `Undefined` at an explored node, then the engine
   SHALL return `Undefined` with the canonical breadth-first path to the
   first such node in discovery order, with `where` and `cause` as QSpec
-  FR-391 states them: the predicate, the node's state-key digest and the
+  FR-391 states them: the predicate, the node's state key and the
   locus of the expression with no value, and the catalogued reason
   (ADR-022 GV-7, ADR-018 UE-1).
 - The engine SHALL also treat as evaluated at an explored node the
@@ -184,7 +184,7 @@ Each carries its instance's `over` binding.
   node, then the engine SHALL return `Undefined` for every state-graph item
   instance over the subject whose exploration reaches that node, with the
   canonical breadth-first path to the node as its stem and a `where` that
-  names the node's state-key digest and the locus of the expression with no
+  names the node's state key and the locus of the expression with no
   value, plus the FR-181 transition identity for a guard and neither a
   predicate nor a transition for the `terminal when` predicate or a state
   constraint (QSpec FR-393).

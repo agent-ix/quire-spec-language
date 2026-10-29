@@ -33,7 +33,7 @@ one QSpec FR-323 replay target member, typed as FR-323 types that member (a
 function packet's `function`, the selected function's `QualifiedName`; a
 frame packet's `frame_operation`, `{object, operation}`; a state-clause
 packet's `state_clause`, the clause's own declared `QualifiedName`); the `package_id` and `RawSourceRef`
-digests of the package the harness was generated from; the semantic profile
+of the package the harness was generated from; the semantic profile
 selections; the `run_limits` and declared domains; the `backend` member
 (O-19); the trace position where the family has one; and the `ReplaySource`
 (`Witness` or `Input`). A packet missing any of these members SHALL be
@@ -90,7 +90,7 @@ admits union arguments (QSL-503).
   envelope in that case.
 - A construct → serialize → read round trip SHALL preserve the stored
   transcript byte-for-byte and every O-25 member exactly: obligation
-  identity, occurrence key, `package_id` and every `RawSourceRef` digest,
+  identity, occurrence key, `package_id` and every `RawSourceRef`,
   semantic profile selections, `run_limits` and declared domains, `backend`
   member, trace position, and the `ReplaySource` variant (with its
   `Witness`/`Input` payload).
@@ -106,10 +106,7 @@ admits union arguments (QSL-503).
   otherwise untyped map that a family populates by convention.
 - This envelope carries no `contract_version` of its own: version ownership
   is delegated to the FR-331 envelope (FR-069) within which a
-  `counterexamples` entry travels, and to the closed FR-201 digest-domain
-  set every `RawSourceRef` and `package_id` digest this envelope stores must
-  belong to. Envelope construction SHALL refuse a digest whose domain falls
-  outside that closed set.
+  `counterexamples` entry travels.
 - Envelope construction SHALL refuse when the envelope's encoded size
   exceeds the configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
@@ -179,13 +176,11 @@ last field.
 | `Set<T>`, `Bag<T>` | `{"type":"set"\|"bag","elements":[<value>, ...]}`, ascending by each element's JCS UTF-8 bytes; a set holds no two equal elements, a bag keeps every duplicate |
 
 `<declaration>` is the enum, record, tuple or union declaration's checked
-node id, in the 64-lowercase-hex `WireNodeId` spelling the entry's own
-parameter name uses. FR-181 leaves `<qualified-name>`'s text form to the
+node id, in the `WireNodeId` spelling the entry's own
+parameter name uses (the QSpec FR-322 node `id` member). FR-181 leaves `<qualified-name>`'s text form to the
 implementation, and a node id is the identity FR-098 already resolves in
 the recompiled package. `<field>` and `<member>` are the declared member
-identifiers. `<unit>` is the 64-lowercase-hex digest of the declared
-quantity type's unit identity; for a declared unit that is the unit's node
-id.
+identifiers. `<unit>` is the declared quantity type's unit identity text; for a declared unit that is the unit's `QualifiedName`.
 
 **Decode.** The binding type of a parameter with a witness value text is
 `WitnessValueType::Canonical`. `decode` SHALL unescape a `Canonical`
@@ -256,10 +251,10 @@ length of its escaped value text.
 |----|----------|--------------|
 | FR-070-AC-1 | The envelope stores the transcript once; `harness_symbol`, `concrete_values` and `decode` each recompute their result from that one stored transcript rather than from a separately-stored value, so no code path can leave the envelope's derived facts disagreeing with its transcript. | Test (TC-180) |
 | FR-070-AC-2 | A cover transcript, an untrimmed transcript, and a transcript with zero or two assertion blocks each refuse at envelope construction; none produces a partially-built envelope. | Test (TC-181) |
-| FR-070-AC-3 | A positive envelope's construct → serialize → read round trip preserves the transcript byte-for-byte and every O-25 member (obligation identity, occurrence key, package reference and digests, profile selections, bounds and domains, backend, trace position, `ReplaySource` variant) exactly, with no member re-derived, reordered or dropped. | Test (TC-182) |
+| FR-070-AC-3 | A positive envelope's construct → serialize → read round trip preserves the transcript byte-for-byte and every O-25 member (obligation identity, occurrence key, package reference, profile selections, bounds and domains, backend, trace position, `ReplaySource` variant) exactly, with no member re-derived, reordered or dropped. | Test (TC-182) |
 | FR-070-AC-4 | An O-25 packet missing any one required member (for example, no trace position on a family that carries one, or no `backend` member) refuses at reconstruction; no envelope is built with a defaulted or absent value in that member's place. | Test (TC-183) |
 | FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract, and the extension point itself is typed (a trait or generic parameter), never a `String`-keyed untyped map. | Test (TC-184) |
-| FR-070-AC-6 | This envelope defines no `contract_version` member of its own; a `RawSourceRef` or `package_id` digest it stores whose domain falls outside the closed FR-201 digest-domain set refuses at construction. | Test (TC-181) |
+| FR-070-AC-6 | **RETIRED (no digest domains).** This envelope defines no `contract_version` member of its own; version ownership is delegated to the FR-331 envelope. | Test (TC-181), retired |
 | FR-070-AC-7 | An envelope whose encoded size exceeds the configured reader bound refuses at construction, with no truncated or partially-populated envelope returned. | Test (TC-181) |
 | FR-070-AC-8 | A transcript with one `Canonical` entry and one `I64` entry decodes to two `WitnessValue`s in binding order. The `Canonical` entry is a record whose fields hold a nested record with a present field, an absent optional field and a `null` slot; a present option and a `none` option; a three-element sequence; a set and a bag in ascending JCS order (the bag with a duplicate); an ordered set; a union with a one-component member; and a union with a nullary member. Each slot state, option state, element order, member identifier and declaration node id decodes exactly as written. The `I64` entry decodes as it did before this change. | Test (TC-905) |
 | FR-070-AC-9 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: trailing bytes; added whitespace; record members out of JCS order; an unknown `type` tag; a record field entry with no `value` member; an integer `"007"`, and an integer as a JSON number; a rational `2`/`4`, and one with denominator `-1`; a `float64` with 15 hex digits, and one with uppercase hex; a reference `identity` of odd length; `{"type":"null"}` as a sequence element; a set with two equal elements; set elements out of order; an ordered set with two equal elements; a raw `%` not starting an escape; a lowercase escape `%3b`; and a record field name written `\u0061` where JCS writes `a`. | Test (TC-905) |
@@ -287,10 +282,9 @@ length of its escaped value text.
   shape this envelope's `Input`-arm and #217/#186 consumers read).
 - **Shared types**: [#213](https://github.com/agent-ix/quire-spec-language/issues/213)
   (ARCH-20) owns the O-04 `NodeKey`/occurrence-key shapes the obligation
-  identity and occurrence key members reuse, the O-18 digest record the
-  `RawSourceRef` and `package_id` digests reuse, and the O-11 `QualifiedName`
+  identity and occurrence key members reuse, the `RawSourceRef` and `package_id` members reuse, and the O-11 `QualifiedName`
   the selected function's identity reuses; this requirement defines no
-  parallel identity or digest type.
+  parallel identity type.
 - **Witness value text**: QSpec FR-181 (typed canonical form);
   [FR-261](FR-261-read-other-untrusted-json-at-any-depth.md) (the shared
   reader at any depth); [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md)

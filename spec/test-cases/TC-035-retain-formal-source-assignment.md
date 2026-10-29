@@ -21,7 +21,7 @@ two other independently selected positive formal revisions, including 2^53, the 
 
 ## Expected Results
 
-The binding retains the exact text, path, native labels, byte digest and selected
+The binding retains the exact text, path, native labels and selected
 formal identity. No relationship between the revision spellings is inferred.
 IR constructors refuse zero revision and an invalid document identifier before
 either can be supplied to the binding.

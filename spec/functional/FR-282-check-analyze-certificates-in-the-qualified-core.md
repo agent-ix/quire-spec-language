@@ -64,18 +64,7 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 ## Behavior
 
 - Each certificate checker shall recompile the package from the byte
-  provision and check that the recompiled `package_id` equals the one the
-  certificate names.
-- If the recompiled `package_id` differs from the certificate's, then the
-  checker shall reject the certificate with a cause naming both identities.
-  A state-graph certificate (FR-169) and an EN-1 closure certificate
-  (FR-338) each carry their own `package_id`, and an EN-1 component
-  certificate (FR-339) and a product-closure certificate (FR-163) each
-  carry it once, as their closure's. Each of these
-  checkers compares it with the recompiled `package_id` before any other
-  rule, and its rejection `PackageMismatch{certificate, recompiled}` settles
-  `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
-  the certificate's `package_id` (FR-127).
+  provision.
 - Each certificate checker shall decide the certificate using the
   recompiled package and the certificate document only.
 - If the certificate does not establish the claim under the checker's rules,
@@ -89,14 +78,14 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-282-AC-1 | The EN-5 certificate from FR-281-AC-1, written to bytes by `analyze` and passed with the byte provision to the EN-5 checker in a fresh process that links only qualified-core crates, is accepted. | Test (TC-764) |
-| FR-282-AC-2 | The same certificate with one probability bound changed is rejected with a cause naming the failing obligation; with its `package_id` replaced by another package's, it is rejected with a cause naming both identities. | Test (TC-764) |
+| FR-282-AC-2 | The same certificate with one probability bound changed is rejected with a cause naming the failing obligation. | Test (TC-764) |
 | FR-282-AC-3 | A zone certificate from an ADR-026 zone-search run over a dense-time model is accepted by the zone checker, and the same certificate with one zone removed is rejected. | Test (TC-764) |
 | FR-282-AC-5 | The EN-1 closure certificate of an invariant proved over a finite model is accepted by the EN-1 closure checker; the same certificate with one reachable product state removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |
 | FR-282-AC-6 | The EN-1 component certificate of `always eventually q` under `fair weak inc`, proved over a finite model, is accepted by the SCC and ranking checker; the same certificate with two components swapped out of topological order is rejected with a cause naming the edge that runs backward. | Test (TC-764) |
 | FR-282-AC-7 | The simulation-relation certificate of a refinement that holds is accepted by the simulation-relation checker; the same certificate with one pair removed from the relation is rejected with a cause naming the concrete step left without a matching abstract step. | Test (TC-764) |
 | FR-282-AC-8 | The product-closure certificate of a two-copy hyperproperty proved over a finite model is accepted by the product-closure checker; the same certificate with one product-state key removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |
-| FR-282-AC-9 | A state-graph certificate for ADR-022 §7.1's `ReachesTwo` whose `package_id` is another package's is rejected by `check_state_graph` with `PackageMismatch` naming the certificate's and the recompiled `package_id`, before any closure or rank rule. | Test (TC-1141) |
-| FR-282-AC-10 | FR-338-AC-11's closure certificate and FR-339-AC-4's component certificate, each with its `package_id` replaced by another package's, are rejected by `check_closure` and `check_components` with `PackageMismatch` naming the certificate's and the recompiled `package_id`, before any closure, partition, edge or witness rule. | Test (TC-1141) |
+| FR-282-AC-9 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1141), retired |
+| FR-282-AC-10 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1141), retired |
 
 ## Dependencies
 

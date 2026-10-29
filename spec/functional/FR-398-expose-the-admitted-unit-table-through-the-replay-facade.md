@@ -35,8 +35,8 @@ against a unit table and the target unit's `QuantityUnit`. A consumer holding
 a `compile_admitted` result (FR-394) can get neither the id nor the unit
 graph. This requirement extends the `AdmittedContext` with the dimension and
 unit tables and the unit table, so the consumer looks a declared unit up by
-its `unit` node's wire id, reads its kernel id and unit, and never decodes,
-hashes or builds a key.
+its `unit` node's wire id, reads its kernel id and unit, and never decodes
+or builds a key.
 
 ## Inputs
 
@@ -128,7 +128,7 @@ hashes or builds a key.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-398-AC-1 | A consumer that names only the `qsl_replay` root and the kernel (`quire-exact`, `quire-semantic-value`), compiling a unit that declares `dimension Length;`, `unit m : Length = rational(1, 1);` and `unit km : Length = rational(1000, 1) * m;` through `compile_admitted`, finds both units through `unit_declaration`, and from what the context returns builds `ValueType::Quantity` of each, a quantity of `m` that a type environment over `unit_table` admits at `Quantity<m>` and refuses at `Quantity<km>`, and the exact conversion of that quantity to `km`, without decoding, hashing or constructing a node key or a unit id. | Test (TC-1092) |
+| FR-398-AC-1 | A consumer that names only the `qsl_replay` root and the kernel (`quire-exact`, `quire-semantic-value`), compiling a unit that declares `dimension Length;`, `unit m : Length = rational(1, 1);` and `unit km : Length = rational(1000, 1) * m;` through `compile_admitted`, finds both units through `unit_declaration`, and from what the context returns builds `ValueType::Quantity` of each, a quantity of `m` that a type environment over `unit_table` admits at `Quantity<m>` and refuses at `Quantity<km>`, and the exact conversion of that quantity to `km`, without decoding or constructing a node key or a unit id. | Test (TC-1092) |
 | FR-398-AC-2 | Over a unit declaring two dimensions and three units (two of one dimension) and a function whose parameters are `Quantity<m>`, `Quantity<km>` and `Quantity<s>`, the context's tables equal, per unit and dimension, the spine's own checked package read independently of the unit table: the node id and name of each `unit` and `dimension` semantic node, and the `UnitId` the checked function signature carries for each `Quantity<u>` parameter, which carries the declared-unit domain and the node id's bytes. A derived dimension lists its base parts and exponents; a chain km to mm converts exactly (2 km is 2,000,000 mm), an offset unit with its offset (0 C is 5463/20 K) and units of unlike dimension do not convert. The unit ids differ; each unit names its dimension's node id; `m` and `km` convert to each other and neither converts to `s`; `unit_table` holds every admitted unit by its id; and a repeated lookup and a recompile return the same entries. | Test (TC-1092) |
 | FR-398-AC-3 | `unit_declaration` and `dimension_declaration` refuse `Unknown` for an id no package admitted; `WrongKind` for the unit's dimension, enum and record (unit lookup), for a unit (dimension lookup) and, for an unused declared unit, to the record, tuple, union and dimension lookups, which still find it by `unit_declaration` (the enum lookups say `Unknown`), with a dimension no unit names unlisted; and `Foreign` naming the library's `package_id` for a library unit and dimension imported directly or through an intermediate library, while every own unit is found. `composite_declaration` refuses a unit id `WrongKind`. | Test (TC-1092) |
 | FR-398-AC-4 | FR-394-AC-1 to FR-394-AC-5 and FR-396-AC-1 to FR-396-AC-9 still hold. | Test (TC-1089, TC-1090) |

@@ -23,8 +23,7 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
 
 1. Run a native-run/1 request selecting `tests/fixtures/spine-compile.native`,
    no models, and `call` `{"function": "seven", "arguments": []}`. Compile the
-   same source with the FR-278 composition under the same labels, and
-   take the SHA-256 digest of the request file's bytes.
+   same source with the FR-278 composition under the same labels.
 2. Run the `1-draft` fixture relabelled `edition "0-draft"`, then the same
    request with a `call` and a `libraries` entry, then a source with no
    header.
@@ -40,7 +39,7 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
    `extraction` request twice more: through the command built with no
    features and through the command built with `--all-features`.
 5. Run a `1-draft` program that imports `test/geometry` and declares
-   `model M` by the `sha256-jcs` digest of
+   `model M` by the identity of
    `tests/fixtures/spine-model.semantic-ir.json`, and calls a function using
    both, with `libraries` supplying `test/geometry` and `models` supplying the
    document.
@@ -53,7 +52,7 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 
 - Step 1: exit 0 and no refusal envelope; the result document is one document
   whose `format` is `spine-run-result/1`, whose `package_id` equals the compiled
-  package's, whose `source` names the request's two labels, source digest
+  package's, whose `source` names the request's two labels
   and authored path, whose `function` is `seven`, and whose `outcome` is
   `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`.
 - Step 2: the two `0-draft` requests refuse `unknown_edition`, stage

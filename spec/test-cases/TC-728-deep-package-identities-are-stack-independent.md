@@ -24,7 +24,7 @@ Scope: FR-259-AC-1, FR-259-AC-2, FR-259-AC-4.
 2. Compile the same source on a thread with an 8 MiB stack and read the
    same identities.
 3. Check a declaration whose preimage is longer than `s3.input_bytes`.
-4. Drive the intake digest site of FR-260 and the observation digest site of
+4. Drive the intake read of FR-260 and the untrusted-JSON read of
    FR-261 with a byte limit below the document's encoded length.
 5. Check each FR-258 expression form at 4 and at 63 levels, a function with
    a parameter typed with 4 and with 100 nested `Option`s, and a chain of 4
@@ -41,7 +41,7 @@ Tag the tests `#[trace("TC-728", "FR-259-AC-1")]`, `#[trace("TC-728", "FR-259-AC
 - Steps 1 and 2: every identity is equal across the two threads.
 - Step 3: `stage_limit_exceeded`/`input-bytes-exceeded` naming that bound,
   the preimage length and setting `s3.input_bytes`.
-- Step 4: each site reports its own input-bytes limit with its setting, and
+- Step 4: each read reports its own input-bytes limit with its setting, and
   no malformed-input cause.
 - Step 5: for each pair, the deepest nesting at the shallow depth equals
   the deepest nesting at the deep depth.

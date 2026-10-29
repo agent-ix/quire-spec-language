@@ -30,13 +30,12 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-# The largest legitimate tracked text artifact today is
-# artifacts/compiled-protocol-v2/mutations/binding-surplus.json at 223,978
-# bytes, one of ~30 near-identical mutation-corpus JSON fixtures in that
-# family. 1 MiB (1,048,576 bytes) is ~4.7x that measured largest file -- real
-# headroom for that fixture family to grow, while sitting more than 23x below
-# the two ELF executables (5.2 MB, 5.8 MB) this gate exists to catch. It's a
-# multiple of a measured artifact, not a round guess.
+# The largest legitimate tracked text file today is
+# qsl-semantics/src/model/intake.rs at 447,259 bytes. 1 MiB (1,048,576 bytes)
+# is ~2.3x that measured largest file -- real headroom for source files to
+# grow, while sitting far below the two ELF executables (5.2 MB, 5.8 MB) this
+# gate exists to catch. It's a multiple of a measured artifact, not a round
+# guess.
 #
 # Wired into `make ci` and the CI workflow (Makefile, .github/workflows/ci.yml).
 # Raising the ceiling or adding a path carve-out to let a tracked file through

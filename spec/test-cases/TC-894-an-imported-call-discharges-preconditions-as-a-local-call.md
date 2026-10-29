@@ -31,8 +31,7 @@ local `function f2 using v(x: Int[0, 9]): Boolean pure { x < 5 }`.
    - `y`, with `y: Int[0, 20]`;
    - `if y <= 9 then g::f(y) else false` (and `f2(y)` in its pair), with
      `y: Int[0, 20]`.
-2. Change `f`'s body to `(10 div x) < 5`, update the import's digest to the
-   new `package_id`, and compile the importing unit whose body is
+2. Change `f`'s body to `(10 div x) < 5`, and compile the importing unit whose body is
    `g::f(y)` with `y: Int[0, 9]`.
 
 ## Expected Results
