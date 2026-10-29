@@ -1552,7 +1552,7 @@ impl Proof {
         self.commands
             .iter()
             .zip(0_u64..)
-            .find(|(command, _)| command.check(query) == wanted)
+            .find(|(command, _)| command.judge(query) == wanted)
             .map(|(_, index)| index)
     }
 }
@@ -1582,7 +1582,7 @@ impl From<bool> for Check {
 
 impl Command {
     /// FR-314's test of one command.
-    fn check(&self, query: &Query) -> Check {
+    fn judge(&self, query: &Query) -> Check {
         if !self.premises_visible {
             return Check::Fails;
         }
@@ -1597,8 +1597,8 @@ impl Command {
             // A formula the checker cannot type leaves the step at most
             // `Undecided`, still `Fails` when its rule shows it wrong.
             CommandKind::Step(step) => match formulas_sorted(&step.clause, query, &self.context) {
-                Check::Holds => step.check(&self.context, query),
-                Check::Undecided => match step.check(&self.context, query) {
+                Check::Holds => step.judge(&self.context, query),
+                Check::Undecided => match step.judge(&self.context, query) {
                     Check::Fails => Check::Fails,
                     Check::Holds | Check::Undecided => Check::Undecided,
                 },
@@ -1620,7 +1620,7 @@ fn is_clause(clause: &[Rc<Term>], expected: &[Rc<Term>]) -> bool {
 
 impl Step {
     /// FR-314's test of the step in `context`.
-    fn check(&self, context: &[Entry], query: &Query) -> Check {
+    fn judge(&self, context: &[Entry], query: &Query) -> Check {
         let Some(rule) = checked_rule(&self.rule) else {
             return Check::Undecided;
         };
