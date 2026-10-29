@@ -589,7 +589,7 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
-        let (expansion, enabled) = expand_enabled(self, state)?;
+        let (expansion, enabled) = expand_enabled(self, state, None)?;
         if expansion
             .findings
             .iter()

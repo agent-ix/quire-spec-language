@@ -3,7 +3,9 @@
 //! model state. It evaluates the state's invariants, then every application
 //! of every object's operations, collecting the successors and the findings.
 
+use qsl_semantics::model::object_environment::PlacePresences;
 use qsl_semantics::model::observation::Observation;
+use qsl_semantics::model::state::ModelState;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
@@ -98,7 +100,16 @@ pub(super) struct Walk<'s, 'a> {
     /// The footprints each step's clauses are held to, when the expansion
     /// enforces them.
     pub(super) enforcement: Option<&'s Enforcement<'s>>,
+    /// The presence of each guarded clock place at a candidate post-state,
+    /// which a postcondition's `present(self.v)` reads (FR-230 "Presence is
+    /// derived", QSpec FR-322 `CW-05`); `None` outside a timed expansion.
+    pub(super) post_presence: Option<PostPresence<'s>>,
 }
+
+/// The presence of each guarded clock place a timed model's post-state
+/// holds, which the timed subject derives from it (FR-230 "Presence is
+/// derived").
+pub(super) type PostPresence<'s> = &'s dyn Fn(&ModelState) -> PlacePresences;
 
 impl Walk<'_, '_> {
     /// The references of every object of the state, in row order.
@@ -229,6 +240,7 @@ pub(super) fn walk_of<'s, 'a>(
         observation,
         rows: rows_of(system, &state.state)?,
         enforcement,
+        post_presence: None,
     })
 }
 
@@ -241,26 +253,30 @@ pub(super) fn expand_state(
     state: &ModelSimState,
     enforcement: Option<&Enforcement<'_>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-    expand(system, state, enforcement, None)
+    expand(system, state, enforcement, None, None)
 }
 
 /// [`expand_state`] with no footprint enforcement, also returning every
 /// argument vector whose effective precondition holds, each with the
 /// positions of its successors in the expansion's list (FR-187).
-pub(super) fn expand_enabled(
-    system: &ModelSystem<'_>,
-    state: &ModelSimState,
+/// `post_presence`, when given, is the presence of each guarded clock place
+/// at a candidate post-state, which a postcondition reads.
+pub(super) fn expand_enabled<'s>(
+    system: &'s ModelSystem<'_>,
+    state: &'s ModelSimState,
+    post_presence: Option<PostPresence<'s>>,
 ) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
     let mut enabled = Vec::new();
-    let expansion = expand(system, state, None, Some(&mut enabled))?;
+    let expansion = expand(system, state, None, Some(&mut enabled), post_presence)?;
     Ok((expansion, enabled))
 }
 
-fn expand(
-    system: &ModelSystem<'_>,
-    state: &ModelSimState,
-    enforcement: Option<&Enforcement<'_>>,
+fn expand<'s>(
+    system: &'s ModelSystem<'_>,
+    state: &'s ModelSimState,
+    enforcement: Option<&'s Enforcement<'s>>,
     mut enabled: Option<&mut Vec<frames::EnabledVector>>,
+    post_presence: Option<PostPresence<'s>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
     // FR-120: every expansion entry point runs the bound check first, so an
     // expansion never meets a granted field with no finite domain.
@@ -268,7 +284,8 @@ fn expand(
         system.bounded(),
         "FR-120: a system the requires-bound check refuses is never expanded"
     );
-    let walk = walk_of(system, state, enforcement)?;
+    let mut walk = walk_of(system, state, enforcement)?;
+    walk.post_presence = post_presence;
     let mut budget = system.budget();
 
     let mut findings = contracts::invariants(&walk)?;

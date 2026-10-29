@@ -646,6 +646,9 @@ pub struct ClockResets {
     /// Each drop's span, beside `drops`.
     drop_spans: Vec<Span>,
     requires: Vec<(ClockId, bool)>,
+    /// Each requirement spelled as a comparison with `absent` (`self.v !=
+    /// absent`), which S3 keeps out of the lowered postcondition.
+    compared: Vec<Span>,
     /// The postcondition's index among the unit's state clauses.
     pub(crate) index: usize,
     /// The postcondition's context type, which `self` ranges over.
@@ -722,7 +725,7 @@ pub struct TimeInvariant {
 /// declaring the field, the field's name and the union case whose payload
 /// is the place (`None` for an `Option<Clock>`).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PresencePlace {
+pub struct PresencePlace {
     pub(crate) owner: EffectiveId,
     pub(crate) field: String,
     pub(crate) case: Option<String>,
@@ -1212,11 +1215,8 @@ impl TimedModel {
                 let span = written.drop_spans.first().copied().unwrap_or(written.span);
                 return Some((Excluded(ExcludedClauseForm::PresenceDrop), span));
             }
-            // QSpec FR-322 `CW-05` keeps the requirement in the
-            // postcondition as a `presence_read`; the evaluator reads a
-            // postcondition's presence only through `requires` today.
-            if !written.requires.is_empty() {
-                return Some((Unwritten(Member::PresenceRequirement), written.span));
+            if let Some(span) = written.compared.first() {
+                return Some((Unwritten(Member::ComparedPresence), *span));
             }
             for reset in &written.resets {
                 if reset.parameter.is_some() {
@@ -1478,6 +1478,8 @@ struct ResetsDraft {
     requires: Vec<(ClockId, bool)>,
     /// Each requirement's span, beside `requires`.
     require_spans: Vec<Span>,
+    /// Each requirement spelled as a comparison with `absent`.
+    compared: Vec<Span>,
 }
 
 /// A reset by selection before its condition is typed.
@@ -2791,6 +2793,9 @@ struct ResetCut {
     requires: Vec<(ClockId, bool)>,
     /// Each requirement's span, beside `requires`.
     require_spans: Vec<Span>,
+    /// Each requirement spelled as a comparison with `absent`, cut from
+    /// the lowered postcondition.
+    compared: Vec<Span>,
 }
 
 /// QSpec FR-415-AC-21: a postcondition that requires `present(p)` of a
@@ -2862,6 +2867,16 @@ fn post_presence(located: &Located<'_>, id: ExprId) -> Option<(ClockId, bool)> {
     }
 }
 
+/// Whether the requirement `id` is `present(p)` or `not present(p)`, which
+/// the lowered postcondition reads as a `presence_read`, rather than a
+/// comparison of `p` with `absent`.
+fn reads_presence(located: &Located<'_>, id: ExprId) -> bool {
+    match located.node(id) {
+        Some(ExprNode::Not(operand)) => located.presence(*operand).is_some(),
+        _ => located.presence(id).is_some(),
+    }
+}
+
 /// The resets of a postcondition: each top-level conjunct `self.x = c` that
 /// writes a clock of the operation's frame, and each `self.f = R { … }`
 /// writing a clock-bearing record whole, whose clock components are resets
@@ -2900,10 +2915,16 @@ fn resets(
             return Err(located.outside(conjunct));
         }
         // `present(self.v)`, `self.v != absent` or `not present(self.v)`: a
-        // requirement on the post-state's presence, read as a data
-        // predicate over it (FR-230 "Presence bit").
+        // requirement on the post-state's presence (FR-230 "Presence bit"),
+        // which the step's presence bits follow. `present(self.v)` and its
+        // negation stay in the postcondition, a `presence_read` with no
+        // clause node (QSpec FR-322 `CW-05`); a comparison with `absent` is
+        // cut from it, its presence read not written yet.
         if let Some(required) = post_presence(located, conjunct) {
-            cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+            if !reads_presence(located, conjunct) {
+                cut.leaves.insert(conjunct, ExprNode::Boolean(true));
+                cut.compared.push(located.span(conjunct));
+            }
             cut.requires.push(required);
             cut.require_spans.push(located.span(conjunct));
             continue;
@@ -3519,6 +3540,11 @@ fn read_clause(
         .ok_or_else(|| timed(located.outside(root)))?;
     clause.body = rewritten.expression;
     clause.spans.body = rewritten.spans;
+    // A postcondition's presence requirement stays in its body, read
+    // through its place (QSpec FR-322 `CW-05`).
+    if matches!(&read, ClauseClocks::Resets(cut) if cut.requires.len() > cut.compared.len()) {
+        clause.presence_places = presence_places(&clocks.fields);
+    }
     Ok(read)
 }
 
@@ -4072,6 +4098,7 @@ fn prepare_models(
                             drop_spans: cut.drop_spans,
                             requires: cut.requires,
                             require_spans: cut.require_spans,
+                            compared: cut.compared,
                         });
                     }
                 }
@@ -4634,6 +4661,7 @@ pub(crate) fn check(
                 drops: written.drops,
                 drop_spans: written.drop_spans,
                 requires: written.requires,
+                compared: written.compared,
             });
         }
         models.push(TimedModel {

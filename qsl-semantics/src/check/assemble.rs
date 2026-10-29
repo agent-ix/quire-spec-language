@@ -4453,6 +4453,7 @@ fn state_clauses(
             frame_population,
             body: form.body,
             spans: form.spans,
+            presence_places: Vec::new(),
         });
     }
     if errors.is_empty() {
