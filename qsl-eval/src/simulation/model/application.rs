@@ -201,6 +201,7 @@ impl<'a> ModelSystem<'a> {
                     contract: &mut contract,
                     successors: &mut successors,
                     enabled: None,
+                    enabled_transitions: None,
                 },
             )?;
         }
@@ -208,6 +209,48 @@ impl<'a> ModelSystem<'a> {
             successors,
             findings: sorted_contract_findings(contract),
         })
+    }
+
+    /// FR-220 MA-1: the transition identities with a true selected effective
+    /// precondition and at least one completed candidate at `observed`. The
+    /// first completed candidate is sufficient when no attempt constraint
+    /// reads its result.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when a precondition or the first candidate cannot
+    /// be evaluated within the available resources.
+    pub(crate) fn enabled_transitions(
+        &self,
+        observed: &ModelSimState,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        budget: &mut Budget,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        let walk = walk_of(self, observed, None)?;
+        let mut contract = Vec::new();
+        let mut successors = Vec::new();
+        let mut transitions = Vec::new();
+        for row in &walk.rows {
+            let Some(application) = self.application_at(row, operation) else {
+                continue;
+            };
+            let clauses = walk.selected(row, application, select);
+            frames::apply(
+                &walk,
+                row,
+                application,
+                &clauses,
+                budget,
+                frames::Outputs {
+                    contract: &mut contract,
+                    successors: &mut successors,
+                    enabled: None,
+                    enabled_transitions: Some(&mut transitions),
+                },
+            )?;
+        }
+        Ok(transitions)
     }
 
     /// ADR-027 PD-4: how the first application of `operation` at

@@ -34,6 +34,7 @@ use crate::check::refusal::{CheckCause, CheckRefusal, IdentityForm, IdentityNode
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
+use ix_trace_rs::string_edge;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
     FieldInitializer, NameForm, PopulationForm,
@@ -429,6 +430,26 @@ enum Unary<'r> {
     Size,
     Convert(ValueType),
     AllInstances(ValueType),
+}
+
+/// Whether an HP-1 relation's `pre(...)` contains a receiver-state read.
+/// Operation arguments and results are execution inputs, not model state, so
+/// they do not by themselves make a pre-read meaningful.
+#[string_edge]
+fn relation_pre_eligible(expression: ExprRef<'_>, hyper: &super::HyperTyping) -> bool {
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        if let ExprNode::Field { operand, field } = expression.node() {
+            if field == "self"
+                && matches!(expression.at(*operand).node(), ExprNode::Name(name)
+                    if hyper.executions.contains_key(&name.name))
+            {
+                return true;
+            }
+        }
+        pending.extend(expression.children());
+    }
+    false
 }
 
 /// Whether an unqualified expression call names the built-in present-option
@@ -1190,6 +1211,23 @@ impl<'a> Typer<'a> {
             ExprNode::Field { operand, field } => {
                 let operand = expression.at(*operand);
                 let operand_location = location.child(0);
+                // FR-180: an HP-1 execution variable is a typed root, not a
+                // local value. Its `self`, `result` and operation-parameter
+                // fields name the execution's own distinct binder slots.
+                if let ExprNode::Name(execution) = operand.node() {
+                    if let Some((slot, value_type)) = self
+                        .hyper
+                        .as_ref()
+                        .and_then(|hyper| hyper.executions.get(&execution.name))
+                        .and_then(|fields| fields.get(field))
+                    {
+                        return Ok(Step::Typed(node(
+                            NodeKind::Local(*slot),
+                            value_type.clone(),
+                            &location,
+                        )));
+                    }
+                }
                 if let ExprNode::Deref(reference) = operand.node() {
                     let reference = operand.at(*reference);
                     self.enter(&operand_location)?;
@@ -1244,7 +1282,11 @@ impl<'a> Typer<'a> {
                 // at runtime over a population with no attached pre anchor
                 // (`evaluate.rs`'s `select_anchor`) -- never a `pre(...)`
                 // written in the wrong clause.
-                if self.clause_kind != ClauseKind::Postcondition {
+                let relation_body = self
+                    .hyper
+                    .as_ref()
+                    .is_some_and(|hyper| !hyper.executions.is_empty());
+                if self.clause_kind != ClauseKind::Postcondition && !relation_body {
                     return Err(refuse(
                         &location,
                         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
@@ -1259,7 +1301,9 @@ impl<'a> Typer<'a> {
                 // `pre(...)`) never does.
                 // FR-104: a state clause's `pre(e)` also reads `self` and
                 // fields through `self` or a parameter reference.
-                let eligible = if self.in_state_clause() {
+                let eligible = if relation_body {
+                    relation_pre_eligible(operand, self.hyper.as_ref().expect("relation body"))
+                } else if self.in_state_clause() {
                     self.state_pre_eligible(operand)
                 } else {
                     contains_pre_eligible_read(operand)
