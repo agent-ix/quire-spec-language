@@ -7,7 +7,7 @@
 //! is frozen.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
@@ -26,6 +26,15 @@ fn args(items: &[&Path]) -> Vec<OsString> {
 
 fn strings(items: &[&str]) -> Vec<OsString> {
     items.iter().map(OsString::from).collect()
+}
+
+/// `tests/fixtures/spine-model.native` with its model digest filled in
+/// (`crate::support::spine_model::unit`), written to `directory` for the
+/// runnable output to read.
+fn spine_model_source(directory: &Path) -> PathBuf {
+    let path = directory.join("spine-model.native");
+    std::fs::write(&path, crate::support::spine_model::unit()).unwrap();
+    path
 }
 
 /// IR's strict read of `bytes`, supplied `documents` as domain evidence.
@@ -72,22 +81,21 @@ fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
 /// same bytes the default stdout carries.
 #[test]
 fn the_output_is_the_producers_bytes_and_reads_back() {
-    let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
-    let source = std::fs::read_to_string("tests/fixtures/spine-model.native")
-        .unwrap()
-        .replace(MODEL_DIGEST_TOKEN, &model_digest(&document));
+    let source = crate::support::spine_model::unit();
+    let document = crate::support::spine_model::DOCUMENT;
     let directory = tempfile::tempdir().unwrap();
     let out = directory.path().join("package.json");
     let model = Path::new("tests/fixtures/spine-model.semantic-ir.json");
-    let program = Path::new("tests/fixtures/spine-model.native");
+    let program = spine_model_source(directory.path());
+    let program = program.as_path();
 
     let mut stdout = Vec::new();
     let mut command = strings(&["--model"]);
     command.extend(args(&[model, program]));
     run(&command, &mut stdout).expect("the fixture emits");
     assert!(!stdout.is_empty());
-    assert_eq!(stdout, producer_bytes(program, &source, &[&document]));
-    read_back(&stdout, &[&document]);
+    assert_eq!(stdout, producer_bytes(program, &source, &[document]));
+    read_back(&stdout, &[document]);
 
     let mut elsewhere = Vec::new();
     let mut command = strings(&["--out"]);
@@ -173,16 +181,16 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     assert_eq!(transitions, 1, "one derived transition for (set, on)");
 }
 
-/// A source the producer refuses (its `model` is not supplied: the template's
-/// digest cannot be derived) writes no bytes
+/// A source the producer refuses (its `model` is not supplied) writes no bytes
 /// and fails with the refusing stage's nonzero exit code; a malformed command
 /// line and an unreadable file fail the same way.
 #[test]
 fn a_refused_source_writes_nothing_and_exits_nonzero() {
-    let program = Path::new("tests/fixtures/spine-model.native");
+    let directory = tempfile::tempdir().unwrap();
+    let program = spine_model_source(directory.path());
     let mut stdout = Vec::new();
-    let refusal = run(&args(&[program]), &mut stdout).expect_err("the model is not supplied");
-    assert!(matches!(refusal, Error::Template), "{refusal:?}");
+    let refusal = run(&args(&[&program]), &mut stdout).expect_err("the model is not supplied");
+    assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_ne!(refusal.exit_code(), 0);
     assert!(!refusal.to_string().is_empty());
     assert!(stdout.is_empty());
@@ -415,4 +423,121 @@ fn an_over_cap_points_file_is_refused_explicitly() {
     assert_eq!(refusal.exit_code(), 20);
     assert!(refusal.to_string().contains("big-points.json"), "{refusal}");
     assert!(stdout.is_empty());
+}
+
+const SWITCH_MODEL: &str = "examples/switch-transition/switch.semantic-ir.json";
+const SWITCH_TEMPLATE: &str = "examples/switch-transition/switch.native.in";
+
+/// `--source-out` is written only after the producer accepted the template
+/// and carries exactly the template with every `{model_digest}` replaced:
+/// `{other}` text is untouched, and `{{model_digest}}` becomes the digest in
+/// single braces (a plain replace of the inner token). A producer refusal, a
+/// template refusal (no model, several models, a model that is not a domain
+/// package) and an unreadable source each leave no `--source-out` file and no
+/// bytes; a source that is not a template is not copied.
+#[test]
+fn source_out_is_written_only_for_an_accepted_template() {
+    let directory = tempfile::tempdir().unwrap();
+    let model = Path::new(SWITCH_MODEL);
+    let document = std::fs::read(model).unwrap();
+    let digest = model_digest(&document);
+    let out = directory.path().join("rendered.native");
+    let run_with = |program: &Path, models: &[&Path]| {
+        let mut command = strings(&["--source-out"]);
+        command.extend(args(&[&out]));
+        for model in models {
+            command.extend(strings(&["--model"]));
+            command.extend(args(&[model]));
+        }
+        command.extend(args(&[program]));
+        let mut stdout = Vec::new();
+        let result = run(&command, &mut stdout);
+        (result, stdout)
+    };
+
+    // Success: present and correct; `{other}` untouched, `{{model_digest}}`
+    // is the digest inside single braces, every placeholder is filled.
+    let template = std::fs::read_to_string(SWITCH_TEMPLATE).unwrap()
+        + "// {other} {{model_digest}} {model_digest}\n";
+    let accepted = directory.path().join("accepted.native.in");
+    std::fs::write(&accepted, &template).unwrap();
+    let (result, stdout) = run_with(&accepted, &[model]);
+    result.expect("the template emits");
+    assert!(!stdout.is_empty());
+    let rendered = std::fs::read_to_string(&out).unwrap();
+    assert_eq!(rendered, template.replace(MODEL_DIGEST_TOKEN, &digest));
+    assert!(rendered.contains(&format!("// {{other}} {{{digest}}} {digest}\n")));
+    assert!(!rendered.contains(MODEL_DIGEST_TOKEN));
+    assert!(std::fs::read_dir(directory.path())
+        .unwrap()
+        .all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains(".tmp")));
+    std::fs::remove_file(&out).unwrap();
+
+    // Producer refusal: an invalid clause after a valid template.
+    let refused = directory.path().join("refused.native.in");
+    std::fs::write(
+        &refused,
+        template.clone() + "post Q9 using v on M::Nope::x { true }\n",
+    )
+    .unwrap();
+    let (result, stdout) = run_with(&refused, &[model]);
+    assert!(matches!(result, Err(Error::Producer(_))), "{result:?}");
+    assert!(
+        stdout.is_empty() && !out.exists(),
+        "a producer refusal leaves no file"
+    );
+
+    // Template refusals: no model, several models, an empty model, a model
+    // that is not a domain package.
+    let (result, stdout) = run_with(&accepted, &[]);
+    assert!(
+        matches!(result, Err(Error::TemplateModels { supplied: 0 })),
+        "{result:?}"
+    );
+    assert!(stdout.is_empty() && !out.exists());
+    let (result, stdout) = run_with(&accepted, &[model, model]);
+    let refusal = result.expect_err("several models");
+    assert!(
+        matches!(refusal, Error::TemplateModels { supplied: 2 }),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.exit_code(), 20);
+    assert!(stdout.is_empty() && !out.exists());
+    for (name, content) in [
+        ("empty.json", ""),
+        ("junk.json", "{\"not\": \"a package\"}"),
+    ] {
+        let bad = directory.path().join(name);
+        std::fs::write(&bad, content).unwrap();
+        let (result, stdout) = run_with(&accepted, &[&bad]);
+        let refusal = result.expect_err("an unusable model");
+        assert!(
+            matches!(refusal, Error::TemplateModel),
+            "{name}: {refusal:?}"
+        );
+        assert!(!refusal.to_string().contains("exactly one"), "{refusal}");
+        assert_eq!(refusal.exit_code(), 20);
+        assert!(stdout.is_empty() && !out.exists(), "{name}");
+    }
+
+    // A non-UTF-8 template is filled byte-wise and the producer refuses it;
+    // substitution is never silently skipped, and nothing is written.
+    let mut bytes = template.into_bytes();
+    bytes.extend_from_slice(b"// \xff\xfe\n");
+    let binary = directory.path().join("binary.native.in");
+    std::fs::write(&binary, bytes).unwrap();
+    let (result, _) = run_with(&binary, &[model]);
+    assert!(matches!(result, Err(Error::Producer(_))), "{result:?}");
+    assert!(!out.exists());
+
+    // A source that is not a template is not copied.
+    let plain = directory.path().join("plain.native");
+    std::fs::write(&plain, rendered_switch_source()).unwrap();
+    let (result, _) = run_with(&plain, &[model]);
+    result.expect("a plain source emits");
+    assert!(!out.exists(), "a non-template source is not copied");
 }

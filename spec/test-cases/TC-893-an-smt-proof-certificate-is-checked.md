@@ -15,7 +15,7 @@ FR-315 encodes, both for an inductive proof, and rejects a query mismatch,
 an invalid proof step, a proof that does not refute and a
 certificate of the wrong shape.
 
-Scope: FR-314-AC-1 to FR-314-AC-4 and FR-314-AC-9.
+Scope: FR-314-AC-1 to FR-314-AC-4, FR-314-AC-9 and FR-314-AC-10 to FR-314-AC-17.
 
 ## Test Procedure
 
@@ -39,6 +39,14 @@ Scope: FR-314-AC-1 to FR-314-AC-4 and FR-314-AC-9.
    command 3 not follow from its premises, and with command 3 of the base
    proof using `hole`, and over `CasRefinesCounterAdd` (FR-315-AC-6) with a base part and eight step parts, valid for the seven rows other than `bump`, the part at `bump`'s position being present but neither compared nor checked.
 6. Over `CasRefinesCounter` with a mapping row outside `QF_LIA` (FR-314-AC-9), check a certificate with a base part carrying the query of an in-fragment initial state and seven step parts, then the same certificate with an empty base part and with a `hole` proof in a step part; then check the step 5 `CasRefinesCounterAdd` certificate again. Settle each.
+7. Assemble a `RefinementSmtCertificate` for `CasRefinesCounter` from a CG
+   `Base` record and seven step records (rows 0 to 6) supplied out of row
+   order (FR-314-AC-10). Then assemble from the same records with the `Base`
+   record missing (FR-314-AC-11), with row 3's record missing (FR-314-AC-12),
+   with row 3's record supplied twice (FR-314-AC-13), with a row 7 record added
+   (FR-314-AC-14), with row 3's query absent (FR-314-AC-15), and with row 3's
+   proof absent (FR-314-AC-16); settle each. Assemble with the `Base` record's
+   proof present and of no bytes and check it (FR-314-AC-17).
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -69,3 +77,9 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `Base`, never `Unencodable` or `Unverifiable`, and settles `inconclusive`,
   `CertificateRejected`; the `CasRefinesCounterAdd` certificate again returns
   `Unencodable { Step { row: r } }`, `proved`, `Uncertified`.
+- Step 7: the assembled certificate holds `format` `Alethe`, `base` and
+  `steps[0..7]` with each record's query and proof bytes unchanged, in row
+  order; each of the six defective record sets assembles no certificate and
+  settles `proved`, `Uncertified`; the empty base proof assembles unchanged
+  and is rejected `NotRefutation` at `Query { Base }`, `inconclusive`,
+  `CertificateRejected`.

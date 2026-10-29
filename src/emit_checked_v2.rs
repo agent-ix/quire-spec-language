@@ -90,11 +90,20 @@ pub enum Error {
     },
     /// The source is a template (it carries [`MODEL_DIGEST_TOKEN`]) but the
     /// command line does not supply exactly one `--model` to take the digest
-    /// from.
+    /// from. Exit 20.
     #[error(
-        "the source carries {MODEL_DIGEST_TOKEN} and needs exactly one --model to derive it from"
+        "the source carries {MODEL_DIGEST_TOKEN} and needs exactly one --model to derive it \
+         from; {supplied} supplied"
     )]
-    Template,
+    TemplateModels {
+        /// How many `--model` files were supplied.
+        supplied: usize,
+    },
+    /// The single `--model` of a template is not a domain package document
+    /// (empty, not JSON, or without `package.identity` and `package.version`), so no digest can be derived.
+    /// Exit 20.
+    #[error("the source carries {MODEL_DIGEST_TOKEN} but the --model is not a domain package document, so no digest can be derived")]
+    TemplateModel,
     /// The producer refused the source.
     #[error("{}", without_limit_hint(.0))]
     Producer(Box<ReplayRefusal>),
@@ -111,7 +120,8 @@ impl Error {
             | Self::Read { .. }
             | Self::Write { .. }
             | Self::TooLarge { .. }
-            | Self::Template
+            | Self::TemplateModels { .. }
+            | Self::TemplateModel
             | Self::Points { .. } => None,
         };
         code.map_or(Category::Refusal.exit_code(), |code| {
@@ -133,8 +143,9 @@ pub struct Request {
     /// an object from exact authored clause name to an execution point such
     /// as `{"kind": "post", "operation": "set"}`.
     pub execution_points: Option<PathBuf>,
-    /// Where to write the source after template substitution, when the source
-    /// is a template.
+    /// Where to write the rendered source of a template source, atomically and
+    /// only after the producer accepted it; a refusal leaves no file, and a
+    /// source that is not a template is not copied.
     pub source_out: Option<PathBuf>,
     /// Where to write the bytes instead of stdout.
     pub out: Option<PathBuf>,
@@ -295,7 +306,9 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
         .iter()
         .map(|path| read(path, true))
         .collect::<Result<Vec<_>, _>>()?;
-    let source = render_source(source, &models, request.source_out.as_deref())?;
+    let source = render_source(source, &models)?;
+    let template = source.template;
+    let source = source.bytes;
     let libraries = request
         .libraries
         .iter()
@@ -326,38 +339,86 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
         ReplayLimits::default(),
     )
     .map_err(|refusal| Error::Producer(Box::new(refusal)))?;
+    if let (Some(path), true) = (&request.source_out, template) {
+        write_source_out(path, &source)?;
+    }
     Ok(compiled.bytes().to_vec())
 }
 
-/// Fill [`MODEL_DIGEST_TOKEN`] in a template `source` with the digest of the
-/// one supplied model document, and write the result to `source_out` when
-/// given. A source without the token is returned unchanged (and
-/// `source_out` is then a copy of it).
-#[ix_trace_rs::string_edge]
-fn render_source(
-    source: Vec<u8>,
-    models: &[Vec<u8>],
-    source_out: Option<&Path>,
-) -> Result<Vec<u8>, Error> {
-    let rendered = match std::str::from_utf8(&source) {
-        Ok(text) if text.contains(MODEL_DIGEST_TOKEN) => {
-            let [document] = models else {
-                return Err(Error::Template);
-            };
-            let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-            let digest = packages.keys().next().ok_or(Error::Template)?;
-            text.replace(MODEL_DIGEST_TOKEN, &qsl_semantics::model::key::hex(digest))
-                .into_bytes()
-        }
-        _ => source,
-    };
-    if let Some(path) = source_out {
-        std::fs::write(path, &rendered).map_err(|source| Error::Write {
-            path: path.display().to_string(),
-            source,
-        })?;
+/// A source rendered from a template: the bytes the producer reads.
+struct Rendered {
+    /// The source with every [`MODEL_DIGEST_TOKEN`] replaced.
+    bytes: Vec<u8>,
+    /// Whether the source carried the token (was a template).
+    template: bool,
+}
+
+/// Fill [`MODEL_DIGEST_TOKEN`] in `source` with the digest of the one supplied
+/// model document, byte-wise and with no UTF-8 decoding: every occurrence of
+/// the exact token is replaced, so a non-UTF-8 source is filled like any
+/// other and left to the producer to refuse; `{other}` text and
+/// `{{model_digest}}` (whose inner `{model_digest}` is replaced, leaving the
+/// outer braces) are not otherwise interpreted. A source without the token is
+/// returned unchanged. No file is written here: see [`write_source_out`].
+///
+/// A template needs exactly one `--model` ([`Error::TemplateModels`]) and that
+/// model must be an admissible domain package ([`Error::TemplateModel`]); both
+/// exit 20.
+fn render_source(source: Vec<u8>, models: &[Vec<u8>]) -> Result<Rendered, Error> {
+    let token = MODEL_DIGEST_TOKEN.as_bytes();
+    if !source.windows(token.len()).any(|window| window == token) {
+        return Ok(Rendered {
+            bytes: source,
+            template: false,
+        });
     }
-    Ok(rendered)
+    let [document] = models else {
+        return Err(Error::TemplateModels {
+            supplied: models.len(),
+        });
+    };
+    let declares = |name: &str| {
+        serde_json::from_slice::<serde_json::Value>(document)
+            .ok()
+            .is_some_and(|value| value["package"][name].is_string())
+    };
+    if !declares("identity") || !declares("version") {
+        return Err(Error::TemplateModel);
+    }
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let digest = packages.keys().next().ok_or(Error::TemplateModel)?;
+    let digest = qsl_semantics::model::key::hex(digest).into_bytes();
+    let mut bytes = Vec::with_capacity(source.len());
+    let mut rest = source.as_slice();
+    while let Some(at) = rest.windows(token.len()).position(|window| window == token) {
+        bytes.extend_from_slice(&rest[..at]);
+        bytes.extend_from_slice(&digest);
+        rest = &rest[at + token.len()..];
+    }
+    bytes.extend_from_slice(rest);
+    Ok(Rendered {
+        bytes,
+        template: true,
+    })
+}
+
+/// Write the rendered source to `path`, atomically (a temporary file in the
+/// same directory, then a rename). Called only after the producer has
+/// accepted the source, and only for a template: a non-template source is not
+/// copied.
+fn write_source_out(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    let fail = |source| Error::Write {
+        path: path.display().to_string(),
+        source,
+    };
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(format!(".tmp{}", std::process::id()));
+    let temporary = PathBuf::from(temporary);
+    std::fs::write(&temporary, bytes).map_err(fail)?;
+    std::fs::rename(&temporary, path).map_err(|source| {
+        let _ = std::fs::remove_file(&temporary);
+        fail(source)
+    })
 }
 
 /// Parse `arguments`, emit, and write the bytes to `--out` or `stdout`.

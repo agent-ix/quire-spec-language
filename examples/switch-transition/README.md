@@ -39,9 +39,14 @@ cargo run --locked --example emit_checked_v2 -- \
 
 The generated pair is `target/switch-transition/switch.native` plus
 `examples/switch-transition/switch.semantic-ir.json`; `target/` is untracked,
-so nothing generated is committed. The emitted bytes embed the source path
-exactly as given, so a caller that needs stable bytes passes the canonical
-repository-relative paths above from the repository root every time.
+so nothing generated is committed. `--source-out` is written only after the
+producer accepts the template, atomically; a refusal leaves no file.
+
+The emitted bytes embed the path of the source exactly as given, which is the
+TEMPLATE path `examples/switch-transition/switch.native.in`, never the rendered
+`switch.native` path. A caller that needs stable bytes (IR-1117) pins the bytes
+produced from that template path, passing the canonical repository-relative
+paths above from the repository root every time.
 
 Tests (`tests/it/emit_checked_v2.rs`) render the template themselves, derive
 the digest from the model file, and never assert a literal; one test scans this
