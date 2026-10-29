@@ -1842,6 +1842,10 @@ impl Default for DependencyLimits {
 mod dependency_tests;
 
 #[cfg(test)]
+#[path = "../../tests/support/spine_model.rs"]
+pub(crate) mod spine_model;
+
+#[cfg(test)]
 mod wide_integer_tests;
 
 /// A parameter list in source syntax: `(Boolean, Int[0, 3])`.

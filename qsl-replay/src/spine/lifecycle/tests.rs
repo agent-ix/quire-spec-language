@@ -8,6 +8,7 @@ use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
+use crate::spine::spine_model;
 use ix_trace_rs::trace;
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::QualifiedName;
@@ -42,9 +43,7 @@ use crate::spine::{
 };
 
 const FIXTURE: &str = include_str!("../../../../tests/fixtures/spine-compile.native");
-const MODEL_FIXTURE: &str = include_str!("../../../../tests/fixtures/spine-model.native");
-const MODEL_DOCUMENT: &str =
-    include_str!("../../../../tests/fixtures/spine-model.semantic-ir.json");
+const MODEL_DOCUMENT: &[u8] = spine_model::DOCUMENT;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";
@@ -634,10 +633,10 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
 #[trace("TC-757", "FR-276-AC-2")]
 #[test]
 fn a_cancel_inside_select_stops_within_one_charge() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let limits = SpineLimits::default();
     let live = Cancel::new();
-    let parsed = parse(&request(MODEL_FIXTURE.as_bytes()), limits.source, &live)
+    let parsed = parse(&request(spine_model::unit().as_bytes()), limits.source, &live)
         .expect("the model fixture parses")
         .into_value();
     let run = |cancel: &Cancel| select(&parsed, &packages, limits.model, cancel);
@@ -661,12 +660,12 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 #[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let mut limits = SpineLimits::default();
     let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
     limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
     let parsed = parse(
-        &request(MODEL_FIXTURE.as_bytes()),
+        &request(spine_model::unit().as_bytes()),
         limits.source,
         &Cancel::new(),
     )
@@ -866,9 +865,9 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let model = chain_of(
-        MODEL_FIXTURE.as_bytes(),
+        spine_model::unit().as_bytes(),
         &packages,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -877,7 +876,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     assert_eq!(model.models.models().len(), 1);
     read_back(&model, &packages, "test/model");
     let again = chain_of(
-        MODEL_FIXTURE.as_bytes(),
+        spine_model::unit().as_bytes(),
         &packages,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -940,7 +939,7 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
     assert_eq!(syntax.code().as_str(), "invalid_syntax");
     assert_eq!(syntax.stage(), SpineStage::Source);
 
-    let parsed = parse(&request(MODEL_FIXTURE.as_bytes()), limits.source, &live)
+    let parsed = parse(&request(spine_model::unit().as_bytes()), limits.source, &live)
         .expect("the model fixture parses")
         .into_value();
     let missing = refusal(
@@ -953,10 +952,11 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         usize::try_from(region.start()).expect("a start offset"),
         usize::try_from(region.end()).expect("an end offset"),
     );
+    let model_fixture = spine_model::unit();
     assert!(
-        MODEL_FIXTURE[start..end].starts_with("model M"),
+        model_fixture[start..end].starts_with("model M"),
         "located at {:?}",
-        &MODEL_FIXTURE[start..end]
+        &model_fixture[start..end]
     );
 
     let ill_typed = format!("{HEADER}function f using v(): Boolean pure {{ 1 + true }}\n");
@@ -1275,10 +1275,10 @@ fn parse_names_the_source_limit_field_it_reached() {
 #[trace("TC-758", "FR-277-AC-1", "FR-255-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let live = Cancel::new();
     let parsed = parse(
-        &request(MODEL_FIXTURE.as_bytes()),
+        &request(spine_model::unit().as_bytes()),
         SpineLimits::default().source,
         &live,
     )
@@ -1340,9 +1340,9 @@ fn select_names_the_model_limit_field_it_reached() {
 #[trace("TC-758", "FR-255-AC-1")]
 #[test]
 fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let parsed = parse(
-        &request(MODEL_FIXTURE.as_bytes()),
+        &request(spine_model::unit().as_bytes()),
         SpineLimits::default().source,
         &Cancel::new(),
     )
@@ -1626,9 +1626,9 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn check_names_the_type_environment_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let model = chain_of(
-        MODEL_FIXTURE.as_bytes(),
+        spine_model::unit().as_bytes(),
         &packages,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -1927,7 +1927,7 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
 /// holds `clauses` (`language`, `text`), and the unit selecting it.
 fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let mut document: serde_json::Value =
-        serde_json::from_str(MODEL_DOCUMENT).expect("the model fixture is JSON");
+        serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let generated = |identity: &str| {
         serde_json::json!({"generated": {
             "generatorIdentity": identity,
@@ -1966,13 +1966,7 @@ fn offered_model(document: &serde_json::Value) -> (String, BTreeMap<[u8; 32], Ve
     let bytes = serde_json::to_vec(document).expect("the document serializes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
     let digest = packages.keys().next().expect("one package");
-    let original = MODEL_FIXTURE
-        .split("sha256-jcs:")
-        .nth(1)
-        .and_then(|rest| rest.get(..64))
-        .expect("the fixture names its digest");
-    let unit = MODEL_FIXTURE.replace(original, &qsl_semantics::model::key::hex(digest));
-    (unit, packages)
+    (spine_model::unit_selecting(digest), packages)
 }
 
 /// The model fixture with the clauses `clauses` (`name`, `language`, `text`)
@@ -1981,7 +1975,7 @@ fn widget_with_type_clauses(
     clauses: &[(&str, &str, &str)],
 ) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let mut document: serde_json::Value =
-        serde_json::from_str(MODEL_DOCUMENT).expect("the model fixture is JSON");
+        serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let widget = document["types"]
         .as_array_mut()
         .expect("types")

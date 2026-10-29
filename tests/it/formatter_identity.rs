@@ -1013,7 +1013,7 @@ fn emitter_authored_units_keep_format_identity() {
             &source_literal(fixture, "ORDERED_COMPARISON"),
         )],
     ));
-    let model = include_str!("../fixtures/spine-model.native");
+    let model = crate::support::spine_model::unit();
     let field = source_literal(fixture, "FIELD_ACCESS");
     let equality = source_literal(fixture, "CONFORMING_EQUALITY");
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
@@ -2114,6 +2114,7 @@ fn wide_integer_fixture_units_keep_checked_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
+    let spine_model = crate::support::spine_model::unit();
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     for (name, bytes) in [
@@ -2127,7 +2128,7 @@ fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
         ),
         (
             "spine-model.native",
-            include_bytes!("../fixtures/spine-model.native").as_slice(),
+            spine_model.as_bytes(),
         ),
         (
             "value-format.native",
