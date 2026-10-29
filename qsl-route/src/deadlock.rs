@@ -16,7 +16,7 @@
 //! abstract subject (ADR-020 RS-9).
 //!
 //! A timed subject (FR-232, ADR-026 TD-2) also gets one time-lock-freedom
-//! item from [`time_lock_freedom_items`], with no opt-out.
+//! item, with no opt-out.
 //!
 //! A protocol subject (FR-211, ADR-027 PD-3) gets its item the same way,
 //! from [`protocol_deadlock_freedom_items`]: one per distinct protocol
@@ -41,7 +41,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     Capability, CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember,
-    TerminalDeclaration, TimeSourceKind,
+    TerminalDeclaration,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_semantic_value::fairness::PropertyForm;
@@ -180,24 +180,16 @@ impl<S> ItemObligation<S> {
     }
 }
 
-/// One derived deadlock-freedom item.
+/// One derived deadlock-freedom item over a protocol subject (FR-211).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeadlockFreedomItem<S> {
     subject: S,
-    dense_time: bool,
 }
 
 impl<S: Clone> DeadlockFreedomItem<S> {
     /// The subject the item is over.
     pub fn subject(&self) -> &S {
         &self.subject
-    }
-
-    /// Whether the subject is `time dense` (FR-243): one of its models
-    /// declares `time dense`, so the item routes to EN-6
-    /// ([`crate::Registry::restrict_to_dense_time`]).
-    pub fn dense_time(&self) -> bool {
-        self.dense_time
     }
 
     /// The item's obligation identity: the subject and `deadlock-freedom`.
@@ -231,15 +223,14 @@ impl<S: Clone> DeadlockFreedomItem<S> {
 /// What the request writer reads about the subject of one caller item to
 /// derive the subject's items (FR-124, FR-232, FR-243, QSpec FR-368): the
 /// `model_root` node of each `model_selections` row the subject reads, and
-/// whether one of the models it reads declares `terminal any`, has a `time`
-/// member, or declares `time dense`. Only a subject's own models count:
+/// whether one of the models it reads declares `terminal any` or has a
+/// `time` member. Only a subject's own models count:
 /// another model of the package has no effect on it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SubjectReading {
     roots: BTreeSet<WireNodeId>,
     opted_out: bool,
     timed: bool,
-    dense: bool,
 }
 
 impl SubjectReading {
@@ -260,21 +251,7 @@ impl SubjectReading {
                 .time_sources()
                 .iter()
                 .any(|source| own(&source.model)),
-            dense: package
-                .time_sources()
-                .iter()
-                .any(|source| own(&source.model) && source.source == TimeSourceKind::Dense),
         }
-    }
-
-    /// The reading of a subject over the model aliases `models` of
-    /// `package`.
-    fn of_models(package: &CheckedGraph, models: &[String]) -> Self {
-        Self::read(package, |identity| {
-            models
-                .iter()
-                .any(|model| package.model_package_identity(model) == Some(identity))
-        })
     }
 
     /// Whether a model the subject reads declares `terminal any`, which
@@ -284,14 +261,10 @@ impl SubjectReading {
     }
 
     /// Whether a model the subject reads is timed (ADR-026 TS-1), which
-    /// gives it the time-lock-freedom item (FR-232).
+    /// gives it the time-lock-freedom item (FR-232) and routes its derived
+    /// items to EN-6 alone (FR-243).
     pub fn timed(&self) -> bool {
         self.timed
-    }
-
-    /// Whether a model the subject reads declares `time dense` (FR-243).
-    pub fn dense(&self) -> bool {
-        self.dense
     }
 
     /// The reading of a subject that two caller items read: the union of
@@ -300,7 +273,6 @@ impl SubjectReading {
         self.roots.extend(other.roots.iter().copied());
         self.opted_out |= other.opted_out;
         self.timed |= other.timed;
-        self.dense |= other.dense;
     }
 
     /// QSpec FR-368 "Claim and anchor of a derived or refinement item": the
@@ -344,42 +316,6 @@ impl<S: Clone> ModelRefinementItem<'_, S> {
     }
 }
 
-/// FR-124, FR-144 and FR-165: the deadlock-freedom items of a request's
-/// temporal, refinement and state-graph items over model subjects. There is
-/// one per distinct subject, ordered by temporal-item order, then
-/// refinement-item order, then state-graph-item order, and none for a subject
-/// one of whose own models declares `terminal any`. `models_of` gives the
-/// model aliases a subject ranges over, as [`time_lock_freedom_items`]
-/// reads them. A refinement item brings its concrete subject's item, opted
-/// out only by its concrete model's `terminal any`, and none for its
-/// abstract subject (ADR-020 RS-9).
-pub fn deadlock_freedom_items<S: Clone + Eq>(
-    temporal: &[ModelTemporalItem<'_, S>],
-    refinements: &[ModelRefinementItem<'_, S>],
-    state_graph: &[ModelStateGraphItem<'_, S>],
-    models_of: impl Fn(&S) -> Vec<String>,
-) -> Vec<DeadlockFreedomItem<S>> {
-    let temporal = temporal.iter().map(|item| {
-        let reading = SubjectReading::of_models(item.package, &models_of(item.subject));
-        (item.subject.clone(), reading)
-    });
-    let refinements = refinements
-        .iter()
-        .map(|item| (item.subject.clone(), item.reading()));
-    let state_graph = state_graph.iter().map(|item| {
-        let reading = SubjectReading::of_models(item.package, &models_of(item.subject));
-        (item.subject.clone(), reading)
-    });
-    by_subject(temporal.chain(refinements).chain(state_graph))
-        .into_iter()
-        .filter(|(_, reading)| !reading.opted_out)
-        .map(|(subject, reading)| DeadlockFreedomItem {
-            subject,
-            dense_time: reading.dense,
-        })
-        .collect()
-}
-
 /// One temporal item over a protocol subject, as the writer reads it: the
 /// claim's occurrence, the protocol subject, and its checked protocol
 /// clause.
@@ -408,7 +344,6 @@ pub fn protocol_deadlock_freedom_items<S: Clone + Eq>(
         }
         derived.push(DeadlockFreedomItem {
             subject: item.subject.clone(),
-            dense_time: false,
         });
     }
     derived
@@ -501,76 +436,4 @@ pub fn race_freedom_items<S: Clone + Eq>(
         });
     }
     derived
-}
-
-/// FR-232 (ADR-026 TD-2): one derived time-lock-freedom item, over a timed
-/// subject. It is requested, routed and negotiated as an unbounded temporal
-/// item, like the deadlock-freedom item, and settled by FR-235.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TimeLockFreedomItem<S> {
-    subject: S,
-    dense_time: bool,
-}
-
-impl<S: Clone> TimeLockFreedomItem<S> {
-    /// The subject the item is over.
-    pub fn subject(&self) -> &S {
-        &self.subject
-    }
-
-    /// Whether the subject is `time dense` (FR-243): one of its models
-    /// declares `time dense`, so the item routes to EN-6
-    /// ([`crate::Registry::restrict_to_dense_time`]).
-    pub fn dense_time(&self) -> bool {
-        self.dense_time
-    }
-
-    /// The item's obligation identity: the subject and `time-lock-freedom`.
-    pub fn obligation(&self) -> ItemObligation<S> {
-        ItemObligation {
-            subject: self.subject.clone(),
-            kind: ObligationKind::TimeLockFreedom,
-            reductions: ObligationReductions::default(),
-        }
-    }
-
-    /// The requested capability kind: `temporal-satisfaction`.
-    pub fn kind(&self) -> Capability {
-        Capability::TemporalSatisfaction
-    }
-
-    /// The extent classification: unbounded.
-    pub fn extent(&self) -> ExtentClassification {
-        ExtentClassification::Unbounded {
-            finite_bound_available: false,
-        }
-    }
-}
-
-/// FR-232: the time-lock-freedom items of a request's temporal and
-/// state-graph items over model subjects: one per distinct timed subject,
-/// in temporal-item then state-graph-item order. `models_of` gives the
-/// model aliases a subject ranges over. There is no opt-out: a `terminal`
-/// member does not remove it.
-pub fn time_lock_freedom_items<S: Clone + Eq>(
-    temporal: &[ModelTemporalItem<'_, S>],
-    state_graph: &[ModelStateGraphItem<'_, S>],
-    models_of: impl Fn(&S) -> Vec<String>,
-) -> Vec<TimeLockFreedomItem<S>> {
-    let readings = temporal
-        .iter()
-        .map(|item| (item.subject, item.package))
-        .chain(state_graph.iter().map(|item| (item.subject, item.package)))
-        .map(|(subject, package)| {
-            let reading = SubjectReading::of_models(package, &models_of(subject));
-            (subject.clone(), reading)
-        });
-    by_subject(readings)
-        .into_iter()
-        .filter(|(_, reading)| reading.timed)
-        .map(|(subject, reading)| TimeLockFreedomItem {
-            subject,
-            dense_time: reading.dense,
-        })
-        .collect()
 }

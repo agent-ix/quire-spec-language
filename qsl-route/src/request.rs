@@ -1686,11 +1686,11 @@ mod tests {
         );
     }
 
-    /// QSpec FR-368-AC-13 and AC-21: a temporal item over a model subject
-    /// has one of exactly five kinds, `formula`, `deadlock-freedom`,
+    /// QSpec FR-368-AC-21, and the producer half of AC-13 (the five
+    /// spellings QSL writes; refusing another spelling is the reader's): a
+    /// temporal item over a model subject has one of exactly five kinds, `formula`, `deadlock-freedom`,
     /// `time-lock-freedom`, `race-freedom` and `refinement`; `transfer` is
     /// none of them.
-    #[trace("QSpec-TC-431", "QSpec-FR-368-AC-13")]
     #[trace("QSpec-TC-431", "QSpec-FR-368-AC-21")]
     #[test]
     fn a_model_items_kind_is_one_of_five_spellings() {
@@ -1708,14 +1708,16 @@ mod tests {
         assert!(!spelled.contains(&"transfer"));
     }
 
-    /// QSpec FR-368-AC-20: a derived item's `limits` hold a caller's
+    /// The limit-name half of QSpec FR-368-AC-20 (refusing a derived item
+    /// that carries `max_depth` is the reader's): a derived item's `limits`
+    /// hold a caller's
     /// setting of `max_states`, `max_transitions`, `max_clocks`,
     /// `max_store_buffer`, `max_messages`, `max_live_instances`,
     /// `max_solver_steps` and `max_solver_time` only; `max_automaton_states`,
     /// `max_walk_steps`, `max_witness_set` and `max_relation_tuples` are each
     /// refused `invalid_runtime_input`/`unknown-member`, and a limit the
     /// caller does not set is absent, so the provider's default applies.
-    #[trace("QSpec-TC-431", "QSpec-FR-368-AC-20")]
+    #[trace("QSpec-TC-431")]
     #[test]
     fn a_derived_items_limits_hold_only_exhaustive_check_limits() {
         let names = [

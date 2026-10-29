@@ -11,7 +11,7 @@ use qsl_replay::{
     open_systems, replay_refinement_trace, settle_refinement_safety, ModelCheckLimits,
     RefinementFailure, SafetyOutcome, SimulationCertificateRequest, SubjectIdentity, TerminalValue,
 };
-use qsl_route::deadlock::{deadlock_freedom_items, ModelRefinementItem, ObligationKind};
+use qsl_route::deadlock::{ModelRefinementItem, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::{items_from_requirements, ItemKind};
 use qsl_route::{CandidateOutcome, ManifestDigest, ProviderOrigin, Registry};
@@ -20,6 +20,7 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::PropertyForm;
 
+use crate::derived_request::derived_items;
 use crate::refinement_fixture::{cas_refines_counter, mutated, World, UNLIMITED};
 
 const ENSURE: &str = "ensure fair weak each Spec::Counter::inc;\n";
@@ -104,11 +105,6 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
     }
 }
 
-/// The concrete subject ranges over the one model `Impl`.
-fn over_impl<S>(_: &S) -> Vec<String> {
-    vec!["Impl".to_owned()]
-}
-
 /// The deadlock-freedom items of a request holding `CasRefinesCounter` over
 /// its concrete subject, in a unit that also declares `terminal`.
 fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
@@ -122,9 +118,10 @@ fn derived(terminal: &str) -> (SubjectIdentity, Vec<SubjectIdentity>) {
         abstract_initial: &initial,
         package: world.package().graph(),
     };
-    let derived = deadlock_freedom_items(&[], &[item], &[], over_impl)
-        .iter()
-        .map(|item| item.subject().clone())
+    let derived = derived_items(&[], &[item], &[], &[])
+        .into_iter()
+        .filter(|(item, _)| item.item_kind() == Some(ItemKind::DeadlockFreedom))
+        .map(|(_, obligation)| obligation.subject)
         .collect();
     (identity, derived)
 }
@@ -176,23 +173,29 @@ fn a_temporal_and_a_refinement_item_share_the_concrete_deadlock_item() {
             abstract_initial: &initial,
             package: graph,
         }];
+        // The concrete subject reads the one model `Impl`'s selection.
+        let over_impl = [world
+            .refinement()
+            .concrete_model_selection()
+            .identity
+            .as_str()];
         for (name, derived) in [
-            (
-                "temporal",
-                deadlock_freedom_items(&temporal, &[], &[], over_impl),
-            ),
+            ("temporal", derived_items(&temporal, &[], &[], &over_impl)),
             (
                 "refinement",
-                deadlock_freedom_items(&[], &refinement, &[], over_impl),
+                derived_items(&[], &refinement, &[], &over_impl),
             ),
             (
                 "both",
-                deadlock_freedom_items(&temporal, &refinement, &[], over_impl),
+                derived_items(&temporal, &refinement, &[], &over_impl),
             ),
         ] {
             assert_eq!(derived.len(), expected, "{terminal:?} {name}");
             assert!(
-                derived.iter().all(|item| *item.subject() == identity),
+                derived.iter().all(|(item, obligation)| {
+                    obligation.subject == identity
+                        && item.item_kind() == Some(ItemKind::DeadlockFreedom)
+                }),
                 "{terminal:?} {name}"
             );
         }

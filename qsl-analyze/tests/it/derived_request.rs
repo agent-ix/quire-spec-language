@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, derived_model_item, derived_zone_item, AnalyzeRecord, DerivedItemMismatch, Engines,
-    TimedItem,
+    analyze, derived_model_item, derived_zone_item, AnalyzeItem, AnalyzeRecord,
+    DerivedItemMismatch, Engines, TimedItem,
 };
 use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::model_check::SubjectContext;
@@ -27,19 +27,78 @@ use qsl_replay::{
     CertificateCheckLimits, CertifiedItem, IncompleteCause, ModelCheckLimit, TerminalValue,
     ZoneCertificateRequest,
 };
+use qsl_route::deadlock::{
+    ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem,
+};
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::reductions::Reductions;
-use qsl_route::request::{DerivedLimits, ExtentClassification, ItemKind, RequestItem};
+use qsl_route::request::{
+    AbstractSubject, DerivedLimits, ExtentClassification, ItemKind, RequestItem,
+};
 use qsl_semantics::check::Capability;
+use qsl_semantics::family::{ClaimExtent, Requirements};
 use qsl_semantics::library::PackageId;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
+use std::collections::BTreeSet;
+use std::num::NonZeroU64;
 
 use crate::counter::{clause_text, CONTRACT};
 use crate::dense_route::{ids, registry};
 use crate::model_settle::case;
-use crate::timed_world::PACKAGE;
-use crate::zone_search::rpc;
+use crate::timed_world::{World, PACKAGE};
+use crate::zone_search::{rpc, INFINITE};
+
+/// The derived items, each with its obligation, that
+/// `ModelRequest::derived` writes, with EN-1 and EN-6 registered, after
+/// `temporal`, `refinements` and `state_graph` in that caller order. Each
+/// temporal and state-graph item's subject reads the selections
+/// `selections`; a refinement's reads its concrete model. A record's
+/// requirements are not read by the derivation, so each caller item is
+/// written with a bounded `temporal-satisfaction` record.
+pub(crate) fn derived_items<S: Clone + Eq>(
+    temporal: &[ModelTemporalItem<'_, S>],
+    refinements: &[ModelRefinementItem<'_, S>],
+    state_graph: &[ModelStateGraphItem<'_, S>],
+    selections: &[&str],
+) -> Vec<(RequestItem, ItemObligation<S>)> {
+    let selections: BTreeSet<&str> = selections.iter().copied().collect();
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let mut request = ModelRequest::new();
+    for item in temporal {
+        request.authored(item, &record, &selections);
+    }
+    for item in refinements {
+        let abstract_subject = AbstractSubject {
+            package_id: PackageId::of_preimage(b"abstract"),
+            initial_states: item.abstract_initial.to_vec(),
+        };
+        request
+            .refinement(item, &record, abstract_subject)
+            .expect("the refinement has a record");
+    }
+    for item in state_graph {
+        request.state_graph(item, &selections);
+    }
+    let written = request.derived(&registry(), None, &DerivedLimits::default());
+    written
+        .items()
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.item_kind(),
+                Some(ItemKind::DeadlockFreedom | ItemKind::TimeLockFreedom)
+            )
+        })
+        .map(|item| {
+            let obligation = written
+                .obligation(item.index())
+                .expect("its obligation")
+                .clone();
+            (item.clone(), obligation)
+        })
+        .collect()
+}
 
 /// The claim QSpec FR-368 gives a derived item over a subject reading the
 /// selection `identity` of `package`: its `model_root` node's `generated`
@@ -83,7 +142,10 @@ fn settled(record: &AnalyzeRecord) -> (String, TerminalValue) {
     )
 }
 
-/// QSpec FR-368-AC-14, AC-16, AC-17 and AC-18 with FR-243: over the dense
+/// QSpec FR-368-AC-17 and AC-18 with FR-243, and the producer half of
+/// AC-14 (the model subject's `model_root` anchor; the protocol anchor is
+/// QSL-1235's) and of AC-16 (`unbounded`, no finite bound, no
+/// `extent.bounds`; QSL writes no extent domain list): over the dense
 /// `Rpc`, the request holds the authored clause at index 0, then the
 /// deadlock-freedom and then the time-lock-freedom item. Both derived
 /// items are `temporal-satisfaction`, unbounded with no finite bound, carry
@@ -91,8 +153,7 @@ fn settled(record: &AnalyzeRecord) -> (String, TerminalValue) {
 /// route to EN-6 alone.
 #[trace("TC-698", "FR-243-AC-1")]
 #[trace("TC-687", "FR-232-AC-1")]
-#[trace("QSpec-TC-431", "QSpec-FR-368-AC-14")]
-#[trace("QSpec-TC-431", "QSpec-FR-368-AC-16")]
+#[trace("QSpec-TC-431")]
 #[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
 #[trace("QSpec-TC-302", "QSpec-FR-368-AC-18")]
 #[test]
@@ -137,6 +198,54 @@ fn a_dense_subjects_request_carries_its_derived_items_after_the_callers() {
     assert!(written.unanchored().is_empty());
 }
 
+/// The EN-6 run of `written`'s derived item at `at` over `timed`, deciding
+/// `item` and checked as `certified` under the clock bound `max_clocks`,
+/// through `derived_zone_item`.
+#[allow(clippy::too_many_arguments)] // one run's subject, check and item
+fn zone_run<'w>(
+    world: &'w World,
+    written: &WrittenRequest<SubjectIdentity>,
+    timed: &'w TimedSystem<'w, 'w>,
+    reductions: &'w Reductions,
+    max_clocks: NonZeroU64,
+    at: usize,
+    item: ZoneCheckItem<'w>,
+    certified: CertifiedItem<'w>,
+) -> Result<AnalyzeItem<'w>, DerivedItemMismatch> {
+    let derived = &written.items()[at];
+    let timed_item = TimedItem {
+        request: ZoneCheckRequest {
+            subject: timed,
+            item,
+            obligation: written
+                .obligation(derived.index())
+                .expect("its obligation")
+                .clone(),
+            limits: ZoneCheckLimits::default(),
+            reductions,
+        },
+        certificate: ZoneCertificateRequest {
+            simulation: world.request(),
+            model: "M",
+            max_clocks,
+            item: certified,
+        },
+        certificate_limits: CertificateCheckLimits::default(),
+        package_id: PackageId::of_preimage(b"derived-timed").record(),
+        replay: Box::new(|_| panic!("a proof has no counterexample to replay")),
+    };
+    derived_zone_item(derived, timed_item)
+}
+
+/// The records `analyze` settles for `items`.
+fn analyzed(items: Vec<AnalyzeItem<'_>>) -> Vec<AnalyzeRecord> {
+    analyze(
+        &Engines::qsl().expect("the layer-A manifests register"),
+        items,
+        &Cancel::new(),
+    )
+}
+
 /// FR-243-AC-1 and FR-232 end to end: the dense `Rpc`'s derived
 /// deadlock-freedom and time-lock-freedom items, run through `analyze` by
 /// `derived_zone_item` at their own request indices, settle on EN-6 with
@@ -154,32 +263,18 @@ fn a_dense_subjects_derived_items_settle_on_en6() {
     let written = written(&subject, &DerivedLimits::default());
     let system = world.system();
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
-    let package = PackageId::of_preimage(b"derived-dense");
     let reductions = Reductions::default();
-    let run = |at: usize, item: ZoneCheckItem<'static>, certified: CertifiedItem<'static>| {
-        let derived = &written.items()[at];
-        let timed_item = TimedItem {
-            request: ZoneCheckRequest {
-                subject: &timed,
-                item,
-                obligation: written
-                    .obligation(derived.index())
-                    .expect("its obligation")
-                    .clone(),
-                limits: ZoneCheckLimits::default(),
-                reductions: &reductions,
-            },
-            certificate: ZoneCertificateRequest {
-                simulation: world.request(),
-                model: "M",
-                max_clocks: DEFAULT_MAX_CLOCKS,
-                item: certified,
-            },
-            certificate_limits: CertificateCheckLimits::default(),
-            package_id: package.record(),
-            replay: Box::new(|_| panic!("a proof has no counterexample to replay")),
-        };
-        derived_zone_item(derived, timed_item)
+    let run = |at, item, certified| {
+        zone_run(
+            &world,
+            &written,
+            &timed,
+            &reductions,
+            DEFAULT_MAX_CLOCKS,
+            at,
+            item,
+            certified,
+        )
     };
     let mismatch = run(
         1,
@@ -195,24 +290,20 @@ fn a_dense_subjects_derived_items_settle_on_en6() {
             kind: ItemKind::DeadlockFreedom
         }
     );
-    let records = analyze(
-        &Engines::qsl().expect("the layer-A manifests register"),
-        vec![
-            run(
-                1,
-                ZoneCheckItem::DeadlockFreedom,
-                CertifiedItem::DeadlockFreedom,
-            )
-            .expect("the deadlock-freedom run"),
-            run(
-                2,
-                ZoneCheckItem::TimeLockFreedom,
-                CertifiedItem::TimeLockFreedom,
-            )
-            .expect("the time-lock-freedom run"),
-        ],
-        &Cancel::new(),
-    );
+    let records = analyzed(vec![
+        run(
+            1,
+            ZoneCheckItem::DeadlockFreedom,
+            CertifiedItem::DeadlockFreedom,
+        )
+        .expect("the deadlock-freedom run"),
+        run(
+            2,
+            ZoneCheckItem::TimeLockFreedom,
+            CertifiedItem::TimeLockFreedom,
+        )
+        .expect("the time-lock-freedom run"),
+    ]);
     assert_eq!(
         records
             .iter()
@@ -231,6 +322,125 @@ fn a_dense_subjects_derived_items_settle_on_en6() {
     }
 }
 
+/// FR-243 over a `time tick` subject (SR-1786001 FND-001): a timed subject
+/// whose source is a tick, not `time dense`, still routes both derived
+/// items to EN-6 alone, never to EN-1, which has no time-lock-freedom item;
+/// its deadlock-freedom item settles proved on EN-6.
+#[trace("TC-698", "FR-243-AC-1")]
+#[trace("TC-687", "FR-232-AC-1")]
+#[test]
+fn a_tick_subjects_derived_items_route_to_en6_alone() {
+    let world = crate::timed_world::world(
+        &crate::timed_world::document(&[], &[("go", &["phase"]), ("tick", &["phase"])]),
+        INFINITE,
+        "dimension Time;\nunit s : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1000) * s;\n\
+         time M tick M::Call::tick period 5 ms unit ms;\n\
+         pre Go using v on M::Call::go { self.phase = 0 }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         pre Tick using v on M::Call::tick { self.phase = 1 }\n\
+         post Ticked using v on M::Call::tick { self.phase = 0 }\n\
+         temporal Quiet using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always holds(not c.retried) }\n",
+    );
+    let subject = ModelSubject {
+        simulation: world.request(),
+        proof_bounds: Vec::new(),
+    };
+    let written = written(&subject, &DerivedLimits::default());
+    assert_eq!(
+        kinds(&written),
+        [
+            Some(ItemKind::Formula),
+            Some(ItemKind::DeadlockFreedom),
+            Some(ItemKind::TimeLockFreedom)
+        ]
+    );
+    for item in &written.items()[1..] {
+        assert_eq!(
+            ids(item.candidates().expect("its candidates")),
+            [en6::BACKEND_ID],
+            "{:?}",
+            item.item_kind()
+        );
+    }
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let reductions = Reductions::default();
+    let records = analyzed(vec![zone_run(
+        &world,
+        &written,
+        &timed,
+        &reductions,
+        DEFAULT_MAX_CLOCKS,
+        1,
+        ZoneCheckItem::DeadlockFreedom,
+        CertifiedItem::DeadlockFreedom,
+    )
+    .expect("the deadlock-freedom run")]);
+    let (backend, value) = settled(&records[0]);
+    assert_eq!(backend, en6::BACKEND_ID);
+    assert!(matches!(value, TerminalValue::Proved { .. }), "{value:?}");
+}
+
+/// QSpec FR-368 "Negotiation" (SR-1786001 FND-002, SR-1786002 FND-003):
+/// the caller's limits reach EN-6. With `max_states` 1 the dense `Rpc`'s
+/// deadlock-freedom item stops `incomplete`; with `max_clocks` 2 a run over
+/// a subject built under EN-6's default clock bound is refused, naming
+/// both bounds, and one built and checked under 2 settles proved.
+#[trace("TC-698", "FR-243-AC-1")]
+#[test]
+fn a_derived_items_caller_limits_reach_en6() {
+    let world = rpc(4);
+    let subject = ModelSubject {
+        simulation: world.request(),
+        proof_bounds: Vec::new(),
+    };
+    let system = world.system();
+    let reductions = Reductions::default();
+    let deadlock = |written: &WrittenRequest<SubjectIdentity>, max_clocks: NonZeroU64| {
+        let timed =
+            TimedSystem::with_max_clocks(&system, "M", max_clocks).expect("a timed subject");
+        let run = zone_run(
+            &world,
+            written,
+            &timed,
+            &reductions,
+            max_clocks,
+            1,
+            ZoneCheckItem::DeadlockFreedom,
+            CertifiedItem::DeadlockFreedom,
+        );
+        run.map(|item| settled(&analyzed(vec![item])[0]).1)
+    };
+
+    let one_state = written(
+        &subject,
+        &DerivedLimits::from_settings([("max_states", 1)]).expect("a member"),
+    );
+    let stopped = deadlock(&one_state, DEFAULT_MAX_CLOCKS).expect("the run");
+    assert!(
+        matches!(stopped, TerminalValue::Incomplete(_)),
+        "{stopped:?}"
+    );
+
+    let two_clocks = written(
+        &subject,
+        &DerivedLimits::from_settings([("max_clocks", 2)]).expect("a member"),
+    );
+    assert_eq!(
+        deadlock(&two_clocks, DEFAULT_MAX_CLOCKS).err(),
+        Some(DerivedItemMismatch::ClockBound {
+            index: two_clocks.items()[1].index(),
+            expected: 2,
+            run: DEFAULT_MAX_CLOCKS.get(),
+        })
+    );
+    let two = NonZeroU64::new(2).expect("nonzero");
+    let proved = deadlock(&two_clocks, two).expect("the run");
+    assert!(matches!(proved, TerminalValue::Proved { .. }), "{proved:?}");
+}
+
 /// The Counter unit with `terminal Done` at 3 and one clause over it.
 fn counter_body(terminal: &str) -> String {
     format!(
@@ -241,7 +451,9 @@ fn counter_body(terminal: &str) -> String {
 
 const DONE: &str = "terminal Done using v on M when { self.value = 3 };\n";
 
-/// FR-124-AC-2 and QSpec FR-368-AC-17, AC-20 end to end: the untimed
+/// FR-124-AC-2, QSpec FR-368-AC-17 and the producer half of AC-20 (no
+/// `max_depth`, provider defaults for unset limits; the reader's refusal
+/// of a `max_depth` is not QSL's) end to end: the untimed
 /// Counter's request holds the clause, then one deadlock-freedom item and
 /// no time-lock-freedom item, routed to both engines; run on EN-1 by
 /// `derived_model_item`, it settles on EN-1 under EN-1's default limits,
@@ -250,7 +462,7 @@ const DONE: &str = "terminal Done using v on M when { self.value = 3 };\n";
 /// clause keeps its index.
 #[trace("TC-519", "FR-124-AC-2")]
 #[trace("QSpec-TC-302", "QSpec-FR-368-AC-17")]
-#[trace("QSpec-TC-431", "QSpec-FR-368-AC-20")]
+#[trace("QSpec-TC-431")]
 #[test]
 fn an_untimed_subjects_deadlock_item_settles_on_en1() {
     let settle = |limits: &DerivedLimits| {

@@ -30,8 +30,8 @@ use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::fairness::PropertyForm;
 
 use crate::deadlock::{
-    by_subject, ItemObligation, ModelRefinementItem, ModelTemporalItem, ObligationKind,
-    SubjectReading,
+    by_subject, ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem,
+    ObligationKind, SubjectReading,
 };
 use crate::reductions::{ObligationReductions, Reductions};
 use crate::request::{AbstractSubject, DerivedLimits, ItemKind, RequestItem, RequestWriter};
@@ -133,6 +133,16 @@ impl<S: Clone + Eq> ModelRequest<S> {
         Some(index)
     }
 
+    /// Join the subject of the state-graph item `item` (FR-165), over a
+    /// subject reading the `model_selections` rows `selections`, to the
+    /// derivation: state-graph claims share their model subject's derived
+    /// items with temporal claims. The state-graph item's own request item
+    /// is written from its record, so nothing is written here.
+    pub fn state_graph(&mut self, item: &ModelStateGraphItem<'_, S>, selections: &BTreeSet<&str>) {
+        let reading = SubjectReading::read(item.package, |identity| selections.contains(identity));
+        self.readings.push((item.subject.clone(), reading));
+    }
+
     /// The obligation of the item at `index`: the join of a result that
     /// carries `index` to the obligation it answers. `None` for an index
     /// this request did not write.
@@ -156,8 +166,8 @@ impl<S: Clone + Eq> ModelRequest<S> {
     /// opt out by `terminal any` gets a `deadlock-freedom` item, and each
     /// timed subject a `time-lock-freedom` item. A derived item's
     /// candidates are the `temporal-satisfaction` backends under `registry`
-    /// for the backend `named`, restricted to those deciding `time dense`
-    /// for a dense subject (FR-243) and to those advertising the request's
+    /// for the backend `named`, restricted to EN-6's zone search, the
+    /// backends deciding timed subjects, for a timed subject (FR-243) and to those advertising the request's
     /// reductions (FR-159); it carries `limits`, the caller's settings, and
     /// no `max_depth`. A subject with no stated anchor gets no request item
     /// and an [`UnanchoredItem`] per derived item instead.
@@ -201,7 +211,7 @@ impl<S: Clone + Eq> ModelRequest<S> {
                             &BTreeSet::new(),
                             false,
                         ),
-                        reading.dense(),
+                        reading.timed(),
                     ),
                     &selected,
                 );

@@ -4,7 +4,7 @@
 //! engine's layer-6 settlement map, or classifies its refusal by FR-281's
 //! "Engine refusals" table.
 
-use qsl_eval::simulation::model::ClauseOutcome;
+use qsl_eval::simulation::model::{ClauseOutcome, DEFAULT_MAX_CLOCKS};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::RequestIndex;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
@@ -225,6 +225,19 @@ pub enum DerivedItemMismatch {
         /// The request item's kind.
         kind: ItemKind,
     },
+    /// The timed subject, or its certificate check, bounds the live clocks
+    /// by another value than the request item's `max_clocks`: the caller's
+    /// setting, or EN-6's published default when it has none (QSpec FR-368
+    /// "Negotiation", FR-415).
+    #[error("request item {index:?} bounds the live clocks by {expected}, the run by {run}")]
+    ClockBound {
+        /// The request item's index.
+        index: RequestIndex,
+        /// The request item's `max_clocks`.
+        expected: u64,
+        /// The bound the run or its check holds.
+        run: u64,
+    },
 }
 
 /// The run's limits under a derived item's caller settings (QSpec FR-368
@@ -289,8 +302,9 @@ pub fn derived_model_item<'a>(
 ///
 /// # Errors
 ///
-/// [`DerivedItemMismatch`] when `derived` is no such item or `item` runs
-/// another item.
+/// [`DerivedItemMismatch`] when `derived` is no such item, `item` runs
+/// another item, or `item`'s timed subject or certificate check bounds the
+/// live clocks by another value than the item's `max_clocks`.
 pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
     derived: &RequestItem,
     mut item: TimedItem<'a, S>,
@@ -314,6 +328,21 @@ pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
     };
     if !runs {
         return Err(DerivedItemMismatch::OtherItem { index, kind });
+    }
+    // The clock bound is fixed when the timed subject is built, so the
+    // adapter checks it rather than setting it.
+    let expected = derived_limit(limits, DerivedLimit::MaxClocks, DEFAULT_MAX_CLOCKS.get());
+    for run in [
+        item.request.subject.max_clocks().get(),
+        item.certificate.max_clocks.get(),
+    ] {
+        if run != expected {
+            return Err(DerivedItemMismatch::ClockBound {
+                index,
+                expected,
+                run,
+            });
+        }
     }
     let defaults = ZoneCheckLimits::default();
     item.request.limits.max_symbolic_states = derived_limit(
