@@ -1288,25 +1288,34 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
-/// Supplies, as domain package evidence, QSpec's selected `acme/orders`
-/// semantic IR document (`domain-package-acme-orders.json` under `the QSpec checkout`)
-/// when one of `envelope`'s `model_selections` rows selects its digest
-/// (QSpec FR-322 "Model-owned members" step 1).
+/// Supplies, as domain package evidence, each QSpec semantic IR document
+/// (`domain-package-*.json` under the QSpec checkout) whose digest one of
+/// `envelope`'s `model_selections` rows selects (QSpec FR-322 "Model-owned
+/// members" step 1).
 fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
     let qspec = qspec_directory();
-    let document = read_fixture(
-        &std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/domain-package-acme-orders.json"),
-    );
-    let bytes = jcs(&document);
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    let selected = envelope["lock"]["model_selections"]
-        .as_array()
-        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
-    if selected {
-        evidence
-            .insert_domain_package_document(digest.as_str(), &bytes[..])
-            .expect("a fresh evidence key");
+    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2");
+    let mut paths: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("domain-package-") && name.ends_with(".json"))
+        })
+        .collect();
+    paths.sort();
+    for path in paths {
+        let bytes = jcs(&read_fixture(&path));
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let selected = envelope["lock"]["model_selections"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
+        if selected {
+            evidence
+                .insert_domain_package_document(digest.as_str(), &bytes[..])
+                .expect("a fresh evidence key");
+        }
     }
 }
 
@@ -2884,10 +2893,7 @@ fn assert_timed_refusal(
 #[trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-262", "QSpec-FR-322-AC-263")]
 #[test]
 fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let proposals = directory.parent().expect("the proposal directory");
     let vectors = read_fixture(&proposals.join("timed-clause-node-vectors.json"));
     let mut replayed = 0_usize;

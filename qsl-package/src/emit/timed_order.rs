@@ -589,10 +589,12 @@ mod tests {
     use ix_trace_rs::trace;
     use serde_json::Value;
 
-    /// The QSpec checked-package V2 proposal directory.
-    fn proposals() -> Option<std::path::PathBuf> {
-        std::env::var_os("QSPEC_DIR")
-            .map(|directory| std::path::Path::new(&directory).join("proposals/checked-package-v2"))
+    /// The QSpec checked-package V2 proposal directory; the conformance
+    /// tests fail explicitly without a QSpec checkout.
+    fn proposals() -> std::path::PathBuf {
+        let directory = std::env::var_os("QSPEC_DIR")
+            .expect("QSPEC_DIR must point to an available QSpec checkout");
+        std::path::Path::new(&directory).join("proposals/checked-package-v2")
     }
 
     fn read(path: &std::path::Path) -> Value {
@@ -639,10 +641,7 @@ mod tests {
     #[trace("QSpec-FR-322-AC-260", "QSpec-TC-367")]
     #[test]
     fn conformance_the_aggregate_order_vectors_replay() {
-        let Some(directory) = proposals() else {
-            println!("skipped: QSPEC_DIR not set");
-            return;
-        };
+        let directory = proposals();
         let vectors = read(&directory.join("timed-slot-selector-vectors.json"));
         let cases = vectors["aggregate_order"]["cases"]
             .as_array()
@@ -657,10 +656,7 @@ mod tests {
     #[trace("QSpec-FR-322-AC-265", "QSpec-TC-367")]
     #[test]
     fn conformance_the_clause_member_key_vectors_replay() {
-        let Some(directory) = proposals() else {
-            println!("skipped: QSPEC_DIR not set");
-            return;
-        };
+        let directory = proposals();
         let vectors = read(&directory.join("timed-clause-node-vectors.json"));
         let cases = vectors["cases"].as_array().expect("CL cases");
         replay(&directory, cases, |case| {
@@ -675,10 +671,7 @@ mod tests {
     #[trace("QSpec-FR-322-AC-260", "QSpec-FR-322-AC-265")]
     #[test]
     fn the_producer_writes_the_declared_order() {
-        let Some(directory) = proposals() else {
-            println!("skipped: QSPEC_DIR not set");
-            return;
-        };
+        let directory = proposals();
         for fixture in [
             "fixtures/positive-timed-clause-nodes.json",
             "fixtures/positive-timed-slot-nodes.json",
