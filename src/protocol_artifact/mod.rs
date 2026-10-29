@@ -42,6 +42,7 @@ pub use occurrence::{
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::native_model::NativeModel;
+use qsl_foundation::ByteDigest;
 
 /// The clock name of each temporal declaration of an admitted package, read
 /// once from the wire's `clock:` binding name at admission (ADR-012 section 9):
@@ -113,7 +114,6 @@ impl ClockNames {
 pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")
 }
-use qsl_foundation::ByteDigest;
 
 /// Payload wire version; the external reference retains its separate wire pair.
 pub const WIRE: &str = "quire.compiled-protocol/1";
@@ -240,8 +240,6 @@ pub enum Invalid {
     /// An offered artifact reference disagrees with an independently supplied
     /// selection it is required to match.
     Selection,
-    /// A supplied artifact's bytes do not hash to its declared digest.
-    Seal,
     /// A name is empty or exceeds the maximum permitted length.
     Name,
     /// An encoded structural integer, such as an index or count, exceeds the
@@ -377,7 +375,6 @@ const fn numeric_code(error: &NumberError) -> &'static str {
 const fn invalid_code(invalid: Invalid) -> &'static str {
     match invalid {
         Invalid::Selection => "invalid.selection",
-        Invalid::Seal => "invalid.seal",
         Invalid::Name => "invalid.name",
         Invalid::StructuralInteger => "invalid.structural-integer",
         Invalid::WrongNumericKind => "invalid.wrong-numeric-kind",
@@ -568,11 +565,10 @@ impl AdmittedPackage {
     pub fn package(&self) -> &wire::Package {
         &self.package
     }
-    /// Raw-byte digest that matched the independently expected external seal.
+    /// Digest of the exact admitted canonical bytes.
     pub fn digest(&self) -> ByteDigest {
         self.digest
     }
-
     /// Independently selected compiled artifact identity admitted by the reader.
     pub fn artifact(&self) -> &wire::ArtifactRef {
         &self.artifact

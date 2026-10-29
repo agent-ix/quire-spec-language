@@ -210,9 +210,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         work.charge(Dimension::PayloadBytes, bytes.len())?;
         work.bytes(bytes.len())?;
         let digest = ByteDigest::of(bytes);
-        if digest != expected.inherited.inherited.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
         let package: wire::Package = artifact::decode::bounded(bytes, &mut work)?;
         headers(&package, &expected.inherited.inherited, &mut work)?;
         v2::intake::validate(

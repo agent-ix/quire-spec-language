@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::support::native_rule_model;
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
@@ -33,7 +33,7 @@ pub fn reference(
     identity: &str,
     wire: &str,
     version: &str,
-    bytes: &[u8],
+    _bytes: &[u8],
 ) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
@@ -41,7 +41,6 @@ pub fn reference(
         authority: "test:protocol-reader".into(),
         identity: identity.into(),
         revision: revision("fixture-1"),
-        digest: ByteDigest::of(bytes),
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -614,7 +613,6 @@ impl Fixture {
         let start = source.text.len();
         source.text.push_str(text);
         source.text.push('\n');
-        source.artifact.digest = ByteDigest::of(source.text.as_bytes());
         declaration.name = name.into();
         declaration.requirement.identity = name.into();
         declaration.locus.span = w::Span {
@@ -1019,7 +1017,6 @@ impl Fixture {
         let source = &mut fixture.package.sources[0];
         source.text.truncate(start);
         source.text.push_str(&format!("protocol Demo using P over (view: M::Node) on origin {{\nrole Service on M::Node;\nrun {run}\n{FINISH}\n}}\n"));
-        source.artifact.digest = ByteDigest::of(source.text.as_bytes());
         declaration.locus.span.end = source.text.len() as u32;
         let whole = declaration.locus.clone();
         let locus = |text: &str| {
@@ -1426,7 +1423,6 @@ impl Fixture {
         let source = &mut fixture.package.sources[0];
         source.text.truncate(start);
         source.text.push_str(&format!("protocol Demo using P over (view: M::Node) on origin {{\n  run {PARALLEL}\n  {FINISH}\n}}\n"));
-        source.artifact.digest = ByteDigest::of(source.text.as_bytes());
         let locus = |at: usize, length: usize| w::Locus {
             source: 0,
             span: w::Span {

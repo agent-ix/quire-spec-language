@@ -196,7 +196,6 @@ pub(super) fn validate(
         same_ref(artifact, selected.artifact, work)?;
         work.bytes(model.profile.len())?;
         if artifact.kind != w::ArtifactKind::ModelPackage
-            || artifact.digest != selected.model.digest()
             || model.profile != selected.model.profile().as_str()
         {
             return Err(Error::Invalid(Invalid::Model));
@@ -543,7 +542,6 @@ fn validate_source(selected: &AdmittedModel<'_>, work: &mut Work) -> Result<(), 
     work.bytes(source.formal.revision.value.len())?;
     let revision = &source.formal.revision.value;
     if source.artifact.kind != w::ArtifactKind::Source
-        || source.artifact.digest != original.source().digest()
         || source.formal.document != original.identity().document().as_str()
         || revision.starts_with('0')
         || !revision.bytes().all(|byte| byte.is_ascii_digit())

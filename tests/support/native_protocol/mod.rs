@@ -89,7 +89,7 @@ fn reference(
     identity: &str,
     wire: &str,
     version: &str,
-    bytes: &[u8],
+    _bytes: &[u8],
 ) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
@@ -97,7 +97,6 @@ fn reference(
         authority: "test:native-emission".into(),
         identity: identity.into(),
         revision: revision("test:fixture-revision", "1"),
-        digest: ByteDigest::of(bytes),
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -691,7 +690,7 @@ impl Inputs {
         &self,
         proofs: &proofs::ProofReport<'_, '_, '_>,
         bytes: &[u8],
-        digest: ByteDigest,
+        _digest: ByteDigest,
         version: &str,
         test: impl FnOnce(artifact::Expected<'_>, &[artifact::ExpectedSource<'_>]) -> T,
     ) -> T {
@@ -791,14 +790,13 @@ impl Inputs {
                 declarations: &declarations[index],
             })
             .collect();
-        let mut artifact = reference(
+        let artifact = reference(
             w::ArtifactKind::LinkedPackage,
             "fixture-native-output",
             "quire.compiled-protocol",
             version,
             bytes,
         );
-        artifact.digest = digest;
         let language = w::Language {
             identity: "ix:native".into(),
             edition: "1-draft".into(),

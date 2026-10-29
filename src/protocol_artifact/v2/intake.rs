@@ -102,7 +102,6 @@ pub(crate) fn reference_bytes(reference: &artifact::wire::ArtifactRef) -> usize 
         .saturating_add(reference.identity.len())
         .saturating_add(reference.revision.namespace.len())
         .saturating_add(reference.revision.value.len())
-        .saturating_add(71)
         .saturating_add(reference.wire.identity.len())
         .saturating_add(reference.wire.version.len())
 }
@@ -494,9 +493,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         work.charge(Dimension::PayloadBytes, bytes.len())?;
         work.bytes(bytes.len())?;
         let digest = ByteDigest::of(bytes);
-        if digest != expected.inherited.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
         let package: wire::Package = artifact::decode::bounded(bytes, &mut work)?;
         headers(&package, &expected.inherited, &mut work)?;
         validate(&package, expected.temporal, &mut work)?;

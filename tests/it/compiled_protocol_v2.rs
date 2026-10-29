@@ -77,11 +77,7 @@ fn written_handoff_interchange_records_are_complete() {
             .expect("round-trip published mutation-manifest type"),
         manifest
     );
-    for path in [
-        manifest.base_offer,
-        manifest.base_artifact,
-        manifest.independent_selection,
-    ] {
+    for path in [manifest.base_offer, manifest.independent_selection] {
         assert!(
             root.join(&path).is_file(),
             "manifest path {path} is not a published file"
@@ -824,7 +820,6 @@ fn public_v2_refusal_codes_are_injective_across_every_declared_axis() {
             v2::ArtifactField::Identity,
             v2::ArtifactField::RevisionNamespace,
             v2::ArtifactField::RevisionValue,
-            v2::ArtifactField::Digest,
             v2::ArtifactField::WireIdentity,
             v2::ArtifactField::WireVersion,
         ]
@@ -870,7 +865,6 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
     errors.extend(
         [
             Invalid::Selection,
-            Invalid::Seal,
             Invalid::Name,
             Invalid::StructuralInteger,
             Invalid::WrongNumericKind,
@@ -929,7 +923,6 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
     // The two identities the downstream mutation corpus cannot express through
     // `v2::Refusal::code` alone.
     assert_eq!(Error::Json { line: 3, column: 9 }.code(), "json");
-    assert_eq!(Error::Invalid(Invalid::Seal).code(), "invalid.seal");
     // A version-2 refusal keeps its own established spelling.
     assert_eq!(
         Error::V2(v2::Refusal::Header(v2::HeaderField::Wire)).code(),
@@ -972,10 +965,7 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         // Emission produces bytes before any caller publishes an identity for
         // them; the reader retains the identity it independently admitted.
         assert!(emitted.admitted().artifact().is_none());
-        assert_eq!(
-            admitted.artifact().map(|artifact| artifact.digest),
-            Some(emitted.digest())
-        );
+        assert!(admitted.artifact().is_some());
 
         for (name, clock, profile, parameters) in [
             (
@@ -1391,8 +1381,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             revision_namespace.revision.namespace.push_str("/other");
             let mut revision_value = original.clone();
             revision_value.revision.value.push_str("-other");
-            let mut digest = original.clone();
-            digest.digest = emitted.digest();
             let mut wire_identity = original.clone();
             wire_identity.wire.identity.push_str("/canonical-json");
             let mut wire_version = original.clone();
@@ -1404,7 +1392,6 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
                 (v2::ArtifactField::Identity, identity),
                 (v2::ArtifactField::RevisionNamespace, revision_namespace),
                 (v2::ArtifactField::RevisionValue, revision_value),
-                (v2::ArtifactField::Digest, digest),
                 (v2::ArtifactField::WireIdentity, wire_identity),
                 (v2::ArtifactField::WireVersion, wire_version),
             ]
@@ -1567,9 +1554,8 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
 
 #[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
-fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
-    with_v2(|inputs, proofs, selected, temporal, emitted| {
-        let producer_temporal = &temporal.producer;
+fn malformed_clock_objects_refuse() {
+    with_v2(|inputs, proofs, _, temporal, emitted| {
         let temporal = &temporal.expected;
         let original: serde_json::Value = serde_json::from_slice(emitted.bytes()).unwrap();
         for (binding_index, field, renamed) in [
@@ -1601,25 +1587,6 @@ fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
                 ));
             }
         }
-
-        let definition = &producer_temporal[0].definition_artifact;
-        let at = selected
-            .dependencies
-            .iter()
-            .position(|dependency| &dependency.artifact == definition)
-            .unwrap();
-        let mut dependencies = selected.dependencies.to_vec();
-        let mut changed_bytes = dependencies[at].bytes.to_vec();
-        changed_bytes.push(b'\n');
-        dependencies[at].bytes = &changed_bytes;
-        let changed = native::Selections {
-            dependencies: &dependencies,
-            ..*selected
-        };
-        assert_error(
-            &native::admit_v2(proofs, &changed, producer_temporal, Limits::default()),
-            Error::Invalid(Invalid::Seal),
-        );
     });
 }
 
@@ -1947,67 +1914,5 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
                 ..
             }))
         ));
-    });
-}
-
-#[trace("TC-138", "FR-050-AC-3", "FR-050-AC-4")]
-#[test]
-fn digest_domains_and_original_producer_bytes_cannot_be_reinterpreted() {
-    with_v2(|inputs, proofs, selected, temporal, emitted| {
-        let producer_temporal = &temporal.producer;
-        let expected_temporal = &temporal.expected;
-        let definition_digest = expected_temporal[0].definition.artifact.digest;
-        assert_ne!(definition_digest, emitted.digest());
-        assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                definition_digest,
-                expected_temporal,
-                Limits::default(),
-            ),
-            Error::Invalid(Invalid::Seal),
-        );
-
-        let mut substituted_artifact = expected_temporal[0].definition.artifact.clone();
-        substituted_artifact.digest = emitted.digest();
-        let mut substituted_expected = expected_temporal.to_vec();
-        substituted_expected[0].definition.artifact = substituted_artifact;
-        assert_error(
-            &inputs.read_v2_bytes(
-                proofs,
-                emitted.bytes(),
-                emitted.digest(),
-                &substituted_expected,
-                Limits::default(),
-            ),
-            v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Artifact(
-                v2::ArtifactField::Digest,
-            ))),
-        );
-
-        let model_dependency = selected
-            .dependencies
-            .iter()
-            .position(|dependency| dependency.artifact == &inputs.model_reference)
-            .expect("selected original model package");
-        let original = selected.dependencies[model_dependency].bytes;
-        let value: serde_json::Value = serde_json::from_slice(original).expect("model JSON");
-        let recanonicalized = serde_json::to_vec_pretty(&value).expect("recanonicalized model");
-        assert_ne!(original, recanonicalized);
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(original).unwrap(),
-            serde_json::from_slice::<serde_json::Value>(&recanonicalized).unwrap()
-        );
-        let mut dependencies = selected.dependencies.to_vec();
-        dependencies[model_dependency].bytes = &recanonicalized;
-        let changed = native::Selections {
-            dependencies: &dependencies,
-            ..*selected
-        };
-        assert_error(
-            &native::admit_v2(proofs, &changed, producer_temporal, Limits::default()),
-            Error::Invalid(Invalid::Seal),
-        );
     });
 }

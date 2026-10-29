@@ -26,17 +26,11 @@ pub use writer::{write_v1, write_v2};
 /// Handoff-relative file containing the canonical version-1 package bytes.
 pub const PUBLISHED_V1_OFFER_FILE: &str = "compiled-protocol.json";
 
-/// Handoff-relative file containing the independently authorized version-1 artifact reference.
-pub const PUBLISHED_V1_ARTIFACT_REFERENCE_FILE: &str = "compiled-protocol.ref.json";
-
 /// Handoff-relative file containing the independent version-1 reader selection.
 pub const PUBLISHED_V1_SELECTION_FILE: &str = "expected.json";
 
 /// Handoff-relative file containing the canonical version-2 package bytes.
 pub const PUBLISHED_OFFER_FILE: &str = "compiled-protocol-v2.json";
-
-/// Handoff-relative file containing the independently authorized artifact reference.
-pub const PUBLISHED_ARTIFACT_REFERENCE_FILE: &str = "compiled-protocol-v2.ref.json";
 
 /// Handoff-relative file containing the independent version-2 reader selection.
 pub const PUBLISHED_SELECTION_FILE: &str = "expected-v2.json";
@@ -81,7 +75,7 @@ pub struct SelectedDeclaration {
 pub struct SelectedSource {
     /// Handoff-relative file holding the source's exact original bytes.
     pub file: String,
-    /// Exact source identity, revision and raw-byte digest.
+    /// Exact source identity and revision, with source text retained below.
     pub source: w::Source,
     /// Complete expected declaration inventory for this source.
     pub declarations: Vec<SelectedDeclaration>,
@@ -93,7 +87,7 @@ pub struct SelectedSource {
 pub struct SelectedModel {
     /// Exact model artifact reference.
     pub artifact: w::ArtifactRef,
-    /// Exact model source identity, revision and raw-byte digest.
+    /// Exact model source identity and revision, with its text retained below.
     pub source: w::Source,
     /// Handoff-relative file holding the model's original bytes.
     pub source_file: String,
@@ -105,7 +99,7 @@ pub struct SelectedModel {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
-    /// Exact offered compiled artifact reference, including its external seal.
+    /// Exact offered compiled artifact identity and wire selection.
     pub artifact: w::ArtifactRef,
     /// Exact selected compiler/consumer contract dependency.
     pub contract: w::ArtifactRef,
@@ -209,8 +203,6 @@ impl SelectedArtifactLimits {
 pub struct SelectedClockInput {
     /// Clock-input identity.
     pub identity: String,
-    /// Raw-byte digest of the clock input's original bytes.
-    pub digest: String,
     /// Handoff-relative file holding those bytes.
     pub file: String,
     /// Typed clock configuration the consumer expects.
@@ -258,8 +250,6 @@ pub struct MutationManifest {
     pub format: String,
     /// Handoff-relative unmutated control offer.
     pub base_offer: String,
-    /// Handoff-relative base artifact reference file.
-    pub base_artifact: String,
     /// Handoff-relative independent reader selection.
     pub independent_selection: String,
     /// Complete mutation inventory.
@@ -307,7 +297,7 @@ mod tests {
 
     use super::{
         MutationInput, MutationManifest, SelectedArtifactLimits, MUTATION_MANIFEST_FORMAT,
-        PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+        PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
     };
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
 
@@ -336,7 +326,6 @@ mod tests {
         let manifest = MutationManifest {
             format: MUTATION_MANIFEST_FORMAT.into(),
             base_offer: PUBLISHED_OFFER_FILE.into(),
-            base_artifact: PUBLISHED_ARTIFACT_REFERENCE_FILE.into(),
             independent_selection: PUBLISHED_SELECTION_FILE.into(),
             cases: Vec::new(),
         };
@@ -367,8 +356,7 @@ mod tests {
 
         use super::super::{
             MutationManifest, Selection, MUTATION_MANIFEST_FORMAT,
-            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
-            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+            PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
             PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         };
 
@@ -391,11 +379,7 @@ mod tests {
         #[trace("TC-121", "FR-042-AC-10")]
         fn written_v1_handoff_addresses_are_complete() {
             let (_directory, root) = written(super::super::write_v1);
-            for relative in [
-                PUBLISHED_V1_OFFER_FILE,
-                PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
-                PUBLISHED_V1_SELECTION_FILE,
-            ] {
+            for relative in [PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE] {
                 assert!(
                     root.join(relative).is_file(),
                     "written v1 member {relative}"
@@ -435,7 +419,6 @@ mod tests {
             let (_directory, root) = written(super::super::write_v2);
             for relative in [
                 PUBLISHED_OFFER_FILE,
-                PUBLISHED_ARTIFACT_REFERENCE_FILE,
                 PUBLISHED_SELECTION_FILE,
                 PUBLISHED_MUTATION_MANIFEST_FILE,
             ] {
@@ -449,7 +432,6 @@ mod tests {
             .expect("decode written mutation manifest");
             assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
             assert_eq!(manifest.base_offer, PUBLISHED_OFFER_FILE);
-            assert_eq!(manifest.base_artifact, PUBLISHED_ARTIFACT_REFERENCE_FILE);
             assert_eq!(manifest.independent_selection, PUBLISHED_SELECTION_FILE);
         }
     }

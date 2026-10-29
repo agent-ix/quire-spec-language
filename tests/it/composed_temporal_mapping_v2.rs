@@ -381,11 +381,6 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                     },
                     "{name}: the namespaced registered revision",
                 );
-                assert_eq!(
-                    selection.definition_artifact(),
-                    definition_artifact(selected, definition).digest,
-                    "{name}: the independently selected definition artifact",
-                );
             }
         }
     });

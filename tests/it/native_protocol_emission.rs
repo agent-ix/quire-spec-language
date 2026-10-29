@@ -407,7 +407,7 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
         body: SIMPLE,
         declarations: &["Simple"],
     }]);
-    let (source, bytes) = inputs
+    let (source, _) = inputs
         .dependencies
         .iter_mut()
         .find(|(_, bytes)| bytes.as_slice() == R::Protocol.bytes())
@@ -417,7 +417,6 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
         value: "opaque-protocol-source-object".into(),
     };
     let original = source.clone();
-    assert_eq!(original.digest, ByteDigest::of(bytes));
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),
@@ -457,10 +456,9 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
 
             let mut changed_bytes = R::Protocol.bytes().to_vec();
             changed_bytes.push(b'\n');
-            let mut resealed = original.clone();
-            resealed.digest = ByteDigest::of(&changed_bytes);
-            // Wrong raw-byte sealing refuses before recognition is ever reached.
-            let unsealed: Vec<_> = selected
+            // Recognition is by identity alone; no ArtifactRef byte seal is
+            // required for the selected source dependency.
+            let selected_dependencies: Vec<_> = selected
                 .dependencies
                 .iter()
                 .map(|dependency| {
@@ -475,39 +473,10 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
                     }
                 })
                 .collect();
-            failure(
-                &native::admit(
-                    proofs,
-                    &native::Selections {
-                        dependencies: &unsealed,
-                        ..*selected
-                    },
-                    Limits::default(),
-                ),
-                Error::Invalid(Invalid::Seal),
-            );
-            // Recognition is by identity alone: a resealed artifact — self-consistent
-            // but carrying altered content under the same source-object identity —
-            // still grants the compiler's Protocol interpretation.
-            let resealed_dependencies: Vec<_> = selected
-                .dependencies
-                .iter()
-                .map(|dependency| {
-                    if dependency.artifact == &original {
-                        artifact::SuppliedDependency {
-                            artifact: &resealed,
-                            bytes: &changed_bytes,
-                            requires: dependency.requires,
-                        }
-                    } else {
-                        *dependency
-                    }
-                })
-                .collect();
             assert!(native::admit(
                 proofs,
                 &native::Selections {
-                    dependencies: &resealed_dependencies,
+                    dependencies: &selected_dependencies,
                     ..*selected
                 },
                 Limits::default(),
@@ -1831,147 +1800,4 @@ fn missing_selected_model_and_independent_limits_cannot_emit_partial_packages() 
             );
         },
     );
-}
-
-/// A producer-owned configuration object, authored with member order and
-/// whitespace that are deliberately not RFC 8785/JCS canonical.
-const CONFIG_AUTHORED: &[u8] =
-    b"{\n  \"profile\": \"native-state-model\",\n  \"edition\": \"1-draft\",\n  \"declarations\": 1\n}\n";
-
-/// The same configuration object written out literally in RFC 8785/JCS form.
-/// This repository registers no JCS canonicalizer and must not grow one; the
-/// constant exists only to name the other domain's byte sequence.
-const CONFIG_JCS: &[u8] =
-    b"{\"declarations\":1,\"edition\":\"1-draft\",\"profile\":\"native-state-model\"}";
-
-const CONFIG_IDENTITY: &str = "fixture-producer-config";
-
-/// The producer's external byte selection for the configuration object. Only the
-/// digest varies across the cases below; every other selector is held fixed.
-fn config_reference(digest: ByteDigest) -> w::ArtifactRef {
-    w::ArtifactRef {
-        ref_version: "ix.artifact-ref/3-draft".into(),
-        kind: w::ArtifactKind::Environment,
-        authority: "test:native-emission".into(),
-        identity: CONFIG_IDENTITY.into(),
-        revision: w::Revision {
-            namespace: "test:producer-config-revision".into(),
-            value: "1".into(),
-        },
-        digest,
-        wire: w::Wire {
-            identity: "test:producer-config".into(),
-            version: "1".into(),
-        },
-    }
-}
-
-/// Real native source with the producer-owned config artifact added to the exact
-/// dependency inventory under the given reference digest and supplied bytes.
-fn config_inputs(digest: ByteDigest, bytes: &[u8]) -> Inputs {
-    let mut inputs = Inputs::new(&[Unit {
-        name: "digest-domains-config",
-        body: SIMPLE,
-        declarations: &["Simple"],
-    }]);
-    inputs
-        .dependencies
-        .push((config_reference(digest), bytes.to_vec()));
-    inputs
-}
-
-#[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-3")]
-fn recanonicalized_producer_bytes_do_not_satisfy_the_authored_config_selection() {
-    // The two spellings denote the same object and differ only in
-    // canonicalization, so no structural comparison can tell the cases apart.
-    assert_ne!(CONFIG_AUTHORED, CONFIG_JCS);
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(CONFIG_AUTHORED).unwrap(),
-        serde_json::from_slice::<serde_json::Value>(CONFIG_JCS).unwrap()
-    );
-    let authored = ByteDigest::of(CONFIG_AUTHORED);
-    let canonical = ByteDigest::of(CONFIG_JCS);
-    assert_ne!(authored, canonical);
-    // Positive controls: each spelling admits when the reference selects its own
-    // bytes, so neither spelling is refused on its own account and no unrelated
-    // guard is armed by this fixture.
-    for (name, digest, bytes) in [
-        (
-            "authored reference over authored bytes",
-            authored,
-            CONFIG_AUTHORED,
-        ),
-        (
-            "canonical reference over canonical bytes",
-            canonical,
-            CONFIG_JCS,
-        ),
-    ] {
-        let inputs = config_inputs(digest, bytes);
-        inputs.with_proofs(
-            TypeLimits::default(),
-            proofs::ProofLimits::default(),
-            |proofs, selections| {
-                discharged(proofs);
-                let admitted = native::admit(proofs, selections, Limits::default())
-                    .into_result()
-                    .unwrap_or_else(|error| panic!("{name}: {error:?}"));
-                let dependency = admitted
-                    .package()
-                    .dependencies
-                    .iter()
-                    .find(|dependency| dependency.artifact.identity == CONFIG_IDENTITY)
-                    .expect("the exact producer-selected dependency is retained");
-                assert_eq!(dependency.artifact, config_reference(digest), "{name}");
-            },
-        );
-    }
-    // Crossing the same two cells is the only change: an equal-meaning
-    // re-encoding of the producer's object does not satisfy the authored byte
-    // selection, and the authored spelling does not satisfy a canonicalized one.
-    // Admission refuses outright, so no artifact is emitted in either direction.
-    for (name, digest, bytes) in [
-        (
-            "authored reference over recanonicalized bytes",
-            authored,
-            CONFIG_JCS,
-        ),
-        (
-            "canonical reference over authored bytes",
-            canonical,
-            CONFIG_AUTHORED,
-        ),
-    ] {
-        let inputs = config_inputs(digest, bytes);
-        inputs.with_proofs(
-            TypeLimits::default(),
-            proofs::ProofLimits::default(),
-            |proofs, selections| {
-                discharged(proofs);
-                let mismatches: Vec<_> = selections
-                    .dependencies
-                    .iter()
-                    .filter(|dependency| {
-                        ByteDigest::of(dependency.bytes) != dependency.artifact.digest
-                    })
-                    .map(|dependency| dependency.artifact.identity.as_str())
-                    .collect();
-                assert_eq!(mismatches, [CONFIG_IDENTITY], "{name}: one changed axis");
-                let report = native::admit(proofs, selections, Limits::default());
-                assert_eq!(
-                    report.result().err(),
-                    Some(&Error::Invalid(Invalid::Seal)),
-                    "{name}"
-                );
-                // Native metadata verifies dependency seals before visiting
-                // source or model tables. Together with the isolated mismatch
-                // and matched controls, this distinguishes this refusal from
-                // a later reader/source seal failure.
-                assert_eq!(report.usage().sources, 0, "{name}");
-                assert_eq!(report.usage().models, 0, "{name}");
-                assert_eq!(report.locus(), None, "{name}");
-            },
-        );
-    }
 }

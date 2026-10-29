@@ -8,11 +8,11 @@ use std::{
     io::{self, Write},
 };
 
+use qsl_foundation::ByteDigest;
 use serde::Serialize;
 use serde_json::ser::{CompactFormatter, Formatter};
 
 use super::{report, wire, work::Work, Candidate, Dimension, Error, Invalid, Limits, Report};
-use qsl_foundation::ByteDigest;
 
 struct Meter<'a> {
     work: &'a mut Work,

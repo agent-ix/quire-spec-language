@@ -7,7 +7,6 @@ use crate::support::protocol_artifact as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use quire_contract_model as ir;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
     self as artifact, wire as w, Dimension, Error, Invalid, Limits, NumberComponent, NumberError,
@@ -43,12 +42,6 @@ fn complete_wire_candidate_binds_real_model_and_independent_original_inventory()
     );
     let package = admitted.package();
     let model = &package.models[0];
-    assert_eq!(
-        package.dependencies[model.artifact as usize]
-            .artifact
-            .digest,
-        fixture.model.digest()
-    );
     assert_eq!(model.profile, fixture.model.profile().as_str());
     assert_eq!(model.exports[0].kind, w::ExportKind::Object);
     assert_eq!(model.exports[0].path, ["Node"]);
@@ -128,38 +121,6 @@ fn fixed_member_order_and_serde_escaping_have_one_selected_byte_spelling() {
     }
 }
 
-// BLOCKED-BY QSL-1270 (draco): expected-byte-seal behaviour, removed with
-// `ArtifactRef.digest`.
-#[test]
-#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
-fn resealing_a_tampered_candidate_cannot_replace_the_original_expected_seal() {
-    let fixture = Fixture::new();
-    let original = fixture.candidate();
-    let selected = Fixture::seal(original.bytes());
-    let mut offered = fixture.package.clone();
-    offered.declarations[0].values[0].operation = w::ValueOperation::Boolean { value: false };
-    let tampered = artifact::encode_candidate(&offered, Limits::default())
-        .into_result()
-        .unwrap();
-    assert_ne!(tampered.digest(), selected.digest);
-    failure(
-        &fixture.read(tampered.bytes(), &selected, Limits::default()),
-        Error::Invalid(Invalid::Seal),
-    );
-    for foreign in [
-        fixture.model.digest(),
-        fixture.package.sources[0].artifact.digest,
-        fixture.package.contract.digest,
-    ] {
-        let mut substituted = selected.clone();
-        substituted.digest = foreign;
-        failure(
-            &fixture.read(original.bytes(), &substituted, Limits::default()),
-            Error::Invalid(Invalid::Seal),
-        );
-    }
-}
-
 #[test]
 #[trace("TC-121", "FR-042-AC-3")]
 fn independent_header_and_source_selections_refuse_single_axis_substitution() {
@@ -184,14 +145,6 @@ fn independent_header_and_source_selections_refuse_single_axis_substitution() {
             Error::Invalid(Invalid::Selection),
         );
     }
-    let mut offered = fixture.package.clone();
-    offered.sources[0].text.push(' ');
-    failure(&fixture.offered(&offered), Error::Invalid(Invalid::Seal));
-    offered.sources[0].artifact.digest = ByteDigest::of(offered.sources[0].text.as_bytes());
-    failure(
-        &fixture.offered(&offered),
-        Error::Invalid(Invalid::Selection),
-    );
 }
 
 #[test]
@@ -877,8 +830,8 @@ fn known_refusals_survive_zero_entries_without_a_diagnostic_allocation() {
     let fixture = Fixture::new();
     let candidate = fixture.candidate();
     let mut selected = Fixture::seal(candidate.bytes());
-    selected.digest = ByteDigest::of(b"a different independently selected artifact");
-    // Seal checking precedes JSON census and requires exactly zero entries.
+    selected.wire.version.push_str("-other");
+    // Header selection checking precedes JSON census and requires zero entries.
     // The terminal Error and optional locus are inline report fields.
     let report = fixture.read(
         candidate.bytes(),
@@ -888,7 +841,7 @@ fn known_refusals_survive_zero_entries_without_a_diagnostic_allocation() {
             ..Limits::default()
         },
     );
-    failure(&report, Error::Invalid(Invalid::Seal));
+    failure(&report, Error::Invalid(Invalid::Selection));
     assert_eq!(report.usage().entries, 0);
     assert_eq!(report.limits().entries, 0);
     assert_eq!(report.locus(), None);
@@ -1438,137 +1391,9 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
     }
 }
 
-/// RFC 8785 (JCS) canonical bytes of a small consumer protocol-result document.
-/// Sorted ASCII member names, no insignificant whitespace and bare safe integers
-/// fix this spelling without importing a second canonicalizer into the producer.
-const RESULT_JCS: &[u8] = br#"{"accepted":true,"protocolResult":"ok","workflow":1}"#;
-
-/// Digest of the consumer's RFC 8785/JCS protocol-result domain. The producer
-/// neither computes nor accepts this identity for any of its own references.
-fn result_jcs_digest() -> ByteDigest {
-    // Independently spelled members reach the same canonical bytes, so the
-    // vector above is the document's canonical form and not one chosen spelling.
-    assert_eq!(
-        serde_json::to_vec(&json!({"workflow": 1, "protocolResult": "ok", "accepted": true}))
-            .unwrap(),
-        RESULT_JCS
-    );
-    ByteDigest::of(RESULT_JCS)
-}
-
-/// Every producer-owned digest domain the artifact retains: raw model package
-/// bytes, the model's canonical IR object and original native source text.
-fn producer_digests(fixture: &Fixture) -> [ByteDigest; 3] {
-    let canonical = fixture
-        .model
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    [
-        fixture.model.digest(),
-        ByteDigest::of(canonical.bytes().as_slice()),
-        fixture.package.sources[0].artifact.digest,
-    ]
-}
-
 #[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
-fn a_producer_source_model_or_config_digest_is_never_reinterpreted_as_the_compiled_artifact_seal() {
-    let fixture = Fixture::new();
-    let candidate = fixture.candidate();
-    let accepted = Fixture::seal(candidate.bytes());
-    // Positive control: the same producer references admit under the real seal,
-    // so each refusal below is attributable to the substituted digest alone.
-    fixture
-        .read(candidate.bytes(), &accepted, Limits::default())
-        .result()
-        .expect("complete reader fixture");
-    for producer in producer_digests(&fixture) {
-        assert_ne!(producer, accepted.digest);
-        // The compiled-artifact byte domain refuses a producer-owned digest on
-        // its own seal cause, with no producer reference consulted first.
-        let mut substituted = accepted.clone();
-        substituted.digest = producer;
-        failure(
-            &fixture.read(candidate.bytes(), &substituted, Limits::default()),
-            Error::Invalid(Invalid::Seal),
-        );
-        // Offering the same producer digest as an accepted contract reference
-        // refuses independently, on the selection cause rather than the seal.
-        let mut offered = fixture.package.clone();
-        offered.contract.digest = producer;
-        failure(
-            &fixture.offered(&offered),
-            Error::Invalid(Invalid::Selection),
-        );
-    }
-}
-
-#[test]
-#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
-fn a_protocol_result_jcs_digest_is_never_accepted_as_a_model_package_digest() {
-    let jcs = result_jcs_digest();
-    // The model package byte authority refuses even when the offered bytes are
-    // the result document itself, so its own seal cause cannot mask the model
-    // cause: the admitted native model's raw-byte digest remains the authority.
-    let mut fixture = Fixture::new();
-    let model = fixture.package.models[0].artifact as usize;
-    assert_ne!(fixture.package.dependencies[model].artifact.digest, jcs);
-    fixture.package.dependencies[model].artifact.digest = jcs;
-    fixture.dependency_bytes[model] = RESULT_JCS.to_vec();
-    // Every embedded copy of that producer reference is substituted too, so the
-    // reader's separate binding-authority selection cannot mask the model cause.
-    let identity = fixture.package.dependencies[model]
-        .artifact
-        .identity
-        .clone();
-    for declaration in &mut fixture.package.declarations {
-        for binding in &mut declaration.bindings {
-            if binding.authority.identity == identity {
-                binding.authority.digest = jcs;
-            }
-        }
-    }
-    let candidate = fixture.candidate();
-    failure(
-        &fixture.read(
-            candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
-            Limits::default(),
-        ),
-        Error::Invalid(Invalid::Model),
-    );
-    // The model's original producer source keeps its foreign-locus cause.
-    let mut fixture = Fixture::new();
-    assert_ne!(fixture.foreign_source.digest, jcs);
-    fixture.foreign_source.digest = jcs;
-    let candidate = fixture.candidate();
-    failure(
-        &fixture.read(
-            candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
-            Limits::default(),
-        ),
-        Error::Invalid(Invalid::ForeignLocus),
-    );
-    // The native source text retains its exact raw-byte seal cause.
-    let mut fixture = Fixture::new();
-    assert_ne!(fixture.package.sources[0].artifact.digest, jcs);
-    fixture.package.sources[0].artifact.digest = jcs;
-    let candidate = fixture.candidate();
-    failure(
-        &fixture.read(
-            candidate.bytes(),
-            &Fixture::seal(candidate.bytes()),
-            Limits::default(),
-        ),
-        Error::Invalid(Invalid::Seal),
-    );
-}
-
-#[test]
-#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
-fn an_admitted_producer_reference_is_retained_byte_exactly_without_recanonicalization() {
+fn an_admitted_producer_reference_is_retained_without_a_byte_seal() {
     let fixture = Fixture::new();
     let candidate = fixture.candidate();
     let report = fixture.read(
@@ -1578,36 +1403,16 @@ fn an_admitted_producer_reference_is_retained_byte_exactly_without_recanonicaliz
     );
     let admitted = report.result().expect("complete reader fixture");
     let package = admitted.package();
-    let canonical = fixture
-        .model
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    // The retained model reference hashes the producer's exact artifact bytes;
-    // no canonical projection of the same model is substituted for them.
+    // The retained reference carries its source identity; artifact bytes are
+    // not sealed into the shared reference envelope.
     let model = &package.dependencies[package.models[0].artifact as usize].artifact;
-    assert_eq!(model.digest, ByteDigest::of(fixture.model.artifact_bytes()));
-    assert_eq!(model.digest, fixture.model.digest());
-    assert_ne!(model.digest, ByteDigest::of(canonical.bytes().as_slice()));
-    // Original native source bytes and their producer digest survive unparsed.
+    assert_eq!(
+        model,
+        &fixture.package.dependencies[package.models[0].artifact as usize].artifact
+    );
     let source = &package.sources[0];
     assert_eq!(source.text, fixture.package.sources[0].text);
-    assert_eq!(
-        source.artifact.digest,
-        ByteDigest::of(source.text.as_bytes())
-    );
-    assert_eq!(
-        fixture.foreign_source.digest,
-        ByteDigest::of(fixture.model.source().source().text().as_bytes())
-    );
-    // The compiled-artifact digest stays in the consumer's own byte domain and
-    // never collapses onto a producer reference or the result JCS domain.
     assert_eq!(admitted.digest(), ByteDigest::of(candidate.bytes()));
-    for producer in producer_digests(&fixture) {
-        assert_ne!(admitted.digest(), producer);
-        assert_ne!(result_jcs_digest(), producer);
-    }
-    assert_ne!(admitted.digest(), result_jcs_digest());
     // Re-encoding the admitted package reproduces the exact offered bytes, so
     // admission recanonicalized no retained reference.
     assert_eq!(

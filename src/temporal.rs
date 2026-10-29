@@ -294,15 +294,13 @@ fn authenticated_selection<'a>(
         .ok()
         .and_then(|index| inherited.definitions.get(index))
         .ok_or(Refusal::Reference { subject })?;
-    let artifact = usize::try_from(definition.artifact)
+    usize::try_from(definition.artifact)
         .ok()
         .and_then(|index| inherited.dependencies.get(index))
-        .ok_or(Refusal::Reference { subject })?
-        .artifact
-        .digest;
+        .ok_or(Refusal::Reference { subject })?;
     Ok((
         binding,
-        AuthenticatedSelection::new(package.digest(), declaration, definition, artifact),
+        AuthenticatedSelection::new(package.digest(), declaration, definition),
     ))
 }
 

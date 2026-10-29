@@ -3,6 +3,7 @@
 
 use super::{wire::*, work::Work, *};
 use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
+use qsl_foundation::ByteDigest;
 
 type Key<'a> = (
     &'a str,
@@ -64,7 +65,6 @@ fn reference_bytes(value: &ArtifactRef) -> usize {
         + value.revision.value.len()
         + value.wire.identity.len()
         + value.wire.version.len()
-        + 71
 }
 
 fn retained_text(value: &str) -> Result<String, Error> {
@@ -86,7 +86,6 @@ pub(super) fn retained_reference(value: &ArtifactRef) -> Result<ArtifactRef, Err
             namespace: retained_text(&value.revision.namespace)?,
             value: retained_text(&value.revision.value)?,
         },
-        digest: value.digest,
         wire: Wire {
             identity: retained_text(&value.wire.identity)?,
             version: retained_text(&value.wire.version)?,
@@ -193,9 +192,6 @@ pub(super) fn selected<'a>(
             return Err(Error::Invalid(Invalid::Duplicate));
         }
         work.bytes(dependency.bytes.len())?;
-        if ByteDigest::of(dependency.bytes) != dependency.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
         let offered = &package.dependencies[index];
         sorted_indices(&offered.requires, work)?;
         if offered.requires.len() != dependency.requires.len() {
@@ -303,9 +299,6 @@ pub(super) fn sources(
         revision(&source.formal.revision)?;
         work.charge(Dimension::SourceBytes, source.text.len())?;
         work.bytes(source.text.len())?;
-        if ByteDigest::of(source.text.as_bytes()) != source.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
     }
     // Validate ordering before using binary searches for independent selections.
     for declaration in &package.declarations {
@@ -513,9 +506,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         work.charge(Dimension::PayloadBytes, bytes.len())?;
         work.bytes(bytes.len())?;
         let digest = ByteDigest::of(bytes);
-        if digest != expected.artifact.digest {
-            return Err(Error::Invalid(Invalid::Seal));
-        }
         let package = super::decode::package(bytes, &mut work)?;
         headers(&package, expected, &mut work)?;
         let supplied = selected(&package, expected, &mut work)?;

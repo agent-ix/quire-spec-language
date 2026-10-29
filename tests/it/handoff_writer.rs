@@ -4,7 +4,7 @@
 //! from the files on disk alone, through QSL's own strict readers.
 //!
 //! Each test reads back only what the writer put in its output directory:
-//! the `expected*.json` selection, the offer, its reference, the original
+//! the `expected*.json` selection, the offer, the original
 //! sources, the model source and every `dependencies/` file. Nothing is taken
 //! from the writer's in-memory state.
 
@@ -24,11 +24,10 @@ use quire_spec_language::{
     protocol_artifact::{
         self as artifact,
         handoff::{
-            self, writer, Selection, SelectionV2, PUBLISHED_ARTIFACT_REFERENCE_FILE,
-            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+            self, writer, Selection, SelectionV2, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
             PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
-        v2, wire as w,
+        v2,
     },
 };
 
@@ -64,13 +63,11 @@ impl Loaded {
     fn new(root: &Path, selection: Selection) -> Self {
         for source in &selection.sources {
             let bytes = fs::read(root.join(&source.file)).expect("written original source");
-            assert_eq!(ByteDigest::of(&bytes), source.source.artifact.digest);
             assert_eq!(bytes, source.source.text.as_bytes());
         }
 
         let selected = &selection.model.source;
         let bytes = fs::read(root.join(&selection.model.source_file)).expect("model source");
-        assert_eq!(ByteDigest::of(&bytes), selected.artifact.digest);
         let source = Source::read(
             SourceIdentity {
                 authority: selected.native.authority.clone(),
@@ -116,12 +113,6 @@ impl Loaded {
             .iter()
             .map(|dependency| {
                 let bytes = fs::read(root.join(&dependency.file)).expect("written dependency");
-                assert_eq!(
-                    ByteDigest::of(&bytes),
-                    dependency.artifact.digest,
-                    "{}",
-                    dependency.file
-                );
                 bytes
             })
             .collect::<Vec<_>>();
@@ -231,19 +222,13 @@ fn write_v1_handoff_admits_from_its_files_through_the_strict_v1_reader() {
     )
     .expect("decode expected.json through the published type");
     let offer = fs::read(root.join(PUBLISHED_V1_OFFER_FILE)).expect("written v1 offer");
-    let reference: w::ArtifactRef = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_V1_ARTIFACT_REFERENCE_FILE)).expect("written v1 reference"),
-    )
-    .expect("decode the written v1 reference");
-    assert_eq!(reference, selection.artifact);
-    assert_eq!(ByteDigest::of(&offer), selection.artifact.digest);
 
     let loaded = Loaded::new(&root, selection);
     let admitted = loaded
         .with_expected(|expected| artifact::read(&offer, &expected, artifact::Limits::default()))
         .into_result()
         .expect("the strict v1 reader admits the written handoff");
-    assert_eq!(admitted.digest(), loaded.selection.artifact.digest);
+    assert_eq!(admitted.digest(), ByteDigest::of(&offer));
 }
 
 #[test]
@@ -256,19 +241,6 @@ fn write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader() {
     )
     .expect("decode expected-v2.json through the published type");
     let offer = fs::read(root.join(PUBLISHED_OFFER_FILE)).expect("written v2 offer");
-    let reference: w::ArtifactRef = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_ARTIFACT_REFERENCE_FILE)).expect("written v2 reference"),
-    )
-    .expect("decode the written v2 reference");
-    assert_eq!(reference, selection.inherited.artifact);
-    assert_eq!(ByteDigest::of(&offer), selection.inherited.artifact.digest);
-    for temporal in &selection.temporal {
-        let clock = fs::read(root.join(&temporal.clock_input.file)).expect("written clock input");
-        assert_eq!(
-            ByteDigest::of(&clock).to_string(),
-            temporal.clock_input.digest
-        );
-    }
 
     let temporal = selection.temporal.clone();
     let declarations = temporal

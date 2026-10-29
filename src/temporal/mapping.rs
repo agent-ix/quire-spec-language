@@ -125,7 +125,6 @@ pub struct Retained {
 ///     declaration: 0,
 ///     definition_identity: String::new(),
 ///     definition_revision: Revision { namespace: String::new(), value: String::new() },
-///     definition_artifact: ByteDigest::of(b"forged"),
 /// };
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -134,7 +133,6 @@ pub struct AuthenticatedSelection {
     declaration: usize,
     definition_identity: String,
     definition_revision: w::Revision,
-    definition_artifact: ByteDigest,
 }
 
 impl AuthenticatedSelection {
@@ -142,14 +140,12 @@ impl AuthenticatedSelection {
         package_digest: ByteDigest,
         declaration: usize,
         definition: &w::Definition,
-        definition_artifact: ByteDigest,
     ) -> Self {
         Self {
             package_digest,
             declaration,
             definition_identity: definition.identity.clone(),
             definition_revision: definition.revision.clone(),
-            definition_artifact,
         }
     }
 
@@ -171,11 +167,6 @@ impl AuthenticatedSelection {
     /// Registered semantic revision of that definition, with its namespace.
     pub fn definition_revision(&self) -> &w::Revision {
         &self.definition_revision
-    }
-
-    /// Raw-byte digest of the exact definition artifact the package selects.
-    pub fn definition_artifact(&self) -> ByteDigest {
-        self.definition_artifact
     }
 }
 

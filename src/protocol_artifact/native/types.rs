@@ -75,9 +75,7 @@ impl<'a> ValueBuilder<'a> {
             previous = Some(dependency);
             match selection {
                 ModelSelection::Native { model, .. } => {
-                    if model.artifact.kind != w::ArtifactKind::ModelPackage
-                        || model.artifact.digest != model.model.digest()
-                    {
+                    if model.artifact.kind != w::ArtifactKind::ModelPackage {
                         return Err(Error::Invalid(Invalid::Model));
                     }
                     let exports = model_exports(model, work)?;
@@ -694,7 +692,6 @@ fn copy_artifact(value: &w::ArtifactRef, work: &mut Work) -> Result<w::ArtifactR
             namespace: text(&value.revision.namespace, work)?,
             value: text(&value.revision.value, work)?,
         },
-        digest: value.digest,
         wire: w::Wire {
             identity: text(&value.wire.identity, work)?,
             version: text(&value.wire.version, work)?,

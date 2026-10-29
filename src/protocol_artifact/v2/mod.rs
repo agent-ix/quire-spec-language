@@ -76,15 +76,14 @@ impl AdmittedPackage {
     pub fn package(&self) -> &wire::Package {
         &self.package
     }
+    /// Digest of the exact admitted version-2 bytes.
+    pub fn digest(&self) -> ByteDigest {
+        self.digest
+    }
 
     /// The inherited version-1-shaped graph retained without translation.
     pub fn inherited(&self) -> &super::wire::Package {
         &self.package.inherited
-    }
-
-    /// Digest of the exact admitted version-2 bytes.
-    pub fn digest(&self) -> ByteDigest {
-        self.digest
     }
 
     /// Independently admitted model schema retained for this model-table entry.

@@ -170,24 +170,6 @@ impl<'de> Deserialize<'de> for JcsDigest {
     }
 }
 
-// Exact shared raw-byte digest spelling; no new digest identity or algorithm.
-mod digest {
-    use super::*;
-    pub(super) fn serialize<S: Serializer>(
-        value: &ByteDigest,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(value)
-    }
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        decoder: D,
-    ) -> Result<ByteDigest, D::Error> {
-        String::deserialize(decoder)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
-
 labels! {
     /// Shared ArtifactRef/3 kinds used by compiled and assessment boundaries.
     ArtifactKind {
@@ -295,8 +277,6 @@ record! { /// Narrow representation of the exact shared ArtifactRef/3 object.
         identity: String,
         /// The artifact's selected revision.
         revision: Revision,
-        /// The artifact's content digest, in its exact selected domain.
-        #[serde(with = "digest")] digest: ByteDigest,
         /// The wire schema this artifact reference itself conforms to.
         wire: Wire
     }

@@ -184,10 +184,6 @@ fn original_object_roles_grant_distinct_populations_despite_equal_universe_names
                     exported.locus.formal.document,
                     inputs.model.source().identity().document().as_str()
                 );
-                assert_eq!(
-                    exported.locus.source.digest,
-                    inputs.model.source().source().digest()
-                );
                 let (index, declaration) = package
                     .declarations
                     .iter()
