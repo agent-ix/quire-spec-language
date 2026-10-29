@@ -73,7 +73,7 @@ evidence state.
 
 ## Requirements Summary
 
-- [x] **QSL #116:** install the frozen contract, exact allocation,
+- [x] **QSL #116:** install the contract, exact allocation,
   evidence reconciliation and serial issue graph.
 - [x] **AD-003, FR-131/134, FR-302/303 and FR-339:** complete source packages,
   grammar, identities, lossless CST and incremental source tooling foundations
@@ -103,7 +103,7 @@ belong to Agent-C; they are not silently reassigned to this lane.
   repository owner, with final QSL qualification consuming the merged
   lifecycle tooling.
 - QSL #131 and #120 consume the merged filament-core-data semantic IR crates and
-  quire-rs extraction by exact git revision; they edit neither repository.
+  quire-rs extraction through Cargo dependencies; they edit neither repository.
 - QSL #121 consumes merged temporal/protocol artifacts and preserves their
   semantic authority rather than importing their evaluators.
 - QSL #123 consumes merged temporal, protocol, IR and integration results under
@@ -184,7 +184,7 @@ complete and partial counts are therefore the same over both row sets.
 - [ ] **TC-047, TC-182/183, TC-230/231, IT-070/071/076 / QSL #123:**
   authority-bound diagnostic catalog/causes, canonical manifest and extension
   compatibility, failure-stage and complete attributable qualification over all
-  Agent-A rows and exact dependency pins.
+  Agent-A rows and their dependency declarations.
 
 ## Atomic capability allocation
 
@@ -281,7 +281,7 @@ concrete evidence owner; task files may require additional boundary cases.
 
 ### Track A: Critical path (serial)
 
-- **A00 = Task-046** adoption — exit: the frozen plan is validated and audited.
+- **A00 = Task-046** adoption — exit: the plan is validated and audited.
 - **A01 = Task-047** source packages — hard; exit: complete syntax and CST round-trip exactly.
 - **A02 = Task-048** scalar semantics — hard; exit: exact numeric/text/unit matrices pass.
 - **A03 = Task-049** composites/functions — hard; exit: collection and totality properties pass.
@@ -294,7 +294,7 @@ concrete evidence owner; task files may require additional boundary cases.
 
 ```text
 A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
-        \------ external producer/consumer pins merge before use ------/
+        \------ external producer/consumer changes merge before use ------/
 ```
 
 ## Task File Mapping
@@ -313,7 +313,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
 ## Coordination Rules
 
 - One issue and one PR at a time from a fresh default-branch worktree.
-- Shared interfaces are consumed only from merged pinned revisions; no lane edits
+- Shared interfaces are consumed only after their changes merge; no lane edits
   another producer's repository or redefines a central payload.
 - Rust only for first-party implementation, tests, fixtures, generators and
   audits. Crates remain `publish = false`.
