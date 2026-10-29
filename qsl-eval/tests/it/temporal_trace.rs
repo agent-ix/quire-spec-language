@@ -646,7 +646,7 @@ fn work_is_charged_per_visit_and_exhaustion_returns_no_truth_value() {
     assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
     assert_eq!(incomplete.limit, 3);
     assert_eq!(incomplete.consumed, 3);
-    assert_eq!(incomplete.charge_point, ChargePoint::GraphExpand);
+    assert_eq!(incomplete.charge_point, ChargePoint::TemporalVisit);
     assert_eq!(spent, 3);
     assert_eq!(
         TemporalOutcome::Incomplete(incomplete).category(),
