@@ -11,15 +11,13 @@ use quire_exact::{IntegerInterval, NodeKey, Origin, Role};
 use quire_semantic_value::supplied_stop::{SuppliedLimitKind, SuppliedLimits};
 
 const NODE: [u8; 32] = [0x22; 32];
-const P0: &str = "ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda";
-const T0: &str = "652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477";
+/// The first argument's parameter and type nodes: arbitrary distinct ids.
+const P0: [u8; 32] = [0x55; 32];
+const T0: [u8; 32] = [0x66; 32];
 
-fn from_hex(hex: &str) -> WireNodeId {
-    let mut bytes = [0_u8; 32];
-    for (index, byte) in bytes.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).unwrap();
-    }
-    WireNodeId::from_digest(bytes)
+/// 64 lowercase hex digits of `bytes`.
+fn hex64(bytes: [u8; 32]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn argument(
@@ -36,7 +34,7 @@ fn argument(
 
 /// The spec's first argument: `x: Int[0, 9]` (QSpec FR-322 P4 typed by T4).
 fn first() -> ValueParityArgument {
-    argument(from_hex(P0), 0, from_hex(T0))
+    argument(WireNodeId::from_digest(P0), 0, WireNodeId::from_digest(T0))
 }
 
 fn second() -> ValueParityArgument {
@@ -75,24 +73,26 @@ fn identity_hex(preimage: &ValueParityPreimage) -> String {
 #[trace("TC-1252", "FR-484-AC-1")]
 #[test]
 fn tc_1252_the_preimage_encodes_to_the_specified_bytes_and_digest() {
-    let text = concat!(
-        r#"{"arguments":[{"parameter":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","position":0,"type":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477"},"#,
-        r#"{"parameter":"3333333333333333333333333333333333333333333333333333333333333333","position":1,"type":"4444444444444444444444444444444444444444444444444444444444444444"}],"#,
-        r#""node":"2222222222222222222222222222222222222222222222222222222222222222","#,
-        r#""occurrence_key":{"ordinal":0,"role":"declaration"},"subject_kind":"function-value-parity"}"#
+    let (p0, t0) = (hex64(P0), hex64(T0));
+    let text = format!(
+        concat!(
+            r#"{{"arguments":[{{"parameter":"{p0}","position":0,"type":"{t0}"}},"#,
+            r#"{{"parameter":"{p1}","position":1,"type":"{t1}"}}],"#,
+            r#""node":"{node}","#,
+            r#""occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"function-value-parity"}}"#
+        ),
+        p0 = p0,
+        t0 = t0,
+        p1 = hex64([0x33; 32]),
+        t1 = hex64([0x44; 32]),
+        node = hex64(NODE),
     );
     assert_eq!(text.len(), 516);
     assert_eq!(bytes_of(&v2()), text);
-    assert_eq!(
-        identity_hex(&v2()),
-        "793909279b4897ab8f03f3c14547fc08861d353d979e471aa423c2bce9d8b92c"
-    );
-    let argument_text = format!(r#"{{"parameter":"{P0}","position":0,"type":"{T0}"}}"#);
+    // The identity is the SHA-256 of those bytes, hashed independently.
+    assert_eq!(identity_hex(&v2()), sha_hex(&text));
+    let argument_text = format!(r#"{{"parameter":"{p0}","position":0,"type":"{t0}"}}"#);
     assert_eq!(bytes_of(&first()), argument_text);
-    assert_eq!(
-        sha_hex(&argument_text),
-        "34f0d98f1306d5e3720eec3469a6181c73f809ac51c6fe608e97129e7f94270f"
-    );
 }
 
 /// FR-484-AC-2: the empty list, the first argument alone, and the declared
@@ -105,26 +105,41 @@ fn tc_1252_the_declared_order_is_part_of_the_identity() {
         arguments,
     };
     let empty = with(Vec::new());
-    assert_eq!(
-        bytes_of(&empty),
-        r#"{"arguments":[],"node":"2222222222222222222222222222222222222222222222222222222222222222","occurrence_key":{"ordinal":0,"role":"declaration"},"subject_kind":"function-value-parity"}"#
+    let node = hex64(NODE);
+    let tail = format!(
+        r#""node":"{node}","occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"function-value-parity"}}"#
     );
-    assert_eq!(
-        identity_hex(&empty),
-        "908362fdf1c3d0bb20aadf2249e285964ad024f5fd994d6c01e88024839166b7"
-    );
-    assert_eq!(
-        identity_hex(&with(vec![first()])),
-        "3333f20dd244bd7043f410893713ed40ffc067b45cae410050898de89834cbc0"
-    );
+    let empty_text = format!(r#"{{"arguments":[],{tail}"#);
+    assert_eq!(bytes_of(&empty), empty_text);
+    assert_eq!(identity_hex(&empty), sha_hex(&empty_text));
+    let argument_json = |parameter: [u8; 32], position: usize, semantic_type: [u8; 32]| {
+        format!(
+            r#"{{"parameter":"{}","position":{position},"type":"{}"}}"#,
+            hex64(parameter),
+            hex64(semantic_type)
+        )
+    };
+    let one_text = format!(r#"{{"arguments":[{}],{tail}"#, argument_json(P0, 0, T0));
+    assert_eq!(identity_hex(&with(vec![first()])), sha_hex(&one_text));
     let swapped = with(vec![
         argument(second().parameter, 0, second().semantic_type),
         argument(first().parameter, 1, first().semantic_type),
     ]);
-    assert_eq!(
-        identity_hex(&swapped),
-        "f052b4583fc320a5a470209188b911e75fe02d55a28d079a5e614ac0f44e76fd"
+    let swapped_text = format!(
+        r#"{{"arguments":[{},{}],{tail}"#,
+        argument_json([0x33; 32], 0, [0x44; 32]),
+        argument_json(P0, 1, T0)
     );
+    assert_eq!(identity_hex(&swapped), sha_hex(&swapped_text));
+    // Order is part of the identity: all four spellings differ.
+    let identities = [
+        identity_hex(&empty),
+        identity_hex(&with(vec![first()])),
+        identity_hex(&swapped),
+        identity_hex(&v2()),
+    ];
+    let distinct: std::collections::BTreeSet<_> = identities.iter().collect();
+    assert_eq!(distinct.len(), identities.len());
 }
 
 /// FR-484-AC-3: every member changes the digest, a position out of order

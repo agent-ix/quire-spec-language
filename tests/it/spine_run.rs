@@ -951,10 +951,22 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
     const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let library = format!("{HEADER}{LIBRARY}").into_bytes();
     let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
+    // The domain package's `sha256-jcs` digest, computed from the document:
+    // the SHA-256 of its RFC 8785 encoding.
+    let model_digest = {
+        use sha2::{Digest, Sha256};
+        let parsed: serde_json::Value = serde_json::from_slice(&document).unwrap();
+        let canonical = serde_json_canonicalizer::to_vec(&parsed).unwrap();
+        let hex: String = Sha256::digest(&canonical)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        format!("sha256-jcs:{hex}")
+    };
     let program = format!(
         "{HEADER}\
          import \"test/geometry\" as g;\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114\";\n\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"{model_digest}\";\n\
          function seven using v(): Integer pure {{ 7 }}\n"
     )
     .into_bytes();

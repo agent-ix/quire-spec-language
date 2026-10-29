@@ -1034,19 +1034,16 @@ mod tests {
     /// preimage's RFC 8785 text, all written out by hand.
     #[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
     #[test]
-    fn resolved_graph_identity_matches_its_golden_vector() {
+    fn resolved_graph_identity_is_the_hash_of_its_hand_written_preimage() {
         const TEXT: &str =
             r#"{"capabilities":["V1-SRC-001","V1-TYPE-002"],"definitions":[],"models":[]}"#;
-        const DIGEST: &str = "0cf46736b80d36aafb61f77297f1d41debb0182c6d9c4b689912661f94282209";
+        // FR-111's domain label, written out; not the production constant.
+        const DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
         let mut hasher = Sha256::new();
-        hasher.update(
-            u64::try_from(RESOLVED_GRAPH_DOMAIN.len())
-                .unwrap()
-                .to_be_bytes(),
-        );
-        hasher.update(RESOLVED_GRAPH_DOMAIN);
+        hasher.update(u64::try_from(DOMAIN.len()).unwrap().to_be_bytes());
+        hasher.update(DOMAIN);
         hasher.update(TEXT.as_bytes());
-        assert_eq!(format!("{:x}", hasher.finalize()), DIGEST);
+        let digest = format!("{:x}", hasher.finalize());
 
         let capabilities = ["V1-SRC-001", "V1-TYPE-002"]
             .into_iter()
@@ -1055,6 +1052,6 @@ mod tests {
         let identity =
             resolved_graph_identity(&BTreeMap::new(), &capabilities, IdentityLimits::default())
                 .unwrap();
-        assert_eq!(format!("{:x}", identity.digest()), DIGEST);
+        assert_eq!(format!("{:x}", identity.digest()), digest);
     }
 }

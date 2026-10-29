@@ -603,7 +603,16 @@ fn a_self_recursive_function_keys_to_g4_to_g6() {
     assert_eq!(g4.semantic_form(), "recursive_function");
     assert_eq!(
         g4.recursion().map(|recursion| lower_hex(recursion.group())),
-        Some("d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6".to_owned())
+        Some(
+            include_str!(
+                "../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md"
+            )
+            .split("G4-G6, group digest `")
+            .nth(1)
+            .and_then(|rest| rest.split('`').next())
+            .expect("FR-092 states the G4-G6 group digest")
+            .to_owned()
+        )
     );
 }
 
