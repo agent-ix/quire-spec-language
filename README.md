@@ -266,8 +266,14 @@ same producer (`qsl_replay::compile_package`), so the bytes follow the
 producer and nothing is frozen. Pass each domain package document the
 source's `model` declarations select with `--model`, and each imported library
 as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
-A refused source writes nothing, prints the diagnostic on stderr and exits
-nonzero (the refusing code's category: 20 refusal, 22 incomplete).
+Every failure (usage, unreadable file, write failure, refusal) writes no
+bytes, prints a diagnostic on stderr that tells them apart, and exits with the
+refusal category's code 20, as `quire-spec` does; a producer refusal whose
+catalog code is in another category (for example incomplete) exits with that
+category's code (22). The emitted bytes embed the source path exactly as given
+(the `source:<path>` label feeds the source digest labels and the
+`package_id`), so pass an identical, fixed, cwd-relative path on every
+invocation to get stable bytes. Files are read under the source-size ceiling.
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \

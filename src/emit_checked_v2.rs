@@ -9,13 +9,23 @@
 //! freezes a shape or a digest. The `emit_checked_v2` example is a thin
 //! caller of [`run`].
 //!
-//! The refusals are the producer's: [`Error::exit_code`] is the exit code of
-//! the refusing stage's catalog code, so a caller sees a nonzero exit and a
-//! diagnostic on stderr rather than partial bytes.
+//! Every failure (usage, unreadable file, write failure, refusal) exits with
+//! the refusal category's code, 20, as `quire-spec` does, unless the
+//! producer's catalog code belongs to another category (for example 22 for
+//! an incomplete result); the stderr diagnostic tells them apart. No bytes
+//! are written on failure.
+//!
+//! The emitted bytes embed the source path exactly as given: the label
+//! `source:<path>` feeds the source digest labels and so the `package_id`.
+//! A caller that needs stable bytes passes an identical, fixed,
+//! cwd-relative path on every invocation. The same holds for each
+//! `--library` path.
 
 use std::ffi::OsString;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
+use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_replay::{
     compile_package,
@@ -121,11 +131,21 @@ impl Request {
     }
 }
 
+/// Read at most the source ceiling plus one byte, as `quire-spec` does, so an
+/// oversized file reaches the producer's own size refusal without an
+/// unbounded read.
 fn read(path: &Path) -> Result<Vec<u8>, Error> {
-    std::fs::read(path).map_err(|source| Error::Read {
+    let failed = |source| Error::Read {
         path: path.display().to_string(),
         source,
-    })
+    };
+    let file = std::fs::File::open(path).map_err(failed)?;
+    let ceiling = u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX);
+    let mut bytes = Vec::new();
+    file.take(ceiling.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(failed)?;
+    Ok(bytes)
 }
 
 /// The labels a file is compiled under: its own path names it, so a caller
