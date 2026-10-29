@@ -774,3 +774,48 @@ fn a_refused_initial_query_rejects_the_base_part() {
         );
     });
 }
+
+/// SR-1788001 FND-001 (TC-893): a certificate whose every proof is the
+/// numerals' forgery (`0`, `1` and `2` read as Booleans through
+/// `equiv_neg1` and `equiv_neg2`), which assumes nothing, is rejected
+/// `ProofStepInvalid` at the base part's first `equiv_neg1`, never
+/// `Verified`.
+#[trace("TC-893")]
+#[test]
+fn a_proof_over_ill_sorted_literals_is_rejected() {
+    let mut forged = String::new();
+    for (a, b, id) in [("0", "1", "p"), ("0", "2", "q"), ("1", "2", "r")] {
+        forged.push_str(&format!(
+            "(step {id}d (cl (not (= {a} {b}))) :rule la_tautology)\n\
+             (step {id}n (cl (= {a} {b}) (not {a}) (not {b})) :rule equiv_neg1)\n\
+             (step {id}p (cl (= {a} {b}) {a} {b}) :rule equiv_neg2)\n\
+             (step {id}1 (cl (not {a}) (not {b})) :rule resolution :premises ({id}n {id}d))\n\
+             (step {id}2 (cl {a} {b}) :rule resolution :premises ({id}p {id}d))\n"
+        ));
+    }
+    forged.push_str(
+        "(step s1 (cl 0 (not 2)) :rule resolution :premises (p2 r1))\n\
+         (step s2 (cl 0) :rule resolution :premises (q2 s1))\n\
+         (step s3 (cl 2 (not 0)) :rule resolution :premises (r2 p1))\n\
+         (step s4 (cl (not 0)) :rule resolution :premises (q1 s3))\n\
+         (step s5 (cl) :rule resolution :premises (s2 s4))\n",
+    );
+    let world = World::new(&cas_refines_counter());
+    with_request(&world, |request| {
+        let mut forgery = certificate(request, 7);
+        forgery.base.proof = forged.clone().into_bytes();
+        for step in &mut forgery.steps {
+            step.proof = forged.clone().into_bytes();
+        }
+        assert_eq!(
+            check(request, &forgery),
+            rejected(
+                CertificateRule::ProofStepInvalid,
+                CertificateLocus::ProofStep {
+                    part: QueryPart::Base,
+                    index: 1
+                }
+            )
+        );
+    });
+}
