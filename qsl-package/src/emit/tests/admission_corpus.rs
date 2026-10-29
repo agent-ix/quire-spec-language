@@ -756,6 +756,9 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
+        // FR-180-AC-4 (TC-1143) specifies the step-relation emission; QSL-552
+        // lands it, and until then lowering builds no such node.
+        (K::Claim(ClaimForm::StepRelation), NO_TAG),
         (K::Correspondence(CorrespondenceForm::SourceLocus), NO_TAG),
         (
             K::Correspondence(CorrespondenceForm::ModelCorrespondence),
