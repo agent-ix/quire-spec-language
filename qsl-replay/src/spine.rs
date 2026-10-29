@@ -2324,7 +2324,6 @@ mod tests {
     /// source order.
     #[trace(
         "TC-490",
-        "TC-136",
         "FR-110-AC-1",
         "FR-110-AC-2",
         "FR-110-AC-3",

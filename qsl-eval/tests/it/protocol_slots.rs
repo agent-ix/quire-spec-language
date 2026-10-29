@@ -179,7 +179,6 @@ fn money(package: &CheckedPackage, amount: i64) -> Value {
 
 #[test]
 #[trace("TC-1071", "FR-390-AC-3", "FR-390-AC-4", "FR-390-AC-5", "FR-049-AC-6")]
-#[trace("TC-136", "FR-049-AC-4")]
 #[trace("TC-1072", "FR-390-AC-7")]
 fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     let package = package();
@@ -451,7 +450,6 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
 }
 
 #[test]
-#[trace("TC-136", "FR-049-AC-4")]
 #[trace("TC-1072", "FR-390-AC-7")]
 fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() {
     let source = unit().replace("(1 + 2 = 3) and opened", "(1 + 2 = 4) and opened");
@@ -500,8 +498,10 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
 }
 
 #[test]
-#[trace("TC-142", "TC-1070", "FR-049-AC-9", "FR-390-AC-1", "FR-390-AC-2")]
-#[trace("TC-136", "FR-049-AC-3")]
+// Covers TC-1070 rows 2-4, 6, 8 and 12 only (capture, trigger, retry and
+// recovery slots over supplied values); the remaining rows are not asserted
+// here, so TC-1070 itself is not tagged.
+#[trace("TC-142", "FR-049-AC-9", "FR-390-AC-1", "FR-390-AC-2")]
 fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes() {
     let package = compensation_package();
     let keys = package
@@ -661,14 +661,10 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
 }
 
 #[trace("TC-1073", "FR-390-AC-9", "FR-390-AC-10", "FR-049-AC-6")]
-#[trace(
-    "TC-137",
-    "FR-049-AC-7",
-    "FR-049-AC-8",
-    "NFR-009-AC-1",
-    "NFR-009-AC-2",
-    "NFR-009-AC-4"
-)]
+// Exercises the `work_units` counter only: exact, one-short and zero budgets,
+// fresh-meter retry and shared-meter accumulation. Per-counter accounting
+// coverage and the deep-stack cases are not asserted here.
+#[trace("FR-049-AC-8", "NFR-009-AC-4")]
 #[test]
 fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
     let package = package();

@@ -1277,9 +1277,7 @@ fn equal(left: Expression, right: Expression) -> Expression {
     "QSpec-V1-EXPR-017",
     "TC-129",
     "TC-136",
-    "FR-047-AC-1",
     "FR-047-AC-2",
-    "FR-049-AC-3",
     "FR-049-AC-5"
 )]
 fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
@@ -1346,9 +1344,7 @@ fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
     "QSpec-V1-EXPR-017",
     "TC-129",
     "TC-136",
-    "FR-047-AC-1",
     "FR-047-AC-3",
-    "FR-049-AC-3",
     "FR-049-AC-5"
 )]
 fn a_surviving_object_compares_equal_across_pre_and_post() {
