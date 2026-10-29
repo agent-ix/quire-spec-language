@@ -210,6 +210,61 @@ fn a_population_reference_row_maps_element_by_element() {
     assert_eq!(found, wanted);
 }
 
+/// FR-140-AC-11's optional-field case (TC-545): an optional abstract field
+/// maps `Some(v)` to its payload and `none` to an unset field whose key is
+/// the same as the selected model's initial state.
+#[trace("TC-545")]
+#[test]
+fn optional_abstract_field_rows_preserve_absence_and_unwrap_present_values() {
+    let variant = Variant {
+        optional_head: true,
+        ..Variant::default()
+    };
+    let rows = format!("{ITEMS_ROW} head = if self.size >= 1 then Some(self.head) else none;");
+    let world = RingWorld::with(variant, &ring_is_queue(&rows));
+    let concrete = world.concrete_system(UNLIMITED);
+    let abstracted = world.abstract_system(UNLIMITED);
+    let expected_empty = abstracted.initial_states()[0].state();
+
+    let empty = ring_state(&concrete, 1, 0, [0, 0]);
+    let mapped_empty = map_state(
+        world.refinement(),
+        &concrete,
+        &abstracted,
+        &empty,
+        &HistoryValues::default(),
+    )
+    .expect("the empty ring maps");
+    let queue = &mapped_empty.visible.populations[&key(QUEUE, "queues")]["r"];
+    assert!(!queue.fields.contains_key(&key(QUEUE, "Queue/head")));
+    assert!(mapped_empty.hidden.is_empty());
+    assert_eq!(
+        abstracted
+            .state_key_of(&mapped_empty.visible)
+            .expect("a key")
+            .0,
+        abstracted
+            .state_key_of(expected_empty)
+            .expect("the initial key")
+            .0,
+    );
+
+    let full = ring_state(&concrete, 1, 2, [0, 1]);
+    let mapped_full = map_state(
+        world.refinement(),
+        &concrete,
+        &abstracted,
+        &full,
+        &HistoryValues::default(),
+    )
+    .expect("the populated ring maps");
+    let queue = &mapped_full.visible.populations[&key(QUEUE, "queues")]["r"];
+    let Some(Value::Integer(head)) = queue.fields.get(&key(QUEUE, "Queue/head")) else {
+        panic!("a populated optional field takes its present payload");
+    };
+    assert_eq!(*head, quire_exact::Integer::from(1_i64));
+}
+
 /// FR-140-AC-13 (TC-1086 step 4): the failure reported is the first in
 /// reading order, which does not depend on the order the rows were written:
 /// the undefined `items` row of object `a`, not `b`; and with `items`

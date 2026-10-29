@@ -1935,7 +1935,8 @@ mod tests {
             for (part, expected_part) in [
                 (QueryPart::Unrolling, "unrolling"),
                 (QueryPart::Base, "base"),
-                (QueryPart::Step, "step"),
+                (QueryPart::Step { row: None }, "step"),
+                (QueryPart::Step { row: Some(3) }, "step/3"),
             ] {
                 let item = record(
                     2,
@@ -2012,7 +2013,8 @@ mod tests {
         for (part, expected_part) in [
             (QueryPart::Unrolling, "unrolling"),
             (QueryPart::Base, "base"),
-            (QueryPart::Step, "step"),
+            (QueryPart::Step { row: None }, "step"),
+            (QueryPart::Step { row: Some(4) }, "step/4"),
         ] {
             for (index, expected_index) in [
                 (0, "0"),

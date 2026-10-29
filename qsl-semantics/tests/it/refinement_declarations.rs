@@ -958,6 +958,25 @@ fn a_field_row_is_typed_against_the_abstract_field_after_reference_lifting() {
     assert_eq!(slot.at, "self.next");
 }
 
+/// TC-1273's negative vector: `Some(x)` has `Option<Integer>` and does not
+/// coerce to the refinement row's required `Integer` type.
+#[trace("TC-1273")]
+#[test]
+fn a_present_option_with_the_wrong_row_type_refuses_at_its_expression() {
+    let body = mutated(
+        &cas_refines_counter(),
+        "value = self.value;",
+        "value = Some(self.value);",
+    );
+    let refusals = refused_counter(&body);
+    let refusal = only(&refusals);
+    assert_eq!(
+        refusal.code_and_cause(),
+        (Code::IllTyped, Some("type-mismatch"))
+    );
+    assert_eq!(refusal.at, "Some(self.value)");
+}
+
 const NESTED_SPEC: &str = "example/nested-spec";
 const NESTED_IMPL: &str = "example/nested-impl";
 

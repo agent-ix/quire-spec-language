@@ -82,6 +82,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::History { .. }
         | NodeKind::Present(_)
         | NodeKind::Value(_)
+        | NodeKind::OptionSome(_)
         | NodeKind::Call { .. }
         | NodeKind::ImportedCall { .. }
         | NodeKind::Tuple { .. }

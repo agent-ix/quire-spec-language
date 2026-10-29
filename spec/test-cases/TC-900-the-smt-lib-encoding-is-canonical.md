@@ -13,7 +13,7 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-32.
+Scope: FR-315-AC-1 to FR-315-AC-6, FR-315-AC-15 to FR-315-AC-32 and FR-315-AC-53 to FR-315-AC-55.
 
 Steps 8, 10, 18 and 20 read scripts with a `QF_LIA` solver, steps 18 and
 20 with replay as well; every other step reads
@@ -74,8 +74,55 @@ the printed script.
 23. Encode FR-315-AC-1's query and read the negated property's disjuncts.
 24. Call the encoding inside `qsl-eval` with a TP-1 item whose checked
     clause has its atom removed, and repeat FR-315-AC-21's requests.
+25. Over `CasRefinesCounter2`, encode the `Initial` query and the `commitA`
+    `Step` query, read the command heads in order, rename and reorder the
+    invariant clauses, apply each of the six FR-315-AC-53 mutations (two
+    applications swapped; `AaInv` and `CasInv` swapped; a hypothesis on `s1`;
+    the initial-state predicate in a `Step` query; one assertion per
+    application; the global negation beside a separate disjunction) and check,
+    for each, that FR-314 returns `QueryMismatch` at that row's part for the
+    unmutated certificate.
+26. Over the lost-update variant, add the FR-315-AC-54 equalities to the
+    `commitB` query and solve it for each of the two pre-states; encode a row
+    with one application and a row with none.
+27. Request the refinement queries of FR-315-AC-55's refusal cases and read
+    each refusal's code, locus and FR-314 `Unencodable` part.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
+
+## Fixtures
+
+`CasRefinesCounter2` is ADR-020 §8's `CasRefinesCounter` (fixture
+`tests/support/refinement_cas.rs`) with the population `counters` holding two
+`Impl::Counter` objects with keys `c0` < `c1` (and the `Spec::counters` objects
+mapped one to one), and three invariants: `AaInv` on `Impl::Counter`,
+`self.tmpA <= 2`; `CasInv` on `Impl::Counter`, `self.busyA or self.tmpA <=
+self.value` (FR-146-AC-3); `AbsInv` on `Spec::Counter`, `self.value <= 2`,
+which is no hypothesis. The lost-update variant has `commitB`'s precondition
+`self.busyB and self.tmpB < 2` and postcondition `pre(self.tmpB) < 2 and
+self.value = pre(self.tmpB) + 1 and not self.busyB`, frame `modifies [value,
+busyB]`, and the abstract `inc` of ADR-020 §8 (precondition `self.value < 2`,
+postcondition `self.value = pre(self.value) + 1`).
+
+A counter's tuple is `(value, tmpA, busyA, tmpB, busyB)`, the declaration
+order of the fixture; the script's constants are ordered by field name.
+FR-315-AC-54's `s0` tuples, added as equalities, are:
+
+| Case | `c0` | `c1` | Result |
+| --- | --- | --- | --- |
+| `c0` not enabled, `c1` loses an update | `(0, 0, f, 0, f)` | `(1, 0, f, 0, t)` | sat |
+| `c0` enabled and obeying the rule, `c1` not enabled | `(0, 0, f, 0, t)` | `(0, 0, f, 0, f)` | unsat |
+
+Each tuple satisfies both hypotheses on both counters (`tmpA = 0`, and `0 <=
+value`), and the definedness `D` is `true` (total integer terms). The
+postcondition and frame fix `s1` deterministically for an enabled application:
+the written fields are `value = tmpB + 1` and `busyB = false`, and every other
+field of every counter equals `s0`. In the first case `c1`'s application gives
+`s1.c1.value = 1` from `s0.c1.value = 1`, which the mapped abstract `inc`
+(`value` must become 2) does not admit, so the rule fails and the script is
+satisfiable; no application of `c0` is enabled. In the second case `c0`'s
+application gives `s1.c0.value = 1` from `s0.c0.value = 0`, which `inc` admits,
+and no other application is enabled, so the script is unsatisfiable.
 
 ## Expected Results
 
@@ -139,3 +186,10 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 24: `Fault` carrying `InternalFault` (`runtime_invariant`) naming the
   atom invariant, not `Refused` with `item-form`; no AC-21 request returns
   it.
+- Step 25: the head sequence of FR-315-AC-53, the hypothesis order
+  `AaInv`/`c0`, `AaInv`/`c1`, `CasInv`/`c0`, `CasInv`/`c1`, a `Step` query with
+  one row assertion over the applications in `c0`, `c1` order; every mutation
+  changes the bytes and gives `QueryMismatch`.
+- Step 26: satisfiable for the first pre-state, unsatisfiable for the second;
+  `(assert false)` for the row with no application.
+- Step 27: the codes and loci of FR-315-AC-55, in its stated order.
