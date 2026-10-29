@@ -22,10 +22,9 @@ When the `qualify` repository gate finishes a conformance run, the gate SHALL
 report QSL qualified for the run's scope if and only if every capability in
 that scope is `passed` (FR-351) and the scope is nonempty.
 
-Complete-V1 qualified is that verdict over the default scope defined by
-[FR-350](FR-350-run-the-conformance-corpus-against-qsl.md): every capability
-the corpus lists for a QSL consumer type and a semantic profile QSL's
-definition catalog holds.
+The label `complete-v1: qualified` is reserved for the default scope defined
+by [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md). A
+caller-selected scope is reported as `qualified` without that label.
 
 ## Inputs
 
@@ -86,14 +85,10 @@ and yields `not-qualified`, coverage zero and exit 1.
 - If any in-scope capability is not `passed`, then the gate SHALL report
   `not-qualified`, naming every such capability with its outcome, and SHALL
   exit 1.
-- If the corpus location cannot be read, if the corpus fails QSpec FR-336's
-  `quire.conformance-corpus/v1` schema or semantic validation (including a
-  wrong `contract_version`, missing required or unknown members, duplicate
-  object keys or primary capability ids, an out-of-domain value, an invalid
-  vector or rollup reference, or a non-canonical encoding), if a
-  `--capability` id names no `coverage.primary` capability (FR-351), or if
-  an argument is malformed, then the gate SHALL
-  report the refusal, naming its cause and locus, give no verdict and exit 2.
+- If the corpus location cannot be read, if QSpec FR-336 refuses the corpus,
+  if a `--capability` id is absent from the corpus capability inventory
+  (FR-351), or if an argument is malformed, then the gate SHALL report the
+  owning refusal with its cause and locus, give no verdict and exit 2.
 - A verdict for a caller-selected scope SHALL name that scope. Only a run
   over the default scope SHALL report `complete-v1: qualified`.
 - A non-passing capability outside the scope SHALL change no verdict.
@@ -109,7 +104,7 @@ and yields `not-qualified`, coverage zero and exit 1.
 | FR-353-AC-1 | A fixture corpus whose in-scope vectors all pass, run over the default scope, reports `complete-v1: qualified` and exits 0. | Test |
 | FR-353-AC-2 | The same corpus with one vector's expected cause changed reports `not-qualified`, naming that vector's capability as `failed`, and exits 1; the same corpus with one capability's vectors removed reports `not-qualified`, naming it `uncovered`. Separate one-capability runs settling `unsupported`, `incomplete` and `tool-failure` each report `not-qualified` and exit 1; a missing vector input is the latter case, while a missing corpus is AC-4's exit 2. | Test |
 | FR-353-AC-3 | A run scoped to the capabilities that pass, over the corpus of AC-2, reports `qualified` for that named scope, does not report `complete-v1: qualified`, and exits 0. | Test |
-| FR-353-AC-4 | A run over a corpus location that does not exist reports the I/O refusal, gives no verdict and exits 2; so does a run over a corpus whose `contract_version` is `quire.conformance-corpus/v0`, naming `/contract_version`, a corpus with one vector missing its expected disposition, naming that member, and a run with `--capability CAP-Z` that the corpus does not list, naming `CAP-Z`. Duplicate keys, out-of-domain values and non-canonical encodings each refuse before execution. Runs with `--limit s9.nodes=1`, `--limit s3.nodes=ten`, `--limit s3.nodes=-1`, or two `--limit s3.nodes=5` operands each refuse naming the offending operand. No vector executes and no verdict is emitted in any of them. | Test |
+| FR-353-AC-4 | A run over a corpus location that does not exist reports the I/O refusal, gives no verdict and exits 2. A corpus rejected by QSpec FR-336 is refused before vector execution, with the owning cause and locus, no verdict and exit 2. A run with `--capability CAP-Z` that FR-351 does not declare refuses naming `CAP-Z`. Runs with `--limit s9.nodes=1`, `--limit s3.nodes=ten`, `--limit s3.nodes=-1`, or two `--limit s3.nodes=5` operands each refuse naming the offending operand. No vector executes and no verdict is emitted in any of them. | Test |
 | FR-353-AC-5 | Valid corpora containing only monitor capabilities, only language capabilities with profiles absent from QSL's catalog, and a mix of those two kinds each resolve to an empty default scope: the gate refuses with cause `empty-scope` and locus the resolved scope, executes no vector, emits no verdict or coverage report, and exits 2 in JSON and text modes. Explicitly selecting one listed monitor-only capability from the same corpus instead reports that capability `uncovered`, coverage zero, `not-qualified` and exit 1. | Test |
 
 ## Dependencies
