@@ -861,10 +861,7 @@ fn a_rejected_part_rejects_only_its_record() {
     let holds = [StepRecordVerdict::Holds; 8];
     let uncertified = proved(Certification::Uncertified);
     for (part, record) in [(QueryPart::Base, 0), (step_part(2), 3)] {
-        let at = CertificateLocus::ProofStep {
-            part,
-            index: 3,
-        };
+        let at = CertificateLocus::ProofStep { part, index: 3 };
         let rejection = CertificateRejection {
             rule: CertificateRule::ProofStepInvalid,
             at: at.clone(),

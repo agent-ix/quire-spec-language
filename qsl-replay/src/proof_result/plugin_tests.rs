@@ -366,6 +366,70 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
     }
 }
 
+/// QSpec FR-468 and FR-331: a plugin's `hypotheses-not-established` cause
+/// reads to its invariant clause node and its item's result; a node id
+/// outside the node-key domain, a bad digest, an extra member or a result
+/// outside FR-331's vocabulary is refused at its member.
+#[trace("TC-774")]
+#[test]
+fn the_cause_reader_reads_hypotheses_not_established() {
+    let node = |domain: &str, digest: String| json!({"domain": domain, "digest": digest});
+    let domain = quire_exact::NODE_KEY_DOMAIN;
+    assert_eq!(
+        read_plugin_inconclusive_cause(&json!({
+            "type": "hypotheses-not-established",
+            "hypothesis": node(domain, "dc".repeat(32)),
+            "result": "refuted",
+        })),
+        Ok(InconclusiveCause::HypothesesNotEstablished {
+            hypothesis: quire_exact::NodeKey::from_digest([0xdc; 32]),
+            result: crate::outcome::ItemLabel::Refuted,
+        })
+    );
+    let cases: Vec<(Value, PluginResultRefusal)> = vec![
+        (
+            json!({"type": "hypotheses-not-established", "result": "refuted"}),
+            missing("/cause/hypothesis"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established", "hypothesis": "dc", "result": "refuted"}),
+            wrong("/cause/hypothesis"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node("quire.package.semantic/v2", "dc".repeat(32)), "result": "refuted"}),
+            invalid("/cause/hypothesis/domain"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node(domain, "DC".repeat(32)), "result": "refuted"}),
+            invalid("/cause/hypothesis/digest"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": {"domain": domain, "digest": "dc".repeat(32), "extra": 1}, "result": "refuted"}),
+            unknown("/cause/hypothesis/extra"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node(domain, "dc".repeat(32)), "result": "undefined"}),
+            invalid("/cause/result"),
+        ),
+        (
+            json!({"type": "hypotheses-not-established",
+                   "hypothesis": node(domain, "dc".repeat(32)), "result": 1}),
+            wrong("/cause/result"),
+        ),
+    ];
+    for (cause, expected) in cases {
+        assert_eq!(
+            read_plugin_inconclusive_cause(&cause),
+            Err(expected),
+            "{cause}"
+        );
+    }
+}
+
 /// FR-290-AC-9.
 #[trace("TC-774", "FR-290-AC-9")]
 #[test]
@@ -406,7 +470,6 @@ fn tc_774_cause_reader_refuses_in_order() {
         "no-admitted-behaviour",
         "transfer-not-preserving",
         "premise-unproved",
-        "hypotheses-not-established",
     ] {
         assert_eq!(
             read_plugin_inconclusive_cause(&json!({"type": spelling})),

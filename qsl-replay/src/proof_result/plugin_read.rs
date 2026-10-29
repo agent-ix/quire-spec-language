@@ -21,10 +21,11 @@ use super::{
     Proviso,
 };
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
+use crate::outcome::ItemLabel;
 use crate::witness::{CanonicalAssignment, WitnessValue};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::ReductionKind;
-use quire_exact::{Integer, Rational};
+use quire_exact::{Integer, NodeKey, Rational, NODE_KEY_DOMAIN};
 use quire_semantic_value::fairness::PropertyForm;
 
 mod trace;
@@ -89,6 +90,7 @@ const CAUSE: &[Spelling] = &[
     spelling("vacuous-match", &[]),
     spelling("bound-reached", &["depth"]),
     spelling("induction-not-closed", &["depth"]),
+    spelling("hypotheses-not-established", &["hypothesis", "result"]),
     spelling("reduction-not-preserving", &["form", "reduction"]),
     spelling("constraint-reached", &["boundary_states"]),
     spelling("reduction-horizon", &["max_depth"]),
@@ -107,7 +109,6 @@ const UNSUPPORTED_CAUSE: &[&str] = &[
     "no-admitted-behaviour",
     "transfer-not-preserving",
     "premise-unproved",
-    "hypotheses-not-established",
 ];
 
 /// A pointer to `name` under `base`, with `~` and `/` escaped (RFC 6901).
@@ -612,6 +613,13 @@ pub fn read_plugin_inconclusive_cause(
         "induction-not-closed" => InconclusiveCause::InductionNotClosed {
             depth: count(members, "depth", BASE, false)?,
         },
+        "hypotheses-not-established" => InconclusiveCause::HypothesesNotEstablished {
+            hypothesis: read_node(
+                member(members, "hypothesis", BASE)?,
+                child(BASE, "hypothesis"),
+            )?,
+            result: read_result(member(members, "result", BASE)?, child(BASE, "result"))?,
+        },
         "reduction-not-preserving" => {
             let form_value = member(members, "form", BASE)?;
             let reduction = read_reduction_kind(
@@ -754,6 +762,43 @@ fn read_instance_limit(
         Some("max_live_instances") => Ok(()),
         other => Err(malformed(other.is_some(), child(base, "limit"))),
     }
+}
+
+/// A checked-package `NodeId`: exactly `domain`, the node-key domain, and
+/// `digest`, 64 lowercase hex digits.
+fn read_node(value: &Value, pointer: String) -> Result<NodeKey, PluginResultRefusal> {
+    let Value::Object(members) = value else {
+        return Err(wrong_kind(pointer));
+    };
+    let domain = member(members, "domain", &pointer)?;
+    let digest = member(members, "digest", &pointer)?;
+    if let Some(name) = first_undefined(members, &["digest", "domain"]) {
+        return Err(unknown_member(child(&pointer, name)));
+    }
+    if domain.as_str() != Some(NODE_KEY_DOMAIN) {
+        return Err(malformed(domain.is_string(), child(&pointer, "domain")));
+    }
+    match digest.as_str().and_then(WireNodeId::from_hex) {
+        Some(node) => Ok(NodeKey::from_digest(*node.as_bytes())),
+        None => Err(malformed(digest.is_string(), child(&pointer, "digest"))),
+    }
+}
+
+/// An FR-331 `ResultValue`.
+#[ix_trace_rs::string_edge]
+fn read_result(value: &Value, pointer: String) -> Result<ItemLabel, PluginResultRefusal> {
+    Ok(match value.as_str() {
+        Some("proved") => ItemLabel::Proved,
+        Some("refuted") => ItemLabel::Refuted,
+        Some("tested") => ItemLabel::Tested,
+        Some("measured") => ItemLabel::Measured,
+        Some("inconclusive") => ItemLabel::Inconclusive,
+        Some("unsupported") => ItemLabel::Unsupported,
+        Some("declined") => ItemLabel::Declined,
+        Some("incomplete") => ItemLabel::Incomplete,
+        Some("failed") => ItemLabel::Failed,
+        _ => return Err(malformed(value.is_string(), pointer)),
+    })
 }
 
 /// An FR-331 `StateKey`: 64 lowercase hex digits.
