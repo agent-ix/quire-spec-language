@@ -50,6 +50,9 @@ struct Raw {
     groups: BTreeMap<Name, Vec<String>>,
 }
 
+/// `#[string_edge]`: reads the spec's markdown text, whose line markers are
+/// the intake of this test-vector table.
+#[ix_trace_rs::string_edge]
 fn parse(tag: &str, spec: &str, raw: &mut Raw) {
     let mut lines = spec.lines().peekable();
     while let Some(line) = lines.next() {
@@ -92,7 +95,11 @@ fn parse(tag: &str, spec: &str, raw: &mut Raw) {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    hex_of(qsl_foundation::ByteDigest::of(bytes).as_bytes())
+    qsl_foundation::ByteDigest::of(bytes)
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// The key QSpec publishes for its nominal vector `name`, read from
@@ -114,51 +121,47 @@ pub fn published_key(name: &str) -> Option<String> {
 }
 
 fn owner_json() -> Value {
-    serde_json::json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
+    // Members in ascending key order (RFC 8785 for these ASCII keys).
+    serde_json::json!({"authority": "agent-ix", "identity": "example-model", "kind": "definition"})
 }
 
-fn hex_of(digest: [u8; 32]) -> String {
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+/// The SHA-256 of the RFC 8785 bytes of `preimage`, which the callers below
+/// write by hand: every object lists its members in ascending key order and
+/// every number is a decimal string, so `serde_json` emits the canonical
+/// bytes. No production identity type is used, which keeps this recomputation
+/// independent of the code under test when `QSPEC_DIR` is unset.
+fn key_of(preimage: &Value) -> String {
+    hex(serde_json::to_string(preimage)
+        .expect("a preimage serialises")
+        .as_bytes())
 }
 
 /// The key of QSpec's nominal vector `name` (`dimension-length`,
 /// `dimension-time`, `unit-metre`, `unit-second`), recomputed from the
 /// hand-written preimage; no published key is recorded.
+#[ix_trace_rs::string_edge]
 pub fn local_key(name: &str) -> Option<String> {
-    use crate::value::semantic_node::NodeIdentityPreimage;
-    use crate::value::unit::{DimensionPreimage, UnitPreimage};
-    let limits = qsl_foundation::IdentityLimits::default();
     let dimension = |declared: &str| {
-        let preimage = DimensionPreimage::from_json(serde_json::json!({
-            "version": "quire.dimension-node/v1",
+        key_of(&serde_json::json!({
             "owner": owner_json(),
             "qualified_declaration": ["Example", declared],
             "terms": [],
+            "version": "quire.dimension-node/v1",
         }))
-        .expect("a base dimension");
-        hex_of(
-            preimage
-                .digest(limits)
-                .expect("a base dimension has a digest"),
-        )
     };
     let unit = |declared: &str, of: &str| {
-        let preimage = UnitPreimage::from_json(serde_json::json!({
-            "version": "quire.unit-node/v1",
+        Some(key_of(&serde_json::json!({
+            "dimension_node_id": {
+                "digest": local_key(of)?,
+                "domain": "quire.checked-semantic-node/v1",
+            },
+            "offset": {"denominator": "1", "numerator": "0"},
             "owner": owner_json(),
             "qualified_declaration": ["Example", declared],
-            "dimension_node_id": {
-                "domain": "quire.checked-semantic-node/v1",
-                "digest": local_key(of)?,
-            },
+            "scale": {"denominator": "1", "numerator": "1"},
             "target_unit_node_id": null,
-            "scale": {"numerator": "1", "denominator": "1"},
-            "offset": {"numerator": "0", "denominator": "1"},
-        }))
-        .expect("a root unit");
-        Some(hex_of(
-            preimage.digest(limits).expect("a root unit has a digest"),
-        ))
+            "version": "quire.unit-node/v1",
+        })))
     };
     match name {
         "dimension-length" => Some(dimension("Length")),
@@ -178,6 +181,7 @@ struct Resolver<'a> {
 impl Resolver<'_> {
     /// `text` with every placeholder replaced, or `None` when one needs a
     /// QSpec key that is unavailable.
+    #[ix_trace_rs::string_edge]
     fn resolve(&mut self, tag: &str, text: &str) -> Option<String> {
         let mut out = String::new();
         let mut rest = text;

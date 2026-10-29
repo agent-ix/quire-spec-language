@@ -92,7 +92,9 @@ fn enum_declaration(name: &str, identity: &str, ordered: bool, members: &[&str])
 }
 
 /// FR-091 vector `id`'s key, recomputed from the preimage content the spec
-/// states for it.
+/// states for it. `#[string_edge]`: `id` is the spec's own vector label
+/// (`Q1`..`N4`), the intake of this hand-written test-vector table.
+#[ix_trace_rs::string_edge]
 pub fn key(id: &str) -> String {
     let (one, zero) = (("1", "1"), ("0", "1"));
     match id {

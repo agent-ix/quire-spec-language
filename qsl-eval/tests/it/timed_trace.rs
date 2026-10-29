@@ -26,7 +26,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::key::hex;
-use quire_exact::{Integer, Meter, Rational, ScalarLimits, Undefined};
+use quire_exact::{ChargePoint, Integer, Meter, Rational, ScalarLimits, Undefined};
 
 use crate::model_simulation::{counters_document, increment, PACKAGE};
 use crate::property_automata::accepts;
@@ -540,7 +540,8 @@ fn a_timed_lasso_stops_when_the_meter_runs_out() {
     )
     .expect("the lasso is readable");
     assert!(
-        matches!(outcome, TemporalOutcome::Incomplete(_)),
+        matches!(&outcome, TemporalOutcome::Incomplete(record)
+            if record.charge_point == ChargePoint::TemporalVisit),
         "{outcome:?}"
     );
 }

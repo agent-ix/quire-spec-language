@@ -449,6 +449,11 @@ fn an_exhausted_budget_stops_the_aggregate_without_a_value() {
         matches!(&stop, LetterStop::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
         "{stop:?}"
     );
+    // The per-window-position charge is named `temporal.visit` (FR-414-AC-8).
+    assert!(
+        matches!(&stop, LetterStop::Incomplete(record) if record.charge_point == ChargePoint::TemporalVisit),
+        "{stop:?}"
+    );
 }
 
 /// FR-194-AC-4: a quantile of 1 and a `min_count` of 0 are refused when the
