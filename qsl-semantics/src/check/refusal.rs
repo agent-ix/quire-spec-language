@@ -1214,9 +1214,6 @@ pub enum UnwrittenTimedMember {
     /// A guard disjunct that constrains no clock: a `clock_guard` part
     /// names at least one constraint (QSpec FR-322-AC-261, `CL-20`).
     UnconstrainedGuardPart,
-    /// Two guarded preconditions of one operation, whose conjunction S4
-    /// does not write as the one guard of the operation's anchor yet.
-    ConjoinedGuards,
     /// A clock collection written whole, which no FR-322 clause form
     /// carries.
     CollectionWrite,
@@ -1246,7 +1243,6 @@ impl UnwrittenTimedMember {
             Self::PresenceRead => "a predicate reading a clock presence is not lowered yet",
             Self::OtherObjectClock => "a constraint on another object's clock is not lowered yet",
             Self::UnconstrainedGuardPart => "a guard disjunct that constrains no clock",
-            Self::ConjoinedGuards => "two guarded preconditions of one operation",
             Self::CollectionWrite => "a clock collection written whole",
             Self::PresenceDrop => "a clock place set absent",
             Self::PresenceRequirement => "a postcondition requiring a clock presence",

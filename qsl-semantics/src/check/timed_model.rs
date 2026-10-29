@@ -1125,7 +1125,6 @@ impl TimedModel {
     /// parameter and urgency of the model.
     pub fn unwritten(&self) -> Option<(UnwrittenTimedMember, Span)> {
         use UnwrittenTimedMember as Member;
-        let mut guarded: Vec<&ClauseOperation> = Vec::with_capacity(self.guards.len());
         for guard in &self.guards {
             if let Some(span) = guard.quantifier {
                 return Some((Member::QuantifiedClause, span));
@@ -1133,13 +1132,6 @@ impl TimedModel {
             if guard.point {
                 return Some((Member::PointQualifiedClause, guard.span));
             }
-            if guarded
-                .iter()
-                .any(|operation| same_operation(operation, &guard.operation))
-            {
-                return Some((Member::ConjoinedGuards, guard.span));
-            }
-            guarded.push(&guard.operation);
             for part in &guard.parts {
                 if !part.elements.is_empty() || !part.families.is_empty() {
                     return Some((Member::QuantifiedClause, guard.span));
@@ -4552,12 +4544,6 @@ pub(crate) fn check(
         });
     }
     Ok((models, nodes_used))
-}
-
-/// Whether `left` and `right` name one operation: one declaring type and
-/// one name.
-fn same_operation(left: &ClauseOperation, right: &ClauseOperation) -> bool {
-    left.declaring == right.declaring && left.declaration.name() == right.declaration.name()
 }
 
 /// The refusal for a timed model that checks but has a member no S4

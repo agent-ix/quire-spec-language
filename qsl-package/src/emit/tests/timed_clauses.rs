@@ -377,6 +377,103 @@ fn a_clock_parameter_is_an_inline_name_of_its_operation() {
     assert_declared_order(&wire);
 }
 
+/// QSpec FR-322 "Clause nodes": a model has one `clock_guard` for each
+/// operation anchor, so two guarded preconditions of one operation, `self.x
+/// >= 1 ms or self.x > 7 ms` and `self.versionNumber > 0 and self.x < 5 ms`,
+/// are the one guard of their conjunction: each part of the one a part of
+/// each part of the other, its predicate the `and` of theirs (the data
+/// predicate alone where the other's is `true`) and its constraints both
+/// lists, in declared order.
+#[trace("TC-685", "FR-230-AC-50", "FR-230-AC-54", "QSpec-FR-322-AC-261")]
+#[test]
+fn two_guarded_preconditions_are_one_guard_of_their_conjunction() {
+    let (unit, wire) = emitted(
+        &document(false),
+        "pre A using v on Config::ConfigVersion::attemptUpdate { \
+         self.x >= 1 ms or self.x > 7 ms }\n\
+         pre B using v on Config::ConfigVersion::attemptUpdate { \
+         self.versionNumber > 0 and self.x < 5 ms }\n",
+    );
+    let [guard] = timed(&wire, "clock_guard")[..] else {
+        panic!("one guard");
+    };
+    assert!(located(&wire, guard, &unit).starts_with("pre A"));
+    let parts = member(&guard["body"], "parts")["members"]
+        .as_array()
+        .expect("parts");
+    let read: Vec<(String, Vec<String>)> = parts
+        .iter()
+        .map(|part| {
+            let members = part["members"].as_array().expect("a part");
+            let predicate = target(&wire, &members[0]["value"]);
+            (
+                located(&wire, predicate, &unit).to_owned(),
+                members[1..]
+                    .iter()
+                    .map(|reference| located(&wire, target(&wire, reference), &unit).to_owned())
+                    .collect(),
+            )
+        })
+        .collect();
+    let data = "self.versionNumber > 0".to_owned();
+    assert_eq!(
+        read,
+        [
+            (
+                data.clone(),
+                vec!["self.x >= 1 ms".to_owned(), "self.x < 5 ms".to_owned()]
+            ),
+            (
+                data,
+                vec!["self.x > 7 ms".to_owned(), "self.x < 5 ms".to_owned()]
+            ),
+        ]
+    );
+    let [root] = timed(&wire, "timed_model")[..] else {
+        panic!("one root");
+    };
+    assert_eq!(
+        member(&root["body"], "guards")["members"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(timed(&wire, "clock_constraint").len(), 3);
+    assert_declared_order(&wire);
+
+    let (unit, wire) = emitted(
+        &document(false),
+        "pre A using v on Config::ConfigVersion::attemptUpdate { \
+         self.versionNumber > 0 and self.x >= 1 ms }\n\
+         pre B using v on Config::ConfigVersion::attemptUpdate { \
+         self.versionNumber < 9 and self.x < 5 ms }\n",
+    );
+    let [guard] = timed(&wire, "clock_guard")[..] else {
+        panic!("one guard");
+    };
+    let [part] = member(&guard["body"], "parts")["members"]
+        .as_array()
+        .expect("parts")
+        .as_slice()
+    else {
+        panic!("one part");
+    };
+    let predicate = target(&wire, &part["members"][0]["value"]);
+    assert_eq!(
+        predicate["body"]["operation"]["identity"],
+        "quire.op.boolean.and"
+    );
+    let operands: Vec<&str> = predicate["body"]["arguments"]
+        .as_array()
+        .expect("arguments")
+        .iter()
+        .map(|argument| located(&wire, target(&wire, argument), &unit))
+        .collect();
+    assert_eq!(operands, ["self.versionNumber > 0", "self.versionNumber < 9"]);
+    assert_eq!(part["members"].as_array().map(Vec::len), Some(3));
+    assert_declared_order(&wire);
+}
+
 /// The member a refused model names, and the text of its span in `unit`.
 fn unwritten(document: &[u8], body: &str) -> (qsl_semantics::check::UnwrittenTimedMember, String) {
     let (unit, checked) = checked(document, body);
@@ -396,8 +493,7 @@ fn unwritten(document: &[u8], body: &str) -> (qsl_semantics::check::UnwrittenTim
 /// FR-230-AC-50, QSpec FR-322-AC-263 (`QN-01`): the guard `forall(e in
 /// self.ts: e.x < 5 ms)` quantified over a clock collection refuses `unsupported_construct`/`not-yet-implemented`
 /// at the quantifier, naming STD-554, and is never written unquantified.
-/// Two guarded preconditions of one operation and a guard disjunct that
-/// constrains no clock refuse at the precondition.
+/// A guard disjunct that constrains no clock refuses at the precondition.
 #[trace("TC-685", "FR-230-AC-50", "QSpec-FR-322-AC-263")]
 #[test]
 fn an_unwritten_guard_refuses_at_its_member() {
@@ -421,14 +517,6 @@ fn an_unwritten_guard_refuses_at_its_member() {
         (cause.code(), cause.tag()),
         (Code::UnsupportedConstruct, "not-yet-implemented")
     );
-
-    let (member, text) = unwritten(
-        &document(false),
-        "pre A using v on Config::ConfigVersion::attemptUpdate { self.x >= 1 ms }\n\
-         pre B using v on Config::ConfigVersion::attemptUpdate { self.x < 5 ms }\n",
-    );
-    assert_eq!(member, Member::ConjoinedGuards);
-    assert!(text.starts_with("pre B"), "{text}");
 
     let (member, text) = unwritten(
         &document(false),

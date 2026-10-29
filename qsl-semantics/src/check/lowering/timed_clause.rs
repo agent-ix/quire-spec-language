@@ -22,7 +22,9 @@ use quire_semantic_value::location::Location;
 
 use super::{Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
-use crate::check::node_key::{BodyTerm, LeafTerm, LiteralValue, NodeTag};
+use crate::check::node_key::{
+    BodyTerm, LeafTerm, LiteralValue, MemberTerm, NodeTag, Operation, Operator,
+};
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::ClauseOperation;
 use crate::check::timed_model::{
@@ -85,11 +87,41 @@ impl Lowering<'_> {
                     constraints,
                 });
             }
-            guards.push(GuardNodes {
-                operation,
-                span: guard.span(),
-                parts,
-            });
+            // QSpec FR-322 "Clause nodes": one `clock_guard` for each
+            // operation anchor. A second guarded precondition of the same
+            // operation conjoins with the first: each part of the one guard
+            // is a part of each, its predicate their conjunction and its
+            // constraints both lists.
+            match guards
+                .iter_mut()
+                .find(|held: &&mut GuardNodes| held.operation == operation)
+            {
+                Some(held) => {
+                    let truth = self.timed_true(location)?;
+                    let mut product = Vec::with_capacity(held.parts.len() * parts.len());
+                    for left in &held.parts {
+                        for right in &parts {
+                            let predicate =
+                                self.timed_and(left.predicate, right.predicate, truth, location)?;
+                            let mut constraints = left.constraints.clone();
+                            constraints.extend(right.constraints.iter().cloned());
+                            let part = PartNodes {
+                                predicate,
+                                constraints,
+                            };
+                            if !product.contains(&part) {
+                                product.push(part);
+                            }
+                        }
+                    }
+                    held.parts = product;
+                }
+                None => guards.push(GuardNodes {
+                    operation,
+                    span: guard.span(),
+                    parts,
+                }),
+            }
         }
         let mut resets = Vec::new();
         for written in model.resets() {
@@ -271,6 +303,36 @@ impl Lowering<'_> {
         )?;
         self.record(literal, OccurrenceRole::Expression, location.clone());
         self.boolean_expression(literal, location)
+    }
+
+    /// The Boolean `expression` node of `left and right`, `truth` being the
+    /// node of `true`: either operand when the other is `truth`.
+    fn timed_and(
+        &mut self,
+        left: NodeKey,
+        right: NodeKey,
+        truth: NodeKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        if left == truth {
+            return Ok(right);
+        }
+        if right == truth || left == right {
+            return Ok(left);
+        }
+        let boolean = self.type_node(&ValueType::Boolean, location)?;
+        let term = self.typed_application(
+            location,
+            boolean,
+            Operator::Binary,
+            Operation::plain("quire.op.boolean.and"),
+            vec![
+                MemberTerm::Leaf(LeafTerm::reference(left)),
+                MemberTerm::Leaf(LeafTerm::reference(right)),
+            ],
+        )?;
+        term.key()
+            .ok_or_else(|| super::fault(location, KeyFault::UnkeyableRequirements))
     }
 
     /// `key` when it is an `expression` node; else the

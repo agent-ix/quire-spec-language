@@ -364,6 +364,10 @@ pub enum NodeTag {
     Correspondence,
     /// `hybrid`: a hybrid model, mode or transition (QSpec FR-481).
     Hybrid,
+    /// `timed_model`: a timed model's `clock_place` template, which a
+    /// `presence_read` over the place references (QSpec FR-322
+    /// "Presence").
+    TimedModel,
 }
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a

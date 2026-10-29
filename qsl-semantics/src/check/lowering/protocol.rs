@@ -714,7 +714,8 @@ impl Lowering<'_> {
                     | NodeTag::Protocol
                     | NodeTag::Claim
                     | NodeTag::Correspondence
-                    | NodeTag::Hybrid,
+                    | NodeTag::Hybrid
+                    | NodeTag::TimedModel,
                     _,
                 ) => return false,
             }
