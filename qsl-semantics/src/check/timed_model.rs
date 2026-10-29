@@ -42,7 +42,10 @@ use super::assemble::TimedDeclaration;
 use super::ir::{CheckedBody, CheckedNode};
 use super::lowering::{strictly_below, AdmittedModel, CollectionShape, PlaceStep};
 use super::refusal::TimedConstruct;
-use super::refusal::{CheckCause, CheckRefusal, TemporalCause, UnwrittenTimedMember};
+use super::refusal::{
+    CheckCause, CheckRefusal, ExcludedClauseForm, TemporalCause, TimedOmission,
+    UnwrittenTimedMember,
+};
 use super::state_clause::{
     check_clause, population_of, ClauseDeclarations, ClauseOperation, ClauseView, PopulationDomain,
     StateClauseDeclaration,
@@ -414,6 +417,26 @@ impl QuantifiedFamily {
     }
 }
 
+impl ClockGuard {
+    /// Whether a part of the guard always holds: it reads no data and no
+    /// presence and each of its constraints is `x >= 0`, which every clock
+    /// meets (QSpec `GJ-03`). Such a guard is that part alone: a disjunct
+    /// that constrains no clock adds nothing to it, and S4 writes it as
+    /// built rather than excluding it.
+    pub fn covered(&self) -> bool {
+        self.parts.iter().any(|part| {
+            part.data.is_none()
+                && part.presences.is_empty()
+                && part.elements.is_empty()
+                && part.families.is_empty()
+                && !part.clocks.is_empty()
+                && part.clocks.iter().all(|constraint| {
+                    constraint.op == ClockOp::GreaterOrEqual && constraint.bound.is_zero()
+                })
+        })
+    }
+}
+
 impl ConvexPart {
     /// The part's data predicate; `None` when the part reads no data.
     pub fn data(&self) -> Option<&CheckedTimedPredicate> {
@@ -513,6 +536,9 @@ pub struct SlotSelection {
     /// The binder as written, which the reset's binder node names.
     binder: String,
     predicate: Option<CheckedTimedPredicate>,
+    /// The condition's span and whether it reads only the element's
+    /// presence (`present(e)`), when there is a condition.
+    condition: Option<(Span, bool)>,
 }
 
 impl SlotSelection {
@@ -611,6 +637,8 @@ pub struct ClockResets {
     resets: Vec<ClockReset>,
     writes: Vec<CollectionWrite>,
     drops: Vec<ClockId>,
+    /// Each drop's span, beside `drops`.
+    drop_spans: Vec<Span>,
     requires: Vec<(ClockId, bool)>,
     /// The postcondition's index among the unit's state clauses.
     pub(crate) index: usize,
@@ -1122,36 +1150,46 @@ impl TimedModel {
         &self.urgency
     }
 
-    /// The first member no S4 emission writes yet, with its span (FR-230
-    /// "Checked package", QSpec FR-322 "Clause nodes"): `None` when S4
-    /// writes every clock place, guard, reset, time invariant, `Clock`
-    /// parameter and urgency of the model.
-    pub fn unwritten(&self) -> Option<(UnwrittenTimedMember, Span)> {
+    /// The first member no S4 emission writes yet or form the checked
+    /// package excludes, with its span (FR-230 "Checked package", QSpec
+    /// FR-322 "Clause nodes" and FR-322-AC-267): `None` when S4 writes every
+    /// clock place, guard, reset, time invariant, `Clock` parameter and
+    /// urgency of the model.
+    pub fn unwritten(&self) -> Option<(TimedOmission, Span)> {
+        use TimedOmission::{Excluded, Unwritten};
         use UnwrittenTimedMember as Member;
-        for guard in &self.guards {
+        for (at, guard) in self.guards.iter().enumerate() {
             if let Some(span) = guard.quantifier {
-                return Some((Member::QuantifiedClause, span));
+                return Some((Unwritten(Member::QuantifiedClause), span));
             }
             if guard.point {
-                return Some((Member::PointQualifiedClause, guard.span));
+                return Some((Unwritten(Member::PointQualifiedClause), guard.span));
             }
-            for part in &guard.parts {
+            for (index, part) in guard.parts.iter().enumerate() {
                 if !part.elements.is_empty() || !part.families.is_empty() {
-                    return Some((Member::QuantifiedClause, guard.span));
+                    return Some((Unwritten(Member::QuantifiedClause), guard.span));
                 }
                 if part
                     .data
                     .as_ref()
                     .is_some_and(|data| data.checked_body().reads_slot_presence())
                 {
-                    return Some((Member::ElementPresence, guard.span));
+                    return Some((Unwritten(Member::ElementPresence), guard.span));
                 }
-                if part.clocks.is_empty() {
-                    return Some((Member::UnconstrainedGuardPart, guard.span));
+                if part.clocks.is_empty() && !guard.covered() {
+                    // Located at the disjunct: its data predicate's site.
+                    let site = guard_part_site(&self.model, at, index);
+                    let span = self
+                        .sites
+                        .iter()
+                        .find(|(held, _)| *held == site)
+                        .and_then(|(_, spans)| spans.span(spans.root()))
+                        .unwrap_or(guard.span);
+                    return Some((Excluded(ExcludedClauseForm::DataOnlyDisjunct), span));
                 }
                 if let Some(found) = part.clocks.iter().find_map(|constraint| {
                     self.unwritten_constraint(constraint)
-                        .map(|member| (member, constraint.span))
+                        .map(|member| (Unwritten(member), constraint.span))
                 }) {
                     return Some(found);
                 }
@@ -1159,16 +1197,17 @@ impl TimedModel {
         }
         for written in &self.resets {
             if written.point {
-                return Some((Member::PointQualifiedClause, written.span));
+                return Some((Unwritten(Member::PointQualifiedClause), written.span));
             }
-            if !written.writes.is_empty() {
-                return Some((Member::CollectionWrite, written.span));
+            if let Some(write) = written.writes.first() {
+                return Some((Excluded(ExcludedClauseForm::CollectionWrite), write.span()));
             }
             if !written.drops.is_empty() {
-                return Some((Member::PresenceDrop, written.span));
+                let span = written.drop_spans.first().copied().unwrap_or(written.span);
+                return Some((Excluded(ExcludedClauseForm::PresenceDrop), span));
             }
             if !written.requires.is_empty() {
-                return Some((Member::PresenceRequirement, written.span));
+                return Some((Unwritten(Member::PresenceRequirement), written.span));
             }
             for reset in &written.resets {
                 if reset.parameter.is_some() {
@@ -1177,13 +1216,22 @@ impl TimedModel {
                 let slots = self
                     .clock(reset.clock)
                     .map_or(0, |clock| clock.slots().count());
-                let member = match &reset.selection {
+                let omission = match &reset.selection {
                     None if slots == 0 => continue,
-                    Some(selection) if selection.predicate.is_some() => Member::SelectionPredicate,
+                    Some(SlotSelection {
+                        condition: Some((span, presence)),
+                        ..
+                    }) => {
+                        return Some(if *presence {
+                            (Unwritten(Member::PresenceSelection), *span)
+                        } else {
+                            (Excluded(ExcludedClauseForm::ElementDataSelection), *span)
+                        });
+                    }
                     Some(_) if slots == 1 => continue,
-                    None | Some(_) => Member::ElementReset,
+                    None | Some(_) => Unwritten(Member::ElementReset),
                 };
-                return Some((member, reset.span));
+                return Some((omission, reset.span));
             }
         }
         for invariant in &self.invariants {
@@ -1192,14 +1240,14 @@ impl TimedModel {
                 .iter()
                 .find_map(|bound| self.unwritten_constraint(bound))
             {
-                return Some((member, invariant.span));
+                return Some((Unwritten(member), invariant.span));
             }
             if invariant
                 .alternatives
                 .iter()
                 .any(|alternative| alternative.predicate.checked_body().reads_slot_presence())
             {
-                return Some((Member::ElementPresence, invariant.span));
+                return Some((Unwritten(Member::ElementPresence), invariant.span));
             }
         }
         self.urgency
@@ -1208,7 +1256,7 @@ impl TimedModel {
             .find(|(urgency, predicate)| {
                 matches!(urgency, Urgency::When { .. }) && predicate.is_none()
             })
-            .map(|(urgency, _)| (Member::ElementPresence, urgency.span()))
+            .map(|(urgency, _)| (Unwritten(Member::ElementPresence), urgency.span()))
     }
 
     /// Why S4 does not write `constraint` yet, `None` when it does: a
@@ -1365,7 +1413,7 @@ struct ResetDraft {
     span: Span,
     /// The collection field, the element's parameter name, its binder as
     /// written and the data predicate over it, of a reset by selection.
-    selection: Option<(Vec<String>, String, String, Option<ExpressionForm>)>,
+    selection: Option<SelectionDraft>,
     /// The `Clock` parameter's position, of a reset of one.
     parameter: Option<usize>,
 }
@@ -1410,9 +1458,23 @@ struct ResetsDraft {
     resets: Vec<ResetDraft>,
     writes: Vec<CollectionWrite>,
     drops: Vec<ClockId>,
+    /// Each drop's span, beside `drops`.
+    drop_spans: Vec<Span>,
     requires: Vec<(ClockId, bool)>,
     /// Each requirement's span, beside `requires`.
     require_spans: Vec<Span>,
+}
+
+/// A reset by selection before its condition is typed.
+struct SelectionDraft {
+    /// The path of field names from the receiver to the collection.
+    path: Vec<String>,
+    /// The parameter name the condition reads the element by.
+    name: String,
+    /// The binder as written.
+    binder: String,
+    /// The condition, with its span; `None` selects every held slot.
+    condition: Option<(ExpressionForm, Span)>,
 }
 
 /// What [`prepare`] read out of a unit: one draft per dense time source.
@@ -2705,6 +2767,8 @@ struct ResetCut {
     writes: Vec<CollectionWrite>,
     /// The `Option<Clock>` places the postcondition drops.
     drops: Vec<ClockId>,
+    /// Each drop's span, beside `drops`.
+    drop_spans: Vec<Span>,
     /// The guarded places written so far, by a reset or a drop: an
     /// `Option<Clock>`, or each clock case of a union field written whole.
     option_writes: BTreeSet<ClockId>,
@@ -2897,6 +2961,7 @@ fn resets(
             if let Some((clock, value)) = write.reset {
                 cut.resets.push(ResetDraft::single(clock, value, span));
             }
+            cut.drop_spans.extend(write.drops.iter().map(|_| span));
             cut.drops.extend(write.drops);
             continue;
         }
@@ -2937,6 +3002,7 @@ fn resets(
                 }
                 cut.leaves.insert(conjunct, ExprNode::Boolean(true));
                 cut.drops.push(clock);
+                cut.drop_spans.push(span);
                 continue;
             }
             if located.reads_clock(*right) {
@@ -3986,6 +4052,7 @@ fn prepare_models(
                             resets: cut.resets,
                             writes: cut.writes,
                             drops: cut.drops,
+                            drop_spans: cut.drop_spans,
                             requires: cut.requires,
                             require_spans: cut.require_spans,
                         });
@@ -4471,8 +4538,20 @@ pub(crate) fn check(
             for reset in written.resets {
                 let selection = match reset.selection {
                     None => None,
-                    Some((path, name, binder, predicate)) => {
-                        let predicate = match predicate {
+                    Some(SelectionDraft {
+                        path,
+                        name,
+                        binder,
+                        condition: predicate,
+                    }) => {
+                        let condition = predicate.as_ref().map(|(form, span)| {
+                            let presence = form
+                                .expression
+                                .get(form.expression.root_id())
+                                .is_some_and(|root| matches!(root.node(), ExprNode::Present(_)));
+                            (*span, presence)
+                        });
+                        let predicate = match predicate.map(|(form, _)| form) {
                             None => None,
                             Some(form) => {
                                 let element =
@@ -4500,6 +4579,7 @@ pub(crate) fn check(
                             name,
                             binder,
                             predicate,
+                            condition,
                         })
                     }
                 };
@@ -4521,6 +4601,7 @@ pub(crate) fn check(
                 resets: checked,
                 writes: written.writes,
                 drops: written.drops,
+                drop_spans: written.drop_spans,
                 requires: written.requires,
             });
         }
@@ -4547,10 +4628,14 @@ pub(crate) fn check(
 /// compiled and silently missing from the package's identity. `None` when
 /// S4 writes the whole model.
 pub(crate) fn not_emitted(model: &TimedModel) -> Option<CheckRefusal> {
-    let (member, span) = model.unwritten()?;
-    Some(refusal(timed(TemporalCause::TimedModelNotEmitted {
-        model: model.model.clone(),
-        member,
-        span,
+    let (omission, span) = model.unwritten()?;
+    let model = model.model.clone();
+    Some(refusal(timed(match omission {
+        TimedOmission::Unwritten(member) => TemporalCause::TimedModelNotEmitted {
+            model,
+            member,
+            span,
+        },
+        TimedOmission::Excluded(form) => TemporalCause::ExcludedClauseForm { model, form, span },
     })))
 }

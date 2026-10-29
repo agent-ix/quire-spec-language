@@ -1450,6 +1450,11 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                      yet: {}",
                     member.description()
                 ),
+                TemporalCause::ExcludedClauseForm { model, form, .. } => format!(
+                    "{message}: timed model `{model}` has a clause form the checked package \
+                     excludes: {}",
+                    form.description()
+                ),
                 TemporalCause::MalformedTimeUnit { name, .. } => {
                     format!("{message}: the time unit `{name}` has a zero scale")
                 }

@@ -405,12 +405,13 @@ pub use qsl_forms::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, ExecutionPointRefusal, IdentityForm, IdentityNode, IdentityObserving,
-    InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
-    NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
-    ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
-    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember,
-    TemporalCause, TimeUnitCause, TimedConstruct, UnwrittenTimedMember,
+    DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
+    IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
+    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, ProvedInterval,
+    QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
+    StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
+    TimedOmission, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,

@@ -740,14 +740,6 @@ fn an_unwritten_guard_refuses_at_its_member() {
         (cause.code(), cause.tag()),
         (Code::UnsupportedConstruct, "not-yet-implemented")
     );
-
-    let (member, text) = unwritten(
-        &document(false),
-        "pre Or using v on Config::ConfigVersion::attemptUpdate { \
-         self.x >= 1 ms or self.versionNumber > 0 }\n",
-    );
-    assert_eq!(member, Member::UnconstrainedGuardPart);
-    assert!(text.starts_with("pre Or"), "{text}");
 }
 
 /// FR-230-AC-50, QSpec FR-342-AC-11: a clock-reading clause bound to an
@@ -866,15 +858,106 @@ fn a_reset_by_selection_binds_its_slot() {
         "forall(e in self.ts: e.x = 0 ms)"
     );
     assert_declared_order(&wire);
+}
 
-    let (member, text) = unwritten(
-        &timer_document(),
-        "post R using v on Config::ConfigVersion::attemptUpdate { \
-         forall(e in self.ts: e.n > 1 implies e.x = 0 ms) }\n",
+/// The excluded form a refused model names, and the text of its span in
+/// `unit`.
+fn excluded(document: &[u8], body: &str) -> (qsl_semantics::check::ExcludedClauseForm, String) {
+    let (unit, checked) = checked(document, body);
+    let refusals = checked.expect_err("the form is excluded");
+    let found = refusals.iter().find_map(|refusal| match &refusal.cause {
+        qsl_semantics::check::CheckCause::Temporal(cause) => match &**cause {
+            qsl_semantics::check::TemporalCause::ExcludedClauseForm { form, span, .. } => {
+                assert_eq!(
+                    (cause.code(), cause.tag()),
+                    (Code::UnsupportedConstruct, "expression-form")
+                );
+                Some((*form, unit[span.start..span.end].to_owned()))
+            }
+            _ => None,
+        },
+        _ => None,
+    });
+    found.unwrap_or_else(|| panic!("{body}: {refusals:?}"))
+}
+
+/// [`presence_document`] whose `attemptUpdate` frame names `v`.
+fn dropping_document() -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(&presence_document()).expect("JSON");
+    document["types"][1]["operations"][0]["frame"]["modifies"]
+        .as_array_mut()
+        .expect("modifies")
+        .push(json!("ix://example/config-version/ConfigVersion/v"));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// QSpec FR-322-AC-267 (STD-560, `excluded_forms`): the forms the checked
+/// package excludes refuse `unsupported_construct`/`expression-form` at the
+/// form, naming the construct, and no package is emitted: a guard disjunct
+/// that reads no clock at that disjunct (`GJ-01`), a clock collection
+/// written by a literal or a `filter` at the write (`CW-01`, `CW-02`), a
+/// drop `self.v = absent` at the write (`CW-03`) and a reset by selection
+/// that reads the element's data at the condition (`SD-01`). The controls
+/// build: `self.x >= 0 ms or self.versionNumber > 0` is the one part of
+/// `x >= 0 ms`, which every clock meets (`GJ-03`), and a constant write of
+/// `v` is its reset (`CW-04`).
+#[trace("TC-685", "FR-230-AC-50", "QSpec-FR-322-AC-267")]
+#[test]
+fn excluded_clause_forms_refuse_at_the_form() {
+    use qsl_semantics::check::ExcludedClauseForm as Form;
+    let attempt = |body: &str| {
+        format!("post P using v on Config::ConfigVersion::attemptUpdate {{ {body} }}\n")
+    };
+    for (document, body, form, text) in [
+        (
+            document(false),
+            "pre Or using v on Config::ConfigVersion::attemptUpdate { \
+             self.x >= 1 ms or self.versionNumber > 0 }\n"
+                .to_owned(),
+            Form::DataOnlyDisjunct,
+            "self.versionNumber > 0",
+        ),
+        (
+            timer_document(),
+            attempt("self.ts = sequence[Config::Timer { x: 0 ms, n: 1 }]"),
+            Form::CollectionWrite,
+            "self.ts = sequence[Config::Timer { x: 0 ms, n: 1 }]",
+        ),
+        (
+            timer_document(),
+            attempt("self.ts = filter(e in pre(self.ts): e.n > 1)"),
+            Form::CollectionWrite,
+            "self.ts = filter(e in pre(self.ts): e.n > 1)",
+        ),
+        (
+            dropping_document(),
+            attempt("self.v = absent"),
+            Form::PresenceDrop,
+            "self.v = absent",
+        ),
+        (
+            timer_document(),
+            attempt("forall(e in self.ts: e.n > 1 implies e.x = 0 ms)"),
+            Form::ElementDataSelection,
+            "e.n > 1",
+        ),
+    ] {
+        let (found, located) = excluded(&document, &body);
+        assert_eq!((found, located.as_str()), (form, text), "{body}");
+        assert!(!found.description().is_empty());
+    }
+    let (_, wire) = emitted(
+        &document(false),
+        "pre Zero using v on Config::ConfigVersion::attemptUpdate { \
+         self.x >= 0 ms or self.versionNumber > 0 }\n",
     );
-    assert_eq!(
-        member,
-        qsl_semantics::check::UnwrittenTimedMember::SelectionPredicate
-    );
-    assert_eq!(text, "forall(e in self.ts: e.n > 1 implies e.x = 0 ms)");
+    let [guard] = timed(&wire, "clock_guard")[..] else {
+        panic!("one guard");
+    };
+    let parts = member(&guard["body"], "parts")["members"]
+        .as_array()
+        .expect("parts");
+    assert_eq!(parts.len(), 1, "the disjunct x >= 0 ms alone");
+    let (_, wire) = emitted(&dropping_document(), &attempt("self.v = 0 ms"));
+    assert_eq!(timed(&wire, "clock_reset").len(), 1);
 }

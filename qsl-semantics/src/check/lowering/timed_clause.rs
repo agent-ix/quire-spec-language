@@ -87,7 +87,13 @@ impl Lowering<'_> {
             let context = guard.context;
             let operation = self.clause_anchor(guard.operation(), location)?;
             let mut parts = Vec::with_capacity(guard.parts().len());
+            // A covered guard is its always-holding part: the disjuncts that
+            // constrain no clock add nothing (QSpec `GJ-03`).
+            let covered = guard.covered();
             for (index, part) in guard.parts().iter().enumerate() {
+                if covered && part.clocks().is_empty() {
+                    continue;
+                }
                 // A part with no data predicate has no site of its own: its
                 // presences are located at the clause.
                 let site = match part.data() {

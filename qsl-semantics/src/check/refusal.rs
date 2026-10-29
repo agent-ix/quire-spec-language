@@ -1190,6 +1190,48 @@ impl ProtocolAnchorCause {
     }
 }
 
+/// A clause form the checked package excludes by rule (QSpec FR-322-AC-267,
+/// STD-560): the producer refuses it `unsupported_construct`/
+/// `expression-form` at the form, naming the construct, and writes no clause
+/// node for it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExcludedClauseForm {
+    /// A guard disjunct that constrains no clock (`GJ-01`): a `clock_guard`
+    /// part names at least one constraint.
+    DataOnlyDisjunct,
+    /// A clock collection written other than by a reset of its elements: a
+    /// collection literal, `filter` and the like (`CW-01`, `CW-02`).
+    CollectionWrite,
+    /// `self.v = absent` or another drop of a clock place (`CW-03`): a drop
+    /// is no reset.
+    PresenceDrop,
+    /// A reset by selection whose condition reads the element's data
+    /// (`SD-01`).
+    ElementDataSelection,
+}
+
+impl ExcludedClauseForm {
+    /// The construct, as the refusal names it.
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::DataOnlyDisjunct => "a guard disjunct that constrains no clock",
+            Self::CollectionWrite => "a clock collection written other than by a reset",
+            Self::PresenceDrop => "a clock place set absent",
+            Self::ElementDataSelection => "a reset by selection that reads the element's data",
+        }
+    }
+}
+
+/// Why a checked timed model is not written whole: a member S4 does not
+/// write yet, or a clause form the package excludes.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TimedOmission {
+    /// A member S4 does not write yet.
+    Unwritten(UnwrittenTimedMember),
+    /// A form the checked package excludes.
+    Excluded(ExcludedClauseForm),
+}
+
 /// A timed-model member that no S4 emission writes yet (FR-230 "Checked
 /// package", QSpec FR-322 "Clause nodes"): the model is refused
 /// `unsupported_construct`/`not-yet-implemented` at the member.
@@ -1208,20 +1250,13 @@ pub enum UnwrittenTimedMember {
     /// present(e))`), whose quantifier over the collection's slots has no
     /// checked form until STD-554.
     ElementPresence,
-    /// A guard disjunct that constrains no clock: a `clock_guard` part
-    /// names at least one constraint (QSpec FR-322-AC-261, `CL-20`).
-    UnconstrainedGuardPart,
-    /// A clock collection written whole, which no FR-322 clause form
-    /// carries.
-    CollectionWrite,
-    /// `self.v = absent`, which no FR-322 clause form carries.
-    PresenceDrop,
     /// A postcondition's requirement on a clock place's presence, which no
     /// FR-322 clause form carries.
     PresenceRequirement,
-    /// A reset by selection whose selection reads the element's data: the
-    /// `condition` of a `clock_reset` reads the element by its position.
-    SelectionPredicate,
+    /// A reset by selection whose condition reads only the element's
+    /// presence (`present(e) implies e = 0 ms`, QSpec `SD-02`), whose
+    /// `condition` S3 does not lower yet.
+    PresenceSelection,
     /// A reset of an element clock that no single binder selects: a clock
     /// below two collections, or an element named by position.
     ElementReset,
@@ -1240,11 +1275,10 @@ impl UnwrittenTimedMember {
             Self::ElementPresence => {
                 "a predicate reading a clock collection's element presences waits on STD-554"
             }
-            Self::UnconstrainedGuardPart => "a guard disjunct that constrains no clock",
-            Self::CollectionWrite => "a clock collection written whole",
-            Self::PresenceDrop => "a clock place set absent",
             Self::PresenceRequirement => "a postcondition requiring a clock presence",
-            Self::SelectionPredicate => "a reset by selection that reads the element's data",
+            Self::PresenceSelection => {
+                "a reset by selection whose condition reads the element's presence"
+            }
             Self::ElementReset => "a reset of an element clock no single binder selects",
         }
     }
@@ -1451,6 +1485,16 @@ pub enum TemporalCause {
         member: UnwrittenTimedMember,
         /// The member's span: the quantifier of a quantified clause, else
         /// the clause, declaration or constraint written.
+        span: Span,
+    },
+    /// QSpec FR-322-AC-267: a clause form the checked package excludes,
+    /// refused at the form.
+    ExcludedClauseForm {
+        /// The model alias.
+        model: String,
+        /// The excluded form.
+        form: ExcludedClauseForm,
+        /// The form's span.
         span: Span,
     },
     /// FR-230: a tick source's period is zero or negative.
@@ -1948,6 +1992,7 @@ impl TemporalCause {
             | Self::UrgentGuardReadsClock { span, .. }
             | Self::TimedPredicate { span, .. }
             | Self::TimedModelNotEmitted { span, .. }
+            | Self::ExcludedClauseForm { span, .. }
             | Self::InvalidTickPeriod { span }
             | Self::MalformedTimeUnit { span, .. }
             | Self::MissingTickOperation { span, .. }
@@ -2030,7 +2075,9 @@ impl TemporalCause {
             Self::TimedPredicate { cause, .. } => cause.code(),
             Self::UnprovedPresence { .. } => Code::UndefinedExpression,
             Self::PresenceNotChecked { .. } => Code::UnsupportedConstruct,
-            Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::TimedModelNotEmitted { .. } | Self::ExcludedClauseForm { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 Code::InvalidModelBinding
             }
@@ -2105,6 +2152,7 @@ impl TemporalCause {
             Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
             Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),
             Self::TimedModelNotEmitted { .. } => "not-yet-implemented",
+            Self::ExcludedClauseForm { .. } => "expression-form",
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 "malformed-declaration"
             }

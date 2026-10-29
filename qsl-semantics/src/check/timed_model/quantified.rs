@@ -484,19 +484,22 @@ pub(super) fn reset(
     }
     let name = format!("{}#{}", quantifier.binder, quantifier.path.join("."));
     let predicate = premise
-        .map(|premise| renamed(located, premise, quantifier.binder, &name))
+        .map(|premise| {
+            renamed(located, premise, quantifier.binder, &name)
+                .map(|form| (form, located.span(premise)))
+        })
         .transpose()?;
     Ok(Some(ResetDraft {
         parameter: None,
         clock,
         value,
         span,
-        selection: Some((
-            quantifier.path,
+        selection: Some(super::SelectionDraft {
+            path: quantifier.path,
             name,
-            quantifier.binder.to_owned(),
-            predicate,
-        )),
+            binder: quantifier.binder.to_owned(),
+            condition: predicate,
+        }),
     }))
 }
 
