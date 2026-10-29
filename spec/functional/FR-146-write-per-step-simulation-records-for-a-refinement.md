@@ -164,11 +164,11 @@ wording.
   concrete operation's receiver (`self`), result and parameter types; the
   parameter domain of each `_` argument of its abstract operation; the
   context population, the one population that covers the receiver's type
-  (FR-104); each population the operation's contract clauses range over
-  (FR-104, [FR-391](FR-391-name-a-population-in-a-state-clause.md): a
-  population a clause checks state over, names in a state clause or `holds`
-  atom, or walks with a `reaches`), because the record reads the clause
-  bodies; and each population a `reaches` in the refinement's state mapping
+  (FR-104); each population the operation's contract clauses (precondition,
+  postcondition, invariant) range over (QSL FR-104,
+  [FR-391](FR-391-name-a-population-in-a-state-clause.md)), whether by a
+  quantifier, an `allInstances` or a `reaches`, because the record reads the
+  clause bodies; and each population a `reaches` in the refinement's state mapping
   walks. An `Initial` record's roots SHALL be the population covering each
   concrete object type the state mapping maps and each population a `reaches`
   in the state mapping walks, because the record evaluates the mapping at
