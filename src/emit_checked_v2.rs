@@ -63,8 +63,16 @@ pub enum Error {
     /// The library selection is invalid.
     #[error("{0}")]
     Dependencies(DependencyInputRefusal),
+    /// A domain package or library file is over the source-size ceiling.
+    #[error("{path} is over the {limit}-byte file ceiling; it is not truncated")]
+    TooLarge {
+        /// The file.
+        path: String,
+        /// The ceiling in bytes.
+        limit: usize,
+    },
     /// The producer refused the source.
-    #[error("{0}")]
+    #[error("{}", without_limit_hint(.0))]
     Producer(Box<ReplayRefusal>),
 }
 
@@ -75,7 +83,7 @@ impl Error {
         let code: Option<Code> = match self {
             Self::Producer(refusal) => Some(refusal.code()),
             Self::Dependencies(refusal) => Some(refusal.code()),
-            Self::Usage | Self::Read { .. } | Self::Write { .. } => None,
+            Self::Usage | Self::Read { .. } | Self::Write { .. } | Self::TooLarge { .. } => None,
         };
         code.map_or(Category::Refusal.exit_code(), |code| {
             code.category().exit_code()
@@ -131,10 +139,26 @@ impl Request {
     }
 }
 
+/// The producer's refusal text without its trailing "raise it with
+/// `--limit ...`" hint, which names a flag this tool does not have. The
+/// refusal itself, its code and its category are unchanged.
+fn without_limit_hint(refusal: &ReplayRefusal) -> String {
+    let text = refusal.to_string();
+    match text.find("; raise it with") {
+        Some(at) => text[..at].to_owned(),
+        None => text,
+    }
+}
+
 /// Read at most the source ceiling plus one byte, as `quire-spec` does, so an
 /// oversized file reaches the producer's own size refusal without an
 /// unbounded read.
-fn read(path: &Path) -> Result<Vec<u8>, Error> {
+///
+/// With `refuse_over_cap`, a file over the ceiling is an explicit
+/// [`Error::TooLarge`] rather than truncated bytes (a domain package or
+/// library would otherwise fail later as a digest or import refusal); the
+/// source passes `false` and leaves the refusal to the producer.
+fn read(path: &Path, refuse_over_cap: bool) -> Result<Vec<u8>, Error> {
     let failed = |source| Error::Read {
         path: path.display().to_string(),
         source,
@@ -145,6 +169,12 @@ fn read(path: &Path) -> Result<Vec<u8>, Error> {
     file.take(ceiling.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(failed)?;
+    if refuse_over_cap && bytes.len() > MAX_SOURCE_BYTES {
+        return Err(Error::TooLarge {
+            path: path.display().to_string(),
+            limit: MAX_SOURCE_BYTES,
+        });
+    }
     Ok(bytes)
 }
 
@@ -157,11 +187,11 @@ fn identity(kind: &str, path: &Path) -> SourceIdentity {
 /// Emit the `quire.checked-package/v2` bytes of `request`'s source through
 /// [`qsl_replay::compile_package`].
 pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
-    let source = read(&request.source)?;
+    let source = read(&request.source, false)?;
     let models = request
         .models
         .iter()
-        .map(|path| read(path))
+        .map(|path| read(path, true))
         .collect::<Result<Vec<_>, _>>()?;
     let libraries = request
         .libraries
@@ -171,7 +201,7 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
                 identity: library.clone(),
                 source: identity("library", path),
                 path: path.display().to_string(),
-                bytes: read(path)?,
+                bytes: read(path, true)?,
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;

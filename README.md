@@ -273,7 +273,10 @@ catalog code is in another category (for example incomplete) exits with that
 category's code (22). The emitted bytes embed the source path exactly as given
 (the `source:<path>` label feeds the source digest labels and the
 `package_id`), so pass an identical, fixed, cwd-relative path on every
-invocation to get stable bytes. Files are read under the source-size ceiling.
+invocation to get stable bytes. The source is read under the source-size ceiling (a longer source is the
+producer's size refusal, exit 22, with its `--limit` hint removed because this
+tool has no such flag); a `--model` or `--library` file over the ceiling is an
+explicit refusal naming the file (exit 20), never truncated.
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \

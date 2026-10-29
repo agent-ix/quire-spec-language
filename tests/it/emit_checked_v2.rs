@@ -221,3 +221,51 @@ fn a_refused_source_writes_nothing_and_exits_nonzero() {
     assert_ne!(missing.exit_code(), 0);
     assert!(stdout.is_empty());
 }
+
+/// The ceiling: a source of exactly the source-size ceiling emits, one byte
+/// more is the producer's size refusal (exit 22, no bytes, without the
+/// producer's `--limit` hint, which names a flag this tool lacks); an
+/// over-ceiling domain package or library file is an explicit refusal naming
+/// the file, exit 20, never truncated.
+#[test]
+fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
+    use qsl_foundation::source::MAX_SOURCE_BYTES;
+    let directory = tempfile::tempdir().unwrap();
+    let mut text = std::fs::read_to_string("tests/fixtures/spine-compile.native").unwrap();
+    assert!(text.len() < MAX_SOURCE_BYTES);
+    text.push('\n');
+    text.push_str(&" ".repeat(MAX_SOURCE_BYTES - text.len()));
+    assert_eq!(text.len(), MAX_SOURCE_BYTES);
+    let program = directory.path().join("at-cap.native");
+    std::fs::write(&program, &text).unwrap();
+    let mut stdout = Vec::new();
+    run(&args(&[&program]), &mut stdout).expect("a source at the ceiling emits");
+    assert!(!stdout.is_empty());
+
+    let over = directory.path().join("over-cap.native");
+    std::fs::write(&over, format!("{text} ")).unwrap();
+    let mut refused = Vec::new();
+    let refusal = run(&args(&[&over]), &mut refused).expect_err("one byte over the ceiling");
+    assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
+    assert_eq!(refusal.exit_code(), 22, "{refusal}");
+    assert!(!refusal.to_string().contains("--limit"), "{refusal}");
+    assert!(refused.is_empty());
+
+    let model = directory.path().join("big.semantic-ir.json");
+    std::fs::write(&model, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[&model, &program]));
+    let refusal = run(&command, &mut refused).expect_err("an over-cap model file");
+    assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
+    assert_eq!(refusal.exit_code(), 20);
+    assert!(
+        refusal.to_string().contains("big.semantic-ir.json"),
+        "{refusal}"
+    );
+    let mut command = strings(&["--library"]);
+    command.push(OsString::from(format!("lib={}", model.display())));
+    command.extend(args(&[&program]));
+    let refusal = run(&command, &mut refused).expect_err("an over-cap library file");
+    assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
+    assert!(refused.is_empty());
+}
