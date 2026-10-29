@@ -230,6 +230,10 @@ pub use model_check::state_graph::{
     ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
     StateGraphPropertyForm, TrapClosure, WitnessPath, WitnessSource,
 };
+pub use model_check::step_safety::{
+    certify_step_records, settle_step_records, StepCertification, StepRecordVerdict,
+    StepRecordsSettlement,
+};
 pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
     STEP_INDUCTION_DEPTH,

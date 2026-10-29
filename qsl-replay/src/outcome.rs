@@ -189,6 +189,28 @@ pub enum ItemLabel {
     Measured,
 }
 
+impl ItemLabel {
+    /// The result label `value` settles. A vacuous proof is `inconclusive`,
+    /// never `proved`.
+    pub fn of(value: &TerminalValue) -> Self {
+        match value {
+            TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                ..
+            }
+            | TerminalValue::Inconclusive(_) => Self::Inconclusive,
+            TerminalValue::Proved { .. } => Self::Proved,
+            TerminalValue::Tested => Self::Tested,
+            TerminalValue::Refuted => Self::Refuted,
+            TerminalValue::Declined { .. } => Self::Declined,
+            TerminalValue::Unsupported(_) => Self::Unsupported,
+            TerminalValue::Incomplete(_) => Self::Incomplete,
+            TerminalValue::Failed => Self::Failed,
+            TerminalValue::Measured(_) => Self::Measured,
+        }
+    }
+}
+
 /// Why a replay settled inconclusive: its disagreement reason and the two
 /// verdicts' categories.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -198,6 +220,13 @@ pub struct ParityReason {
     proved: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     replayed: Option<&'static str>,
+}
+
+/// A checked-package node id on the wire: its domain and hex digest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WireNodeId {
+    domain: &'static str,
+    digest: String,
 }
 
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
@@ -226,6 +255,12 @@ pub struct ItemCause {
         skip_serializing_if = "Option::is_none"
     )]
     source: Option<CancelCause>,
+    /// A `hypotheses-not-established` cause's invariant clause node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hypothesis: Option<WireNodeId>,
+    /// A `hypotheses-not-established` cause's hypothesis item result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<ItemLabel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rule: Option<CertificateRule>,
     #[serde(rename = "at", skip_serializing_if = "Option::is_none")]
@@ -385,6 +420,8 @@ impl ItemCause {
             exhaustive: None,
             source: None,
             rule: None,
+            hypothesis: None,
+            result: None,
             certificate_at: None,
             limit: None,
             value: None,
@@ -427,6 +464,16 @@ impl ItemCause {
             }) => {
                 item.rule = Some(*rule);
                 item.certificate_at = Some(at.clone());
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::HypothesesNotEstablished {
+                hypothesis,
+                result,
+            }) => {
+                item.hypothesis = Some(WireNodeId {
+                    domain: quire_exact::NODE_KEY_DOMAIN,
+                    digest: hypothesis.to_string(),
+                });
+                item.result = Some(*result);
             }
             ReportedInconclusiveCause::Cause(
                 InconclusiveCause::BoundReached { depth }
@@ -632,30 +679,23 @@ impl OutcomeItem {
     /// `inconclusive` with its vacuity cause, never `proved`.
     pub fn from_terminal(record: &TerminalRecord) -> Self {
         let value = record.value();
-        let (result, cause) = match value {
+        let result = ItemLabel::of(value);
+        let cause = match value {
             TerminalValue::Proved {
                 basis: ProofBasis::Checks { success_checks: 0 },
                 ..
             }
-            | TerminalValue::Inconclusive(_) => (
-                ItemLabel::Inconclusive,
-                value
-                    .inconclusive_cause()
-                    .map(|cause| ItemCause::inconclusive(&cause)),
-            ),
-            TerminalValue::Proved { .. } => (ItemLabel::Proved, None),
-            TerminalValue::Tested => (ItemLabel::Tested, None),
-            TerminalValue::Refuted => (ItemLabel::Refuted, None),
-            TerminalValue::Declined { cause, code } => (
-                ItemLabel::Declined,
-                Some(ItemCause {
-                    code: Some(match code {
-                        DeclineCode::Qsl(code) => code.as_str().to_owned(),
-                        DeclineCode::Std001(code) => code.as_str().to_owned(),
-                    }),
-                    ..ItemCause::kind(cause.as_str())
+            | TerminalValue::Inconclusive(_) => value
+                .inconclusive_cause()
+                .map(|cause| ItemCause::inconclusive(&cause)),
+            TerminalValue::Proved { .. } | TerminalValue::Tested | TerminalValue::Refuted => None,
+            TerminalValue::Declined { cause, code } => Some(ItemCause {
+                code: Some(match code {
+                    DeclineCode::Qsl(code) => code.as_str().to_owned(),
+                    DeclineCode::Std001(code) => code.as_str().to_owned(),
                 }),
-            ),
+                ..ItemCause::kind(cause.as_str())
+            }),
             TerminalValue::Unsupported(cause) => {
                 let mut item = ItemCause {
                     code: cause.code().map(str::to_owned),
@@ -687,7 +727,7 @@ impl OutcomeItem {
                     | UnavailabilityCause::ConfidenceBeyondPrecision
                     | UnavailabilityCause::PunctualInterval { .. } => {}
                 }
-                (ItemLabel::Unsupported, Some(item))
+                Some(item)
             }
             TerminalValue::Incomplete(cause) => {
                 let mut item = ItemCause::kind(cause.as_str());
@@ -700,16 +740,13 @@ impl OutcomeItem {
                     }
                     IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
                 }
-                (ItemLabel::Incomplete, Some(item))
+                Some(item)
             }
-            TerminalValue::Failed => (
-                ItemLabel::Failed,
-                record.diagnostic().map(|diagnostic| ItemCause {
-                    code: Some(diagnostic.code().to_owned()),
-                    ..ItemCause::kind(diagnostic.cause())
-                }),
-            ),
-            TerminalValue::Measured(verdict) => (ItemLabel::Measured, measured(verdict).1),
+            TerminalValue::Failed => record.diagnostic().map(|diagnostic| ItemCause {
+                code: Some(diagnostic.code().to_owned()),
+                ..ItemCause::kind(diagnostic.cause())
+            }),
+            TerminalValue::Measured(verdict) => measured(verdict).1,
         };
         let (basis, certification) = match value {
             TerminalValue::Proved {
@@ -2176,6 +2213,21 @@ mod tests {
                     Code::StaleDependency,
                 )),
                 json!({"result": "inconclusive", "cause": {"kind": "replay-refused", "code": "stale_dependency"}, "category": "inconclusive"}),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
+                    hypothesis: quire_exact::NodeKey::from_digest([0xdc; 32]),
+                    result: ItemLabel::Refuted,
+                }),
+                json!({
+                    "result": "inconclusive",
+                    "cause": {
+                        "kind": "hypotheses-not-established",
+                        "hypothesis": {"domain": "quire.checked-semantic-node/v1", "digest": "dc".repeat(32)},
+                        "result": "refuted",
+                    },
+                    "category": "inconclusive",
+                }),
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {

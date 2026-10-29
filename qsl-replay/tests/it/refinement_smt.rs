@@ -2,7 +2,8 @@
 //! FR-315 "Refinement queries" (TC-900) and FR-314 "Refinement certificates"
 //! (TC-893, TC-1165): `encode_refinement_query` and
 //! `check_refinement_smt_proof` over ADR-020 §8's `CasRefinesCounter`, with
-//! hand-written Alethe refutations of its queries.
+//! hand-written Alethe refutations of its queries; and FR-146's settlement of
+//! the per-step simulation records and the safety half from them (TC-551).
 
 use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
@@ -11,9 +12,12 @@ use qsl_eval::smt::{
     SmtEncodingRefusal,
 };
 use qsl_replay::{
-    check_refinement_smt_proof, CertificateCheckLimits, CertificateLocus, CertificateRejection,
-    CertificateRule, IncompleteCause, ModelCheckLimit, ProofFormat, QueryPart,
-    RefinementSmtCertificate, RefutedQuery, SmtProofCheck,
+    certify_step_records, check_refinement_smt_proof, settle_step_records, CertificateCheckLimits,
+    CertificateLocus, CertificateRejection, CertificateRule, Certification, IncompleteCause,
+    InconclusiveCause, ItemLabel, ModelCheckLimit, ProofBasis, ProofFormat, QueryPart,
+    RefinementFailure, RefinementSmtCertificate, RefinementTraceSettlement, RefutedQuery,
+    SettlementBasis, SmtProofCheck, StepCertification, StepRecordVerdict, StepRecordsSettlement,
+    TerminalValue, UnavailabilityCause,
 };
 use quire_exact::Cancel;
 
@@ -773,4 +777,223 @@ fn a_refused_initial_query_rejects_the_base_part() {
             )
         );
     });
+}
+
+fn proved(certification: Certification) -> TerminalValue {
+    TerminalValue::Proved {
+        basis: ProofBasis::Inductive { depth: 1 },
+        certification,
+    }
+}
+
+fn no_replay() -> Result<RefinementTraceSettlement, qsl_replay::ReplayRefusal> {
+    panic!("only an initial counterexample is replayed")
+}
+
+/// The values of `settled`'s records.
+fn values(settled: &StepRecordsSettlement) -> Vec<TerminalValue> {
+    settled
+        .records
+        .iter()
+        .map(|record| record.value.clone())
+        .collect()
+}
+
+/// TC-551, the certificate part of FR-146-AC-4: every record of
+/// `CasRefinesCounter` whose obligation holds settles `Certified` exactly when
+/// FR-314 verifies the refinement's certificate, `Uncertified` with no
+/// certificate, and every record of `CasRefinesCounterAdd`, whose `_` row
+/// FR-315 refuses to encode, `Uncertified`.
+#[trace("TC-551")]
+#[test]
+fn step_records_are_certified_only_by_a_verified_certificate() {
+    let holds = [StepRecordVerdict::Holds; 8];
+    let world = World::new(&cas_refines_counter());
+    with_request(&world, |request| {
+        let valid = certificate(request, 7);
+        let limits = CertificateCheckLimits::default();
+        let cancel = Cancel::new();
+        for (certificate, certification) in [
+            (Some(&valid), Certification::Certified),
+            (None, Certification::Uncertified),
+        ] {
+            let checked = certify_step_records(request, certificate, 7, &limits, &cancel);
+            let settled = settle_step_records(&holds, &checked, &[], no_replay);
+            assert_eq!(values(&settled), vec![proved(certification); 8]);
+            assert!(settled
+                .records
+                .iter()
+                .all(|record| record.basis == SettlementBasis::DecisiveWitness));
+            assert_eq!(settled.safety.value, proved(certification));
+            assert_eq!(settled.safety.basis, SettlementBasis::DecisiveWitness);
+        }
+    });
+
+    let add = World::with(Variant::ADD, &cas_refines_counter_add());
+    let bump = usize::try_from(row_of(&add, "bump")).expect("small");
+    with_request(&add, |request| {
+        let mut unencodable = certificate(request, 8);
+        unencodable.steps[bump] = part("anything".to_owned(), "(not a proof".to_owned());
+        let checked = certify_step_records(
+            request,
+            Some(&unencodable),
+            8,
+            &CertificateCheckLimits::default(),
+            &Cancel::new(),
+        );
+        let settled = settle_step_records(&[StepRecordVerdict::Holds; 9], &checked, &[], no_replay);
+        assert_eq!(
+            values(&settled),
+            vec![proved(Certification::Uncertified); 9]
+        );
+        assert_eq!(settled.safety.value, proved(Certification::Uncertified));
+    });
+}
+
+/// FR-146-AC-7 (TC-551): the settlement map fed FR-314's results directly.
+/// A rejection at a part makes that part's record `CertificateRejected`
+/// with FR-314's rule and locus, never `proved`, and every other record
+/// `Uncertified`; an unverifiable certificate leaves every holding record
+/// `Proved{Inductive{1}, Uncertified}`.
+#[trace("TC-551", "FR-146-AC-7")]
+#[test]
+fn a_rejected_part_rejects_only_its_record() {
+    let holds = [StepRecordVerdict::Holds; 8];
+    let uncertified = proved(Certification::Uncertified);
+    for (part, record) in [(QueryPart::Base, 0), (step_part(2), 3)] {
+        let at = CertificateLocus::ProofStep {
+            part,
+            index: 3,
+        };
+        let rejection = CertificateRejection {
+            rule: CertificateRule::ProofStepInvalid,
+            at: at.clone(),
+        };
+        let checked = StepCertification::of_check(Some(Err(rejection)), 7);
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        let wrong = TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ProofStepInvalid,
+            at,
+        });
+        let mut expected = vec![uncertified.clone(); 8];
+        expected[record] = wrong.clone();
+        assert_eq!(values(&settled), expected, "rejected at {part:?}");
+        assert_eq!(settled.records[record].basis, SettlementBasis::Unsettled);
+        assert_eq!(settled.safety.value, wrong);
+    }
+
+    // A shape mismatch past the last row names no record: every record is
+    // `Uncertified`, and the half is still rejected.
+    let at = CertificateLocus::Query { part: step_part(7) };
+    let checked = StepCertification::of_check(
+        Some(Err(CertificateRejection {
+            rule: CertificateRule::ShapeMismatch,
+            at: at.clone(),
+        })),
+        7,
+    );
+    let settled = settle_step_records(&holds, &checked, &[], no_replay);
+    assert_eq!(values(&settled), vec![uncertified.clone(); 8]);
+    assert_eq!(
+        settled.safety.value,
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ShapeMismatch,
+            at,
+        })
+    );
+
+    for check in [
+        SmtProofCheck::Unverifiable {
+            part: step_part(1),
+            step: 3,
+        },
+        SmtProofCheck::Unencodable { part: step_part(1) },
+    ] {
+        let checked = StepCertification::of_check(Some(Ok(check)), 7);
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        assert_eq!(values(&settled), vec![uncertified.clone(); 8]);
+    }
+}
+
+/// TC-551, QSpec FR-468 "Settlement": the safety half takes the first rule
+/// that applies, in the order initial counterexample, hypothesis item not
+/// `proved`, step counterexample, certificate shown wrong, other backend
+/// result, then the proof, `Certified` only when every record and every
+/// hypothesis item is.
+#[trace("TC-551")]
+#[test]
+fn the_safety_half_settles_by_the_first_rule_that_applies() {
+    let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
+    let certified = proved(Certification::Certified);
+    let uncertified = proved(Certification::Uncertified);
+    let verified = StepCertification::of_check(Some(Ok(SmtProofCheck::Verified)), 7);
+    let rejected = StepCertification::of_check(
+        Some(Err(CertificateRejection {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query { part: step_part(4) },
+        })),
+        7,
+    );
+    let holds = [StepRecordVerdict::Holds; 8];
+    let mut step_failed = holds;
+    step_failed[5] = StepRecordVerdict::Counterexample;
+    let mut initial_failed = holds;
+    initial_failed[0] = StepRecordVerdict::Counterexample;
+    let mut absent = holds;
+    absent[2] = StepRecordVerdict::NoCandidate;
+    let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    let not_established =
+        TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
+            hypothesis,
+            result: ItemLabel::Inconclusive,
+        });
+    let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
+    let safety = |verdicts: &[StepRecordVerdict],
+                  certification: &StepCertification,
+                  item: &TerminalValue| {
+        settle_step_records(
+            verdicts,
+            certification,
+            &[(hypothesis, item.clone())],
+            no_replay,
+        )
+        .safety
+        .value
+    };
+
+    assert_eq!(safety(&holds, &verified, &certified), certified);
+    assert_eq!(safety(&holds, &verified, &uncertified), uncertified);
+    assert_eq!(safety(&holds, &verified, &unproved), not_established);
+    assert_eq!(safety(&step_failed, &verified, &unproved), not_established);
+    assert_eq!(safety(&step_failed, &verified, &certified), induction);
+    assert_eq!(safety(&step_failed, &rejected, &certified), induction);
+    assert_eq!(
+        safety(&absent, &verified, &certified),
+        TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+    );
+    assert!(matches!(
+        safety(&holds, &rejected, &certified),
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { .. })
+    ));
+
+    // An initial counterexample comes first, and settles `refuted` only
+    // through its replay.
+    let reproduced = settle_step_records(
+        &initial_failed,
+        &verified,
+        &[(hypothesis, unproved.clone())],
+        || {
+            Ok(RefinementTraceSettlement::Reproduced {
+                failure: RefinementFailure::InitialNotAbstract { initial: 0 },
+                mapped: Vec::new(),
+            })
+        },
+    );
+    assert_eq!(reproduced.safety.value, TerminalValue::Refuted);
+    assert_eq!(
+        reproduced.safety.basis,
+        SettlementBasis::DecisiveCounterexample
+    );
+    // The `Initial` record itself never settles `refuted`.
+    assert_eq!(reproduced.records[0].value, induction);
 }
