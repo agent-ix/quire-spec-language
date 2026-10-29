@@ -21,6 +21,7 @@ mod refinement_hidden;
 mod refinement_history;
 mod refinement_mapping;
 mod refinement_ring;
+mod refinement_smt;
 mod refinement_step;
 mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]

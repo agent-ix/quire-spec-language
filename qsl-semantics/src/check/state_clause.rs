@@ -1035,6 +1035,12 @@ impl CheckedStateClause {
         self.kind
     }
 
+    /// Whether the clause is an invariant, the kind a refinement's per-step
+    /// records take as hypotheses (FR-146).
+    pub fn is_invariant(&self) -> bool {
+        self.kind == StateClauseKind::Invariant
+    }
+
     /// The observation the clause's own reads take (FR-104, FR-107):
     /// `current` for an invariant, `pre` for a precondition, `post` for a
     /// postcondition.

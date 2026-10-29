@@ -1836,7 +1836,11 @@ mod tests {
             CertificateRule::ProofStepInvalid,
             CertificateRule::NotRefutation,
         ] {
-            for part in [QueryPart::Unrolling, QueryPart::Base, QueryPart::Step] {
+            for part in [
+                QueryPart::Unrolling,
+                QueryPart::Base,
+                QueryPart::Step { row: None },
+            ] {
                 for at in [
                     CertificateLocus::Query { part },
                     CertificateLocus::ProofStep { part, index: 0 },

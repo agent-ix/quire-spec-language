@@ -190,6 +190,16 @@ impl<'r, 'a> Reader<'r, 'a> {
         }
     }
 
+    /// What `node` denotes and its definedness, whatever its sort.
+    ///
+    /// # Errors
+    ///
+    /// [`SmtEncodingRefusal::Refused`] naming the first construct outside
+    /// the fragment.
+    pub fn value(&mut self, node: CheckedNode<'_>) -> Result<Encoded, SmtEncodingRefusal> {
+        self.encode(node, 0)
+    }
+
     fn refuse(&self, node: CheckedNode<'_>, form: &'static str) -> SmtEncodingRefusal {
         let component = self.components.as_ref().and_then(|components| {
             let at = components.component_of(node.location())?;

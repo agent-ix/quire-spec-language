@@ -200,6 +200,23 @@ pub enum Refusal {
         /// Where it is.
         locus: ExpressionLocus,
     },
+    /// `refinement-any-row`: a refinement step row maps to `any`, so it has
+    /// no per-step query (FR-146).
+    #[error("refinement step row {row} maps to `any`, which has no per-step query")]
+    RefinementAnyRow {
+        /// The row's zero-based position in the refinement's `steps`.
+        row: u64,
+    },
+    /// `refinement-open-argument`: an argument of a refinement step row is
+    /// `_`, which the negated rule would quantify universally.
+    #[error("argument {argument} of refinement step row {row} is `_`")]
+    RefinementOpenArgument {
+        /// The row's zero-based position in the refinement's `steps`.
+        row: u64,
+        /// The argument's zero-based position among the abstract
+        /// parameters.
+        argument: u64,
+    },
     /// `hyper-form`: FR-173 classifies the clause as other than HP-2.
     #[error("hyper clause `{clause}` is {form}, not an HP-2 clause")]
     HyperForm {
@@ -275,6 +292,8 @@ impl Refusal {
             Self::SeveralInstances { .. } => "several-instances",
             Self::TooLarge { .. } => "too-large",
             Self::OutOfFragment { .. } => "out-of-fragment",
+            Self::RefinementAnyRow { .. } => "refinement-any-row",
+            Self::RefinementOpenArgument { .. } => "refinement-open-argument",
             Self::HyperForm { .. } => "hyper-form",
             Self::HyperBody { .. } => "hyper-body",
             Self::SubjectBinding { .. } => "subject-binding",
@@ -287,7 +306,9 @@ impl Refusal {
     /// The position of this refusal in the order the encoding applies its
     /// checks: rows 1 to 17 of FR-315's refusal table, and 18 to 23 for the
     /// hyper refusals in the order FR-315 "Refusals and their order" states
-    /// (the table itself lists no hyper row).
+    /// (the table itself lists no hyper row), and 24 and 25 for the
+    /// refinement row refusals, which FR-315 "Refinement queries" checks
+    /// before it reads a subject.
     pub const fn row(&self) -> u8 {
         match self {
             Self::ItemForm { .. } | Self::ItemTranslation(_) => 1,
@@ -317,6 +338,8 @@ impl Refusal {
             Self::ProductIdentity { .. } => 21,
             Self::HyperBody { .. } => 22,
             Self::MatchConjunct { .. } => 23,
+            Self::RefinementAnyRow { .. } => 24,
+            Self::RefinementOpenArgument { .. } => 25,
         }
     }
 }

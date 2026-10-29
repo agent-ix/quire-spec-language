@@ -21,15 +21,34 @@ use crate::certificate::closure::{DigestWire, ProductStateRef};
 use crate::certificate::simulation::FailedStep;
 
 /// FR-314's part of an SMT proof obligation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
+///
+/// It serializes with QSpec FR-331's query-part spelling: `unrolling`,
+/// `base`, `step`, and `step/<r>` for a refinement certificate's step row
+/// `r` (FR-338 "Locus spelling").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueryPart {
     /// The bounded-complete unrolling query.
     Unrolling,
-    /// The induction base query.
+    /// The induction base query, or a refinement certificate's initial
+    /// query.
     Base,
-    /// The induction step query.
-    Step,
+    /// The induction step query (`row: None`), or a refinement
+    /// certificate's step query of the zero-based step row `row`.
+    Step {
+        /// The refinement step row, for a refinement certificate.
+        row: Option<u64>,
+    },
+}
+
+impl Serialize for QueryPart {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Unrolling => serializer.serialize_str("unrolling"),
+            Self::Base => serializer.serialize_str("base"),
+            Self::Step { row: None } => serializer.serialize_str("step"),
+            Self::Step { row: Some(row) } => serializer.serialize_str(&format!("step/{row}")),
+        }
+    }
 }
 
 /// FR-338 and FR-314's finite certificate rejection rule vocabulary.
@@ -259,12 +278,14 @@ impl Serialize for CertificateLocus {
     }
 }
 
+mod alethe;
 mod check;
 pub mod closed_form;
 pub mod closure;
 mod recording;
 pub mod scc;
 pub mod simulation;
+pub mod smt;
 pub mod state_graph;
 pub mod zone;
 pub mod zone_certificate;
