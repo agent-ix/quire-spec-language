@@ -42,7 +42,7 @@ pub type InitialReplayFn<'a> =
 /// A refinement's per-step simulation records, settled from the SMT backend.
 pub struct StepSimulationItem<'a> {
     /// The refinement and its two subjects, for FR-315's queries.
-    pub request: RefinementCertificateRequest<'a>,
+    pub request: &'a RefinementCertificateRequest<'a>,
     /// The backend that decided the records.
     pub backend: BackendId,
     /// The `Initial` record's result, then each step row's in `steps` order.
@@ -118,7 +118,7 @@ pub fn settle_step_simulations(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let certification = certify_step_records(
-        &request,
+        request,
         certificate.as_ref(),
         rows,
         &certificate_limits,

@@ -610,8 +610,8 @@ pub enum InconclusiveCause {
     /// simulation obligations is not `proved`, so no step query's refutation
     /// can settle the safety half `proved`.
     HypothesesNotEstablished {
-        /// The invariant clause's node.
-        hypothesis: quire_exact::NodeKey,
+        /// The invariant clause's node, as its wire id.
+        hypothesis: qsl_foundation::digest::WireNodeId,
         /// The result its item settled.
         result: crate::outcome::ItemLabel,
     },

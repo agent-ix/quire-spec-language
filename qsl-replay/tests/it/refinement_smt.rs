@@ -695,7 +695,7 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
     let unproved = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });
     let not_established =
         TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis,
+            hypothesis: qsl_foundation::digest::WireNodeId::from_digest(*hypothesis.as_bytes()),
             result: ItemLabel::Inconclusive,
         });
     let induction = TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed { depth: 1 });

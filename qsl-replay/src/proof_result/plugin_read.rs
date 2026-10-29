@@ -25,7 +25,7 @@ use crate::outcome::ItemLabel;
 use crate::witness::{CanonicalAssignment, WitnessValue};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::ReductionKind;
-use quire_exact::{Integer, NodeKey, Rational, NODE_KEY_DOMAIN};
+use quire_exact::{Integer, Rational, NODE_KEY_DOMAIN};
 use quire_semantic_value::fairness::PropertyForm;
 
 mod trace;
@@ -766,7 +766,7 @@ fn read_instance_limit(
 
 /// A checked-package `NodeId`: exactly `domain`, the node-key domain, and
 /// `digest`, 64 lowercase hex digits.
-fn read_node(value: &Value, pointer: String) -> Result<NodeKey, PluginResultRefusal> {
+fn read_node(value: &Value, pointer: String) -> Result<WireNodeId, PluginResultRefusal> {
     let Value::Object(members) = value else {
         return Err(wrong_kind(pointer));
     };
@@ -779,7 +779,7 @@ fn read_node(value: &Value, pointer: String) -> Result<NodeKey, PluginResultRefu
         return Err(malformed(domain.is_string(), child(&pointer, "domain")));
     }
     match digest.as_str().and_then(WireNodeId::from_hex) {
-        Some(node) => Ok(NodeKey::from_digest(*node.as_bytes())),
+        Some(node) => Ok(node),
         None => Err(malformed(digest.is_string(), child(&pointer, "digest"))),
     }
 }

@@ -382,7 +382,7 @@ fn the_cause_reader_reads_hypotheses_not_established() {
             "result": "refuted",
         })),
         Ok(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: quire_exact::NodeKey::from_digest([0xdc; 32]),
+            hypothesis: WireNodeId::from_digest([0xdc; 32]),
             result: crate::outcome::ItemLabel::Refuted,
         })
     );

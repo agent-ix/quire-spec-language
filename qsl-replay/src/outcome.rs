@@ -224,7 +224,7 @@ pub struct ParityReason {
 
 /// A checked-package node id on the wire: its domain and hex digest.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct WireNodeId {
+pub struct WireNode {
     domain: &'static str,
     digest: String,
 }
@@ -257,7 +257,7 @@ pub struct ItemCause {
     source: Option<CancelCause>,
     /// A `hypotheses-not-established` cause's invariant clause node.
     #[serde(skip_serializing_if = "Option::is_none")]
-    hypothesis: Option<WireNodeId>,
+    hypothesis: Option<WireNode>,
     /// A `hypotheses-not-established` cause's hypothesis item result.
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<ItemLabel>,
@@ -469,7 +469,7 @@ impl ItemCause {
                 hypothesis,
                 result,
             }) => {
-                item.hypothesis = Some(WireNodeId {
+                item.hypothesis = Some(WireNode {
                     domain: quire_exact::NODE_KEY_DOMAIN,
                     digest: hypothesis.to_string(),
                 });
@@ -2216,7 +2216,7 @@ mod tests {
             ),
             (
                 TerminalValue::Inconclusive(InconclusiveCause::HypothesesNotEstablished {
-                    hypothesis: quire_exact::NodeKey::from_digest([0xdc; 32]),
+                    hypothesis: qsl_foundation::digest::WireNodeId::from_digest([0xdc; 32]),
                     result: ItemLabel::Refuted,
                 }),
                 json!({

@@ -49,7 +49,7 @@ fn a_verified_certificate_settles_every_record_certified() {
         ] {
             let settled = settle_step_simulations(
                 StepSimulationItem {
-                    request: request.clone(),
+                    request,
                     backend: backend.clone(),
                     records: holding(),
                     certificate,
@@ -64,10 +64,7 @@ fn a_verified_certificate_settles_every_record_certified() {
             for (index, record) in settled.records.iter().enumerate() {
                 assert_eq!(record.value(), &proved(certification));
                 assert_eq!(record.backend(), Some(&backend));
-                assert_eq!(
-                    record.request_index(),
-                    RequestIndex::new(u64::try_from(index).expect("small"))
-                );
+                assert_eq!(record.request_index(), RequestIndex::new(index));
             }
             assert_eq!(settled.safety.value, proved(certification));
             assert_eq!(settled.safety.basis, SettlementBasis::DecisiveWitness);
@@ -77,7 +74,7 @@ fn a_verified_certificate_settles_every_record_certified() {
         tested[3].result = Some(TerminalValue::Tested);
         let refused = settle_step_simulations(
             StepSimulationItem {
-                request: request.clone(),
+                request,
                 backend: backend.clone(),
                 records: tested,
                 certificate: None,
