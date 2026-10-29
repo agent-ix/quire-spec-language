@@ -1673,9 +1673,6 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../tests/fixtures/spine-model.semantic-ir.json"
         ));
-        let packages = package_input([document.as_slice()]);
-        let digest = packages.keys().next().expect("one model package");
-        let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.model.complete/v1\";\n\

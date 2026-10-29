@@ -1017,7 +1017,7 @@ fn emitter_authored_units_keep_format_identity() {
     let field = source_literal(fixture, "FIELD_ACCESS");
     let equality = source_literal(fixture, "CONFORMING_EQUALITY");
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     for removed in [
         &[field.as_str(), equality.as_str()][..],
         &[field.as_str()][..],
@@ -1583,8 +1583,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
         "{header}function t using v(b: Boolean): Boolean pure {{ b }}\n"
     ));
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let body = function_literal(
         fixture,
         "tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value",
@@ -1598,7 +1597,6 @@ fn replay_composite_and_model_units_keep_format_identity() {
         function_literal(fixture, "model_fixture", "language "),
         &[
             ("MODEL_PROFILE", &model_profile),
-            ("hex", &digest),
             ("body", &body),
         ],
     );
@@ -1616,7 +1614,7 @@ fn replay_composite_and_model_units_keep_format_identity() {
             "tc_444_a_domain_package_comes_from_the_byte_provision",
             "language ",
         ),
-        &[("PROFILE", &profile), ("hex", &digest)],
+        &[("PROFILE", &profile)],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
@@ -1946,15 +1944,14 @@ fn compile_facade_authored_units_keep_format_identity() {
         plain_fixture(&format!("{header}{}", source_literal(fixture, constant)));
     }
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let hex = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let source = fixture_text(
         function_literal(
             fixture,
             "a_domain_package_is_the_i1_input_as_in_the_spine",
             "{HEADER}model ",
         ),
-        &[("HEADER", &header), ("hex", &hex)],
+        &[("HEADER", &header)],
     );
     emitted(
         SourceIdentity::new("a", "u", "git", "1"),
@@ -1982,15 +1979,14 @@ fn admission_corpus_authored_units_keep_format_identity() {
         ));
     }
     let document = include_bytes!("../fixtures/systems-interface.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let source = fixture_text(
         format!(
             "{}{}",
             source_literal(fixture, "COMPLETE_V1_HEADER"),
             source_literal(fixture, "SYSTEMS_INTERFACE_UNIT"),
         ),
-        &[("", &digest)],
+        &[],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -2007,13 +2003,6 @@ fn admission_corpus_authored_units_keep_format_identity() {
 fn package_dependent_library_keeps_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/spine/dependency_tests.rs");
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(
-        document,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .unwrap()
-    .jcs_digest();
-    let model_digest = qsl_semantics::model::key::hex(&digest);
     let body = fixture_text(
         function_literal(
             fixture,
@@ -2021,7 +2010,6 @@ fn package_dependent_library_keeps_format_identity() {
             "model M =",
         ),
         &[
-            ("model_digest", &model_digest),
             ("F", &source_literal(fixture, "F")),
         ],
     );
@@ -2030,7 +2018,7 @@ fn package_dependent_library_keeps_format_identity() {
         SourceIdentity::new("a", "geometry", "git", "1"),
         "geometry.native",
         source.as_bytes(),
-        &qsl_semantics::model::intake::package_input([document.as_slice()]),
+        &qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
         &DependencyInput::default(),
     )
     .expect("the reached library checks under its original selected model");
@@ -2116,7 +2104,7 @@ fn wide_integer_fixture_units_keep_checked_identity() {
 fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
     let spine_model = crate::support::spine_model::unit();
     let document = include_bytes!("../fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     for (name, bytes) in [
         (
             "spine-compile.native",

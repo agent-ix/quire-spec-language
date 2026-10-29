@@ -236,7 +236,8 @@ fn with_population_package<T>(
         None,
         Expression::boolean(true),
     );
-    let packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE]);
+    let packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
+        .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let mut declarations = assemble(&packages)?;
     declarations.functions.extend([pop]);
     let graph = declarations
@@ -247,7 +248,7 @@ fn with_population_package<T>(
 
 /// The spine-model unit run S1, S2, I1 (against `packages`) and the
 /// assembler, as spine `compile` runs it.
-fn assemble(packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Result<PackageDeclarations, Error> {
+fn assemble(packages: &qsl_semantics::model::intake::PackageInput) -> Result<PackageDeclarations, Error> {
     let stage = |stage| move |detail: String| Error::Assemble { stage, detail };
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -343,7 +344,8 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     }
     let library =
         LibraryName::new("pkg").map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
-    let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE]);
+    let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
+        .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let mut admitted = AdmittedPackages::default();
     let view = read_import_view(
         package,
@@ -360,10 +362,9 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
         .ok_or_else(|| Error::Admission("the read recorded no admitted package".to_owned()))?
         .clone();
     let mut evidence = emission.evidence().clone();
-    for (digest, document) in &domain_packages {
-        let digest: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    for (identity, document) in &domain_packages {
         evidence
-            .insert_domain_package_document(digest, document.as_slice())
+            .insert_domain_package_document(identity.as_str(), document.as_slice())
             .map_err(|conflict| Error::Admission(format!("{conflict:?}")))?;
     }
     Ok(EmittedRead {

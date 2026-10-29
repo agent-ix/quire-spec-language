@@ -18,22 +18,16 @@ use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
     DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
 };
-use crate::limits::CallerLimits;
 use crate::object_environment::ObjectEnvironmentRef;
 use crate::target::{
     ReplayOverBinding, ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal,
 };
 use crate::witness::ReplaySource;
-use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use qsl_foundation::BackendId;
 use qsl_foundation::Code;
-use qsl_foundation::IntakeLimits;
 use qsl_foundation::{AccountingSetting, Setting, SettingName};
 use qsl_semantics::library::LibraryName;
-use qsl_semantics::model::intake::PackageDocument;
-use qsl_semantics::model::normalize::ModelRefusal;
-use qsl_semantics::model::refusal::{Inexact, IntakeLimit, ModelRefusalCause};
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
@@ -175,14 +169,17 @@ impl FromIterator<(Setting, u64)> for StageLimits {
 /// accessor anywhere (FR-071-AC-2): [`Self::get`] is the only way to reach
 /// an entry, and it takes a digest.
 #[derive(Clone, Default, Eq, PartialEq)]
-pub struct ByteProvision(BTreeMap<DigestRecord, Vec<u8>>);
+pub struct ByteProvision {
+    bytes: BTreeMap<DigestRecord, Vec<u8>>,
+    documents: Vec<Vec<u8>>,
+}
 
 /// FR-073-AC-2: never the entries' raw bytes -- only each entry's digest
 /// and byte length.
 impl std::fmt::Debug for ByteProvision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
-            .entries(self.0.iter().map(|(digest, bytes)| (digest, bytes.len())))
+            .entries(self.bytes.iter().map(|(digest, bytes)| (digest, bytes.len())))
             .finish()
     }
 }
@@ -192,16 +189,30 @@ impl ByteProvision {
     /// accessor this type has; there is no path- or location-typed
     /// alternative.
     pub fn get(&self, digest: DigestRecord) -> Option<&[u8]> {
-        self.0.get(&digest).map(Vec::as_slice)
+        self.bytes.get(&digest).map(Vec::as_slice)
     }
 
-    /// Every entry with its declared digest, ascending by digest: how the
-    /// executor finds the domain packages the provision carries under
-    /// their `sha256-jcs` digests (QC-1).
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (DigestRecord, &[u8])> {
-        self.0
-            .iter()
-            .map(|(digest, bytes)| (*digest, bytes.as_slice()))
+    /// The domain package and state documents the provision carries, each
+    /// identified by what it declares (QC-1).
+    pub(crate) fn documents(&self) -> impl Iterator<Item = &[u8]> {
+        self.documents.iter().map(Vec::as_slice)
+    }
+
+    /// The state documents among them, keyed by the reference each declares.
+    pub(crate) fn snapshots(&self) -> qsl_semantics::model::observation::DocumentProvision {
+        self.documents()
+            .filter_map(|bytes| {
+                qsl_semantics::model::observation::document_reference(bytes)
+                    .map(|reference| (reference, bytes.to_vec()))
+            })
+            .collect()
+    }
+
+    /// The domain package documents among them: every document that is no
+    /// state document.
+    pub(crate) fn package_documents(&self) -> impl Iterator<Item = &[u8]> {
+        self.documents()
+            .filter(|bytes| qsl_semantics::model::observation::document_reference(bytes).is_none())
     }
 }
 
@@ -427,8 +438,12 @@ pub struct ReplayRequestWire {
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
     pub declared_domains: Vec<DeclaredDomain>,
-    /// `(digest domain, digest hex, raw bytes)` per entry.
+    /// `(digest domain, digest hex, raw bytes)` per raw-byte-addressed
+    /// entry.
     pub byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
+    /// The domain package and state documents, each identified by what it
+    /// declares.
+    pub documents: Vec<Vec<u8>>,
 }
 
 const KNOWN_SEMANTIC_PROFILES: &[&str] = &["quire.profile.v1"];
@@ -462,61 +477,12 @@ pub enum ReplayRequestRefusal {
     /// problem, so it is never spelled `digest-domain-mismatch`.
     #[error("invalid_digest/malformed-encoding: {0}")]
     MalformedDigest(#[source] InvalidDigestRecord),
-    /// A byte-provision entry names an FR-201 domain that is neither
-    /// raw-byte-addressed nor `sha256-jcs` (e.g. a structural-preimage
-    /// domain): this reader recomputes only those, so such a domain can
-    /// never be verified here and is refused before any hashing is
-    /// attempted, distinct from an actual byte/digest mismatch.
-    #[error("invalid_digest/ineligible-domain: {0} is neither a raw-byte-addressed digest domain nor sha256-jcs and cannot be admitted as a byte-provision entry")]
+    /// A byte-provision entry names an FR-201 domain that is not
+    /// raw-byte-addressed: this reader recomputes only those, so such a
+    /// domain can never be verified here and is refused before any hashing
+    /// is attempted, distinct from an actual byte/digest mismatch.
+    #[error("invalid_digest/ineligible-domain: {0} is not a raw-byte-addressed digest domain and cannot be admitted as a byte-provision entry")]
     IneligibleByteProvisionDomain(DigestDomain),
-    /// A byte-provision entry under a `sha256-jcs` digest is not a domain
-    /// package document at all, so it has no `sha256-jcs` digest to match.
-    #[error("invalid_model_binding/malformed-declaration: entry under {0} is not a domain package document")]
-    NotAPackageDocument(String),
-    /// A byte-provision entry under a `sha256-jcs` digest reached one of
-    /// intake's limits while it was read for its digest: intake's own limit
-    /// outcome, `resource_exhausted`/`intake-limit-exceeded` (FR-056).
-    #[error(
-        "resource_exhausted/intake-limit-exceeded: entry under {entry} exceeds intake's {} limit of {bound}",
-        limit.as_str()
-    )]
-    IntakeLimitExceeded {
-        /// The entry's declared digest.
-        entry: String,
-        /// The limit reached.
-        limit: IntakeLimit,
-        /// That limit's bound.
-        bound: u64,
-        /// What the entry measured.
-        actual: u64,
-    },
-    /// Reading or digesting a byte-provision entry under a `sha256-jcs`
-    /// digest could not reserve memory: `resource_exhausted`/
-    /// `allocation-failed` (FR-259 B6).
-    #[error("resource_exhausted/allocation-failed: entry under {entry} could not reserve {requested} bytes of memory")]
-    AllocationFailed {
-        /// The entry's declared digest.
-        entry: String,
-        /// The size in bytes of the reservation that failed.
-        requested: usize,
-    },
-    /// A byte-provision entry under a `sha256-jcs` digest holds a number
-    /// with no exact RFC 8785 spelling: intake's own refusal,
-    /// `noncanonical_wire` with its cause and `document_pointer` (FR-056).
-    #[error(
-        "noncanonical_wire/{}: entry under {entry} holds a number at {:?} with no exact RFC 8785 spelling",
-        inexact.as_str(),
-        document_pointer.as_str()
-    )]
-    NoncanonicalNumber {
-        /// The entry's declared digest.
-        entry: String,
-        /// Why the number has no exact spelling; the cause tag.
-        inexact: Inexact,
-        /// The RFC 6901 pointer of the first such number in the entry's
-        /// document.
-        document_pointer: JsonPointer,
-    },
     /// A byte-provision entry under a raw-byte domain does not hash to its
     /// own declared digest: the raw bytes' own digest differs
     /// (`stale_dependency`/`byte-digest-mismatch`).
@@ -526,18 +492,6 @@ pub enum ReplayRequestRefusal {
         declared: String,
         /// The digest of the entry's raw bytes.
         actual: String,
-    },
-    /// A `sha256-jcs` byte-provision entry's document recomputes to a digest
-    /// other than the one it is provided under
-    /// (`stale_dependency`/`content-mismatch`).
-    #[error(
-        "stale_dependency/content-mismatch: entry under {selected} recomputes to {recomputed}"
-    )]
-    ContentMismatch {
-        /// The digest the entry is provided under.
-        selected: String,
-        /// The digest recomputed from the supplied document.
-        recomputed: String,
     },
     /// The package reference names a source digest with no matching
     /// byte-provision entry (`missing_import`/`missing-selection`).
@@ -664,62 +618,15 @@ fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestR
     Ok(target)
 }
 
-/// `bytes`' digest under `domain`: SHA-256 of the raw bytes for a
-/// raw-byte-addressed domain (source and definition documents), and for
-/// `sha256-jcs` the domain package document's own digest, SHA-256 of its
-/// RFC 8785 bytes, exactly as I1 keys its package input
-/// (`model::intake::package_input`, ADR-013 QC-1). A refusal of intake's
-/// read keeps its cause ([`package_document_refusal`]), and every other
+/// `bytes`' digest under `digest`'s domain: SHA-256 of the raw bytes for a
+/// raw-byte-addressed domain (source and definition documents); every other
 /// domain refuses as ineligible.
-fn digest_of(
-    digest: DigestRecord,
-    bytes: &[u8],
-    intake: IntakeLimits,
-) -> Result<[u8; 32], ReplayRequestRefusal> {
+fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayRequestRefusal> {
     let domain = digest.domain();
-    if domain == DigestDomain::Sha256Jcs {
-        return PackageDocument::parse(bytes, intake)
-            .map(|document| document.jcs_digest())
-            .map_err(|refusal| package_document_refusal(digest, refusal));
-    }
     if domain.is_raw_byte_addressed() {
         return Ok(ByteDigest::of(bytes).as_bytes());
     }
     Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(domain))
-}
-
-/// The refusal for a `sha256-jcs` entry under `digest` that intake's read
-/// refused, by its cause: an intake limit stays intake's limit outcome, an
-/// allocation failure stays `allocation-failed` (FR-259 B6), a number with
-/// no exact RFC 8785 spelling stays `noncanonical_wire` with its pointer
-/// (FR-056), and only a document intake cannot read is not a domain package
-/// document.
-fn package_document_refusal(digest: DigestRecord, refusal: ModelRefusal) -> ReplayRequestRefusal {
-    let entry = format!("{digest:?}");
-    match refusal.cause {
-        ModelRefusalCause::IntakeLimitExceeded {
-            limit,
-            bound,
-            actual,
-        } => ReplayRequestRefusal::IntakeLimitExceeded {
-            entry,
-            limit,
-            bound,
-            actual,
-        },
-        ModelRefusalCause::AllocationFailed { requested } => {
-            ReplayRequestRefusal::AllocationFailed { entry, requested }
-        }
-        ModelRefusalCause::NoncanonicalNumber {
-            inexact,
-            document_pointer,
-        } => ReplayRequestRefusal::NoncanonicalNumber {
-            entry,
-            inexact,
-            document_pointer,
-        },
-        _ => ReplayRequestRefusal::NotAPackageDocument(entry),
-    }
 }
 
 impl ReplayRequestRefusal {
@@ -728,16 +635,10 @@ impl ReplayRequestRefusal {
         match self {
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::DigestDomainMismatch(_)
-            | Self::ByteDigestMismatch { .. }
-            | Self::ContentMismatch { .. } => Code::StaleDependency,
+            | Self::ByteDigestMismatch { .. } => Code::StaleDependency,
             Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
                 Code::InvalidDigest
             }
-            Self::NotAPackageDocument(_) => Code::InvalidModelBinding,
-            Self::IntakeLimitExceeded { .. } | Self::AllocationFailed { .. } => {
-                Code::ResourceExhausted
-            }
-            Self::NoncanonicalNumber { .. } => Code::NoncanonicalWire,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
                 Code::InvalidIdentifier
@@ -863,7 +764,6 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
                 + labels.identity.len()
                 + labels.revision_namespace.len()
                 + labels.revision.len()
-                + environment.digest().hex().len()
         })
 }
 
@@ -923,10 +823,6 @@ impl ReplayRequest {
         let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
         let supplied_limits = wire.supplied_limits.unwrap_or_default();
-        let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)
-            .spine
-            .model
-            .intake;
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
@@ -978,26 +874,19 @@ impl ReplayRequest {
             // builds, so admitting one here would always refuse with a
             // misleading staleness cause instead of the real "wrong domain
             // for this position" one.
-            let recomputed = digest_of(digest, &bytes, intake)?;
+            let recomputed = digest_of(digest, &bytes)?;
             if recomputed != *digest.as_bytes() {
-                return Err(if digest.domain() == DigestDomain::Sha256Jcs {
-                    ReplayRequestRefusal::ContentMismatch {
-                        selected: format!("{digest:?}"),
-                        recomputed: format!(
-                            "{:?}",
-                            DigestRecord::mint(digest.domain(), recomputed)
-                        ),
-                    }
-                } else {
-                    ReplayRequestRefusal::ByteDigestMismatch {
-                        declared: format!("{digest:?}"),
-                        actual: format!("{:?}", DigestRecord::mint(digest.domain(), recomputed)),
-                    }
+                return Err(ReplayRequestRefusal::ByteDigestMismatch {
+                    declared: format!("{digest:?}"),
+                    actual: format!("{:?}", DigestRecord::mint(digest.domain(), recomputed)),
                 });
             }
             provision.insert(digest, bytes);
         }
-        let byte_provision = ByteProvision(provision);
+        let byte_provision = ByteProvision {
+            bytes: provision,
+            documents: wire.documents,
+        };
 
         // Completeness: every named source digest, the proved package's and
         // each dependency's, must have a matching entry (FR-071-AC-5, AC-9).
@@ -1085,9 +974,10 @@ impl ReplayRequest {
             supplied_limits: Some(self.supplied_limits),
             object_environment: self.object_environment.clone(),
             declared_domains: self.declared_domains.clone(),
+            documents: self.byte_provision.documents.clone(),
             byte_provision: self
                 .byte_provision
-                .0
+                .bytes
                 .iter()
                 .map(|(digest, bytes)| {
                     (
@@ -1184,6 +1074,7 @@ mod tests {
                 DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),
                 source_bytes,
             )],
+            documents: vec![],
         }
     }
 
@@ -1404,64 +1295,12 @@ mod tests {
             ))
         ));
 
-        // QC-1: a domain package document enters under its `sha256-jcs`
-        // digest, verified over its RFC 8785 bytes; other bytes under that
-        // digest refuse as a content mismatch.
-        let document = br#"{"b": 1, "a": [true]}"#.to_vec();
-        let jcs = qsl_semantics::model::intake::PackageDocument::parse(
-            &document,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .expect("the document parses")
-        .jcs_digest();
+        // QC-1: a domain package document enters by what it declares.
         let mut domain_package = wire(1);
-        domain_package.byte_provision.push((
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
-            document,
-        ));
+        domain_package.documents.push(br#"{"b": 1, "a": [true]}"#.to_vec());
         let admitted =
             ReplayRequest::decode(domain_package, crate::ReplayLimits::default()).unwrap();
-        assert!(admitted
-            .byte_provision()
-            .get(DigestRecord::mint(DigestDomain::Sha256Jcs, jcs))
-            .is_some());
-        let mut stale_package = wire(1);
-        stale_package.byte_provision.push((
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
-            br#"{"b": 2}"#.to_vec(),
-        ));
-        let stale_jcs = qsl_semantics::model::intake::PackageDocument::parse(
-            br#"{"b": 2}"#,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .expect("the document parses")
-        .jcs_digest();
-        assert_ne!(stale_jcs, jcs);
-        assert_eq!(
-            ReplayRequest::decode(stale_package, crate::ReplayLimits::default()).unwrap_err(),
-            ReplayRequestRefusal::ContentMismatch {
-                selected: format!("{:?}", DigestRecord::mint(DigestDomain::Sha256Jcs, jcs)),
-                recomputed: format!(
-                    "{:?}",
-                    DigestRecord::mint(DigestDomain::Sha256Jcs, stale_jcs)
-                ),
-            }
-        );
-        let mut not_a_document = wire(1);
-        not_a_document.byte_provision.push((
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
-            b"not json".to_vec(),
-        ));
-        let refused =
-            ReplayRequest::decode(not_a_document, crate::ReplayLimits::default()).unwrap_err();
-        assert!(matches!(
-            refused,
-            ReplayRequestRefusal::NotAPackageDocument(_)
-        ));
-        assert_eq!(refused.code(), Code::InvalidModelBinding);
+        assert_eq!(admitted.byte_provision().documents().count(), 1);
 
         // Byte/digest mismatch.
         let mut mismatched = wire(1);
@@ -1840,109 +1679,6 @@ mod tests {
                 assert_eq!(refusal.cause(), Some(cause));
                 assert_eq!(refusal.pointer(), Some(pointer));
             }
-        }
-    }
-
-    /// A `sha256-jcs` byte-provision entry that intake's read refuses keeps
-    /// the refusal's cause (FR-071-AC-11, TC-186 step 9): bytes intake
-    /// cannot read are not a domain package document, a document over an
-    /// intake limit refuses with intake's limit outcome, an allocation
-    /// failure refuses `resource_exhausted`/`allocation-failed` carrying the
-    /// bytes requested (FR-259 B6), and a number with no exact RFC 8785
-    /// spelling refuses `noncanonical_wire` with its cause and
-    /// `document_pointer` (FR-056).
-    #[trace("TC-186", "FR-071-AC-11")]
-    #[test]
-    fn a_package_document_refusal_keeps_its_cause() {
-        let digest = DigestRecord::mint(DigestDomain::Sha256Jcs, [0xAB; 32]);
-        let entry = format!("{digest:?}");
-        let decode = |bytes: Vec<u8>| {
-            let mut request = wire(1);
-            request.byte_provision.push((
-                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-                digest.hex(),
-                bytes,
-            ));
-            ReplayRequest::decode(request, crate::ReplayLimits::default()).unwrap_err()
-        };
-
-        let malformed = decode(br#"{"a":1,"a":2}"#.to_vec());
-        assert_eq!(
-            malformed,
-            ReplayRequestRefusal::NotAPackageDocument(entry.clone())
-        );
-        assert_eq!(malformed.code(), Code::InvalidModelBinding);
-
-        // A document over `intake.input_bytes`, carried in the request's
-        // `stage_limits`, refuses with intake's limit outcome, keeping its
-        // cause, through `decode`.
-        let mut request = wire(1);
-        request
-            .stage_limits
-            .insert("intake.input_bytes".to_owned(), 4);
-        request.byte_provision.push((
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            digest.hex(),
-            b"[0,0,0,0,0,0,0,0]".to_vec(),
-        ));
-        let over_limit =
-            ReplayRequest::decode(request, crate::ReplayLimits::default()).unwrap_err();
-        assert_eq!(
-            over_limit,
-            ReplayRequestRefusal::IntakeLimitExceeded {
-                entry: entry.clone(),
-                limit: IntakeLimit::InputBytes,
-                bound: 4,
-                actual: 17,
-            }
-        );
-        assert_eq!(over_limit.code(), Code::ResourceExhausted);
-
-        let allocation = package_document_refusal(
-            digest,
-            ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::AllocationFailed { requested: 4096 },
-                detail: String::new(),
-            },
-        );
-        assert_eq!(
-            allocation,
-            ReplayRequestRefusal::AllocationFailed {
-                entry: entry.clone(),
-                requested: 4096,
-            }
-        );
-        assert_eq!(allocation.code(), Code::ResourceExhausted);
-        assert!(allocation
-            .to_string()
-            .starts_with("resource_exhausted/allocation-failed:"));
-
-        for (bytes, inexact, pointer) in [
-            (
-                br#"{"package":{"count":18446744073709551616}}"#.to_vec(),
-                Inexact::Integer,
-                "/package/count",
-            ),
-            (
-                br#"{"a/b":[0.1000000000000000000001]}"#.to_vec(),
-                Inexact::Number,
-                "/a~1b/0",
-            ),
-        ] {
-            let noncanonical = decode(bytes);
-            assert_eq!(
-                noncanonical,
-                ReplayRequestRefusal::NoncanonicalNumber {
-                    entry: entry.clone(),
-                    inexact,
-                    document_pointer: pointer.parse().unwrap(),
-                }
-            );
-            assert_eq!(noncanonical.code(), Code::NoncanonicalWire);
-            assert!(noncanonical
-                .to_string()
-                .starts_with(&format!("noncanonical_wire/{}:", inexact.as_str())));
         }
     }
 

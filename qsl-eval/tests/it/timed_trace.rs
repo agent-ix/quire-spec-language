@@ -48,8 +48,7 @@ pub(crate) fn timed(body: &str) -> Fixture {
 /// [`timed`] under `activation`.
 pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
     let document = counters_document(vec![increment()], false);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
@@ -59,7 +58,6 @@ pub(crate) fn timed_on(activation: &str, body: &str) -> Fixture {
          unit s : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1000) * s;\n\
          temporal C using t0 over (c: M::Counter) clock \"model-time\" {activation} {{ {body} }}\n",
-        hex(&digest)
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),

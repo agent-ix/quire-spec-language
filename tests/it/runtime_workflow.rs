@@ -94,9 +94,8 @@ fn record_result(name: &str, report: &EvaluationReport<'_, '_, '_>) {
     );
     for model in context.checked().linked().models() {
         println!(
-            "case={name} model={:?} model_digest={}",
-            model.environment().owner(),
-            model.native_model().unwrap().digest()
+            "case={name} model={:?}",
+            model.environment().owner()
         );
     }
     for snapshot in &context.input().snapshots {

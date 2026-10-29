@@ -494,22 +494,13 @@ impl Unit {
         ring_queue::key(self.concrete_package, path)
     }
 
-    fn packages(&self) -> BTreeMap<[u8; 32], Vec<u8>> {
-        package_input([self.documents.0.as_slice(), self.documents.1.as_slice()])
+    fn packages(&self) -> qsl_semantics::model::intake::PackageInput {
+        package_input([self.documents.0.as_slice(), self.documents.1.as_slice()]).unwrap()
     }
 
     /// The unit's text: both models, the contracts and `body`.
-    fn text(&self, packages: &BTreeMap<[u8; 32], Vec<u8>>, body: &str) -> String {
-        let digest = |package: &str| {
-            packages
-                .iter()
-                .find(|(_, bytes)| {
-                    serde_json::from_slice::<Json>(bytes)
-                        .is_ok_and(|json| json["package"]["identity"] == package)
-                })
-                .map(|(digest, _)| hex(digest))
-                .expect("the package is provisioned")
-        };
+    fn text(&self, packages: &qsl_semantics::model::intake::PackageInput, body: &str) -> String {
+        let _ = packages;
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
@@ -518,9 +509,7 @@ impl Unit {
              model Impl = \"{}\";\n\
              {}{body}\n",
             self.abstract_package,
-            digest(self.abstract_package),
             self.concrete_package,
-            digest(self.concrete_package),
             self.contracts,
         )
     }
@@ -607,20 +596,15 @@ fn snapshot(
     (package, document): (&str, &[u8]),
     name: &str,
     fields: &Json,
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
-    let model_digest = *package_input([document])
-        .keys()
-        .next()
-        .expect("one package");
     let identity = format!("{package}/{name}");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": identity, "revision_namespace": "fixture",
             "revision": "fixture:1"},
         "observation": "current",
-        "model": {"identity": package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&model_digest))},
+        "model": {"identity": package},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": node(package, unit.population), "complete": true,
             "objects": unit.present.iter().map(|key| json!({
@@ -629,16 +613,12 @@ fn snapshot(
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     DocumentRef {
         authority: "test".to_owned(),
         identity,
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     }
 }
 
@@ -646,8 +626,8 @@ fn snapshot(
 pub struct World<'u> {
     unit: &'u Unit,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     abstract_initial: DocumentRef,
     abstract_extra: Vec<DocumentRef>,
     concrete_initials: Vec<DocumentRef>,

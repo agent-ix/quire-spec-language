@@ -259,6 +259,15 @@ pub struct Expr {
     pub span: Span,
 }
 
+/// A profile import's version and digest labels, retained unvalidated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportPin {
+    /// Decoded version label.
+    pub version: Spanned<String>,
+    /// Decoded digest label.
+    pub digest: Spanned<String>,
+}
+
 /// Model import syntax; labels are retained without resolving a model artifact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelImport {
@@ -266,10 +275,9 @@ pub struct ModelImport {
     pub alias: Spanned<String>,
     /// Decoded package label.
     pub package: Spanned<String>,
-    /// Decoded version label.
-    pub version: Spanned<String>,
-    /// Decoded digest label; parser success does not validate a model digest.
-    pub digest: Spanned<String>,
+    /// A profile's decoded version and digest labels; a `model` declaration
+    /// names its package by identity alone and has none.
+    pub pin: Option<ImportPin>,
     /// Complete import declaration range.
     pub span: Span,
 }

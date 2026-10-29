@@ -477,6 +477,7 @@ mod redaction_tests {
                 source_digest_record.hex(),
                 mismatched_bytes,
             )],
+            documents: vec![],
         };
         let refusal = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err();
         let rendered = format!("{refusal:?} {refusal}");
@@ -522,6 +523,7 @@ mod redaction_tests {
                 source_digest_record.hex(),
                 entry_x.clone(),
             )],
+            documents: vec![],
         };
         let valid_request =
             ReplayRequest::decode(valid_wire, crate::ReplayLimits::default()).unwrap();

@@ -12,7 +12,6 @@
 //! package does not declare, or that the lookup does not find, is
 //! `clause-root-unresolved` ([`ClauseRootRefusal`]).
 
-use std::collections::BTreeMap;
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -69,7 +68,7 @@ impl ClauseIdentity {
     /// or `cancel` stopped the emission.
     pub fn resolve(
         package: &CheckedPackage,
-        domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        domain_packages: &qsl_semantics::model::intake::PackageInput,
         clause: &CheckedTemporalClause,
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
@@ -98,7 +97,7 @@ impl ClauseIdentity {
 /// with the emitted `package_id` the read recorded it at.
 fn read_back(
     package: &CheckedPackage,
-    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    domain_packages: &qsl_semantics::model::intake::PackageInput,
     cancel: &Cancel,
 ) -> Result<(AdmittedPackages, PackageId), ClauseRootRefusal> {
     let emission = emit_checked_with_cancel(package, cancel).map_err(|refusal| match refusal {
@@ -152,7 +151,7 @@ impl StateGraphIdentity {
     /// triple; or `cancel` stopped the emission.
     pub fn resolve(
         package: &CheckedPackage,
-        domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        domain_packages: &qsl_semantics::model::intake::PackageInput,
         claim: &CheckedStateGraphClaim,
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
@@ -196,7 +195,7 @@ impl HyperIdentity {
     /// the clause's claim root, or when `cancel` stops emission.
     pub fn resolve(
         package: &CheckedPackage,
-        domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        domain_packages: &qsl_semantics::model::intake::PackageInput,
         clause: &CheckedHyperClause,
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {

@@ -382,7 +382,7 @@ impl ParsedSource {
 #[derive(Clone, Debug, Default)]
 pub struct AdmittedModels {
     models: SelectedModels,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 impl AdmittedModels {
@@ -392,7 +392,7 @@ impl AdmittedModels {
     }
 
     /// The supplied domain package documents, by their `sha256-jcs` digest.
-    pub(crate) fn packages(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+    pub(crate) fn packages(&self) -> &qsl_semantics::model::intake::PackageInput {
         &self.packages
     }
 }
@@ -501,7 +501,7 @@ pub fn parse(
 /// admit.
 pub fn select(
     parsed: &ParsedSource,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AdmittedModels>, FrontEndFailure> {
@@ -703,7 +703,7 @@ fn parse_unit(
 /// I1 over one unit's `model` declarations.
 fn select_models(
     parsed: &ParsedSource,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
 ) -> Result<SelectedModels, Box<CompileRefusal>> {
@@ -798,7 +798,7 @@ pub(crate) fn compose(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<ComposedUnit, Box<CompileRefusal>> {
@@ -917,7 +917,7 @@ struct ResolvedLibrary {
 /// One compile's S4 source resolution state (ADR-015 D-1).
 struct Resolution<'a> {
     dependencies: &'a DependencyInput,
-    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &'a qsl_semantics::model::intake::PackageInput,
     limits: SpineLimits,
     cancel: &'a Cancel,
     /// The libraries whose compile is in progress, outermost first.

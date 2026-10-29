@@ -153,7 +153,6 @@ fn identity_preimage(dependency_selections: Vec<Value>) -> Value {
         "dependency_selections": dependency_selections,
         "edition": selection("edition", "edition-def"),
         "identity_projection": [projection_node("pkg::R", "R")],
-        "model_selections": [],
         "profile_selections": [],
         "required_features": [],
         "version": "quire.checked-package-id/v2",
@@ -166,7 +165,6 @@ fn lock(dependency_selections: Vec<Value>) -> Value {
         "edition": selection("edition", "edition-def"),
         "definition_selections": [],
         "dependency_selections": dependency_selections,
-        "model_selections": [],
         "profile_selections": [],
         "required_features": [],
     })
@@ -1288,30 +1286,6 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
-/// Supplies, as domain package evidence, QSpec's selected `acme/orders`
-/// semantic IR document (`domain-package-acme-orders.json` under `the QSpec checkout`)
-/// when one of `envelope`'s `model_selections` rows selects its digest
-/// (QSpec FR-322 "Model-owned members" step 1).
-fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
-    let Some(qspec) = qspec_directory() else {
-        return;
-    };
-    let document = read_fixture(
-        &std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/domain-package-acme-orders.json"),
-    );
-    let bytes = jcs(&document);
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    let selected = envelope["lock"]["model_selections"]
-        .as_array()
-        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
-    if selected {
-        evidence
-            .insert_domain_package_document(digest.as_str(), &bytes[..])
-            .expect("a fresh evidence key");
-    }
-}
-
 /// Supplies, as extension definition evidence, every definition QSpec
 /// publishes in `extension-definitions.json` under `the QSpec checkout` for a
 /// `definition_selections` entry of `envelope`, except those in `withheld`
@@ -1398,7 +1372,6 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
         for feature in library["lock"]["required_features"].as_array().unwrap() {
             inner.support_feature(feature.as_str().unwrap());
         }
-        supply_qspec_domain_package(&mut inner, &library);
         supply_qspec_dependency_packages(&mut inner, &library);
         let admitted = read_checked_package_v2(
             &fixture_wire_bytes(&library),
@@ -1494,7 +1467,6 @@ fn fixture_evidence(
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    supply_qspec_domain_package(&mut evidence, envelope);
     supply_qspec_dependency_packages(&mut evidence, envelope);
     evidence
 }
@@ -3864,7 +3836,6 @@ fn valid_envelope_over(nodes: Vec<Value>) -> Value {
         "dependency_selections": [],
         "edition": selection("edition", "edition-def"),
         "identity_projection": projection,
-        "model_selections": [],
         "profile_selections": [],
         "required_features": [],
         "version": "quire.checked-package-id/v2",

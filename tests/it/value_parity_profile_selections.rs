@@ -38,8 +38,7 @@ fn source_identity() -> SourceIdentity {
 
 /// TC-1252's unit `UC`.
 fn uc(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().expect("one package"));
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
@@ -102,10 +101,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         DigestDomain::SourceBytesV1,
         qsl_foundation::digest::ByteDigest::of(source.as_bytes()).as_bytes(),
     );
-    let document_digest = *qsl_semantics::model::intake::package_input([document])
-        .keys()
-        .next()
-        .unwrap();
     let source_wire = (
         "agent-ix".to_owned(),
         "test:value-parity-uc".to_owned(),
@@ -169,12 +164,8 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
                 source_digest.hex(),
                 source.as_bytes().to_vec(),
             ),
-            (
-                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::Sha256Jcs, document_digest).hex(),
-                document.to_vec(),
-            ),
         ],
+        documents: vec![document.to_vec()],
     };
     assert!(
         ReplayRequest::decode(wire.clone(), ReplayLimits::default()).is_ok(),

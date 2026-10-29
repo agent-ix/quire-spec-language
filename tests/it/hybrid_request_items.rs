@@ -37,9 +37,8 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
 
 fn graph() -> CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let digest = packages.keys().next().expect("one package");
-    let text = SOURCE.replace("{}", &qsl_semantics::model::key::hex(digest));
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let text = SOURCE.to_owned();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:hybrid", "fixture", "fixture:1"),
         "program.native",

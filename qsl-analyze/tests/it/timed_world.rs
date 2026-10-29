@@ -235,8 +235,8 @@ pub(crate) const DENSE: &str = "dimension Time;\nunit s : Time = rational(1, 1);
 /// false).
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
     keys: Vec<String>,
 }
@@ -278,14 +278,12 @@ pub(crate) fn world_built(
     armed: &[&str],
     extra: &Json,
 ) -> World {
-    let packages = package_input([document]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\";\n{body}",
-        hex(&digest)
+         model M = \"{PACKAGE}\";\n{body}"
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-239", "fixture", "1"),
@@ -316,8 +314,7 @@ pub(crate) fn world_built(
     .with_unwritten_timed_members()
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let mut fields = json!({"phase": {"integer": "0"}, "inflight": {"boolean": false},
         "late": {"boolean": false}, "retried": {"boolean": false}});
     for (name, value) in extra.as_object().expect("extra fields") {
@@ -338,19 +335,15 @@ pub(crate) fn world_built(
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
+        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         },
         keys: keys.iter().map(|key| (*key).to_owned()).collect(),
     }
@@ -414,8 +407,8 @@ pub(crate) fn renamed_package(document: &[u8], package: &str) -> Vec<u8> {
 /// one object `c` (`phase` 0, every Boolean false).
 pub(crate) struct Refining {
     pub(crate) package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     /// `M`'s initial states, in index order.
     concrete_initials: Vec<DocumentRef>,
     /// `A`'s initial state.
@@ -442,14 +435,7 @@ pub(crate) fn refining_from(
     body: &str,
     abstract_inflight: bool,
 ) -> Result<Refining, Vec<(String, String, String)>> {
-    let packages = package_input([abstract_document, concrete_document]);
-    let digest_of = |document: &[u8]| {
-        packages
-            .iter()
-            .find(|(_, bytes)| bytes.as_slice() == document)
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned")
-    };
+    let packages = package_input([abstract_document, concrete_document]).unwrap();
     let abstract_package = serde_json::from_slice::<Json>(abstract_document).expect("JSON")
         ["package"]["identity"]
         .as_str()
@@ -462,8 +448,6 @@ pub(crate) fn refining_from(
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model A = \"{abstract_package}\";\n\
          model M = \"{PACKAGE}\";\n{body}",
-        digest_of(abstract_document),
-        digest_of(concrete_document),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-430", "fixture", "1"),
@@ -543,25 +527,19 @@ pub(crate) fn refining_from(
 /// object `c` has `phase` 0 and `inflight`, `late` and `retried` as
 /// `flags` gives them, stored in `snapshots`.
 fn snapshot(
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
     (package, document): (&str, &[u8]),
     name: &str,
     [inflight, late, retried]: [bool; 3],
 ) -> DocumentRef {
-    let digest = packages
-        .iter()
-        .find(|(_, bytes)| bytes.as_slice() == document)
-        .map(|(digest, _)| hex(digest))
-        .expect("the package is provisioned");
     let identity = |suffix: &str| format!("ix://{package}/{suffix}");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
             "revision": "fixture:1"},
         "observation": "current",
-        "model": {"identity": package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{digest}")},
+        "model": {"identity": package},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": identity("calls"), "complete": true,
             "objects": [{"key": "c", "type": identity("Call"),
@@ -570,16 +548,12 @@ fn snapshot(
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     }
 }
 

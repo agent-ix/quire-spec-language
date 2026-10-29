@@ -199,13 +199,13 @@ pub struct ClauseRunRequest {
     /// The unit: program source bytes, or an I3 extracted source.
     pub source: ClauseRunSource,
     /// FR-056's package input.
-    pub packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: qsl_semantics::model::intake::PackageInput,
     /// FR-099's dependency input.
     pub dependencies: DependencyInput,
     /// FR-106's snapshot provision.
-    pub snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub snapshots: qsl_semantics::model::observation::DocumentProvision,
     /// FR-106's invocation provision.
-    pub invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    pub invocations: qsl_semantics::model::observation::DocumentProvision,
     /// The selection.
     pub selection: ClauseRunSelection,
     /// An optional expected `package_id` (FR-098's stale package rule).
@@ -790,7 +790,7 @@ fn admitted_documents(
 pub(crate) fn admit_clause_observations(
     graph: &CheckedGraph,
     clause: &CheckedStateClause,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
     selection: &ClauseSelection,
@@ -954,7 +954,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
 /// package and byte provision.
 pub(crate) struct CompiledRun<'a> {
     /// FR-056's package input.
-    pub(crate) packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) packages: &'a qsl_semantics::model::intake::PackageInput,
     /// The limits admission re-reads (`intake.input_bytes`) and
     /// re-normalizes the domain packages under.
     pub(crate) model_limits: ModelNormalizationLimits,

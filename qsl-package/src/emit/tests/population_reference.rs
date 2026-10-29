@@ -173,10 +173,7 @@ fn counter_unit(archive: bool, declarations: &str) -> (Emission, Read) {
     let mut evidence = read_evidence(&emission);
     for (digest, document) in &checked.packages {
         evidence
-            .insert_domain_package_document(
-                qsl_semantics::model::key::hex(digest).as_str(),
-                document.as_slice(),
-            )
+            .insert_domain_package_document(package_identity(&document.as_slice(),), document.as_slice(),)
             .expect("a fresh evidence key");
     }
     let read = read_with(&emission, &evidence);

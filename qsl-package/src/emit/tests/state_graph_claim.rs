@@ -19,13 +19,6 @@ fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
 
 /// A unit selecting the ConfigVersion model, then `declarations`.
 fn unit(declarations: &str) -> String {
@@ -34,8 +27,7 @@ fn unit(declarations: &str) -> String {
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model Config = \"example/config-version\";\n\
-         {declarations}\n",
-        document_digest()
+         {declarations}\n"
     )
 }
 
@@ -57,7 +49,7 @@ struct Compiled {
 }
 
 fn compile(unit: &str) -> Compiled {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -74,7 +66,7 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(&document()), document().to_vec())
         .expect("a fresh evidence key");
     evidence
 }

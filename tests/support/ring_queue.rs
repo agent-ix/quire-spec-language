@@ -367,7 +367,7 @@ pub struct Checked {
     /// The checked graph.
     pub graph: CheckedGraph,
     /// The domain packages, by digest.
-    pub packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub packages: qsl_semantics::model::intake::PackageInput,
 }
 
 /// The unit holding `body` over both models, checked, or its refusals.
@@ -381,13 +381,9 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
     let mut packages = BTreeMap::new();
     let mut selections = String::new();
     for (alias, identity, bytes) in [("Q", QUEUE, &queue), ("R", RING, &ring)] {
-        let single = package_input([bytes.as_slice()]);
-        let [(digest, _)] = single.iter().collect::<Vec<_>>()[..] else {
-            panic!("one supplied document");
-        };
+        let single = package_input([bytes.as_slice()]).unwrap();
         selections.push_str(&format!(
-            "model {alias} = {identity:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            hex(digest)
+            "model {alias} = {identity:?};\n"
         ));
         packages.extend(single);
     }

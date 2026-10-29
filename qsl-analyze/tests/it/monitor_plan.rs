@@ -25,8 +25,7 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 
 fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     let domain = Domain::config_version();
-    let packages = qsl_semantics::model::intake::package_input([domain.document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model package");
+    let packages = qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
     let source = SourceIdentity::new("agent-ix", "monitor-plan", "git", "1");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -36,7 +35,6 @@ fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
          {TIME_UNITS}\
          temporal C using t over (c: M::ConfigVersion) clock \"model-time\" on origin {{ {formula} }}\n",
         domain.package,
-        qsl_semantics::model::key::hex(&digest),
     );
     let parsed = qsl_cst::parse(
         source.clone(),

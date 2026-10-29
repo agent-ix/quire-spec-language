@@ -291,7 +291,6 @@ fn label(name: &str) -> DocumentRef {
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -307,12 +306,8 @@ fn labels(reference: &DocumentRef) -> Value {
 fn provision(reference: &DocumentRef, value: &Value) -> (DocumentRef, Vec<u8>) {
     let bytes = value.to_string().into_bytes();
     let document = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     (
         DocumentRef {
-            digest,
             ..reference.clone()
         },
         bytes,
@@ -418,15 +413,12 @@ fn set_instances(document: &mut Value, relationship: &str, instances: Vec<Value>
 
 struct Admission {
     graph: CheckedGraph,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    model_digest: [u8; 32],
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 fn checked(variant: &Variant) -> Admission {
     let document = package(variant);
-    let packages = package_input([document.as_slice()]);
-    let model_digest = *packages.keys().next().expect("one model");
-    let digest = qsl_semantics::model::key::hex(&model_digest);
+    let packages = package_input([document.as_slice()]).unwrap();
     let clauses = if variant.clauses {
         "pre RehomePre using v on M::Pump::rehome { true }\n\
          post RehomePost using v on M::Pump::rehome { true }\n"
@@ -436,7 +428,7 @@ fn checked(variant: &Variant) -> Admission {
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {PACKAGE:?};\n\
          invariant SysOk using v on M::Sys at current {{ true }}\n{clauses}"
     );
     let built = crate::model_operations::parse_and_build(&unit);
@@ -463,8 +455,7 @@ fn checked(variant: &Variant) -> Admission {
     Admission {
         graph,
         packages,
-        model_digest,
-    }
+        }
 }
 
 impl Admission {
@@ -475,12 +466,8 @@ impl Admission {
         mut document: Value,
         limits: ObservationLimits,
     ) -> (Result<AdmittedObservations, AdmissionFailure>, DocumentRef) {
-        document["model"]["digest"] = json!(format!(
-            "sha256-jcs:{}",
-            qsl_semantics::model::key::hex(&self.model_digest)
-        ));
         let (snapshot, bytes) = provision(&label("current"), &document);
-        let snapshots = BTreeMap::from([(snapshot.digest, bytes)]);
+        let snapshots = BTreeMap::from([(snapshot.clone(), bytes)]);
         let invocations = BTreeMap::new();
         let clause = self.graph.state_clause("SysOk").expect("SysOk is checked");
         let facts = ClauseFacts {
@@ -1191,8 +1178,8 @@ fn post_of_i() -> Value {
 /// The documents of one invocation.
 struct Documents {
     invocation: DocumentRef,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Admission {
@@ -1203,7 +1190,6 @@ impl Admission {
         let model = |document: &mut Value| {
             document["model"] = json!({
                 "identity": PACKAGE, "version": "1.0.0",
-                "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&self.model_digest)),
             });
         };
         let call = label("call");
@@ -1214,12 +1200,11 @@ impl Admission {
             document["identity"] = labels(&label(name));
             document["invocation"] = labels(&call);
             let (reference, bytes) = provision(&label(name), &document);
-            snapshots.insert(reference.digest, bytes);
+            snapshots.insert(reference.clone(), bytes);
             referenced.push(reference);
         }
         let reference = |held: &DocumentRef| {
-            json!({"identity": labels(held),
-                "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&held.digest))})
+            json!({"identity": labels(held)})
         };
         let mut invocation = json!({
             "format": "quire.state.invocation/v1",
@@ -1238,7 +1223,7 @@ impl Admission {
         edit(&mut invocation);
         let (invocation, bytes) = provision(&call, &invocation);
         Documents {
-            invocations: BTreeMap::from([(invocation.digest, bytes)]),
+            invocations: BTreeMap::from([(invocation.clone(), bytes)]),
             invocation,
             snapshots,
         }

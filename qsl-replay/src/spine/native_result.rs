@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::diagnostic::Locus;
-use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord};
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
@@ -626,27 +625,17 @@ struct DocumentRefRead {
     identity: String,
     revision_namespace: String,
     revision: String,
-    digest: String,
 }
 
 impl DocumentRefRead {
     #[ix_trace_rs::string_edge]
-    fn typed(&self, member: &'static str) -> Result<DocumentRef, NativeRunReadError> {
-        let digest = self
-            .digest
-            .strip_prefix("sha256-jcs:")
-            .and_then(parse_lower_hex32)
-            .ok_or(NativeRunReadError::Invalid {
-                member,
-                reason: "expected sha256-jcs digest",
-            })?;
-        Ok(DocumentRef {
+    fn typed(&self) -> DocumentRef {
+        DocumentRef {
             authority: self.authority.clone(),
             identity: self.identity.clone(),
             revision_namespace: self.revision_namespace.clone(),
             revision: self.revision.clone(),
-            digest,
-        })
+        }
     }
 }
 
@@ -802,13 +791,13 @@ impl FrameWitnessRead {
             cause: "unauthorized-change",
             invocation: self
                 .invocation
-                .typed("disposition.refusal.frame_witness.invocation.digest")?,
+                .typed(),
             pre: self
                 .pre
-                .typed("disposition.refusal.frame_witness.pre.digest")?,
+                .typed(),
             post: self
                 .post
-                .typed("disposition.refusal.frame_witness.post.digest")?,
+                .typed(),
             population: self.population.clone(),
             change: self.change.typed(),
         })
@@ -1891,18 +1880,15 @@ struct DocumentRefWire {
     identity: String,
     revision_namespace: String,
     revision: String,
-    digest: String,
 }
 
 impl From<&DocumentRef> for DocumentRefWire {
     fn from(value: &DocumentRef) -> Self {
-        let digest = DigestRecord::mint(DigestDomain::Sha256Jcs, value.digest);
         Self {
             authority: value.authority.clone(),
             identity: value.identity.clone(),
             revision_namespace: value.revision_namespace.clone(),
             revision: value.revision.clone(),
-            digest: format!("sha256-jcs:{}", digest.hex()),
         }
     }
 }
@@ -2303,12 +2289,7 @@ fn format_declaration_key(key: &quire_checked::key::DeclarationKey) -> String {
 fn format_model_selection(
     selection: &qsl_semantics::model::domain_package::DomainPackageRef,
 ) -> String {
-    format!(
-        "{}@{}#{}",
-        selection.identity,
-        selection.version,
-        qsl_semantics::model::key::hex(&selection.digest)
-    )
+    selection.identity.clone()
 }
 
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.

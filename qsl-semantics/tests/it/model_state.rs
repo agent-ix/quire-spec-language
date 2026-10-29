@@ -58,7 +58,7 @@ fn field(name: &str) -> DeclarationKey {
 struct Fixture {
     model: StateModel,
     graph: qsl_semantics::check::CheckedGraph,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     header: serde_json::Value,
 }
 
@@ -78,8 +78,7 @@ fn fixture_with(relationships: serde_json::Value) -> Fixture {
         vec![],
         relationships,
     );
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let graph =
         admit_and_assemble_with_body(&document, "function noop using v(): Boolean pure { true }")
             .expect("assemble model")
@@ -92,8 +91,7 @@ fn fixture_with(relationships: serde_json::Value) -> Fixture {
         ModelNormalizationLimits::default(),
     )
     .expect("model views");
-    let header = json!({"identity": PACKAGE_IDENTITY, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE_IDENTITY});
     Fixture {
         model,
         graph,
@@ -108,7 +106,6 @@ fn label(name: &str) -> DocumentRef {
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -129,7 +126,7 @@ fn snapshot(
     anchor: serde_json::Value,
     complete: bool,
     objects: Vec<serde_json::Value>,
-) -> (DocumentRef, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (DocumentRef, qsl_semantics::model::observation::DocumentProvision) {
     let reference = label("start");
     let mut document = json!({
         "format": "quire.state.snapshot/v1",
@@ -143,15 +140,11 @@ fn snapshot(
     }
     let bytes = document.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     (
         DocumentRef {
-            digest,
             ..reference
         },
-        BTreeMap::from([(digest, bytes)]),
+        BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
     )
 }
 
@@ -638,15 +631,11 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
         });
         let bytes = document.to_string().into_bytes();
         let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
         (
             DocumentRef {
-                digest,
                 ..reference
             },
-            BTreeMap::from([(digest, bytes)]),
+            BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
         )
     };
     let (state, _) = fixture

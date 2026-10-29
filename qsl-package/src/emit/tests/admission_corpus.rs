@@ -355,15 +355,13 @@ impl Fixture {
                 let unit = format!(
                     "{}{}",
                     COMPLETE_V1_HEADER,
-                    RELATIONSHIP_MODEL_UNIT.replace("{}", &document_digest(document)),
+                    RELATIONSHIP_MODEL_UNIT,
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::RefinementV2Empty => {
                 let abstract_document = state_machine_document("example/refinement-abstract");
                 let concrete_document = state_machine_document("example/refinement-concrete");
-                let abstract_digest = document_digest(&abstract_document);
-                let concrete_digest = document_digest(&concrete_document);
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
                      model A = \"example/refinement-abstract\";\n\
@@ -380,7 +378,7 @@ impl Fixture {
                 let unit = format!(
                     "{}{}",
                     COMPLETE_V1_HEADER,
-                    SYSTEMS_INTERFACE_UNIT.replace("{}", &document_digest(SYSTEMS_DOCUMENT)),
+                    SYSTEMS_INTERFACE_UNIT,
                 );
                 Emitted::placed(
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
@@ -391,7 +389,7 @@ impl Fixture {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}{}",
-                    TEMPORAL_CLAUSE.replace("{}", &document_digest(document))
+                    TEMPORAL_CLAUSE
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -399,7 +397,7 @@ impl Fixture {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}{}",
-                    HYPER_CLAUSE.replace("{}", &document_digest(document))
+                    HYPER_CLAUSE
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -407,7 +405,7 @@ impl Fixture {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}{}",
-                    STATE_GRAPH_CLAIMS.replace("{}", &document_digest(document))
+                    STATE_GRAPH_CLAIMS
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -415,7 +413,7 @@ impl Fixture {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
                 let unit = format!(
                     "{COMPLETE_V1_HEADER}{}",
-                    TERMINAL_DECLARATION.replace("{}", &document_digest(document))
+                    TERMINAL_DECLARATION
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -426,7 +424,7 @@ impl Fixture {
             ),
             Self::ConfigVersion => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-                let unit = config_version_unit::unit_text(&document_digest(document));
+                let unit = config_version_unit::unit_text();
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::ExtentRecords => whole(package_declaring(
@@ -445,11 +443,9 @@ impl Fixture {
             Self::VariantType => {
                 let document = VARIANT_DOCUMENT.as_slice();
                 let unit = format!(
-                    "{COMPLETE_V1_HEADER}model M = {package:?} version \"1\" \
-                     digest \"sha256-jcs:{digest}\";\n\
+                    "{COMPLETE_V1_HEADER}model M = {package:?};\n\
                      function keep using v(t: M::Tier): M::Tier pure {{ t }}\n",
                     package = variant_fixture::PACKAGE,
-                    digest = document_digest(document),
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
@@ -474,14 +470,6 @@ impl Fixture {
     }
 }
 
-/// `document`'s `sha256-jcs` digest, as `intake::package_input` keys it.
-fn document_digest(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
 
 /// The spine fixture's object package with one minimal, independent state
 /// machine added, under `package`'s identity.
@@ -562,7 +550,7 @@ fn modelled(
     document: &'static [u8],
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);
@@ -578,7 +566,7 @@ fn modelled_with_documents(
     documents: &[Vec<u8>],
     functions: Vec<FunctionDeclaration>,
 ) -> CheckedPackage {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     declarations.functions.extend(functions);
@@ -806,7 +794,7 @@ fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
-            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .insert_domain_package_document(package_identity(&document), document.to_vec())
             .expect("a fresh evidence key");
     }
     let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
@@ -1044,8 +1032,6 @@ fn two_refinements_of_one_meaning_refuse_naming_both() {
          model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n\
          refinement R2 using inf abstract A concrete C {{}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     let package =
         modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
@@ -1076,8 +1062,6 @@ fn two_refinements_of_different_meanings_both_emit() {
          model C = \"example/refinement-concrete\";\n\
          refinement R using inf abstract A concrete C {{}}\n\
          refinement R2 using inf abstract C concrete A {{}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     let package =
         modelled_with_documents(&unit, &[abstract_document, concrete_document], Vec::new());
@@ -1096,8 +1080,6 @@ fn two_refinements_of_different_meanings_both_emit() {
 fn row_empty_refinement() -> (String, Vec<Vec<u8>>) {
     let abstract_document = state_machine_document("example/refinement-abstract");
     let concrete_document = state_machine_document("example/refinement-concrete");
-    let abstract_digest = document_digest(&abstract_document);
-    let concrete_digest = document_digest(&concrete_document);
     let unit = format!(
         "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model A = \"example/refinement-abstract\";\n\
@@ -1129,7 +1111,7 @@ fn a_refinement_changed_under_its_node_id_is_a_stale_node_key() {
         let mut evidence = read_evidence(&emission);
         for document in &documents {
             evidence
-                .insert_domain_package_document(document_digest(document), document.to_vec())
+                .insert_domain_package_document(package_identity(&document), document.to_vec())
                 .expect("a fresh evidence key");
         }
         match quire_contract_model::read_checked_package(
@@ -1296,8 +1278,6 @@ fn catalog_refinement() -> (String, Vec<Vec<u8>>) {
          finish Done as (d: Boolean) {{ true }};\n\
          }}\n\
          refinement R using inf abstract A concrete C {{}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     (unit, vec![abstract_document, concrete_document])
 }
@@ -1450,9 +1430,7 @@ fn a_clause_over_a_third_model_contributes_no_class() {
         .replace(
             "protocol Local",
             &format!(
-                "model T = \"example/refinement-third\" version \"1.0.0\" \
-                 digest \"sha256-jcs:{}\";\nprotocol Local",
-                document_digest(&third)
+                "model T = \"example/refinement-third\";\nprotocol Local"
             ),
         )
         .replace("over (input: C::Widget)", "over (input: T::Widget)")
@@ -1489,7 +1467,7 @@ fn emit_with_internals(
     documents: &[Vec<u8>],
     internals: Option<Value>,
 ) -> (Value, BTreeMap<String, Value>) {
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     let mut declarations =
         assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     if let Some(value) = internals {
@@ -2177,8 +2155,6 @@ fn rows_refinement_with(
          model A = \"example/rows-abstract\";\n\
          model C = \"example/rows-concrete\";\n\
          refinement R using inf abstract A concrete C {{\n{rows}\n}}\n",
-        document_digest(&abstract_document),
-        document_digest(&concrete_document),
     );
     (unit, vec![abstract_document, concrete_document])
 }
@@ -2335,7 +2311,7 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
 /// The refusals of [`rows_refinement`] over `rows`, which must not check.
 fn refused_rows(rows: &str, operations: &[&str]) -> Vec<qsl_semantics::check::CheckCause> {
     let (unit, documents) = rows_refinement(rows, operations);
-    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice));
+    let packages = qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -2758,7 +2734,7 @@ fn refinement_verdict(emitted: &Emitted, envelope: &Value, position: usize) -> S
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
         evidence
-            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .insert_domain_package_document(package_identity(&document), document.to_vec())
             .expect("a fresh evidence key");
     }
     match quire_contract_model::read_checked_package(

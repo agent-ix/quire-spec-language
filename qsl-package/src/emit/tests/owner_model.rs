@@ -77,15 +77,9 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
         evidence.support_feature(feature.as_str().unwrap());
     }
     let document = document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     evidence
-        .insert_domain_package_document(
-            qsl_semantics::model::key::hex(digest).as_str(),
-            &document[..],
-        )
+        .insert_domain_package_document(package_identity(&document[..],), &document[..],)
         .expect("a fresh evidence key");
     match read_checked_package(
         &jcs(envelope),

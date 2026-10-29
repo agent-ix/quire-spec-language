@@ -188,7 +188,6 @@ mod tests {
             identity: name.to_owned(),
             revision_namespace: "ns".to_owned(),
             revision: "1".to_owned(),
-            digest: [7; 32],
         }
     }
 

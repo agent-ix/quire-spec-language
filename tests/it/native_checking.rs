@@ -84,7 +84,7 @@ fn program<'a>(
     models: &'a [NativeModel],
     clauses: &str,
 ) -> Result<(LinkedPackage<'a>, FormalSource), Box<LinkingError>> {
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{clauses}\n", models[0].digest());
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{clauses}\n");
     let unit = parse(
         SourceIdentity {
             authority: "test".into(),
@@ -146,7 +146,7 @@ fn refused(
     assert_eq!(error.diagnostic.phase, Phase::Check, "{expression}");
     assert!(!error.diagnostic.is_incomplete());
     if let Some(locus) = locus {
-        let clause_text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n", models[0].digest());
+        let clause_text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n");
         // Locate against the authored test expression, independently of the AST.
         let expression_start = clause_text.len()
             + match kind {

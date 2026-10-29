@@ -206,8 +206,7 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
 fn actual_checked_clause_retains_complete_selected_model_and_dispositions() {
     let models = [native_rule_model::parts().model()];
     let text = format!(
-        "{HEADER}model M = \"example/rule-tests\";\ninvariant Rule on M::Node at current {{ true }}\n",
-        models[0].digest()
+        "{HEADER}model M = \"example/rule-tests\";\ninvariant Rule on M::Node at current {{ true }}\n"
     );
     let binding = ClauseBinding {
         name: "Rule".into(),

@@ -226,7 +226,7 @@ fn the_abstract_initial_states_are_part_of_the_obligation() {
     let subject = subject(&world);
     let context = SubjectContext::new(&subject).expect("the package emits");
     let (zero, one) = (world.abstract_initial(), world.abstract_initial_one());
-    assert_ne!(zero.digest, one.digest);
+    assert_ne!(zero, one);
 
     let mut request = ModelRequest::new();
     let author = |request: &mut ModelRequest<_>, initial: &DocumentRef| {

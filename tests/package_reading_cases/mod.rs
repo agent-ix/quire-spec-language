@@ -52,7 +52,7 @@ fn rule<'a>(models: &'a [NativeModel], kind: &str, expression: &str) -> NativePa
         ),
         _ => unreachable!("known test clause kind"),
     };
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{kind} Rule on {context} {{ {expression} }}\n", models[0].digest());
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{kind} Rule on {context} {{ {expression} }}\n");
     let unit = parse(
         SourceIdentity {
             authority: "test".into(),

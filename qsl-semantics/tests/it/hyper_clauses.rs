@@ -92,13 +92,12 @@ fn assemble_under(
     let mut selections = String::new();
     for alias in aliases {
         let (identity, document) = model(alias);
-        let input = package_input([document.as_slice()]);
+        let input = package_input([document.as_slice()]).unwrap();
         let [(digest, _)] = input.iter().collect::<Vec<_>>()[..] else {
             panic!("one document");
         };
         selections.push_str(&format!(
-            "model {alias} = {identity:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            qsl_semantics::model::key::hex(digest)
+            "model {alias} = {identity:?};\n"
         ));
         packages.extend(input);
     }

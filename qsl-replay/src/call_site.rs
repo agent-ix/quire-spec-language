@@ -478,7 +478,12 @@ pub fn call_site<'a, S: CallSiteSelection>(
         Err(fault) => Box::new(CallSiteRefusal::Fault(fault)),
     };
     let limits = spine::SpineLimits::default();
-    let packages = package_input(packages);
+    let packages = package_input(packages).map_err(|_| {
+        Box::new(CallSiteRefusal::Fault(InternalFault::new(
+            "call-site",
+            "package-documents-form-a-package-input",
+        )))
+    })?;
     let parsed = spine::parse(
         &spine::ParseRequest {
             source: &source,
@@ -901,6 +906,7 @@ mod tests {
                 source_digest_record.hex(),
                 bytes.to_vec(),
             )],
+            documents: vec![],
         }
     }
 
@@ -1010,7 +1016,7 @@ mod tests {
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             UNIT.as_bytes(),
-            &qsl_semantics::model::intake::package_input([]),
+            &qsl_semantics::model::intake::package_input([]).unwrap(),
             &DependencyInput::default(),
             crate::spine::SpineLimits::default(),
         )
@@ -1043,7 +1049,6 @@ mod tests {
             edition: &selections.edition,
             profile_selections: &selections.profile_selections,
             definition_selections: &selections.definition_selections,
-            model_selections: &selections.model_selections,
             required_features: &selections.required_features,
             dependency_selections: &selections.dependency_selections,
             identity_projection: &package.graph().nodes,

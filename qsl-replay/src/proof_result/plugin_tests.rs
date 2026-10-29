@@ -760,7 +760,7 @@ fn fixture() -> Fixture {
 
 fn fixture_of(
     source: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
 ) -> Fixture {
     let identity = SourceIdentity::new("agent-ix", "test:plugin", "fixture", "fixture:1");

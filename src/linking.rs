@@ -432,14 +432,6 @@ fn select_models<'a>(
 ) -> Result<Vec<LinkedModel<'a>>, Box<LinkingError>> {
     let mut models = Vec::with_capacity(unit.imports().len());
     for import in unit.imports() {
-        let expected: ByteDigest = import.digest.value.parse().map_err(|_| {
-            failure(
-                unit,
-                Code::InvalidModelBinding,
-                import.digest.span,
-                "expected a sha256 byte digest",
-            )
-        })?;
         let same_package: Vec<_> = catalog
             .iter()
             .filter(|model| model.environment.owner().package().as_str() == import.package.value)
@@ -452,28 +444,13 @@ fn select_models<'a>(
                 "selected package is absent",
             ));
         }
-        let exact: Vec<_> = same_package
-            .into_iter()
-            .filter(|model| {
-                model.environment.owner().revision().get().to_string() == import.version.value
-                    && model.digest == expected
-            })
-            .collect();
-        match exact.as_slice() {
-            [] => {
-                return Err(failure(
-                    unit,
-                    Code::StaleDependency,
-                    import.span,
-                    format!("package {} revision {} digest {expected} has no exact formal declaration artifact", import.package.value, import.version.value),
-                ))
-            }
+        match same_package.as_slice() {
             [model] => models.push(**model),
             _ => {
                 return Err(ambiguous(
                     unit,
                     import.span,
-                    exact
+                    same_package
                         .iter()
                         .flat_map(|model| {
                             model.environment.types().iter().map(|declaration| {
@@ -1060,10 +1037,7 @@ mod profile_tests {
             ModelLimits::default(),
         )
         .unwrap();
-        let text = format!(
-            "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\"; invariant Rule on M::Node at current {{ true }}",
-            model.digest()
-        );
+        let text = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\"; invariant Rule on M::Node at current { true }";
         let unit = parse(
             SourceIdentity {
                 authority: "test".into(),

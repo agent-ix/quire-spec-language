@@ -9,13 +9,6 @@ pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
-fn document_digest() -> String {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
 
 fn relation_unit() -> String {
     format!(
@@ -24,13 +17,12 @@ fn relation_unit() -> String {
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model Config = \"example/config-version\";\n\
          relation Det using t over (x: Config::ConfigVersion::attemptUpdate, y: Config::ConfigVersion::attemptUpdate) \
-         {{ x.result = y.result and pre(x.self.versionNumber) = pre(y.self.versionNumber) implies x.self.versionNumber = y.self.versionNumber }}\n",
-        document_digest()
+         {{ x.result = y.result and pre(x.self.versionNumber) = pre(y.self.versionNumber) implies x.self.versionNumber = y.self.versionNumber }}\n"
     )
 }
 
 pub(super) fn checked_graph() -> qsl_semantics::check::CheckedGraph {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     assemble_with_models(relation_unit().as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -93,7 +85,7 @@ fn a_step_relation_emits_and_reads_back_its_execution_body() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(document_digest(), document().to_vec())
+        .insert_domain_package_document(package_identity(&document()), document().to_vec())
         .expect("the fixture evidence is unique");
     let admitted = crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),

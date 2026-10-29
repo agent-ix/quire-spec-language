@@ -68,11 +68,7 @@ fn operation_site(
 /// no clause names `probe`.
 fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     let document = config_version_step3_domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let (pre, probe_post) = if clauses {
         (
             "pre AttemptPre using v on Config::ConfigVersion::attemptUpdate { \
@@ -86,8 +82,7 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{digest}\";\n\
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
          invariant NoCycle using v on Config::ConfigVersion at current {{ \
@@ -107,7 +102,7 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
 fn private_call_site_operation_variants_keep_format_identity() {
     for clauses in [false, true] {
         let (unit, document) = two_operation_unit(clauses);
-        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
         compile_config_version_unit(&unit, &packages);
     }
     for (unit, packages) in [
@@ -118,7 +113,7 @@ fn private_call_site_operation_variants_keep_format_identity() {
     }
 }
 
-fn sub_field_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn sub_field_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
     let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
     let unit = insert_clause_after(
         &unit,
@@ -128,7 +123,7 @@ fn sub_field_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     (unit, packages)
 }
 
-fn two_population_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn two_population_unit_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
     let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
     (unit, packages)
 }
@@ -319,7 +314,7 @@ fn call_site_refuses_an_operation_no_clause_names() {
 #[test]
 fn call_site_locates_a_state_clause_by_name() {
     let (unit, document) = two_operation_unit(true);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let compiled = compose(
         source(),
         "call-site.native",
@@ -431,7 +426,7 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
         source(),
         "pq.native",
         PQ.as_bytes(),
-        &qsl_semantics::model::intake::package_input([]),
+        &qsl_semantics::model::intake::package_input([]).unwrap(),
         &DependencyInput::default(),
         SpineLimits::default(),
     )

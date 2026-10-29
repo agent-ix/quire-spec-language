@@ -78,9 +78,7 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     }
     text.push_str(&format!(
         "model M = \"{}\";\n",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     ));
     text.push_str(body);
     Source::read(
@@ -374,41 +372,6 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
         assert_eq!(new.closure[0], R::StateQueries);
         assert_eq!(old.closure[0], R::StateGraph);
     }
-}
-
-#[test]
-#[trace("TC-115", "FR-036-AC-5")]
-fn a_stale_model_selection_refuses_instead_of_inheriting_the_new_meaning() {
-    // The units select the original model; a later model is supplied instead.
-    let authored = setup::native_rule_model::parts().model();
-    let replacement = setup::authored_model(|document| {
-        document["requirement"] = Value::from("Replacement");
-    });
-    assert_ne!(authored.digest(), replacement.digest());
-
-    let sources = ecosystem(&authored, R::StateGraph);
-    let models = [ModelInput::Native(&replacement)];
-    with_reports(
-        &sources,
-        &models,
-        WorkLimits::default(),
-        Limits::default(),
-        BindingLimits::default(),
-        |inventory, _, report| {
-            assert!(report.complete(), "{:?}", report.exhaustion());
-            let subject = StaticSubject::of(inventory, report).unwrap();
-            for component in subject.models() {
-                assert_eq!(component.selection, Err(ImportRefusal::StaleSelection));
-            }
-            // No declaration inherits the replacement's meaning.
-            for entry in report.declarations() {
-                assert_eq!(
-                    report.disposition(entry.declaration()),
-                    Some(BindingDisposition::Refused)
-                );
-            }
-        },
-    );
 }
 
 // ---------------------------------------------------------------------------

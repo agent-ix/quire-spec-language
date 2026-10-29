@@ -1004,9 +1004,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
     // after admitting the package and its selection), so it refuses
     // immediately, with no charge at all, unlike the per-node checks
     // `validate_references` runs once node reading has begun.
-    if domain_package.model_selection.identity.is_empty()
-        || domain_package.model_selection.version.is_empty()
-    {
+    if domain_package.model_selection.identity.is_empty() {
         // The unit `MalformedDeclaration` carries no node on purpose: the
         // selection is a field of the package reference, not an IR
         // declaration, so no node identity or origin exists to retain

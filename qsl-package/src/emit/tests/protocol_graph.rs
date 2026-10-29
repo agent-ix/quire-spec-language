@@ -624,15 +624,11 @@ pub(super) fn checked_package(
     text: &str,
     open: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{PROFILES}\
-         model M = {package:?} version {version:?} digest \"sha256-jcs:{}\";\n{text}",
-        qsl_semantics::model::key::hex(digest)
+         model M = {package:?};\n{text}"
     );
     let assembled = assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     let assembled = if open {

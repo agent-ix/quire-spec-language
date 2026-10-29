@@ -19,21 +19,15 @@
 //! spells `1`/`100` (ECMAScript `Number::toString`), so the old digest was
 //! not a `sha256-jcs` digest at all.
 
-use std::collections::BTreeMap;
-
 use ix_trace_rs::trace;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
-};
-use qsl_semantics::model::intake::admit;
+use qsl_semantics::model::intake::{admit, package_input};
 use qsl_semantics::model::key::{
-    EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
+    EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY,
 };
-use qsl_semantics::model::normalize::{normalize, NormalizeOutcome, ObjectUniverse};
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
 use qsl_semantics::value::{
@@ -48,9 +42,7 @@ const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha2
 
 const EFFECTIVE_MEMBER_TEMPLATE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A/x","package":"test/orders"},"owner_effective_type":{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"},"version":"quire.model.effective-declaration/v2"}"#;
 
-const UNIVERSE_TEMPLATE: &str = r#"{"model_selection":{"digest":"@SEL@","digest_domain":"sha256-jcs","identity":"test/orders"},"root_types":[{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"}],"version":"quire.model.object-universe/v2"}"#;
 
-const VIEW_TEMPLATE: &str = r#"{"declarations":[{"effective_id":{"digest":"@TYPE@","domain":"quire.model.effective-declaration/v2"},"preimage":{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","parent":null,"rule":{"identity":"quire.model.normalize.qualify/v1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v2"}}],"model_selection":{"digest":"@SEL@","digest_domain":"sha256-jcs","identity":"test/orders"},"rules":{"identity":"quire.model.complete.rules/v1"},"version":"quire.model.effective-view/v2"}"#;
 
 const ENUM_DECLARATION: &str = r#"{"members":["Active","Closed"],"ordered":false,"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Status"],"version":"quire.enum-declaration-node/v1"}"#;
 
@@ -62,20 +54,6 @@ const UNIT_TEMPLATE: &str = r#"{"dimension_node_id":{"digest":"@DIM@","domain":"
 
 const COMPOUND_UNIT_TEMPLATE: &str = r#"{"terms":[{"exponent":"2","unit_node_id":{"digest":"@UNIT@","domain":"quire.checked-semantic-node/v1"}}],"version":"quire.value.compound-unit/v1"}"#;
 
-/// A domain-package document as a producer might write it: whitespace,
-/// members out of order, an escaped `é`.
-const DOCUMENT_RAW: &str = r#"{ "package": { "version": "1", "identity": "test/golden" }, "types": [], "note": "\u00e9" }"#;
-const DOCUMENT: &str =
-    r#"{"note":"é","package":{"identity":"test/golden","version":"1"},"types":[]}"#;
-
-/// A document with integral numbers spelled `1.0` and `1e2`: its RFC 8785
-/// text, and the text `serde_json` printed for it before `quire-canonical`.
-const FLOAT_DOCUMENT_RAW: &str =
-    r#"{"package":{"identity":"test/golden","version":"1"},"n":[1.0,1e2,0.5]}"#;
-const FLOAT_DOCUMENT: &str =
-    r#"{"n":[1,100,0.5],"package":{"identity":"test/golden","version":"1"}}"#;
-const FLOAT_DOCUMENT_BEFORE_QSL_194: &str =
-    r#"{"n":[1.0,100.0,0.5],"package":{"identity":"test/golden","version":"1"}}"#;
 
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -97,21 +75,8 @@ fn effective_member() -> String {
     EFFECTIVE_MEMBER_TEMPLATE.replace("@TYPE@", &effective_type_digest())
 }
 
-fn selection_digest() -> String {
-    hex(&selection().digest)
-}
 
-fn universe_text() -> String {
-    UNIVERSE_TEMPLATE
-        .replace("@SEL@", &selection_digest())
-        .replace("@TYPE@", &effective_type_digest())
-}
 
-fn view_text() -> String {
-    VIEW_TEMPLATE
-        .replace("@SEL@", &selection_digest())
-        .replace("@TYPE@", &effective_type_digest())
-}
 
 fn enum_member() -> String {
     ENUM_MEMBER_TEMPLATE.replace("@DECL@", &digest_of(ENUM_DECLARATION))
@@ -123,6 +88,14 @@ fn unit() -> String {
 
 fn compound_unit() -> String {
     COMPOUND_UNIT_TEMPLATE.replace("@UNIT@", &digest_of(&unit()))
+}
+
+fn digest_bytes(hex: &str) -> [u8; 32] {
+    let mut digest = [0_u8; 32];
+    for (index, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).unwrap();
+    }
+    digest
 }
 
 fn hex(bytes: &[u8; 32]) -> String {
@@ -152,12 +125,6 @@ fn key(node: &str) -> DeclarationKey {
     }
 }
 
-fn selection() -> DomainPackageRef {
-    DomainPackageRef {
-        identity: "test/orders".to_owned(),
-        version: "1".to_owned(),
-    }
-}
 
 fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPreimage {
     EffectiveDeclarationPreimage {
@@ -193,43 +160,6 @@ fn effective_declaration_identities_match_their_golden_vectors() {
         member.canonical_len(),
         u64::try_from(member_text.len()).unwrap()
     );
-}
-
-/// `quire.model.object-universe/v2`.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
-#[test]
-fn object_universe_identity_matches_its_golden_vector() {
-    let universe = ObjectUniverse {
-        model_selection: selection(),
-        root_types: vec![qualified("ix://test/orders/A", None).identity()],
-    };
-    let text = universe_text();
-    assert_golden(&text, &universe.identity().to_string());
-    assert_eq!(universe.canonical_len(), u64::try_from(text.len()).unwrap());
-}
-
-/// `quire.model.effective-view/v2`, over the view `normalize` builds for a
-/// one-type domain package.
-#[trace("QSpec-TC-195")]
-#[test]
-fn effective_view_identity_matches_its_golden_vector() {
-    let package = DomainPackage::new(
-        selection(),
-        vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
-            key: key("ix://test/orders/A"),
-            interface_features: None,
-            abstract_type: false,
-            supertypes: Vec::new(),
-        })],
-    );
-    let NormalizeOutcome::Completed(view) =
-        normalize(&package, ModelNormalizationLimits::default())
-    else {
-        panic!("a one-type domain package normalizes");
-    };
-    let text = view_text();
-    assert_golden(&text, &view.identity().to_string());
-    assert_eq!(view.canonical_len(), u64::try_from(text.len()).unwrap());
 }
 
 /// The nominal enum declaration and enum member node preimages (FR-092 rule
@@ -336,33 +266,24 @@ fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
     );
 }
 
-/// Admit `raw` under the `sha256-jcs` digest `digest`: intake's check 3
-/// passes only when the digest it takes over the parsed document equals it.
-fn admit_under(raw: &str, digest: [u8; 32]) -> bool {
-    refusal_under(raw, digest).is_none()
-}
-
-/// The refusal of [`admit_under`], or `None` when `raw` admits.
-fn refusal_under(raw: &str, digest: [u8; 32]) -> Option<ModelRefusal> {
-    let offered = DomainPackageRef {
-        identity: "test/golden".to_owned(),
-        version: "1".to_owned(),
-        digest,
+/// Admit `raw`: refused with the refusal, or `None` when `raw` admits.
+fn refusal_of(raw: &str) -> Option<ModelRefusal> {
+    let packages = package_input([raw.as_bytes()]).map_err(Some);
+    let packages = match packages {
+        Ok(packages) => packages,
+        Err(refusal) => return refusal,
     };
-    let bytes = BTreeMap::from([(digest, raw.as_bytes().to_vec())]);
     admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
-        &bytes,
+        "test/golden",
+        &packages,
         qsl_foundation::IntakeLimits::default(),
     )
     .err()
 }
 
-/// `raw`, offered under `digest`, refuses `noncanonical_wire` with cause
-/// `inexact-integer` at `/n`, never a digest mismatch.
-fn assert_inexact_integer_at_n(raw: &str, digest: [u8; 32], what: &str) {
-    let refusal = refusal_under(raw, digest).unwrap_or_else(|| panic!("{what} admitted"));
+/// `raw` refuses `noncanonical_wire` with cause `inexact-integer` at `/n`.
+fn assert_inexact_integer_at_n(raw: &str, what: &str) {
+    let refusal = refusal_of(raw).unwrap_or_else(|| panic!("{what} admitted"));
     assert_eq!(
         refusal.code,
         qsl_foundation::diagnostic::Code::NoncanonicalWire,
@@ -379,120 +300,21 @@ fn assert_inexact_integer_at_n(raw: &str, digest: [u8; 32], what: &str) {
     );
 }
 
-fn digest_bytes(hex: &str) -> [u8; 32] {
-    let mut digest = [0_u8; 32];
-    for (index, byte) in digest.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).unwrap();
-    }
-    digest
-}
-
-/// The domain-package `sha256-jcs` digest intake recomputes (FR-154 check
-/// 3): taken over the RFC 8785 text of the parsed document, not the raw
-/// bytes, so a whitespace/order variant admits under the canonical digest.
-#[trace("TC-145", "FR-056-AC-2")]
-#[test]
-fn domain_package_digest_matches_its_golden_vector() {
-    let parsed: Value = serde_json::from_str(DOCUMENT_RAW).unwrap();
-    assert_golden(
-        DOCUMENT,
-        &sha256_hex(serde_json::to_string(&parsed).unwrap().as_bytes()),
-    );
-    assert!(admit_under(
-        DOCUMENT_RAW,
-        digest_bytes(&digest_of(DOCUMENT))
-    ));
-    assert!(!admit_under(
-        DOCUMENT_RAW,
-        digest_bytes(&sha256_hex(DOCUMENT_RAW.as_bytes()))
-    ));
-}
-
-/// The one changed digest: an integral number spelled `1.0` or `1e2`.
-/// Intake now admits the document under the digest of its RFC 8785 text
-/// (`1`, `100`), and no longer under the digest of `serde_json`'s
-/// non-conformant `1.0`/`100.0` text.
-#[trace("TC-145", "FR-056-AC-2")]
-#[test]
-fn domain_package_digest_spells_numbers_as_rfc_8785_does() {
-    let parsed: Value = serde_json::from_str(FLOAT_DOCUMENT_RAW).unwrap();
-    assert_eq!(
-        serde_json::to_string(&parsed).unwrap(),
-        FLOAT_DOCUMENT_BEFORE_QSL_194,
-        "serde_json's spelling, which RFC 8785 does not use"
-    );
-    assert!(admit_under(
-        FLOAT_DOCUMENT_RAW,
-        digest_bytes(&digest_of(FLOAT_DOCUMENT))
-    ));
-    assert!(!admit_under(
-        FLOAT_DOCUMENT_RAW,
-        digest_bytes(&sha256_hex(FLOAT_DOCUMENT_BEFORE_QSL_194.as_bytes()))
-    ));
-}
-
-/// The RFC 8785 text of the big-integer documents below, `n` being the IEEE
-/// 754 double the literal parses to, written by hand from an independent
-/// JavaScript RFC 8785 canonicalizer (`JSON.parse`, sorted keys,
-/// `JSON.stringify`); its digest is the SHA-256 of that text, recomputed.
-const BIG_INTEGER_DOCUMENT: &str =
-    r#"{"n":18446744073709552000,"package":{"identity":"test/golden","version":"1"}}"#;
-const BEYOND_U64_DOCUMENT: &str =
-    r#"{"n":1.2345678901234568e+29,"package":{"identity":"test/golden","version":"1"}}"#;
-const BELOW_I53_DOCUMENT: &str =
-    r#"{"n":-9007199254740992,"package":{"identity":"test/golden","version":"1"}}"#;
-
 fn big_integer_document(literal: &str) -> String {
     format!(r#"{{"package":{{"identity":"test/golden","version":"1"}},"n":{literal}}}"#)
 }
 
-/// An integer outside ±2^53 has no exact double, and RFC 8785
-/// canonicalizes the double it parses to, so `2^64 - 1` and `2^64` once
-/// both admitted under the digest of `18446744073709552000`, an integer
-/// beyond `u64` under `1.2345678901234568e+29`'s and one below `-2^53`
-/// under `-9007199254740992`'s. Intake now refuses each document, so none
-/// admits under the digest of its double, nor under the digest of its own
-/// exact digits.
+/// An integer outside ±2^53 has no exact double, so intake refuses it as
+/// `noncanonical_wire`/`inexact-integer`, whatever its spelling.
 #[trace("TC-145", "FR-056-AC-13")]
 #[test]
-fn big_integers_admit_under_neither_their_double_nor_their_digits() {
-    for (literal, double_text) in [
-        ("18446744073709551615", BIG_INTEGER_DOCUMENT),
-        ("18446744073709551616", BIG_INTEGER_DOCUMENT),
-        ("123456789012345678901234567890", BEYOND_U64_DOCUMENT),
-        ("-9007199254740993", BELOW_I53_DOCUMENT),
+fn big_integers_are_refused_as_inexact() {
+    for literal in [
+        "18446744073709551615",
+        "18446744073709551616",
+        "123456789012345678901234567890",
+        "-9007199254740993",
     ] {
-        let raw = big_integer_document(literal);
-        assert_inexact_integer_at_n(&raw, digest_bytes(&digest_of(double_text)), literal);
-        let exact_digits =
-            format!(r#"{{"n":{literal},"package":{{"identity":"test/golden","version":"1"}}}}"#);
-        assert_inexact_integer_at_n(
-            &raw,
-            digest_bytes(&sha256_hex(exact_digits.as_bytes())),
-            &format!("{literal} under its exact digits"),
-        );
+        assert_inexact_integer_at_n(&big_integer_document(literal), literal);
     }
-}
-
-/// Domain separation: every identity vector above digests to a different
-/// value, so no two preimage domains can be confused for one another.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
-#[test]
-fn no_two_identity_vectors_share_a_digest() {
-    let texts = [
-        EFFECTIVE_TYPE.to_owned(),
-        effective_member(),
-        universe_text(),
-        view_text(),
-        ENUM_DECLARATION.to_owned(),
-        enum_member(),
-        DIMENSION.to_owned(),
-        unit(),
-        compound_unit(),
-        DOCUMENT.to_owned(),
-        FLOAT_DOCUMENT.to_owned(),
-    ];
-    let digests: std::collections::BTreeSet<String> =
-        texts.iter().map(|text| digest_of(text)).collect();
-    assert_eq!(digests.len(), texts.len());
 }

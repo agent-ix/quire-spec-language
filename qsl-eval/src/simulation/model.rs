@@ -130,12 +130,12 @@ pub struct ExpansionLimits {
 pub struct ModelSimulationRequest<'a> {
     /// The S4 package.
     pub package: &'a CheckedPackage,
-    /// FR-056's package input: domain package bytes by `sha256-jcs` digest.
-    pub packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    /// FR-056's package input: domain package bytes by the identity each declares.
+    pub packages: &'a qsl_semantics::model::intake::PackageInput,
     /// The normalization limits FR-106 admission takes.
     pub normalization: ModelNormalizationLimits,
     /// An FR-106 snapshot provision.
-    pub snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    pub snapshots: &'a qsl_semantics::model::observation::DocumentProvision,
     /// The initial states: documents of `snapshots`.
     pub initial: Vec<DocumentRef>,
     /// For each simulated population, its finite key set.
@@ -1636,15 +1636,14 @@ fn handler_anchor(operation: &str) -> SelectedAnchor {
 }
 
 /// A synthesized state's document reference (FR-120 "Frame and observation
-/// seam"): authority `quire`, identity `quire.simulation.state/<digest>`, and
-/// the state-key digest as its digest.
+/// seam"): authority `quire`, identity `quire.simulation.state/<digest>`,
+/// the state-key as its revision.
 fn state_document(digest: &DigestRecord) -> DocumentRef {
     DocumentRef {
         authority: "quire".to_owned(),
         identity: format!("quire.simulation.state/{}", digest.hex()),
         revision_namespace: "quire.simulation.state-key".to_owned(),
         revision: digest.hex(),
-        digest: *digest.as_bytes(),
     }
 }
 

@@ -31,8 +31,7 @@ fn unit() -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     profile p = \"quire.protocol.finite-global/v1\";\n\
-    model M = \"acme/orders\" version \"1.0.0\" digest \
-    \"sha256-jcs:{digest}\";\n\
+    model M = \"acme/orders\";\n\
     function refers using v(): Boolean pure {{ protocol Fill }}\n\
     protocol Fill using v over (input: M::Gadget) on origin {{\n\
     role R on M::Gadget;\n\
@@ -66,7 +65,7 @@ fn evaluating_a_protocol_reference_refuses_unsupported_feature() {
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let packages = qsl_semantics::model::intake::package_input([MODEL]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL]).unwrap();
     let models = qsl_semantics::model::intake::admit_unit(
         &unit.selections().models,
         &packages,

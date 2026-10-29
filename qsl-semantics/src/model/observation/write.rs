@@ -49,13 +49,11 @@ pub struct EnvironmentPopulation {
     pub objects: Vec<EnvironmentObject>,
 }
 
-/// The selected model the document names: its identity and version.
+/// The selected model the document names: its identity.
 #[derive(Clone, Debug)]
 pub struct EnvironmentModel {
     /// The domain package identity.
     pub identity: String,
-    /// The domain package version.
-    pub version: String,
 }
 
 /// The canonical bytes of a current snapshot of `populations`, labelled
@@ -106,7 +104,6 @@ pub fn write_environment_document(
         "anchor": {"kind": "handler", "name": "replay"},
         "model": {
             "identity": model.identity,
-            "version": model.version,
         },
         "populations": populations,
     });

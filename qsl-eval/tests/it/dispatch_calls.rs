@@ -2264,7 +2264,6 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
             identity: "tc-196-d01-current".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         },
         environment: objects.clone(),
         populations: BTreeMap::new(),

@@ -11,10 +11,6 @@ use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimit
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
     self as artifact,
-    handoff::{
-        MUTATION_MANIFEST_FORMAT, PUBLISHED_HANDOFF, PUBLISHED_MUTATION_MANIFEST_FILE,
-        PUBLISHED_SELECTION_FILE,
-    },
     native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid, Limits, NumberComponent,
     NumberError, NumberWire, Unsupported,
 };
@@ -26,48 +22,6 @@ const DECLARATIONS: [(&str, R); 3] = [
     ("BySample", R::FixedSample),
     ("ByTimestamp", R::TimestampedWindow),
 ];
-
-#[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
-#[test]
-fn committed_handoff_interchange_records_are_complete() {
-    let root = Path::new(PUBLISHED_HANDOFF);
-    let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("committed reader selection"),
-    )
-    .expect("decode expected-v2.json with the published type");
-    assert_eq!(selection.temporal.len(), DECLARATIONS.len());
-    let selection_bytes = serde_json::to_vec(&selection).expect("encode published selection type");
-    assert_eq!(
-        serde_json::from_slice::<artifact::handoff::SelectionV2>(&selection_bytes)
-            .expect("round-trip published selection type"),
-        selection
-    );
-
-    let manifest: artifact::handoff::MutationManifest = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE))
-            .expect("committed mutation manifest"),
-    )
-    .expect("decode mutations/manifest.json with the published type");
-    assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
-    assert_eq!(manifest.cases.len(), 29);
-    let manifest_bytes =
-        serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
-    assert_eq!(
-        serde_json::from_slice::<artifact::handoff::MutationManifest>(&manifest_bytes)
-            .expect("round-trip published mutation-manifest type"),
-        manifest
-    );
-    for path in [
-        manifest.base_offer,
-        manifest.base_artifact,
-        manifest.independent_selection,
-    ] {
-        assert!(
-            root.join(&path).is_file(),
-            "manifest path {path} is not a published file"
-        );
-    }
-}
 
 fn inputs() -> Inputs {
     inputs_with_event_body(

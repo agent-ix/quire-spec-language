@@ -125,9 +125,7 @@ fn program(model: &NativeModel, declarations: &str) -> String {
         "language \"ix:native\" edition \"1-draft\";\n\
         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
         model M = \"{}\";\n{declarations}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     )
 }
 
@@ -264,7 +262,7 @@ fn scalar_field_and_operation_exports_reuse_actual_native_roles() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn changed_import_components_refuse_only_the_dependent_model_lookup() {
+fn a_missing_package_refuses_only_the_dependent_model_lookup() {
     let model = model("test/native", "NativeModel", "native-model");
     let inputs = [ModelInput::Native(&model)];
     let good = program(&model, "predicate Dependent using S (item: M::Node): Boolean { true }\npredicate Independent using S (): Boolean { true }");
@@ -272,24 +270,6 @@ fn changed_import_components_refuse_only_the_dependent_model_lookup() {
         (
             good.replace("test/native", "test/missing"),
             ImportRefusal::MissingPackage,
-        ),
-        (
-            good.replace(
-                "model M = \"test/native\" version \"1\"",
-                "model M = \"test/native\" version \"2\"",
-            ),
-            ImportRefusal::StaleSelection,
-        ),
-        (
-            good.replace(
-                &model.digest().to_string(),
-                &ByteDigest::of(b"other bytes").to_string(),
-            ),
-            ImportRefusal::StaleSelection,
-        ),
-        (
-            good.replace(&model.digest().to_string(), "canonical:unsupported"),
-            ImportRefusal::InvalidDigest,
         ),
     ] {
         with_namespace(&[text], |namespace| {
@@ -489,8 +469,6 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
                 + [
                     &import.alias.value,
                     &import.package.value,
-                    &import.version.value,
-                    &import.digest.value,
                 ]
                 .iter()
                 .map(|value| value.len())
@@ -623,8 +601,6 @@ fn multi_model_indexes_reserve_only_selected_inputs_and_share_repeated_imports()
                 .map(|import| {
                     import.alias.value.len()
                         + import.package.value.len()
-                        + import.version.value.len()
-                        + import.digest.value.len()
                 })
                 .sum::<usize>();
         let exact = BindingLimits {
@@ -896,43 +872,6 @@ fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
             assert_eq!(partial.exhaustion().unwrap().requested, 1);
         },
     );
-}
-
-#[test]
-#[trace("TC-114", "FR-036-AC-3")]
-fn native_revision_spelling_refuses_without_reclassifying_a_stale_revision() {
-    let model = model("test/native", "NativeModel", "native-model");
-    let inputs = [ModelInput::Native(&model)];
-    let original = program(
-        &model,
-        "predicate Rule using S (item: M::Node): Boolean { true }",
-    );
-    for (revision, expected) in [
-        ("1", Ok(0)),
-        ("2", Err(ImportRefusal::StaleSelection)),
-        ("01", Err(ImportRefusal::InvalidRevision)),
-        ("+1", Err(ImportRefusal::InvalidRevision)),
-        (" 1", Err(ImportRefusal::InvalidRevision)),
-        ("1 ", Err(ImportRefusal::InvalidRevision)),
-        ("0", Err(ImportRefusal::InvalidRevision)),
-        ("-1", Err(ImportRefusal::InvalidRevision)),
-        ("1.0", Err(ImportRefusal::InvalidRevision)),
-        ("1e0", Err(ImportRefusal::InvalidRevision)),
-        ("18446744073709551616", Err(ImportRefusal::InvalidRevision)),
-        ("", Err(ImportRefusal::InvalidRevision)),
-    ] {
-        let text = original.replace(
-            "model M = \"test/native\" version \"1\"",
-            &format!("model M = \"test/native\" version \"{revision}\""),
-        );
-        with_namespace(&[text], |namespace| {
-            let bindings = bind_models(namespace, &inputs, &mut work());
-            assert!(bindings.complete());
-            assert_eq!(bindings.imports().len(), 1);
-            assert_eq!(bindings.imports()[0].selection, expected, "{revision:?}");
-            assert_eq!(namespace.units()[0].models()[0].version.value, revision);
-        });
-    }
 }
 
 #[test]

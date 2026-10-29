@@ -895,16 +895,12 @@ fn frame_key_of(owner: &str, name: &str) -> DeclarationKey {
 /// The unit text selecting `document` as model alias `Config`, plus its
 /// package input map (`model::intake::unit::package_input`'s own digest
 /// keying).
-pub(super) fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+pub(super) fn config_unit(document: &[u8]) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = package_input([document]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model Config = {PACKAGE_IDENTITY:?};\n\
          function noop using v(): Boolean pure {{ true }}\n"
     );
     (unit, packages)
@@ -915,7 +911,7 @@ pub(super) fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8
 pub(super) fn config_unit_with_body(
     document: &[u8],
     body: &str,
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     config_unit_with_profiles(document, "", body)
 }
 
@@ -925,17 +921,13 @@ pub(super) fn config_unit_with_profiles(
     document: &[u8],
     profiles: &str,
     body: &str,
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = package_input([document]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          {profiles}\
-         model Config = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model Config = {PACKAGE_IDENTITY:?};\n\
          {body}\n"
     );
     (unit, packages)

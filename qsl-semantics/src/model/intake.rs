@@ -989,9 +989,7 @@ fn declared_member(document: &PackageDocument, member: &str) -> String {
 ///
 /// The package bytes are parsed once, here, into the [`PackageDocument`]
 /// this returns alongside the admitted selection; [`read_records`] reads
-/// that same tree rather than parsing the bytes again. The admitted
-/// selection's version is the one the document declares.
-#[ix_trace_rs::string_edge]
+/// that same tree rather than parsing the bytes again. #[ix_trace_rs::string_edge]
 pub fn admit(
     identity: &str,
     packages: &PackageInput,
@@ -1037,11 +1035,9 @@ pub fn admit(
             ),
         });
     }
-    let version = declared_member(&document, "version");
     Ok((
         DomainPackageRef {
             identity: identity.to_owned(),
-            version,
         },
         document,
     ))
@@ -5846,7 +5842,6 @@ mod tests {
         let (package_ref, document) =
             admit("acme/orders", &map, qsl_foundation::IntakeLimits::default()).unwrap();
         assert_eq!(package_ref.identity, "acme/orders");
-        assert_eq!(package_ref.version, "7");
         assert_eq!(
             document.tree(),
             &serde_json::from_slice::<Value>(&bytes).unwrap()
@@ -6211,7 +6206,6 @@ mod tests {
         let package = read_domain_package(
             DomainPackageRef {
                 identity: "acme/orders".to_owned(),
-                version: "1.0.0".to_owned(),
             },
             &document,
         )

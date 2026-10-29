@@ -48,31 +48,6 @@ impl<'a> ModelInput<'a> {
     }
 }
 
-/// An import's selected digest, in its own digest domain. A native model is
-/// selected by the SHA-256 of its artifact bytes (`sha256:<hex>`); a domain
-/// package by the SHA-256 of its RFC 8785 document (`sha256-jcs:<hex>`,
-/// FR-056-CON-4). Neither spelling selects the other kind of input.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SelectedDigest {
-    /// `sha256:<hex>`: raw artifact bytes.
-    Artifact(ByteDigest),
-    /// `sha256-jcs:<hex>`: a domain package's JCS document.
-    DomainPackage([u8; 32]),
-}
-
-impl FromStr for SelectedDigest {
-    type Err = qsl_foundation::digest::InvalidDigest;
-    #[ix_trace_rs::string_edge]
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        match text.strip_prefix("sha256-jcs:") {
-            Some(hex) => {
-                ByteDigest::from_hex(hex).map(|digest| Self::DomainPackage(digest.as_bytes()))
-            }
-            None => text.parse().map(Self::Artifact),
-        }
-    }
-}
-
 /// Shared conflict, retaining all supplied candidates through input indices.
 #[derive(Debug)]
 pub struct ModelConflict {
@@ -94,18 +69,8 @@ pub enum ModelConflictKind {
 /// Exact import selection failure, separate from qualified export lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ImportRefusal {
-    /// Digest spelling is neither `sha256:<hex>` nor `sha256-jcs:<hex>`.
-    InvalidDigest,
-    /// A native model revision is not the canonical unsigned decimal IR revision.
-    InvalidRevision,
     /// No supplied model has this package label.
     MissingPackage,
-    /// The package is supplied only in the other digest domain: a
-    /// `sha256-jcs` selection of a native model, or a `sha256` selection of
-    /// a domain package (FR-056-CON-4).
-    DigestDomainMismatch,
-    /// No candidate has all selected revision/digest components.
-    StaleSelection,
     /// Multiple candidates match the complete selection.
     AmbiguousSelection {
         /// Indices into ModelBindings::inputs() for the matching candidates.
@@ -493,7 +458,7 @@ impl<'a> ModelBindings<'a> {
                 }
                 ModelInput::Domain(package) => {
                     let selection = package.selection();
-                    text(work, &[&selection.identity, &selection.version])?;
+                    text(work, &[&selection.identity])?;
                 }
             }
             self.catalogs.push(None);
@@ -552,19 +517,9 @@ impl<'a> ModelBindings<'a> {
                     &[
                         &selection.alias.value,
                         &selection.package.value,
-                        &selection.version.value,
-                        &selection.digest.value,
                     ],
                 )?;
-                let selected = match selection.digest.value.parse::<SelectedDigest>() {
-                    Err(_) => Err(ImportRefusal::InvalidDigest),
-                    Ok(digest) => self.select(
-                        &selection.package.value,
-                        &selection.version.value,
-                        digest,
-                        work,
-                    )?,
-                };
+                let selected = self.select(&selection.package.value, work)?;
                 let selected_input = selected.as_ref().ok().copied();
                 self.aliases
                     .entry(unit)
@@ -599,59 +554,21 @@ impl<'a> ModelBindings<'a> {
     fn select(
         &self,
         package: &str,
-        revision: &str,
-        digest: SelectedDigest,
         work: &mut Work,
     ) -> Result<Result<usize, ImportRefusal>, Exhaustion> {
-        let mut same_package = false;
-        let mut same_domain = false;
-        // Parse a native revision once; a domain package version is compared
-        // exactly as spelled.
-        let native_revision = revision
-            .parse::<u64>()
-            .ok()
-            .filter(|_| {
-                revision.bytes().all(|byte| byte.is_ascii_digit()) && !revision.starts_with('0')
-            })
-            .and_then(|value| ir::RequirementRevision::new(value).ok());
-        let mut malformed_native_revision = false;
         let mut exact = Vec::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::References, 1)?;
-            let matches = match *input {
-                ModelInput::Native(model) => {
-                    let owner = model.environment().owner();
-                    let named = owner.package().as_str() == package;
-                    same_package |= named;
-                    let SelectedDigest::Artifact(digest) = digest else {
-                        continue;
-                    };
-                    same_domain |= named;
-                    malformed_native_revision |= named && native_revision.is_none();
-                    named
-                        && native_revision.as_ref() == Some(&owner.revision())
-                        && model.digest() == digest
-                }
-                ModelInput::Domain(domain) => {
-                    let selection = domain.selection();
-                    let named = selection.identity == package;
-                    same_package |= named;
-                    let SelectedDigest::DomainPackage(digest) = digest else {
-                        continue;
-                    };
-                    same_domain |= named;
-                    named && selection.version == revision && selection.digest == digest
-                }
+            let named = match *input {
+                ModelInput::Native(model) => model.environment().owner().package().as_str() == package,
+                ModelInput::Domain(domain) => domain.selection().identity == package,
             };
-            if matches {
+            if named {
                 exact.push(index);
             }
         }
         Ok(match exact.as_slice() {
-            [] if !same_package => Err(ImportRefusal::MissingPackage),
-            [] if !same_domain => Err(ImportRefusal::DigestDomainMismatch),
-            [] if malformed_native_revision => Err(ImportRefusal::InvalidRevision),
-            [] => Err(ImportRefusal::StaleSelection),
+            [] => Err(ImportRefusal::MissingPackage),
             [input] => {
                 let mut groups = Vec::new();
                 for (index, conflict) in self.conflicts.iter().enumerate() {

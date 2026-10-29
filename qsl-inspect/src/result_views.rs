@@ -354,8 +354,7 @@ mod tests {
             authority: String::from("tests"),
             identity: String::from("snapshot"),
             revision_namespace: String::from("test"),
-            revision: String::from("1"),
-            digest: [digest; 32],
+            revision: digest.to_string(),
         }
     }
 

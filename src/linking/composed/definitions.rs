@@ -391,11 +391,16 @@ fn profile(
             return Ok(());
         }
     };
-    let digest = match import.digest.value.parse() {
+    let Some(pin) = &import.pin else {
+        result.refusal = Some(Cause::MissingAlias);
+        result.complete = true;
+        return Ok(());
+    };
+    let digest = match pin.digest.value.parse() {
         Ok(digest) => digest,
         Err(_) => {
             result.refusal = Some(Cause::InvalidDigest {
-                span: import.digest.span,
+                span: pin.digest.span,
             });
             result.complete = true;
             return Ok(());
@@ -403,7 +408,7 @@ fn profile(
     };
     let selection = Selection {
         identity: import.package.value.clone(),
-        revision: import.version.value.clone(),
+        revision: pin.version.value.clone(),
         digest,
     };
     match catalog.closure(&selection, work)? {

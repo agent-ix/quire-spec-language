@@ -233,9 +233,7 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
     }
     text.push_str(&format!(
         "model M = \"{}\";\n{body}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     ));
     Source::read(
         SourceIdentity {

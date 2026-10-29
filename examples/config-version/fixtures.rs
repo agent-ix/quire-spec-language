@@ -206,7 +206,7 @@ fn write_program(directory: &Path, model: &NativeModel, case: Case) -> io::Resul
     };
     let native = format!(
         "// SPDX-License-Identifier: AGPL-3.0-only\nlanguage \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel Config = \"example/config-version\";\n{} {} on {} {{ {} }}\n",
-        model.digest(), syntax.keyword, clause.name, syntax.context, clause.expression,
+        syntax.keyword, clause.name, syntax.context, clause.expression,
     );
     std::fs::write(directory.join("program.native"), &native)?;
     let owner = json!({"package":"example/config-version","requirement":clause.name,"revision":1});

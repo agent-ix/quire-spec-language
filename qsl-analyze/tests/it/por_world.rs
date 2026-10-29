@@ -257,11 +257,10 @@ pub(crate) type Atom = Box<dyn Fn(&ModelSimState, &str) -> Option<bool>>;
 pub(crate) struct Fixture {
     package: CheckedPackage,
     clauses: Vec<CheckedTemporalClause>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
     universes: Vec<(String, Vec<String>)>,
-    digest: [u8; 32],
     document: Vec<u8>,
     text: String,
 }
@@ -286,8 +285,7 @@ impl Fixture {
         universes: &[(&str, &[&str])],
     ) -> Self {
         let document = document(types, populations);
-        let packages = package_input([document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([document.as_slice()]).unwrap();
         let declared = clauses
             .iter()
             .enumerate()
@@ -304,7 +302,6 @@ impl Fixture {
              profile t = \"quire.temporal.infinite-trace/v1\";\n\
              model M = \"{PACKAGE}\";\n\
              function Noop using v(): Boolean pure {{ true }}\n{}\n{declared}",
-            hex(&digest),
             contracts.join("\n"),
         );
         let parsed = qsl_cst::parse(
@@ -356,7 +353,6 @@ impl Fixture {
                     )
                 })
                 .collect(),
-            digest,
             document,
             text,
         };
@@ -384,8 +380,7 @@ impl Fixture {
                 json!({"population": ident(population), "complete": true, "objects": members})
             })
             .collect();
-        let header = json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&self.digest))});
+        let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -396,16 +391,12 @@ impl Fixture {
         });
         let bytes = document.to_string().into_bytes();
         let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 

@@ -87,16 +87,13 @@ pub(crate) fn request_source<'a>(
         .enumerate()
         .map(|(index, model)| {
             format!(
-                "model N{index} = {} version \"{}\" digest \"{}\";\n",
+                "model N{index} = {};\n",
                 serde_json::to_string(model.environment().owner().package().as_str()).unwrap(),
-                model.environment().owner().revision().get(),
-                model.digest(),
             )
         })
         .collect();
     let text = format!(
-        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{additional_imports}{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n",
-        models[0].digest()
+        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\";\n{additional_imports}{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n"
     );
     let text = rewrite(text);
     let unit = parse(

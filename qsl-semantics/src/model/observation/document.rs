@@ -14,7 +14,7 @@ use qsl_foundation::diagnostic::Code;
 use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
-    check_document_digest, collection_tag, fault, incomplete, population_universe, refuse,
+    check_document_valid, collection_tag, fault, incomplete, population_universe, refuse,
     AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits,
     OutOfRange, PathStep, PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter,
     SelectedObject, SnapshotValue,
@@ -50,7 +50,6 @@ pub(super) enum DocumentKind {
 #[derive(Clone, Debug)]
 pub(super) struct ModelHeader {
     pub(super) identity: String,
-    pub(super) version: String,
 }
 
 #[derive(Clone, Debug)]
@@ -313,15 +312,15 @@ fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
 }
 
 /// FR-106 check 1: read one document from `provision` under `selected`'s
-/// digest, running the seven ordered conditions.
+/// reference, running the ordered conditions.
 pub(super) fn read_document(
     kind: DocumentKind,
-    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<ReadDocument, AdmissionFailure> {
     // 1.1
-    let bytes = provision.get(&selected.digest).ok_or_else(|| {
+    let bytes = provision.get(selected).ok_or_else(|| {
         incomplete(admission_record(
             Code::UnavailableObservation,
             "missing-required-artifact",
@@ -336,13 +335,11 @@ pub(super) fn read_document(
         ));
     }
     // The one read of the document, through the shared reader at any depth
-    // (FR-261): check 1.3 digests this tree, and every later check reads
+    // (FR-261): check 1.3 validates this tree, and every later check reads
     // members from it.
     let read = quire_canonical::read(bytes, limits.document_bytes);
-    // 1.3: digest, before any member is read. Bytes the reader refuses are
-    // digested raw, and so refuse here.
-    check_document_digest(bytes, &read, selected.digest, limits)?;
-    let digest = selected.digest;
+    // 1.3: document validity, before any member is read.
+    check_document_valid(&read, limits)?;
     // Bytes that matched the expected digest raw (never parsed as JSON at
     // all) or that parsed but are not a JSON object trivially hold no
     // `format` member at all: absent is not the expected format string, so
@@ -475,7 +472,6 @@ pub(super) fn read_document(
         identity: label("identity")?,
         revision_namespace: label("revision_namespace")?,
         revision: label("revision")?,
-        digest,
     };
     if let Some(blank_label) = first_blank_label(&document_identity) {
         return Err(refuse(
@@ -511,9 +507,9 @@ pub(super) fn read_document(
 }
 
 /// Reads the document's own `model` member into a [`ModelHeader`]: a
-/// wire-reading edge (ADR-012 §9), converting `identity`/`version`
+/// wire-reading edge (ADR-012 §9), converting `identity`
 /// once, here, into the typed header [`check_model`] compares against the
-/// package's own model selection. A missing `identity`/`version`
+/// package's own model selection. A missing `identity`
 /// member refuses `invalid_runtime_input`/`missing-member` at that member
 /// (check 1.5's own cause, generalized to a nested member).
 #[ix_trace_rs::string_edge]
@@ -531,12 +527,7 @@ fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
         .and_then(|value| value.as_str())
         .ok_or_else(|| missing_member("identity"))?
         .to_owned();
-    let version = model
-        .member("version")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| missing_member("version"))?
-        .to_owned();
-    Ok(ModelHeader { identity, version })
+    Ok(ModelHeader { identity })
 }
 
 fn wrong_kind(field: impl Into<String>) -> AdmissionFailure {
@@ -568,11 +559,14 @@ fn read_object_ref(
     Ok(SelectedObject { population, key })
 }
 
-/// Reads a `{identity: {...}, digest: "sha256-jcs:<hex>"}` document
-/// reference at `field`: a wire-reading edge (ADR-012 §9), same as
-/// [`read_model`]. `strip_prefix`, not `trim_start_matches` (SR-750
-/// FND-003): a digest with no `sha256-jcs:` prefix, or a doubled one,
-/// refuses rather than being silently accepted or kept whole.
+/// The reference a document names itself by, from its root `identity`.
+pub(super) fn reference_of(bytes: &[u8]) -> Option<DocumentRef> {
+    let document = quire_canonical::read(bytes, u64::MAX).ok()?;
+    read_document_ref(Json::of(document.root()), "document").ok()
+}
+
+/// Reads a `{identity: {...}}` document reference at `field`: a wire-reading
+/// edge (ADR-012 §9), same as [`read_model`].
 #[ix_trace_rs::string_edge]
 fn read_document_ref(
     value: Json<'_>,
@@ -590,49 +584,12 @@ fn read_document_ref(
             .map(str::to_owned)
             .ok_or_else(|| missing_member(field))
     };
-    let digest_raw = object
-        .member("digest")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| missing_member(field))?;
-    let digest_hex = digest_raw
-        .strip_prefix("sha256-jcs:")
-        .ok_or_else(|| wrong_kind(field))?;
-    let bytes = hex_bytes(digest_hex).ok_or_else(|| wrong_kind(field))?;
-    if bytes.len() != 32 {
-        return Err(wrong_kind(field));
-    }
-    let mut digest = [0u8; 32];
-    digest.copy_from_slice(&bytes);
     Ok(DocumentRef {
         authority: label("authority")?,
         identity: label("identity")?,
         revision_namespace: label("revision_namespace")?,
         revision: label("revision")?,
-        digest,
     })
-}
-
-/// Decodes `text` as ASCII hex, or `None` for anything else -- including
-/// non-ASCII text, where byte-index slicing would otherwise panic on a
-/// char boundary (an untrusted digest such as `"sha256-jcs:aé…"`, reached
-/// after the invocation's own digest check passes). Checked one byte at a
-/// time over `text.as_bytes()`, never `&text[at..at + 2]` (which slices by
-/// byte offset but assumes every two offsets fall on a char boundary).
-fn hex_bytes(text: &str) -> Option<Vec<u8>> {
-    let bytes = text.as_bytes();
-    if !bytes.len().is_multiple_of(2) || !bytes.iter().all(u8::is_ascii_hexdigit) {
-        return None;
-    }
-    bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| {
-            let high = (pair[0] as char).to_digit(16)?;
-            let low = (pair[1] as char).to_digit(16)?;
-            Some((high * 16 + low) as u8)
-        })
-        .collect()
 }
 
 /// Reads the snapshot's own body (`observation`, `anchor`, `populations`),
@@ -2450,7 +2407,7 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            UniverseId::from_digest(snapshot.digest),
+            UniverseId::from_digest(snapshot.key()),
             context.effective,
             object,
         );
@@ -3701,45 +3658,6 @@ mod tests {
         read_raw_value(Json::of(document.root()), &mut || Ok::<(), ()>(()))
             .expect("an uncharged read does not fail")
             .expect("test fixture is a value form")
-    }
-
-    /// SR-750 FND-002: a non-ASCII digest string must refuse, never panic
-    /// on a byte-index char-boundary slice. `read_document_ref` is
-    /// `hex_bytes`'s one caller reachable with untrusted input (a `pre`/
-    /// `post` document reference's own digest).
-    #[test]
-    fn a_non_ascii_digest_refuses_rather_than_panics() {
-        let text = serde_json::json!({
-            "identity": {
-                "authority": "a",
-                "identity": "b",
-                "revision_namespace": "c",
-                "revision": "d",
-            },
-            "digest": "sha256-jcs:aé00000000000000000000000000000000000000000000000000000000000",
-        })
-        .to_string();
-        let document =
-            quire_canonical::read(text.as_bytes(), u64::MAX).expect("test fixture is JSON");
-        let result = read_document_ref(Json::of(document.root()), "pre");
-        assert!(
-            matches!(result, Err(AdmissionFailure::Refused(_))),
-            "expected Err(Refused(..)), got {result:?}"
-        );
-    }
-
-    /// `hex_bytes` decodes a well-formed 32-byte digest.
-    #[test]
-    fn hex_bytes_decodes_a_well_formed_digest() {
-        let hex = "00".repeat(32);
-        let bytes = hex_bytes(&hex).expect("32 zero bytes decode");
-        assert_eq!(bytes, vec![0u8; 32]);
-    }
-
-    /// `hex_bytes` refuses an odd-length string before ever indexing it.
-    #[test]
-    fn hex_bytes_refuses_an_odd_length_string() {
-        assert_eq!(hex_bytes("abc"), None);
     }
 
     /// `collect_references` finds a reference nested under `present` and

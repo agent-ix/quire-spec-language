@@ -66,18 +66,14 @@ fn declarations_over(
     declarations: &str,
 ) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let model_version = document["package"]["version"]
         .as_str()
         .expect("the model package version");
-    let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model {alias} = {package:?} version {model_version:?} digest \"sha256-jcs:{digest}\";\n\
+         model {alias} = {package:?};\n\
          {declarations}\n",
         package = fixture::PACKAGE,
     );
@@ -217,10 +213,7 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
         "hyper Linked using inf over behaviours (v: M::ConfigVersion) forall trace a of M forall trace b of M {{ always holds((let r = v.parent in present(r) and deref(value(r)).versionNumber = 1) @ {trace}) }}\n"
     );
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let model_version = document["package"]["version"]
         .as_str()
         .expect("the model package version");
@@ -228,8 +221,7 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = {package:?} version {model_version:?} digest \"sha256-jcs:{}\";\n{body}",
-        qsl_semantics::model::key::hex(digest),
+         model M = {package:?};\n{body}",
         package = fixture::PACKAGE,
     );
     let parsed = qsl_cst::parse(
@@ -1042,15 +1034,11 @@ fn money_json(amount: i64) -> serde_json::Value {
 
 fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
     let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("the document is canonical")
-        .as_bytes();
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest,
     }
 }
 
@@ -1071,13 +1059,9 @@ fn admit_invocation(
     result: Option<serde_json::Value>,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
+    let packages = package_input([document.as_slice()]).unwrap();
     let model = json!({
         "identity": fixture::PACKAGE, "version": "1",
-        "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
     });
     let snapshot = |label: &str, observation: &str| {
         let identity = DocumentRef {
@@ -1085,7 +1069,6 @@ fn admit_invocation(
             identity: label.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         };
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.snapshot/v1",
@@ -1108,12 +1091,10 @@ fn admit_invocation(
         identity: "call".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let reference = |document: &DocumentRef| {
         json!({
             "identity": identity_json(document),
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&document.digest)),
         })
     };
     let invocation_bytes = serde_json::to_vec(&json!({
@@ -1132,8 +1113,8 @@ fn admit_invocation(
     }))
     .expect("the invocation serializes");
     let invocation = document_ref("call", &invocation_bytes);
-    let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
-    let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+    let snapshots = BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]);
+    let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
     let checked = package.graph().state_clause(clause).expect("the clause");
     let facts = ClauseFacts {
         identity: checked.identity(),

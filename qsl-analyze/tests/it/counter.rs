@@ -173,10 +173,6 @@ fn document_with(parameter_type: Option<String>) -> Vec<u8> {
     .into_bytes()
 }
 
-/// The digest of the domain package document.
-pub(crate) fn document_digest(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
-}
 
 /// The native unit selecting `document` as `M`, with `body` after the
 /// header.
@@ -192,8 +188,7 @@ pub(crate) fn unit_text_in(identity: &str, document: &[u8], body: &str) -> Strin
          profile v = \"quire.value.complete/v1\";\n\
          profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
          model M = \"{identity}\";\n\
-         function Noop using v(): Boolean pure {{ true }}\n{body}",
-        hex(&document_digest(document))
+         function Noop using v(): Boolean pure {{ true }}\n{body}"
     )
 }
 
@@ -221,7 +216,7 @@ pub(crate) fn declarations_with_model_profile(
 }
 
 fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations {
-    let packages = package_input([document]);
+    let packages = package_input([document]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",
@@ -307,14 +302,14 @@ pub(crate) fn package_with_clauses(
 /// A subject's documents: the domain package and the snapshots.
 pub(crate) struct Documents {
     pub(crate) document: Vec<u8>,
-    pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
-    pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
+    pub(crate) snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Documents {
     pub(crate) fn new(document: Vec<u8>) -> Self {
         Self {
-            packages: package_input([document.as_slice()]),
+            packages: package_input([document.as_slice()]).unwrap(),
             document,
             snapshots: BTreeMap::new(),
         }
@@ -330,8 +325,7 @@ impl Documents {
                     "fields": {"value": {"integer": value.to_string()}}})
             })
             .collect();
-        let header = json!({"identity": PACKAGE, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&document_digest(&self.document)))});
+        let header = json!({"identity": PACKAGE});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -343,21 +337,17 @@ impl Documents {
         });
         let bytes = document.to_string().into_bytes();
         let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 
     /// The bytes of each provisioned snapshot, by digest.
-    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&[u8; 32], &Vec<u8>)> {
+    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {
         self.snapshots.iter()
     }
 }
@@ -491,7 +481,7 @@ impl ModelLetters for Letters {
 /// The checked package of a full unit `text` over `document`, for a unit
 /// whose header differs from [`unit_text`]'s.
 pub(crate) fn package_from_text(document: &[u8], text: &str) -> CheckedPackage {
-    let packages = package_input([document]);
+    let packages = package_input([document]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",

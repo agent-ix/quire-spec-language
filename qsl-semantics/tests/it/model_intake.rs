@@ -51,7 +51,6 @@ use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{
     admit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
 };
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 use qsl_semantics::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
@@ -59,7 +58,6 @@ use qsl_semantics::model::systems::{
 };
 use quire_checked::key::DeclarationKey;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 /// Parses test document bytes through intake's one parse.
 fn parse_document(bytes: &[u8]) -> PackageDocument {
@@ -160,13 +158,11 @@ pub(super) fn fcd_fixtures_dir() -> &'static Path {
 
 /// FR-260-AC-1 (TC-730 step 2), on a 512 KiB stack: every corpus domain
 /// package FR-056's tests admit also admits when selected by the
-/// `sha256-jcs` digest of its document. The architecture document is the one
-/// FCD's real lift produces at the pinned rev. The stable, QSL-owned
-/// `domain_package_digest_matches_its_golden_vector` test separately pins
-/// the digest algorithm against QSL-owned bytes.
+/// identity its document declares. The architecture document is the one
+/// FCD's real lift produces.
 #[trace("TC-730", "FR-260-AC-1")]
 #[test]
-fn every_corpus_package_admits_under_its_canonical_digest() {
+fn every_corpus_package_admits_by_its_identity() {
     on_a_small_stack(|| {
         let fixtures = fcd_fixtures_dir();
         let architecture = lift_document(
@@ -191,17 +187,13 @@ fn every_corpus_package_admits_under_its_canonical_digest() {
             ("architecture", architecture),
         ];
         for (name, bytes) in corpus {
-            let digest = parse_document(&bytes).jcs_digest();
             let package: Value = serde_json::from_slice(&bytes).unwrap();
             let offered = DomainPackageRef {
                 identity: package["package"]["identity"].as_str().unwrap().to_owned(),
-                version: package["package"]["version"].as_str().unwrap().to_owned(),
-                digest,
             };
-            let by_digest = BTreeMap::from([(digest, bytes)]);
-            let admitted = admit(
-                &offered,
-                SHA256_JCS_DIGEST_DOMAIN,
+            let by_digest =
+                qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+            let admitted = admit(offered.identity.as_str(),
                 &by_digest,
                 qsl_foundation::IntakeLimits::default(),
             );
@@ -237,34 +229,24 @@ fn lifts_the_architecture_bundle_and_admits_it() {
         lifted, expected,
         "lift_document must produce the fixture's committed expected document"
     );
-    let actual_digest = parse_document(&document).jcs_digest();
 
     let package = lifted;
     let identity = package["package"]["identity"]
         .as_str()
         .expect("document declares its package identity")
         .to_owned();
-    let version = package["package"]["version"]
-        .as_str()
-        .expect("document declares its package version")
-        .to_owned();
-
-    let mut bytes_by_digest = BTreeMap::new();
-    bytes_by_digest.insert(actual_digest, document.clone());
+    let bytes_by_digest =
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
 
     let offered = DomainPackageRef {
         identity: identity.clone(),
-        version: version.clone(),
     };
-    let (admitted, admitted_document) = admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (admitted, admitted_document) = admit(offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
-    .expect("a selection matching the lifted package's own identity/version/digest is admitted");
+    .expect("a selection matching the lifted package's own identity is admitted");
     assert_eq!(admitted.identity, identity);
-    assert_eq!(admitted.version, version);
     assert_eq!(admitted_document.tree(), &package);
 }
 
@@ -774,7 +756,6 @@ fn admitted_declarations_retain_their_original_meaning_and_member_origins() {
     let package = read_domain_package(
         DomainPackageRef {
             identity: package_identity.into(),
-            version: "1.0.0".into(),
         },
         &parsed,
     )
@@ -1076,17 +1057,12 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     .to_string()
     .into_bytes();
 
-    let digest = parse_document(&document).jcs_digest();
-    let mut bytes_by_digest = BTreeMap::new();
-    bytes_by_digest.insert(digest, document.clone());
+    let bytes_by_digest =
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
-        version: "1.0.0".to_owned(),
-        digest,
     };
-    let (package_ref, admitted_document) = admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (package_ref, admitted_document) = admit(offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1252,17 +1228,12 @@ fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
     .to_string()
     .into_bytes();
 
-    let digest = parse_document(&document).jcs_digest();
-    let mut bytes_by_digest = BTreeMap::new();
-    bytes_by_digest.insert(digest, document);
+    let bytes_by_digest =
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
-        version: "1.0.0".to_owned(),
-        digest,
     };
-    let (package_ref, admitted_document) = admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (package_ref, admitted_document) = admit(offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1370,7 +1341,6 @@ fn charges_normalize_record_once_per_intake_declaration() {
     let domain_package = DomainPackage::new(
         DomainPackageRef {
             identity: package_identity.to_owned(),
-            version: "1".to_owned(),
         },
         records,
     );
@@ -1625,16 +1595,10 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
 fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     let offered = DomainPackageRef {
         identity: qsl_semantics::model::intake::native::RESERVED_IDENTITY.to_owned(),
-        version: "1".to_owned(),
-        // This deliberately unrelated token is never looked up: the reserved
-        // identity refuses before byte resolution.
-        digest: Sha256::digest(b"irrelevant: refused before any byte lookup").into(),
     };
-    let bytes_by_digest = BTreeMap::new();
+    let bytes_by_digest = qsl_semantics::model::intake::PackageInput::new();
 
-    let refusal = admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let refusal = admit(offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1645,7 +1609,7 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     assert_eq!(
         refusal.cause,
         qsl_semantics::model::refusal::ModelRefusalCause::ReservedPackageIdentity {
-            selection: offered,
+            identity: offered.identity,
         }
     );
     assert_eq!(refusal.cause.as_str(), "malformed-declaration");
@@ -1671,26 +1635,11 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     let document =
         quire_canonical::to_vec(&tree, quire_semantic_value::semantic_node::IDENTITY_LIMITS)
             .expect("a document of strings encodes");
-    let digest = parse_document(&document).jcs_digest();
-    let mut bytes_by_digest = BTreeMap::new();
-    bytes_by_digest.insert(digest, document);
-
-    let first = DomainPackageRef {
-        identity: "acme/orders".to_owned(),
-        version: "1".to_owned(),
-        digest,
-    };
-    let second = DomainPackageRef {
-        identity: "acme/orders".to_owned(),
-        version: "2".to_owned(),
-        // This deliberately unrelated token is never looked up: duplicate
-        // identity refuses before the second selection's byte resolution.
-        digest: Sha256::digest(b"second selection: refused before this is ever looked up").into(),
-    };
+    let bytes_by_digest =
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
 
     let refusal = qsl_semantics::model::intake::admit_selections(
-        &[first, second],
-        SHA256_JCS_DIGEST_DOMAIN,
+        &["acme/orders".to_owned(), "acme/orders".to_owned()],
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1699,8 +1648,6 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
         refusal.cause,
         qsl_semantics::model::refusal::ModelRefusalCause::DuplicateSelection {
             identity: "acme/orders".to_owned(),
-            already_selected_version: "1".to_owned(),
-            requested_version: "2".to_owned(),
         }
     );
     assert_eq!(refusal.cause.as_str(), "duplicate-identity");
@@ -1789,17 +1736,12 @@ fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
     .to_string()
     .into_bytes();
 
-    let digest = parse_document(&document).jcs_digest();
-    let mut bytes_by_digest = BTreeMap::new();
-    bytes_by_digest.insert(digest, document.clone());
+    let bytes_by_digest =
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
-        version: "1.0.0".to_owned(),
-        digest,
     };
-    let (_, admitted_document) = admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (_, admitted_document) = admit(offered.identity.as_str(),
         &bytes_by_digest,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -1969,7 +1911,6 @@ fn a_bare_string_kind_refuses_at_the_kind_member_through_the_package_read() {
     let parsed = parse_document(&bytes);
     let selection = DomainPackageRef {
         identity: package_identity.into(),
-        version: "1.0.0".into(),
     };
     let refusals = match read_domain_package(selection, &parsed) {
         Ok(package) => match qsl_semantics::model::normalize::normalize(

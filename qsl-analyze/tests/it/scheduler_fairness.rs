@@ -474,7 +474,7 @@ fn a_safety_verdict_is_the_same_with_and_without_the_scheduler() {
 pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
     let document = document();
     let text = unit_text(body);
-    let packages = package_input([document.as_slice()]);
+    let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",

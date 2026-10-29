@@ -28,15 +28,11 @@ fn assemble_as(alias: &str, declarations: &str) -> PackageDeclarations {
 
 fn assemble_document(document: &Value, alias: &str, declarations: &str) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model {alias} = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model {alias} = {package:?};\n\
          {declarations}\n",
         package = fixture::PACKAGE,
     );
@@ -613,18 +609,13 @@ fn admit_order_usage(
     edit: impl FnOnce(String) -> String,
 ) -> Result<AdmissionUsage, AdmissionFailure> {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let model_digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([document.as_slice()]).unwrap();
     let graph = check("function noop using v(): Boolean pure { true }").expect("the unit checks");
     let label = DocumentRef {
         authority: "test".to_owned(),
         identity: "orders".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     };
     let text = serde_json::to_string(&json!({
         "format": "quire.state.snapshot/v1",
@@ -636,7 +627,6 @@ fn admit_order_usage(
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": fixture::PACKAGE, "version": "1",
-            "digest": format!("sha256-jcs:{model_digest}"),
         },
         "populations": [{
             "population": fixture::id("orders"),
@@ -647,11 +637,8 @@ fn admit_order_usage(
     .expect("the snapshot serializes");
     let bytes = edit(text).into_bytes();
     let parsed = quire_canonical::read(&bytes, u64::MAX).expect("the snapshot is JSON");
-    let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
-        .expect("the snapshot is canonical")
-        .as_bytes();
-    let selected = DocumentRef { digest, ..label };
-    let snapshots = BTreeMap::from([(digest, bytes)]);
+    let selected = label;
+    let snapshots = BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]);
     admit_current_snapshot(
         graph.model_selections(),
         graph.scope().types(),

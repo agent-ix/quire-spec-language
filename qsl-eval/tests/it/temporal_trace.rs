@@ -84,15 +84,13 @@ pub(crate) fn modelled(body: &str) -> Fixture {
 /// [`modelled`] over a model that declares `operations`.
 fn modelled_with(operations: Vec<serde_json::Value>, body: &str) -> Fixture {
     let document = counters_document(operations, false);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
          profile t0 = \"{INFINITE}\";\n\
          model M = \"{PACKAGE}\";\n\
          temporal C using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {body} }}\n",
-        hex(&digest)
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),

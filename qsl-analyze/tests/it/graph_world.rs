@@ -214,14 +214,11 @@ pub(crate) struct World {
     pub(crate) model: Model,
     pub(crate) package: CheckedPackage,
     document: Vec<u8>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
 }
 
-fn digest_of(document: &[u8]) -> [u8; 32] {
-    *package_input([document]).keys().next().expect("one model")
-}
 
 impl World {
     /// The world of `model` with `body` after the unit header, and one
@@ -229,14 +226,13 @@ impl World {
     /// value)])` per object.
     pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
         let document = model.document();
-        let packages = package_input([document.as_slice()]);
+        let packages = package_input([document.as_slice()]).unwrap();
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
-             model {} = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
+             model {} = \"{}\";\n{body}",
             model.alias,
-            model.package,
-            hex(&digest_of(&document))
+            model.package
         );
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "graph", "git", "1"),
@@ -309,8 +305,7 @@ impl World {
                 json!({"key": key, "type": object_type, "fields": fields})
             })
             .collect();
-        let header = json!({"identity": self.model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest_of(&self.document)))});
+        let header = json!({"identity": self.model.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -322,16 +317,12 @@ impl World {
         });
         let bytes = document.to_string().into_bytes();
         let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
         DocumentRef {
             authority: "test".to_owned(),
             identity: name.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 

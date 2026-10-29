@@ -79,7 +79,6 @@ fn preimage_value(nodes: Vec<Value>) -> Value {
         "dependency_selections": [],
         "edition": selection("quire-edition"),
         "identity_projection": nodes,
-        "model_selections": [],
         "profile_selections": [],
         "required_features": ["quire.value.complete/v1"],
         "version": "quire.checked-package-id/v2",
@@ -382,7 +381,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     missing_member
         .as_object_mut()
         .unwrap()
-        .remove("model_selections");
+        .remove("definition_selections");
     let mut missing_node_member = valid.clone();
     missing_node_member["identity_projection"][0]
         .as_object_mut()
@@ -406,7 +405,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     let mut wrong_edition_type = valid.clone();
     wrong_edition_type["edition"] = json!([]);
     let mut wrong_selection_type = valid.clone();
-    wrong_selection_type["model_selections"] = json!({});
+    wrong_selection_type["definition_selections"] = json!({});
     let mut unknown_node_member = valid.clone();
     unknown_node_member["identity_projection"][0]["surplus"] = json!(0);
     let mut wrong_schema_version = valid.clone();
@@ -452,7 +451,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
         (
             jcs(&missing_member),
             &["R"],
-            PreimageDefect::MissingMember("model_selections"),
+            PreimageDefect::MissingMember("definition_selections"),
         ),
         (
             jcs(&missing_node_member),
@@ -507,7 +506,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
         (
             jcs(&wrong_selection_type),
             &["R"],
-            PreimageDefect::MemberType("model_selections"),
+            PreimageDefect::MemberType("definition_selections"),
         ),
         (
             jcs(&unknown_node_member),

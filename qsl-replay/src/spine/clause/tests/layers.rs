@@ -24,21 +24,17 @@ const PREDICATE: &str = "predicate Id using v(b: Boolean): Boolean { b }\n";
 
 /// A unit selecting the `test/nodes` model as `M` and `profiles` (alias,
 /// identity), holding `declarations`.
-fn unit(profiles: &[(&str, &str)], declarations: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn unit(profiles: &[(&str, &str)], declarations: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = domain_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let headers: String = profiles
         .iter()
         .map(|(alias, identity)| format!("profile {alias} = \"{identity}\";\n"))
         .collect();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n{headers}\
-         model M = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         {declarations}",
-        hex(digest)
+         model M = {PACKAGE_IDENTITY:?};\n\
+         {declarations}"
     );
     (unit, packages)
 }

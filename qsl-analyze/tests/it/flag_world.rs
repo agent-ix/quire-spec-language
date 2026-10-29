@@ -305,8 +305,8 @@ pub(crate) struct World {
     clauses: Vec<CheckedTemporalClause>,
     document: Vec<u8>,
     text: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
 }
 
@@ -327,9 +327,8 @@ impl World {
             &format!("{}{}", subject.contracts(), clause(over, fairness, formula)),
         );
         let (package, clauses) = checked(&domain, &text);
-        let packages = package_input([domain.document.as_slice()]);
-        let header = json!({"identity": subject.package(), "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", domain.digest_hex())});
+        let packages = package_input([domain.document.as_slice()]).unwrap();
+        let header = json!({"identity": subject.package()});
         let mut snapshots = BTreeMap::new();
         let mut initial = Vec::new();
         for (index, start) in subject.starts().into_iter().enumerate() {
@@ -357,16 +356,12 @@ impl World {
             });
             let bytes = document.to_string().into_bytes();
             let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-            let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
-            snapshots.insert(digest, bytes);
+            snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity: name,
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
-                digest,
             });
         }
         Self {

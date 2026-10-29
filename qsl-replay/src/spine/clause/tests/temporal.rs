@@ -120,7 +120,7 @@ fn request(
         selection(&labels),
     );
     for (label, bytes) in documents {
-        request.snapshots.insert(label.digest, bytes);
+        request.snapshots.insert(label.clone(), bytes);
     }
     request
 }

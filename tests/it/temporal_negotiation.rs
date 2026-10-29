@@ -25,7 +25,7 @@ use quire_semantic_value::checking::CheckingLimits;
 /// infinite-trace profile.
 fn reaches() -> CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let digest = packages.keys().next().expect("one package");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -33,8 +33,7 @@ fn reaches() -> CheckedGraph {
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          model Config = \"example/config-version\";\n\
          temporal Reaches using t over (c: Config::ConfigVersion) clock \"model-steps\" \
-         on origin {{ eventually holds(c.versionNumber = 2) }}\n",
-        qsl_semantics::model::key::hex(digest)
+         on origin {{ eventually holds(c.versionNumber = 2) }}\n"
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:negotiation", "fixture", "fixture:1"),

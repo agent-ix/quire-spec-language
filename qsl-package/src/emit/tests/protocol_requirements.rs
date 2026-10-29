@@ -424,11 +424,7 @@ fn a_requirement_without_a_protocol_profile_emits_no_protocol_node_and_no_refusa
 /// The refusals of `clauses` checked over [`model`] with `profiles`.
 fn refusals_of(profiles: &str, clauses: &str) -> Vec<qsl_semantics::check::CheckRefusal> {
     let document = model();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{profiles}\

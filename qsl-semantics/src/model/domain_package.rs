@@ -999,17 +999,14 @@ impl DomainPackageRecord {
     }
 }
 
-/// A domain package selection: the identity a source `model` names and the
-/// version the supplied document itself declares (FR-321). The version is
-/// read from the document, never recorded or compared.
+/// A domain package selection: the identity a source `model` names (FR-321).
+/// The selection is the identity alone.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DomainPackageRef {
     /// The domain package's own identity (e.g. `test/orders`).
     pub identity: String,
-    /// The domain package's own declared version.
-    pub version: String,
 }
 
 /// A [`DomainPackageRef`]'s preimage form inside the `quire.model.*` identities.

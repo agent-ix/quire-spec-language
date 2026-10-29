@@ -171,9 +171,6 @@ pub(super) enum Details<'a> {
 #[derive(Serialize)]
 pub(super) struct AdmissionModelSelection {
     pub identity: String,
-    pub version: String,
-    pub digest_domain: &'static str,
-    pub digest: String,
 }
 
 #[derive(Serialize)]

@@ -25,29 +25,24 @@ struct Emitted {
 }
 
 /// What [`unit_of`] builds: the unit text, the package document, the package
-/// input keyed by digest, and the hex digest the unit pins the package by.
+/// input keyed by identity.
 struct UnitParts {
     unit: String,
     document: Vec<u8>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    digest: String,
+    packages: qsl_semantics::model::intake::PackageInput,
 }
 
 /// The unit text selecting the package holding `operations` of `Counter`
 /// (each named by its own postcondition clause) with the frames of
-/// `overrides`, the package document, and the digest the unit pins it by.
+/// `overrides`, and the package document.
 fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
     let document = serde_json::to_vec(&fixture::document(operations, overrides))
         .expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {posts}",
         package = fixture::PACKAGE,
         posts = fixture::posts(operations),
@@ -56,7 +51,6 @@ fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
         unit,
         document,
         packages,
-        digest,
     }
 }
 
@@ -67,7 +61,6 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
         unit,
         document,
         packages,
-        digest,
     } = unit_of(operations, overrides);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -81,7 +74,7 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
     Emitted {
         emission,
@@ -556,11 +549,8 @@ fn a_deletes_self_frame_grants_the_receiver_only_and_differs_from_deletes_type()
     };
     let selection = DomainPackageRef {
         identity: fixture::PACKAGE.to_owned(),
-        version: "1".to_owned(),
     };
-    let (selection, document) = admit(
-        &selection,
-        qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
+    let (selection, document) = admit(selection.identity.as_str(),
         &parts.packages,
         qsl_foundation::IntakeLimits::default(),
     )
@@ -721,7 +711,7 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(parts.digest.as_str(), parts.document.as_slice())
+        .insert_domain_package_document(package_identity(&parts.document), parts.document.as_slice())
         .expect("a fresh evidence key");
     let package_id = crate::checked_v2::tests::derived_package_id(&wire);
     assert!(matches!(

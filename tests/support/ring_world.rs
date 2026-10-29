@@ -300,20 +300,11 @@ pub fn ring_is_queue(items: &str) -> String {
 
 /// The unit text: both models, the contracts of `variant` and `refinement`.
 fn unit_text(
-    documents: &BTreeMap<[u8; 32], Vec<u8>>,
+    documents: &qsl_semantics::model::intake::PackageInput,
     refinement: &str,
     variant: Variant,
 ) -> String {
-    let digest = |package: &str| {
-        documents
-            .iter()
-            .find(|(_, bytes)| {
-                serde_json::from_slice::<Json>(bytes)
-                    .is_ok_and(|json| json["package"]["identity"] == package)
-            })
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned")
-    };
+    let _ = documents;
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -321,18 +312,16 @@ fn unit_text(
          model Q = \"{QUEUE}\";\n\
          model R = \"{RING}\";\n\
          {}{refinement}\n",
-        digest(QUEUE),
-        digest(RING),
         contracts(variant),
     )
 }
 
-/// The two domain packages' documents, by digest.
-fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
+/// The two domain packages' documents, by identity.
+fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
         queue_document(variant).as_slice(),
         ring_document(variant).as_slice(),
-    ])
+    ]).unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
@@ -377,43 +366,34 @@ fn snapshot(
     package: &str,
     document: &[u8],
     populations: Vec<Json>,
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
-    let model_digest = *package_input([document])
-        .keys()
-        .next()
-        .expect("one package");
     let name = format!("{package}/start");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
             "revision": "fixture:1"},
         "observation": "current",
-        "model": {"identity": package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&model_digest))},
+        "model": {"identity": package},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": populations,
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     }
 }
 
 /// The unit's package, the two models' documents and their initial states.
 pub struct RingWorld {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     queue_initial: DocumentRef,
     ring_initial: DocumentRef,
 }
@@ -707,8 +687,8 @@ pub fn custom_state(
 /// initial state.
 pub struct MapWorld {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl MapWorld {

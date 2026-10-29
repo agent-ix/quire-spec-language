@@ -1362,17 +1362,12 @@ pub(crate) fn assemble_selected_as(
 ) {
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::intake::{admit_unit, package_input};
-    let inputs = package_input(packages.iter().map(|(_, _, bytes)| bytes.as_slice()));
+    let inputs = package_input(packages.iter().map(|(_, _, bytes)| bytes.as_slice())).unwrap();
     let selections: String = packages
         .iter()
         .map(|(alias, identity, bytes)| {
-            let digest = inputs
-                .iter()
-                .find(|(_, document)| *document == bytes)
-                .map(|(digest, _)| qsl_semantics::model::key::hex(digest))
-                .expect("a supplied document");
             format!(
-                "model {alias} = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n"
+                "model {alias} = \"{identity}\";\n"
             )
         })
         .collect();

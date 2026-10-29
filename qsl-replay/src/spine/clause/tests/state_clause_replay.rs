@@ -74,7 +74,6 @@ fn invocation(pre_objects: &[serde_json::Value], post_objects: &[serde_json::Val
     let (invocation, invocation_bytes) = document_ref_and_bytes("clause-invocation", |label| {
         config_version_invocation_bytes(
             label,
-            &config_version_model_digest_hex(),
             &pre,
             &post,
             "child",
@@ -125,7 +124,6 @@ fn current(identity: &str, root_version: i64, child_version: i64, complete: bool
     let (snapshot, bytes) = document_ref_and_bytes(identity, |label| {
         let bytes = config_version_snapshot(
             label,
-            &config_version_model_digest_hex(),
             root_version,
             Some(child_version),
         );
@@ -188,7 +186,6 @@ fn pre_call(target: &str) -> Documents {
     let (snapshot, bytes) = document_ref_and_bytes("chain-pre", |label| {
         config_version_step3_snapshot(
             label,
-            &config_version_step3_model_digest_hex(),
             "pre",
             &config_version_step3_chain_objects(),
         )
@@ -314,8 +311,7 @@ fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
 
 /// Removes `reference`'s bytes from the request's byte provision.
 fn without(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
-    let hex = DigestRecord::mint(DigestDomain::Sha256Jcs, reference.digest).hex();
-    wire.byte_provision.retain(|(_, entry, _)| *entry != hex);
+    super::frame_replay::withhold(wire, reference);
 }
 
 /// Replays `case` and checks it reproduced with an evaluated witness, whose
@@ -743,12 +739,9 @@ fn probe_invocation() -> Documents {
     let documents = probe_documents(&config_version_step3_chain_objects(), "a", "c");
     let mut bytes: Vec<(DocumentRef, Vec<u8>)> = Vec::new();
     let mut read = vec![documents.invocation.clone()];
-    for (digest, document) in documents.invocations.iter().chain(&documents.snapshots) {
-        let reference = DocumentRef {
-            digest: *digest,
-            ..documents.invocation.clone()
-        };
-        if *digest != documents.invocation.digest {
+    for (key, document) in documents.invocations.iter().chain(&documents.snapshots) {
+        let reference = key.clone();
+        if *key != documents.invocation {
             read.push(reference.clone());
         }
         bytes.push((reference, document.clone()));
@@ -861,61 +854,6 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     assert_eq!(record.code.as_str(), "unavailable_observation");
     assert_eq!(record.cause, "missing-required-artifact");
     assert_eq!(refusal.code(), record.code);
-}
-
-/// TC-517 step 5 (FR-122-AC-5): changed-version with its invocation bytes
-/// edited under the same digest refuses `stale_dependency`/
-/// `content-mismatch`.
-#[trace("TC-517", "FR-122-AC-5")]
-#[test]
-fn edited_invocation_bytes_refuse_content_mismatch() {
-    let documents = changed_version();
-    let selected_digest = documents.read[0].digest;
-    let invocation = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
-    let mut edited_digest = [0_u8; 32];
-    let refusal = replay(case_with(
-        config_version_unit(),
-        "VersionUnchanged",
-        documents,
-        witness_source(),
-        |wire, _| {
-            let entry = wire
-                .byte_provision
-                .iter_mut()
-                .find(|(_, hex, _)| *hex == invocation)
-                .expect("the invocation is provided");
-            entry.2 = String::from_utf8(entry.2.clone())
-                .expect("UTF-8")
-                .replace("\"boolean\":true", "\"boolean\":false")
-                .into_bytes();
-            edited_digest = document_digest(&entry.2);
-        },
-    ))
-    .unwrap_err();
-    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
-        selected,
-        recomputed,
-    }) = &refusal
-    else {
-        panic!("expected a content mismatch, got {refusal:?}");
-    };
-    assert_eq!(
-        selected,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
-        )
-    );
-    assert_eq!(
-        recomputed,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
-        )
-    );
-    assert!(refusal
-        .to_string()
-        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// TC-517 step 5 (FR-122-AC-5): `ParentOrder` over incomplete-population's

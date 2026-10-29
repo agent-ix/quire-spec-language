@@ -48,8 +48,7 @@ fn rule<'a>(models: &'a [NativeModel], expression: &str, kind: ClauseKind) -> Na
         }
     };
     let text = format!(
-        "{HEADER}model M = \"example/rule-tests\";\n{clause}\n",
-        models[0].digest()
+        "{HEADER}model M = \"example/rule-tests\";\n{clause}\n"
     );
     NativePackage::new(
         checked(
@@ -247,7 +246,6 @@ fn repeated_aliases_preserve_source_order_and_unselected_models_stay_out_of_clos
     assert_eq!(normal_wire["models"].as_array().unwrap().len(), 1);
     let text = format!(
         "{HEADER}model Z = \"example/rule-tests\";\nmodel A = \"example/rule-tests\";\ninvariant Rule on A::Node at current {{ true }}\n",
-        digest = models[0].digest(),
     );
     let package = NativePackage::new(
         checked(

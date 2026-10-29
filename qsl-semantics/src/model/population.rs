@@ -906,7 +906,6 @@ fn population_id_preimage<'a>(
         // not its `identity` field alone.
         domain_package_selection: PopulationDomainPackageRefWire {
             identity: &domain_package.model_selection.identity,
-            version: &domain_package.model_selection.version,
         },
         population_key: declaration_key_wire(population_key),
         admission_role: role.as_str(),
@@ -949,7 +948,6 @@ struct PopulationMemberWire<'a> {
 #[derive(Serialize, FixedShape)]
 struct PopulationDomainPackageRefWire<'a> {
     identity: &'a str,
-    version: &'a str,
 }
 
 /// A population member's effective type identity encoded as its wire hex
@@ -1092,7 +1090,6 @@ fn population_id_work_bound(
         .model_selection
         .identity
         .len()
-        .saturating_add(domain_package.model_selection.version.len())
         .saturating_add(population_key.package.len())
         .saturating_add(population_key.node.len())
         .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
@@ -1152,7 +1149,6 @@ fn population_id_byte_bound(
         .model_selection
         .identity
         .len()
-        .saturating_add(domain_package.model_selection.version.len())
         .saturating_add(population_key.package.len())
         .saturating_add(population_key.node.len())
         .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
@@ -2925,38 +2921,6 @@ mod tests {
             before_invocation,
             "admit_invocation never builds, for either instant"
         );
-    }
-
-    /// The seven-field `quire.population/v1` preimage's RFC 8785 text, written
-    /// out independently; the identity is its SHA-256.
-    #[trace("TC-291", "FR-089-AC-1", "FR-089-AC-7")]
-    #[test]
-    fn population_id_is_the_hash_of_its_hand_written_preimage() {
-        const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-        let package = DomainPackage::new(
-            DomainPackageRef {
-                identity: "test/orders".to_owned(),
-                version: "1".to_owned(),
-            },
-            Vec::new(),
-        );
-        let key = DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "ix://test/orders/P1".to_owned(),
-        };
-        let digest = hex(&Sha256::digest(TEXT.as_bytes()));
-        let id = mint_population_id(
-            &package,
-            &key,
-            AdmissionRole::Direct,
-            None,
-            &BTreeMap::new(),
-            population_id_byte_bound(&package, &key, &BTreeMap::new()),
-        )
-        .expect("golden population identity encodes");
-        assert_eq!(hex(id.as_bytes()), digest);
-        let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
-        assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
     }
 
     /// The member wire's typed effective identity keeps the existing `type`

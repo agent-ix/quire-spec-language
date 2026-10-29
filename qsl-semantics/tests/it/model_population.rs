@@ -262,11 +262,10 @@ fn fixture_other_universe() -> DomainPackage {
     )
 }
 
-/// A version-only variant of [`fixture_f1`]: same `identity` and digest as
-/// `fixture_f1()` — only `version` differs.
-fn fixture_f1_with_version(version: &str) -> DomainPackage {
+/// A variant of [`fixture_f1`] under another package identity.
+fn fixture_f1_with_identity(identity: &str) -> DomainPackage {
     let mut domain_package = fixture_f1();
-    domain_package.model_selection.version = version.to_owned();
+    domain_package.model_selection.identity = identity.to_owned();
     domain_package
 }
 
@@ -3471,8 +3470,8 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
     assert_ne!(direct_second_key, direct_1);
 
     // Step 3: the same document/population_key, a distinct domain package
-    // (version-only header divergence) -> a different identity.
-    let other_package = fixture_f1_with_version("2");
+    // (another package identity) -> a different identity.
+    let other_package = fixture_f1_with_identity("bundle.other");
     let other_view = view_of(&other_package);
     let direct_other_package = admit(&other_view, &p1_population_key());
     assert_ne!(direct_other_package, direct_1);
@@ -3621,10 +3620,7 @@ fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
     let preimage = serde_json::json!({
         "version": "quire.population/v1",
         "domain_package_selection": {
-            "identity": selection.identity,
-            "version": selection.version,
-            "digest_domain": "sha256-jcs",
-            "digest": hex(&selection.digest)
+            "identity": selection.identity
         },
         "population_key": {
             "package": "test/orders",
@@ -3672,29 +3668,6 @@ fn population_identity_binds_maximum_and_canonical_members() {
         binding.population_id(),
         identity_binding(&view, &changed_member, Some(3)).population_id(),
         "changing one member changes identity"
-    );
-}
-
-#[test]
-#[trace("TC-291", "FR-089-AC-7")]
-fn population_identity_golden_vector_contains_all_seven_fields() {
-    use qsl_semantics::model::key::hex;
-    use sha2::{Digest, Sha256};
-
-    const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"model.pop.p1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
-    let mut package = fixture_f1();
-    package.model_selection.digest = [0x11; 32];
-    let binding = identity_binding(
-        &view_of(&package),
-        &PopulationDocument {
-            model_identity: "test/orders".into(),
-            members: Vec::new(),
-        },
-        None,
-    );
-    assert_eq!(
-        binding.population_id().to_string(),
-        hex(&Sha256::digest(TEXT.as_bytes()))
     );
 }
 
@@ -4183,9 +4156,7 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
         let preimage = serde_json::json!({
             "version": "quire.model.object-universe/v2",
             "model_selection": {
-                "identity": selection.identity,
-                "digest_domain": "sha256-jcs",
-                "digest": hex(&selection.digest)
+                "identity": selection.identity
             },
             "root_types": ids
                 .iter()

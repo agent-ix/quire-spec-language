@@ -210,7 +210,7 @@ struct Run {
     outcome: Result<(), Vec<CheckRefusal>>,
 }
 
-fn admit_n(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> u64 {
+fn admit_n(unit: &str, packages: &qsl_semantics::model::intake::PackageInput) -> u64 {
     let built = parse_and_build(unit);
     admit_unit(
         &built.selections().models,
@@ -228,7 +228,7 @@ fn run(document: &[u8], body: &str, extra: Option<u64>) -> Run {
     run_unit(&unit, &packages, extra)
 }
 
-fn run_unit(unit: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>, extra: Option<u64>) -> Run {
+fn run_unit(unit: &str, packages: &qsl_semantics::model::intake::PackageInput, extra: Option<u64>) -> Run {
     let n = admit_n(unit, packages);
     let limits = ModelNormalizationLimits {
         work_units: extra.map_or(u64::MAX, |extra| n + extra),
@@ -660,15 +660,15 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
         .unwrap()
         .replace(PACKAGE, "example/other")
         .into_bytes();
-    let first_digest = package_input([bytes.as_slice()])
+    let first_digest = package_input([bytes.as_slice()]).unwrap()
         .into_keys()
         .next()
         .unwrap();
-    let other_digest = package_input([decoy.as_slice()])
+    let other_digest = package_input([decoy.as_slice()]).unwrap()
         .into_keys()
         .next()
         .unwrap();
-    let packages = package_input([bytes.as_slice(), decoy.as_slice()]);
+    let packages = package_input([bytes.as_slice(), decoy.as_slice()]).unwrap();
     let proof = if numeric {
         format!("self.{proof_field} <= 5")
     } else {
@@ -677,12 +677,10 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
     for reverse in [false, true] {
         let mut selections = [
             format!(
-                "model Original = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
-                hex(&first_digest)
+                "model Original = {PACKAGE:?};"
             ),
             format!(
-                "model Decoy = \"example/other\";",
-                hex(&other_digest)
+                "model Decoy = \"example/other\";"
             ),
         ];
         if reverse {
@@ -1267,7 +1265,7 @@ fn reference_covariance_uses_the_complete_model_without_a_writer_obligation() {
 
 // ------------------------------------------------------------------ C06 / C07
 
-fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn two_model_unit(reverse: bool) -> (String, qsl_semantics::model::intake::PackageInput) {
     let bytes = document(|_| {
         vec![
             object(
@@ -1289,23 +1287,21 @@ fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
         .expect("fixture JSON")
         .replace(PACKAGE, "example/other")
         .into_bytes();
-    let input = package_input([bytes.as_slice(), second.as_slice()]);
-    let first_digest = package_input([bytes.as_slice()])
+    let input = package_input([bytes.as_slice(), second.as_slice()]).unwrap();
+    let first_digest = package_input([bytes.as_slice()]).unwrap()
         .into_keys()
         .next()
         .expect("first digest");
-    let second_digest = package_input([second.as_slice()])
+    let second_digest = package_input([second.as_slice()]).unwrap()
         .into_keys()
         .next()
         .expect("second digest");
     let mut declarations = [
         format!(
-            "model Z = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
-            hex(&first_digest)
+            "model Z = {PACKAGE:?};"
         ),
         format!(
-            "model A = \"example/other\";",
-            hex(&second_digest)
+            "model A = \"example/other\";"
         ),
     ];
     if reverse {

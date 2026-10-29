@@ -238,9 +238,7 @@ impl Fixture {
         }
         text.push_str(&format!(
             "model M = \"{}\";\n",
-            model.environment().owner().package().as_str(),
-            model.environment().owner().revision().get(),
-            model.digest()
+            model.environment().owner().package().as_str()
         ));
         text.push_str("// Unicode café / and escaped control: \t\nprotocol Demo using P over (view: M::Node) on origin {\n  run check Good using S { true };\n  finish Closed as (closed: M::Node) { true };\n}\n");
         let source = w::Source {

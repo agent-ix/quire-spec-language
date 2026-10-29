@@ -46,8 +46,7 @@ fn fixture(body: &str) -> Fixture {
 /// (`align skip {...}` or empty) after the second trace variable.
 fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str) -> Fixture {
     let document = counters_document(operations, false);
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -56,7 +55,6 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
          function Noop using v(): Boolean pure {{ true }}\n\
          hyper H using inf over behaviours (c: M::Counter) \
          forall trace a of M forall trace b of M {alignment} {{ {body} }}\n",
-        hex(&digest)
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),

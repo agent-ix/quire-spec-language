@@ -106,7 +106,6 @@ fn view_over(wobble: bool) -> EffectiveView {
     .expect("the existing Semantic IR fixture parses");
     let selection = DomainPackageRef {
         identity: "test/orders".to_owned(),
-        version: "1.0.0".to_owned(),
     };
     let mut records = qsl_semantics::model::intake::read_records(&selection.identity, &document)
         .expect("the actual model document is admitted");
@@ -145,7 +144,7 @@ fn declarations_over(
 ) -> (PackageDeclarations, EffectiveView, String) {
     let view = view_over(wobble);
     let selection = view.model_selection();
-    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity, selection.version, qsl_semantics::model::key::hex(&selection.digest));
+    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
         "sm1.native",
@@ -253,7 +252,7 @@ pub(crate) fn simulation_package_over(
     body: &str,
     guard: bool,
     wobble: bool,
-) -> (qsl_package::CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (qsl_package::CheckedPackage, qsl_semantics::model::intake::PackageInput) {
     let (declarations, _, _) = declarations_over(body, guard, wobble);
     let graph = declarations
         .check(CheckingLimits::default())
@@ -261,7 +260,7 @@ pub(crate) fn simulation_package_over(
     let document = model_document_over(wobble);
     (
         qsl_package::CheckedPackage::link(graph),
-        qsl_semantics::model::intake::package_input([document.as_slice()]),
+        qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
     )
 }
 
@@ -501,10 +500,8 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
         selection.identity,
-        selection.version,
-        qsl_semantics::model::key::hex(&selection.digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
@@ -693,8 +690,7 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
         },
         "observation": "pre",
         "model": {
-            "identity": model.identity, "version": model.version,
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&model.digest))
+            "identity": model.identity
         },
         "populations": [{
             "population": POPULATION, "complete": true,
@@ -709,20 +705,16 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
     }))
     .unwrap();
     let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .unwrap()
-        .as_bytes();
     let snapshot = DocumentRef {
         authority: "test".to_owned(),
         identity: "sm1-snapshot".to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest,
     };
-    let snapshots = BTreeMap::from([(digest, bytes)]);
+    let snapshots = BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]);
     let invocations = BTreeMap::new();
     let model_bytes = model_document();
-    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()]).unwrap();
     let clause = graph.state_clause("F").unwrap();
     let facts = ClauseFacts {
         identity: clause.identity(),
@@ -854,10 +846,8 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
         selection.identity,
-        selection.version,
-        qsl_semantics::model::key::hex(&selection.digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),

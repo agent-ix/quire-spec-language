@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-071: the request's optional `object_environment` member.
 //!
-//! The member names one `quire.state.snapshot/v1` document of the byte
-//! provision: its four identity labels and its `sha256-jcs` digest, in the
-//! form FR-106's invocation uses for its `pre` and `post` members. The
+//! The member names one `quire.state.snapshot/v1` document of the request's
+//! documents by its four identity labels, in the form FR-106's invocation
+//! uses for its `pre` and `post` members. The
 //! reader reads the member alone. It reads no document and requires no
-//! byte-provision entry: the executor admits the document by FR-106
+//! provided document: the executor admits the document by FR-106
 //! (FR-098).
 
 use crate::witness::WitnessValue;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
+use qsl_semantics::model::intake::PackageInput;
 use qsl_semantics::model::observation::{
-    declared_type_universe_for, snapshot_document_digest, write_environment_document,
+    declared_type_universe_for, write_environment_document,
     AdmissionFailure,
 };
 pub use qsl_semantics::model::observation::{
@@ -22,7 +22,6 @@ pub use qsl_semantics::model::observation::{
 };
 use quire_checked::key::DeclarationKey;
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 
 const MEMBER: &str = "object_environment";
 const LABELS: [&str; 4] = ["authority", "identity", "revision_namespace", "revision"];
@@ -31,21 +30,20 @@ const LABELS: [&str; 4] = ["authority", "identity", "revision_namespace", "revis
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectEnvironmentRef {
     identity: EnvironmentLabels,
-    digest: DigestRecord,
 }
 
 /// Why the member is refused at decode: always
 /// `invalid_runtime_input`, naming the member or the member inside it.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ObjectEnvironmentRefusal {
-    /// The member, `identity` or `digest`, or an identity label, is of the
-    /// wrong JSON kind.
+    /// The member, `identity`, or an identity label, is of the wrong JSON
+    /// kind.
     #[error("invalid_runtime_input/wrong-value-kind: `{member}`")]
     WrongValueKind {
         /// The member at fault, as a dotted path.
         member: String,
     },
-    /// `identity`, `digest` or an identity label is missing.
+    /// `identity` or an identity label is missing.
     #[error("invalid_runtime_input/missing-member: `{member}`")]
     MissingMember {
         /// The missing member, as a dotted path.
@@ -55,12 +53,6 @@ pub enum ObjectEnvironmentRefusal {
     #[error("invalid_runtime_input/unknown-member: `{member}`")]
     UnknownMember {
         /// The unknown member, as a dotted path.
-        member: String,
-    },
-    /// `digest` is not 64 lowercase hex digits in the `sha256-jcs` domain.
-    #[error("invalid_runtime_input/invalid-value: `{member}`")]
-    InvalidValue {
-        /// The member at fault, as a dotted path.
         member: String,
     },
 }
@@ -77,7 +69,6 @@ impl ObjectEnvironmentRefusal {
             Self::WrongValueKind { .. } => "wrong-value-kind",
             Self::MissingMember { .. } => "missing-member",
             Self::UnknownMember { .. } => "unknown-member",
-            Self::InvalidValue { .. } => "invalid-value",
         }
     }
 
@@ -86,37 +77,20 @@ impl ObjectEnvironmentRefusal {
         match self {
             Self::WrongValueKind { member }
             | Self::MissingMember { member }
-            | Self::UnknownMember { member }
-            | Self::InvalidValue { member } => member,
+            | Self::UnknownMember { member } => member,
         }
     }
 }
 
 impl ObjectEnvironmentRef {
-    /// The member naming the document with `digest`.
-    ///
-    /// # Errors
-    ///
-    /// `invalid-value` naming `object_environment.digest` when `digest` is
-    /// not in the `sha256-jcs` domain.
-    pub fn new(
-        identity: EnvironmentLabels,
-        digest: DigestRecord,
-    ) -> Result<Self, ObjectEnvironmentRefusal> {
-        if digest.domain() != DigestDomain::Sha256Jcs {
-            return Err(invalid_digest());
-        }
-        Ok(Self { identity, digest })
+    /// The member naming the document by its labels.
+    pub fn new(identity: EnvironmentLabels) -> Self {
+        Self { identity }
     }
 
-    /// The labels retained with the digest.
+    /// The labels naming the document.
     pub fn identity(&self) -> &EnvironmentLabels {
         &self.identity
-    }
-
-    /// The document's `sha256-jcs` digest.
-    pub fn digest(&self) -> DigestRecord {
-        self.digest
     }
 
     /// The member in its wire form.
@@ -133,26 +107,12 @@ impl ObjectEnvironmentRef {
         }
         let mut member = Map::new();
         member.insert("identity".to_owned(), Value::Object(identity));
-        member.insert(
-            "digest".to_owned(),
-            Value::String(format!(
-                "{}:{}",
-                self.digest.domain().as_str(),
-                self.digest.hex()
-            )),
-        );
         Value::Object(member)
     }
 }
 
 fn path(inner: &str) -> String {
     format!("{MEMBER}.{inner}")
-}
-
-fn invalid_digest() -> ObjectEnvironmentRefusal {
-    ObjectEnvironmentRefusal::InvalidValue {
-        member: path("digest"),
-    }
 }
 
 fn labels(identity: &Value) -> Result<EnvironmentLabels, ObjectEnvironmentRefusal> {
@@ -184,15 +144,12 @@ fn labels(identity: &Value) -> Result<EnvironmentLabels, ObjectEnvironmentRefusa
 }
 
 /// Read a wire `object_environment` member (FR-071): a closed object with
-/// exactly `identity`, the four identity labels, and `digest`, a
-/// `sha256-jcs:` digest of 64 lowercase hex digits.
+/// exactly `identity`, the four identity labels.
 ///
 /// # Errors
 ///
 /// [`ObjectEnvironmentRefusal`] for a member that is not an object, an
-/// `identity` or `digest` of the wrong JSON kind, a missing member, an
-/// unknown member, or a `digest` outside the `sha256-jcs` domain or whose
-/// hex is not 64 lowercase digits.
+/// `identity` of the wrong JSON kind, a missing member or an unknown member.
 pub fn read_object_environment(
     value: &Value,
 ) -> Result<ObjectEnvironmentRef, ObjectEnvironmentRefusal> {
@@ -203,7 +160,7 @@ pub fn read_object_environment(
     };
     if let Some(unknown) = members
         .keys()
-        .find(|name| !matches!(name.as_str(), "identity" | "digest"))
+        .find(|name| name.as_str() != "identity")
     {
         return Err(ObjectEnvironmentRefusal::UnknownMember {
             member: path(unknown),
@@ -214,22 +171,12 @@ pub fn read_object_environment(
             .get(name)
             .ok_or_else(|| ObjectEnvironmentRefusal::MissingMember { member: path(name) })
     };
-    let identity = member("identity")?;
-    let digest = member("digest")?;
-    let identity = labels(identity)?;
-    let Value::String(digest) = digest else {
-        return Err(ObjectEnvironmentRefusal::WrongValueKind {
-            member: path("digest"),
-        });
-    };
-    let (domain, hex) = digest.split_once(':').ok_or_else(invalid_digest)?;
-    let digest = DigestRecord::from_wire_expecting(DigestDomain::Sha256Jcs, Some(domain), hex)
-        .map_err(|_| invalid_digest())?;
-    ObjectEnvironmentRef::new(identity, digest)
+    let identity = labels(member("identity")?)?;
+    Ok(ObjectEnvironmentRef::new(identity))
 }
 
 /// An object environment document written for a request: its canonical
-/// bytes, its digest and the `object_environment` member that names it.
+/// bytes and the `object_environment` member that names it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectEnvironmentDocument {
     bytes: Vec<u8>,
@@ -247,27 +194,21 @@ impl ObjectEnvironmentDocument {
         &self.bytes
     }
 
-    /// The `object_environment` member: the labels and the `sha256-jcs`
-    /// digest.
+    /// The `object_environment` member: the labels.
     pub fn member(&self) -> &ObjectEnvironmentRef {
         &self.member
     }
 
-    /// The document as a `ReplayRequestWire::byte_provision` entry, under
-    /// its `sha256-jcs` digest.
-    pub fn provision_entry(&self) -> (Option<String>, String, Vec<u8>) {
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            self.member.digest().hex(),
-            self.bytes.clone(),
-        )
+    /// The document as a `ReplayRequestWire::documents` entry.
+    pub fn provision_document(&self) -> Vec<u8> {
+        self.bytes.clone()
     }
 }
 
 /// Write the `quire.state.snapshot/v1` document of `populations`, the
 /// objects listed by full reference (population and key) with every
 /// declared field, as the FR-106 admission the replay runs reads it
-/// (FR-098). It returns the bytes, the digest and the labels as the FR-071
+/// (FR-098). It returns the bytes and the labels as the FR-071
 /// `object_environment` member.
 ///
 /// ```
@@ -309,7 +250,7 @@ impl ObjectEnvironmentDocument {
 ///     }],
 /// )
 /// .unwrap();
-/// assert_eq!(document.member().digest().hex().len(), 64);
+/// assert_eq!(document.member().identity().identity, "ix://test/graph/environment");
 /// ```
 ///
 /// # Errors
@@ -322,11 +263,7 @@ pub fn write_object_environment(
 ) -> Result<ObjectEnvironmentDocument, ObjectEnvironmentWriteError> {
     let bytes = write_environment_document(&identity, model, populations)
         .map_err(ObjectEnvironmentWriteError)?;
-    let digest = snapshot_document_digest(&bytes).map_err(ObjectEnvironmentWriteError)?;
-    let member = ObjectEnvironmentRef {
-        identity,
-        digest: DigestRecord::mint(DigestDomain::Sha256Jcs, digest),
-    };
+    let member = ObjectEnvironmentRef::new(identity);
     Ok(ObjectEnvironmentDocument { bytes, member })
 }
 
@@ -366,7 +303,7 @@ pub enum ObjectReferenceError {
 /// not re-resolve.
 pub fn object_reference_witness(
     model_selections: &[DomainPackageRef],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     type_identity: &DeclarationKey,
     key: &str,

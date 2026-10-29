@@ -15,7 +15,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{PackageDeclarations, Workload};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
@@ -204,8 +203,8 @@ impl Model {
 /// A checked fixture model with its initial snapshot.
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
     universe: PopulationUniverse,
 }
@@ -228,14 +227,11 @@ impl World {
     /// `model`, checked.
     pub(crate) fn new(model: &Model) -> Self {
         let document = model.document();
-        let packages = package_input([document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([document.as_slice()]).expect("one model");
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
              model M = \"{}\";\n{}\n",
-            model.package,
-            hex(&digest),
-            model.body
+            model.package, model.body
         );
         let parsed = qsl_cst::parse(
             qsl_foundation::SourceIdentity::new("test", "fr-188", "fixture", "1"),
@@ -266,8 +262,7 @@ impl World {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:#?}"));
 
-        let header = json!({"identity": model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))});
+        let header = json!({"identity": model.package});
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -280,26 +275,21 @@ impl World {
         })
         .to_string()
         .into_bytes();
-        let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-        let snapshot_digest =
-            *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
         let population = quire_checked::key::DeclarationKey {
             package: model.package.to_owned(),
             node: model.ident(model.population),
         };
+        let initial = DocumentRef {
+            authority: "test".to_owned(),
+            identity: "s0".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "fixture:1".to_owned(),
+        };
         Self {
             package: CheckedPackage::link(graph),
             packages,
-            snapshots: BTreeMap::from([(snapshot_digest, snapshot)]),
-            initial: DocumentRef {
-                authority: "test".to_owned(),
-                identity: "s0".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
-                digest: snapshot_digest,
-            },
+            snapshots: BTreeMap::from([(initial.clone(), snapshot)]),
+            initial,
             universe: PopulationUniverse {
                 population,
                 keys: vec![model.key.to_owned()],

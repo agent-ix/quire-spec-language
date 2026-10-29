@@ -22,7 +22,7 @@ use crate::request::{DependencyEntryWire, ReplayRequestWire, StateEnvironment};
 use crate::spine::{AdmittedModels, CheckedUnit, EmittedUnit};
 use crate::witness::{CanonicalAssignment, ReplaySource};
 use qsl_foundation::bound::ProofBound;
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
 use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
@@ -70,6 +70,7 @@ pub struct PluginReplayContext {
     /// name: a `value-validity` record owned by a callable function.
     requirements: BTreeMap<OccurrenceKey, Option<Identifier>>,
     byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
+    documents: Vec<Vec<u8>>,
     stage_limits: BTreeMap<String, u64>,
     accounting_limits: ScalarLimits,
 }
@@ -130,14 +131,8 @@ impl PluginReplayContext {
                 source.text().as_bytes().to_vec(),
             )
         });
-        let documents = models.packages().iter().map(|(digest, bytes)| {
-            (
-                DigestRecord::mint(DigestDomain::Sha256Jcs, *digest),
-                bytes.clone(),
-            )
-        });
+        let documents: Vec<Vec<u8>> = models.packages().values().cloned().collect();
         let byte_provision = sources
-            .chain(documents)
             .collect::<BTreeMap<_, _>>()
             .into_iter()
             .map(|(digest, bytes)| {
@@ -177,6 +172,7 @@ impl PluginReplayContext {
                 })
                 .collect(),
             byte_provision,
+            documents,
             stage_limits,
             accounting_limits: limits.accounting.0,
         }
@@ -300,6 +296,7 @@ impl PluginReplayContext {
                 .map(DeclaredDomain::new)
                 .collect(),
             byte_provision: self.byte_provision.clone(),
+            documents: self.documents.clone(),
         })
     }
 }

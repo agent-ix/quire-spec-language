@@ -384,12 +384,10 @@ fn domain_model<'a>(
     let Some(naming) = &model.domain_package.0 else {
         return Err(Error::Invalid(Invalid::Model));
     };
-    work.bytes(naming.identity.len().saturating_add(naming.version.len()))?;
+    work.bytes(naming.identity.len())?;
     if artifact.kind != w::ArtifactKind::ModelPackage
         || model.profile != DOMAIN_PACKAGE_PROFILE
         || naming.identity != selection.identity
-        || naming.version != selection.version
-        || naming.digest.0 != selection.digest
     {
         return Err(Error::Invalid(Invalid::Model));
     }

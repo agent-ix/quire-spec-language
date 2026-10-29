@@ -845,17 +845,15 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     let view = record_charges(&package, 25);
 
     let bytes = serde_json::to_vec(&document).expect("M22 package serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let digest = hex(packages.keys().next().expect("one offered package"));
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let unit = format!(
         concat!(
             "language \"ix:native\" edition \"1-draft\";\n",
             "profile v = \"quire.model.complete/v1\";\n",
-            "model K2 = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n",
+            "model K2 = {PACKAGE:?};\n",
             "function noop using v(): Boolean pure {{ true }}\n",
         ),
         PACKAGE = PACKAGE,
-        digest = digest,
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("test", "tc-235", "m22-flags", "fixture:1"),

@@ -502,9 +502,6 @@ fn forms_message(refusal: &FormsRefusal) -> String {
 /// A readable account of an I1 refusal.
 pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
     match cause {
-        UnitIntakeCause::ArtifactDigest => {
-            "a `sha256:` digest selects a compiled-model artifact, not a domain package".to_owned()
-        }
         UnitIntakeCause::Refused(refusals) => {
             let first = &refusals[0];
             with_more(

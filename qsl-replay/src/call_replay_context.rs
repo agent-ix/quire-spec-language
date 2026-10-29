@@ -9,7 +9,6 @@
 //! and the context through the `qsl_replay` root and never names
 //! [`crate::spine`] (FR-060 T12-A).
 
-use std::collections::BTreeMap;
 
 use qsl_foundation::bound::ProofBound;
 use qsl_foundation::{BackendId, RequestIndex, SourceIdentity};
@@ -163,7 +162,7 @@ pub fn run_with_replay_context(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: CallerLimits,
     call: &Call,
@@ -206,6 +205,7 @@ mod tests {
     use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
     use quire_exact::{Integer, Origin, Role, Value};
+    use std::collections::BTreeMap;
 
     use super::*;
     use crate::execute::callable_parameter_keys;

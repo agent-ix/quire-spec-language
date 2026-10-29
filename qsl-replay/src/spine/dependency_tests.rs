@@ -733,21 +733,14 @@ fn wire_node<'w>(written: &'w Value, digest: &str) -> &'w Value {
         .unwrap_or_else(|| panic!("no node {digest}"))
 }
 
-/// The domain package the refusal library's `model M` selects, and its
-/// `sha256-jcs` digest.
-fn spine_model() -> (Vec<u8>, String) {
+/// The domain package the refusal library's `model M` selects.
+fn spine_model() -> Vec<u8> {
     let document = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(
-        &document,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .unwrap()
-    .jcs_digest();
-    (document, qsl_semantics::model::key::hex(&digest))
+    document
 }
 
 /// The wire node that is the one application whose operation is
@@ -874,8 +867,8 @@ fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_refere
 #[trace("FR-099-AC-5", "TC-446")]
 #[test]
 fn an_imported_name_whose_signature_is_package_dependent_refuses() {
-    let (document, model_digest) = spine_model();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let document = spine_model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let body = format!(
         "model M = \"acme/orders\";\n\
          record R {{ datum: Int[0, 9]; }}\n\

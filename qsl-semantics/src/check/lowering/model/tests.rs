@@ -180,7 +180,6 @@ fn acme(version: &str) -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
-            version: version.to_owned(),
         },
         vec![
             object("Order", &[]),
@@ -1415,7 +1414,6 @@ fn state_machine_declaration_keys_as_a_state_machine_model_node() {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
-            version: "1.0.0".to_owned(),
         },
         vec![
             DomainPackageRecord::StateMachine(StateMachineRecord {
@@ -1496,7 +1494,6 @@ fn keyed_form(records: Vec<DomainPackageRecord>, name: &str) -> (NodeTag, String
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: PACKAGE.to_owned(),
-            version: "1.0.0".to_owned(),
         },
         records,
     );

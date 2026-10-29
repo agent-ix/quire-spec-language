@@ -503,9 +503,7 @@ fn actual_model_operation_inputs_result_and_pre_self_seed_the_state_scope() {
     let source = format!(
         "{HEADER}model M = \"{}\";\n\
         post Changed using S on M::Node::step {{ self.n = pre(self.n) + delta and result }}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     );
     with_namespace(&[source], |namespace| {
         let inputs = [ModelInput::Native(&model)];
@@ -571,9 +569,7 @@ fn an_unavailable_model_operation_does_not_invent_missing_input_names() {
         "{HEADER}model M = \"{}\";\n\
          pre Missing using S on M::Node::absent {{ invocationInput }}\n\
          post Available using S on M::Node::step {{ result }}",
-        model.environment().owner().package().as_str(),
-        model.environment().owner().revision().get(),
-        model.digest()
+        model.environment().owner().package().as_str()
     );
     with_namespace(&[source], |namespace| {
         let inputs = [ModelInput::Native(&model)];

@@ -546,8 +546,6 @@ fn profiles_and_a_substituted_domain_package_cannot_borrow_admission() {
     let mut offered = fixture.package.clone();
     offered.models[0].domain_package = w::Nullable(Some(w::DomainPackage {
         identity: "test/orders".into(),
-        version: "1.0.0".into(),
-        digest: w::JcsDigest([0xab; 32]),
     }));
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Model));
 }

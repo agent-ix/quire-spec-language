@@ -33,13 +33,11 @@ const MODEL_FILE: &str = "model.semantic-ir.json";
 const AUTHORITY: &str = "agent-ix";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
-/// One model an entry selects: its bytes and the three values a `model`
-/// statement repeats, each read from or computed over the bytes.
+/// One model an entry selects: its bytes and the identity a `model`
+/// statement repeats, read from the bytes.
 struct Model {
     bytes: Vec<u8>,
     identity: String,
-    version: String,
-    digest: String,
 }
 
 impl Model {
@@ -57,19 +55,7 @@ impl Model {
                 .ok_or_else(|| invalid(format!("no package.{name}")))
         };
         let identity = member("identity")?;
-        let version = member("version")?;
-        let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-        let digest = packages
-            .keys()
-            .next()
-            .map(|digest| qsl_semantics::model::key::hex(digest))
-            .ok_or_else(|| invalid("the model is no package".to_owned()))?;
-        Ok(Self {
-            bytes,
-            identity,
-            version,
-            digest,
-        })
+        Ok(Self { bytes, identity })
     }
 
     /// The unit under `layer` selecting this model as `M`, holding `body`.
@@ -77,11 +63,9 @@ impl Model {
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"{}\";\n\
-             model M = {:?} version {:?} digest \"sha256-jcs:{}\";\n{body}",
+             model M = {:?};\n{body}",
             layer.identity(),
-            self.identity,
-            self.version,
-            self.digest
+            self.identity
         )
     }
 }

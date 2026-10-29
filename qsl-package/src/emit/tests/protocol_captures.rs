@@ -438,8 +438,7 @@ fn the_capture_types_without_an_initializer_refuse_where_written() {
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n{PROFILES}\
-             model M = \"acme/orders\";\n{decimal}",
-            "0".repeat(64)
+             model M = \"acme/orders\";\n{decimal}"
         )
         .as_bytes(),
         qsl_cst::Limits::default(),

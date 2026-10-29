@@ -371,7 +371,7 @@ impl StateModel {
     /// The first [`AdmissionFailure`] in check order.
     pub fn admit_initial(
         &self,
-        provision: &BTreeMap<[u8; 32], Vec<u8>>,
+        provision: &BTreeMap<DocumentRef, Vec<u8>>,
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure> {

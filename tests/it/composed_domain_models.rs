@@ -38,7 +38,6 @@ use qsl_semantics::model::admitted::{AdmittedPackage, DeclarationKind};
 use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, PortDirection};
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{admit, lift_document, read_domain_package};
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::systems::{
     check_connection, classify, ConnectionCheckOutcome, ConnectionOutcome,
 };
@@ -266,26 +265,17 @@ fn canonical_bytes(document: &serde_json::Value) -> Vec<u8> {
 }
 
 /// FR-154 admission, `read_records` and FR-152 classification over `bytes`,
-/// RFC 8785 document bytes selected under their own identity, version and
-/// digest.
+/// RFC 8785 document bytes selected under their own identity.
 fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
-    let digest = Sha256::digest(&bytes).into();
     let document: serde_json::Value = serde_json::from_slice(&bytes).expect("lifted JSON");
     let offered = DomainPackageRef {
         identity: document["package"]["identity"]
             .as_str()
             .expect("package identity")
             .to_owned(),
-        version: document["package"]["version"]
-            .as_str()
-            .expect("package version")
-            .to_owned(),
-        digest,
     };
-    let (selection, document) = admit(
-        &offered,
-        SHA256_JCS_DIGEST_DOMAIN,
-        &BTreeMap::from([(digest, bytes.clone())]),
+    let (selection, document) = admit(offered.identity.as_str(),
+        &BTreeMap::from([(offered.identity.clone(), bytes.clone())]),
         qsl_foundation::IntakeLimits::default(),
     )
     .expect("the selection matches the lifted package");
@@ -323,7 +313,7 @@ protocol Plumbing using S over (view: M::Sys) on origin {\n\
 /// One native unit importing `M` under `digest`, with the field, Port (a
 /// role) and Connection references of TC-148 step 3, plus `Unrelated`, which names no
 /// model.
-fn program(identity: &str, version: &str, digest: &str) -> String {
+fn program(identity: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
@@ -477,11 +467,7 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
     let package = admitted(bundle.path());
     let selection = package.selection().clone();
     let inputs = [ModelInput::Domain(&package)];
-    let text = program(
-        &selection.identity,
-        &selection.version,
-        &format!("sha256-jcs:{}", hex(&selection.digest)),
-    );
+    let text = program(&selection.identity);
     with_namespace(&text, |namespace| {
         let bindings = bind_models(namespace, &inputs, &mut work());
         assert!(bindings.complete());
@@ -552,9 +538,7 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
              run sequence Main {{ check Valid using S {{ true }}; }}\n\
              finish Closed as (closed: M::Sys) {{ true }};\n\
          }}\n",
-        selection.identity,
-        selection.version,
-        hex(&selection.digest)
+        selection.identity
     );
     with_namespace(&text, |namespace| {
         let bindings = bind_models(namespace, &inputs, &mut work());
@@ -599,27 +583,9 @@ fn substituted_package_or_changed_digest_refuses_only_dependents() {
         "the substitute declares a same-shaped pump_out"
     );
     let selection = package.selection().clone();
-    let mut changed = selection.digest;
-    changed[0] ^= 1;
 
-    for (inputs, digest, refusal) in [
-        (
-            [ModelInput::Domain(&other)],
-            format!("sha256-jcs:{}", hex(&selection.digest)),
-            ImportRefusal::MissingPackage,
-        ),
-        (
-            [ModelInput::Domain(&package)],
-            format!("sha256-jcs:{}", hex(&changed)),
-            ImportRefusal::StaleSelection,
-        ),
-        (
-            [ModelInput::Domain(&package)],
-            format!("sha256:{}", hex(&selection.digest)),
-            ImportRefusal::DigestDomainMismatch,
-        ),
-    ] {
-        let text = program(&selection.identity, &selection.version, &digest);
+    for (inputs, refusal) in [([ModelInput::Domain(&other)], ImportRefusal::MissingPackage)] {
+        let text = program(&selection.identity);
         with_namespace(&text, |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
             assert_eq!(bindings.imports()[0].selection, Err(refusal.clone()));
@@ -640,109 +606,6 @@ fn substituted_package_or_changed_digest_refuses_only_dependents() {
             );
         });
     }
-}
-
-/// FR-036-AC-9 at the package report: under the admitted selection every
-/// declaration's names resolve; with the selected digest changed, each
-/// declaration naming the import refuses, `Caller`, which only calls one of
-/// them, refuses as its dependent, and `Unrelated` stays bound.
-#[trace("TC-148", "FR-036-AC-9")]
-#[test]
-fn changed_digest_refuses_dependents_in_the_package_report() {
-    use quire_spec_language::linking::composed::binding::{self, Disposition, Refusal};
-    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-    use quire_spec_language::linking::composed::definitions::Inventory;
-
-    let bundle = architecture_bundle(|_| {});
-    let package = admitted(bundle.path());
-    let selection = package.selection().clone();
-    let inputs = [ModelInput::Domain(&package)];
-    let (definitions, rules) = crate::composed_binding::artifacts();
-    let selected = Inventory {
-        edition: R::Edition.selection(),
-        definitions: &definitions,
-        rules: &rules,
-    };
-    let profile = R::StateQueries.selection();
-    let mut changed = selection.digest;
-    changed[31] ^= 1;
-    for (digest, bound) in [(selection.digest, true), (changed, false)] {
-        let text = format!(
-            "language \"ix:native\" edition \"1-draft\";\n\
-             profile S = \"{}\" version \"{}\" digest \"{}\";\n\
-             model M = \"{}\";\n\
-             predicate FieldRule using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
-             predicate PumpRule using S (pump: M::Pump): Boolean {{ true }}\n\
-             predicate Caller using S (): Boolean {{ FieldRule() }}\n\
-             predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n",
-            profile.identity,
-            profile.revision,
-            profile.digest,
-            selection.identity,
-            selection.version,
-            hex(&digest)
-        );
-        with_namespace(&text, |namespace| {
-            let report = binding::bind(namespace, &selected, &inputs, BindingLimits::default());
-            assert!(report.complete(), "{:?}", report.exhaustion());
-            let disposition = |name: &str| report.disposition(namespace.lookup(name)[0]);
-            let expected = if bound {
-                Disposition::NamesResolved
-            } else {
-                Disposition::Refused
-            };
-            for name in ["FieldRule", "PumpRule", "Caller"] {
-                assert_eq!(
-                    disposition(name),
-                    Some(expected),
-                    "{name}: {:?}",
-                    report.declarations()[namespace.lookup(name)[0].index()].refusals()
-                );
-            }
-            assert_eq!(disposition("Unrelated"), Some(Disposition::NamesResolved));
-            if !bound {
-                let field_rule = namespace.lookup("FieldRule")[0];
-                let caller = namespace.lookup("Caller")[0];
-                assert!(report.declarations()[caller.index()].refusals().iter().any(
-                    |cause| matches!(
-                        cause,
-                        Refusal::Dependency { target, .. } if *target == field_rule
-                    )
-                ));
-            }
-        });
-    }
-}
-
-/// The reverse digest-domain substitution: a native model selected under a
-/// `sha256-jcs:` spelling of its own artifact digest refuses
-/// `DigestDomainMismatch` rather than binding.
-#[trace("TC-148", "FR-036-AC-9")]
-#[test]
-fn native_model_selected_in_the_jcs_domain_refuses() {
-    let model = crate::support::native_rule_model::parts().model();
-    let inputs = [ModelInput::Native(&model)];
-    let owner = model.environment().owner();
-    let text = format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
-         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
-         model M = \"{}\";\n\
-         predicate Rule using S (item: M::Node): Boolean {{ true }}\n",
-        owner.package().as_str(),
-        owner.revision().get(),
-        model.digest()
-    );
-    with_namespace(&text, |namespace| {
-        let bindings = bind_models(namespace, &inputs, &mut work());
-        assert_eq!(
-            bindings.imports()[0].selection,
-            Err(ImportRefusal::DigestDomainMismatch)
-        );
-        assert_eq!(
-            resolved(&bindings, namespace, "Rule").1,
-            [ModelErrorKind::RefusedImport { import: 0 }]
-        );
-    });
 }
 
 /// Both same-shaped packages supplied: each alias binds only its own
@@ -770,11 +633,7 @@ fn two_same_shaped_packages_keep_keys_under_their_selection() {
          predicate FromM using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
          predicate FromN using S (): Boolean {{ N::Pump::id = N::Pump::id }}\n",
         a.identity,
-        a.version,
-        hex(&a.digest),
-        b.identity,
-        b.version,
-        hex(&b.digest)
+        b.identity
     );
     with_namespace(&text, |namespace| {
         let bindings = bind_models(namespace, &inputs, &mut work());
@@ -832,9 +691,7 @@ fn domain_typed_declarations_type_check() {
         profile.identity,
         profile.revision,
         profile.digest,
-        selection.identity,
-        selection.version,
-        hex(&selection.digest)
+        selection.identity
     );
     let source = Source::read(
         SourceIdentity {
@@ -1002,9 +859,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
         profile.identity,
         profile.revision,
         profile.digest,
-        selection.identity,
-        selection.version,
-        hex(&selection.digest)
+        selection.identity
     );
     let source = Source::read(
         SourceIdentity {
@@ -1196,9 +1051,7 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
         profile.identity,
         profile.revision,
         profile.digest,
-        selection.identity,
-        selection.version,
-        hex(&selection.digest)
+        selection.identity
     );
     let source = Source::read(
         SourceIdentity {

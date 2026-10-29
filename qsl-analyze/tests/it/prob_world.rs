@@ -219,8 +219,8 @@ impl Model {
 /// A checked fixture model with its initial snapshot.
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
     universe: PopulationUniverse,
 }
@@ -333,8 +333,7 @@ impl World {
         value_profile: bool,
     ) -> Result<Self, Vec<CheckRefusal>> {
         let document = model.document(symmetric);
-        let packages = package_input([document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([document.as_slice()]).unwrap();
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
              profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
@@ -346,7 +345,6 @@ impl World {
                 ""
             },
             model.package,
-            hex(&digest),
             model.body
         );
         let parsed = qsl_cst::parse(
@@ -377,8 +375,7 @@ impl World {
         .expect("the unit assembles")
         .check(CheckingLimits::default())?;
 
-        let header = json!({"identity": model.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))});
+        let header = json!({"identity": model.package});
         let mut snapshots = BTreeMap::new();
         let mut initial = Vec::new();
         for (index, fields) in initials.iter().enumerate() {
@@ -399,16 +396,12 @@ impl World {
             .to_string()
             .into_bytes();
             let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-            let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-                .expect("canonical fixture")
-                .as_bytes();
-            snapshots.insert(digest, snapshot);
+            snapshots.insert(qsl_semantics::model::observation::document_reference(&snapshot).expect("a document names itself"), snapshot);
             initial.push(DocumentRef {
                 authority: "test".to_owned(),
                 identity,
                 revision_namespace: "fixture".to_owned(),
                 revision: "fixture:1".to_owned(),
-                digest,
             });
         }
         let population = quire_checked::key::DeclarationKey {

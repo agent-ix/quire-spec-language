@@ -35,7 +35,7 @@ pub(super) struct Unit {
 }
 
 pub(super) fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
-    let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]).unwrap();
     let compiled = compose(
         source(),
         IDENTITY,
@@ -164,27 +164,19 @@ fn invocation(
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> Invocation {
     invocation_over(
-        &config_version_model_digest_hex(),
         pre_objects,
         post_objects,
         edit,
     )
 }
 
-/// [`invocation`] over the domain package whose `sha256-jcs` digest is
-/// `model_digest_hex`.
+/// [`invocation`] over the unit's domain package.
 fn invocation_over(
-    model_digest_hex: &str,
     pre_objects: &[serde_json::Value],
     post_objects: &[serde_json::Value],
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> Invocation {
-    let over_model = |bytes: Vec<u8>| {
-        let mut document: serde_json::Value =
-            serde_json::from_slice(&bytes).expect("the fixture is JSON");
-        document["model"]["digest"] = json!(format!("sha256-jcs:{model_digest_hex}"));
-        document.to_string().into_bytes()
-    };
+    let over_model = |bytes: Vec<u8>| bytes;
     let (pre, pre_bytes) = document_ref_and_bytes("replay-pre", |label| {
         over_model(snapshot(label, "pre", pre_objects))
     });
@@ -192,7 +184,7 @@ fn invocation_over(
         over_model(snapshot(label, "post", post_objects))
     });
     let (invocation, invocation_bytes) = document_ref_and_bytes("replay-invocation", |label| {
-        let bytes = config_version_invocation_bytes(label, model_digest_hex, &pre, &post, "child");
+        let bytes = config_version_invocation_bytes(label, &pre, &post, "child");
         let mut document: serde_json::Value =
             serde_json::from_slice(&bytes).expect("the fixture is JSON");
         edit(&mut document);
@@ -240,6 +232,13 @@ pub(super) fn package_digest(package_id: PackageId) -> DigestRecord {
     DigestRecord::mint(DigestDomain::PackageSemanticV2, *package_id.as_bytes())
 }
 
+/// Withholds the document `reference` names from the provided documents.
+pub(super) fn withhold(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
+    wire.documents.retain(|document| {
+        qsl_semantics::model::observation::document_reference(document).as_ref() != Some(reference)
+    });
+}
+
 pub(super) fn witness_source() -> ReplaySource {
     ReplaySource::Witness(Witness::parse("<<<assertion|frame_harness|frame|>>>").unwrap())
 }
@@ -254,32 +253,14 @@ pub(super) fn request(
     target: ReplayTarget,
 ) -> ReplayRequestWire {
     let source = source_digest(source_bytes);
-    let jcs = qsl_semantics::model::intake::PackageDocument::parse(
-        domain_document,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .expect("the domain package parses")
-    .jcs_digest();
-    let sha256_jcs = |digest: [u8; 32]| {
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
-    let mut byte_provision = vec![
-        (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source.hex(),
-            source_bytes.to_vec(),
-        ),
-        {
-            let (domain, hex) = sha256_jcs(jcs);
-            (domain, hex, domain_document.to_vec())
-        },
-    ];
-    for (reference, bytes) in documents {
-        let (domain, hex) = sha256_jcs(reference.digest);
-        byte_provision.push((domain, hex, bytes.clone()));
+    let byte_provision = vec![(
+        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+        source.hex(),
+        source_bytes.to_vec(),
+    )];
+    let mut provided = vec![domain_document.to_vec()];
+    for (_, bytes) in documents {
+        provided.push(bytes.clone());
     }
     ReplayRequestWire {
         profile_selections: Vec::new(),
@@ -307,6 +288,7 @@ pub(super) fn request(
         object_environment: None,
         declared_domains: Vec::new(),
         byte_provision,
+        documents: provided,
     }
 }
 
@@ -642,8 +624,7 @@ fn a_stale_frame_identity_refuses_before_admission() {
         payload.anchor = other_anchor;
         payload.frame = other_frame;
         payload.occurrence = other_occurrence;
-        let pre_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, pre.digest).hex();
-        wire.byte_provision.retain(|(_, hex, _)| *hex != pre_hex);
+        withhold(wire, &pre);
     });
     let (recompiled_anchor, recompiled_frame) = recompiled.unwrap();
     assert_ne!(other_frame, recompiled_frame);
@@ -934,20 +915,8 @@ fn an_inherited_operation_is_selected_by_its_declaring_object() {
         let (unit, _) = config_version_unit_and_packages_for(document.clone());
         unit_for(unit, document)
     };
-    let model_hex = |unit: &Unit| {
-        qsl_semantics::model::intake::PackageDocument::parse(
-            &unit.domain_document,
-            qsl_foundation::IntakeLimits::default(),
-        )
-        .expect("the domain package parses")
-        .jcs_digest()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
-    };
     let input = || {
         invocation_over(
-            &model_hex(&sub_unit()),
             &[object("root", 1, None), object("child", 2, Some("root"))],
             &[object("root", 1, None), object("child", 2, None)],
             |_| {},
@@ -1183,9 +1152,9 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
 #[test]
 fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     let input = forbidden_parent_change();
-    let pre_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, input.pre.digest).hex();
+    let pre = input.pre.clone();
     let refusal = replay(case_with(input, child_change("parent"), |wire, _| {
-        wire.byte_provision.retain(|(_, hex, _)| *hex != pre_hex);
+        withhold(wire, &pre);
     }))
     .unwrap_err();
     let ReplayRefusal::Admission(AdmissionFailure::Incomplete(record)) = &refusal else {
@@ -1193,55 +1162,6 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     };
     assert_eq!(record.code.as_str(), "unavailable_observation");
     assert_eq!(refusal.code(), record.code);
-}
-
-/// TC-515 step 4 (FR-116-AC-4): invocation bytes edited under their own
-/// digest refuse `stale_dependency`/`content-mismatch`.
-#[trace("TC-515", "FR-116-AC-4")]
-#[test]
-fn edited_invocation_bytes_refuse_content_mismatch() {
-    let input = forbidden_parent_change();
-    let selected_digest = input.invocation.digest;
-    let invocation_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest).hex();
-    let mut edited_digest = [0_u8; 32];
-    let refusal = replay(case_with(input, child_change("parent"), |wire, _| {
-        let entry = wire
-            .byte_provision
-            .iter_mut()
-            .find(|(_, hex, _)| *hex == invocation_hex)
-            .expect("the invocation is provided");
-        entry.2 = String::from_utf8(entry.2.clone())
-            .expect("UTF-8")
-            .replace("\"boolean\":true", "\"boolean\":false")
-            .into_bytes();
-        edited_digest = document_digest(&entry.2);
-    }))
-    .unwrap_err();
-    let ReplayRefusal::Request(ReplayRequestRefusal::ContentMismatch {
-        selected,
-        recomputed,
-    }) = &refusal
-    else {
-        panic!("expected a content mismatch, got {refusal:?}");
-    };
-    assert_eq!(
-        selected,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, selected_digest)
-        )
-    );
-    assert_eq!(
-        recomputed,
-        &format!(
-            "{:?}",
-            DigestRecord::mint(DigestDomain::Sha256Jcs, edited_digest)
-        )
-    );
-    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
-    assert!(refusal
-        .to_string()
-        .starts_with("stale_dependency/content-mismatch"));
 }
 
 /// TC-515 step 5 (FR-116-AC-5): replaying step 1's envelope twice gives
@@ -1306,10 +1226,10 @@ fn a_check_time_frame_violation_replays_to_the_same_witness() {
     for (reference, bytes) in &input.documents {
         clause_request
             .snapshots
-            .insert(reference.digest, bytes.clone());
+            .insert(reference.clone(), bytes.clone());
         clause_request
             .invocations
-            .insert(reference.digest, bytes.clone());
+            .insert(reference.clone(), bytes.clone());
     }
     let report = run_clause(clause_request).expect("a well-formed request reports");
     let ClauseDisposition::FrameViolation(witness) = &report.disposition else {
@@ -1341,8 +1261,8 @@ fn wrapping_debit() -> Invocation {
 /// `request` with every document of `input` provided.
 fn provide(mut request: ClauseRunRequest, input: &Invocation) -> ClauseRunRequest {
     for (reference, bytes) in &input.documents {
-        request.snapshots.insert(reference.digest, bytes.clone());
-        request.invocations.insert(reference.digest, bytes.clone());
+        request.snapshots.insert(reference.clone(), bytes.clone());
+        request.invocations.insert(reference.clone(), bytes.clone());
     }
     request
 }

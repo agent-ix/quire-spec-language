@@ -34,7 +34,7 @@ fn limits(source_bytes: u64) -> StageLimits {
 /// its refusal.
 fn spine_run(
     text: &str,
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<(Vec<u8>, String), Box<CompileRefusal>> {
     let source = identity();
     let limits = SpineLimits::default();
@@ -196,11 +196,7 @@ fn a_domain_package_is_the_i1_input_as_in_the_spine() {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let packages = package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    let packages = package_input([document.as_slice()]).unwrap();
     let text = format!(
         "{HEADER}model M = \"acme/orders\";\n\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"

@@ -37,7 +37,7 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::counter::{
-    document, document_digest, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
+    document, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
     UNLIMITED,
 };
 
@@ -184,31 +184,19 @@ fn selected() -> QualifiedName {
 /// the snapshots in the byte provision.
 pub(crate) fn request<'a>(
     document: &[u8],
-    snapshots: impl Iterator<Item = (&'a [u8; 32], &'a Vec<u8>)>,
+    snapshots: impl Iterator<Item = (&'a qsl_semantics::model::observation::DocumentRef, &'a Vec<u8>)>,
     unit: &[u8],
     package_id: DigestRecord,
 ) -> ReplayRequestWire {
-    let sha256_jcs = |digest: [u8; 32]| {
-        (
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
-        )
-    };
     let source = source_digest(unit);
-    let mut byte_provision = vec![
-        (
-            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-            source.hex(),
-            unit.to_vec(),
-        ),
-        {
-            let (domain, hex) = sha256_jcs(document_digest(document));
-            (domain, hex, document.to_vec())
-        },
-    ];
-    for (digest, bytes) in snapshots {
-        let (domain, hex) = sha256_jcs(*digest);
-        byte_provision.push((domain, hex, bytes.clone()));
+    let byte_provision = vec![(
+        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+        source.hex(),
+        unit.to_vec(),
+    )];
+    let mut documents = vec![document.to_vec()];
+    for (_, bytes) in snapshots {
+        documents.push(bytes.clone());
     }
     ReplayRequestWire {
         profile_selections: Vec::new(),
@@ -235,6 +223,7 @@ pub(crate) fn request<'a>(
         object_environment: None,
         declared_domains: Vec::new(),
         byte_provision,
+        documents,
     }
 }
 

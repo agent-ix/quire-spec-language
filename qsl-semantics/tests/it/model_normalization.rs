@@ -939,52 +939,6 @@ fn n03_equal_shaped_members_from_distinct_originals_stay_distinct_effective_decl
     }
 }
 
-/// TC-195 N09's third clause: F1's nodes as version `2` under placeholder
-/// selection `n01v2` yield declarations byte-equal to F1's own version-1
-/// declarations (an effective declaration identity binds no
-/// `ModelSelection`), but a different view and universe, because only the
-/// model selection differs.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6", "QSpec-FR-150-AC-7")]
-#[test]
-fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe() {
-    let v1 = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture_with_version("n01v2", "2"),
-        fixture_f1().records,
-    );
-    let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations().len(), 4);
-
-    // Every declaration is byte-equal to version 1's own: version binds
-    // nothing about an effective declaration's own identity.
-    let mut v1_ids: Vec<_> = v1
-        .declarations()
-        .iter()
-        .map(|entry| entry.effective_id)
-        .collect();
-    let mut v2_ids: Vec<_> = view
-        .declarations()
-        .iter()
-        .map(|entry| entry.effective_id)
-        .collect();
-    v1_ids.sort();
-    v2_ids.sort();
-    assert_eq!(v1_ids, v2_ids);
-
-    assert!(is_sha256_hex(&view.identity().to_string()));
-    let universe = completed(&domain_package, ModelNormalizationLimits::UNLIMITED)
-        .object_universe()
-        .clone();
-    assert!(is_sha256_hex(&universe.identity().to_string()));
-    // Different from version 1's own view/universe: the model selection
-    // changed.
-    let universe_v1 = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
-        .object_universe()
-        .clone();
-    assert_ne!(view.identity(), v1.identity());
-    assert_ne!(universe.identity(), universe_v1.identity());
-}
-
 #[trace("TC-238", "FR-081-AC-7")]
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-4")]
 #[test]
@@ -1076,34 +1030,6 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
         }
         other => panic!("expected Incomplete, got {other:?}"),
     }
-}
-
-/// Real N05 (digest-domain mismatch, stale package digest) is a byte-level
-/// intake check against the wire `model-effective-declaration.schema.json`:
-/// `DomainPackage`'s fields are already typed Rust here, not decoded from
-/// wire bytes, so this rung cannot reconstruct it. Remaining work: #131
-/// wires a real Semantic IR 2.0.0 intake in front of `normalize`, where
-/// N05's schema-level and package-digest checks belong.
-#[trace("QSpec-TC-195")]
-#[test]
-fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_digest() {
-    let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
-        .object_universe()
-        .clone();
-
-    let selection_digest = qsl_semantics::model::key::hex(&fixture_f1().model_selection.digest);
-
-    for entry in view.declarations() {
-        assert_ne!(
-            entry.effective_id.to_string(),
-            selection_digest,
-            "effective identity {} collided with the model selection digest",
-            entry.effective_id
-        );
-    }
-    assert_ne!(view.identity().to_string(), selection_digest);
-    assert_ne!(universe.identity().to_string(), selection_digest);
 }
 
 /// ADR-013 §8 OQ-E identity proof: F1 (`A`, `B -> A`, one connected
@@ -2084,29 +2010,6 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
             panic!("expected Refused(invalid_model_binding/malformed-declaration), got {other:?}")
         }
     }
-}
-
-/// The same phase-1 check, over an empty domain package `version`.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "TC-1005", "FR-056-AC-33")]
-#[test]
-fn n04_empty_model_selection_version_refuses_malformed_declaration() {
-    let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-version");
-    model_selection.version.clear();
-    let domain_package = DomainPackage::new(
-        model_selection.clone(),
-        vec![object_type("model.A", vec![])],
-    );
-    let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
-        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-        cause: ModelRefusalCause::MalformedDeclaration,
-        detail: format!(
-            "domain package selection has an empty identity or version: {model_selection:?}"
-        ),
-    }]));
-    assert_eq!(
-        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
-    );
 }
 
 /// The same phase-1 check, over a `DeclarationKey` with an empty `package`.

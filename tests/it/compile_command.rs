@@ -665,26 +665,14 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
-        &qsl_semantics::model::intake::package_input([document.as_slice()]),
+        &qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap(),
         &qsl_replay::spine::DependencyInput::default(),
     )
     .unwrap();
     assert_eq!(output.stdout, library.package().bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let selected = std::str::from_utf8(&program)
-        .unwrap()
-        .split("digest \"sha256-jcs:")
-        .nth(1)
-        .and_then(|rest| rest.split('"').next())
-        .unwrap()
-        .to_owned();
-    let selection = json!([{
-        "identity": "acme/orders",
-        "digest_domain": "sha256-jcs",
-        "digest": selected,
-    }]);
-    assert_eq!(wire["lock"]["model_selections"], selection);
-    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+    assert!(wire["lock"].get("model_selections").is_none());
+    assert!(wire["identity_preimage"].get("model_selections").is_none());
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 4): the model fixture refuses at

@@ -26,7 +26,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 /// One compiled and emitted unit, as `run` holds it after its package stage.
 struct Unit {
     source: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     dependencies: DependencyInput,
     models: AdmittedModels,
     checked: CheckedUnit,
@@ -37,13 +37,13 @@ fn identity() -> qsl_foundation::SourceIdentity {
     qsl_foundation::SourceIdentity::new("agent-ix", "bind-fixture", "git", "1")
 }
 
-fn compile_source(source: String, packages: BTreeMap<[u8; 32], Vec<u8>>) -> Unit {
+fn compile_source(source: String, packages: qsl_semantics::model::intake::PackageInput) -> Unit {
     compile_with(source, packages, DependencyInput::default())
 }
 
 fn compile_with(
     source: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     dependencies: DependencyInput,
 ) -> Unit {
     let cancel = Cancel::new();
@@ -919,21 +919,12 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
         .replace("Widget", "Sprocket")
         .replace("Rock", "Stone")
         .into_bytes();
-    let digest = |bytes: &[u8]| {
-        hex(
-            &PackageDocument::parse(bytes, qsl_foundation::IntakeLimits::default())
-                .expect("the model admits")
-                .jcs_digest(),
-        )
-    };
     let source = format!(
         "{HEADER}model M = \"acme/orders\";\n\
          model N = \"acme/billing\";\n\
-         function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure {{ a + 1 }}\n",
-        digest(&first),
-        digest(&second)
+         function mk using v(r: M::Gadget, a: Int[0, 9]): Int[1, 10] pure {{ a + 1 }}\n"
     );
-    let unit = compile_source(source, package_input([first.as_slice(), second.as_slice()]));
+    let unit = compile_source(source, package_input([first.as_slice(), second.as_slice()]).unwrap());
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
     let (other, key, identity) = unit
         .models
@@ -1030,18 +1021,13 @@ fn node_unit(
     use quire_semantic_value::object_closure::ObjectClosure;
 
     let document = domain_document();
-    let digest = hex(
-        &PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
-            .expect("the model admits")
-            .jcs_digest(),
-    );
     let source = format!(
-        "{HEADER}model M = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+        "{HEADER}model M = {PACKAGE:?};\n\
          type Digit = Int[0, 9];\n\
          function shape using v(s: Sequence<Digit>[0, 3]): Boolean pure {{ true }}\n\
          {functions}\n"
     );
-    let unit = compile_source(source, package_input([document.as_slice()]));
+    let unit = compile_source(source, package_input([document.as_slice()]).unwrap());
     let graph = unit.checked.package().graph();
     let ValueType::Collection(declared) =
         &graph.callable("shape").expect("declared").parameters[0].1

@@ -23,7 +23,6 @@
 //! use quire_checked::key::DeclarationKey;
 //! let _ = DeclarationKey { package: String::new(), node: String::new() };
 //! ```
-use qsl_foundation::ByteDigest;
 use quire_canonical::{Encode, FixedShape, Limits};
 use quire_checked::key::DeclarationKey;
 use serde::Serialize;
@@ -412,10 +411,27 @@ pub(super) fn canonical_len(preimage: &impl Encode) -> u64 {
     .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"))
 }
 
-/// The SHA-256 of `bytes` exactly as given, with no canonicalization: the
-/// observation-document digest of bytes that did not parse, which have no
-/// RFC 8785 form. Kept here, beside the canonical digests, so observation
-/// names no hasher itself (arch-lint `canonical-encoder`).
-pub(super) fn raw_bytes_digest(bytes: &[u8]) -> [u8; 32] {
-    ByteDigest::of(bytes).as_bytes()
+/// A document reference's `{authority, identity, revision_namespace,
+/// revision}` preimage form.
+#[derive(Serialize, FixedShape)]
+struct DocumentRefWire<'a> {
+    authority: &'a str,
+    identity: &'a str,
+    revision_namespace: &'a str,
+    revision: &'a str,
+}
+
+/// The fixed-width key of a document reference's four labels.
+pub(super) fn document_ref_key(
+    authority: &str,
+    identity: &str,
+    revision_namespace: &str,
+    revision: &str,
+) -> [u8; 32] {
+    sha256_digest(&DocumentRefWire {
+        authority,
+        identity,
+        revision_namespace,
+        revision,
+    })
 }

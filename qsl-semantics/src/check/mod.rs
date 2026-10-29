@@ -1947,7 +1947,7 @@ impl PackageDeclarations {
             .iter()
             .map(|model| model.selection().clone())
             .collect();
-        model_selections.sort_by(|a, b| (&a.identity, &a.version).cmp(&(&b.identity, &b.version)));
+        model_selections.sort_by(|a, b| a.identity.cmp(&b.identity));
         // FR-094 (ADR-013 O-01): a check selects one version of each domain
         // package identity, so a model owner names one declaration.
         let mut selected = std::collections::BTreeSet::new();

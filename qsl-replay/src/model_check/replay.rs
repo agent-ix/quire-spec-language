@@ -1029,12 +1029,7 @@ fn replay_on<P: crate::witness::FamilyPayload>(
             recompiled: package_id,
         });
     }
-    let documents: BTreeMap<[u8; 32], Vec<u8>> = request
-        .byte_provision()
-        .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
-        .collect();
+    let documents = request.byte_provision().snapshots();
     let meter = request.accounting_limits();
     let package = compiled.checked.package();
     let simulation = |subject: &ModelTraceSubject| ModelSimulationRequest {

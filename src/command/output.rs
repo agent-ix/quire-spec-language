@@ -255,9 +255,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         } => {
                             let expected = types::AdmissionModelSelection {
                                 identity: expected.identity.clone(),
-                                version: expected.version.clone(),
-                                digest_domain: "sha256-jcs",
-                                digest: qsl_semantics::model::key::hex(&expected.digest),
                             };
                             match actual {
                                 qsl_semantics::model::refusal::OfferedSelection::Document(
@@ -734,9 +731,6 @@ mod tests {
                 "model_identity": "foreign-model",
                 "expected": {
                     "identity": expected.identity,
-                    "version": expected.version,
-                    "digest_domain": "sha256-jcs",
-                    "digest": qsl_semantics::model::key::hex(&expected.digest),
                 },
             })
         );

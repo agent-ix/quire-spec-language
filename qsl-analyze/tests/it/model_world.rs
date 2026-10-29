@@ -213,8 +213,8 @@ pub(crate) struct World {
     pub(crate) domain: Domain,
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: Vec<DocumentRef>,
     /// The native unit the package was checked from.
     pub(crate) unit: Vec<u8>,
@@ -232,15 +232,13 @@ impl World {
         clauses: &[Clause<'_>],
         start: &[(&str, Json)],
     ) -> Self {
-        let packages = package_input([domain.document.as_slice()]);
-        let digest = *packages.keys().next().expect("one model");
+        let packages = package_input([domain.document.as_slice()]).unwrap();
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
              profile t = \"{profile}\";\n\
              model M = \"{}\";\n{body}",
-            domain.package,
-            hex(&digest)
+            domain.package
         );
         let declared = clauses
             .iter()
@@ -304,7 +302,7 @@ impl World {
     }
 
     /// The bytes of each provisioned snapshot, by digest.
-    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&[u8; 32], &Vec<u8>)> {
+    pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {
         self.snapshots.iter()
     }
 
@@ -315,9 +313,7 @@ impl World {
             .iter()
             .map(|(key, fields)| json!({"key": key, "type": object_type, "fields": fields}))
             .collect();
-        let digest = *self.packages.keys().next().expect("one model");
-        let header = json!({"identity": self.domain.package, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", hex(&digest))});
+        let header = json!({"identity": self.domain.package});
         let document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -329,16 +325,12 @@ impl World {
         });
         let bytes = document.to_string().into_bytes();
         let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-            .expect("canonical fixture")
-            .as_bytes();
-        self.snapshots.insert(digest, bytes);
+        self.snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
         DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest,
         }
     }
 

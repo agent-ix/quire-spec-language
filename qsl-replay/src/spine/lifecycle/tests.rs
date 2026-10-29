@@ -83,7 +83,7 @@ struct Chain {
 
 fn chain_of(
     bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Chain, FrontEndFailure> {
@@ -633,7 +633,7 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
 #[trace("TC-757", "FR-276-AC-2")]
 #[test]
 fn a_cancel_inside_select_stops_within_one_charge() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let limits = SpineLimits::default();
     let live = Cancel::new();
     let parsed = parse(
@@ -664,7 +664,7 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 #[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let mut limits = SpineLimits::default();
     let size = u64::try_from(MODEL_DOCUMENT.len()).expect("a small document");
     limits.model.intake = qsl_foundation::IntakeLimits::default().with_input_bytes(size - 1);
@@ -869,7 +869,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let model = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -907,7 +907,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
 }
 
 /// `chain`'s emitted bytes through the I2 reader, as `identity`.
-fn read_back(chain: &Chain, packages: &BTreeMap<[u8; 32], Vec<u8>>, identity: &str) {
+fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInput, identity: &str) {
     let emission = emit_checked(chain.checked.package()).expect("the package emits");
     assert_eq!(emission.package(), chain.emitted.package());
     read_import_view(
@@ -1283,7 +1283,7 @@ fn parse_names_the_source_limit_field_it_reached() {
 #[trace("TC-758", "FR-277-AC-1", "FR-255-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let live = Cancel::new();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
@@ -1348,7 +1348,7 @@ fn select_names_the_model_limit_field_it_reached() {
 #[trace("TC-758", "FR-255-AC-1")]
 #[test]
 fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let parsed = parse(
         &request(spine_model::unit().as_bytes()),
         SpineLimits::default().source,
@@ -1634,7 +1634,7 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
 #[trace("TC-758", "FR-277-AC-1")]
 #[test]
 fn check_names_the_type_environment_limit_field_it_reached() {
-    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
     let model = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -1933,7 +1933,7 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
 
 /// The model fixture with an operation `touch` on `Widget` whose `pre`
 /// holds `clauses` (`language`, `text`), and the unit selecting it.
-fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let generated = |identity: &str| {
@@ -1970,18 +1970,17 @@ fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Ve
 }
 
 /// The unit selecting `document`, the model fixture with its digest.
-fn offered_model(document: &serde_json::Value) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+fn offered_model(document: &serde_json::Value) -> (String, qsl_semantics::model::intake::PackageInput) {
     let bytes = serde_json::to_vec(document).expect("the document serializes");
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let digest = packages.keys().next().expect("one package");
-    (spine_model::unit_selecting(digest), packages)
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    (spine_model::unit(), packages)
 }
 
 /// The model fixture with the clauses `clauses` (`name`, `language`, `text`)
 /// on the type `Widget`, and the unit selecting it.
 fn widget_with_type_clauses(
     clauses: &[(&str, &str, &str)],
-) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+) -> (String, qsl_semantics::model::intake::PackageInput) {
     let mut document: serde_json::Value =
         serde_json::from_slice(MODEL_DOCUMENT).expect("the model fixture is JSON");
     let widget = document["types"]

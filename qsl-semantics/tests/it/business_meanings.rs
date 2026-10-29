@@ -9,7 +9,7 @@ use qsl_foundation::{ByteDigest, IntakeLimits};
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord};
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::{hex, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
@@ -125,22 +125,14 @@ fn document(package: &str, version: &str, mut constructs: Vec<Value>, types: Vec
 
 fn read_authored(document: &Value) -> DomainPackage {
     let bytes = serde_json::to_vec(document).expect("authored document serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let digest = *packages.keys().next().expect("one authored package");
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: document["package"]["identity"]
             .as_str()
             .expect("package identity")
             .to_owned(),
-        version: document["package"]["version"]
-            .as_str()
-            .expect("package version")
-            .to_owned(),
-        digest,
     };
-    let (selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (selection, admitted) = admit(selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )
@@ -988,22 +980,14 @@ fn record_specialization_cycle_refuses_before_effective_view() {
 
 fn authored_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::ModelRefusal> {
     let bytes = serde_json::to_vec(document).expect("authored restriction fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let digest = *packages.keys().next().expect("one authored package");
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let selection = qsl_semantics::model::domain_package::DomainPackageRef {
         identity: document["package"]["identity"]
             .as_str()
             .expect("package identity")
             .to_owned(),
-        version: document["package"]["version"]
-            .as_str()
-            .expect("package version")
-            .to_owned(),
-        digest,
     };
-    let (selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (selection, admitted) = admit(selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )

@@ -25,12 +25,11 @@ const NO_LOOP: &str =
 /// `extra`, and its text.
 fn unit(extra: &[(&str, &str)], declarations: &str) -> (String, DeclarationsOrRefusal) {
     let package = package(extra);
-    let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
     let identity = package.model_selection.identity.clone();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {identity:?};\n\
          {declarations}\n"
     );
     let selected = SelectedModels::fixture(

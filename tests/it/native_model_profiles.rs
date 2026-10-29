@@ -708,7 +708,7 @@ fn document_source() -> String {
 }
 
 fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str(), model.digest());
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str());
     parse(
         SourceIdentity {
             authority: "test".into(),
@@ -823,7 +823,7 @@ fn parameter(namespace: &SyntaxNamespace, index: usize) -> (UnitId, &QualifiedNa
 fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
     let record = r#"{"name":"Measure","fields":[{"name":"amount","type":{"kind":"scalar","name":"Ratio"}}]}"#;
     let admitted = model(&document(RATIONAL, record, AMOUNT));
-    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean {{ true }}", admitted.digest());
+    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean {{ true }}");
     let inputs = [ModelInput::Native(&admitted)];
     with_namespace(&program, |namespace| {
         let mut work = Work::new(BindingLimits::default());
@@ -878,28 +878,6 @@ fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
             }
         );
     });
-    let canonical = admitted
-        .environment()
-        .canonical_declaration(ir::CanonicalProfile::V1)
-        .unwrap();
-    for digest in [
-        ByteDigest::of(b"stale artifact"),
-        admitted.source().source().digest(),
-        ByteDigest::of(canonical.bytes().as_slice()),
-    ] {
-        assert_ne!(digest, admitted.digest());
-        with_namespace(
-            &program.replace(&admitted.digest().to_string(), &digest.to_string()),
-            |namespace| {
-                let bindings =
-                    bind_models(namespace, &inputs, &mut Work::new(BindingLimits::default()));
-                assert_eq!(
-                    bindings.imports()[0].selection,
-                    Err(ImportRefusal::StaleSelection)
-                );
-            },
-        );
-    }
     with_namespace(
         &program.replace("test/rational", "test/foreign"),
         |namespace| {
@@ -1007,7 +985,7 @@ fn equal_rational_representations_preserve_distinct_names_and_owners() {
     .admit(ModelLimits::default())
     .unwrap();
     let program = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}", first.digest(), second.digest()
+        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}"
     );
     let inputs = [ModelInput::Native(&first), ModelInput::Native(&second)];
     with_namespace(&program, |namespace| {

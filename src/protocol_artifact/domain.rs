@@ -3,8 +3,7 @@
 //!
 //! A domain-package `Model` selects, through `artifact`, the model-package
 //! dependency whose bytes are the package's Semantic IR 2.0.0 document, and
-//! names the package directly in `domain_package`: its identity, version and
-//! `sha256-jcs` digest. Its exports are the package's object types and
+//! names the package directly in `domain_package`: its identity. Its exports are the package's object types and
 //! Interfaces (`object`), record value types (`record`), and their field and
 //! operation members, each under its artifact id, and one `population`
 //! export `[object artifact id, population artifact id]` for every object
@@ -21,13 +20,12 @@ use qsl_semantics::model::admitted::{AdmittedPackage, Declaration};
 use qsl_semantics::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, PopulationRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
 
-/// Revision namespace of a domain-package export locus: the formal revision
-/// is the package's own version.
-pub const DOMAIN_PACKAGE_VERSION_NAMESPACE: &str = "ix:domain-package-version";
+/// Revision namespace of a domain-package export locus: a domain package has
+/// no version, so the formal revision value is the package identity.
+pub const DOMAIN_PACKAGE_REVISION_NAMESPACE: &str = "ix:domain-package";
 
 /// Constructor-private authority for one admitted domain package, separate
 /// from a wire `Model`.
@@ -232,7 +230,7 @@ pub(super) fn exports<'a>(
 }
 
 /// The locus every export of the package names: the whole document in the
-/// model's own dependency, under the package identity and version.
+/// model's own dependency, under the package identity.
 pub(super) fn locus(
     selected: &AdmittedDomainPackage<'_>,
     document_bytes: usize,
@@ -240,19 +238,14 @@ pub(super) fn locus(
 ) -> Result<w::ForeignLocus, Error> {
     let selection = selected.package.selection();
     work.charge(Dimension::Entries, 3)?;
-    work.bytes(
-        selection
-            .identity
-            .len()
-            .saturating_add(selection.version.len()),
-    )?;
+    work.bytes(selection.identity.len().saturating_mul(2))?;
     Ok(w::ForeignLocus {
         source: selected.artifact.clone(),
         formal: w::Formal {
             document: selection.identity.clone(),
             revision: w::Revision {
-                namespace: DOMAIN_PACKAGE_VERSION_NAMESPACE.to_owned(),
-                value: selection.version.clone(),
+                namespace: DOMAIN_PACKAGE_REVISION_NAMESPACE.to_owned(),
+                value: selection.identity.clone(),
             },
         },
         span: w::Span {
@@ -275,23 +268,16 @@ pub(super) fn naming(
     selection: &DomainPackageRef,
     work: &mut Work,
 ) -> Result<w::DomainPackage, Error> {
-    work.charge(Dimension::Entries, 3)?;
-    work.bytes(
-        selection
-            .identity
-            .len()
-            .saturating_add(selection.version.len()),
-    )?;
+    work.charge(Dimension::Entries, 1)?;
+    work.bytes(selection.identity.len())?;
     Ok(w::DomainPackage {
         identity: selection.identity.clone(),
-        version: selection.version.clone(),
-        digest: w::JcsDigest(selection.digest),
     })
 }
 
 /// Whether `bytes` are the selected package's document: FR-154 admission of
-/// `bytes` under the selection's own identity, version and `sha256-jcs`
-/// digest, read under the caller's `intake` limit.
+/// `bytes` under the selection's own identity, read under the caller's
+/// `intake` limit.
 pub(super) fn verify_document(
     selection: &DomainPackageRef,
     bytes: &[u8],
@@ -299,8 +285,8 @@ pub(super) fn verify_document(
     work: &mut Work,
 ) -> Result<(), Error> {
     work.bytes(bytes.len())?;
-    let offered = BTreeMap::from([(selection.digest, bytes.to_vec())]);
-    qsl_semantics::model::intake::admit(selection, SHA256_JCS_DIGEST_DOMAIN, &offered, intake)
+    let offered = BTreeMap::from([(selection.identity.clone(), bytes.to_vec())]);
+    qsl_semantics::model::intake::admit(selection.identity.as_str(), &offered, intake)
         .map(|_| ())
         .map_err(|refusal| match refusal.cause {
             // A reached `intake.input_bytes` is the caller's limit, not a
@@ -441,18 +427,12 @@ mod tests {
     use crate::protocol_artifact::Limits;
     use ix_trace_rs::trace;
     use qsl_foundation::IntakeLimits;
-    use qsl_semantics::model::intake::PackageDocument;
 
     const DOCUMENT: &[u8] = include_bytes!("../../tests/fixtures/spine-model.semantic-ir.json");
 
     fn selection() -> DomainPackageRef {
-        let digest = PackageDocument::parse(DOCUMENT, IntakeLimits::default())
-            .expect("the fixture parses")
-            .jcs_digest();
         DomainPackageRef {
             identity: "acme/orders".to_owned(),
-            version: "1.0.0".to_owned(),
-            digest,
         }
     }
 

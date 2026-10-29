@@ -13,7 +13,6 @@ use qsl_semantics::model::domain_package::{
 use qsl_semantics::model::intake::{
     admit, admit_unit, meaning, package_input, read_domain_package, read_records,
 };
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, MemberPath, ModelRefusal, ModelRefusalCause,
     NormalizeOutcome,
@@ -35,16 +34,11 @@ fn package_key(node: &str) -> DeclarationKey {
 
 fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("K2 serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
-    let (_selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (_selection, admitted) = admit(selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -342,15 +336,14 @@ fn tc213_retains_exact_key_origin_map_across_order_selection_and_origin_controls
 /// intake -> normalization -> PackageDeclarations::assemble path.
 fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations {
     let bytes = serde_json::to_vec(document).expect("K2-derived fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one K2-derived model package");
     };
-    let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {PACKAGE:?};\n\
          {declarations}\n"
     );
     let parsed = qsl_cst::parse(
@@ -384,16 +377,11 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
 fn admitted_original_keys_survive_normalization() {
     let document = k2();
     let bytes = serde_json::to_vec(&document).expect("K2 serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
-    let (_, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (_, admitted) = admit(selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -556,16 +544,11 @@ fn scalar_original_has_no_effective_entry_or_extra_charge() {
 
 fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
     let bytes = serde_json::to_vec(document).expect("fixture serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
-    let (_selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (_selection, admitted) = admit(selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )
@@ -774,16 +757,11 @@ fn record_charges(
 fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let document = k2();
     let bytes = serde_json::to_vec(&document).expect("K2 serializes");
-    let offered = package_input([bytes.as_slice()]);
-    let digest = *offered.keys().next().expect("one offered package");
+    let offered = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: PACKAGE.to_owned(),
-        version: "1".to_owned(),
-        digest,
     };
-    let (selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (selection, admitted) = admit(selection.identity.as_str(),
         &offered,
         IntakeLimits::default(),
     )

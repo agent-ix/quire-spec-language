@@ -169,6 +169,10 @@ pub enum ReplayRefusal {
     /// stage limits the request carries (`stage_limit_exceeded`).
     #[error("the recompile refused at stage {stage}: {refusal}", stage = .0.stage().as_str(), refusal = .0)]
     Recompile(Box<CompileRefusal>),
+    /// QC-1: the request's domain package documents do not form a package
+    /// input (an unreadable document, or two for one identity).
+    #[error("{}", .0.detail)]
+    DomainPackages(qsl_semantics::model::normalize::ModelRefusal),
     /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
     /// are not in strictly ascending UTF-8 byte order of identity, or name
     /// an identity the recompiled package does not select
@@ -513,6 +517,7 @@ impl ReplayRefusal {
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::NotASource(_) | Self::SourceCount(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
+            Self::DomainPackages(refusal) => refusal.code,
             Self::PackageIdMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
                 Code::StaleDependency
             }
@@ -574,6 +579,7 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
+            Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::DependencyIdentityMismatch { .. } | Self::PackageIdMismatch { .. } => {
@@ -787,6 +793,7 @@ pub enum DependencySelectionsCause {
 /// #       digest.hex(),
 /// #       unit.as_bytes().to_vec(),
 /// #   )],
+/// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
@@ -860,6 +867,7 @@ pub enum DependencySelectionsCause {
 /// #       digest.hex(),
 /// #       unit.as_bytes().to_vec(),
 /// #   )],
+/// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
@@ -1005,12 +1013,7 @@ fn replay_observed_temporal(
         ));
     }
 
-    let mut snapshots = std::collections::BTreeMap::new();
-    for (digest, bytes) in request.byte_provision().entries() {
-        if digest.domain() == DigestDomain::Sha256Jcs {
-            snapshots.insert(*digest.as_bytes(), bytes.to_vec());
-        }
-    }
+    let snapshots = request.byte_provision().snapshots();
     let mut environments = Vec::with_capacity(documents.len());
     for document in &documents {
         let (environment, _) = admit_trace_snapshot(
@@ -1420,7 +1423,7 @@ pub(crate) struct Recompiled {
     /// The recompiled package's v2 bytes and `package_id`.
     pub(crate) emitted: spine::EmittedUnit,
     /// The domain packages the recompile read, by `sha256-jcs` digest.
-    pub(crate) packages: std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
     /// The limits the models were normalized under.
     pub(crate) model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
 }
@@ -1440,7 +1443,7 @@ pub(crate) fn run_spine(
     unit: &SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
@@ -1461,7 +1464,7 @@ pub(crate) fn run_spine_with_execution_points(
     unit: &SourceIdentity,
     path: &str,
     bytes: &[u8],
-    packages: &std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
     limits: SpineLimits,
@@ -1588,7 +1591,7 @@ pub(crate) fn recompile(
         .check_unit_owner(&labels(source))
         .map_err(ReplayRefusal::DependencyInput)?;
     let bytes = provided(source)?;
-    let packages = domain_packages(request);
+    let packages = domain_packages(request)?;
     // Rule 4: the recompile.
     let compiled = run_spine(
         &labels(source),
@@ -1641,17 +1644,12 @@ pub(crate) fn recompile(
     Ok(compiled)
 }
 
-/// I1's package input: every entry the byte provision carries under a
-/// `sha256-jcs` digest (QC-1). A state document there is keyed by its raw
-/// bytes' digest, which no model selection names.
-fn domain_packages(request: &ReplayRequest) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
-    package_input(
-        request
-            .byte_provision()
-            .entries()
-            .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-            .map(|(_, bytes)| bytes),
-    )
+/// I1's package input: every domain package document the provision carries,
+/// keyed by the identity it declares (QC-1).
+fn domain_packages(
+    request: &ReplayRequest,
+) -> Result<qsl_semantics::model::intake::PackageInput, ReplayRefusal> {
+    package_input(request.byte_provision().package_documents()).map_err(ReplayRefusal::DomainPackages)
 }
 
 /// The one `quire.source.bytes/v1` source `references` names (ADR-015 D-4

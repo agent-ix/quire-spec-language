@@ -21,7 +21,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
 use qsl_semantics::model::key::{
-    hex, EffectiveDeclarationPreimage, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
+    hex, EffectiveDeclarationPreimage, RULE_QUALIFY,
 };
 use qsl_semantics::model::normalize::{
     normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
@@ -159,16 +159,11 @@ fn tiers(tier_cases: &[&str]) -> Value {
 
 fn read(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("authored document serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let digest = *packages.keys().next().expect("one authored package");
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let selection = DomainPackageRef {
         identity: document["package"]["identity"].as_str().unwrap().to_owned(),
-        version: document["package"]["version"].as_str().unwrap().to_owned(),
-        digest,
     };
-    let (selection, admitted) = admit(
-        &selection,
-        SHA256_JCS_DIGEST_DOMAIN,
+    let (selection, admitted) = admit(selection.identity.as_str(),
         &packages,
         IntakeLimits::default(),
     )

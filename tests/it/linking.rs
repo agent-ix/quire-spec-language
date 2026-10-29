@@ -129,10 +129,8 @@ fn canonical(env: &ir::DeclarationEnvironment) -> ir::CanonicalOutput {
 
 fn import(env: &ir::DeclarationEnvironment, alias: &str) -> String {
     format!(
-        "model {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
+        "model {alias} = \"{}\";\n",
         env.owner().package(),
-        env.owner().revision().get(),
-        ByteDigest::of(canonical(env).bytes().as_slice())
     )
 }
 
@@ -222,26 +220,11 @@ fn exact_source_owner_field_and_digest_domains() {
     }
     assert_eq!(occurrences[0].expression, None);
     assert!(occurrences[1].expression.is_some());
-    let exact = linked.models()[0].digest().to_string();
-    for replacement in [
-        format!("sha256:{}", canonical(&envs[0]).digest()),
-        ByteDigest::of(canonical(&environment("FR-002", 1, 10)).bytes().as_slice()).to_string(),
-    ] {
-        assert_ne!(replacement, exact);
-        let error = link(
-            read(&source.text().replace(&exact, &replacement)),
-            &envs,
-            LinkLimits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(error.diagnostic.code, Code::StaleDependency);
-        assert_eq!(error.diagnostic.phase, Phase::Link);
-    }
 }
 
 #[trace("TC-021", "TC-023", "FR-005-AC-2", "FR-005-AC-4", "FR-017-AC-3")]
 #[test]
-fn missing_stale_unused_declaration_and_malformed_digest() {
+fn a_missing_model_is_refused_at_its_import() {
     let original = environment("FR-001", 1, 10);
     let source = unit(&original, "self.count").source().clone();
     let missing = link(read(source.text()), &[], LinkLimits::default()).unwrap_err();
@@ -249,40 +232,6 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
     assert_eq!(
         missing.diagnostic.span.start.byte,
         source.text().find("\"example/model\"").unwrap()
-    );
-    for changed in [environment("FR-001", 2, 10), environment("FR-001", 1, 11)] {
-        assert_eq!(
-            link(read(source.text()), &[changed], LinkLimits::default())
-                .unwrap_err()
-                .diagnostic
-                .code,
-            Code::StaleDependency
-        );
-    }
-    let envs = [original];
-    assert_eq!(
-        link(
-            read(&source.text().replace("version \"1\"", "version \"01\"")),
-            &envs,
-            LinkLimits::default()
-        )
-        .unwrap_err()
-        .diagnostic
-        .code,
-        Code::StaleDependency
-    );
-    let parsed = read(source.text());
-    let raw = source.slice(parsed.imports()[0].digest.span).unwrap();
-    let error = link(
-        read(&source.text().replace(raw, "\"invalid\"")),
-        &envs,
-        LinkLimits::default(),
-    )
-    .unwrap_err();
-    assert_eq!(error.diagnostic.code, Code::InvalidModelBinding);
-    assert_eq!(
-        error.diagnostic.span.start.byte,
-        parsed.imports()[0].digest.span.start
     );
 }
 

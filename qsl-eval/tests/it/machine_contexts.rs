@@ -32,15 +32,15 @@ const NATIVE: &str = "ix://quire/native";
 /// object type `Pump` in the populations `Q` and `Spare`, and the clauses.
 struct Orders {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     model: Json,
 }
 
 /// The documents offered to one admission.
 #[derive(Clone, Default)]
 struct Docs {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Docs {
@@ -51,7 +51,7 @@ impl Docs {
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
         let reference = lifecycle_document_ref(&label, &bytes);
-        self.snapshots.insert(reference.digest, bytes);
+        self.snapshots.insert(reference.clone(), bytes);
         reference
     }
 
@@ -62,7 +62,7 @@ impl Docs {
             .to_owned();
         let bytes = serde_json::to_vec(document).unwrap();
         let reference = lifecycle_document_ref(&label, &bytes);
-        self.invocations.insert(reference.digest, bytes);
+        self.invocations.insert(reference.clone(), bytes);
         reference
     }
 }
@@ -73,7 +73,6 @@ fn labelled(label: &str) -> DocumentRef {
         identity: label.to_owned(),
         revision_namespace: "tc235".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -324,7 +323,6 @@ impl Orders {
         let model = json!({
             "identity": crate::tc235_k2::PACKAGE,
             "version": "1",
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
         });
         Self {
             package,
@@ -368,7 +366,6 @@ impl Orders {
         let reference = |document: &DocumentRef| {
             json!({
                 "identity": lifecycle_identity(document),
-                "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&document.digest)),
             })
         };
         json!({
@@ -625,16 +622,6 @@ fn a_context_selection_admits_one_side_of_the_invocation() {
             "{side:?}: member order changes no value"
         );
     }
-    let digest_of = |document: &Json| {
-        let mut docs = Docs::default();
-        docs.snapshot(document).digest
-    };
-    assert_eq!(
-        digest_of(&orders.snapshot("p1", "pre", vec![lifecycle(false, false)])),
-        digest_of(&orders.snapshot("p1", "pre", vec![reversed(false)])),
-        "member order is no part of the digest"
-    );
-
     // A false invariant is a logical violation after admission (AC-42).
     let (docs, i1) = orders.place(vec![lifecycle(false, false)], vec![lifecycle(true, true)]);
     let admitted = orders
@@ -665,17 +652,12 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
         let document: Json = serde_json::from_slice(&bytes).unwrap();
         document["post"].clone()
     });
-    let q1_digest = {
-        let hex = q1.as_ref().unwrap()["digest"]
-            .as_str()
-            .unwrap()
-            .trim_start_matches("sha256-jcs:");
-        let mut digest = [0u8; 32];
-        for (at, byte) in digest.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&hex[at * 2..at * 2 + 2], 16).unwrap();
-        }
-        digest
-    };
+    let q1_digest = docs
+        .snapshots
+        .keys()
+        .find(|reference| reference.identity == "q1")
+        .cloned()
+        .expect("the post snapshot is provisioned");
 
     // The post snapshot absent, and its bytes not JSON.
     let mut absent = docs.clone();
@@ -698,7 +680,7 @@ fn side_pre_ignores_the_post_side_and_the_parameters() {
             .invocations
             .iter()
             .next()
-            .map(|(k, v)| (*k, v.clone()))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .unwrap();
         let mut document: Json = serde_json::from_slice(&bytes).unwrap();
         edit(&mut document);

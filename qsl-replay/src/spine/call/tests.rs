@@ -57,7 +57,7 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
 
 pub(in crate::spine) struct LookupDriverFixture {
     pub(in crate::spine) source: String,
-    pub(in crate::spine) packages: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(in crate::spine) packages: qsl_semantics::model::intake::PackageInput,
 }
 
 pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
@@ -92,21 +92,12 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
         }}
     }]);
     let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
-    let digest = qsl_semantics::model::intake::PackageDocument::parse(
-        &bytes,
-        qsl_foundation::IntakeLimits::default(),
-    )
-    .expect("the lookup driver model admits")
-    .jcs_digest();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = \"acme/orders\";\n\
-         {}\n",
-        hex(&digest),
-        functions
+         model M = \"acme/orders\";\n"
     );
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     LookupDriverFixture { source, packages }
 }
 
@@ -427,7 +418,7 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
         source(),
         "spine-model.native",
         crate::spine::spine_model::unit().as_bytes(),
-        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]),
+        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]).unwrap(),
         &DependencyInput::default(),
         SpineLimits::default(),
         &call,
@@ -479,7 +470,7 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
     let unit = crate::spine::spine_model::unit();
     let bytes = unit.as_bytes();
     let packages =
-        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]);
+        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]).unwrap();
     let cancel = Cancel::new();
     let identity = source();
     let parsed = crate::spine::parse(

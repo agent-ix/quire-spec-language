@@ -33,7 +33,6 @@ use std::{collections::BTreeMap, io, path::Path};
 /// emission-to-admission corpus.
 #[path = "spine_unit.rs"]
 mod unit;
-use unit::PACKAGE_VERSION;
 pub use unit::{DOMAIN_PACKAGE, PACKAGE_IDENTITY};
 
 fn config_version_type() -> String {
@@ -44,30 +43,10 @@ fn population_identity() -> String {
     format!("ix://{PACKAGE_IDENTITY}/config_history")
 }
 
-/// `bytes`' `sha256-jcs` digest (FR-056's digest-first rule): parsed as
-/// JSON, then digested over RFC 8785 canonical bytes -- the same recipe
-/// `qsl_semantics::model::observation`'s own document digest uses.
-fn document_digest(bytes: &[u8]) -> [u8; 32] {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("spine fixture is JSON");
-    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("spine fixture is RFC 8785 canonical")
-        .as_bytes()
-}
-
-/// [`DOMAIN_PACKAGE`]'s own digest, as `intake::package_input` computes it
-/// (the digest a `model` statement's own `digest "sha256-jcs:..."` names).
-pub fn model_digest_hex() -> String {
-    let packages = domain_packages();
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied domain package");
-    };
-    qsl_semantics::model::key::hex(digest)
-}
-
 /// [`DOMAIN_PACKAGE`], keyed the way `compile`/`run_clause` expect their
 /// `packages` map.
-pub fn domain_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
-    qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE.as_bytes()])
+pub fn domain_packages() -> qsl_semantics::model::intake::PackageInput {
+    qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE.as_bytes()]).unwrap()
 }
 
 /// FR-108's own fixed `SourceIdentity` for the compiled unit, shared by
@@ -87,7 +66,7 @@ pub fn unit_identity() -> qsl_foundation::SourceIdentity {
 /// FR-108's own `1-draft` unit text ([`unit::unit_text`]) selecting
 /// [`DOMAIN_PACKAGE`] by its digest.
 pub fn unit_text() -> String {
-    unit::unit_text(&model_digest_hex())
+    unit::unit_text()
 }
 
 fn identity_json(case: Case, role: &str) -> Value {
@@ -99,19 +78,17 @@ fn identity_json(case: Case, role: &str) -> Value {
     })
 }
 
-fn document_ref(identity: &Value, digest: [u8; 32]) -> DocumentRef {
+fn document_ref(identity: &Value) -> DocumentRef {
     DocumentRef {
         authority: identity["authority"].as_str().unwrap().to_owned(),
         identity: identity["identity"].as_str().unwrap().to_owned(),
         revision_namespace: identity["revision_namespace"].as_str().unwrap().to_owned(),
         revision: identity["revision"].as_str().unwrap().to_owned(),
-        digest,
     }
 }
 
 fn model_header() -> Value {
-    json!({"identity": PACKAGE_IDENTITY, "version": PACKAGE_VERSION,
-        "digest": format!("sha256-jcs:{}", model_digest_hex())})
+    json!({"identity": PACKAGE_IDENTITY})
 }
 
 /// A `quire.state.snapshot/v1` document over `rows`, `complete` per the
@@ -163,8 +140,8 @@ fn invocation_bytes(case: Case, self_key: &str, pre: &DocumentRef, post: &Docume
         "context": config_version_type(),
         "operation": "attemptUpdate",
         "self": {"population": population_identity(), "key": self_key},
-        "pre": {"identity": identity(pre), "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&pre.digest))},
-        "post": {"identity": identity(post), "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&post.digest))},
+        "pre": {"identity": identity(pre)},
+        "post": {"identity": identity(post)},
         "parameters": {},
         "result": {"boolean": true},
         "created": [],
@@ -180,8 +157,8 @@ fn write_json(directory: &Path, file: &str, bytes: &[u8]) -> io::Result<()> {
 
 /// Every input document [`request`] needs, plus the selection it names.
 struct Written {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
     selection: ClauseRunSelection,
 }
 
@@ -194,12 +171,11 @@ fn write_current(
     let complete = case.spec().complete;
     let bytes = snapshot_bytes(case, "current", rows, complete);
     write_json(directory, "spine-snapshot.json", &bytes)?;
-    let digest = document_digest(&bytes);
-    let label = document_ref(&identity_json(case, "current"), digest);
+    let label = document_ref(&identity_json(case, "current"));
     let selection = ClauseSelection {
         name: case.spec().clause.name.to_owned(),
         input: ClauseSelectionInput::Current {
-            snapshot: label,
+            snapshot: label.clone(),
             anchor: SelectedAnchor {
                 kind: AnchorKind::Handler,
                 name: "validate".to_owned(),
@@ -211,7 +187,7 @@ fn write_current(
         },
     };
     Ok(Written {
-        snapshots: BTreeMap::from([(digest, bytes)]),
+        snapshots: BTreeMap::from([(label.clone(), bytes)]),
         invocations: BTreeMap::new(),
         selection: ClauseRunSelection::Clause(selection),
     })
@@ -223,23 +199,20 @@ fn write_update(directory: &Path, case: Case, pre: &[Row], post: &[Row]) -> io::
     let post_bytes = snapshot_bytes(case, "post", post, complete);
     write_json(directory, "spine-pre-snapshot.json", &pre_bytes)?;
     write_json(directory, "spine-post-snapshot.json", &post_bytes)?;
-    let pre_digest = document_digest(&pre_bytes);
-    let post_digest = document_digest(&post_bytes);
-    let pre_ref = document_ref(&identity_json(case, "pre"), pre_digest);
-    let post_ref = document_ref(&identity_json(case, "post"), post_digest);
+    let pre_ref = document_ref(&identity_json(case, "pre"));
+    let post_ref = document_ref(&identity_json(case, "post"));
     let invocation_bytes = invocation_bytes(case, "child", &pre_ref, &post_ref);
     write_json(directory, "spine-invocation.json", &invocation_bytes)?;
-    let invocation_digest = document_digest(&invocation_bytes);
-    let invocation_ref = document_ref(&identity_json(case, "invocation"), invocation_digest);
+    let invocation_ref = document_ref(&identity_json(case, "invocation"));
     let selection = ClauseSelection {
         name: case.spec().clause.name.to_owned(),
         input: ClauseSelectionInput::Invocation {
-            invocation: invocation_ref,
+            invocation: invocation_ref.clone(),
         },
     };
     Ok(Written {
-        snapshots: BTreeMap::from([(pre_digest, pre_bytes), (post_digest, post_bytes)]),
-        invocations: BTreeMap::from([(invocation_digest, invocation_bytes)]),
+        snapshots: BTreeMap::from([(pre_ref, pre_bytes), (post_ref, post_bytes)]),
+        invocations: BTreeMap::from([(invocation_ref.clone(), invocation_bytes)]),
         selection: ClauseRunSelection::Clause(selection),
     })
 }
@@ -257,8 +230,7 @@ fn write_function(
     let complete = case.spec().complete;
     let bytes = snapshot_bytes(case, "current", rows, complete);
     write_json(directory, "spine-snapshot.json", &bytes)?;
-    let digest = document_digest(&bytes);
-    let label = document_ref(&identity_json(case, "current"), digest);
+    let label = document_ref(&identity_json(case, "current"));
     let reference = |key: &str| ClauseArgumentValue::Reference {
         population: population_identity(),
         key: key.to_owned(),
@@ -275,10 +247,10 @@ fn write_function(
                 value: reference(other_key),
             },
         ],
-        snapshot: label,
+        snapshot: label.clone(),
     };
     Ok(Written {
-        snapshots: BTreeMap::from([(digest, bytes)]),
+        snapshots: BTreeMap::from([(label.clone(), bytes)]),
         invocations: BTreeMap::new(),
         selection,
     })
@@ -350,8 +322,8 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
     let request = json!({"format": "clause-run/1", "request": {
         "source": {"file": "spine-unit.native", "identity": "example/config-version-spine-unit"},
         "models": [{"format": "semantic-ir/2.0.0", "file": "spine-model.semantic-ir.json"}],
-        "snapshots": written.snapshots.keys().map(|digest| qsl_semantics::model::key::hex(digest)).collect::<Vec<_>>(),
-        "invocations": written.invocations.keys().map(|digest| qsl_semantics::model::key::hex(digest)).collect::<Vec<_>>(),
+        "snapshots": written.snapshots.keys().map(|reference| reference.identity.clone()).collect::<Vec<_>>(),
+        "invocations": written.invocations.keys().map(|reference| reference.identity.clone()).collect::<Vec<_>>(),
         "selection": selection,
     }});
     write_json(
@@ -380,7 +352,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
     // leaves `models` empty in `request.json`.
     let packages = if case.spec().include_model {
         let package = std::fs::read(directory.join("spine-model.semantic-ir.json"))?;
-        qsl_semantics::model::intake::package_input([package.as_slice()])
+        qsl_semantics::model::intake::package_input([package.as_slice()]).unwrap()
     } else {
         BTreeMap::new()
     };

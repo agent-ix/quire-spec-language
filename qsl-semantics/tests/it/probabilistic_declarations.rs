@@ -249,7 +249,7 @@ fn service_document_with_parameter_type(
 /// The unit selecting `Service`, with `dimension Time` and `unit ms`, and
 /// `body` after them; a `model` line of `body` is a second selection and
 /// goes in the header.
-fn service_unit(body: &str) -> (String, std::collections::BTreeMap<[u8; 32], Vec<u8>>) {
+fn service_unit(body: &str) -> (String, qsl_semantics::model::intake::PackageInput) {
     service_unit_over(&service_document(), body)
 }
 
@@ -257,18 +257,14 @@ fn service_unit(body: &str) -> (String, std::collections::BTreeMap<[u8; 32], Vec
 fn service_unit_over(
     document: &[u8],
     body: &str,
-) -> (String, std::collections::BTreeMap<[u8; 32], Vec<u8>>) {
-    let packages = package_input([document]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+) -> (String, qsl_semantics::model::intake::PackageInput) {
+    let packages = package_input([document]).unwrap();
     let (selections, body): (Vec<&str>, Vec<&str>) =
         body.lines().partition(|line| line.starts_with("model "));
     let packages = if selections.is_empty() {
         packages
     } else {
-        package_input([document, other_document().as_slice()])
+        package_input([document, other_document().as_slice()]).unwrap()
     };
     let (selections, body) = (selections.join("\n"), body.join("\n"));
     let unit = format!(
@@ -277,7 +273,7 @@ fn service_unit_over(
          profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          profile tm = \"quire.temporal.timed/v1\";\n\
-         model Service = {P:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         model Service = {P:?};\n\
          {selections}\n\
          dimension Time;\n\
          dimension Length;\n\
@@ -2999,13 +2995,9 @@ fn other_document() -> Vec<u8> {
 /// The `model Other` selection of [`other_document`]: a second model of
 /// the package.
 fn other_model() -> String {
-    let packages = package_input([other_document().as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = package_input([other_document().as_slice()]).unwrap();
     format!(
-        "model Other = {OTHER:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
-        qsl_semantics::model::key::hex(digest)
+        "model Other = {OTHER:?};"
     )
 }
 

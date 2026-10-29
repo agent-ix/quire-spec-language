@@ -174,8 +174,8 @@ struct World {
     keys: Vec<String>,
     package: CheckedPackage,
     clauses: Vec<CheckedTemporalClause>,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
 }
 
@@ -190,8 +190,7 @@ fn world(
     formulas: &[&str],
     start: &[(&str, Json)],
 ) -> World {
-    let packages = package_input([document]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document]).unwrap();
     let clauses: String = formulas
         .iter()
         .enumerate()
@@ -207,7 +206,6 @@ fn world(
          profile t = \"{profile}\";\n\
          model M = \"{PACKAGE}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{contracts}{clauses}",
-        hex(&digest)
     );
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "smt", "git", "1"),
@@ -248,8 +246,7 @@ fn world(
         .iter()
         .map(|(key, fields)| json!({"key": key, "type": ident(object), "fields": fields}))
         .collect();
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -261,21 +258,17 @@ fn world(
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     World {
         keys: start.iter().map(|(key, _)| (*key).to_owned()).collect(),
         package: CheckedPackage::link(graph),
         clauses,
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
+        snapshots: BTreeMap::from([(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes)]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         },
     }
 }

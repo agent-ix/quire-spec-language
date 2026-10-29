@@ -103,7 +103,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn spine(source: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> ComposedUnit {
+fn spine(source: &str, packages: &qsl_semantics::model::intake::PackageInput) -> ComposedUnit {
     compose(
         SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
         IDENTITY,
@@ -209,6 +209,7 @@ fn request(
             digest.hex(),
             bytes.to_vec(),
         )],
+        documents: vec![],
     }
 }
 
@@ -667,16 +668,12 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let jcs = PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
-        .unwrap()
-        .jcs_digest();
-    let hex: String = jcs.iter().map(|byte| format!("{byte:02x}")).collect();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
          model M = \"acme/orders\";\n\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
     );
-    let compiled = spine(&source, &package_input([document.as_slice()]));
+    let compiled = spine(&source, &package_input([document.as_slice()]).unwrap());
     let wire = || {
         request(
             source.as_bytes(),
@@ -687,11 +684,7 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     };
 
     let mut with_package = wire();
-    with_package.byte_provision.push((
-        Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-        hex.clone(),
-        document,
-    ));
+    with_package.documents.push(document);
     let ReplayResult::Input(result) = replay(with_package, ReplayLimits::default()).unwrap() else {
         panic!("Input arm");
     };

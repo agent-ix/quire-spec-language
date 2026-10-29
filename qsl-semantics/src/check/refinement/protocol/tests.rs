@@ -134,7 +134,6 @@ fn abstract_model() -> SelectedModel {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: ABSTRACT.to_owned(),
-            version: "1".to_owned(),
         },
         records,
     );
@@ -162,8 +161,7 @@ fn header(protocol_profile: bool) -> String {
     };
     HEADER.replacen("model M", &format!("{profile}model M"), 1)
         + &format!(
-            "model A = \"{ABSTRACT}\" version \"1\" digest \
-             \"sha256-jcs:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\";\n"
+            "model A = \"{ABSTRACT}\";\n"
         )
 }
 

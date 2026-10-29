@@ -448,10 +448,10 @@ impl super::AdmittedObservations {
             documents: [&self.current, &self.pre, &self.post]
                 .into_iter()
                 .flatten()
-                .map(|held| held.identity.digest)
+                .map(|held| held.identity.key())
                 .collect(),
             role,
-            origin: ObservationOrigin::Document(observation.identity.digest),
+            origin: ObservationOrigin::Document(observation.identity.key()),
         };
         ResolveBundle::over(&observation.environment, &key, types)
     }

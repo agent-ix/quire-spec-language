@@ -58,26 +58,17 @@ fn history_domain_document() -> Vec<u8> {
     envelope.to_string().into_bytes()
 }
 
-fn packages() -> BTreeMap<[u8; 32], Vec<u8>> {
+fn packages() -> qsl_semantics::model::intake::PackageInput {
     let document = history_domain_document();
-    qsl_semantics::model::intake::package_input([document.as_slice()])
+    qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap()
 }
 
-fn model_digest_hex() -> String {
-    let packages = packages();
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    hex(digest)
-}
 
 fn unit_text() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
-         digest \"sha256-jcs:{}\";\n{CLAUSES}",
-        model_digest_hex()
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?};\n{CLAUSES}"
     )
 }
 
@@ -109,7 +100,6 @@ fn snapshot(label: &DocumentRef, observation: &str, history: &[i64]) -> Vec<u8> 
         "anchor": {"kind": "handler", "name": "validate"},
         "model": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", model_digest_hex()),
         },
         "populations": [{
             "population": config_version_population_identity(),
@@ -155,7 +145,7 @@ fn run_current(clause: &str, history: &[i64]) -> super::super::ClauseRunReport {
         label.clone(),
         "mid",
     ));
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.clone(), bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -172,7 +162,7 @@ fn run_pre_call(history: &[i64]) -> super::super::ClauseRunReport {
             parameters: BTreeMap::new(),
         },
     });
-    request.snapshots.insert(label.digest, bytes);
+    request.snapshots.insert(label.clone(), bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 
@@ -180,23 +170,22 @@ fn run_pre_call(history: &[i64]) -> super::super::ClauseRunReport {
 /// snapshots, two documents, each hold `history` (`attemptUpdate`'s frame
 /// leaves `history` unchanged).
 fn run_invocation(history: &[i64]) -> super::super::ClauseRunReport {
-    let digest_hex = model_digest_hex();
     let (pre_label, pre_bytes) =
         document_ref_and_bytes("member-pre", |label| snapshot(label, "pre", history));
     let (post_label, post_bytes) =
         document_ref_and_bytes("member-post", |label| snapshot(label, "post", history));
     let (invocation_label, invocation_bytes) = document_ref_and_bytes("member-call", |label| {
-        config_version_invocation_bytes(label, &digest_hex, &pre_label, &post_label, "mid")
+        config_version_invocation_bytes(label, &pre_label, &post_label, "mid")
     });
     let mut request = request(config_version_invocation_selection(
         "MemberPre",
         invocation_label.clone(),
     ));
-    request.snapshots.insert(pre_label.digest, pre_bytes);
-    request.snapshots.insert(post_label.digest, post_bytes);
+    request.snapshots.insert(pre_label.clone(), pre_bytes);
+    request.snapshots.insert(post_label.clone(), post_bytes);
     request
         .invocations
-        .insert(invocation_label.digest, invocation_bytes);
+        .insert(invocation_label.clone(), invocation_bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
 

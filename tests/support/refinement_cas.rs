@@ -423,20 +423,11 @@ pub fn mutated(body: &str, from: &str, to: &str) -> String {
 
 /// The unit text: both models, their contracts and `refinement`.
 fn unit_text(
-    documents: &BTreeMap<[u8; 32], Vec<u8>>,
+    documents: &qsl_semantics::model::intake::PackageInput,
     refinement: &str,
     variant: Variant,
 ) -> String {
-    let digest = |package: &str| {
-        documents
-            .iter()
-            .find(|(_, bytes)| {
-                serde_json::from_slice::<Json>(bytes)
-                    .is_ok_and(|json| json["package"]["identity"] == package)
-            })
-            .map(|(digest, _)| hex(digest))
-            .expect("the package is provisioned")
-    };
+    let _ = documents;
     // Leading `profile` lines of `refinement` are header selections.
     let (profiles, refinement) = {
         let split = refinement
@@ -456,9 +447,6 @@ fn unit_text(
          pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
          post Inc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
          {}{}{}{refinement}\n",
-        digest(SPEC),
-        digest(CAS),
-        digest(THIRD),
         worker("A", variant),
         worker("B", variant),
         if variant.add {
@@ -470,13 +458,14 @@ fn unit_text(
     )
 }
 
-/// The two domain packages' documents, by digest.
-pub fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
+/// The two domain packages' documents, by identity.
+pub fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
         spec_document(SPEC, variant.add).as_slice(),
         cas_document(variant).as_slice(),
         spec_document(THIRD, false).as_slice(),
     ])
+    .unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
@@ -521,18 +510,13 @@ fn snapshot(
     package: &str,
     document: &[u8],
     (fields, keys): (Json, &[String]),
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
 ) -> DocumentRef {
     let objects: Vec<Json> = keys
         .iter()
         .map(|key| json!({"key": key, "type": ident(package, "Counter"), "fields": fields}))
         .collect();
-    let model_digest = *package_input([document])
-        .keys()
-        .next()
-        .expect("one package");
-    let header = json!({"identity": package, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&model_digest))});
+    let header = json!({"identity": package});
     let name = format!("{package}/start");
     let snapshot = json!({
         "format": "quire.state.snapshot/v1",
@@ -545,16 +529,12 @@ fn snapshot(
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(digest, bytes);
+    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     DocumentRef {
         authority: "test".to_owned(),
         identity: name,
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest,
     }
 }
 
@@ -562,8 +542,8 @@ fn snapshot(
 pub struct World {
     keys: Vec<String>,
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     spec_initial: DocumentRef,
     spec_one: DocumentRef,
     cas_initial: DocumentRef,

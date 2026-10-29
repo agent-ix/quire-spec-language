@@ -1139,7 +1139,6 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
                 ),
             ],
         );
-        let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.value.complete/v1\";\n\

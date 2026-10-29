@@ -262,7 +262,7 @@ fn other_document(document: &[u8]) -> Vec<u8> {
 }
 
 fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
-    let packages = package_input(documents.iter().copied());
+    let packages = package_input(documents.iter().copied()).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "hyper", "git", "1"),
         "hyper.native",
@@ -307,15 +307,13 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
 /// each vault of a busy world has `busy` as its flag.
 fn snapshot(
     document: &[u8],
-    snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &mut qsl_semantics::model::observation::DocumentProvision,
     name: &str,
     vaults: &[(&str, (i64, i64))],
     busy: Option<i64>,
     second: Option<&[(&str, (i64, i64))]>,
 ) -> DocumentRef {
-    let digest = *package_input([document]).keys().next().expect("one model");
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let population = |package: &str, vaults: &[(&str, (i64, i64))]| {
         let ident = |suffix: &str| format!("ix://{package}/{suffix}");
         json!({"population": ident("vaults"), "complete": true,
@@ -341,28 +339,21 @@ fn snapshot(
     });
     let bytes = body.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let hash = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
-    snapshots.insert(hash, bytes);
+    snapshots.insert(qsl_semantics::model::observation::document_reference(&bytes).expect("a document names itself"), bytes);
     DocumentRef {
         authority: "test".to_owned(),
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: hash,
     }
 }
 
 /// The unit text: the header selecting the domain package as `V` (and the
 /// second as `N`), the secure `step` contract, and `body`.
 fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &str) -> String {
-    let digest = *package_input([document]).keys().next().expect("one model");
     let second = other.map_or_else(String::new, |other| {
-        let digest = *package_input([other]).keys().next().expect("one model");
         format!(
-            "model {OTHER_ALIAS} = \"{OTHER}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
-            hex(&digest)
+            "model {OTHER_ALIAS} = \"{OTHER}\";\n"
         )
     });
     format!(
@@ -372,7 +363,6 @@ fn unit_text(document: &[u8], other: Option<&[u8]>, build: &Build<'_>, body: &st
          model V = \"{PACKAGE}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n\
          post Step using v on V::Vault::step {{ {} }}\n{}\n{body}",
-        hex(&digest),
         build.post,
         build.extra,
     )
@@ -384,10 +374,10 @@ pub struct World {
     temporal_clause: Option<CheckedTemporalClause>,
     /// The same clause as S3 checked it, before any package assembled it.
     pub unassembled: CheckedHyperClause,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     /// A provision that holds no document.
-    no_snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    no_snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
     /// The keys of the universe of `vaults`.
     pub universe: Vec<String>,
@@ -505,7 +495,7 @@ impl World {
             package,
             temporal_clause,
             unassembled,
-            packages: package_input(documents.iter().copied()),
+            packages: package_input(documents.iter().copied()).unwrap(),
             snapshots,
             no_snapshots: BTreeMap::new(),
             initial,
