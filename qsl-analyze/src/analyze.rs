@@ -114,7 +114,7 @@ impl Engine {
     ///
     /// Only if the registry's admission rules refuse the arm's own manifest.
     pub fn contract_check() -> Result<Self, RegistrationRefusal> {
-        contract_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+        contract_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// The value-validity arm publishing `max_cases` as its default case

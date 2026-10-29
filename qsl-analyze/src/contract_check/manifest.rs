@@ -13,8 +13,8 @@ use std::num::NonZeroU64;
 
 use qsl_foundation::bound::DomainKind;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, ManifestDigest, ManifestMembers, Mode,
-    ProviderOrigin, RegistrationRefusal,
+    descriptor_from_manifest, BackendDescriptor, Candidate, ManifestMembers, Mode, ProviderOrigin,
+    RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -41,14 +41,10 @@ pub const DEFAULT_MAX_CASES: NonZeroU64 = NonZeroU64::new(65_536).unwrap();
 ///
 /// Only if the registry's admission rules refuse this module's own data,
 /// which the tests of this module rule out.
-pub fn descriptor(
-    origin: ProviderOrigin,
-    manifest_digest: ManifestDigest,
-) -> Result<BackendDescriptor, RegistrationRefusal> {
+pub fn descriptor(origin: ProviderOrigin) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),
         origin,
-        manifest_digest,
         ADVERTISED,
         ManifestMembers {
             domains: Some(&DOMAINS),
