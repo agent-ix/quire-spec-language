@@ -216,13 +216,13 @@ wording.
   record of a refinement `Certified` exactly when `check_refinement_smt_proof`
   (FR-314 "Refinement certificates") returns `Verified` for the refinement's
   certificate, against the queries FR-315 encodes (FR-315 "Refinement
-  queries"); `Uncertified` when it returns `Unverifiable` or no certificate
-  came; and, when it rejects at a part, the record of that part (the `Initial`
+  queries"); `Uncertified` when it returns `Unverifiable` or `Unencodable`
+  or no certificate came, and never `Certified` in those cases; and, when it rejects at a part, the record of that part (the `Initial`
   record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`)
   `Inconclusive(CertificateRejected{rule, at})` and every other record
   `Uncertified`. A refinement with a row whose query FR-315 refuses to encode (a
   `_` argument, an `any` row, a protocol or `binds_result` row, or a term outside `QF_LIA`: FR-315 "Refinement queries") gets `Unencodable`
-  from the checker (FR-314), so every record of it is `Uncertified` unless the
+  from the checker (FR-314), so every record of it is `Uncertified`, never `Certified`, unless the
   checker rejects a part (that part's record is then
   `Inconclusive(CertificateRejected{rule, at})`); a backend counterexample still settles
   `Inconclusive(InductionNotClosed{depth: 1})`.

@@ -37,7 +37,8 @@ LA-3). FR-127's settlement map runs the check: a proof whose certificate it
 verifies settles `proved`, `Certified`; one it shows wrong
 settles `inconclusive`, `CertificateRejected{rule, at}`; one it cannot
 verify because a step uses an unchecked rule settles `proved`,
-`Uncertified`, as an SMT proof that arrives with no certificate does.
+`Uncertified`, as an SMT proof that arrives with no certificate does. The
+settlement rule under "Outputs" states the whole mapping once.
 
 For a refinement's per-step simulation obligations (QSpec FR-468),
 `check_refinement_smt_proof` SHALL accept a `RefinementSmtCertificate` exactly
@@ -160,10 +161,16 @@ Each entry returns `Result<SmtProofCheck, CertificateRejection>`:
 - `Err(CertificateRejection{rule, at})` naming the first rule that failed
   and where.
 
-FR-127's settlement map reads each alternative: `Verified` settles `proved`,
-`Certified`; `Unverifiable` and `Unencodable` settle `proved`, `Uncertified`;
-`Stopped` settles V-7; `Fault` settles `failed`; `Err` settles
-`inconclusive`, `CertificateRejected{rule, at}`.
+**Settlement rule.** FR-127's settlement map reads each alternative, and this
+is the one statement of the mapping: `Verified` settles `proved`, `Certified`;
+`Unverifiable` and `Unencodable` each settle `proved`, `Uncertified`; `Stopped`
+settles V-7; `Fault` settles `failed`; `Err` settles `inconclusive`,
+`CertificateRejected{rule, at}`. `Verified` is the only alternative that
+settles `Certified`. `Unverifiable` and `Unencodable` are never `Verified` and
+never `Certified`: neither shows the certificate wrong, and neither shows the
+query refuted by checked rules, so a caller never reports either as verified,
+and a refinement's records are `Certified` only when the checker returned
+`Verified` for the whole certificate (FR-146).
 
 ## Behavior
 
@@ -308,6 +315,14 @@ number of step rows of the recompiled refinement's `steps` array.
   order, `Unencodable { part: Step { row: Some(r) } }` naming that row; a
   certificate with a refused row is never `Verified`. `Unencodable` is distinct
   from `Unverifiable`, so no command index stands for a whole part.
+- When FR-315 refuses the `Initial` query, whatever the code (`out-of-fragment`
+  for a mapping row outside `QF_LIA` included), the checker SHALL reject with
+  `QueryMismatch` at `Base`: FR-315 prints no initial query, so no carried
+  base query equals one, and the base part has no expected query to compare.
+  The refusal is not `Unencodable`, which names a step row only. The refinement
+  fails closed at `Base`, the first part in the order above: no step part is
+  compared or checked, and the half settles `inconclusive`,
+  `CertificateRejected{QueryMismatch, Base}`, never `proved`.
 - The checker SHALL return `Verified` only when every row is encodable and the
   base and every step part refute their queries using checked rules alone.
 
@@ -340,6 +355,7 @@ command. Every other rule is unchecked.
 | FR-314-AC-6 | Each entry returns `Result<SmtProofCheck, CertificateRejection>`, and its `Ok` is never empty: AC-1's accepted bounded and inductive certificates return `Ok(SmtProofCheck::Verified)`; AC-2's `QueryMismatch` certificate returns `Err(CertificateRejection{rule: QueryMismatch, at: Query { part: Unrolling }})`; AC-2's `hole` certificate returns `Ok(Unverifiable { part: Unrolling, step })` at that step; AC-4's `CasRefinesCounterAdd` certificate returns `Ok(Unencodable { part: Step { row: Some(r) } })`; AC-5's limit-stopped certificate returns `Ok(Stopped(LimitReached{..}))`. AC-1's bounded certificate checked for the TP-2 `on origin` claim `always[0,3] holds(c.value * c.value <= 9)` at `BoundedComplete{depth: 3}`, whose unrolling FR-315 refuses `out-of-fragment`, returns `Err` with `QueryMismatch` at `Query { part: Unrolling }` and settles `inconclusive`, `CertificateRejected`. | Test (TC-1199) |
 | FR-314-AC-7 | FR-314-AC-1's bounded certificate for `always[0,3] holds(c.value <= 3)` at `BoundedComplete{depth: 3}`, whose unrolling query declares eight constants, checked with a `CertificateRequest` whose `smt_encoding` has `max_constants` 8 and every other member at its default, returns `Verified`: the checker rebuilds the query under 8 and it equals the carried one byte for byte. The same certificate with `smt_encoding.max_constants` 7 is rejected `QueryMismatch` at `Query { part: Unrolling }`, FR-315 refusing the rebuild `too-large` naming `constants`, value 8, limit 7 and setting `smt_encoding.max_constants`, and settles `inconclusive`, `CertificateRejected`, never `proved`. A request recording the defaults returns `Verified`. | Test (TC-1250) |
 | FR-314-AC-8 | Over FR-314-AC-1's `Counter` under event-position false-extension, the TP-2 `on origin` claim `always[0,3] eventually[0,1] holds(c.value = 3)`, horizon 4, which FR-315-AC-35 refutes: a `BoundedComplete{depth: 0}` certificate whose carried query and proof are otherwise well formed is rejected `ShapeMismatch` at `Query { part: Unrolling }` before any query is encoded, and settles `inconclusive`, `CertificateRejected`, never `proved`; a `BoundedComplete{depth: 0}` result for it with no certificate settles the same. FR-314-AC-1's `always[0,3] holds(c.value <= 3)` with a `BoundedComplete{depth: 2}` basis, below its horizon 3, is rejected the same way, and so is a `BoundedComplete{depth: 3}` basis for the TP-1 item `always holds(c.value <= 3)`. FR-314-AC-1's accepted `BoundedComplete{depth: 3}` certificate is still accepted. | Test (TC-1201) |
+| FR-314-AC-9 | Over `CasRefinesCounter` with a mapping row outside `QF_LIA`, so that FR-315 refuses `Initial` `out-of-fragment` naming the row, a certificate with a base part and seven step parts, the base part carrying the query of an in-fragment initial state, and the same certificate with an empty base part, are each rejected `QueryMismatch` at `Base`, never `Unencodable` and never `Unverifiable`, whatever the step parts carry (a `hole` proof in a step part included), and the refinement's `Initial` record settles `inconclusive`, `CertificateRejected{QueryMismatch, Base}`. Over `CasRefinesCounterAdd`, whose `bump` query alone is refused, the same certificate is not rejected: it returns `Unencodable`, `proved`, `Uncertified`. | Test (TC-893) |
 
 ## Dependencies
 
