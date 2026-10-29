@@ -79,6 +79,9 @@ pub struct Variant {
     /// `Queue` has `next: Reference<Queue>`, and `rings` admits a subtype
     /// `SubRing` of `Ring` that no object row names (FR-140-AC-6).
     pub next: bool,
+    /// The abstract `Queue` has an optional `head: Digit?` field
+    /// (FR-140-AC-11).
+    pub optional_head: bool,
     /// `rings` admits the subtype `SubRing` of `Ring` (FR-140-AC-9).
     pub sub_ring: bool,
     /// The abstract `Queue` also has `x: Int[0, 1]` and `y: Int[0, 1]`
@@ -160,6 +163,11 @@ fn queue_fields(variant: Variant) -> Vec<Json> {
             "next",
             &node(QUEUE, "Queue"),
         ));
+    }
+    if variant.optional_head {
+        let mut head = ring_queue::single(QUEUE, "Queue", "head", &digit);
+        head["presence"] = json!("optional");
+        fields.push(head);
     }
     if variant.xy {
         fields.push(ring_queue::single(QUEUE, "Queue", "x", &digit));
@@ -418,6 +426,9 @@ impl RingWorld {
         });
         let mut snapshots = BTreeMap::new();
         let mut queue_fields = json!({"items": {"sequence": []}});
+        if variant.optional_head {
+            queue_fields["head"] = json!({"absent": {}});
+        }
         if variant.next {
             queue_fields["next"] =
                 json!({"reference": {"population": node(QUEUE, "queues"), "key": "r"}});

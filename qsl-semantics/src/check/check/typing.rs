@@ -422,12 +422,21 @@ enum Unary<'r> {
     Not,
     Present,
     Value,
+    OptionSome(Option<Want<'r>>),
     Deref,
     Pre,
     Flatten,
     Size,
     Convert(ValueType),
     AllInstances(ValueType),
+}
+
+/// Whether an unqualified expression call names the built-in present-option
+/// value constructor. This is a source-spelling intake point, like the native
+/// literal classifier.
+#[ix_trace_rs::string_edge]
+fn is_option_some_constructor(name: &str) -> bool {
+    name == "Some"
 }
 
 /// `deref(r).f`, its `deref(r)` operand at `operand_location`.
@@ -1078,7 +1087,7 @@ impl<'a> Typer<'a> {
                     CheckRefusal::ill_typed(&location, IllTypedCause::OperatorIneligible)
                 } else {
                     missing_segment(&name.name, &location)
-                });
+                })
             }
             ExprNode::Name(name) if self.population_named(&name.name).is_some() => {
                 self.population_objects(&name.name, &location)?
@@ -1119,7 +1128,7 @@ impl<'a> Typer<'a> {
                     cause: CheckCause::Hyper(Box::new(
                         crate::check::hyper_clause::HyperCause::OutsideHyperClause,
                     )),
-                })
+                });
             }
             ExprNode::Case(case) => {
                 return Ok(Self::case(
@@ -1304,6 +1313,25 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             ExprNode::Call { name, arguments } => {
+                if is_option_some_constructor(&name.name) {
+                    let [argument] = arguments.as_slice() else {
+                        return Err(mismatch(&location));
+                    };
+                    let payload_hint = hint.as_deref().and_then(|value_type| {
+                        if let ValueType::Option(payload) = value_type {
+                            Some(Cow::Owned((**payload).clone()))
+                        } else {
+                            None
+                        }
+                    });
+                    let argument_location = location.child(0);
+                    return Ok(Self::unary(
+                        Unary::OptionSome(payload_hint.clone()),
+                        Goal::Infer(expression.at(*argument), payload_hint, argument_location),
+                        location,
+                        frames,
+                    ));
+                }
                 if let Some(constructor) = NativeConstructor::named(&name.name) {
                     self.native_literal(constructor, &name.name, expression, arguments, &location)?
                 } else {
@@ -1463,7 +1491,7 @@ impl<'a> Typer<'a> {
                     (expression.at(*source), expression.at(*summand)),
                     location,
                     frames,
-                )
+                );
             }
             ExprNode::Population {
                 form,
@@ -1481,7 +1509,7 @@ impl<'a> Typer<'a> {
                     ),
                     location,
                     frames,
-                )
+                );
             }
             ExprNode::Seq {
                 binder,
@@ -2636,6 +2664,19 @@ impl<'a> Typer<'a> {
                 Ok(node(
                     NodeKind::Value(self.push(operand)),
                     payload,
+                    &location,
+                ))
+            }
+            Unary::OptionSome(payload_hint) => {
+                if let Some(expected) = payload_hint {
+                    if &operand.value_type != expected.as_ref() {
+                        return Err(mismatch(&location));
+                    }
+                }
+                let value_type = ValueType::Option(Arc::new(operand.value_type.clone()));
+                Ok(node(
+                    NodeKind::OptionSome(self.push(operand)),
+                    value_type,
                     &location,
                 ))
             }
