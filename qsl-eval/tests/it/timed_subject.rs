@@ -5346,7 +5346,18 @@ fn the_clock_presence_frame_vectors_step_as_published() {
         assert_eq!(observed, expected, "{id}: {post}");
         ran += 1;
     }
-    assert_eq!(ran, 7);
+    // Every published case ran (stepped or refused), and each id is its own:
+    // the count is the published file's, never a copy of it.
+    let cases = vectors["cases"].as_array().expect("cases");
+    let mut ids: Vec<&str> = cases
+        .iter()
+        .map(|case| case["id"].as_str().expect("an id"))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert!(!cases.is_empty(), "the file publishes cases");
+    assert_eq!(ids.len(), cases.len(), "each published id is distinct");
+    assert_eq!(ran, cases.len());
 }
 
 /// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21), the timed subject's

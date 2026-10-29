@@ -510,10 +510,7 @@ impl<'a> Run<'_, 'a> {
         let hyper: Vec<HyperState> = candidate
             .states
             .iter()
-            .map(|state| HyperState {
-                components: vec![state.clone()],
-                property: Property::Dead,
-            })
+            .map(|state| HyperState::new(vec![state.clone()], Property::Dead))
             .collect();
         let mut letters = Positions {
             letters: self.request.letters,
@@ -742,6 +739,7 @@ impl<'a> Run<'_, 'a> {
                 limit: None,
             },
             ProductHalt::Automaton(limit) => stopped(ModelCheckLimit::MaxAutomatonStates, limit),
+            ProductHalt::AutomatonKey(error) => return Err(HyperRefusal::Automaton(error).into()),
             ProductHalt::Atom(stop) => return Err(super::atom_halt(stop)),
             ProductHalt::Encoding(refusal) => return Err(ModelCheckRefusal::Encoding(refusal)),
             ProductHalt::Fault(internal) => return Err(ModelCheckRefusal::Fault(internal)),

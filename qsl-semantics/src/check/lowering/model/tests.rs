@@ -46,7 +46,7 @@ const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 /// from the vector's preimage. The vectors that name a QSpec key are absent
 /// while `QSPEC_DIR` is unset.
 fn vectors() -> BTreeMap<String, (String, String)> {
-    crate::check::lowering::spec_vectors::vectors("FR-094")
+    crate::check::spec_vectors::vectors("FR-094")
 }
 
 fn vector_key(name: &str) -> NodeKey {
@@ -1064,7 +1064,7 @@ mod quantities {
     /// `name_or_hex`, with a QSpec vector name replaced by that vector's key.
     fn resolved(name_or_hex: &str) -> String {
         if name_or_hex.starts_with("dimension-") || name_or_hex.starts_with("unit-") {
-            crate::check::lowering::spec_vectors::local_key(name_or_hex)
+            crate::check::spec_vectors::local_key(name_or_hex)
                 .unwrap_or_else(|| panic!("QSpec publishes no vector {name_or_hex}"))
         } else {
             name_or_hex.to_owned()
@@ -1077,7 +1077,7 @@ mod quantities {
     #[test]
     fn the_nominal_keys_are_qspecs_published_vectors() {
         for name in [LENGTH, TIME, METRE, SECOND] {
-            let Some(published) = crate::check::lowering::spec_vectors::published_key(name) else {
+            let Some(published) = crate::check::spec_vectors::published_key(name) else {
                 println!("skipped: QSPEC_DIR not set");
                 return;
             };

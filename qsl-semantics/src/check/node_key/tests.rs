@@ -680,10 +680,29 @@ fn a_one_member_group_keys_to_g1() {
     let group = keys_of(&[node], &[handle]).expect("G1 keys");
 
     let template = r#"{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"@GROUP@","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}"#;
-    // The member's preimage names the group by its digest, and its key is
-    // the SHA-256 of those bytes, hashed here independently of the key
-    // function.
-    let group_digest = hex(&group.digest);
+    // FR-092's G1 group digest and member signature, recomputed from the
+    // spec's hand-written preimage. The member's key is the SHA-256 of its
+    // preimage bytes, hashed here independently of the key function.
+    let group_digest =
+        crate::check::spec_vectors::group_digest("FR-092", "G1").expect("G1's group digest");
+    // The signature the group-order passes (FR-092 "The group order") give
+    // the one member: its shape is the vector's preimage with `recursion`
+    // null and the self reference written without its ordinal (declaration
+    // and owner are already absent, so the anonymous and full shapes
+    // agree). The first round's signature already has one distinct value
+    // where `h0` had one, so the pass stops there.
+    let shape = crate::check::spec_vectors::raw_preimage("FR-092", "G1")
+        .replace(
+            r#""recursion":{"group":"<group digest of G1>","ordinal":0,"size":1}"#,
+            r#""recursion":null"#,
+        )
+        .replace(
+            r#"{"ordinal":0,"term":"group_reference"}"#,
+            r#"{"term":"group_reference"}"#,
+        );
+    let sha = |text: &str| hex(&Sha256::digest(text.as_bytes()).into());
+    let h0 = sha(&shape);
+    let signature = sha(&format!(r#"{{"shape":"{h0}","targets":["{h0}"]}}"#));
     let expected = template.replace("@GROUP@", &group_digest);
     assert_eq!(
         String::from_utf8(group.members[0].preimage.clone()).expect("UTF-8"),
@@ -693,8 +712,9 @@ fn a_one_member_group_keys_to_g1() {
         group.members[0].key,
         NodeKey::from_digest(Sha256::digest(expected.as_bytes()).into())
     );
-    assert_eq!(group.anonymous, group.full);
-    assert_eq!(group.anonymous.len(), 1);
+    assert_eq!(hex(&group.digest), group_digest);
+    assert_eq!(group.anonymous, std::slice::from_ref(&signature));
+    assert_eq!(group.full, [signature]);
     assert_eq!((group.ordinals.as_slice(), group.size), (&[0][..], 1));
 }
 
