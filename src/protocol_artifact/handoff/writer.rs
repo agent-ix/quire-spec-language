@@ -222,8 +222,8 @@ const UNITS: &[UnitRecipe] = &[
     },
 ];
 
-// The committed `/2` handoff predates the distinct-authority `/1` correction.
-// Keep its exact authored source/model inputs frozen rather than silently
+// The `/2` handoff predates the distinct-authority `/1` correction. Keep its
+// exact authored source/model inputs frozen rather than silently
 // regenerating another contract version as a side effect of `/1` maintenance.
 const UNITS_V2: &[UnitRecipe] = &[
     UnitRecipe {
