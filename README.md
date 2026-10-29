@@ -284,11 +284,25 @@ ceiling is an explicit refusal naming the file (exit 20), never truncated.
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
   --model examples/switch-transition/switch.semantic-ir.json \
-  examples/switch-transition/switch.native > package.json
+  examples/switch-transition/switch.native.in > package.json
 ```
 
 The package is read back with the same domain documents as evidence
 (`CheckedPackageEvidence::insert_domain_package_document`).
+
+**Source templates.** A source that carries the placeholder `{model_digest}` where a
+`model` statement's digest goes (as `examples/switch-transition/switch.native.in` does) is
+filled, byte-wise, with the `sha256-jcs` digest of the single `--model` file, so no
+committed file freezes a digest. Every occurrence of the exact text `{model_digest}` is
+replaced; other `{...}` text is untouched and `{{model_digest}}` becomes the digest in
+single braces; a non-UTF-8 source is filled the same way and left to the producer to
+refuse. A template with no `--model`, several, or one that is not a domain package
+document is an explicit refusal (exit 20, each with its own message). `--source-out
+<path>` writes the rendered source only for a template, only after the producer accepted
+it, and atomically (temporary file, then rename); a refusal leaves no file and a source
+without the placeholder is not copied. The emitted bytes embed the path of the source as
+given, that is the template path (`examples/switch-transition/switch.native.in`), not the
+path of the rendered file.
 
 **Accepted execution points.** `--execution-points <file>` supplies accepted
 state-clause execution points (FR-104-AC-15) through the producer's

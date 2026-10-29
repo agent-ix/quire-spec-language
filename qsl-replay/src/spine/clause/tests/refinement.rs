@@ -424,10 +424,10 @@ fn a_prohibited_form_is_prohibited() {
 /// pending.
 #[trace("TC-861", "FR-341-AC-6")]
 #[test]
-fn a_construct_without_a_node_yet_is_unsupported() {
+fn a_protocol_with_an_attempt_is_unsupported_until_its_attempt_nodes_are_keyed() {
     let refusal = check(vec![CheckCause::ProtocolReference(Box::new(
         ProtocolReferenceCause::NotEmitted {
-            construct: qsl_semantics::check::ProtocolConstruct::Requirements,
+            construct: qsl_semantics::check::ProtocolConstruct::ReferenceToAttemptProtocol,
         },
     ))]);
     let classified = classify_refusal(&refusal);

@@ -3774,11 +3774,40 @@ impl PackageDeclarations {
             }
         };
         lowering.begin_protocols(protocol_list.len());
-        let protocol_edges: Vec<(Vec<usize>, Vec<usize>)> = protocol_list
+        let temporal_positions: BTreeMap<usize, usize> = checked_temporal
             .iter()
-            .map(lowering::ProtocolInput::dependencies)
+            .enumerate()
+            .map(|(dense, (source, _, _))| (*source, dense))
             .collect();
-        let order = lowering::dependency_order(&function_edges, &protocol_edges);
+        let protocol_edges: Vec<(Vec<usize>, Vec<usize>, Vec<usize>)> = protocol_list
+            .iter()
+            .map(|protocol| {
+                let (functions, protocols, required) = protocol.dependencies();
+                let required = required
+                    .iter()
+                    .filter_map(|source| temporal_positions.get(source).copied())
+                    .collect();
+                (functions, protocols, required)
+            })
+            .collect();
+        let temporal_edges: Vec<(Vec<usize>, Vec<usize>)> = checked_temporal
+            .iter()
+            .map(|(_, _, conditions)| {
+                let mut functions = Vec::new();
+                let mut protocols = Vec::new();
+                for condition in conditions.all() {
+                    let root = condition.body.root();
+                    functions.extend(root.callees());
+                    protocols.extend(root.protocol_references());
+                }
+                functions.sort_unstable();
+                functions.dedup();
+                protocols.sort_unstable();
+                protocols.dedup();
+                (functions, protocols)
+            })
+            .collect();
+        let order = lowering::dependency_order(&function_edges, &protocol_edges, &temporal_edges);
         let lower_protocol = |lowering: &mut lowering::Lowering<'_>,
                               refusals: &mut Vec<CheckRefusal>,
                               index: usize,
@@ -3828,6 +3857,35 @@ impl PackageDeclarations {
                 .collect();
             refusals.extend(lowering.function_group(group, &inputs));
         };
+        let mut lowered_temporal: Vec<Option<lowering::LoweredTemporalClause>> =
+            std::iter::repeat_with(|| None)
+                .take(checked_temporal.len())
+                .collect();
+        let lower_temporal =
+            |lowering: &mut lowering::Lowering<'_>,
+             refusals: &mut Vec<CheckRefusal>,
+             dense: usize,
+             lowered_temporal: &mut Vec<Option<lowering::LoweredTemporalClause>>| {
+                let Some((index, checked, conditions)) = checked_temporal.get(dense) else {
+                    return;
+                };
+                match lowering.temporal_clause(&lowering::TemporalClauseInput {
+                    index: *index,
+                    clause: checked,
+                    conditions,
+                }) {
+                    Ok(lowered) => {
+                        lowering.record_temporal_key(*index, lowered.key);
+                        if let Some(slot) = lowered_temporal.get_mut(dense) {
+                            *slot = Some(lowered);
+                        }
+                    }
+                    Err(refusal) => {
+                        lowering.record_temporal_refused(*index);
+                        refusals.push(refusal);
+                    }
+                }
+            };
         for step in &order {
             match step {
                 lowering::LoweringStep::Functions(group) => {
@@ -3836,15 +3894,22 @@ impl PackageDeclarations {
                 lowering::LoweringStep::Protocol(index) => {
                     lower_protocol(&mut lowering, &mut refusals, *index, false);
                 }
+                lowering::LoweringStep::Temporal(index) => {
+                    lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
+                }
                 lowering::LoweringStep::Cycle {
                     protocols,
                     functions,
+                    temporals,
                 } => {
                     for index in protocols {
                         lower_protocol(&mut lowering, &mut refusals, *index, true);
                     }
                     for group in functions {
                         lower_functions(&mut lowering, &mut refusals, group);
+                    }
+                    for index in temporals {
+                        lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
                     }
                 }
             }
@@ -4493,38 +4558,9 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
-        // FR-135: the clause a refinement's rows select, by its node.
-        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
-            let Some(selected) = selected else {
-                continue;
-            };
-            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
-                Ok(key) => checked.concrete_protocol = Some(key),
-                // Under the test opt-in a protocol with an unwritten
-                // construct has no clause key, and is refused nowhere.
-                Err(refusal)
-                    if self.emit_unwritten_protocols
-                        && matches!(
-                            &refusal.cause,
-                            CheckCause::ProtocolReference(cause)
-                                if cause.construct().is_some()
-                        ) => {}
-                // An attempt-bearing protocol is keyed only when no earlier
-                // refusal skipped its node; the earlier refusal is reported.
-                Err(refusal)
-                    if !attempt_nodes_written
-                        && matches!(
-                            &refusal.cause,
-                            CheckCause::ProtocolReference(cause)
-                                if cause.construct()
-                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
-                        ) => {}
-                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
-            }
-        }
-        // FR-375: a protocol subject's `protocol` key, its abstract clause's
-        // node. A clause with no node refuses at the clause itself, and the
-        // refinement stays unemitted.
+        // FR-375: a protocol subject's abstract side names the emitted
+        // protocol clause node. Resolve it after dependency-ordered protocol
+        // lowering (and after attempt-bearing clauses receive their nodes).
         for checked in &mut refinements {
             let AbstractSide::Protocol { clause } = &checked.abstract_side else {
                 continue;
@@ -4542,18 +4578,31 @@ impl PackageDeclarations {
                 checked.node = lowering.protocol_key(index, &root(Origin::Expression)).ok();
             }
         }
-        // FR-337: each emitted temporal clause, after every function its
-        // conditions may call, minting its node identity and recording its
-        // `claim` occurrence.
-        let mut lowered_temporal = Vec::with_capacity(checked_temporal.len());
-        for (index, checked, conditions) in &checked_temporal {
-            match lowering.temporal_clause(&lowering::TemporalClauseInput {
-                index: *index,
-                clause: checked,
-                conditions,
-            }) {
-                Ok(lowered) => lowered_temporal.push(lowered),
-                Err(refusal) => refusals.push(refusal),
+        // FR-135: the clause a refinement's rows select, by its node. This
+        // follows temporal lowering because a selected protocol may require
+        // one of those clause nodes.
+        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
+            let Some(selected) = selected else {
+                continue;
+            };
+            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
+                Ok(key) => checked.concrete_protocol = Some(key),
+                Err(refusal)
+                    if self.emit_unwritten_protocols
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct().is_some()
+                        ) => {}
+                Err(refusal)
+                    if !attempt_nodes_written
+                        && matches!(
+                            &refusal.cause,
+                            CheckCause::ProtocolReference(cause)
+                                if cause.construct()
+                                    == Some(ProtocolConstruct::ReferenceToAttemptProtocol)
+                        ) => {}
+                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
             }
         }
         // FR-488: each emitted hyper clause over `behaviours`, after every
@@ -4978,7 +5027,9 @@ impl PackageDeclarations {
         // FR-337: each emitted temporal clause's node, its `claim`
         // occurrence and its `over` node; FR-326 "Requirement record": its
         // `temporal-satisfaction` record, keyed by that occurrence.
-        if lowered_temporal.len() != checked_temporal.len() {
+        if lowered_temporal.len() != checked_temporal.len()
+            || lowered_temporal.iter().any(Option::is_none)
+        {
             return Err(unlowered());
         }
         if lowered_hyper.len() != checked_hyper.len() {
@@ -5133,6 +5184,10 @@ impl PackageDeclarations {
                 .push(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)));
         }
         let named_scope = NamedScope::of(&models, &scope);
+        let lowered_temporal = lowered_temporal
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(unlowered)?;
         let temporal_clauses = checked_temporal
             .into_iter()
             .zip(lowered_temporal)
