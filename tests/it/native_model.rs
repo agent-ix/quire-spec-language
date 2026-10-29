@@ -98,7 +98,7 @@ fn tc_040_source_derived_rule_model() {
     let data: serde_json::Value = serde_json::from_slice(model.artifact_bytes()).unwrap();
     assert_eq!(data["profile"], "native-state-model/1");
     assert_eq!(model.digest(), ByteDigest::of(model.artifact_bytes()));
-    assert_eq!(model.source().source().text(), native_rule_model::FIXTURE);
+    assert_eq!(model.source().source().text(), native_rule_model::fixture());
 }
 
 #[test]
@@ -193,14 +193,14 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
         );
     }
     let relocated =
-        native_rule_model::from_text(native_rule_model::FIXTURE, "another/path", "draft:1")
+        native_rule_model::from_text(native_rule_model::fixture(), "another/path", "draft:1")
             .unwrap()
             .model();
     assert_eq!(original.artifact_bytes(), relocated.artifact_bytes());
     assert_ne!(
         original.digest(),
         native_rule_model::from_text(
-            native_rule_model::FIXTURE,
+            native_rule_model::fixture(),
             "native-rule-model.json",
             "draft:2"
         )
@@ -208,7 +208,7 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
         .model()
         .digest()
     );
-    let with_whitespace = format!("{}\n", native_rule_model::FIXTURE);
+    let with_whitespace = format!("{}\n", native_rule_model::fixture());
     assert_ne!(
         original.digest(),
         native_rule_model::from_text(&with_whitespace, "native-rule-model.json", "draft:1")

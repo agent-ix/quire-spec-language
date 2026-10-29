@@ -10,15 +10,13 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 fn qspec_dir() -> PathBuf {
-    std::env::var_os("QSPEC_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .expect("xtask is under the workspace root");
-            Some(workspace.parent()?.join("quire-specification"))
-        })
-        .expect("QSpec checkout path")
+    PathBuf::from(
+        std::env::var_os("QSPEC_DIR")
+            .filter(|path| !path.is_empty())
+            .unwrap_or_else(|| {
+                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
+            }),
+    )
 }
 
 fn fixture_dir() -> PathBuf {
@@ -28,7 +26,6 @@ fn fixture_dir() -> PathBuf {
 fn run(arguments: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_xtask"))
         .args(arguments)
-        .env("QSPEC_DIR", qspec_dir())
         .output()
         .expect("xtask starts")
 }

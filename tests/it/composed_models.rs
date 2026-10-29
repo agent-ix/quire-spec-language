@@ -25,7 +25,8 @@ use quire_spec_language::syntax::composed::{
 use quire_spec_language::Limits;
 
 fn model(package: &str, formal: &str, native: &str) -> NativeModel {
-    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["package"] = package.into();
     document_model(document, formal, native)
 }
@@ -58,7 +59,8 @@ fn document_model(document: serde_json::Value, formal: &str, native: &str) -> Na
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-3")]
 fn enum_members_bind_actual_variant_loci_and_reject_wrong_or_missing_kinds() {
-    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["enums"] = serde_json::json!([{ "name": "Color", "variants": ["Red", "Blue"] }]);
     let model = document_model(document, "EnumModel", "enum-model");
     let inputs = [ModelInput::Native(&model)];
@@ -816,7 +818,8 @@ fn missing_alias_and_unfinished_catalog_retain_distinct_original_causes() {
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
 fn scalar_and_record_name_collision_refuses_the_ambiguous_export() {
-    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["records"]
         .as_array_mut()
         .unwrap()
@@ -1147,7 +1150,8 @@ fn wide_record_fields_resolve_at_defaults_without_repeated_linear_scans() {
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-7")]
 fn indexed_operations_and_values_charge_only_selected_parameters_and_members() {
-    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["enums"] = serde_json::json!([{ "name": "Color", "variants": ["Red", "Blue"] }]);
     document["values"].as_array_mut().unwrap().extend([
         serde_json::json!({"name": "alpha", "kind": "input", "type": {"kind": "boolean"}}),
