@@ -1259,10 +1259,9 @@ fn every_occurrence_role_is_spelled_as_ir_serializes_it() {
 }
 
 /// The published QSpec checked-package-v2 fixture directory under
-/// `$QSPEC_DIR`, and its `positive-*.json` fixtures in name order; `None`
-/// when `QSPEC_DIR` is unset.
-fn qspec_v2_fixtures() -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>)> {
-    let qspec = std::env::var_os("QSPEC_DIR")?;
+/// `the QSpec checkout`, and its `positive-*.json` fixtures in name order.
+fn qspec_v2_fixtures() -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+    let qspec = qspec_directory();
     let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2/fixtures");
     let mut paths: Vec<_> = std::fs::read_dir(&directory)
         .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
@@ -1279,7 +1278,7 @@ fn qspec_v2_fixtures() -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>)> 
         "{} holds no positive fixture",
         directory.display()
     );
-    Some((directory, paths))
+    (directory, paths)
 }
 
 fn read_fixture(path: &std::path::Path) -> Value {
@@ -1289,42 +1288,30 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
-/// Supplies, as domain package evidence, every selected semantic IR document
-/// QSpec publishes as `proposals/checked-package-v2/domain-package-*.json`
-/// under `$QSPEC_DIR`: a document is supplied when one of `envelope`'s
-/// `model_selections` rows selects its JCS sha256 digest (QSpec FR-322
-/// "Model-owned members" step 1). Nothing of QSpec is copied here.
+/// Supplies, as domain package evidence, QSpec's selected `acme/orders`
+/// semantic IR document (`domain-package-acme-orders.json` under `the QSpec checkout`)
+/// when one of `envelope`'s `model_selections` rows selects its digest
+/// (QSpec FR-322 "Model-owned members" step 1).
 fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        return;
-    };
-    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2");
-    let mut paths: Vec<_> = std::fs::read_dir(&directory)
-        .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
-        .map(|entry| entry.expect("a directory entry").path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("domain-package-") && name.ends_with(".json"))
-        })
-        .collect();
-    paths.sort();
-    for path in paths {
-        let bytes = jcs(&read_fixture(&path));
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        let selected = envelope["lock"]["model_selections"]
-            .as_array()
-            .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
-        if selected {
-            evidence
-                .insert_domain_package_document(digest.as_str(), &bytes[..])
-                .expect("a fresh evidence key");
-        }
+    let qspec = qspec_directory();
+    let document = read_fixture(
+        &std::path::Path::new(&qspec)
+            .join("proposals/checked-package-v2/domain-package-acme-orders.json"),
+    );
+    let bytes = jcs(&document);
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let selected = envelope["lock"]["model_selections"]
+        .as_array()
+        .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
+    if selected {
+        evidence
+            .insert_domain_package_document(digest.as_str(), &bytes[..])
+            .expect("a fresh evidence key");
     }
 }
 
 /// Supplies, as extension definition evidence, every definition QSpec
-/// publishes in `extension-definitions.json` under `$QSPEC_DIR` for a
+/// publishes in `extension-definitions.json` under `the QSpec checkout` for a
 /// `definition_selections` entry of `envelope`, except those in `withheld`
 /// (QSpec FR-469 "Published definitions"). A selection with no published
 /// definition (an `agent-ix` value or rule selection) is not held; an
@@ -1344,9 +1331,7 @@ fn supply_qspec_extension_definitions(
     struct File {
         definitions: Vec<Published>,
     }
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        return;
-    };
+    let qspec = qspec_directory();
     let path = std::path::Path::new(&qspec)
         .join("proposals/checked-package-v2/extension-definitions.json");
     let bytes = match std::fs::read(&path) {
@@ -1379,9 +1364,7 @@ fn supply_qspec_extension_definitions(
 /// `positive-*.json` fixture whose recomputed `package_id` the selection
 /// names, itself read with its own dependencies supplied first.
 fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
-    let Some((_, fixtures)) = qspec_v2_fixtures() else {
-        return;
-    };
+    let (_, fixtures) = qspec_v2_fixtures();
     let Some(selections) = envelope["lock"]["dependency_selections"].as_array() else {
         return;
     };
@@ -1526,21 +1509,18 @@ fn admitted_fixture(envelope: &Value) -> std::sync::Arc<quire_contract_model::Ch
 
 /// ADR-013 C-14 over QSpec's published positive `quire.checked-package/v2`
 /// fixtures, read at run time from
-/// `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json`: QSL's
+/// `the QSpec checkout/proposals/checked-package-v2/fixtures/positive-*.json`: QSL's
 /// whole I2 read (`read_checked_package_v2`) admits each fixture, and every
 /// one of its `source_map` entries looks up in the verified read's package
 /// source map, by its occurrence key, to exactly its wire regions, while
 /// each node's occurrences number exactly its entries.
 ///
-/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
-/// requires it. Nothing of QSpec is copied into this repository.
+/// Read directly from the QSpec checkout; nothing of QSpec is
+/// copied into this repository.
 #[trace("TC-421", "FR-095-AC-3", "TC-1111", "NFR-015-AC-6")]
 #[test]
 fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
-    let Some((_, paths)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (_, paths) = qspec_v2_fixtures();
     let mut looked_up = 0_usize;
     for path in &paths {
         let envelope = read_fixture(path);
@@ -1599,10 +1579,7 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
 #[trace("FR-320-AC-4")]
 #[test]
 fn qspec_union_value_application_keys_are_admitted_by_i2() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let envelope = read_fixture(&directory.join("positive-union-nodes.json"));
     let nodes = envelope["semantic_graph"]["nodes"]
         .as_array()
@@ -1684,15 +1661,12 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
 /// identity projection the reader derives). Each published structural mutation of `positive-all-families.json`
 /// still refuses with its expected cause.
 ///
-/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
-/// requires it. Nothing of QSpec is copied into this repository.
+/// Read directly from the QSpec checkout; nothing of QSpec is
+/// copied into this repository.
 #[trace("TC-253", "FR-087-AC-3", "TC-1111", "NFR-015-AC-6")]
 #[test]
 fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
-    let Some((directory, paths)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, paths) = qspec_v2_fixtures();
     let mut unsorted = 0_usize;
     for path in &paths {
         let envelope = read_fixture(path);
@@ -1775,8 +1749,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
 /// FR-447-AC-13 (QSpec FR-481): QSL's I2 read admits `positive-all-families.json`
 /// with its three `hybrid` nodes (the `Tank` model, mode and transition), and
 /// refuses a `hybrid_model` whose body binds `modes` before `variables`
-/// `malformed_wire`. Skipped when `QSPEC_DIR` is unset; `make conformance`
-/// requires it.
+/// `malformed_wire`. Read from the QSpec checkout by `make conformance`.
 #[trace(
     "TC-685",
     "FR-230-AC-36",
@@ -1788,10 +1761,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
 )]
 #[test]
 fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let base = read_fixture(&directory.join("positive-all-families.json"));
     let nodes = base["semantic_graph"]["nodes"].as_array().unwrap();
     let hybrid = nodes
@@ -1827,7 +1797,7 @@ fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
 /// FR-447-AC-13: QSL's I2 read-back of `positive-all-families.json` returns
 /// `Tank`'s `CheckedHybridModel`: `x` and `y` classed `hybrid`, one mode
 /// `Filling` whose rates are the bare variable `y` and the literal `1`, and
-/// one transition resetting `x` to `y`. Skipped when `QSPEC_DIR` is unset.
+/// one transition resetting `x` to `y`. Read from the QSpec checkout.
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
@@ -1835,10 +1805,7 @@ fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
         CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable,
         HybridTerm, InitialEntry, ModeIndex, ResetConstraint, VariableClass, VariableIndex,
     };
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let base = read_fixture(&directory.join("positive-all-families.json"));
     let package = admitted_fixture(&base);
     let read = super::read_hybrids(&package, 10_000).expect("the fixture reads back");
@@ -1890,14 +1857,11 @@ fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
 /// classed `clock`, the model is re-keyed and QSL's I2 read refuses it
 /// `invalid_package`/`invalid-value` at the first variable's class literal,
 /// because `x`'s rate is the variable `y`, not the literal `1` a `clock`
-/// takes. Skipped when `QSPEC_DIR` is unset.
+/// takes. Read from the QSpec checkout.
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let mut candidate = read_fixture(&directory.join("positive-all-families.json"));
     let model = candidate["semantic_graph"]["nodes"]
         .as_array()
@@ -1937,10 +1901,7 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_timed_model_nodes_are_retained_by_i2() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let expected_id = derived_package_id(&envelope);
     let (package_id, outcome) = read_fixture_wire(&envelope);
@@ -2025,10 +1986,7 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
 #[trace("TC-1187", "FR-415-AC-17", "FR-447-AC-13")]
 #[test]
 fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let envelope = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
     let expected_id = derived_package_id(&envelope);
     let (package_id, outcome) = read_fixture_wire(&envelope);
@@ -2077,10 +2035,7 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
 #[trace("TC-367", "FR-415-AC-17", "FR-322-AC-122")]
 #[test]
 fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let original = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let (_, read_outcome) = read_fixture_wire(&original);
     let Read::Verified {
@@ -2140,10 +2095,7 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
 #[trace("TC-367", "FR-322-AC-120", "FR-415-AC-17")]
 #[test]
 fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let mut envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let nodes = envelope["semantic_graph"]["nodes"].as_array_mut().unwrap();
     let mut timed_indices = Vec::new();
@@ -2277,10 +2229,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
 #[trace("TC-685")]
 #[test]
 fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let mut base_wire = read_fixture(&directory.join("positive-timed-model-nodes.json"));
 
     // Add a second unit with the same time dimension so the unit mutation is
@@ -2549,10 +2498,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
 #[trace("TC-1187", "FR-447-AC-13")]
 #[test]
 fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     for name in [
         "positive-all-families.json",
         "positive-timed-model-nodes.json",
@@ -2623,10 +2569,7 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 #[trace("TC-685", "FR-230-AC-31", "FR-230-AC-34")]
 #[test]
 fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let base = read_fixture(&directory.join("positive-timed-model-nodes.json"));
     let tick_base = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
     let vectors = read_fixture(&directory.join("../timed-model-node-vectors.json"));
@@ -2891,15 +2834,12 @@ fn replace_dependency(dependencies: &mut Value, old: &Value, replacement: &Value
 /// its `identity_preimage`, as the occurrence-free graph or as `[]`. QSL's I2
 /// read refuses it `malformed_wire` at that member; with the member removed
 /// the package is admitted under the published `package_id`, so the shipped
-/// copy never entered the package-id preimage. Skipped when `QSPEC_DIR` is
-/// unset; `make conformance` requires it.
+/// copy never entered the package-id preimage. The vector is read in place
+/// from the QSpec checkout.
 #[trace("TC-233", "FR-322-AC-100")]
 #[test]
 fn conformance_shipped_projection_cases_are_refused_and_admitted_once_removed() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let adverse = read_fixture(&directory.join("adverse.json"));
     let base = read_fixture(&directory.join("positive-all-families.json"));
     let cases = adverse["shipped_projection_cases"]
@@ -3072,7 +3012,7 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
 }
 
 /// Over QSpec's `dependency-selection-vectors.json` (FR-322-AC-35,
-/// QSpec TC-233), read at run time from `$QSPEC_DIR`: the published
+/// QSpec TC-233), read at run time from `the QSpec checkout`: the published
 /// `DependencySelection` entries, inserted into the all-families fixture's
 /// lock and identity preimage, recompute the recorded `package_id` and pass
 /// QSL's I2 read up to binding the entries to supplied packages (see the
@@ -3080,14 +3020,11 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
 /// mutated entry (a shape mutation in either member, a digest-domain
 /// mutation in both); and each order vector gets its recorded outcome, a
 /// refusal located at its last recorded locus (the repeating or misordered
-/// entry). Skipped when `QSPEC_DIR` is unset; `make conformance` requires it.
+/// entry). This conformance check reads from the required QSpec checkout and runs under `make conformance`.
 #[trace("TC-253", "TC-416", "FR-087-AC-3", "FR-093-AC-16")]
 #[test]
 fn conformance_dependency_selection_vectors() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let vectors = read_fixture(&directory.join("../dependency-selection-vectors.json"));
     let base = read_fixture(
         &directory.join(
@@ -3675,9 +3612,8 @@ pub(crate) fn refresh_frame_identity(envelope: &mut Value) {
 /// `frame_defect`, already mapped by `map_refusal_code`); no new admission
 /// path is added for it.
 ///
-/// Read at run time from `$QSPEC_DIR`; skipped (and passing) when unset.
-/// `make conformance` requires it. Nothing of QSpec is copied into this
-/// repository. Like this file's other `QSPEC_DIR`-gated conformance checks,
+/// Read at run time from the QSpec checkout. Nothing of QSpec is
+/// copied into this repository. Like this file's other QSpec conformance checks,
 /// the vectors this covers (including FR-340-AC-1, AC-4 and AC-9: an
 /// all-empty frame body, a misordered member array, and the lower-digest
 /// frame of two defective ones winning) run only when `make conformance` is
@@ -3685,10 +3621,7 @@ pub(crate) fn refresh_frame_identity(envelope: &mut Value) {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn conformance_fr340_frame_mutations_match_qspec_vectors() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let vectors = read_fixture(&directory.join("../node-identity-vectors.json"));
     let mutations = vectors["frame_mutations"]
         .as_array()
@@ -3910,7 +3843,7 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
     )
 }
 
-/// A minimal, always-run (no `QSPEC_DIR` needed) FR-340 frame-body package:
+/// A minimal, always-run FR-340 frame-body package:
 /// a self-typed scalar type `T` and a `model`/`object_type` `O`, typed by
 /// `T`, and a `state`/`frame` naming `O` as its only `dependencies` entry.
 /// `frame_body` supplies the frame's own `modifies`/`creates`/`deletes`.
@@ -3968,7 +3901,7 @@ fn frame_body_membership_against_dependencies_is_admitted() {
 /// this crate's own `V2ReadRefusal::code()` maps that to `Code::
 /// MissingDeclaration`. The other half of FR-340-AC-13 (a real node elsewhere
 /// in the graph that is simply never declared to this frame) is covered by
-/// the `QSPEC_DIR`-gated `undeclared-entry` vector in
+/// the `undeclared-entry` vector in
 /// `conformance_fr340_frame_mutations_match_qspec_vectors`, not repeated here.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
@@ -4119,14 +4052,11 @@ fn assert_extension_vector(directory: &std::path::Path, vector: &Value) {
 /// `locus` and `document_pointer`. A refusal returns no package, so the
 /// lock, source map and node are unchanged by construction (X05).
 ///
-/// Skipped (and passing) when `QSPEC_DIR` is unset.
+/// Read from the QSpec checkout.
 #[trace("FR-469-AC-10", "FR-469-AC-3", "TC-951")]
 #[test]
 fn extension_definition_vectors_xd_01_to_04() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let package_dir = directory.join("..");
     let file = read_fixture(&package_dir.join("extension-definition-vectors.json"));
     assert_eq!(
@@ -4145,14 +4075,11 @@ fn extension_definition_vectors_xd_01_to_04() {
 /// that does not both refuse `missing_declaration`/`missing-selection` at
 /// `/semantic_graph/nodes/{i}/body/definition`, before the held check.
 ///
-/// Skipped (and passing) when `QSPEC_DIR` is unset.
+/// Read from the QSpec checkout.
 #[trace("FR-469-AC-3", "TC-951")]
 #[test]
 fn extension_definition_absent_from_selections_refuses_missing_selection() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let original = read_fixture(&directory.join("positive-extension-nodes.json"));
     let mut mutated = original.clone();
     for pointer in [
@@ -4206,14 +4133,11 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
 /// grammar production with a typed-node entry of the same keyword whose
 /// clause names are the production's clauses.
 ///
-/// Skipped (and passing) when `QSPEC_DIR` is unset.
+/// Read from the QSpec checkout.
 #[trace("FR-469-AC-9", "TC-951")]
 #[test]
 fn published_extension_definitions_conform_to_their_schema_and_pairing() {
-    let Some((directory, _)) = qspec_v2_fixtures() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let (directory, _) = qspec_v2_fixtures();
     let package_dir = directory.join("..");
     let file = read_fixture(&package_dir.join("extension-definitions.json"));
     let schema = read_fixture(&package_dir.join("extension-definitions.schema.json"));
@@ -4281,4 +4205,14 @@ fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
     ] {
         assert_eq!(super::map_refusal_code(ir), qsl);
     }
+}
+
+fn qspec_directory() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        std::env::var_os("QSPEC_DIR")
+            .filter(|path| !path.is_empty())
+            .unwrap_or_else(|| {
+                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
+            }),
+    )
 }
