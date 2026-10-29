@@ -5251,7 +5251,10 @@ fn the_clock_presence_frame_vectors_step_as_published() {
         let write = match &vector["write"] {
             Json::Null => None,
             write if write["absent"] == true => Some("self.v = absent".to_owned()),
-            write => Some(format!("self.v = {}", write["clock"].as_str().expect("clock"))),
+            write => Some(format!(
+                "self.v = {}",
+                write["clock"].as_str().expect("clock")
+            )),
         };
         if let Some(refused) = vector["expected"].get("refused") {
             let body = format!(
@@ -5311,7 +5314,10 @@ fn the_clock_presence_frame_vectors_step_as_published() {
         let initial = timed.initial();
         let start = initial
             .iter()
-            .find(|state| timed.live(&timed.places()[at], state.discrete()) == (vector["pre"]["present"] == true))
+            .find(|state| {
+                timed.live(&timed.places()[at], state.discrete())
+                    == (vector["pre"]["present"] == true)
+            })
             .unwrap_or_else(|| panic!("{id}: the pre-state"));
         let start = TimedState::new(
             start.discrete().clone(),

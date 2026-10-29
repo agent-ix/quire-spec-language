@@ -1504,7 +1504,10 @@ fn clock_variant_payload_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> Option<ModelRefusal> {
-    let pointer = located.pointer.strip_prefix("/ir").unwrap_or(&located.pointer);
+    let pointer = located
+        .pointer
+        .strip_prefix("/ir")
+        .unwrap_or(&located.pointer);
     let mut segments = pointer.strip_prefix('/')?.split('/');
     if segments.next()? != "types" {
         return None;

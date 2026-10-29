@@ -399,8 +399,7 @@ fn a_unit_or_clock_payload_refuses_as_unsupported_at_its_member() {
     assert_eq!(member_of(&found[0]), path("Variant.payloadType"));
 
     let mut document = payload_tiers();
-    document["types"][0]["variants"][1]["payloadType"] =
-        json!("ix://quire/native/Clock");
+    document["types"][0]["variants"][1]["payloadType"] = json!("ix://quire/native/Clock");
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::UnsupportedConstruct);

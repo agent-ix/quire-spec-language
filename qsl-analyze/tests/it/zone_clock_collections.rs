@@ -12,9 +12,7 @@ use quire_exact::Cancel;
 use crate::timed_world::{
     document, ident, timers_document, wire_field, world_holding, World, DENSE,
 };
-use crate::zone_search::{
-    claim, deadlock, deadlock_result, operations, violated, INFINITE,
-};
+use crate::zone_search::{claim, deadlock, deadlock_result, operations, violated, INFINITE};
 
 /// `ts: Sequence<Timer>[0, max]` (`Timer { x: Clock; n: Phase }`) granted by
 /// `grow`, with the precondition `guard` and the further text `claim`.
