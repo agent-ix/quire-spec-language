@@ -348,9 +348,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use step_simulation::{
-    step_row_refs, step_simulation_records, StepRowRefusal, StepSimulationEntry,
-};
+pub use step_simulation::StepSimulationEntry;
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -4537,6 +4535,13 @@ impl PackageDeclarations {
                 .position(|protocol| protocol.name.name == *clause)
                 .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
         }
+        // QSpec FR-368: each clause's own node, its subject's derived-item
+        // anchor; a clause with no node keeps none.
+        for (index, place) in protocol_places.iter().enumerate() {
+            if let Some(checked) = place.and_then(|place| checked_protocols.get_mut(place)) {
+                checked.node = lowering.protocol_key(index, &root(Origin::Expression)).ok();
+            }
+        }
         // FR-337: each emitted temporal clause, after every function its
         // conditions may call, minting its node identity and recording its
         // `claim` occurrence.
@@ -4819,6 +4824,18 @@ impl PackageDeclarations {
                     cause: CheckCause::InternalFault(Box::new(fault)),
                 }]
             })?;
+        // FR-146 "Claim extent": the populations each operation's contract
+        // clauses range over, which its refinement `Step` records add.
+        let mut contract_populations: BTreeMap<
+            (quire_exact::EffectiveId, String),
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
+        // ... and the populations each clause ranges over, by its node, which
+        // a hypothesis adds to every record.
+        let mut clause_populations: BTreeMap<
+            quire_exact::NodeKey,
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
         // FR-104 "Requirements": one `operation-contract` record per clause,
         // keyed by its `claim` occurrence, and one per frame of an operation
         // a `pre` or `post` clause names, keyed by the frame node's own
@@ -4842,6 +4859,20 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
+                let ranged = claims
+                    .iter()
+                    .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
+                    .flat_map(|claim| claim.populations.iter().copied());
+                if let Some(operation) = &form.operation {
+                    contract_populations
+                        .entry(state_clause::operation_reference(operation))
+                        .or_default()
+                        .extend(ranged.clone());
+                }
+                clause_populations
+                    .entry(lowered.key)
+                    .or_default()
+                    .extend(ranged);
                 let keyed = state_clause::clause_records(
                     &typed,
                     &claims,
@@ -5166,11 +5197,11 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
-                    // FR-243: a clause over a `time dense` subject is EN-6's
-                    // item.
+                    // FR-243: a clause over a timed subject, `dense` or
+                    // `tick`, is EN-6's item.
                     let record = claims::RequirementRecord::unguarded(
-                        if checked.dense_time() {
-                            extent.over_dense_time()
+                        if checked.timed() {
+                            extent.over_timed()
                         } else {
                             extent
                         },
@@ -5284,10 +5315,8 @@ impl PackageDeclarations {
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             };
-            let node = checked
-                .v2_emission()
-                .map(|emission| claims::wire(emission.identity))
-                .map_err(|_| unkeyable())?;
+            let emission = checked.v2_emission().map_err(|_| unkeyable())?;
+            let node = claims::wire(emission.identity);
             let boolean = refinement_booleans
                 .get(checked.name())
                 .copied()
@@ -5297,17 +5326,15 @@ impl PackageDeclarations {
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
-            // EN-6's item.
+            // EN-6's item. EN-6's refinement product reads only a dense
+            // concrete subject, so a `tick` refinement is not marked and
+            // goes to the explicit-state engines.
             let dense = self.time_sources.iter().any(|source| {
                 source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(
-                if dense {
-                    wanted.over_dense_time()
-                } else {
-                    wanted
-                },
+                if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
                 claims::wire(boolean),
                 references::ModelReferences::new(Default::default(), [], None),
@@ -5322,6 +5349,40 @@ impl PackageDeclarations {
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
             checked.requirement = Some(occurrence);
+            // FR-146: the per-step simulation records beside it, each keyed
+            // by its O-07 `generated` occurrence at the refinement node.
+            let object_node = |object: quire_exact::EffectiveId| {
+                object_node_of(&object_types, &object_nodes, object)
+            };
+            let inputs = step_simulation::ExtentInputs {
+                node: emission.identity,
+                step_sources: &emission.step_sources,
+                boolean,
+                contracts: &contract_populations,
+                clauses: &clause_populations,
+                object_node: &object_node,
+                types: scope.types(),
+                position_limit: limits.nodes(),
+                location: &location,
+            };
+            checked.row_positions =
+                step_simulation::row_positions(&emission.step_sources, &location)
+                    .map_err(|refusal| vec![refusal])?;
+            let written = step_simulation::simulation_records(checked, &state_clauses, &inputs)
+                .map_err(|refusal| vec![refusal])?;
+            let mut entries = Vec::with_capacity(written.len());
+            for (entry, record) in written {
+                match requirements.entry(entry.occurrence().clone()) {
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(record);
+                    }
+                    std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {
+                    }
+                    std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                }
+                entries.push(entry);
+            }
+            checked.simulations = entries;
         }
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
@@ -6008,6 +6069,19 @@ fn population_key_table(
         .collect()
 }
 
+/// The `model`/`object_type` node of the object type `object`.
+fn object_node_of(
+    object_types: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
+    object: quire_exact::EffectiveId,
+) -> Option<quire_exact::NodeKey> {
+    object_types
+        .iter()
+        .find_map(|(declaration, id)| (*id == object).then_some(declaration))
+        .and_then(|declaration| object_nodes.get(declaration))
+        .copied()
+}
+
 /// ADR-012 §15.7: the domain key of `domain` from the admitted models'
 /// object types and their `model`/`object_type` nodes: the one place a
 /// checked graph's `population_key` and the emitted `temporal-satisfaction`
@@ -6017,17 +6091,13 @@ fn population_domain_key(
     object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
-    let node = object_types
-        .iter()
-        .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
-        .and_then(|declaration| object_nodes.get(declaration))
-        .ok_or_else(|| {
-            quire_semantic_value::catalog::InternalFault::new(
-                "check.population-domain",
-                "member-type-has-a-model-node",
-            )
-        })?;
-    state_clause::population_key(&domain, *node)
+    let node = object_node_of(object_types, object_nodes, domain.object).ok_or_else(|| {
+        quire_semantic_value::catalog::InternalFault::new(
+            "check.population-domain",
+            "member-type-has-a-model-node",
+        )
+    })?;
+    state_clause::population_key(&domain, node)
 }
 
 impl CheckedGraph {
@@ -6051,6 +6121,23 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The identity of the domain package the model `model` selects, where
+    /// `model` names it as [`ModelTimeSource::model`] and
+    /// [`CheckedTerminal::model`] do: the alias of the `model` declaration
+    /// that selects it, or the package identity when no alias names it.
+    /// `None` for a name no selection carries.
+    pub fn model_package_identity(&self, model: &str) -> Option<&str> {
+        self.model_names
+            .get(model)
+            .map(abstraction::ModelNames::package)
+            .or_else(|| {
+                self.model_selections
+                    .iter()
+                    .find(|selection| selection.identity == model)
+                    .map(|selection| selection.identity.as_str())
+            })
     }
 
     /// QSpec FR-322: each selection with its `model_root` node key, in

@@ -41,7 +41,10 @@ pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_
             occurrence,
             abstract_initial,
         },
-        ObligationKind::RaceFreedom { .. } => CertificateItem::Other,
+        // A protocol subject is never timed, so EN-6 decides neither.
+        ObligationKind::ProtocolAuthored { .. }
+        | ObligationKind::ProtocolDeadlockFreedom { .. }
+        | ObligationKind::RaceFreedom { .. } => CertificateItem::Other,
     }
 }
 
@@ -52,7 +55,7 @@ pub(super) struct Proof {
     pub(super) lu_bounds: LuBounds,
     pub(super) nodes: Vec<CertNode>,
     pub(super) edges: Vec<CertEdge>,
-    pub(super) initial: Vec<usize>,
+    pub(super) initials: Vec<usize>,
     pub(super) components: Option<Components>,
     pub(super) divergence: Option<Vec<DivergenceWitness>>,
     pub(super) admitted: DivergenceWitness,
@@ -70,7 +73,7 @@ impl Proof {
             lu_bounds: self.lu_bounds,
             nodes: self.nodes,
             edges: self.edges,
-            initial: self.initial,
+            initials: self.initials,
             components: self.components,
             divergence: self.divergence,
             admitted: self.admitted,
@@ -191,7 +194,7 @@ impl Run<'_, '_, '_> {
             },
             nodes,
             edges,
-            initial: roots.to_vec(),
+            initials: roots.to_vec(),
             components: None,
             divergence,
             admitted: witnessed,

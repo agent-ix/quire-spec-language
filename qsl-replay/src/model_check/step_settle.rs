@@ -12,9 +12,10 @@
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::settle::Truth;
 use crate::proof_result::{
-    Certification, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
-    UnavailabilityCause,
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalRecord,
+    TerminalValue, UnavailabilityCause,
 };
+use qsl_foundation::{BackendId, RequestIndex};
 
 /// The induction depth of a per-step simulation record (ADR-020 RE-2).
 pub const STEP_INDUCTION_DEPTH: u64 = 1;
@@ -36,6 +37,11 @@ pub enum BackendCertificate {
         /// Where the rule failed.
         at: CertificateLocus,
     },
+    /// A limit or a cancellation stopped the check (FR-314 `Stopped`): the
+    /// record settles V-7 with the cause, never `proved`.
+    Stopped(IncompleteCause),
+    /// The check faulted (FR-314 `Fault`): the record settles `failed`.
+    Fault,
 }
 
 /// What the SMT backend returned for one per-step simulation record.
@@ -51,6 +57,24 @@ pub enum StepBackendOutcome {
     /// The backend found a counterexample: a pre-state the invariants may
     /// not reach.
     Counterexample,
+    /// The backend settled the obligation neither way (QSpec FR-468 "Other
+    /// backend results").
+    Other(OtherBackendResult),
+}
+
+/// A backend result for a per-step simulation record that neither holds nor
+/// fails: QSpec FR-468 "Other backend results". The record takes the result
+/// FR-331 records for it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OtherBackendResult {
+    /// `inconclusive`, such as a solver `unknown` (`solver-inconclusive`).
+    Inconclusive(InconclusiveCause),
+    /// `incomplete`: a timeout, a limit or a cancellation.
+    Incomplete(IncompleteCause),
+    /// `unsupported`: a missing solver or tool.
+    Unsupported(UnavailabilityCause),
+    /// `failed`: a backend fault.
+    Failed,
 }
 
 /// One per-step simulation record, settled.
@@ -64,10 +88,21 @@ pub struct StepSimulationSettlement {
     pub truth: Truth,
 }
 
+impl StepSimulationSettlement {
+    /// The FR-331 terminal record of this settlement for the per-step
+    /// simulation record at `request_index`, which `backend` settled. A
+    /// per-step record never settles `refuted`, so it carries no replay.
+    pub fn to_terminal(&self, request_index: RequestIndex, backend: BackendId) -> TerminalRecord {
+        TerminalRecord::with_backend(request_index, backend, self.value.clone())
+    }
+}
+
 /// FR-146: settle `outcome` as one terminal value. Never `Refuted`.
 pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSettlement {
     match outcome {
         StepBackendOutcome::Holds { certificate } => match certificate {
+            BackendCertificate::Stopped(cause) => unavailable(TerminalValue::Incomplete(cause)),
+            BackendCertificate::Fault => unavailable(TerminalValue::Failed),
             BackendCertificate::Rejected { rule, at } => StepSimulationSettlement {
                 value: TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
                     rule,
@@ -105,6 +140,27 @@ pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSett
             basis: SettlementBasis::Unavailable,
             truth: Truth::Unavailable,
         },
+        StepBackendOutcome::Other(other) => match other {
+            OtherBackendResult::Inconclusive(cause) => StepSimulationSettlement {
+                value: TerminalValue::Inconclusive(cause),
+                basis: SettlementBasis::Unsettled,
+                truth: Truth::Pending,
+            },
+            OtherBackendResult::Incomplete(cause) => unavailable(TerminalValue::Incomplete(cause)),
+            OtherBackendResult::Unsupported(cause) => {
+                unavailable(TerminalValue::Unsupported(cause))
+            }
+            OtherBackendResult::Failed => unavailable(TerminalValue::Failed),
+        },
+    }
+}
+
+/// `value`, which settles no truth.
+fn unavailable(value: TerminalValue) -> StepSimulationSettlement {
+    StepSimulationSettlement {
+        value,
+        basis: SettlementBasis::Unavailable,
+        truth: Truth::Unavailable,
     }
 }
 
@@ -165,7 +221,7 @@ mod tests {
     #[test]
     fn a_rejected_certificate_settles_inconclusive_never_proved() {
         let at = CertificateLocus::Query {
-            part: crate::certificate::QueryPart::Step,
+            part: crate::certificate::QueryPart::Step { row: None },
         };
         let settled = settle_step_simulation(StepBackendOutcome::Holds {
             certificate: BackendCertificate::Rejected {

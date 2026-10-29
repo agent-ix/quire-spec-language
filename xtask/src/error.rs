@@ -357,6 +357,13 @@ pub enum Error {
         #[source]
         source: crate::refinement::layering::RegistryBuildError,
     },
+    /// FR-345-AC-9: the layering CLI's run is not the expected
+    /// no-negotiation run.
+    #[error("refinement-layering: {mismatch}")]
+    LayeringUnexpectedRun {
+        /// Why the run is not the expected one.
+        mismatch: crate::refinement::layering_check::Mismatch,
+    },
     /// FR-353: corpus preflight or invocation refused before any vector ran.
     #[error("qualify: {0}")]
     QualificationRefusal(String),
@@ -406,7 +413,8 @@ impl Error {
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
             Self::RefinementReport { .. }
             | Self::RefinementCorpus { .. }
-            | Self::RefinementRegistryBuild { .. } => Code::Refinement,
+            | Self::RefinementRegistryBuild { .. }
+            | Self::LayeringUnexpectedRun { .. } => Code::Refinement,
             Self::QualificationRefusal(_) => Code::Qualification,
         }
     }

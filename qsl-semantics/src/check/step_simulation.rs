@@ -4,53 +4,52 @@
 //!
 //! A refinement with no hidden field, no history field and no `any` row
 //! writes one [`StepObligation::Initial`] record and one
-//! [`StepObligation::Step`] record per step row, each listing the concrete
-//! package's invariant clauses as hypotheses. With a hidden field or an
-//! `any` row it writes none: an `any` row has no per-step obligation, so the
-//! other rows' records would not discharge the safety half, and a hidden
-//! field or a history field makes `map` no function of the concrete step.
+//! [`StepObligation::Step`] record per step row, each listing as hypotheses
+//! the invariant clauses whose context is an object type of the concrete
+//! model. With a hidden field, a history field or an `any` row it writes
+//! none: an `any` row has no per-step obligation, so the other rows' records
+//! would not discharge the safety half, and a hidden field or a history field
+//! makes `map` no function of the concrete step.
 //!
 //! A record's members are the refinement node, the obligation and the
-//! hypotheses: QSV's canonical encoding of them is the record's content
-//! identity (ADR-013 O-09, which CG hashes). Each record is carried with its
-//! occurrence key (ADR-013 O-07): the refinement node, role `generated`, and
-//! ordinal 0 for `Initial` or row position + 1 for a `Step`. The key is a
-//! locator and not a member of the content identity.
-//! The hypotheses are sorted ascending by node key and deduplicated, so the
-//! order of the invariant clauses in the source does not change a record.
+//! hypotheses. Each record is written into `CheckedGraph::requirements()` as
+//! an `operation-contract` record keyed by its occurrence (ADR-013 O-07):
+//! the refinement node, role `generated`, and ordinal 0 for `Initial` or row
+//! position + 1 for a `Step`. The hypotheses are sorted ascending by node
+//! key and deduplicated, so the order of the invariant clauses in the source
+//! does not change a record.
 //!
-//! A row is named by its zero-based position in the order QSpec FR-375 gives
-//! the checked refinement node's `steps` array: ascending by the node-key
-//! digest of the step's first named declaration (its concrete operation),
-//! then by member name as UTF-8 bytes. The caller supplies each concrete
-//! operation's node key; this module sorts. The records come out in that
+//! A row is named by its zero-based position in the refinement node's
+//! `steps` array, which QSpec FR-375 sorts; the records come out in that
 //! order, so reordering rows in the source changes nothing.
+//!
+//! A record's extent is FR-146 "Claim extent"'s: a `Step` record ranges over
+//! its concrete operation's receiver, result and parameter types (keyed
+//! under the operation's anchor node, as a frame record keys them under its
+//! frame node), each `_` argument's abstract parameter domain, the context
+//! population, each population the operation's contract clauses walk and
+//! each population a `reaches` in the state mapping walks; an `Initial`
+//! record over the population covering each concrete object type the state
+//! mapping maps and, since its obligation evaluates the mapping, each
+//! population a `reaches` in the state mapping walks. Every record reads
+//! its hypotheses, so the populations they range over enter every record.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::{NodeKey, Origin};
+use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
+use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::location::Location;
 use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 
-use super::claims::wire;
+use super::claims::{wire, RequirementRecord};
 use super::family::OccurrenceRole;
-use super::{CheckedRefinement, CheckedStateClause, StepClass, StepTarget};
-use quire_checked::key::DeclarationKey;
-
-/// Why a refinement's step rows have no [`StepRowRef`]s.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum StepRowRefusal {
-    /// The refinement has more step rows than a [`StepRowRef`] names.
-    #[error("a refinement's step rows outnumber the positions a step row reference names")]
-    Overflow,
-    /// A row of the refinement is not an operation row. FR-136 orders a
-    /// protocol subject's rows by the node key of the declaration each names,
-    /// and FR-383's minting of the protocol nodes' keys is not built, so a
-    /// protocol subject's rows have no position yet.
-    #[error("a protocol subject's step rows have no order yet: protocol node keys are not minted")]
-    ProtocolSubject,
-}
+use super::references::ModelReferences;
+use super::refinement::RowRoots;
+use super::refusal::{CheckCause, CheckRefusal, KeyFault};
+use super::state_clause::{classify_refusal, record, PopulationDomain};
+use super::{CheckedRefinement, CheckedStateClause};
 
 /// One per-step simulation record with its ADR-013 O-07 occurrence key.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,37 +79,60 @@ impl StepSimulationEntry {
     }
 }
 
-/// The per-step simulation records of `refinement`, keyed by its node
-/// `refinement_key`, with `clauses` the declaring package's checked state
-/// clauses: those that are invariants of a concrete-model object type are
-/// the hypotheses, sorted by node key.
-/// The records name rows by position in FR-375's order; [`step_row_refs`]
-/// maps a source row to its position.
-///
-/// Empty when the refinement has a hidden field, a history field or an `any`
-/// row.
-///
-/// # Errors
-///
-/// [`StepRowRefusal::Overflow`] when a row's position exceeds `u32`;
-/// [`StepRowRefusal::ProtocolSubject`] when a row is not an operation row.
-pub fn step_simulation_records(
-    refinement_key: NodeKey,
+/// What S3 reads to give the records their extents.
+pub(crate) struct ExtentInputs<'a> {
+    /// The refinement's V2 node.
+    pub(crate) node: NodeKey,
+    /// For each `steps` entry in V2 order, its source row's position among
+    /// [`CheckedRefinement::steps`].
+    pub(crate) step_sources: &'a [usize],
+    /// The `Boolean` type node every record is result-bounded at.
+    pub(crate) boolean: NodeKey,
+    /// The populations each concrete operation's contract clauses range
+    /// over, by the operation's declaring type and name.
+    pub(crate) contracts: &'a BTreeMap<(EffectiveId, String), BTreeSet<PopulationDomain>>,
+    /// The populations each state clause ranges over, by its node.
+    pub(crate) clauses: &'a BTreeMap<NodeKey, BTreeSet<PopulationDomain>>,
+    /// The `model`/`object_type` node of a population's member type.
+    pub(crate) object_node: &'a dyn Fn(EffectiveId) -> Option<NodeKey>,
+    pub(crate) types: &'a TypeEnvironment,
+    pub(crate) position_limit: u64,
+    /// The refinement declaration's location, where a fault is reported.
+    pub(crate) location: &'a Location,
+}
+
+/// The positions [`CheckedRefinement::step_row_ref`] reads: for each source
+/// row, its position in the V2 `steps` order `step_sources` gives.
+pub(crate) fn row_positions(
+    step_sources: &[usize],
+    location: &Location,
+) -> Result<Vec<StepRowRef>, CheckRefusal> {
+    let mut positions = vec![None; step_sources.len()];
+    for (position, source) in step_sources.iter().enumerate() {
+        let position = u32::try_from(position).map_err(|_| fault(location))?;
+        *positions.get_mut(*source).ok_or_else(|| fault(location))? =
+            Some(StepRowRef::new(position));
+    }
+    positions
+        .into_iter()
+        .map(|position| position.ok_or_else(|| fault(location)))
+        .collect()
+}
+
+/// The per-step simulation records of `refinement`, each with its
+/// `operation-contract` requirement record; empty when the refinement
+/// writes none (it has no [`CheckedRefinement::simulation`] roots). The
+/// hypotheses are the invariants among `clauses` whose context is a
+/// concrete-model object type.
+pub(crate) fn simulation_records(
     refinement: &CheckedRefinement,
     clauses: &[CheckedStateClause],
-) -> Result<Vec<StepSimulationEntry>, StepRowRefusal> {
-    operation_rows(refinement)?;
-    let has_hidden = refinement
-        .objects()
-        .iter()
-        .any(|object| !object.hidden.is_empty());
-    let has_any = refinement
-        .steps()
-        .iter()
-        .any(|row| matches!(row.target, StepTarget::Any));
-    if has_hidden || has_any || !refinement.history().is_empty() {
+    inputs: &ExtentInputs<'_>,
+) -> Result<Vec<(StepSimulationEntry, RequirementRecord)>, CheckRefusal> {
+    let Some(roots) = &refinement.simulation else {
         return Ok(Vec::new());
-    }
+    };
+    let location = inputs.location;
     let hypotheses: Vec<NodeKey> = clauses
         .iter()
         .filter(|clause| {
@@ -123,68 +145,125 @@ pub fn step_simulation_records(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let mut records = vec![StepSimulationEntry::new(
-        refinement_key,
-        0,
-        StepSimulationRecord::new(refinement_key, StepObligation::Initial, hypotheses.clone()),
-    )];
-    for index in 0..refinement.steps().len() {
-        let position = u32::try_from(index).map_err(|_| StepRowRefusal::Overflow)?;
-        records.push(StepSimulationEntry::new(
-            refinement_key,
-            u64::from(position) + 1,
-            StepSimulationRecord::new(
-                refinement_key,
-                StepObligation::Step {
-                    row: StepRowRef::new(position),
-                },
-                hypotheses.clone(),
+    let keyed = refinement
+        .row_keys
+        .as_ref()
+        .ok_or_else(|| fault(location))?;
+    let mut written = Vec::with_capacity(inputs.step_sources.len() + 1);
+    // The `Initial` obligation evaluates the state mapping, so it ranges
+    // over the populations a `reaches` there walks as well.
+    // Every record reads its hypotheses, so the populations they range over
+    // enter every record.
+    let read: BTreeSet<PopulationDomain> = roots
+        .mapping
+        .iter()
+        .copied()
+        .chain(
+            hypotheses
+                .iter()
+                .filter_map(|hypothesis| inputs.clauses.get(hypothesis))
+                .flatten()
+                .copied(),
+        )
+        .collect();
+    let mut initial_populations = roots.initial.clone();
+    initial_populations.extend(read.iter().copied());
+    let initial = extent_record(None, &initial_populations, None, inputs)?;
+    written.push((
+        StepSimulationEntry::new(
+            inputs.node,
+            0,
+            StepSimulationRecord::new(inputs.node, StepObligation::Initial, hypotheses.clone()),
+        ),
+        initial,
+    ));
+    for (position, source) in inputs.step_sources.iter().enumerate() {
+        let row = refinement
+            .steps()
+            .get(*source)
+            .ok_or_else(|| fault(location))?;
+        let Some(RowRoots {
+            operation,
+            types,
+            context: Ok(context),
+            ..
+        }) = &row.roots
+        else {
+            return Err(fault(location));
+        };
+        let anchor = keyed
+            .steps
+            .get(*source)
+            .and_then(|keyed| keyed.source_node)
+            .ok_or_else(|| fault(location))?;
+        let mut populations: BTreeSet<PopulationDomain> = read.clone();
+        populations.extend(*context);
+        populations.extend(inputs.contracts.get(operation).into_iter().flatten());
+        let record = extent_record(
+            Some((anchor, types)),
+            &populations,
+            Some(operation.clone()),
+            inputs,
+        )?;
+        let position = u32::try_from(position).map_err(|_| fault(location))?;
+        written.push((
+            StepSimulationEntry::new(
+                inputs.node,
+                u64::from(position) + 1,
+                StepSimulationRecord::new(
+                    inputs.node,
+                    StepObligation::Step {
+                        row: StepRowRef::new(position),
+                    },
+                    hypotheses.clone(),
+                ),
             ),
+            record,
         ));
     }
-    Ok(records)
+    Ok(written)
 }
 
-/// The [`StepRowRef`] of each step row of `refinement`, indexed by the row's
-/// position in [`CheckedRefinement::steps`] (source order) and ascending in
-/// FR-375's order: by the node key of the row's concrete operation, then by
-/// the operation's name as UTF-8 bytes.
-///
-/// # Errors
-///
-/// [`StepRowRefusal::Overflow`] when a row's position exceeds `u32`;
-/// [`StepRowRefusal::ProtocolSubject`] when a row is not an operation row.
-pub fn step_row_refs(
-    refinement: &CheckedRefinement,
-    operation_key: impl Fn(&DeclarationKey) -> NodeKey,
-) -> Result<Vec<StepRowRef>, StepRowRefusal> {
-    let mut order: Vec<(NodeKey, &str, usize)> = operation_rows(refinement)?
-        .into_iter()
-        .enumerate()
-        .map(|(source, operation)| (operation_key(operation), operation.node.as_str(), source))
-        .collect();
-    order.sort_by(|left, right| {
-        left.0
-            .as_bytes()
-            .cmp(right.0.as_bytes())
-            .then_with(|| left.1.as_bytes().cmp(right.1.as_bytes()))
-    });
-    let mut refs = vec![StepRowRef::new(0); order.len()];
-    for (position, (_, _, source)) in order.into_iter().enumerate() {
-        refs[source] =
-            StepRowRef::new(u32::try_from(position).map_err(|_| StepRowRefusal::Overflow)?);
-    }
-    Ok(refs)
-}
-
-/// The concrete operation of each step row of `refinement`, in source order.
-fn operation_rows(refinement: &CheckedRefinement) -> Result<Vec<&DeclarationKey>, StepRowRefusal> {
-    refinement
-        .steps()
+/// One record's `operation-contract` requirement record: its type roots
+/// keyed under `anchor`, and `populations`, an authored bound making one
+/// add no domain (FR-380).
+fn extent_record(
+    roots: Option<(NodeKey, &Vec<ValueType>)>,
+    populations: &BTreeSet<PopulationDomain>,
+    operation: Option<(EffectiveId, String)>,
+    inputs: &ExtentInputs<'_>,
+) -> Result<RequirementRecord, CheckRefusal> {
+    let location = inputs.location;
+    let populations: Vec<(PopulationDomain, NodeKey)> = populations
         .iter()
-        .map(|row| match &row.class {
-            StepClass::Operation(operation) => Ok(operation),
-            _ => Err(StepRowRefusal::ProtocolSubject),
-        })
-        .collect()
+        .map(|domain| (inputs.object_node)(domain.object).map(|object| (*domain, object)))
+        .collect::<Option<_>>()
+        .ok_or_else(|| fault(location))?;
+    let (anchor, types) = match roots {
+        Some((anchor, types)) => (anchor, types.iter().map(|value| (anchor, value)).collect()),
+        None => (inputs.node, Vec::new()),
+    };
+    let references = ModelReferences::new(
+        BTreeSet::new(),
+        populations.iter().map(|(domain, _)| *domain),
+        operation,
+    );
+    record(
+        &types,
+        Some(anchor),
+        &populations,
+        inputs.boolean,
+        inputs.types,
+        inputs.position_limit,
+        references,
+    )
+    .map_err(|failure| classify_refusal(failure, location))
+}
+
+/// A record S3 cannot key.
+fn fault(location: &Location) -> CheckRefusal {
+    CheckRefusal {
+        location: location.clone(),
+        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+    }
 }

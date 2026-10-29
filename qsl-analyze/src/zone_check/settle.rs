@@ -21,7 +21,10 @@ use qsl_route::deadlock::ItemObligation;
 use qsl_semantics::family::UnsupportedItem;
 use quire_exact::Cancel;
 
-use super::refine::{TimedRefinementStop, TimedRefinementUndecided, TimedSafetyOutcome};
+use super::refine::{
+    TimedLivenessHalf, TimedLivenessOutcome, TimedRefinementOutcome, TimedRefinementStop,
+    TimedRefinementUndecided, TimedSafetyOutcome,
+};
 use super::search::{ZoneCheckLimit, ZoneCheckOutcome, ZoneReduction, ZoneStop, ZoneUndecided};
 
 /// The settlement method of an EN-6 record (FR-235).
@@ -345,8 +348,9 @@ fn certified<O>(
     }
 }
 
-/// FR-144 and QSpec FR-430: settle EN-6's safety half of a timed refinement
-/// as one terminal record, by FR-144's rows over EN-6's causes:
+/// FR-144 and QSpec FR-430: settle EN-6's timed refinement item as one
+/// terminal record. Its safety half settles by FR-144's rows over EN-6's
+/// causes:
 ///
 /// - V-1: `Holds` settles `Proved{ZoneCertified, Certified}` only when
 ///   `check` (FR-245 over FR-244's refinement form) accepts its
@@ -360,7 +364,67 @@ fn certified<O>(
 /// - V-7: `Stopped` is `incomplete` naming the EN-6 or step budget, or the
 ///   cancellation;
 /// - an evaluator fault is `failed`.
+///
+/// The item's value is the safety half's unless the safety half is
+/// `proved`, and then it is the liveness half's (FR-144, as
+/// `settle_refinement` settles an untimed item): a liveness half that holds
+/// is `Proved{Exhaustive, Uncertified}`, since no core checker covers it
+/// (ADR-020 CT-4); a `Violated` one is `refuted` only through `replay` of its
+/// lasso; an `Unsupported` one is V-8 with its cause (ADR-020 AX-5); and
+/// otherwise it takes the safety half's rows.
 pub fn settle_timed_refinement<S>(
+    outcome: &TimedRefinementOutcome<S>,
+    cancel: &Cancel,
+    check: impl FnOnce(
+        &ZoneCertificate<ItemObligation<S>>,
+    ) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<S>>>,
+    replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+) -> ZoneCheckRecord {
+    let liveness = match (&outcome.safety, &outcome.liveness) {
+        (TimedSafetyOutcome::Holds { certificate, .. }, Some(liveness)) => {
+            let safety = certified(check(certificate));
+            if !matches!(safety.value, TerminalValue::Proved { .. }) {
+                return safety;
+            }
+            liveness
+        }
+        (safety, _) => return timed_safety(safety, cancel, check, replay),
+    };
+    match liveness {
+        // ADR-020 AX-5: the second phase did not run.
+        TimedLivenessHalf::Unsupported(cause) => ZoneCheckRecord::row(
+            TerminalValue::Unsupported(cause.clone()),
+            ResultLabel::Unsupported,
+            SettlementBasis::Unavailable,
+            Execution::Completed,
+            Truth::Unavailable,
+        ),
+        // No core checker covers the liveness half (ADR-020 CT-4).
+        TimedLivenessHalf::Checked(TimedLivenessOutcome::Holds { .. }) => ZoneCheckRecord::row(
+            TerminalValue::Proved {
+                basis: ProofBasis::Exhaustive,
+                certification: Certification::Uncertified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
+        TimedLivenessHalf::Checked(TimedLivenessOutcome::Violated { counterexample, .. }) => {
+            violated(counterexample, replay)
+        }
+        TimedLivenessHalf::Checked(TimedLivenessOutcome::Undecided { cause, .. }) => {
+            undecided(cause)
+        }
+        TimedLivenessHalf::Checked(TimedLivenessOutcome::Stopped { cause, .. }) => {
+            timed_stopped(*cause, cancel)
+        }
+        TimedLivenessHalf::Checked(TimedLivenessOutcome::Fault { .. }) => ZoneCheckRecord::failed(),
+    }
+}
+
+/// The safety half's record, by FR-144's rows over EN-6's causes.
+fn timed_safety<S>(
     outcome: &TimedSafetyOutcome<S>,
     cancel: &Cancel,
     check: impl FnOnce(
@@ -370,45 +434,66 @@ pub fn settle_timed_refinement<S>(
 ) -> ZoneCheckRecord {
     match outcome {
         TimedSafetyOutcome::Holds { certificate, .. } => certified(check(certificate)),
-        TimedSafetyOutcome::Violated { counterexample, .. } => match replay(counterexample) {
-            Ok(RefinementTraceSettlement::Reproduced { .. }) => ZoneCheckRecord {
-                counterexample: Some(counterexample.as_ref().clone()),
-                ..ZoneCheckRecord::row(
-                    TerminalValue::Refuted,
-                    ResultLabel::Refuted,
-                    SettlementBasis::DecisiveCounterexample,
-                    Execution::Completed,
-                    Truth::Violated,
-                )
-            },
-            Ok(RefinementTraceSettlement::Inconclusive(cause)) => {
-                ZoneCheckRecord::inconclusive(InconclusiveCause::ReplayParity(cause))
-            }
-            Ok(RefinementTraceSettlement::Stopped(reached)) => {
-                ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
-                    limit: reached.limit,
-                    value: reached.value,
-                })
-            }
-            // A fault stays a tool failure (ADR-013 C-09).
-            Err(refusal) => match TerminalValue::from_replay_refusal(&refusal) {
-                TerminalValue::Inconclusive(cause) => ZoneCheckRecord::inconclusive(cause),
-                _ => ZoneCheckRecord::failed(),
-            },
-        },
-        TimedSafetyOutcome::Undecided { cause, .. } => ZoneCheckRecord::inconclusive(match cause {
-            TimedRefinementUndecided::Zone(zone) => undecided_cause(zone),
-            TimedRefinementUndecided::Undetermined(undetermined) => undetermined.cause(),
-        }),
-        TimedSafetyOutcome::Stopped { cause, .. } => match cause {
-            TimedRefinementStop::Zone(zone) => stopped(*zone, cancel),
-            TimedRefinementStop::Step(reached) => {
-                ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
-                    limit: reached.limit,
-                    value: reached.value,
-                })
-            }
-        },
+        TimedSafetyOutcome::Violated { counterexample, .. } => violated(counterexample, replay),
+        TimedSafetyOutcome::Undecided { cause, .. } => undecided(cause),
+        TimedSafetyOutcome::Stopped { cause, .. } => timed_stopped(*cause, cancel),
         TimedSafetyOutcome::Fault { .. } => ZoneCheckRecord::failed(),
+    }
+}
+
+/// A half's counterexample: `refuted`, `decisive-counterexample`, only when
+/// `replay` (FR-145 over FR-241's delays) reproduces it.
+fn violated(
+    counterexample: &TemporalCounterexample,
+    replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+) -> ZoneCheckRecord {
+    match replay(counterexample) {
+        Ok(RefinementTraceSettlement::Reproduced { .. }) => ZoneCheckRecord {
+            counterexample: Some(counterexample.clone()),
+            ..ZoneCheckRecord::row(
+                TerminalValue::Refuted,
+                ResultLabel::Refuted,
+                SettlementBasis::DecisiveCounterexample,
+                Execution::Completed,
+                Truth::Violated,
+            )
+        },
+        Ok(RefinementTraceSettlement::Inconclusive(cause)) => {
+            ZoneCheckRecord::inconclusive(InconclusiveCause::ReplayParity(cause))
+        }
+        Ok(RefinementTraceSettlement::Stopped(reached)) => {
+            ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
+                limit: reached.limit,
+                value: reached.value,
+            })
+        }
+        // A fault stays a tool failure (ADR-013 C-09).
+        Err(refusal) => match TerminalValue::from_replay_refusal(&refusal) {
+            TerminalValue::Inconclusive(cause) => ZoneCheckRecord::inconclusive(cause),
+            _ => ZoneCheckRecord::failed(),
+        },
+    }
+}
+
+/// A half that decided nothing: `inconclusive` with the zone search's
+/// cause or the mapping's.
+fn undecided(cause: &TimedRefinementUndecided) -> ZoneCheckRecord {
+    ZoneCheckRecord::inconclusive(match cause {
+        TimedRefinementUndecided::Zone(zone) => undecided_cause(zone),
+        TimedRefinementUndecided::Undetermined(undetermined) => undetermined.cause(),
+    })
+}
+
+/// A half that stopped: `incomplete` naming the EN-6 or step budget, or
+/// the cancellation.
+fn timed_stopped(cause: TimedRefinementStop, cancel: &Cancel) -> ZoneCheckRecord {
+    match cause {
+        TimedRefinementStop::Zone(zone) => stopped(zone, cancel),
+        TimedRefinementStop::Step(reached) => {
+            ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
+                limit: reached.limit,
+                value: reached.value,
+            })
+        }
     }
 }

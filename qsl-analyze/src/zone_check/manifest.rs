@@ -66,5 +66,5 @@ pub fn descriptor(
             reductions: Some(&REDUCTIONS),
         },
     )
-    .map(BackendDescriptor::with_dense_time)
+    .map(BackendDescriptor::with_timed)
 }
