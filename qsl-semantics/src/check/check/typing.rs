@@ -34,6 +34,7 @@ use crate::check::refusal::{CheckCause, CheckRefusal, IdentityForm, IdentityNode
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
+use ix_trace_rs::string_edge;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
     FieldInitializer, NameForm, PopulationForm,
@@ -434,6 +435,7 @@ enum Unary<'r> {
 /// Whether an HP-1 relation's `pre(...)` contains a receiver-state read.
 /// Operation arguments and results are execution inputs, not model state, so
 /// they do not by themselves make a pre-read meaningful.
+#[string_edge]
 fn relation_pre_eligible(expression: ExprRef<'_>, hyper: &super::HyperTyping) -> bool {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {

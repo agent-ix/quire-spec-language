@@ -5,7 +5,7 @@
 use super::admission_corpus::config_version_unit;
 use super::*;
 
-fn document() -> &'static [u8] {
+pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
@@ -29,16 +29,20 @@ fn relation_unit() -> String {
     )
 }
 
+pub(super) fn checked_graph() -> qsl_semantics::check::CheckedGraph {
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    assemble_with_models(relation_unit().as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
+}
+
 /// FR-180/FR-477: both execution binders remain distinct, their body is
 /// represented in the checked wire, and I2 admits the emitted package.
 #[trace("TC-1143", "FR-180-AC-2", "FR-180-AC-3")]
 #[test]
 fn a_step_relation_emits_and_reads_back_its_execution_body() {
-    let packages = qsl_semantics::model::intake::package_input([document()]);
-    let graph = assemble_with_models(relation_unit().as_bytes(), &packages)
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let graph = checked_graph();
     assert_eq!(graph.step_relations().len(), 1);
     assert_eq!(graph.requirements().len(), 1);
     assert_eq!(

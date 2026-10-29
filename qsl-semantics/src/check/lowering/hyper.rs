@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 
+use ix_trace_rs::string_edge;
 use quire_exact::{Identifier, NodeKey, ValueType};
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use quire_semantic_value::location::Location;
@@ -550,6 +551,7 @@ impl Lowering<'_> {
 /// Finish the step-relation node after the checked abstraction relation is
 /// available. The relation key is late-bound because QSL computes it from
 /// the assembled graph's exact model declaration nodes.
+#[string_edge]
 pub(crate) fn finish_step_relation(
     mut lowered: LoweredStepRelation,
     relation: &CheckedModelRelation,
