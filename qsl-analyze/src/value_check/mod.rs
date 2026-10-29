@@ -70,87 +70,186 @@ pub enum ValueRefusal {
 pub struct ValueRequest<'p> {
     /// The claim's target, with the item's bounds applied.
     pub target: ValueTarget<'p>,
-    /// The item's `check.limits.max_cases`; absent takes the descriptor
-    /// default ([`manifest::DEFAULT_MAX_CASES`]).
+    /// The item's `check.limits.max_cases`; absent takes the default the
+    /// candidate's descriptor publishes under `bounds.max_cases`.
     pub max_cases: Option<NonZeroU64>,
+    /// A candidate violation an external source reports for the claim (an
+    /// engine's counterexample). The arm confirms it by the native replay
+    /// before it reports `refuted`, and a candidate the replay does not
+    /// reproduce is `inconclusive` `replay-parity` (QSpec FR-483
+    /// "Counterexample and evidence kind"). Absent, the arm searches the
+    /// domain itself.
+    pub reported: Option<qsl_replay::value_check::Assignment>,
 }
 
-/// The values of `domain` in order, at most `cap` of them.
-fn values(domain: &ParameterDomain, cap: u64) -> Result<Vec<Value>, ValueCheckUnsupported> {
-    let take = usize::try_from(cap).unwrap_or(usize::MAX);
-    match domain {
-        ParameterDomain::Boolean => Ok(vec![Value::Boolean(false), Value::Boolean(true)]),
-        ParameterDomain::Integers(Some(interval)) => {
-            Ok(integers(interval).take(take).map(Value::Integer).collect())
-        }
-        ParameterDomain::Integers(None) => Ok(Vec::new()),
-        ParameterDomain::Unbounded | ParameterDomain::Unsupported(_) => {
-            Err(ValueCheckUnsupported::ParameterDomain)
-        }
+/// What one evaluated assignment means for the search.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum Step {
+    /// The goal holds there, or the evaluation showed nothing against it.
+    Continue,
+    /// The goal is violated there.
+    Violated(qsl_replay::value_check::Violation),
+    /// The evaluation was stopped.
+    Stop(Stop),
+    /// The evaluator refused: the arm cannot decide the claim.
+    Refuse,
+}
+
+/// The step a verdict is. A refused evaluation is never a held goal.
+pub(crate) fn judge(verdict: Verdict) -> Step {
+    match verdict {
+        Verdict::Holds | Verdict::NotDecisive => Step::Continue,
+        Verdict::Violated(violation) => Step::Violated(violation),
+        Verdict::Stopped(stop) => Step::Stop(stop),
+        Verdict::Refused => Step::Refuse,
     }
 }
 
-/// Decide `request` (QSpec FR-483, FR-484).
+/// `refuted` when the native replay reproduces `violation` at `assignment`,
+/// and `replay-parity` otherwise: the verdict is never the search's own.
+fn reproduce(
+    target: &ValueTarget<'_>,
+    assignment: &[Value],
+    violation: &qsl_replay::value_check::Violation,
+    cancel: &Cancel,
+) -> Result<ValueOutcome, ValueRefusal> {
+    Ok(
+        match target
+            .replay(assignment, violation, cancel)
+            .map_err(ValueRefusal::Fault)?
+        {
+            Some(reproduced) => ValueOutcome::Refuted(Box::new(reproduced)),
+            None => ValueOutcome::ReplayParity,
+        },
+    )
+}
+
+/// Confirm a candidate violation an external source reports: `refuted` only
+/// when the evaluator violates the goal at it, `replay-parity` otherwise.
+fn confirm_reported(
+    target: &ValueTarget<'_>,
+    reported: &[Value],
+    cancel: &Cancel,
+) -> Result<ValueOutcome, ValueRefusal> {
+    let verdict = target
+        .evaluate(reported, cancel)
+        .map_err(ValueRefusal::Fault)?;
+    match judge(verdict) {
+        Step::Violated(violation) => reproduce(target, reported, &violation, cancel),
+        Step::Continue => Ok(ValueOutcome::ReplayParity),
+        Step::Stop(stop) => Ok(ValueOutcome::Stopped(stop)),
+        Step::Refuse => Err(ValueRefusal::Unsupported(
+            target.form(),
+            ValueCheckUnsupported::EvaluationRefused,
+        )),
+    }
+}
+
+/// One parameter's position in the enumeration: the values it has left and
+/// the one it holds. Values are produced one at a time, so a domain of any
+/// size costs a position, never its extent.
+struct Digit {
+    first: Value,
+    values: Box<dyn Iterator<Item = Value>>,
+    current: Value,
+}
+
+/// The iterator over `domain`'s values, in order.
+fn values(domain: &ParameterDomain) -> Box<dyn Iterator<Item = Value>> {
+    match domain {
+        ParameterDomain::Integers(Some(interval)) => {
+            Box::new(integers(interval).map(Value::Integer))
+        }
+        ParameterDomain::Boolean => {
+            Box::new([Value::Boolean(false), Value::Boolean(true)].into_iter())
+        }
+        ParameterDomain::Integers(None)
+        | ParameterDomain::Unbounded
+        | ParameterDomain::Unsupported(_) => Box::new(std::iter::empty()),
+    }
+}
+
+impl Digit {
+    /// The first position of `domain`; `None` when it holds no value.
+    fn first(domain: &ParameterDomain) -> Option<Self> {
+        let mut values = values(domain);
+        let current = values.next()?;
+        Some(Self {
+            first: current.clone(),
+            values,
+            current,
+        })
+    }
+
+    /// Move to the next value; `false` after the last, when the digit is
+    /// back at its first value.
+    fn advance(&mut self, domain: &ParameterDomain) -> bool {
+        if let Some(next) = self.values.next() {
+            self.current = next;
+            return true;
+        }
+        self.values = values(domain);
+        self.values.next();
+        self.current = self.first.clone();
+        false
+    }
+}
+
+/// Decide `request` (QSpec FR-483, FR-484) under the case budget `budget`.
 ///
 /// # Errors
 ///
 /// [`ValueRefusal`] when the item settles without a check.
 pub fn check_value(
     request: &ValueRequest<'_>,
+    budget: NonZeroU64,
     cancel: &Cancel,
 ) -> Result<ValueOutcome, ValueRefusal> {
     let target = &request.target;
     let form = target.form();
-    let budget = request
-        .max_cases
-        .unwrap_or(manifest::DEFAULT_MAX_CASES)
-        .get();
-    if target
+    let budget = budget.get();
+    let domains: Vec<&ParameterDomain> = target
         .parameters()
         .iter()
-        .any(|parameter| *parameter.domain() == ParameterDomain::Unbounded)
-    {
+        .map(|parameter| parameter.domain())
+        .collect();
+    if domains.iter().any(|d| **d == ParameterDomain::Unbounded) {
         return Err(ValueRefusal::RequiresBound);
     }
-    let domains = target
-        .parameters()
+    if domains
         .iter()
-        .map(|parameter| values(parameter.domain(), budget.saturating_add(1)))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|reason| ValueRefusal::Unsupported(form, reason))?;
-    if domains.iter().any(Vec::is_empty) {
-        return Ok(ValueOutcome::Vacuous);
+        .any(|d| matches!(d, ParameterDomain::Unsupported(_)))
+    {
+        return Err(ValueRefusal::Unsupported(
+            form,
+            ValueCheckUnsupported::ParameterDomain,
+        ));
     }
-    let mut position = vec![0_usize; domains.len()];
+    let Some(mut digits) = domains
+        .iter()
+        .map(|domain| Digit::first(domain))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(ValueOutcome::Vacuous);
+    };
+    if let Some(reported) = &request.reported {
+        return confirm_reported(target, reported, cancel);
+    }
     let mut cases = 0_u64;
     loop {
         if cases >= budget {
             return Ok(ValueOutcome::MaxCases(budget));
         }
         cases += 1;
-        let assignment: Vec<Value> = position
-            .iter()
-            .zip(&domains)
-            .map(|(at, domain)| domain[*at].clone())
-            .collect();
-        match target
+        let assignment: Vec<Value> = digits.iter().map(|d| d.current.clone()).collect();
+        let verdict = target
             .evaluate(&assignment, cancel)
-            .map_err(ValueRefusal::Fault)?
-        {
-            Verdict::Holds | Verdict::NotDecisive => {}
-            Verdict::Violated(violation) => {
-                return Ok(
-                    match target
-                        .replay(&assignment, &violation, cancel)
-                        .map_err(ValueRefusal::Fault)?
-                    {
-                        Some(reproduced) => ValueOutcome::Refuted(Box::new(reproduced)),
-                        None => ValueOutcome::ReplayParity,
-                    },
-                );
-            }
-            Verdict::Stopped(stop) => return Ok(ValueOutcome::Stopped(stop)),
-            Verdict::Refused => {
+            .map_err(ValueRefusal::Fault)?;
+        match judge(verdict) {
+            Step::Continue => {}
+            Step::Violated(violation) => return reproduce(target, &assignment, &violation, cancel),
+            Step::Stop(stop) => return Ok(ValueOutcome::Stopped(stop)),
+            Step::Refuse => {
                 return Err(ValueRefusal::Unsupported(
                     form,
                     ValueCheckUnsupported::EvaluationRefused,
@@ -158,20 +257,18 @@ pub fn check_value(
             }
         }
         // Advance the odometer, the last parameter fastest.
-        let mut digit = position.len();
+        let mut at = digits.len();
         loop {
-            if digit == 0 {
+            if at == 0 {
                 return Ok(match form {
                     ClaimForm::Clause => ValueOutcome::Proved { cases },
                     ClaimForm::ScalarOperation => ValueOutcome::Undecided,
                 });
             }
-            digit -= 1;
-            position[digit] += 1;
-            if position[digit] < domains[digit].len() {
+            at -= 1;
+            if digits[at].advance(domains[at]) {
                 break;
             }
-            position[digit] = 0;
         }
     }
 }
@@ -223,12 +320,12 @@ pub fn value_item<'a>(
     index: RequestIndex,
     selection: Result<ValueRequest<'a>, Selection>,
 ) -> AnalyzeItem<'a> {
-    AnalyzeItem::new(
+    AnalyzeItem::new_with_engine(
         index,
         Capability::ValueValidity,
         Mode::Bounded,
         manifest::BACKEND_ID,
-        move |cancel| {
+        move |cancel, engine| {
             let request = match selection {
                 Ok(request) => request,
                 Err(Selection::NoForm) => return EngineReport::Refused(invalid_input()),
@@ -244,7 +341,13 @@ pub fn value_item<'a>(
                 .map(|parameter| parameter.wire())
                 .collect();
             let claim = request.target.claim().clone();
-            match check_value(&request, cancel) {
+            let Some(budget) = request.max_cases.or_else(|| engine.max_cases()) else {
+                return EngineReport::Refused(Refusal::Failed(
+                    InternalFault::new("value-check", "descriptor-publishes-max-cases")
+                        .catalog_code(),
+                ));
+            };
+            match check_value(&request, budget, cancel) {
                 Ok(outcome) => {
                     EngineReport::Value(Box::new(ValueReport::Found(outcome, parameters, claim)))
                 }
@@ -349,5 +452,28 @@ pub(crate) fn settle(
             ),
             None,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsl_replay::value_check::Violation;
+    use quire_exact::CancelCause;
+
+    /// A verdict is a step: a refused evaluation is never a held goal, a
+    /// stop is never a pass, and a violation keeps the violation it found.
+    #[test]
+    fn a_verdict_is_judged_without_turning_a_refusal_or_a_stop_into_a_pass() {
+        assert_eq!(judge(Verdict::Holds), Step::Continue);
+        assert_eq!(judge(Verdict::NotDecisive), Step::Continue);
+        assert_eq!(judge(Verdict::Refused), Step::Refuse);
+        let violation = Violation { undefined: None };
+        assert_eq!(
+            judge(Verdict::Violated(violation.clone())),
+            Step::Violated(violation)
+        );
+        let stop = Stop::Cancelled(CancelCause::Deadline);
+        assert_eq!(judge(Verdict::Stopped(stop.clone())), Step::Stop(stop));
     }
 }

@@ -39,7 +39,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, NodeTag};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{CallFailure, FamilyOutcome};
 use quire_exact::{
@@ -210,7 +210,8 @@ pub struct ValueTarget<'p> {
 impl<'p> ValueTarget<'p> {
     /// The target of the claim at `claim` of the function named `function`.
     ///
-    /// A `Boolean` function's `declaration` occurrence is a `clause`; an
+    /// A `Boolean` function's node at occurrence role `declaration` or
+    /// `claim` is a `clause`; an
     /// occurrence a `value-validity` requirement record of the function keys
     /// is a `scalar-operation`. Every other occurrence selects no form.
     ///
@@ -235,11 +236,16 @@ impl<'p> ValueTarget<'p> {
         if parameters.len() != callable.parameters.len() {
             return Err(fault("function-node-parameters-match-signature"));
         }
-        let declaration = OccurrenceKey::new(
-            wire_id(callable.identity),
-            Origin::new(Role::new("declaration"), 0),
-        );
-        let form = if *claim == declaration {
+        // FR-484 "Forms": a clause's occurrence role is `claim` or
+        // `declaration`. Both select the one clause a `Boolean` function
+        // is, so an item that names the function's node by either role
+        // selects it; the claim keeps the role the item named.
+        let is_clause_key = [Role::new("declaration"), Role::new("claim")]
+            .into_iter()
+            .any(|role| {
+                *claim == OccurrenceKey::new(wire_id(callable.identity), Origin::new(role, 0))
+            });
+        let form = if is_clause_key {
             if *callable.result != ValueType::Boolean {
                 return Err(Selection::NoForm);
             }
@@ -447,13 +453,29 @@ impl<'p> ValueTarget<'p> {
         })
     }
 
-    /// The `{node, occurrence}` the evaluator's `location` stands for.
+    /// The `{node, occurrence}` the evaluator's `location` stands for: the
+    /// one `expression` occurrence of an operation node the package locates
+    /// there. A `value` node (a literal, or a parameter, which the package
+    /// also records at the body's root) is a leaf, and no evaluation is
+    /// undefined at a leaf, so leaves are not candidates. `None` when no
+    /// candidate or more than one remains, so a locus is never a guess
+    /// (QSpec FR-484: the innermost undefined subexpression).
     fn locus_of(&self, location: &Location) -> Option<OccurrenceKey> {
-        self.package
-            .graph()
+        let graph = self.package.graph();
+        let expression = Role::new("expression");
+        let mut found = graph
             .occurrences()
-            .find(|(_, _, found)| *found == location)
-            .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin))
+            .filter(|(node, origin, at)| {
+                *at == location
+                    && *origin.role() == expression
+                    && graph
+                        .semantic_graph()
+                        .node(*node)
+                        .is_some_and(|n| n.node_tag() != NodeTag::Value)
+            })
+            .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin));
+        let only = found.next()?;
+        found.next().is_none().then_some(only)
     }
 }
 

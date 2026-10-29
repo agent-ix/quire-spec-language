@@ -11,8 +11,8 @@ use std::num::NonZeroU64;
 
 use qsl_foundation::bound::DomainKind;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, ManifestDigest, ManifestMembers, Mode,
-    ProviderOrigin, RegistrationRefusal,
+    descriptor_from_manifest_with_max_cases, BackendDescriptor, Candidate, ManifestDigest,
+    ManifestMembers, MaxCasesMember, Mode, ProviderOrigin, RegistrationRefusal,
 };
 use qsl_semantics::check::Capability;
 
@@ -32,8 +32,9 @@ pub const DOMAINS: [&str; 1] = [DomainKind::Integer.to_wire()];
 /// without its own `check.limits.max_cases` may examine.
 pub const DEFAULT_MAX_CASES: NonZeroU64 = NonZeroU64::new(1_048_576).unwrap();
 
-/// The arm's routed descriptor, converted by FR-288's conversion, with its
-/// published `max_cases` default.
+/// The arm's routed descriptor with its published `max_cases` default,
+/// converted by FR-288's conversion for a check arm, which refuses a
+/// descriptor without a positive default (QSpec FR-483).
 ///
 /// # Errors
 ///
@@ -43,7 +44,20 @@ pub fn descriptor(
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
-    descriptor_from_manifest(
+    descriptor_with(origin, manifest_digest, DEFAULT_MAX_CASES)
+}
+
+/// As [`descriptor`], publishing `max_cases` as the default.
+///
+/// # Errors
+///
+/// As [`descriptor`].
+pub fn descriptor_with(
+    origin: ProviderOrigin,
+    manifest_digest: ManifestDigest,
+    max_cases: NonZeroU64,
+) -> Result<BackendDescriptor, RegistrationRefusal> {
+    descriptor_from_manifest_with_max_cases(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),
         origin,
         manifest_digest,
@@ -55,6 +69,6 @@ pub fn descriptor(
             memory_models: None,
             reductions: None,
         },
+        MaxCasesMember::Count(max_cases.get()),
     )
-    .map(|descriptor| descriptor.with_max_cases(DEFAULT_MAX_CASES))
 }
