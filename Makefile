@@ -59,8 +59,15 @@ checked-input:
 # FR-340/FR-344 (ADR-017 RF-2): fails when a superseding revision in the real
 # corpus does not admit a case its prior revision admitted, or when the gate
 # reports anything but success (exit 0).
+#
+# FR-340: the corpus is generated into a temporary directory on every run, with
+# the model digest computed from examples/config-version/model.semantic-ir.json
+# then. Nothing is committed with a frozen digest.
 refinement-versioning:
-	cargo run --package xtask -- refinement versioning tests/fixtures/refinement/versioning/
+	@corpus=$$(mktemp -d "$${TMPDIR:-/tmp}/refinement-versioning.XXXXXX") && \
+	trap 'rm -rf "$$corpus"' EXIT && \
+	cargo run --package xtask -- refinement generate-versioning "$$corpus" && \
+	cargo run --package xtask -- refinement versioning "$$corpus"
 
 # FR-353: run complete-V1 conformance qualification against the published corpus.
 qualify:
