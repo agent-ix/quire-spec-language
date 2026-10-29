@@ -111,9 +111,15 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
     let source = std::fs::read_to_string(program).unwrap();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    let line = source
+        .lines()
+        .find(|line| line.starts_with("model "))
+        .unwrap_or("<no model line>");
     assert!(
         source.contains(&format!("sha256-jcs:{digest}")),
-        "the source selects the model file by its digest"
+        "the source must select the model file by its digest. Computed model digest: \
+         sha256-jcs:{digest}; the source's current line: {line}. Update \
+         examples/switch-transition/switch.native so its `model` line carries the computed digest."
     );
 
     let mut command = strings(&["--model"]);
