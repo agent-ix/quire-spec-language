@@ -42,7 +42,11 @@ impl Lowering<'_> {
         }
         let mut binders = Binders::new(predicate.slot_names(), &scope);
         let term = self.expression(predicate.checked_body().root(), &mut binders)?;
-        term.key()
-            .ok_or_else(|| super::fault(&at, KeyFault::UnkeyableRequirements))
+        let key = term
+            .key()
+            .ok_or_else(|| super::fault(&at, KeyFault::UnkeyableRequirements))?;
+        // A literal or parameter root is a value, which an `urgency`
+        // references through an `expression`/`reference` node.
+        self.boolean_expression(key, &at)
     }
 }

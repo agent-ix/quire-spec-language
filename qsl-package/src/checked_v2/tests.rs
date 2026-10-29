@@ -2016,10 +2016,13 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     assert_eq!(timed.guards.len(), 1);
     assert_eq!(timed.invariants.len(), 1);
     assert_eq!(timed.urgencies.len(), 2);
-    assert_eq!(timed.normalized_constraints.len(), 1);
-    assert_eq!(timed.normalized_constraints[0].bound, "3/1");
-    assert_eq!(timed.normalized_constraints[0].comparison, "le");
-    assert_eq!(timed.normalized_constraints[0].unit, timed.source.unit);
+    assert_eq!(timed.constraints.len(), 1);
+    assert_eq!(timed.constraints[0].bound, "3/1");
+    assert_eq!(
+        timed.constraints[0].comparison,
+        super::timed_model::ClockComparison::Le
+    );
+    assert_eq!(timed.constraints[0].bound_type, timed.source.unit);
 }
 
 #[trace("TC-1187", "FR-415-AC-17", "FR-447-AC-13")]
@@ -2054,7 +2057,7 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
     assert!(timed.guards.is_empty());
     assert!(timed.invariants.is_empty());
     assert!(timed.urgencies.is_empty());
-    assert!(timed.normalized_constraints.is_empty());
+    assert!(timed.constraints.is_empty());
     let source = &envelope["semantic_graph"]["nodes"][44];
     let operation_id = &source["body"]["members"][3]["value"]["target"];
     let operation = envelope["semantic_graph"]["nodes"]
@@ -2343,8 +2346,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     for reset in &mut changed_unit.resets {
         reset.value_type = changed_unit.source.unit.clone();
     }
-    for constraint in &mut changed_unit.normalized_constraints {
-        constraint.unit = changed_unit.source.unit.clone();
+    for constraint in &mut changed_unit.constraints {
         constraint.bound_type = changed_unit.source.unit.clone();
     }
     cases.push(("unit", changed_unit));
@@ -2373,11 +2375,11 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     cases.push(("path", changed_path));
 
     let mut changed_bound = original.clone();
-    changed_bound.normalized_constraints[0].bound = "7/2".to_owned();
+    changed_bound.constraints[0].bound = "7/2".to_owned();
     cases.push(("bound", changed_bound));
 
     let mut changed_comparison = original.clone();
-    changed_comparison.normalized_constraints[0].comparison = "lt".to_owned();
+    changed_comparison.constraints[0].comparison = super::timed_model::ClockComparison::Lt;
     cases.push(("comparison", changed_comparison));
 
     let mut changed_reset = original.clone();
@@ -2468,15 +2470,19 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         for (expected, actual) in expected.clock_places.iter_mut().zip(&actual.clock_places) {
             expected.metadata = actual.metadata.clone();
         }
+        // The referenced timed nodes are rekeyed; each reference is
+        // taken from the read-back model.
         for (expected, actual) in expected.resets.iter_mut().zip(&actual.resets) {
             expected.metadata = actual.metadata.clone();
-            expected.place = actual.place.clone();
+            expected.target = actual.target.clone();
         }
         for (expected, actual) in expected.guards.iter_mut().zip(&actual.guards) {
             expected.metadata = actual.metadata.clone();
+            expected.parts = actual.parts.clone();
         }
         for (expected, actual) in expected.invariants.iter_mut().zip(&actual.invariants) {
             expected.metadata = actual.metadata.clone();
+            expected.bounds = actual.bounds.clone();
         }
         for (expected, actual) in expected.urgencies.iter_mut().zip(&actual.urgencies) {
             match (expected, actual) {
@@ -2495,13 +2501,9 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
                 _ => panic!("urgency form is unchanged"),
             }
         }
-        for (expected, actual) in expected
-            .normalized_constraints
-            .iter_mut()
-            .zip(&actual.normalized_constraints)
-        {
+        for (expected, actual) in expected.constraints.iter_mut().zip(&actual.constraints) {
             expected.metadata = actual.metadata.clone();
-            expected.place = actual.place.clone();
+            expected.target = actual.target.clone();
         }
         assert_eq!(actual, &expected, "{case} typed content reads back exactly");
     }

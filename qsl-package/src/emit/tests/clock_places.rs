@@ -306,7 +306,6 @@ fn a_clock_place_reads_back() {
         place.path,
         [crate::checked_v2::ClockPathStep::Field("x".to_owned())]
     );
-    assert!(place.guards.is_empty());
 }
 
 /// QSpec FR-322-AC-148 read-back of a template slot step: the place of `s:
@@ -322,10 +321,6 @@ fn a_template_slot_place_reads_back() {
         panic!("one timed model reads back");
     };
     assert_eq!(timed.clock_places.len(), 2);
-    assert!(timed
-        .clock_places
-        .iter()
-        .all(|place| place.guards.is_empty()));
 }
 
 /// ConfigVersion with the record `Timer { x: Clock; n: VersionNumber }`, the

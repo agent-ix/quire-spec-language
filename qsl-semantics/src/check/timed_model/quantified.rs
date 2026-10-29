@@ -494,3 +494,19 @@ pub(super) fn reset(
         selection: Some((quantifier.path, name, predicate)),
     }))
 }
+
+/// The span of the first quantifier over a clock collection in `located`,
+/// in node order: a guard reading one has no `clock_guard` binder form
+/// until STD-554 (QSpec FR-322-AC-263).
+pub(super) fn first(
+    located: &Located<'_>,
+    clocks: &Clocks<'_>,
+    context: EffectiveId,
+) -> Option<qsl_foundation::Span> {
+    located
+        .form
+        .expression
+        .iter()
+        .find_map(|node| quantifier(located, node.id(), clocks, context))
+        .map(|quantifier| quantifier.span)
+}

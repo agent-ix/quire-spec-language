@@ -26,14 +26,15 @@ pub struct CheckedTimedModel {
     pub clock_places: Vec<CheckedClockPlace>,
     /// Clock resets in the root's declared order.
     pub resets: Vec<CheckedClockReset>,
-    /// Guard declarations and their checked predicates.
-    pub guards: Vec<CheckedTimedPredicate>,
-    /// Invariant declarations and their checked predicates.
-    pub invariants: Vec<CheckedTimedPredicate>,
+    /// One guard for each guarded operation, in the root's declared order.
+    pub guards: Vec<CheckedClockGuard>,
+    /// Time invariants in the root's declared order.
+    pub invariants: Vec<CheckedTimeInvariant>,
     /// Urgency declarations in the root's declared order.
     pub urgencies: Vec<CheckedUrgency>,
-    /// Normalized constraints in the root's declared order.
-    pub normalized_constraints: Vec<CheckedClockConstraint>,
+    /// Every constraint a guard part or an invariant names, in the root's
+    /// declared order.
+    pub constraints: Vec<CheckedClockConstraint>,
     /// Primitive scalar type identities used by timed-node literals.
     pub literal_types: TimedLiteralTypes,
 }
@@ -70,13 +71,133 @@ pub struct TimedLiteralTypes {
     pub integer: Option<CheckedNodeId>,
 }
 
-/// One checked guard or time invariant.
+/// The comparison of a `clock_constraint` (QSpec FR-322 "Clause nodes"),
+/// declared in the rank the aggregate order compares it by: `lt`, `le`,
+/// `eq`, `ge`, `gt`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ClockComparison {
+    /// `lt`.
+    Lt,
+    /// `le`.
+    Le,
+    /// `eq`.
+    Eq,
+    /// `ge`.
+    Ge,
+    /// `gt`.
+    Gt,
+}
+
+impl ClockComparison {
+    /// The wire word.
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::Lt => "lt",
+            Self::Le => "le",
+            Self::Eq => "eq",
+            Self::Ge => "ge",
+            Self::Gt => "gt",
+        }
+    }
+
+    /// The comparison a wire word names, `None` for any other word.
+    // Intake proof: clause_intake_is_total_and_round_trips_the_clause_fixture.
+    #[ix_trace_rs::string_edge]
+    pub fn from_wire(word: &str) -> Option<Self> {
+        Some(match word {
+            "lt" => Self::Lt,
+            "le" => Self::Le,
+            "eq" => Self::Eq,
+            "ge" => Self::Ge,
+            "gt" => Self::Gt,
+            _ => return None,
+        })
+    }
+
+    /// Whether the comparison is an upper bound, the only comparisons a
+    /// `time_invariant` bound may carry.
+    pub const fn is_upper_bound(self) -> bool {
+        matches!(self, Self::Lt | Self::Le)
+    }
+}
+
+/// What a `clock_constraint` bounds (QSpec FR-322 "Clause nodes").
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedTimedPredicate {
+pub enum CheckedConstraintTarget {
+    /// Kind `place`: the clock of one instance of a template place.
+    Place {
+        /// The `clock_place` template.
+        place: CheckedNodeId,
+        /// The owner term, an expression of the place's owner type.
+        owner: CheckedNodeId,
+        /// One term for each `slot` step of the place's path.
+        slots: Vec<CheckedNodeId>,
+    },
+    /// Kind `parameter`: the clock an operation's `Clock` parameter binds.
+    Parameter {
+        /// The no-point `state`/`operation_anchor` of the operation.
+        operation: CheckedNodeId,
+        /// The parameter's declared name.
+        parameter: String,
+    },
+}
+
+/// What a `clock_reset` writes (QSpec FR-322 "Clause nodes").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedResetTarget {
+    /// Kind `place`: each instance of a template place the binders select
+    /// where the condition holds.
+    Place {
+        /// The `clock_place` template.
+        place: CheckedNodeId,
+        /// The owner term.
+        owner: CheckedNodeId,
+        /// One term for each `slot` step of the place's path.
+        slots: Vec<CheckedNodeId>,
+        /// The `parameter` nodes the reset quantifies, each one of `slots`,
+        /// in slot order.
+        binders: Vec<CheckedNodeId>,
+        /// The Boolean expression under which the reset happens.
+        condition: CheckedNodeId,
+    },
+    /// Kind `parameter`: the clock an operation's `Clock` parameter binds.
+    Parameter {
+        /// The parameter's declared name.
+        parameter: String,
+    },
+}
+
+/// One part of a `clock_guard`: the constraints that hold in the operation
+/// when the predicate does.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedGuardPart {
+    /// The part's Boolean expression node.
+    pub predicate: CheckedNodeId,
+    /// The part's `clock_constraint` nodes, in aggregate order.
+    pub constraints: Vec<CheckedNodeId>,
+}
+
+/// One operation's `clock_guard`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedClockGuard {
     /// The node's checked wire metadata.
     pub metadata: TimedNodeMetadata,
-    /// The checked Boolean predicate node.
+    /// The no-point `state`/`operation_anchor` of the guarded operation.
+    pub operation: CheckedNodeId,
+    /// The nonempty disjunction of parts.
+    pub parts: Vec<CheckedGuardPart>,
+}
+
+/// One `time_invariant`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedTimeInvariant {
+    /// The node's checked wire metadata.
+    pub metadata: TimedNodeMetadata,
+    /// The Boolean expression node where the bounds hold.
     pub predicate: CheckedNodeId,
+    /// The nonempty upper bounds, `clock_constraint` nodes of kind `place`
+    /// in aggregate order.
+    pub bounds: Vec<CheckedNodeId>,
 }
 
 /// The closed kind of an admitted time source.
@@ -171,8 +292,6 @@ pub struct CheckedClockPlace {
     pub resolved_path: Vec<ResolvedClockPathStep>,
     /// The model node this place belongs to.
     pub model: CheckedNodeId,
-    /// Guard nodes associated with this place.
-    pub guards: Vec<CheckedNodeId>,
 }
 
 /// A checked clock reset with an exact normalized nonnegative value.
@@ -180,8 +299,10 @@ pub struct CheckedClockPlace {
 pub struct CheckedClockReset {
     /// The node's checked wire metadata.
     pub metadata: TimedNodeMetadata,
-    /// The clock place being reset.
-    pub place: CheckedNodeId,
+    /// The no-point `state`/`operation_anchor` of the resetting operation.
+    pub operation: CheckedNodeId,
+    /// The reset clock.
+    pub target: CheckedResetTarget,
     /// The reduced reset quantity.
     pub value: String,
     /// Quantity type, which is the selected unit node.
@@ -214,14 +335,12 @@ pub enum CheckedUrgency {
 pub struct CheckedClockConstraint {
     /// The node's checked wire metadata.
     pub metadata: TimedNodeMetadata,
-    /// The clock place it constrains.
-    pub place: CheckedNodeId,
-    /// `lt`, `le`, `gt` or `ge`.
-    pub comparison: String,
+    /// The constrained clock.
+    pub target: CheckedConstraintTarget,
+    /// The comparison.
+    pub comparison: ClockComparison,
     /// The reduced rational bound.
     pub bound: String,
-    /// The source's selected time unit for this normalized bound.
-    pub unit: CheckedNodeId,
     /// Quantity type, which is the selected unit node.
     pub bound_type: CheckedNodeId,
 }
@@ -230,8 +349,8 @@ impl CheckedClockPlace {
     /// The template `clock_place` of the checked clock `clock` of the timed
     /// model of `model` (QSpec FR-322 "Timed-model nodes"): its path, with
     /// each slot step's symbolic selector the Integer type node
-    /// `integer_type`, its `resolved_path` rows, and no guard, since a
-    /// model with a guard is not emitted. The emitter rekeys `id`.
+    /// `integer_type`, and its `resolved_path` rows. The emitter rekeys
+    /// `id`.
     pub(crate) fn template(
         clock: &qsl_semantics::check::ClockField,
         id: CheckedNodeId,
@@ -285,7 +404,6 @@ impl CheckedClockPlace {
             path,
             resolved_path,
             model: model.clone(),
-            guards: Vec::new(),
         }
     }
 }
@@ -364,7 +482,7 @@ impl CheckedTimedModel {
             guards: Vec::new(),
             invariants: Vec::new(),
             urgencies: Vec::new(),
-            normalized_constraints: Vec::new(),
+            constraints: Vec::new(),
             literal_types: TimedLiteralTypes {
                 text: text_type,
                 integer: None,
@@ -425,39 +543,31 @@ impl CheckedTimedModel {
 
     /// Write all timed nodes from this typed model in FR-322 graph order.
     pub fn write_nodes(&self) -> Result<Vec<CheckedSemanticNodeV2>, &'static str> {
+        let types = &self.literal_types;
         let mut nodes = Vec::with_capacity(
-            1 + self.clock_places.len()
+            2 + self.clock_places.len()
                 + self.resets.len()
                 + self.guards.len()
                 + self.invariants.len()
                 + self.urgencies.len()
-                + self.normalized_constraints.len(),
+                + self.constraints.len(),
         );
-        nodes.push(write_source(&self.source, &self.literal_types));
-        nodes.extend(
-            self.clock_places
-                .iter()
-                .map(|place| write_place(place, &self.literal_types))
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-        nodes.extend(self.resets.iter().map(write_reset));
-        nodes.extend(
-            self.guards
-                .iter()
-                .map(|guard| write_predicate(&guard.metadata, "clock_guard", &guard.predicate)),
-        );
-        nodes.extend(self.invariants.iter().map(|invariant| {
-            write_predicate(&invariant.metadata, "time_invariant", &invariant.predicate)
-        }));
+        nodes.push(write_source(&self.source, types));
+        for place in &self.clock_places {
+            nodes.push(write_place(place, types)?);
+        }
+        nodes.extend(self.resets.iter().map(|reset| write_reset(reset, types)));
+        nodes.extend(self.guards.iter().map(write_guard));
+        nodes.extend(self.invariants.iter().map(write_invariant));
         nodes.extend(
             self.urgencies
                 .iter()
-                .map(|urgency| write_urgency(urgency, &self.literal_types)),
+                .map(|urgency| write_urgency(urgency, types)),
         );
         nodes.extend(
-            self.normalized_constraints
+            self.constraints
                 .iter()
-                .map(|constraint| write_constraint(constraint, &self.literal_types)),
+                .map(|constraint| write_constraint(constraint, types)),
         );
         nodes.push(write_root(self));
         Ok(nodes)
@@ -601,32 +711,71 @@ fn write_place(
             binding_term("model", reference_term(&place.model)),
             binding_term("path", aggregate_term(path)),
             binding_term("resolved_path", aggregate_term(resolved_path)),
-            binding_term("guards", reference_terms(&place.guards)),
         ]),
     ))
 }
 
-fn write_reset(reset: &CheckedClockReset) -> CheckedSemanticNodeV2 {
-    reset.metadata.node(
-        "clock_reset",
+fn write_reset(reset: &CheckedClockReset, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
+    let value = binding_term(
+        "value",
+        CheckedTerm::literal_quantity(reset.value_type.clone(), reset.value.as_str()),
+    );
+    let operation = binding_term("operation", reference_term(&reset.operation));
+    let members = match &reset.target {
+        CheckedResetTarget::Place {
+            place,
+            owner,
+            slots,
+            binders,
+            condition,
+        } => vec![
+            binding_term("kind", text_literal(&types.text, "place")),
+            operation,
+            binding_term("place", reference_term(place)),
+            binding_term("owner", reference_term(owner)),
+            binding_term("slots", reference_terms(slots)),
+            binding_term("binders", reference_terms(binders)),
+            binding_term("condition", reference_term(condition)),
+            value,
+        ],
+        CheckedResetTarget::Parameter { parameter } => vec![
+            binding_term("kind", text_literal(&types.text, "parameter")),
+            operation,
+            binding_term("parameter", text_literal(&types.text, parameter)),
+            value,
+        ],
+    };
+    reset.metadata.node("clock_reset", aggregate_term(members))
+}
+
+fn write_guard(guard: &CheckedClockGuard) -> CheckedSemanticNodeV2 {
+    let parts = guard
+        .parts
+        .iter()
+        .map(|part| {
+            aggregate_term(
+                std::iter::once(binding_term("predicate", reference_term(&part.predicate)))
+                    .chain(part.constraints.iter().map(reference_term))
+                    .collect(),
+            )
+        })
+        .collect();
+    guard.metadata.node(
+        "clock_guard",
         aggregate_term(vec![
-            binding_term("place", reference_term(&reset.place)),
-            binding_term(
-                "value",
-                CheckedTerm::literal_quantity(reset.value_type.clone(), reset.value.as_str()),
-            ),
+            binding_term("operation", reference_term(&guard.operation)),
+            binding_term("parts", aggregate_term(parts)),
         ]),
     )
 }
 
-fn write_predicate(
-    metadata: &TimedNodeMetadata,
-    form: &str,
-    predicate: &CheckedNodeId,
-) -> CheckedSemanticNodeV2 {
-    metadata.node(
-        form,
-        aggregate_term(vec![binding_term("predicate", reference_term(predicate))]),
+fn write_invariant(invariant: &CheckedTimeInvariant) -> CheckedSemanticNodeV2 {
+    invariant.metadata.node(
+        "time_invariant",
+        aggregate_term(vec![
+            binding_term("predicate", reference_term(&invariant.predicate)),
+            binding_term("bounds", reference_terms(&invariant.bounds)),
+        ]),
     )
 }
 
@@ -661,22 +810,39 @@ fn write_constraint(
     constraint: &CheckedClockConstraint,
     types: &TimedLiteralTypes,
 ) -> CheckedSemanticNodeV2 {
+    let tail = [
+        binding_term(
+            "comparison",
+            text_literal(&types.text, constraint.comparison.as_wire()),
+        ),
+        binding_term(
+            "bound",
+            CheckedTerm::literal_quantity(constraint.bound_type.clone(), constraint.bound.as_str()),
+        ),
+    ];
+    let head = match &constraint.target {
+        CheckedConstraintTarget::Place {
+            place,
+            owner,
+            slots,
+        } => vec![
+            binding_term("kind", text_literal(&types.text, "place")),
+            binding_term("place", reference_term(place)),
+            binding_term("owner", reference_term(owner)),
+            binding_term("slots", reference_terms(slots)),
+        ],
+        CheckedConstraintTarget::Parameter {
+            operation,
+            parameter,
+        } => vec![
+            binding_term("kind", text_literal(&types.text, "parameter")),
+            binding_term("operation", reference_term(operation)),
+            binding_term("parameter", text_literal(&types.text, parameter)),
+        ],
+    };
     constraint.metadata.node(
         "clock_constraint",
-        aggregate_term(vec![
-            binding_term("place", reference_term(&constraint.place)),
-            binding_term(
-                "comparison",
-                text_literal(&types.text, &constraint.comparison),
-            ),
-            binding_term(
-                "bound",
-                CheckedTerm::literal_quantity(
-                    constraint.bound_type.clone(),
-                    constraint.bound.as_str(),
-                ),
-            ),
-        ]),
+        aggregate_term(head.into_iter().chain(tail).collect()),
     )
 }
 
@@ -744,7 +910,7 @@ fn write_root(model: &CheckedTimedModel) -> CheckedSemanticNodeV2 {
                 "constraints",
                 references(
                     model
-                        .normalized_constraints
+                        .constraints
                         .iter()
                         .map(|constraint| &constraint.metadata.node_id)
                         .collect(),
@@ -810,19 +976,19 @@ fn project_root(
         .collect::<Result<Vec<_>, _>>()?;
     let guards = reference_list(binding(body, "guards")?)?
         .into_iter()
-        .map(|id| project_predicate(referenced_node_by_id(&id, nodes)?, "clock_guard"))
+        .map(|id| project_guard(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
     let invariants = reference_list(binding(body, "invariants")?)?
         .into_iter()
-        .map(|id| project_predicate(referenced_node_by_id(&id, nodes)?, "time_invariant"))
+        .map(|id| project_invariant(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
     let urgencies = reference_list(binding(body, "urgencies")?)?
         .into_iter()
         .map(|id| project_urgency(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let normalized_constraints = reference_list(binding(body, "constraints")?)?
+    let constraints = reference_list(binding(body, "constraints")?)?
         .into_iter()
-        .map(|id| project_constraint(referenced_node_by_id(&id, nodes)?, source.unit.clone()))
+        .map(|id| project_constraint(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(CheckedTimedModel {
         metadata: TimedNodeMetadata::from_node(root),
@@ -834,7 +1000,7 @@ fn project_root(
         guards,
         invariants,
         urgencies,
-        normalized_constraints,
+        constraints,
         literal_types: literal_types.clone(),
     })
 }
@@ -896,7 +1062,6 @@ fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'st
         path,
         resolved_path,
         model: reference(binding(body, "model")?)?,
-        guards: reference_list(binding(body, "guards")?)?,
     })
 }
 
@@ -946,29 +1111,76 @@ fn project_resolved_step(value: &CheckedTerm) -> Result<ResolvedClockPathStep, &
     })
 }
 
+// Intake proof: clause_intake_is_total_and_round_trips_the_clause_fixture.
+// The `kind` word is consumed once into CheckedResetTarget; an unknown kind
+// refuses.
+#[ix_trace_rs::string_edge]
 fn project_reset(node: &CheckedSemanticNodeV2) -> Result<CheckedClockReset, &'static str> {
     if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Reset) {
         return Err("clock reset reference has wrong form");
     }
     let body = &node.body;
+    let target = match literal_text(binding(body, "kind")?)? {
+        "place" => CheckedResetTarget::Place {
+            place: reference(binding(body, "place")?)?,
+            owner: reference(binding(body, "owner")?)?,
+            slots: reference_list(binding(body, "slots")?)?,
+            binders: reference_list(binding(body, "binders")?)?,
+            condition: reference(binding(body, "condition")?)?,
+        },
+        "parameter" => CheckedResetTarget::Parameter {
+            parameter: literal_text(binding(body, "parameter")?)?.to_owned(),
+        },
+        _ => return Err("unknown clock reset kind"),
+    };
     Ok(CheckedClockReset {
         metadata: TimedNodeMetadata::from_node(node),
-        place: reference(binding(body, "place")?)?,
+        operation: reference(binding(body, "operation")?)?,
+        target,
         value: normalized_rational(literal_string(binding(body, "value")?)?)?,
         value_type: literal_type(binding(body, "value")?)?,
     })
 }
 
-fn project_predicate(
-    node: &CheckedSemanticNodeV2,
-    expected_form: &str,
-) -> Result<CheckedTimedPredicate, &'static str> {
-    if node.semantic_form.as_ref() != expected_form {
-        return Err("timed predicate reference has wrong form");
+fn project_guard(node: &CheckedSemanticNodeV2) -> Result<CheckedClockGuard, &'static str> {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Guard) {
+        return Err("clock guard reference has wrong form");
     }
-    Ok(CheckedTimedPredicate {
+    let body = &node.body;
+    let parts = aggregate(binding(body, "parts")?)?
+        .iter()
+        .map(|part| {
+            let (predicate, constraints) = aggregate(part)?
+                .split_first()
+                .ok_or("a guard part is empty")?;
+            let CheckedTerm::Binding { name, value } = predicate else {
+                return Err("a guard part does not begin with its predicate");
+            };
+            if name.as_ref() != "predicate" {
+                return Err("a guard part does not begin with its predicate");
+            }
+            Ok(CheckedGuardPart {
+                predicate: reference(value)?,
+                constraints: constraints.iter().map(reference).collect::<Result<_, _>>()?,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CheckedClockGuard {
         metadata: TimedNodeMetadata::from_node(node),
-        predicate: reference(binding(&node.body, "predicate")?)?,
+        operation: reference(binding(body, "operation")?)?,
+        parts,
+    })
+}
+
+fn project_invariant(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeInvariant, &'static str> {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Invariant) {
+        return Err("time invariant reference has wrong form");
+    }
+    let body = &node.body;
+    Ok(CheckedTimeInvariant {
+        metadata: TimedNodeMetadata::from_node(node),
+        predicate: reference(binding(body, "predicate")?)?,
+        bounds: reference_list(binding(body, "bounds")?)?,
     })
 }
 
@@ -994,20 +1206,33 @@ fn project_urgency(node: &CheckedSemanticNodeV2) -> Result<CheckedUrgency, &'sta
     }
 }
 
-fn project_constraint(
-    node: &CheckedSemanticNodeV2,
-    unit: CheckedNodeId,
-) -> Result<CheckedClockConstraint, &'static str> {
+// Intake proof: clause_intake_is_total_and_round_trips_the_clause_fixture.
+// The `kind` word is consumed once into CheckedConstraintTarget and the
+// comparison once into ClockComparison; unknown words refuse.
+#[ix_trace_rs::string_edge]
+fn project_constraint(node: &CheckedSemanticNodeV2) -> Result<CheckedClockConstraint, &'static str> {
     if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Constraint) {
         return Err("clock constraint reference has wrong form");
     }
     let body = &node.body;
+    let target = match literal_text(binding(body, "kind")?)? {
+        "place" => CheckedConstraintTarget::Place {
+            place: reference(binding(body, "place")?)?,
+            owner: reference(binding(body, "owner")?)?,
+            slots: reference_list(binding(body, "slots")?)?,
+        },
+        "parameter" => CheckedConstraintTarget::Parameter {
+            operation: reference(binding(body, "operation")?)?,
+            parameter: literal_text(binding(body, "parameter")?)?.to_owned(),
+        },
+        _ => return Err("unknown clock constraint kind"),
+    };
     Ok(CheckedClockConstraint {
         metadata: TimedNodeMetadata::from_node(node),
-        place: reference(binding(body, "place")?)?,
-        comparison: literal_text(binding(body, "comparison")?)?.to_owned(),
+        target,
+        comparison: ClockComparison::from_wire(literal_text(binding(body, "comparison")?)?)
+            .ok_or("unknown clock comparison")?,
         bound: normalized_rational(literal_string(binding(body, "bound")?)?)?,
-        unit,
         bound_type: literal_type(binding(body, "bound")?)?,
     })
 }
@@ -1179,6 +1404,115 @@ mod intake_proofs {
             })
             .expect("fixture binding exists");
         **value = replacement;
+    }
+
+    /// The graph nodes of the published fixture `name`.
+    fn fixture_nodes(name: &str) -> Vec<CheckedSemanticNodeV2> {
+        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
+        let path = std::path::Path::new(&directory)
+            .join("proposals/checked-package-v2/fixtures")
+            .join(name);
+        let bytes = std::fs::read(path).expect("the published fixture is readable");
+        let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        serde_json::from_value(package["semantic_graph"]["nodes"].clone()).unwrap()
+    }
+
+    /// QSpec FR-322-AC-261, FR-322-AC-266 (TC-367 CK-32): the clause
+    /// fixture's closed forms, every clause in both kinds, reconstruct as
+    /// one typed model, and the writer gives back every timed node of the
+    /// fixture exactly; an unknown kind or comparison word refuses.
+    #[ix_trace_rs::trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-266")]
+    #[test]
+    fn clause_intake_is_total_and_round_trips_the_clause_fixture() {
+        let nodes = fixture_nodes("positive-timed-clause-nodes.json");
+        let models = CheckedTimedModel::from_nodes(&nodes).expect("the clause fixture projects");
+        let [model] = models.as_slice() else {
+            panic!("one timed model");
+        };
+        assert_eq!(model.clock_places.len(), 9);
+        assert_eq!(model.resets.len(), 5);
+        assert_eq!(model.guards.len(), 2);
+        assert_eq!(model.invariants.len(), 2);
+        assert_eq!(model.urgencies.len(), 2);
+        assert_eq!(model.constraints.len(), 7);
+        let parameter_resets = model
+            .resets
+            .iter()
+            .filter(|reset| matches!(reset.target, CheckedResetTarget::Parameter { .. }))
+            .count();
+        assert_eq!(parameter_resets, 1);
+        let parameter_constraints = model
+            .constraints
+            .iter()
+            .filter(|constraint| {
+                matches!(constraint.target, CheckedConstraintTarget::Parameter { .. })
+            })
+            .count();
+        assert_eq!(parameter_constraints, 1);
+        assert_eq!(
+            model.guards[0]
+                .parts
+                .iter()
+                .map(|part| part.constraints.len())
+                .collect::<Vec<_>>(),
+            [2, 1]
+        );
+        let written = model.write_nodes().expect("the clause model writes");
+        let timed: Vec<&CheckedSemanticNodeV2> = nodes
+            .iter()
+            .filter(|node| node.node_tag.as_ref() == "timed_model")
+            .collect();
+        assert_eq!(written.len(), timed.len());
+        for node in &written {
+            let published = timed
+                .iter()
+                .find(|published| published.node_id == node.node_id)
+                .unwrap_or_else(|| panic!("{} is a published node", node.semantic_form));
+            assert_eq!(
+                serde_json::to_value(node).unwrap(),
+                serde_json::to_value(published).unwrap(),
+                "{} round trips",
+                node.semantic_form
+            );
+        }
+        let text = |node: &CheckedSemanticNodeV2| {
+            literal_type(binding(&node.body, "kind").unwrap()).unwrap()
+        };
+        let mut reset = timed
+            .iter()
+            .find(|node| node.semantic_form.as_ref() == "clock_reset")
+            .map(|node| (*node).clone())
+            .unwrap();
+        let text_type = text(&reset);
+        replace_binding(
+            &mut reset.body,
+            "kind",
+            CheckedTerm::literal_text(text_type.clone(), "other"),
+        );
+        assert_eq!(project_reset(&reset), Err("unknown clock reset kind"));
+        let mut constraint = timed
+            .iter()
+            .find(|node| node.semantic_form.as_ref() == "clock_constraint")
+            .map(|node| (*node).clone())
+            .unwrap();
+        replace_binding(
+            &mut constraint.body,
+            "comparison",
+            CheckedTerm::literal_text(text_type.clone(), "ne"),
+        );
+        assert_eq!(
+            project_constraint(&constraint),
+            Err("unknown clock comparison")
+        );
+        replace_binding(
+            &mut constraint.body,
+            "kind",
+            CheckedTerm::literal_text(text_type, "other"),
+        );
+        assert_eq!(
+            project_constraint(&constraint),
+            Err("unknown clock constraint kind")
+        );
     }
 
     #[test]

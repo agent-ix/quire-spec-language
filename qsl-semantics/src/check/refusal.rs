@@ -1191,6 +1191,71 @@ impl ProtocolAnchorCause {
     }
 }
 
+/// A timed-model member that no S4 emission writes yet (FR-230 "Checked
+/// package", QSpec FR-322 "Clause nodes"): the model is refused
+/// `unsupported_construct`/`not-yet-implemented` at the member.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UnwrittenTimedMember {
+    /// A guard or time invariant quantified over a clock collection, which
+    /// has no binder form in a `clock_guard` or `time_invariant` until
+    /// STD-554 (QSpec FR-322-AC-263, `QN-01`, `QN-02`).
+    QuantifiedClause,
+    /// A clock-reading clause bound to an execution point: a timed clause
+    /// names its operation's no-point anchor, and STD-555 rules the
+    /// point-qualified anchor (QSpec FR-342-AC-11).
+    PointQualifiedClause,
+    /// A guard part, time invariant or `urgent when` predicate that reads a
+    /// clock presence, whose `presence_read` over a `clock_place` S3 does
+    /// not lower yet.
+    PresenceRead,
+    /// A constraint on the clock of another object than the receiver
+    /// (`self.peer.x`), whose owner term S3 does not lower yet.
+    OtherObjectClock,
+    /// A guard disjunct that constrains no clock: a `clock_guard` part
+    /// names at least one constraint (QSpec FR-322-AC-261, `CL-20`).
+    UnconstrainedGuardPart,
+    /// Two guarded preconditions of one operation, whose conjunction S4
+    /// does not write as the one guard of the operation's anchor yet.
+    ConjoinedGuards,
+    /// A clock collection written whole, which no FR-322 clause form
+    /// carries.
+    CollectionWrite,
+    /// `self.v = absent`, which no FR-322 clause form carries.
+    PresenceDrop,
+    /// A postcondition's requirement on a clock place's presence, which no
+    /// FR-322 clause form carries.
+    PresenceRequirement,
+    /// A reset by selection whose selection reads the element's data: the
+    /// `condition` of a `clock_reset` reads the element by its position.
+    SelectionPredicate,
+    /// A reset of an element clock that no single binder selects: a clock
+    /// below two collections, or an element named by position.
+    ElementReset,
+}
+
+impl UnwrittenTimedMember {
+    /// The member, as the refusal names it.
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::QuantifiedClause => {
+                "a quantified guard or time invariant has no binder form until STD-554"
+            }
+            Self::PointQualifiedClause => {
+                "a clock-reading clause bound to an execution point waits on STD-555"
+            }
+            Self::PresenceRead => "a predicate reading a clock presence is not lowered yet",
+            Self::OtherObjectClock => "a constraint on another object's clock is not lowered yet",
+            Self::UnconstrainedGuardPart => "a guard disjunct that constrains no clock",
+            Self::ConjoinedGuards => "two guarded preconditions of one operation",
+            Self::CollectionWrite => "a clock collection written whole",
+            Self::PresenceDrop => "a clock place set absent",
+            Self::PresenceRequirement => "a postcondition requiring a clock presence",
+            Self::SelectionPredicate => "a reset by selection that reads the element's data",
+            Self::ElementReset => "a reset of an element clock no single binder selects",
+        }
+    }
+}
+
 /// FR-326: why the `TemporalTrace` family's `check` refused one `temporal`
 /// clause. Each variant carries its own span, which
 /// `region::DeclarationRegions::refusal_region` reads directly: a clause has
@@ -1382,13 +1447,16 @@ pub enum TemporalCause {
         /// The span of the node it names.
         span: Span,
     },
-    /// FR-230: a timed model with clocks, time invariants or urgency that
-    /// no S4 emission writes yet: refused rather than compiled and silently
-    /// missing from the package's identity.
+    /// FR-230: a timed model with a member that no S4 emission writes yet:
+    /// refused rather than compiled and silently missing from the package's
+    /// identity.
     TimedModelNotEmitted {
         /// The model alias.
         model: String,
-        /// The model's `time` declaration span.
+        /// The member S4 does not write.
+        member: UnwrittenTimedMember,
+        /// The member's span: the quantifier of a quantified clause, else
+        /// the clause, declaration or constraint written.
         span: Span,
     },
     /// FR-230: a tick source's period is zero or negative.

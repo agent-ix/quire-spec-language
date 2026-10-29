@@ -410,7 +410,7 @@ pub use refusal::{
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
     ProtocolConstruct, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
     ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember,
-    TemporalCause, TimeUnitCause, TimedConstruct,
+    TemporalCause, TimeUnitCause, TimedConstruct, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -429,9 +429,10 @@ pub use temporal_clause::{
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
-    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConvexPart, ElementBinding,
-    QuantifiedFamily, SlotRef, SlotSelection, StateAlternative, TimeInvariant, TimedModel, Urgency,
-    Written,
+    ClockParameterRange, ClockReset, ClockResets, CollectionWrite, ConstraintNodes,
+    ConstraintTargetNodes, ConvexPart, ElementBinding, GuardNodes, InvariantNodes, PartNodes,
+    QuantifiedFamily, ResetNodes, ResetTargetNodes, SlotRef, SlotSelection, StateAlternative,
+    TimeInvariant, TimedClauseNodes, TimedModel, Urgency, Written,
 };
 
 /// A checked function.
@@ -2547,6 +2548,11 @@ impl PackageDeclarations {
             for (_, _, predicate) in model.urgency_predicates_mut() {
                 site_spans.insert(predicate.site.clone(), predicate.spans.clone());
             }
+            // FR-230, QSpec FR-322 "Clause nodes": so is each guard part's
+            // and time invariant's predicate.
+            for (site, spans) in model.predicate_sites() {
+                site_spans.insert(site.clone(), spans.clone());
+            }
         }
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
         // state-clause bodies over the concrete object. FR-147: the
@@ -4516,6 +4522,41 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-230, QSpec FR-322 "Clause nodes": the terms of the guards,
+        // resets and time invariants of each model S4 writes whole.
+        for model in &mut timed_models {
+            if model.unwritten().is_some() {
+                continue;
+            }
+            let Some(source) = self
+                .time_sources
+                .iter()
+                .position(|source| source.model == model.model())
+            else {
+                continue;
+            };
+            let declaration = root(Origin::TypeDeclaration {
+                name: time_source_origin(source),
+            });
+            let name = model.model().to_owned();
+            let part_site = |guard: usize, part: usize| {
+                timed_model::site_location(&timed_model::guard_part_site(&name, guard, part))
+            };
+            let invariant_site = |invariant: usize| {
+                timed_model::site_location(&timed_model::invariant_site(&name, invariant))
+            };
+            let input = lowering::TimedClauseInput {
+                model,
+                clause_locations: &clause_locations,
+                declaration: &declaration,
+                part_site: &part_site,
+                invariant_site: &invariant_site,
+            };
+            match lowering.timed_clauses(&input) {
+                Ok(nodes) => model.set_clause_nodes(nodes),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -5334,8 +5375,7 @@ impl PackageDeclarations {
             unwritten.extend(
                 timed_models
                     .iter()
-                    .filter(|model| model.has_unwritten_members())
-                    .map(timed_model::not_emitted),
+                    .filter_map(timed_model::not_emitted),
             );
         }
         if !unwritten.is_empty() {
