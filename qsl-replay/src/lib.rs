@@ -71,6 +71,7 @@ pub mod statistical;
 mod supplied_limits;
 mod target;
 mod timed;
+pub mod value_check;
 mod witness;
 
 pub use admitted::{
@@ -274,8 +275,8 @@ pub use proof_result::{
     ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
     ReportedInconclusiveCause, SettlementBasis, StaleIdentity, StatedInstanceBound,
     StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
-    WeakAccessFailure,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    ValueCheckUnsupported, ValueFault, WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

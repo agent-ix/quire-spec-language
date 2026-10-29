@@ -287,6 +287,7 @@ pub struct BackendDescriptor {
     evidence_kinds: BTreeSet<EvidenceKind>,
     dynamics: Option<BTreeSet<DynamicsKind>>,
     solver_bounds: Option<SolverBounds>,
+    max_cases: Option<std::num::NonZeroU64>,
     timed: bool,
 }
 
@@ -412,6 +413,7 @@ pub fn descriptor_from_manifest<'a>(
         evidence_kinds,
         dynamics: None,
         solver_bounds: None,
+        max_cases: None,
         memory_models,
         reductions,
         timed: false,
@@ -470,6 +472,47 @@ pub enum DynamicsMember<'a> {
     List(&'a [&'a str]),
     /// A present member whose value is not an array.
     NotAList,
+}
+
+/// [`descriptor_from_manifest`] for a check arm: a backend that advertises
+/// `value-validity` or `operation-contract` SHALL publish a positive
+/// `max_cases` default under `bounds` (QSpec FR-483 "Descriptor modes,
+/// domains and registration"), which the descriptor keeps
+/// ([`BackendDescriptor::max_cases`]). A member of any other backend is
+/// ignored.
+///
+/// # Errors
+///
+/// A [`RegistrationRefusal`] for every defect [`descriptor_from_manifest`]
+/// refuses, and `InvalidMaxCases` for an absent, non-count or zero default.
+pub fn descriptor_from_manifest_with_max_cases<'a>(
+    backend: Candidate,
+    origin: ProviderOrigin,
+    manifest_digest: ManifestDigest,
+    advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+    members: ManifestMembers<'_>,
+    max_cases: MaxCasesMember,
+) -> Result<BackendDescriptor, RegistrationRefusal> {
+    let descriptor =
+        descriptor_from_manifest(backend, origin, manifest_digest, advertised, members)?;
+    if !(descriptor.advertises_kind(Capability::ValueValidity)
+        || descriptor.advertises_kind(Capability::OperationContract))
+    {
+        return Ok(descriptor);
+    }
+    let defect = match max_cases {
+        MaxCasesMember::Absent => MaxCasesDefect::Absent,
+        MaxCasesMember::NotACount => MaxCasesDefect::NotACount,
+        MaxCasesMember::Count(count) => match std::num::NonZeroU64::new(count) {
+            Some(count) => return Ok(descriptor.with_max_cases(count)),
+            None => MaxCasesDefect::Zero,
+        },
+    };
+    Err(RegistrationRefusal {
+        backend: descriptor.backend.clone(),
+        manifest_digest,
+        cause: RegistrationCause::InvalidMaxCases(defect),
+    })
 }
 
 /// Convert a provider manifest including its optional temporal dynamics.
@@ -642,6 +685,7 @@ impl BackendDescriptor {
             evidence_kinds,
             dynamics: None,
             solver_bounds: None,
+            max_cases: None,
             timed: false,
         })
     }
@@ -654,6 +698,20 @@ impl BackendDescriptor {
     pub fn with_timed(mut self) -> Self {
         self.timed = true;
         self
+    }
+
+    /// Publish the default `max_cases` of a check arm (QSpec FR-483
+    /// "Descriptor modes, domains and registration": the descriptor's
+    /// `bounds` key `max_cases`). A `PositiveCount` by type.
+    #[must_use]
+    pub fn with_max_cases(mut self, max_cases: std::num::NonZeroU64) -> Self {
+        self.max_cases = Some(max_cases);
+        self
+    }
+
+    /// The published default `max_cases`, when the descriptor has one.
+    pub fn max_cases(&self) -> Option<std::num::NonZeroU64> {
+        self.max_cases
     }
 
     /// Whether the engine decides timed items (QSL FR-243).
@@ -1041,6 +1099,29 @@ pub enum ReductionsDefect {
     DuplicateLabel(String),
 }
 
+/// The `bounds.max_cases` member of a check arm's manifest as the driver read
+/// it (QSpec FR-483): what the wire held, before it is a count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaxCasesMember {
+    /// No `bounds` member, or a `bounds` member without `max_cases`.
+    Absent,
+    /// A `max_cases` that is not a count.
+    NotACount,
+    /// A count, which may be zero.
+    Count(u64),
+}
+
+/// Why a check arm's `max_cases` default was refused.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum MaxCasesDefect {
+    /// The manifest published no `max_cases`.
+    Absent,
+    /// The `max_cases` was not a count.
+    NotACount,
+    /// The `max_cases` was zero.
+    Zero,
+}
+
 /// Why a temporal provider's `dynamics` member was refused.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DynamicsDefect {
@@ -1096,6 +1177,11 @@ pub enum RegistrationCause {
     /// "Capability"). No QSpec cause names it yet (spec gap STD-493); it
     /// reports under `invalid-dynamics`, as `memory_models` does.
     InvalidReductions(ReductionsDefect),
+    /// A `value-validity` or `operation-contract` backend's `bounds` member
+    /// does not hold a positive `max_cases` count (QSpec FR-483 "Descriptor
+    /// modes, domains and registration"). No QSpec cause names it yet; it
+    /// reports under `invalid-dynamics`, as `reductions` does.
+    InvalidMaxCases(MaxCasesDefect),
 }
 
 impl RegistrationCause {
@@ -1110,7 +1196,9 @@ impl RegistrationCause {
             Self::InvalidFairnessKinds(_) => "invalid-fairness-kinds",
             Self::UnknownEvidenceKind(_) => "unknown-evidence-kind",
             Self::InvalidDynamics(_) => "invalid-dynamics",
-            Self::InvalidMemoryModels(_) | Self::InvalidReductions(_) => "invalid-dynamics",
+            Self::InvalidMemoryModels(_)
+            | Self::InvalidReductions(_)
+            | Self::InvalidMaxCases(_) => "invalid-dynamics",
         }
     }
 }
