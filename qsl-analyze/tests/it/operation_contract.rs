@@ -10,7 +10,7 @@
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{analyze, contract_item, AnalyzeRecord, Engines};
+use qsl_analyze::analyze::{analyze, contract_item, AnalyzeRecord, Engines, Settlement};
 use qsl_analyze::contract_check::{manifest, ContractRequest};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_forms::StateClauseKind;
@@ -110,6 +110,7 @@ fn version(state: &qsl_semantics::model::state::ModelState) -> i64 {
 }
 
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-2")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-1")]
 #[test]
 fn an_invariant_that_holds_initially_and_is_preserved_is_proved() {
     // attemptUpdate moves 0 -> 1 -> 2 -> 0: every pre-state at most 2 stays
@@ -123,6 +124,7 @@ fn an_invariant_that_holds_initially_and_is_preserved_is_proved() {
 
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-2")]
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-3")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-1")]
 #[test]
 fn an_operation_that_breaks_an_invariant_from_a_satisfying_pre_state_is_refuted() {
     // The pre-state versionNumber = 1 satisfies the invariant and is not
@@ -218,6 +220,7 @@ fn a_clause_defined_at_every_case_is_proved() {
 }
 
 #[trace("QSpec-TC-972", "QSpec-FR-483-AC-2")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-1")]
 #[test]
 fn a_clause_whose_premises_hold_at_no_case_is_vacuous() {
     // No ConfigVersion satisfies the context invariant, so the clause is
@@ -237,6 +240,7 @@ fn a_clause_whose_premises_hold_at_no_case_is_vacuous() {
 }
 
 #[trace("QSpec-TC-972", "QSpec-FR-483-AC-4")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-1")]
 #[test]
 fn the_case_budget_settles_incomplete_naming_max_cases() {
     let world = world(
@@ -533,6 +537,7 @@ fn bound_world(body: &str) -> World {
 }
 
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-5")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-1")]
 #[test]
 fn a_bound_clause_is_unsupported_with_no_implementation_engine() {
     let world = bound_world(&format!("{BOUNDED_POST}{}", relation(true)));
@@ -548,6 +553,98 @@ fn a_bound_clause_is_unsupported_with_no_implementation_engine() {
     };
     assert_eq!(form.as_str(), "clause");
     assert_eq!(reason.as_str(), "no-implementation-engine");
+    // FR-483-AC-1: an arm outcome `unsupported` is a result on a `supported`
+    // disposition, not a disposition.
+    assert!(matches!(record.settlement, Settlement::Terminal(_)));
+    assert!(record.contract_check.is_none());
+}
+
+/// SR FND-001 (QSpec FR-485 "The oracle"): an invariant whose context has an
+/// operation with an implementation binding settles `unsupported`
+/// `no-implementation-engine` and records no counterexample. The invariant
+/// is one the contract relation breaks (`attemptUpdate` takes 1 to 2), and
+/// the same invariant with no binding is refuted, so the arm ran no check.
+#[trace("QSpec-TC-974", "QSpec-FR-485-AC-5")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-1")]
+#[test]
+fn an_invariant_over_a_bound_operation_is_unsupported_and_runs_no_check() {
+    const LOW: &str =
+        "invariant Low using v on Config::ConfigVersion at current { self.versionNumber <= 1 }\n";
+    let unbound = world(LOW, 0);
+    assert!(matches!(
+        terminal(&run(&unbound, &clause(&unbound, "Low"), None)),
+        TerminalValue::Refuted
+    ));
+    let bound = bound_world(&format!("{LOW}{}", relation(true)));
+    let claim = clause(&bound, "Low");
+    let selected = select_contract(&bound.package, &claim).expect("selects");
+    assert_eq!(selected.form().as_str(), "invariant");
+    let record = run(&bound, &claim, None);
+    let TerminalValue::Unsupported(UnavailabilityCause::ContractCheck { form, reason }) =
+        terminal(&record)
+    else {
+        panic!("expected unsupported: {:?}", terminal(&record));
+    };
+    assert_eq!(form.as_str(), "invariant");
+    assert_eq!(reason.as_str(), "no-implementation-engine");
+    assert!(matches!(record.settlement, Settlement::Terminal(_)));
+    assert!(record.contract_check.is_none(), "no counterexample");
+}
+
+/// QSpec FR-485-AC-12: an `operation-contract` item over an operation whose
+/// context population has no maximum is `unbounded` with one `population`
+/// domain, the arm a candidate in its `bounded` mode; with a cardinality
+/// bound on that population the item is `bounded`.
+#[trace("QSpec-TC-974", "QSpec-FR-485-AC-12")]
+#[test]
+fn a_clause_item_over_an_unbounded_population_is_unbounded_with_one_population_domain() {
+    use qsl_foundation::bound::DomainKind;
+    use qsl_route::request::{items_from_requirements, ExtentClassification};
+    use qsl_semantics::family::ClaimExtent;
+
+    const POST: &str = "post Bounded using v on Config::ConfigVersion::attemptUpdate \
+         { self.versionNumber >= 0 }\n";
+    let engines = Engines::qsl().expect("the linked engines register");
+    let mut registry = qsl_route::Registry::new();
+    for descriptor in engines.registrations() {
+        registry.register(descriptor.clone()).expect("registers");
+    }
+    let item_of = |world: &World| {
+        let claim = clause(world, "Bounded");
+        let graph = world.package.graph();
+        let record = graph.requirements().get(&claim).expect("its record");
+        assert_eq!(
+            record.requirements().kind(),
+            qsl_semantics::check::Capability::OperationContract
+        );
+        let extent = record.requirements().extent().clone();
+        let item = items_from_requirements(graph.requirements(), &registry, None)
+            .into_iter()
+            .find(|item| item.occurrence() == &claim)
+            .expect("the clause's item");
+        (extent, item)
+    };
+
+    let (extent, item) = item_of(&world(POST, 0));
+    let ClaimExtent::Unbounded(domains) = extent else {
+        panic!("unbounded: {extent:?}");
+    };
+    let kinds: Vec<DomainKind> = domains.iter().map(|(_, kind)| kind).collect();
+    assert_eq!(kinds, [DomainKind::Population]);
+    assert_eq!(
+        item.extent(),
+        ExtentClassification::Unbounded {
+            finite_bound_available: true
+        }
+    );
+
+    let bounded = world(
+        &format!("{POST}bound HistoryBound on Config::config_history [2]\n"),
+        0,
+    );
+    let (extent, item) = item_of(&bounded);
+    assert_eq!(extent, ClaimExtent::Bounded);
+    assert_eq!(item.extent(), ExtentClassification::Bounded);
 }
 
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-7")]
