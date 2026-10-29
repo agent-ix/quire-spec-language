@@ -6352,6 +6352,33 @@ impl CheckedGraph {
             .find(|operation| operation.frame == frame)
     }
 
+    /// QSpec FR-485 "Forms": the operation frame whose
+    /// `state`/`operation_anchor` node identity is `anchor`, the node a
+    /// `frame` item's claim names.
+    pub fn operation_frame_by_anchor(
+        &self,
+        anchor: quire_exact::NodeKey,
+    ) -> Option<&CheckedOperationFrame> {
+        self.operation_frames
+            .iter()
+            .find(|operation| operation.anchor == anchor)
+    }
+
+    /// The `state`/`operation_anchor` node of the operation `name` that
+    /// `declaring` declares, when a clause or attempt of the unit names it.
+    pub fn operation_anchor_of(
+        &self,
+        declaring: quire_exact::EffectiveId,
+        name: &str,
+    ) -> Option<quire_exact::NodeKey> {
+        self.operation_frames
+            .iter()
+            .find(|frame| {
+                frame.operation.declaring == declaring && frame.operation.declaration.name() == name
+            })
+            .map(|frame| frame.anchor)
+    }
+
     /// FR-107: the checked state clause whose minted node identity is
     /// `identity` (`CheckedStateClause::identity`) -- the accessor the S6a
     /// `ProtocolClause` evaluate hook resolves its bare identity key

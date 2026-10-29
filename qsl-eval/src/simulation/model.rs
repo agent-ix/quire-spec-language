@@ -17,6 +17,7 @@
 mod application;
 mod cells;
 mod constraint;
+mod contract;
 mod contracts;
 mod domain;
 pub(crate) mod encode;
@@ -74,6 +75,10 @@ use crate::value::QualifiedName;
 
 pub(crate) use application::{FirstApplication, OperationRef};
 pub use cells::Cell;
+pub use contract::{
+    ContractClause, ContractClauseKind, DeclaredStates, DeclaredStatesRefusal, OperationCases,
+    OperationStep, PreconditionCase, UndecidedContract,
+};
 pub(crate) use contracts::{verdict, Verdict};
 pub(crate) use domain::enumerable;
 pub use encode::ModelKey;

@@ -45,6 +45,7 @@ use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 
+pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
 pub use items::{
     derived_model_item, derived_zone_item, hyper_form_item, model_item, statistical_item,
@@ -53,7 +54,7 @@ pub use items::{
 };
 
 use crate::zone_check::ZoneCheckRecord;
-use crate::{model_check, statistical, value_check, zone_check};
+use crate::{contract_check, model_check, statistical, value_check, zone_check};
 
 /// One layer-A engine as `analyze` runs it: its backend identity and the
 /// descriptor FR-288 converts its manifest into.
@@ -104,6 +105,15 @@ impl Engine {
     /// Only if the registry's admission rules refuse the arm's own manifest.
     pub fn value_check() -> Result<Self, RegistrationRefusal> {
         value_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
+    }
+
+    /// The operation-contract check arm (QSpec FR-483, FR-485).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the arm's own manifest.
+    pub fn contract_check() -> Result<Self, RegistrationRefusal> {
+        contract_check::manifest::descriptor(ProviderOrigin::Linked, linked_digest()).map(Self::new)
     }
 
     /// The engine's backend identity.
@@ -164,6 +174,7 @@ impl Engines {
                 Engine::statistical()?,
                 Engine::zone_check()?,
                 Engine::value_check()?,
+                Engine::contract_check()?,
             ],
         })
     }
@@ -280,6 +291,8 @@ pub(crate) enum EngineReport {
     Statistical(Box<StatisticalRecord>),
     /// The value-validity arm's finding.
     Value(Box<value_check::ValueReport>),
+    /// The operation-contract arm's finding.
+    Contract(Box<contract_check::ContractReport>),
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
     Zone(Box<ZoneCheckRecord>),
@@ -383,6 +396,9 @@ pub struct AnalyzeRecord {
     pub zone_check: Option<Box<ZoneCheckRecord>>,
     /// The value-validity arm's counterexample, carried by a `refuted` item.
     pub value_check: Option<Box<value_check::ValueCounterexample>>,
+    /// The operation-contract arm's counterexample, carried by a `refuted`
+    /// item.
+    pub contract_check: Option<Box<qsl_replay::contract_check::ContractCounterexample>>,
 }
 
 /// How an item settled.
@@ -485,6 +501,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         model_check: None,
         zone_check: None,
         value_check: None,
+        contract_check: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -559,6 +576,7 @@ fn settle(
         model_check,
         zone_check: None,
         value_check: None,
+        contract_check: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -587,6 +605,12 @@ fn settle(
             settled.value_check = counterexample.map(Box::new);
             settled
         }
+        EngineReport::Contract(report) => {
+            let (settled_record, counterexample) = contract_check::settle(*report, index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.contract_check = counterexample.map(Box::new);
+            settled
+        }
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
@@ -606,6 +630,7 @@ fn settle(
             model_check: None,
             zone_check: Some(zone),
             value_check: None,
+            contract_check: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
@@ -706,10 +731,10 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4", "en-6", "value-checker"]
+            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
         );
-        let [en1, en4, _en6, value] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the value arm");
+        let [en1, en4, _en6, value, contract] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the two check arms");
         };
         assert!(registrations
             .iter()
@@ -723,6 +748,9 @@ mod tests {
         assert!(value
             .advertises()
             .any(|(kind, _)| kind == Capability::ValueValidity));
+        assert!(contract
+            .advertises()
+            .any(|(kind, _)| kind == Capability::OperationContract));
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as

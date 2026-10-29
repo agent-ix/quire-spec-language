@@ -52,6 +52,7 @@ mod call_site;
 mod certificate;
 mod compile;
 mod composite;
+pub mod contract_check;
 mod execute;
 mod hybrid;
 mod hybrid_replay;

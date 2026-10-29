@@ -1222,7 +1222,7 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1, EN-4 and EN-6 registrations and leaves the missing witness kinds empty.
+    /// EN-1, EN-4 and EN-6 registrations and the two witness arms.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1280,11 +1280,22 @@ mod tests {
         let CandidateOutcome::Candidates(contract) =
             first.candidates(Capability::OperationContract)
         else {
-            panic!("an unregistered kind returns its empty candidate set");
+            panic!("the operation-contract arm gives a candidate set");
         };
-        assert!(
-            contract.is_empty(),
-            "unexpected provider for OperationContract"
+        assert_eq!(
+            contract
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["contract-checker"]
+        );
+        assert_eq!(
+            registrations
+                .iter()
+                .map(|descriptor| descriptor.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
         );
     }
 
