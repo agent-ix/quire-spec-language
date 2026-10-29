@@ -15,7 +15,7 @@ use quire_contract_model::{
     CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
 };
 use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn args(items: &[&Path]) -> Vec<OsString> {
     items
@@ -226,13 +226,10 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
 /// each write no bytes and exit nonzero.
 #[test]
 fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
-    let document = switch_document();
-    let source = switch_source(&document, "post Q1 using v on M::Switch::set { self.on }\n");
+    let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
+    let program = Path::new("examples/switch-transition/switch.native");
+    let document = std::fs::read(model).unwrap();
     let directory = tempfile::tempdir().unwrap();
-    let model = directory.path().join("switch.semantic-ir.json");
-    let program = directory.path().join("switch.native");
-    std::fs::write(&model, &document).unwrap();
-    std::fs::write(&program, &source).unwrap();
     let points = |text: &str| {
         let file = directory.path().join(format!("points-{}.json", text.len()));
         std::fs::write(&file, text).unwrap();
@@ -240,12 +237,12 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
     };
     let command = |extra: &[&Path]| {
         let mut command = strings(&["--model"]);
-        command.extend(args(&[&model]));
+        command.extend(args(&[model]));
         for file in extra {
             command.extend(strings(&["--execution-points"]));
             command.extend(args(&[file]));
         }
-        command.extend(args(&[&program]));
+        command.extend(args(&[program]));
         command
     };
 
@@ -297,4 +294,29 @@ fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
         assert_ne!(refusal.exit_code(), 0);
         assert!(refused.is_empty(), "{text}");
     }
+}
+
+/// A points file over the file ceiling is an explicit refusal naming it
+/// (exit 20), never truncated.
+#[test]
+fn an_over_cap_points_file_is_refused_explicitly() {
+    use qsl_foundation::source::MAX_SOURCE_BYTES;
+    let directory = tempfile::tempdir().unwrap();
+    let points = directory.path().join("big-points.json");
+    std::fs::write(&points, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[Path::new(
+        "examples/switch-transition/switch.semantic-ir.json",
+    )]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&points]));
+    command.extend(args(&[Path::new(
+        "examples/switch-transition/switch.native",
+    )]));
+    let mut stdout = Vec::new();
+    let refusal = run(&command, &mut stdout).expect_err("an over-cap points file");
+    assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
+    assert_eq!(refusal.exit_code(), 20);
+    assert!(refusal.to_string().contains("big-points.json"), "{refusal}");
+    assert!(stdout.is_empty());
 }

@@ -32,6 +32,7 @@ use qsl_replay::{
     spine::{DependencyInput, DependencyInputRefusal, StateClauseExecutionPoints, SuppliedLibrary},
     ReplayLimits, ReplayRefusal, StageLimits,
 };
+use quire_contract_model::ExecutionPoint;
 use quire_semantic_value::catalog::Category;
 
 /// The usage line, shown on a malformed command line.
@@ -207,16 +208,66 @@ fn identity(kind: &str, path: &Path) -> SourceIdentity {
     SourceIdentity::new("local", format!("{kind}:{}", path.display()), "file", "1")
 }
 
+/// The points file's object, read so a repeated clause name is detected
+/// rather than silently last-wins.
+struct PointsFile(Vec<(String, serde_json::Value)>);
+
+impl<'de> serde::Deserialize<'de> for PointsFile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = PointsFile;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an object from authored clause name to execution point")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<PointsFile, M::Error> {
+                let mut entries: Vec<(String, serde_json::Value)> = Vec::new();
+                while let Some((name, point)) = map.next_entry::<String, serde_json::Value>()? {
+                    if entries.iter().any(|(seen, _)| *seen == name) {
+                        return Err(serde::de::Error::custom(format!(
+                            "clause {name:?} is given more than once"
+                        )));
+                    }
+                    entries.push((name, point));
+                }
+                Ok(PointsFile(entries))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
+}
+
 /// The accepted execution points `path` holds, keyed by authored clause name.
-/// An unknown `kind` or a malformed anchor name is a
-/// [`Error::Points`] refusal; whether a clause exists and accepts its point is
-/// the checker's, reported as [`Error::Producer`].
+/// An empty object, a repeated clause name, an unknown `kind`, a malformed
+/// anchor name or a member the point does not define is an [`Error::Points`]
+/// refusal; whether a clause exists and accepts its point is the checker's,
+/// reported as [`Error::Producer`].
+#[ix_trace_rs::string_edge]
 fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
-    let bytes = read(path, true)?;
-    serde_json::from_slice(&bytes).map_err(|error| Error::Points {
+    let bad = |message: String| Error::Points {
         path: path.display().to_string(),
-        message: error.to_string(),
-    })
+        message,
+    };
+    let bytes = read(path, true)?;
+    let PointsFile(entries) = serde_json::from_slice(&bytes).map_err(|e| bad(e.to_string()))?;
+    if entries.is_empty() {
+        return Err(bad("no execution points".to_owned()));
+    }
+    let mut points = StateClauseExecutionPoints::new();
+    for (clause, wire) in entries {
+        let point: ExecutionPoint =
+            serde_json::from_value(wire.clone()).map_err(|e| bad(format!("{clause}: {e}")))?;
+        // A point that does not serialize back to what was written carried a
+        // member it does not define.
+        if serde_json::to_value(&point).ok().as_ref() != Some(&wire) {
+            return Err(bad(format!("{clause}: unknown member in the point")));
+        }
+        points.insert(clause, point);
+    }
+    Ok(points)
 }
 
 /// Emit the `quire.checked-package/v2` bytes of `request`'s source through

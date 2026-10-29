@@ -275,8 +275,8 @@ category's code (22). The emitted bytes embed the source path exactly as given
 `package_id`), so pass an identical, fixed, cwd-relative path on every
 invocation to get stable bytes. The source is read under the source-size ceiling (a longer source is the
 producer's size refusal, exit 22, with its `--limit` hint removed because this
-tool has no such flag); a `--model` or `--library` file over the ceiling is an
-explicit refusal naming the file (exit 20), never truncated.
+tool has no such flag); a `--model`, `--library` or `--execution-points` file over the
+ceiling is an explicit refusal naming the file (exit 20), never truncated.
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
@@ -296,8 +296,13 @@ exact authored clause name to an execution point: `{"kind": "initialization" |
 "<anchor>"}`. For example, `{"After": {"kind": "post", "operation": "probe"}}`
 accepts the point for `post After ... on X::Y::probe`. A malformed file is a
 refusal naming it; a point for no authored clause, or one the clause kind does
-not accept, is the checker's refusal. Either way no bytes are written and the
-exit is nonzero. Without the option the clauses are point-free.
+not accept, is the checker's refusal. The points file is read under the same
+file ceiling as a `--model` file (over it is an explicit refusal, never
+truncated). A repeated clause name, an empty object, a member the point does
+not define and a malformed anchor name are each a refusal naming the file; an
+empty object is refused rather than emitting point-free bytes, since passing
+the option means points are expected. In every refusal no bytes are written and
+the exit is nonzero. Without the option the clauses are point-free.
 
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
