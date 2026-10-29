@@ -2,19 +2,6 @@
 
 For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
 
-## Hash / digest / pin prohibition
-
-Do not add, keep or refresh any SHA, digest, hash, checksum, pin, lock, revision,
-fingerprint, golden value, stamp or inventory that records, compares against or
-gates on a frozen file, version, revision or tool outside Cargo.toml and
-Cargo.lock, whatever it is named. A rename, wrapper, helper, derived digest or
-move of such a record is the same violation. When you touch code, specs, docs
-or comments that contain one, remove it in the same change. Package and tool
-versions live in Cargo.toml, Cargo.lock and rust-toolchain.toml only; text points
-there or states nothing. Reports and reviews do not record commit SHAs. A question
-about a content-identity digest goes to a specification ruling (STD-551), not to
-an exemption written here.
-
 Read README.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
