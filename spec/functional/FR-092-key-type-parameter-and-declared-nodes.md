@@ -480,11 +480,13 @@ the old key is stale.
 
 ### Key vectors
 
+The `digest` and `domain` members of a node-id object in the vectors below are QSpec FR-322 wire members that QSL carries as opaque strings (BLOCKED-BY STD-583 (owner: planner titan:QSL:plan)); the shipped code still reads these vectors until the code-lane removal lands.
+
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
 for the named node. Owners are `SourceOwner{authority: "a", identity: "u"}`
 and, for D2, `{authority: "a", identity: "w"}`. Every function below is
 declared under owner (`a`, `u`). A vector that names another vector's key
-uses the key that vector gives. E1 to E3 are `quire.application-node/v1`
+uses the digest that vector gives. E1 to E3 are `quire.application-node/v1`
 keys of the expression nodes [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
 builds; they are listed here because F2 and E2 depend on them.
 
@@ -552,15 +554,11 @@ builds; they are listed here because F2 and E2 depend on them.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"boolean","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
-
 **T2**: Integer
 
 ```json
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"integer","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T3**: Text scalar
 
@@ -568,47 +566,35 @@ Key: the preimage above (its RFC 8785 byte string), compared by equality.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"text","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
-
 **T4**: Int[0, 9]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T5**: Option<Int[0, 9]>
 
 ```json
-{"body":{"members":[{"target":"<key of T4>","term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T6**: Sequence<Int[0, 9]>
 
 ```json
-{"body":{"members":[{"target":"<key of T4>","term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T7**: Sequence<Int[0, 9]>[0, 5]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":"<key of T6>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<digest of T6>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T8**: Text[0, 64; nfc]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"64","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":"<key of T3>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"64","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T9**: Rational scalar
 
@@ -616,15 +602,11 @@ Key: the preimage above (its RFC 8785 byte string), compared by equality.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"rational","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
-
 **T10**: Rational[-9, 9; 1, 9]
 
 ```json
-{"body":{"members":[{"name":"numerator_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"-9","value_kind":"integer"}},{"name":"numerator_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9","value_kind":"integer"}},{"name":"denominator_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}},{"name":"denominator_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"rational_range","semantic_type":"<key of T9>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"numerator_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-9","value_kind":"integer"}},{"name":"numerator_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}},{"name":"denominator_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}},{"name":"denominator_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"rational_range","semantic_type":{"digest":"<digest of T9>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T11**: Decimal scalar
 
@@ -632,199 +614,149 @@ Key: the preimage above (its RFC 8785 byte string), compared by equality.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"decimal","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
-
 **T12**: Decimal[-100000, 100000; 2, 2; nearest-even]
 
 ```json
-{"body":{"members":[{"name":"coefficient_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"-100000","value_kind":"integer"}},{"name":"coefficient_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"100000","value_kind":"integer"}},{"name":"scale_min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"2","value_kind":"integer"}},{"name":"scale_max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"2","value_kind":"integer"}},{"name":"rounding","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"nearest-even","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"decimal_range","semantic_type":"<key of T11>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"coefficient_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-100000","value_kind":"integer"}},{"name":"coefficient_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"100000","value_kind":"integer"}},{"name":"scale_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"scale_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"rounding","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"nearest-even","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"decimal_range","semantic_type":{"digest":"<digest of T11>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T13**: Int[0, 18446744073709551615]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T14**: Int[0, 9223372036854775808]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T15**: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **T16**: Int[0, 18446744073709551616]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D1**: record Point, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"x","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"y","term":"binding","value":{"target":"<key of T4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D2**: record Point, owner (a, w)
 
 ```json
-{"body":{"members":[{"name":"x","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"y","term":"binding","value":{"target":"<key of T4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"w","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"w","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D3**: record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":"<key of T5>","term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"<digest of T5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D4**: record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":"<key of T4>","term":"reference"}},{"name":"b","term":"binding","value":{"target":"<key of T5>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"target":{"digest":"<digest of T5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **D5**: tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u)
 
 ```json
-{"body":{"members":[{"target":"<key of T4>","term":"reference"},{"target":"<key of T4>","term":"reference"}],"term":"aggregate"},"declaration":{"qualified_name":["Pair"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"tuple","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":{"qualified_name":["Pair"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"tuple","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P1**: parameter a: Boolean, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P2**: parameter b: Boolean, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P3**: let binder y: Boolean, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **P4**: parameter x: Int[0, 9], level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":"<key of T3>","value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":"<key of T4>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L1**: literal true
 
 ```json
-{"body":{"term":"literal","type":"<key of T1>","value":true,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L2**: literal 7
 
 ```json
-{"body":{"term":"literal","type":"<key of T2>","value":"7","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"7","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L7**: literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091)
 
 ```json
-{"body":{"term":"literal","type":"<key of T2>","value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L3**: literal rational(1, 2) of type Rational[-9, 9; 1, 9]
 
 ```json
-{"body":{"term":"literal","type":"<key of T10>","value":"1/2","value_kind":"rational"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T10>","version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T10>","domain":"quire.checked-semantic-node/v1"},"value":"1/2","value_kind":"rational"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T10>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **F1**: function f() -> Boolean { true }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":"<key of L1>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E1**: a and b
 
 ```json
-{"body":{"arguments":[{"target":"<key of P1>","term":"reference"},{"target":"<key of P2>","term":"reference"}],"operation":{"identity":"quire.op.boolean.and","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.boolean.and","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **F2**: function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P1>","term":"reference"},{"target":"<key of P2>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":"<key of E1>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["both"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of E1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["both"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E2**: both(a, true)
 
 ```json
-{"body":{"arguments":[{"target":"<key of F2>","term":"reference"},{"target":"<key of P1>","term":"reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of F2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E3**: let y = a in y
 
 ```json
-{"body":{"arguments":[{"name":"y","term":"binding","value":{"target":"<key of P1>","term":"reference"}},{"target":"<key of P3>","term":"reference"}],"operation":{"identity":"quire.op.control.let","laws":[],"leaves":[],"member":null,"mode":null},"operator":"let","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"let","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"name":"y","term":"binding","value":{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"target":{"digest":"<digest of P3>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.let","laws":[],"leaves":[],"member":null,"mode":null},"operator":"let","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"let","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **F3**: function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":"<key of L1>","term":"reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["m"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["m"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 #### Recursion-group vectors
 
@@ -855,189 +787,148 @@ declared member is under owner (`a`, `u`):
   and `function pong`, the same body calling `ping`, a mutually recursive
   pair whose bodies differ only in which function they call, a group of six.
 
-Each group's members in group order and its group key are below, and the
+Each group's members in group order and its group digest are below, and the
 tests assert both against the lowered graph. The group order separates G4 to
 G6, G2 and G3 and G7 to G9 by their content alone. G10 to G15 holds three
 pairs of members that differ only in which function they call, ordered by the
 names `ping` and `pong`. Only G1's signatures are published, because a unit
 test asserts them; the signatures of the other groups are intermediate values
-that the group key holds.
+that the group digest binds.
 
 **L5**: literal `0`
 
 ```json
-{"body":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **L6**: literal `1`
 
 ```json
-{"body":{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":"<key of T2>","version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E11**: `x > 0`
 
 ```json
-{"body":{"arguments":[{"target":"<key of P4>","term":"reference"},{"target":"<key of L5>","term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of L5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E12**: `x - 1`
 
 ```json
-{"body":{"arguments":[{"target":"<key of P4>","term":"reference"},{"term":"literal","type":"<key of T2>","value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":"<key of T2>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":"<key of T2>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **E13**: `x - 1` narrowed into `Int[0, 9]`
 
 ```json
-{"body":{"arguments":[{"target":"<key of E12>","term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":"<key of T4>","kind":"type_argument"},"mode":null},"operator":"convert","result_type":"<key of T4>","term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":"<key of T4>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E12>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G1**: an `option` node over itself, a one-member group, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group key of G1>","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G1>","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G2**: `record List { next: List?; }`, ordinal 1
 
 ```json
-{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G2>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G2>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G3**: `Option<List>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group key of G2>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G2>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G4**: function `f`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G4>","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G4>","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G5**: `if x > 0 then f(x - 1) else true`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":"<key of E11>","term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G6**: `f(x - 1)`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":"<key of E13>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G7**: `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0
 
 ```json
-{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G7>","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G7>","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G8**: `Sequence<Tree>`, ordinal 1
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group key of G7>","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G7>","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G9**: `Sequence<Tree>[0, 3]`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":"<key of T2>","value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"<group key of G7>","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"<group digest of G7>","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G10**: function `ping`, ordinal 4
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G10>","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G10>","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G11**: function `pong`, ordinal 5
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":"<key of P4>","term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":"<key of P4>","term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group key of G10>","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":"<key of T1>","version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G10>","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G12**: `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"target":"<key of E11>","term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G13**: `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":"<key of E11>","term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":"<key of L1>","term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G14**: `ping(x - 1)`, in `pong`, ordinal 2
 
 ```json
-{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":"<key of E13>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
-
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
 
 **G15**: `pong(x - 1)`, in `ping`, ordinal 3
 
 ```json
-{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":"<key of E13>","term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":"<key of T1>","term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":"<key of T1>","version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: the preimage above (its RFC 8785 byte string), compared by equality.
-
-
-G1, group key (the array of the group-local preimages):
+G1, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member | Anonymous signature | Full signature |
 |---|---|---|---|
-| 0 | G1 | the group member's own anonymous signature | the group member's own full signature |
+| 0 | G1 | the group member's own signature digest | the group member's own signature digest |
 
-G2-G3, group key (the array of the group-local preimages):
+G2-G3, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
 | 0 | G3 `Option<List>` |
 | 1 | G2 `List` |
 
-G4-G6, group key (the array of the group-local preimages):
+G4-G6, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
@@ -1045,7 +936,7 @@ G4-G6, group key (the array of the group-local preimages):
 | 1 | G6 call |
 | 2 | G4 `f` |
 
-G7-G9, group key (the array of the group-local preimages):
+G7-G9, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
@@ -1053,7 +944,7 @@ G7-G9, group key (the array of the group-local preimages):
 | 1 | G8 `Sequence<Tree>` |
 | 2 | G9 `Sequence<Tree>[0, 3]` |
 
-G10-G15, group key (the array of the group-local preimages):
+G10-G15, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
