@@ -1445,9 +1445,15 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::TimedPredicate { .. } => {
                     format!("{message}: a timed model's predicate does not check")
                 }
-                TemporalCause::TimedModelNotEmitted { model, .. } => format!(
-                    "{message}: the clocks of timed model `{model}` are not written to the \
-                     checked package yet"
+                TemporalCause::TimedModelNotEmitted { model, member, .. } => format!(
+                    "{message}: timed model `{model}` is not written to the checked package \
+                     yet: {}",
+                    member.description()
+                ),
+                TemporalCause::ExcludedClauseForm { model, form, .. } => format!(
+                    "{message}: timed model `{model}` has a clause form the checked package \
+                     excludes: {}",
+                    form.description()
                 ),
                 TemporalCause::MalformedTimeUnit { name, .. } => {
                     format!("{message}: the time unit `{name}` has a zero scale")
@@ -2324,7 +2330,6 @@ mod tests {
     /// source order.
     #[trace(
         "TC-490",
-        "TC-136",
         "FR-110-AC-1",
         "FR-110-AC-2",
         "FR-110-AC-3",

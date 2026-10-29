@@ -297,6 +297,9 @@ fn witness(layer: HeaderLayer, model: &Model, body: &str) -> Entry {
 }
 
 /// The layer identity's name between `quire.` and `/v1`, for a directory.
+// Intake proof: the_generated_corpus_compares_every_edge (tests/refinement_layering.rs).
+// The slug is spelled from the layer's identity text, never branched on.
+#[ix_trace_rs::string_edge]
 fn layer_slug(layer: HeaderLayer) -> String {
     layer
         .identity()

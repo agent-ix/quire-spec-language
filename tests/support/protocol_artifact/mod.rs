@@ -151,14 +151,6 @@ impl Fixture {
             "1",
             baseline_bytes,
         );
-        let binary_bytes = b"independently selected reader fixture producer binary";
-        let binary = reference(
-            w::ArtifactKind::GeneratedArtifact,
-            "producer-binary",
-            "test:binary",
-            "1",
-            binary_bytes,
-        );
         let model_ref = reference(
             w::ArtifactKind::ModelPackage,
             "rule-model",
@@ -169,7 +161,6 @@ impl Fixture {
         for (key, selected, bytes) in [
             ("contract", contract.clone(), contract_bytes.as_slice()),
             ("baseline", baseline.clone(), baseline_bytes.as_slice()),
-            ("binary", binary.clone(), binary_bytes.as_slice()),
             ("model", model_ref.clone(), model.artifact_bytes()),
         ] {
             inputs.insert(key.into(), (selected, bytes.to_vec()));
@@ -432,7 +423,6 @@ impl Fixture {
             producer: w::Producer {
                 implementation: "test:reader-fixture".into(),
                 revision: revision("1"),
-                binary,
             },
             language: w::Language {
                 identity: "ix:native".into(),

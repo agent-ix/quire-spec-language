@@ -63,14 +63,7 @@ This test uses a fresh temporary output directory and checks original source and
 declaration owners, joined receive/choice provenance and Full/Partial compensation records after the producer's
 independent reader succeeds. It does not exercise B's acceptance interface.
 
-The producer identifies itself by a digest over its own source text
-(`src/protocol_artifact/handoff/writer.rs`, embedded at compile time via
-`include_bytes!`) and records only that digest as `Producer.binary` -- the
-bytes are never retained, written to a fixture file, or supplied as a
-dependency's exact-byte content, so no size ceiling applies to them, and the
-value is the same across a debug or release build, stripped or not, and
-across any toolchain: anyone with this repository can independently
-recompute it (`sha256sum src/protocol_artifact/handoff/writer.rs`). All compiler
+All compiler
 stages retain their own default limits; no limit is disabled to accommodate a
 build. Existing
 output directories are refused. Publication is not atomic: an I/O failure may
@@ -86,9 +79,7 @@ The output directory contains:
 - `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and
   `model-source.json`: the complete original sources.
 - `dependencies/`: exact selected model, contract, definition and rule bytes;
-  `expected.json` maps each reference to its file and direct prerequisites. The
-  producer's own binary is not among them: `expected.json`'s `producer.binary`
-  records its identity as a digest.
+  `expected.json` maps each reference to its file and direct prerequisites.
 
 No handoff copy is checked in. A consumer that must admit a handoff calls
 `write_v1`/`write_v2` (feature `handoff-writer`) from its own build or test

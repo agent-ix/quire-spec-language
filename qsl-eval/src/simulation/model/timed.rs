@@ -1564,6 +1564,18 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             ) else {
                                 continue;
                             };
+                            // `present(e) implies e = c` resets the elements
+                            // present in the post-state alone: an absent
+                            // element is no write and stays absent (QSpec
+                            // FR-322 `SD-02`).
+                            if selection.presence_condition()
+                                && !self
+                                    .places
+                                    .get(place)
+                                    .is_some_and(|held| self.live(held, post))
+                            {
+                                continue;
+                            }
                             let selected = match selection.predicate() {
                                 None => true,
                                 Some(predicate) => self.about_one(

@@ -264,6 +264,12 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             file: "qsl-replay/src/execute/value_parity.rs".to_owned(),
             item: "settle".to_owned(),
         },
+        // QSpec FR-483: the value-validity check arm's own seam over
+        // `FamilyOutcome`, mirroring `replay_value_parity`'s above.
+        SeamLocation {
+            file: "qsl-replay/src/value_check.rs".to_owned(),
+            item: "ValueTarget::evaluate".to_owned(),
+        },
     ]
     .into_iter()
     .collect()
