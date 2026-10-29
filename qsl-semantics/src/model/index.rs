@@ -44,7 +44,7 @@
 //! "without a charge, exactly when that type conforms to `T`").
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, the typed-failure convention of the checked-term result categories"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
 use std::collections::{BTreeMap, HashMap};

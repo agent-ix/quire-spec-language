@@ -1797,7 +1797,7 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-6")]
+#[trace("TC-138", "TC-136", "FR-050-AC-6", "FR-049-AC-10")]
 #[test]
 fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration() {
     with_v2(|inputs, proofs, selected, temporal, emitted| {

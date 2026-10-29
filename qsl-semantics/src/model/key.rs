@@ -316,7 +316,7 @@ impl EffectiveDeclarationPreimage {
     /// the first defect found, in derivation order.
     #[allow(
         clippy::result_large_err,
-        reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, the typed-failure convention of the checked-term result categories"
+        reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
     )]
     pub fn validate_derivation(&self) -> Result<(), (ModelRefusalCause, String)> {
         for (position, fact) in self.derivation.iter().enumerate() {

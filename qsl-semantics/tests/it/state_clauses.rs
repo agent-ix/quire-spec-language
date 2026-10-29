@@ -3590,7 +3590,7 @@ fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
 
 /// Row 4 (check 1.3): the snapshot's bytes edited, kept under the original
 /// digest.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "TC-136", "FR-106-AC-3", "FR-049-AC-11")]
 #[test]
 fn tc465_row4_edited_bytes_under_original_digest_refuses_content_mismatch() {
     let document = tc465_document();
@@ -3799,7 +3799,7 @@ fn tc465_row12_anchor_mismatch_refuses_wrong_anchor() {
 }
 
 /// Row 13 (check 4): `model.digest` of another package.
-#[trace("TC-465", "FR-106-AC-3", "TC-136", "FR-049-AC-2")]
+#[trace("TC-465", "TC-136", "FR-106-AC-3", "FR-049-AC-10", "FR-049-AC-11")]
 #[test]
 fn tc465_row13_wrong_model_digest_refuses_wrong_model_selection() {
     let document = tc465_document();

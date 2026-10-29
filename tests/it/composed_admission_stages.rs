@@ -261,7 +261,7 @@ fn assessment_selections_leave_every_declared_component_unchanged() {
 }
 
 #[test]
-#[trace("TC-115", "FR-036-AC-5")]
+#[trace("TC-115", "TC-136", "FR-036-AC-5", "FR-049-AC-10")]
 fn a_resource_only_configuration_change_stays_visible_without_changing_meaning() {
     let model = setup::native_rule_model::parts().model();
     let sources = ecosystem(&model, R::StateGraph);
