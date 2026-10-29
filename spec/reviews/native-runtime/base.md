@@ -18,7 +18,7 @@ The LC03 packet has 42 testable functional criteria mapped to 23 planned cases a
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Resolved before the evaluated revision: the first drafts had no discrete runtime artifacts or exact work ceilings; FR-018, NFR-006, expanded FR-007/008, IT-006 and TM-004 now own them. | FR-007; FR-008; FR-018; NFR-006; TM-004 |
-| FND-002 | low | Resolved: the baseline Node items field contains Version scalars; TC-067/070 now use that actual model and require a separately admitted source-derived model for reference-element variants. | TC-067; TC-070; tests/fixtures/native-rule-model.json |
+| FND-002 | low | Resolved: the baseline Node items field contains Version scalars; TC-067/070 now use that actual model and require a separately admitted source-derived model for reference-element variants. | TC-067; TC-070; tests/support/native_rule_model.rs |
 
 ## Checklist and six coverage rules
 
