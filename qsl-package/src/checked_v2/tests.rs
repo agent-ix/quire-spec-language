@@ -2736,7 +2736,10 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                     .as_array_mut()
                     .unwrap()
                     .push(json!({"term": "reference", "target": placeholder.clone()}));
-                root["dependencies"].as_array_mut().unwrap().push(placeholder);
+                root["dependencies"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(placeholder);
             }
             "noncanonical-place-path" => {
                 candidate["semantic_graph"]["nodes"][45]["body"]["members"][1]["value"]["members"]

@@ -128,7 +128,9 @@ impl<'g> Graph<'g> {
                 }
                 "parameter" => {
                     key.push(number(1));
-                    key.push(Token::Text(self.operation_name(binding(body, "operation")?)?));
+                    key.push(Token::Text(
+                        self.operation_name(binding(body, "operation")?)?,
+                    ));
                     key.push(Token::Text(text(binding(body, "parameter")?)?.into()));
                     comparison(binding(body, "comparison")?, &mut key)?;
                     key.push(Token::Number(rational(binding(body, "bound")?)?));
@@ -139,7 +141,9 @@ impl<'g> Graph<'g> {
                 "place" => {
                     key.push(number(0));
                     self.place_path(binding(body, "place")?, &mut key)?;
-                    key.push(Token::Text(self.operation_name(binding(body, "operation")?)?));
+                    key.push(Token::Text(
+                        self.operation_name(binding(body, "operation")?)?,
+                    ));
                     self.term(binding(body, "condition")?, &mut key, 0)?;
                     self.term(binding(body, "binders")?, &mut key, 0)?;
                     self.term(binding(body, "owner")?, &mut key, 0)?;
@@ -148,7 +152,9 @@ impl<'g> Graph<'g> {
                 }
                 "parameter" => {
                     key.push(number(1));
-                    key.push(Token::Text(self.operation_name(binding(body, "operation")?)?));
+                    key.push(Token::Text(
+                        self.operation_name(binding(body, "operation")?)?,
+                    ));
                     key.push(Token::Text(text(binding(body, "parameter")?)?.into()));
                     key.push(Token::Number(rational(binding(body, "value")?)?));
                 }
@@ -165,7 +171,9 @@ impl<'g> Graph<'g> {
                 self.term(binding(body, "predicate")?, &mut key, 0)?;
             }
             TimedModelForm::Guard => {
-                key.push(Token::Text(self.operation_name(binding(body, "operation")?)?));
+                key.push(Token::Text(
+                    self.operation_name(binding(body, "operation")?)?,
+                ));
             }
             TimedModelForm::Urgency => {
                 key.push(Token::Text(text(binding(body, "kind")?)?.into()));
@@ -249,7 +257,12 @@ impl<'g> Graph<'g> {
     /// node (its form, then its body), a literal by its kind and value, an
     /// aggregate by its members in order. No digest, region or literal
     /// type is read.
-    fn term(&self, term: &CheckedTerm, key: &mut Vec<Token>, depth: usize) -> Result<(), OrderFault> {
+    fn term(
+        &self,
+        term: &CheckedTerm,
+        key: &mut Vec<Token>,
+        depth: usize,
+    ) -> Result<(), OrderFault> {
         if depth > TERM_DEPTH {
             return Err(OrderFault::TooDeep);
         }
@@ -332,12 +345,19 @@ fn aggregates(nodes: &[CheckedSemanticNodeV2]) -> Vec<(usize, String, usize, Vec
                 }
             }
             Some(TimedModelForm::Guard) => {
-                let parts = members.get(1).map(bound_value).and_then(|parts| parts.and_then(members_of).ok());
+                let parts = members
+                    .get(1)
+                    .map(bound_value)
+                    .and_then(|parts| parts.and_then(members_of).ok());
                 for (part, entry) in parts.unwrap_or_default().iter().enumerate() {
                     let Ok(entries) = members_of(entry) else {
                         continue;
                     };
-                    let list = entries.iter().skip(1).filter_map(|member| target(member).ok()).collect();
+                    let list = entries
+                        .iter()
+                        .skip(1)
+                        .filter_map(|member| target(member).ok())
+                        .collect();
                     found.push((
                         index,
                         format!("body/members/1/value/members/{part}/members"),
@@ -706,7 +726,10 @@ mod tests {
                 Ok(true),
                 "{fixture}"
             );
-            assert_eq!(nodes, published, "{fixture}: the published order is restored");
+            assert_eq!(
+                nodes, published,
+                "{fixture}: the published order is restored"
+            );
             assert_eq!(
                 order_timed_aggregates(&mut nodes, &source_map),
                 Ok(false),

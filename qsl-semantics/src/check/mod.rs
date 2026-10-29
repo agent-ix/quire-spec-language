@@ -5372,11 +5372,7 @@ impl PackageDeclarations {
             }));
         }
         if !self.emit_unwritten_timed_members {
-            unwritten.extend(
-                timed_models
-                    .iter()
-                    .filter_map(timed_model::not_emitted),
-            );
+            unwritten.extend(timed_models.iter().filter_map(timed_model::not_emitted));
         }
         if !unwritten.is_empty() {
             return Err(unwritten);

@@ -14,8 +14,7 @@ const CLOCK: &str = "ix://quire/native/Clock";
 /// ConfigVersion with the clock `x`, `attemptUpdate`'s frame naming `x`
 /// too, and, when `parameter` holds, `attemptUpdate(c: Clock)`.
 fn document(parameter: bool) -> Vec<u8> {
-    let mut document: Value =
-        serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
+    let mut document: Value = serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
     let operation = &mut document["types"][1]["operations"][0];
     operation["frame"]["modifies"]
         .as_array_mut()
@@ -114,7 +113,11 @@ fn assert_true(wire: &Value, node: &Value) {
     assert_eq!(node["semantic_form"], "reference");
     let literal = target(wire, &node["body"]);
     assert_eq!(
-        (&literal["node_tag"], &literal["semantic_form"], &literal["body"]["value"]),
+        (
+            &literal["node_tag"],
+            &literal["semantic_form"],
+            &literal["body"]["value"]
+        ),
         (&json!("value"), &json!("literal"), &json!(true))
     );
 }
@@ -147,9 +150,9 @@ fn assert_declared_order(wire: &Value) {
 /// the expression node of `self.versionNumber > 0` and the constraint `ge
 /// 1/1`, the second `true` and `lt 5/1`. The postcondition `self.x = 0 ms`
 /// is one `clock_reset` of kind `place`, owner `self`, no slot or binder and
-/// the condition `true`. `time invariant Bounded when { self.versionNumber
-/// >= 0 } { self.x <= 9 ms }` is one `time_invariant` with the bound `le
-/// 9/1`, and `urgent Always when { true }` names the `true` expression. A
+/// the condition `true`. `time invariant Bounded when {
+/// self.versionNumber >= 0 } { self.x <= 9 ms }` is one `time_invariant`
+/// with the bound `le 9/1`, and `urgent Always when { true }` names the `true` expression. A
 /// place is exactly `model`, `path`, `resolved_path`. The root lists every
 /// clause and every constraint once, in declared order, and each clause
 /// node is located at its own source.
@@ -235,7 +238,16 @@ fn guards_resets_and_invariants_emit_clause_nodes() {
     };
     assert_eq!(
         names(&reset["body"]),
-        ["kind", "operation", "place", "owner", "slots", "binders", "condition", "value"]
+        [
+            "kind",
+            "operation",
+            "place",
+            "owner",
+            "slots",
+            "binders",
+            "condition",
+            "value"
+        ]
     );
     assert_eq!(
         member(&reset["body"], "operation"),
@@ -274,7 +286,12 @@ fn guards_resets_and_invariants_emit_clause_nodes() {
     let [root] = timed(&wire, "timed_model")[..] else {
         panic!("one root");
     };
-    let listed = |name: &str| member(&root["body"], name)["members"].as_array().unwrap().len();
+    let listed = |name: &str| {
+        member(&root["body"], name)["members"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
     assert_eq!(
         ["resets", "guards", "invariants", "urgencies", "constraints"].map(listed),
         [1, 1, 1, 1, 3]
@@ -305,7 +322,8 @@ fn an_equal_constraint_is_one_node_located_at_each_source() {
         .filter(|entry| entry["node_id"] == constraint["node_id"])
         .map(|entry| {
             let region = &entry["regions"][0];
-            &unit[region["start"].as_u64().unwrap() as usize..region["end"].as_u64().unwrap() as usize]
+            &unit[region["start"].as_u64().unwrap() as usize
+                ..region["end"].as_u64().unwrap() as usize]
         })
         .collect();
     assert_eq!(regions, ["self.x = 2 ms", "self.x = 2 ms"]);
@@ -340,7 +358,10 @@ fn a_clock_parameter_is_an_inline_name_of_its_operation() {
     let [reset] = timed(&wire, "clock_reset")[..] else {
         panic!("one reset");
     };
-    assert_eq!(names(&reset["body"]), ["kind", "operation", "parameter", "value"]);
+    assert_eq!(
+        names(&reset["body"]),
+        ["kind", "operation", "parameter", "value"]
+    );
     assert_eq!(literal(&reset["body"], "parameter"), "c");
     assert_eq!(
         member(&reset["body"], "operation"),
@@ -357,10 +378,7 @@ fn a_clock_parameter_is_an_inline_name_of_its_operation() {
 }
 
 /// The member a refused model names, and the text of its span in `unit`.
-fn unwritten(
-    document: &[u8],
-    body: &str,
-) -> (qsl_semantics::check::UnwrittenTimedMember, String) {
+fn unwritten(document: &[u8], body: &str) -> (qsl_semantics::check::UnwrittenTimedMember, String) {
     let (unit, checked) = checked(document, body);
     let refusals = checked.expect_err("the member is not written yet");
     let found = refusals.iter().find_map(|refusal| match &refusal.cause {
@@ -389,7 +407,10 @@ fn an_unwritten_guard_refuses_at_its_member() {
         &vector_document(),
         &format!("pre All using v on Config::ConfigVersion::attemptUpdate {{ {quantifier} }}\n"),
     );
-    assert_eq!((member, text.as_str()), (Member::QuantifiedClause, quantifier));
+    assert_eq!(
+        (member, text.as_str()),
+        (Member::QuantifiedClause, quantifier)
+    );
     assert!(member.description().contains("STD-554"));
     let cause = qsl_semantics::check::TemporalCause::TimedModelNotEmitted {
         model: "Config".to_owned(),

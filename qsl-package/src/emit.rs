@@ -1443,9 +1443,12 @@ fn write_clauses(
 ) -> Result<(), EmitRefusal> {
     use qsl_semantics::check::{ConstraintTargetNodes, ResetTargetNodes};
     let place = |clock: qsl_semantics::check::ClockId| {
-        places.get(clock.index()).cloned().ok_or(
-            EmitRefusal::TimedModelWriterInvariant("a clause names a clock with no place"),
-        )
+        places
+            .get(clock.index())
+            .cloned()
+            .ok_or(EmitRefusal::TimedModelWriterInvariant(
+                "a clause names a clock with no place",
+            ))
     };
     let constraint = |model: &mut CheckedTimedModel,
                       regions: &mut BTreeMap<CheckedNodeId, Vec<(u64, u64)>>,
@@ -1477,8 +1480,10 @@ fn write_clauses(
         }) {
             return Ok(occur(&mut held.metadata, region, regions, false));
         }
-        let mut metadata =
-            clause_metadata(placeholder(&format!("constraint-{}", model.constraints.len())));
+        let mut metadata = clause_metadata(placeholder(&format!(
+            "constraint-{}",
+            model.constraints.len()
+        )));
         let id = occur(&mut metadata, region, regions, true);
         model.constraints.push(CheckedClockConstraint {
             metadata,
@@ -1530,8 +1535,10 @@ fn write_clauses(
             occur(&mut held.metadata, region, regions, false);
             continue;
         }
-        let mut metadata =
-            clause_metadata(placeholder(&format!("invariant-{}", model.invariants.len())));
+        let mut metadata = clause_metadata(placeholder(&format!(
+            "invariant-{}",
+            model.invariants.len()
+        )));
         occur(&mut metadata, region, regions, true);
         model.invariants.push(CheckedTimeInvariant {
             metadata,
@@ -2655,3 +2662,4 @@ pub(crate) mod tests;
 #[cfg(test)]
 mod extent_agreement;
 mod timed_order;
+pub use timed_order::OrderFault as TimedOrderFault;

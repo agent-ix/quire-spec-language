@@ -491,7 +491,12 @@ pub(super) fn reset(
         clock,
         value,
         span,
-        selection: Some((quantifier.path, name, quantifier.binder.to_owned(), predicate)),
+        selection: Some((
+            quantifier.path,
+            name,
+            quantifier.binder.to_owned(),
+            predicate,
+        )),
     }))
 }
 

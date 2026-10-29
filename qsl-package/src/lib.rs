@@ -37,8 +37,7 @@ pub use checked_v2::{
     CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget, CheckedGuardPart,
     CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource, CheckedTimeSourceKind,
     CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockComparison,
-    ClockPathStep,
-    HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal,
+    ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal,
     PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
     ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect, StateGraphKind,
     StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
@@ -47,7 +46,7 @@ pub use checked_v2::{
 #[cfg(feature = "std")]
 pub use emit::{
     checked_node_id, checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package,
-    emit_timed_models, Emission, EmitRefusal, OmissionCause, OmittedNode,
+    emit_timed_models, Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 

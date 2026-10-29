@@ -1155,7 +1155,10 @@ fn project_guard(node: &CheckedSemanticNodeV2) -> Result<CheckedClockGuard, &'st
             }
             Ok(CheckedGuardPart {
                 predicate: reference(value)?,
-                constraints: constraints.iter().map(reference).collect::<Result<_, _>>()?,
+                constraints: constraints
+                    .iter()
+                    .map(reference)
+                    .collect::<Result<_, _>>()?,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1204,7 +1207,9 @@ fn project_urgency(node: &CheckedSemanticNodeV2) -> Result<CheckedUrgency, &'sta
 // The `kind` word is consumed once into CheckedConstraintTarget and the
 // comparison once into ClockComparison; unknown words refuse.
 #[ix_trace_rs::string_edge]
-fn project_constraint(node: &CheckedSemanticNodeV2) -> Result<CheckedClockConstraint, &'static str> {
+fn project_constraint(
+    node: &CheckedSemanticNodeV2,
+) -> Result<CheckedClockConstraint, &'static str> {
     if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Constraint) {
         return Err("clock constraint reference has wrong form");
     }

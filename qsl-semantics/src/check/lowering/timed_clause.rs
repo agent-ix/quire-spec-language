@@ -55,15 +55,16 @@ impl Lowering<'_> {
         input: &TimedClauseInput<'_>,
     ) -> Result<TimedClauseNodes, CheckRefusal> {
         let model = input.model;
+        // Every guard and reset is of a state clause of the unit.
         let clause_at = |index: usize| {
             input
                 .clause_locations
                 .get(index)
-                .unwrap_or(input.declaration)
+                .ok_or_else(|| super::fault(input.declaration, KeyFault::UnkeyableRequirements))
         };
         let mut guards = Vec::with_capacity(model.guards().len());
         for (at, guard) in model.guards().iter().enumerate() {
-            let location = clause_at(guard.index);
+            let location = clause_at(guard.index)?;
             let context = guard.context;
             let operation = self.clause_anchor(guard.operation(), location)?;
             let mut parts = Vec::with_capacity(guard.parts().len());
@@ -92,7 +93,7 @@ impl Lowering<'_> {
         }
         let mut resets = Vec::new();
         for written in model.resets() {
-            let location = clause_at(written.index);
+            let location = clause_at(written.index)?;
             let context = written.context;
             let operation = self.clause_anchor(written.operation(), location)?;
             for reset in written.resets() {
@@ -130,7 +131,10 @@ impl Lowering<'_> {
         let mut invariants = Vec::with_capacity(model.invariants().len());
         for (at, invariant) in model.invariants().iter().enumerate() {
             let [alternative] = invariant.alternatives() else {
-                return Err(super::fault(input.declaration, KeyFault::UnkeyableRequirements));
+                return Err(super::fault(
+                    input.declaration,
+                    KeyFault::UnkeyableRequirements,
+                ));
             };
             let predicate = if invariant.from_bound() {
                 self.timed_true(input.declaration)?

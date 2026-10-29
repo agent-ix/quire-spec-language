@@ -1185,9 +1185,7 @@ impl TimedModel {
                     .map_or(0, |clock| clock.slots().count());
                 let member = match &reset.selection {
                     None if slots == 0 => continue,
-                    Some(selection) if selection.predicate.is_some() => {
-                        Member::SelectionPredicate
-                    }
+                    Some(selection) if selection.predicate.is_some() => Member::SelectionPredicate,
                     Some(_) if slots == 1 => continue,
                     None | Some(_) => Member::ElementReset,
                 };
