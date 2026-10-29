@@ -214,9 +214,9 @@ only an enum member node key as a `VariantId`.
 ### A quantity type carries a two-domain UnitId
 
 For a quantity type, C-26 SHALL produce a `UnitId` that is the declared
-unit's QSpec FR-142 node key, and `semantic_value` SHALL produce the
-compound-unit identity defined by QSpec FR-142 under its own domain (ADR-013
-T-6, OQ-B). A
+unit's QSpec FR-142 node key under the `quire.checked-semantic-node/v1`
+label, and `semantic_value` SHALL produce the `quire.value.compound-unit/v1`
+digest under its own label for a compound unit (ADR-013 T-6, OQ-B). A
 declared unit and a compound unit SHALL never be equal. C-30 SHALL admit
 only a unit node key as a declared-arm `UnitId`.
 
