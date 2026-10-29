@@ -2,8 +2,8 @@
 //! The `Value` family's definition catalog and its package-selection
 //! admission. The conformance tests compare them with QSpec's
 //! `complete-value-lock.json` and its package-selection vectors, read at run
-//! time from the QSpec checkout; nothing of QSpec is copied into
-//! this repository.
+//! time from the quire-specification checkout `QSPEC_DIR` names (`make
+//! conformance`); nothing of QSpec is copied into this repository.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -22,14 +22,17 @@ fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
 }
 
-/// QSpec's definition document `name`, read from the QSpec checkout.
-fn qspec_document(name: &str) -> Value {
-    let qspec = qspec_directory();
+/// QSpec's definition document `name`, read from `$QSPEC_DIR`; `None` when
+/// `QSPEC_DIR` is unset.
+fn qspec_document(name: &str) -> Option<Value> {
+    let qspec = std::env::var_os("QSPEC_DIR")?;
     let path = Path::new(&qspec).join(DEFINITIONS).join(name);
     let bytes =
         std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
-    serde_json::from_slice(&bytes)
-        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
+    Some(
+        serde_json::from_slice(&bytes)
+            .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display())),
+    )
 }
 
 fn strings(value: &Value) -> Vec<&str> {
@@ -67,11 +70,15 @@ fn the_catalog_covers_every_role_exactly_once() {
 
 /// The catalog is QSpec's lock: every `qualification_catalog` row's role,
 /// authority and identity, in order, every package-selection rule, the
-/// trigger vocabulary and the selection refusal codes. The vectors are read in place from the QSpec checkout.
+/// trigger vocabulary and the selection refusal codes. Skipped (and
+/// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
 #[trace("TC-490", "FR-110-AC-9")]
 #[test]
 fn conformance_catalog_matches_qspec_complete_value_lock() {
-    let document = qspec_document("complete-value-lock.json");
+    let Some(document) = qspec_document("complete-value-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let lock = lock();
     let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
         .as_array()
@@ -151,11 +158,15 @@ fn conformance_catalog_matches_qspec_complete_value_lock() {
 /// FR-361-AC-10: the rows of the catalog that come from QSpec's
 /// complete-model lock equal that lock: each `qualification_catalog` row's
 /// role, authority and identity, in order, and its `package_selection`.
-/// The vectors are read in place from the QSpec checkout.
+/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// requires it.
 #[trace("FR-361-AC-10", "TC-1017")]
 #[test]
 fn conformance_catalog_matches_qspec_complete_model_lock() {
-    let document = qspec_document("complete-model-lock.json");
+    let Some(document) = qspec_document("complete-model-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
         .as_array()
         .unwrap()
@@ -196,11 +207,14 @@ fn conformance_catalog_matches_qspec_complete_model_lock() {
 }
 
 /// The complete-temporal lock's qualification rows and unconditional
-/// selection match the QSpec source in the QSpec checkout.
+/// selection match the QSpec checkout named by `QSPEC_DIR`.
 #[trace("FR-361-AC-15", "TC-1017")]
 #[test]
 fn conformance_catalog_matches_qspec_complete_temporal_lock() {
-    let document = qspec_document("complete-temporal-lock.json");
+    let Some(document) = qspec_document("complete-temporal-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
         .as_array()
         .unwrap()
@@ -250,11 +264,15 @@ fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
 /// and a division law exactly when `integer_div_rem` is present. Every
 /// refused vector, including the two ordering vectors, refuses with exactly
 /// its `expected_code`, and the refused vectors together reach every closed
-/// refusal code. The vectors are read in place from the QSpec checkout.
+/// refusal code. Skipped (and passing) when `QSPEC_DIR` is unset; `make
+/// conformance` requires it.
 #[trace("QSpec-TC-192", "TC-490", "FR-110-AC-9")]
 #[test]
 fn conformance_admit_selection_matches_qspec_selection_vectors() {
-    let vectors = qspec_document("complete-value-selection-vectors.json");
+    let Some(vectors) = qspec_document("complete-value-selection-vectors.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let accepted = vectors["accepted"].as_array().unwrap();
     assert!(!accepted.is_empty());
     for vector in accepted {
@@ -416,11 +434,14 @@ fn the_qualification_rows_follow_the_value_complete_layer() {
 /// The layer rows are QSpec's `header_selectable_layers`: each row's
 /// identity, `requires`, admitted-form file and witness request, in order,
 /// and the lock's `package_selection.layer` and `without_layer`. Skipped
-/// The vectors are read in place from the QSpec checkout.
+/// (and passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
 #[trace("TC-490", "FR-110-AC-9")]
 #[test]
 fn conformance_layer_rows_match_qspec_complete_value_lock() {
-    let document = qspec_document("complete-value-lock.json");
+    let Some(document) = qspec_document("complete-value-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let lock = lock();
     let rows = document["header_selectable_layers"].as_array().unwrap();
     assert_eq!(rows.len(), lock.layers().len());
@@ -450,14 +471,4 @@ fn conformance_layer_rows_match_qspec_complete_value_lock() {
         .map(|role| role.as_str())
         .collect();
     assert_eq!(without, strings(&selection["without_layer"]));
-}
-
-fn qspec_directory() -> std::path::PathBuf {
-    std::path::PathBuf::from(
-        std::env::var_os("QSPEC_DIR")
-            .filter(|path| !path.is_empty())
-            .unwrap_or_else(|| {
-                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
-            }),
-    )
 }

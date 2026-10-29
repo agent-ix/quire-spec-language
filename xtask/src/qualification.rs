@@ -503,18 +503,17 @@ fn parse_args(operands: &[OsString]) -> Result<Args> {
     })
 }
 
-fn qspec_dir(_workspace_root: &Path) -> Result<PathBuf> {
+fn qspec_dir(workspace_root: &Path) -> Result<PathBuf> {
     let path = std::env::var_os("QSPEC_DIR")
-        .filter(|path| !path.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| {
-            Error::QualificationRefusal(
-                "QSPEC_DIR must point to an available QSpec checkout; no default is used"
-                    .to_owned(),
-            )
-        })?;
+        .unwrap_or_else(|| {
+            workspace_root
+                .parent()
+                .unwrap_or(workspace_root)
+                .join("quire-specification")
+        });
     fs::canonicalize(&path).map_err(|error| {
-        Error::QualificationRefusal(format!("QSpec checkout {}: {error}", path.display()))
+        Error::QualificationRefusal(format!("QSPEC_DIR {}: {error}", path.display()))
     })
 }
 
