@@ -362,11 +362,9 @@ mod tests {
     }
 
     /// FR-064-AC-5's real-site half: runs the real scan over the ADR-010
-    /// section 4.3 dispatch strings still compared in the tree, at the one
-    /// typed conversion each now lives in: `static_authority_digest_refusal`
-    /// (`"sha256-jcs:"`), `AdapterArtifact::try_from`
-    /// (`"quire.state.authority-adapter"`) and `clock_binding_name` (the
-    /// `"clock:"` prefix, a `strip_prefix`). An allow-list entry at each must
+    /// section 4.3 dispatch strings still compared in the tree, at
+    /// `clock_binding_name` (the `"clock:"` prefix, a `strip_prefix`) and the
+    /// operation-role selector. An allow-list entry at each must
     /// be refused as gating a branch, whether or not a `#[string_edge]` mark
     /// covers the site. The `"quire.protocol.finite-global/v1"` profile string
     /// is now only registry data (`RegisteredDefinition::identity`), matched by
@@ -377,12 +375,6 @@ mod tests {
     #[test]
     fn real_adr010_sites_are_refused_as_allow_list_entries() {
         let sites = [
-            (
-                "src",
-                "src/state/evaluation.rs",
-                "static_authority_digest_refusal",
-            ),
-            ("src", "src/state/input.rs", "AdapterArtifact::try_from"),
             ("src", "src/protocol_artifact/mod.rs", "clock_binding_name"),
             // A real named-`const NAME: &str` site
             // (`identity == NARROW`, `qsl-semantics/src/check/claims.rs`),
