@@ -21,6 +21,7 @@ use qsl_semantics::check::{
     AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
 };
 use quire_exact::Value;
+use quire_semantic_value::model_transition::ModelTransition;
 
 use super::access::{
     EnabledApplication, EnabledReader, InstanceAccess, StateWeakAccesses, ThreadAttempt,
@@ -449,14 +450,28 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             }
                         }
                         for (observed, read_location) in observations {
-                            let applied = self
-                                .model
-                                .apply_operation(&observed, &operation, &select, budget)?;
-                            for applied in applied.successors {
+                            let enabled: Vec<(ModelTransition, Option<Value>)> = if attempt
+                                .constraint
+                                .is_some()
+                            {
+                                self.model
+                                    .apply_operation(&observed, &operation, &select, budget)?
+                                    .successors
+                                    .into_iter()
+                                    .map(|applied| (applied.transition, applied.result))
+                                    .collect()
+                            } else {
+                                self.model
+                                    .enabled_transitions(&observed, &operation, &select, budget)?
+                                    .into_iter()
+                                    .map(|transition| (transition, None))
+                                    .collect()
+                            };
+                            for (transition, result) in enabled {
                                 let potential_access = self
                                     .potential
                                     .of(node)
-                                    .and_then(|potential| potential.instance(&applied.transition));
+                                    .and_then(|potential| potential.instance(&transition));
                                 let potential_read = match potential_access {
                                     Some(InstanceAccess::Access {
                                         class: AccessClass::Load | AccessClass::Rmw,
@@ -479,7 +494,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 if let Some(constraint) = attempt.constraint {
                                     let mut frame = self.frame(instance, &observation_path, node);
                                     if let (Some(slot), Some(result)) =
-                                        (self.program.binder_of.get(&node), &applied.result)
+                                        (self.program.binder_of.get(&node), &result)
                                     {
                                         if let Some(entry) = frame.get_mut(*slot) {
                                             *entry = Some(result.clone());
@@ -494,10 +509,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 }
                                 let footprint = self
                                     .model
-                                    .footprint_selecting(
-                                        &applied.transition,
-                                        Some(&attempt.contracts),
-                                    )
+                                    .footprint_selecting(&transition, Some(&attempt.contracts))
                                     .map_err(|_| {
                                         ProtocolRefusal::Unsupported(
                                             super::Unsupported::AccessFootprint,
@@ -518,7 +530,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         path: observation_path.clone(),
                                         node,
                                     },
-                                    transition: applied.transition,
+                                    transition,
                                     reads: model_only(footprint.reads),
                                     writes: model_only(footprint.writes),
                                 });
