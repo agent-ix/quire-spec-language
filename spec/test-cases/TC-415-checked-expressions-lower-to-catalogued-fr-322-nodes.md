@@ -14,9 +14,8 @@ Verify the FR-093 lowering: one node per checked expression, shared by equal
 content, with each source occurrence recorded; each application's operator,
 semantic form, operation identity, member, mode, laws, leaves and arguments
 per the lowering table; FR-149 classification of conversions; binder levels;
-the text-leaf list of a structural comparison, recursive composites
-included; and the refusal of an operation whose law the lock evidence does
-not supply.
+and the text-leaf list of a structural comparison, recursive composites
+included.
 
 This catches a lowering that inlines operands (losing occurrences), a
 `result_type` inferred rather than taken from the checked type, a wrong
@@ -53,19 +52,16 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
 5. Check `q` of FR-093-AC-5 and read the levels of `x`, `y` and `z` and the
    `forall` argument list.
 6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`
-   with lock evidence that supplies the text-profile definition, and again
-   with lock evidence that does not.
+   and read its law.
 7. Scan the lowering `match` over `NodeKind` for a `_` arm.
-8. With lock evidence that selects the text definition FR-093's Recursive
-   text-leaf vectors name, check `Node`, `A` and `B`, and `eq`, `has`, `eqa`
+8. Check `Node`, `A` and `B`, and `eq`, `has`, `eqa`
    and `eqo` of those vectors. Read the preimage bytes and keys of the
    `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes, and of the type,
    group and parameter nodes they name. Check again with `B` declared before
    `A`.
 9. Check structural equality over `R`, `S`, `W`, `Tree2` and `Two` of
    FR-093-AC-11, and structural equality and `contains` over FR-092's
-   `List`, and read each operation's `leaves`. Check `eq` of step 8 with
-   lock evidence that supplies no text-profile definition, and again with a
+   `List`, and read each operation's `leaves`. Check `eq` of step 8 with a
    node limit that admits every node of its package but not also its two
    leaves.
 10. On a spawned thread with a 512 KiB stack, check a function body of the
@@ -130,20 +126,17 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   naming `Int[0, 9]`; `c3` gives `quire.op.numeric.convert`; `fm`'s body
   is one `quire.op.collection.flat_map` node with no map node.
 - Step 5: levels 1, 2 and 1; the `forall` arguments are as FR-093-AC-5 gives.
-- Step 6: the first carries law `text_profile` with the supplied
-  `DefinitionRef` and mode `nfc`; the second refuses with
-  `missing_declaration`/`missing-selection` naming role `text_profile` and
-  yields no node.
+- Step 6: it carries law `text_profile` with the `DefinitionLock` catalog's
+  text-profile `DefinitionRef` and mode `nfc`.
 - Step 7: no `_` arm.
 - Step 8: every check succeeds; the four nodes key to E14 to E17 with the
   vectors' preimage bytes, the others to T13, T14, G16 to G21, S4, S5 and
   P10 to P16; declaring `B` first gives the same keys.
 - Step 9: `R` and `S` each give one leaf at `field:t`, `inner`, and `W` one
   at `field:t`; `Tree2` and `Two` give the lists FR-093-AC-11 states;
-  `List` gives `[]` for both operations; `eq` refuses with
-  `missing_declaration`/`missing-selection` naming role `text_profile`, and
-  under the node limit with `stage_limit_exceeded`/`node-count-exceeded`
-  at that limit, each time yielding no node.
+  `List` gives `[]` for both operations; `eq` under the node limit refuses
+  with `stage_limit_exceeded`/`node-count-exceeded` at that limit and
+  yields no node.
 - Step 10: the default-limit chain checks. Each form checks at 2 and at
   1,000 deep, except the unguarded `value` chain, which refuses at both
   depths as an unproved presence. The first `pre` refuses as a forbidden

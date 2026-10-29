@@ -1568,7 +1568,7 @@ mod tests {
     use crate::result::{DisagreementCause, EvaluatedValue, InputArmResult, Verdict, WitnessCheck};
     use crate::spine::{
         check, default_accounting, package, parse, run, select, Call, CallLocus, DependencyInput,
-        LockEvidence, PackageLimits, ParseRequest, SpineLimits,
+        PackageLimits, ParseRequest, SpineLimits,
     };
 
     const FIXTURE: &str = include_str!("../../tests/fixtures/spine-compile.native");
@@ -1600,7 +1600,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancel,
         );
@@ -2550,7 +2549,6 @@ mod tests {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &cancelled,
         );

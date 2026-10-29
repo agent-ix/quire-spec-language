@@ -69,14 +69,6 @@ pub(super) fn chain(length: usize) -> Vec<CompositeDeclaration> {
     records
 }
 
-/// A text-profile definition for the equality's text leaf.
-fn text_definition() -> DefinitionReference {
-    DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "unicode-text".to_owned(),
-    }
-}
-
 /// `function eq(a: T, b: T): Boolean { a = b }`, each `T` built by
 /// `operand`.
 fn equality_over(operand: fn() -> TypeForm) -> FunctionDeclaration {
@@ -107,7 +99,6 @@ pub(super) fn check_on_small_stack(
             PackageDeclarations {
                 types: TypeEnvironment::new(records, []).expect("FR-143 admits the chain"),
                 functions,
-                lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
                 ..PackageDeclarations::new(
                     fixture_source(),
                     qsl_foundation::IdentityLimits::default(),

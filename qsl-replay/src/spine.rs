@@ -49,7 +49,6 @@ pub use lifecycle::{
     check, check_with_execution_points, package, parse, refusal_or_fault, select, AdmittedModels,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
-pub use qsl_semantics::check::LockEvidence;
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.

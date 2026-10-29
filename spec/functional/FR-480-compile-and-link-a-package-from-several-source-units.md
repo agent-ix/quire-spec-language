@@ -59,13 +59,13 @@ the package means the same whichever order the two files are listed in.
 - The unit list: one `Source` per unit (authority, identity, revision and the
   `quire.source.bytes/v1` digest of its exact bytes, FR-001), in **request
   order**, the order in which the caller lists them.
-- The domain package documents, dependency input (FR-099) and lock evidence
-  the units' selections need, as for one unit.
+- The domain package documents and dependency input (FR-099) the units'
+  selections need, as for one unit.
 - FR-278's library operations take the unit list as follows: `parse` runs
   once per unit and returns that unit's `ParsedSource`; `select` takes the
   model selections of every unit; `check` takes every unit's
-  `ParsedSource`, in request order, with the `AdmittedModels`, dependency
-  input and lock evidence. FR-027's native-compile/1 `1-draft` request names
+  `ParsedSource`, in request order, with the `AdmittedModels` and dependency
+  input. FR-027's native-compile/1 `1-draft` request names
   the unit list as its `program`: one source selection, or a non-empty array
   of source selections in request order (FR-027 states the command's
   edition, intake and refusal rules for each unit).

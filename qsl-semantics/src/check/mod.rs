@@ -225,8 +225,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause,
-    ModelRootKeyError, NominalNode, SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, ModelRootKeyError,
+    NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -1915,7 +1915,7 @@ impl PackageDeclarations {
             .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
-        let lock_evidence = self.lock_evidence;
+        let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
         let model_inputs = self.model_inputs;
@@ -2109,7 +2109,7 @@ impl PackageDeclarations {
                 &owner,
                 &models,
                 scope.types().units().clone(),
-                &lock_evidence,
+                protocol_profile.as_ref(),
                 0,
                 &mut sealing_occurrences,
                 &mut sealing_meter,
@@ -2827,8 +2827,8 @@ impl PackageDeclarations {
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
-        let protocol_profile = lock_evidence
-            .protocol_profile()
+        let protocol_profile_identity = protocol_profile
+            .as_ref()
             .map(|definition| definition.identity.clone());
         // FR-218 "Requirements": the unit's declarations a `requires
         // temporal` name resolves among, each other kind by its keyword.
@@ -2916,7 +2916,7 @@ impl PackageDeclarations {
                 attempts,
                 &state_clause_forms,
                 protocol_clause::Selections {
-                    protocol: protocol_profile.as_deref(),
+                    protocol: protocol_profile_identity.as_deref(),
                     temporal: &temporal_aliases,
                 },
             );
@@ -2945,7 +2945,7 @@ impl PackageDeclarations {
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
-                protocol_profile.as_deref(),
+                protocol_profile_identity.as_deref(),
                 &obligation_declarations,
                 &mut obligation_cx,
             );
@@ -3024,7 +3024,7 @@ impl PackageDeclarations {
                         &slot_declarations,
                         &mut slot_cx,
                         &regions,
-                        protocol_profile.as_deref(),
+                        protocol_profile_identity.as_deref(),
                     ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = *slots;
@@ -3734,7 +3734,7 @@ impl PackageDeclarations {
             &owner,
             &models,
             units,
-            &lock_evidence,
+            protocol_profile.as_ref(),
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,

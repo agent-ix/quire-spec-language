@@ -44,8 +44,8 @@ comparing copied source digests.
    source-map contract follows QSpec FR-322.
 3. **One producer, one `CheckedUnit`.** The producer is the spine front end
    (parse, build, assemble, check over one `Source`) extended by the type
-   phase. It takes the source, the selected formal identity, the spine's
-   `LockEvidence` and the stage limits, and returns the checked unit or
+   phase. It takes the source, the selected formal identity and the stage
+   limits, and returns the checked unit or
    the typed refusal of the first stage that refused. Exactly one public
    `CheckedUnit` type exists: the spine's, which carries the graph's
    requirement records, the type report, the formal identity and the source's
@@ -68,8 +68,8 @@ comparing copied source digests.
    reference (FR-001).
 7. **Profile selection.** A source selects a profile by identity alone
    (FR-110). The one grammar refuses a profile line that carries a `version`
-   or a `digest` after the identity. Profiles resolve through `DefinitionLock::pinned`
-   and the spine's `LockEvidence`; a revision or digest never belongs to the
+   or a `digest` after the identity. Profiles resolve through `DefinitionLock::pinned`;
+   a revision or digest never belongs to the
    source.
 8. **Moved families.** The producer admits a family only once its
    type phase runs in S3 over S2 forms. S2 builds a form for a `relation`

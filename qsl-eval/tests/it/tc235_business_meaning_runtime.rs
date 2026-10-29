@@ -16,7 +16,7 @@ use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, Typ
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::IntakeLimits;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations};
+use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::intake::{admit_unit, package_input, read_domain_package};
@@ -577,11 +577,6 @@ fn package_with_types(
             types,
             functions,
             function_selections,
-            lock_evidence: LockEvidence::default().with_text_profile(
-                DefinitionLock::pinned()
-                    .entry(CatalogRole::TextProfile)
-                    .reference(),
-            ),
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 qsl_foundation::IdentityLimits::default(),

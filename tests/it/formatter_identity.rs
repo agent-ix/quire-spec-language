@@ -1214,7 +1214,6 @@ fn lifecycle_generated_bodies_keep_format_identity() {
             &BTreeMap::new(),
             &DependencyInput::default(),
             limits,
-            &qsl_replay::spine::LockEvidence::default(),
         )
         .unwrap()
     };
@@ -1337,7 +1336,6 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .unwrap();
 }
@@ -1393,7 +1391,6 @@ fn deep_source_generator_keeps_format_identity(label: &str) {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .unwrap_or_else(|refusal| {
         panic!("{label}: actual 100,000-level fixture must check: {refusal}")
@@ -1461,7 +1458,6 @@ fn replay_large_source_generator_keeps_format_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .unwrap();
 }
@@ -1626,44 +1622,6 @@ fn replay_composite_and_model_units_keep_format_identity() {
         &DependencyInput::default(),
     )
     .unwrap();
-}
-
-#[trace("TC-885", "FR-003-AC-9")]
-#[test]
-fn lifecycle_text_law_fixture_keeps_format_identity() {
-    use qsl_replay::spine::{LockEvidence, SpineLimits};
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    let fixture = include_str!("../../qsl-replay/src/spine/lifecycle/tests.rs");
-    let header = source_literal(fixture, "HEADER");
-    let source = fixture_text(
-        function_literal(
-            fixture,
-            "check_takes_the_lock_evidence_the_text_law_comes_from",
-            "{HEADER}",
-        ),
-        &[("HEADER", &header)],
-    );
-    let lock = LockEvidence::default().with_text_profile(
-        DefinitionLock::pinned()
-            .entry(CatalogRole::TextProfile)
-            .reference(),
-    );
-    let compile = |lock: &LockEvidence| {
-        crate::support::front_end::emitted_with_authority(
-            SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1"),
-            "unit.native",
-            source.as_bytes(),
-            &BTreeMap::new(),
-            &DependencyInput::default(),
-            SpineLimits::default(),
-            lock,
-        )
-    };
-    assert!(
-        compile(&LockEvidence::default()).is_err(),
-        "original control lacks the text law"
-    );
-    compile(&lock).expect("owning lock evidence admits original and formatted text unit");
 }
 
 #[trace("TC-885", "FR-003-AC-9")]
@@ -1914,7 +1872,6 @@ fn checker_family_authored_units_keep_format_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         limits,
-        &qsl_replay::spine::LockEvidence::default(),
     )
     .expect("the owning 5,000-node limit admits the original sum");
 }
@@ -2056,8 +2013,7 @@ fn evaluator_source_call_fixture_keeps_checked_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn replay_composite_fixture_keeps_checked_identity() {
-    use qsl_replay::spine::{LockEvidence, SpineLimits};
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use qsl_replay::spine::SpineLimits;
     let profile = source_literal(
         include_str!("../../qsl-replay/src/execute/tests.rs"),
         "PROFILE",
@@ -2067,11 +2023,6 @@ fn replay_composite_fixture_keeps_checked_identity() {
         "UNIT",
     );
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{profile}{body}");
-    let lock = LockEvidence::default().with_text_profile(
-        DefinitionLock::pinned()
-            .entry(CatalogRole::TextProfile)
-            .reference(),
-    );
     crate::support::front_end::emitted_with_authority(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
         "test:replay",
@@ -2079,7 +2030,6 @@ fn replay_composite_fixture_keeps_checked_identity() {
         &BTreeMap::new(),
         &DependencyInput::default(),
         SpineLimits::default(),
-        &lock,
     )
     .expect("the recursive-record, sequence, enum and text fixture checks");
 }

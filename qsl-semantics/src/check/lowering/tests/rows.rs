@@ -9,12 +9,11 @@ use super::*;
 use crate::check::check::EnumBinding;
 use crate::value::definition::{CatalogRole, DefinitionLock};
 
-/// The text-profile definition the lock evidence of these fixtures selects.
+/// QSL's text-profile definition, the law a text operation names.
 fn text_definition() -> DefinitionReference {
-    DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "unicode-text".to_owned(),
-    }
+    DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .reference()
 }
 
 /// The pinned lock's IEEE profile definition.
@@ -127,7 +126,7 @@ struct Row {
     arity: usize,
 }
 
-/// A package holding `functions`, with the text-profile lock evidence, the
+/// A package holding `functions`, with the
 /// pinned IEEE profile and the accumulator aliases these rows use.
 fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     let ieee = DefinitionLock::pinned()
@@ -139,7 +138,6 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
             ("Total".to_owned(), ValueType::Integer),
             ("Small".to_owned(), int(0, 5)),
         ],
-        lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
         ieee_profile: Some(ieee),
         ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }

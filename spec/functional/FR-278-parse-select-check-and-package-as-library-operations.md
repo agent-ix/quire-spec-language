@@ -74,10 +74,8 @@ the refusing stage's own typed causes.
   `AdmittedModels` and the dependency input, and return the
   `CheckedPackage` or S3's or S4's refusal.
 - The `check` operation shall check each library of the dependency closure
-  independently of the unit that imports it, under the default lock evidence
-  and never the importer's, so a library's recomputed `package_id` does not
-  depend on who imports it; the lock evidence it takes applies to the unit
-  itself.
+  independently of the unit that imports it, so a library's recomputed
+  `package_id` does not depend on who imports it.
 - The `package` operation shall emit the `CheckedPackage` as
   `quire.checked-package/v2` bytes with its source provision.
 - The composition of the four operations over a source shall return the same
@@ -95,7 +93,7 @@ the refusing stage's own typed causes.
 ## Dependencies
 
 - ADR-029 OP-1: the operation rows.
-- ADR-011 §2.1, §2.4: the stage path and the lock evidence.
+- ADR-011 §2.1: the stage path.
 - ADR-015 D-1: the dependency input.
 - [FR-275](FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md): the call shape.
 - [FR-027](FR-027-export-compiled-native-package.md): the command encoding.

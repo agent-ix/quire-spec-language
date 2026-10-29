@@ -502,7 +502,6 @@ pub fn compile_unit(input: &UnitInput) -> Compilation {
         &parsed,
         &models,
         &input.dependencies,
-        &qsl_semantics::check::LockEvidence::default(),
         input.limits,
         &cancellation,
     ) {

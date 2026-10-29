@@ -166,7 +166,6 @@ fn compile(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -214,7 +213,6 @@ fn compile_text_with_execution_points(
         execution_points,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -1525,7 +1523,6 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

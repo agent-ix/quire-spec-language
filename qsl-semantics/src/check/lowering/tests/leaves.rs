@@ -4,7 +4,6 @@
 //! repository's own FR-093 text at compile time.
 
 use super::*;
-use crate::value::definition::{CatalogRole, DefinitionLock};
 
 const FR_093: &str = include_str!(
     "../../../../../spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md"
@@ -26,14 +25,6 @@ fn assert_fr093(graph: &SemanticGraph, name: &str) {
         preimage,
         "{name}: preimage bytes"
     );
-}
-
-/// QSpec's text definition that the Recursive text-leaf vectors name: the
-/// lock's `text_profile` row.
-fn vector_text_definition() -> DefinitionReference {
-    DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference()
 }
 
 fn text(max: u64, profile: TextProfile) -> ValueType {
@@ -127,22 +118,16 @@ fn vector_functions() -> Vec<FunctionDeclaration> {
     ]
 }
 
-/// A package declaring `records` and holding `functions`, under `lock`.
+/// A package declaring `records` and holding `functions`.
 fn package(
     records: Vec<CompositeDeclaration>,
     functions: Vec<FunctionDeclaration>,
-    lock: LockEvidence,
 ) -> PackageDeclarations {
     PackageDeclarations {
         types: TypeEnvironment::new(records, []).expect("FR-143 admits the records"),
         functions,
-        lock_evidence: lock,
         ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
     }
-}
-
-fn vector_lock() -> LockEvidence {
-    LockEvidence::default().with_text_profile(vector_text_definition())
 }
 
 /// FR-093's key table, headings, ordinals, group tables and vectors agree.
@@ -204,7 +189,7 @@ fn recursive_text_leaf_vectors_check_and_key() {
         vec![node_record(), record_a(), record_b()],
         vec![node_record(), record_b(), record_a()],
     ] {
-        let checked = package(records, vector_functions(), vector_lock())
+        let checked = package(records, vector_functions())
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("the vector functions check: {refusals:?}"));
         let graph = checked.semantic_graph();
@@ -236,13 +221,9 @@ fn recursive_text_leaf_vectors_check_and_key() {
 /// The leaf paths of the one structural equality of `records`' `R`-typed
 /// `eq`, each joined by `/`, with its mode or `recursion`.
 fn equality_leaves(records: Vec<CompositeDeclaration>, compared: &str) -> Vec<String> {
-    let checked = package(
-        records,
-        vec![equality("eq", ("a", "b"), named(compared))],
-        vector_lock(),
-    )
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("eq over {compared} checks: {refusals:?}"));
+    let checked = package(records, vec![equality("eq", ("a", "b"), named(compared))])
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("eq over {compared} checks: {refusals:?}"));
     let node = application(checked.semantic_graph(), "quire.op.structural.eq");
     node["body"]["operation"]["leaves"]
         .as_array()
@@ -336,7 +317,7 @@ fn leaf_paths_follow_fr093_text_leaves() {
         None,
         Expression::contains(name_expr("s"), name_expr("b")),
     );
-    let checked = package(vec![list()], vec![has], vector_lock())
+    let checked = package(vec![list()], vec![has])
         .check(CheckingLimits::default())
         .expect("contains over List checks");
     let contains = application(checked.semantic_graph(), "quire.op.collection.contains");
@@ -428,13 +409,9 @@ fn union_leaf_paths_follow_member_then_position() {
 #[test]
 fn an_in_group_type_is_its_member_in_every_declaration_order() {
     let keys_of = |functions: Vec<FunctionDeclaration>| {
-        let checked = package(
-            vec![node_record(), record_a(), record_b()],
-            functions,
-            vector_lock(),
-        )
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
+        let checked = package(vec![node_record(), record_a(), record_b()], functions)
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
         let graph = checked.semantic_graph();
         for vector in ["G17", "P15", "P16"] {
             assert_fr093(graph, vector);
@@ -490,7 +467,7 @@ fn a_collection_over_a_recursive_record_reuses_the_group_base() {
         None,
         Expression::boolean(true),
     );
-    let checked = package(vec![tree], vec![wide], vector_lock())
+    let checked = package(vec![tree], vec![wide])
         .check(CheckingLimits::default())
         .expect("the parameter checks");
     let graph = checked.semantic_graph();
@@ -550,22 +527,13 @@ fn a_text_free_recursive_cluster_is_not_walked() {
 fn eq_over(
     records: Vec<CompositeDeclaration>,
     compared: &str,
-    lock: LockEvidence,
     limits: CheckingLimits,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    package(
-        records,
-        vec![equality("eq", ("a", "b"), named(compared))],
-        lock,
-    )
-    .check(limits)
+    package(records, vec![equality("eq", ("a", "b"), named(compared))]).check(limits)
 }
 
-fn eq_over_node(
-    lock: LockEvidence,
-    limits: CheckingLimits,
-) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    eq_over(vec![node_record()], "Node", lock, limits)
+fn eq_over_node(limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    eq_over(vec![node_record()], "Node", limits)
 }
 
 fn node_limit(nodes: u64) -> CheckingLimits {
@@ -587,24 +555,13 @@ fn smallest_limit(checks: impl Fn(u64) -> bool) -> u64 {
     admitted
 }
 
-/// TC-415 step 9 (FR-093-AC-11): `eq` over `Node` with no text-profile
-/// evidence refuses `missing-selection`; under a node limit that admits the
-/// package's nodes but not also its two leaves, it refuses on the node
-/// limit, before `missing-selection`, and yields no node.
+/// TC-415 step 9 (FR-093-AC-11): `eq` over `Node` charges its two leaves
+/// to the node limit: under a limit that admits the package's nodes but not
+/// also its two leaves, it refuses on the node limit and yields no node.
 #[trace("FR-093-AC-11", "TC-415")]
 #[test]
-fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
-    let refusals = eq_over_node(LockEvidence::default(), CheckingLimits::default())
-        .expect_err("no text-profile evidence refuses");
-    assert_eq!(
-        refusals[0].cause,
-        CheckCause::MissingSelection {
-            role: LawRole::TextProfile
-        }
-    );
-    assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
-
-    let admitted = smallest_limit(|limit| eq_over_node(vector_lock(), node_limit(limit)).is_ok());
+fn a_leaf_walk_charges_the_node_limit() {
+    let admitted = smallest_limit(|limit| eq_over_node(node_limit(limit)).is_ok());
     // The same `eq` over a record with no text leaf types the same nodes:
     // `Node`'s two leaves are the last two units.
     let plain = record(
@@ -614,15 +571,8 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
             optional("next", ValueType::Composite(handle("Plain"))),
         ],
     );
-    let typed = smallest_limit(|limit| {
-        eq_over(
-            vec![plain.clone()],
-            "Plain",
-            vector_lock(),
-            node_limit(limit),
-        )
-        .is_ok()
-    });
+    let typed =
+        smallest_limit(|limit| eq_over(vec![plain.clone()], "Plain", node_limit(limit)).is_ok());
     assert_eq!(admitted, typed + 2);
 
     let exhausted = |refusals: Vec<CheckRefusal>, limit: u64| {
@@ -639,20 +589,10 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
     };
     for limit in [admitted - 1, typed] {
         exhausted(
-            eq_over_node(vector_lock(), node_limit(limit)).expect_err("the leaves pass the limit"),
-            limit,
-        );
-        // The walk refuses before the missing law is read.
-        exhausted(
-            eq_over_node(LockEvidence::default(), node_limit(limit))
-                .expect_err("the leaves pass the limit"),
+            eq_over_node(node_limit(limit)).expect_err("the leaves pass the limit"),
             limit,
         );
     }
-    // With the limit met, the missing law refuses instead.
-    let refusals = eq_over_node(LockEvidence::default(), node_limit(admitted))
-        .expect_err("no text-profile evidence refuses");
-    assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
 }
 
 /// `n` records `R0` .. `R{n-1}`, each with a `label` text field and an
@@ -681,13 +621,8 @@ fn text_cluster(n: usize) -> Vec<CompositeDeclaration> {
 #[trace("NFR-011-M-1", "TC-423")]
 #[test]
 fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
-    let refusals = eq_over(
-        text_cluster(9),
-        "R0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect_err("the nine-record cluster's leaves pass the default node ceiling");
+    let refusals = eq_over(text_cluster(9), "R0", CheckingLimits::default())
+        .expect_err("the nine-record cluster's leaves pass the default node ceiling");
     assert_eq!(
         refusals[0].cause,
         CheckCause::ResourceExhausted(Box::new(StageLimitCause {
@@ -700,13 +635,8 @@ fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
     );
     assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
     assert_eq!(refusals[0].cause.cause(), Some("node-count-exceeded"));
-    eq_over(
-        text_cluster(6),
-        "R0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect("the six-record cluster checks at the default limits");
+    eq_over(text_cluster(6), "R0", CheckingLimits::default())
+        .expect("the six-record cluster checks at the default limits");
 }
 
 /// TC-423 step 3 (NFR-011-M-1 to NFR-011-M-4): a checked package and a
@@ -725,7 +655,7 @@ fn a_checked_result_records_its_effective_limits() {
         ),
         (100_000, 16_777_216, 16_777_216)
     );
-    let checked = eq_over_node(vector_lock(), defaults).expect("eq over Node checks");
+    let checked = eq_over_node(defaults).expect("eq over Node checks");
     assert_eq!(checked.effective_limits(), defaults);
 
     let raised = CheckingLimits::new(u64::MAX)
@@ -735,7 +665,7 @@ fn a_checked_result_records_its_effective_limits() {
         .with_work_budget(5_000)
         .with_input_bytes(4_096);
     for limits in [raised, lowered] {
-        let checked = eq_over_node(vector_lock(), limits).expect("eq over Node checks");
+        let checked = eq_over_node(limits).expect("eq over Node checks");
         assert_eq!(checked.effective_limits(), limits);
         let expression = checked
             .check_expression(
@@ -805,13 +735,8 @@ fn deep_wide(chain: usize, levels: usize, name: &str) -> Vec<CompositeDeclaratio
 #[test]
 fn long_leaf_paths_refuse_on_the_default_work_budget() {
     let name = format!("n{}", "x".repeat(255));
-    let refusals = eq_over(
-        deep_wide(1, 17, &name),
-        "C0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect_err("the leaves' key bytes pass the default work budget");
+    let refusals = eq_over(deep_wide(1, 17, &name), "C0", CheckingLimits::default())
+        .expect_err("the leaves' key bytes pass the default work budget");
     assert!(
         matches!(
             refusals[0].cause,
@@ -826,11 +751,6 @@ fn long_leaf_paths_refuse_on_the_default_work_budget() {
     assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
     assert_eq!(refusals[0].cause.cause(), Some("work-budget-exceeded"));
     // The same shape with one-letter names and a shorter tree fits.
-    eq_over(
-        deep_wide(4, 5, "n"),
-        "C0",
-        vector_lock(),
-        CheckingLimits::default(),
-    )
-    .expect("sixteen short leaves check");
+    eq_over(deep_wide(4, 5, "n"), "C0", CheckingLimits::default())
+        .expect("sixteen short leaves check");
 }

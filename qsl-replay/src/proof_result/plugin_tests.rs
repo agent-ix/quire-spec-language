@@ -17,9 +17,7 @@ use crate::bounds::ReplayLimits;
 use crate::execute::{process_provider_obligation, BoundEntries};
 use crate::limits::CallerLimits;
 use crate::result::ReplayResult;
-use crate::spine::{
-    check, package, parse, select, DependencyInput, LockEvidence, PackageLimits, ParseRequest,
-};
+use crate::spine::{check, package, parse, select, DependencyInput, PackageLimits, ParseRequest};
 use crate::witness::{CanonicalAssignment, WitnessValue};
 
 fn wrong(pointer: &str) -> PluginResultRefusal {
@@ -780,16 +778,9 @@ fn fixture_of(
     let models = select(&parsed, packages, limits.spine.model, &cancel)
         .unwrap_or_else(|failure| panic!("select: {failure:?}"))
         .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        dependencies,
-        &LockEvidence::default(),
-        limits.spine,
-        &cancel,
-    )
-    .unwrap_or_else(|failure| panic!("check: {failure:?}"))
-    .into_value();
+    let checked = check(&parsed, &models, dependencies, limits.spine, &cancel)
+        .unwrap_or_else(|failure| panic!("check: {failure:?}"))
+        .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .unwrap_or_else(|failure| panic!("package: {failure:?}"))
         .into_value();

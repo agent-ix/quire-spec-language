@@ -131,8 +131,7 @@ Measured on main when this was written.
   through `parse_with_cancel`, `build_unit`, `assemble` and `check`.
 - *Type path:* binding and typing become S3 phases over the S2 forms of the
   same `ParsedUnit`. They resolve a profile alias by identity alone, as the
-  graph side does, through `DefinitionLock::pinned` and the spine's
-  `LockEvidence`. The type phase takes no caller definition inventory. The
+  graph side does, through `DefinitionLock::pinned`. The type phase takes no caller definition inventory. The
   composed binder's per-profile revision and digest matching
   (`linking/composed/definitions.rs`) is deleted, not ported.
 - *Order:* ADR-011 M-6e deletes one composed family per implementing PR. A
@@ -242,8 +241,7 @@ text. These points follow from it and are decided.
 - **Profile selection.** A source selects a profile by identity alone
   (FR-110). A profile line that states `version` or `digest` after the
   identity is not the single grammar and is refused. The type phase resolves
-  profiles through `DefinitionLock::pinned` and the spine's `LockEvidence`;
-  there is no caller definition inventory parameter, and the source never
+  profiles through `DefinitionLock::pinned`; there is no caller definition inventory parameter, and the source never
   carries a revision or digest.
 - **Refusal and exhaustion.** A unit the S3 type phase refuses is an error
   outcome of `check` and yields no partial inventory rows. The exhaustion stops

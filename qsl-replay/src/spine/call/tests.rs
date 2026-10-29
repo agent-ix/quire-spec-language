@@ -150,7 +150,6 @@ pub(in crate::spine) fn lookup_driver_context(
         &parsed,
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -500,7 +499,6 @@ fn tc_792_driver_returns_the_admitted_reference_identity() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &crate::spine::LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )

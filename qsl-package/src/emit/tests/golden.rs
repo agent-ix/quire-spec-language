@@ -141,18 +141,6 @@ fn record_types() -> TypeEnvironment {
     .expect("FR-143 admits R")
 }
 
-/// The lock evidence of these packages: the catalog's text-profile
-/// definition, which the emitted lock selects.
-fn lock_evidence() -> qsl_semantics::check::LockEvidence {
-    let entry = *DefinitionLock::pinned().entry(CatalogRole::TextProfile);
-    qsl_semantics::check::LockEvidence::default().with_text_profile(
-        qsl_semantics::value::DefinitionReference {
-            authority: entry.authority.to_owned(),
-            identity: entry.identity.to_owned(),
-        },
-    )
-}
-
 /// The package's one admitted IEEE profile: the catalog's own definition.
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
     let lock = DefinitionLock::pinned();
@@ -172,7 +160,6 @@ fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Checke
         PackageDeclarations {
             types,
             functions,
-            lock_evidence: lock_evidence(),
             ieee_profile: Some(ieee_profile()),
             ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
         }

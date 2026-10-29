@@ -29,8 +29,8 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
-    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, LockEvidence, PackageLimits,
-    ParseRequest, ParsedSource,
+    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
+    ParsedSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -90,15 +90,7 @@ fn chain_of(
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        dependencies,
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )?
-    .into_value();
+    let checked = check(&parsed, &models, dependencies, limits, &cancel)?.into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
     Ok(Chain {
         parsed,
@@ -190,7 +182,6 @@ fn each_operation_takes_exactly_its_predecessors_output() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         SpineLimits::default(),
         &cancel,
     )
@@ -441,7 +432,6 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancelled,
     ));
@@ -529,14 +519,7 @@ fn assert_check_cancelled_at(
 ) {
     let gate = gated(Some(at));
     let outcome = gate.run(cause, |cancel| {
-        check(
-            parsed,
-            models,
-            &DependencyInput::default(),
-            &LockEvidence::default(),
-            *limits,
-            cancel,
-        )
+        check(parsed, models, &DependencyInput::default(), *limits, cancel)
     });
     match outcome {
         Err(StageFailure::Cancelled(seen)) => assert_eq!(seen, cause),
@@ -570,7 +553,6 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
             &unit.0,
             &unit.1,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             unit.2,
             cancel,
         )
@@ -613,7 +595,6 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
             &unit.0,
             &unit.1,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             unit.2,
             cancel,
         )
@@ -813,7 +794,6 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
             &parsed,
             &models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             cancel,
         )?
@@ -975,15 +955,8 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("a unit with no model selects nothing")
         .into_value();
     let refused = refusal(
-        check(
-            &parsed,
-            &models,
-            &DependencyInput::default(),
-            &LockEvidence::default(),
-            limits,
-            &live,
-        )
-        .expect_err("the unit is ill typed"),
+        check(&parsed, &models, &DependencyInput::default(), limits, &live)
+            .expect_err("the unit is ill typed"),
     );
     assert_eq!(refused.code().as_str(), "ill_typed");
     assert_eq!(refused.stage(), SpineStage::Check);
@@ -1069,7 +1042,6 @@ fn each_operation_reports_the_work_of_its_own_stages() {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancel,
     )
@@ -1407,7 +1379,6 @@ fn check_names_the_checking_limit_field_it_reached() {
                 &chain.parsed,
                 &chain.models,
                 &DependencyInput::default(),
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1494,7 +1465,6 @@ fn check_names_the_identity_limit_it_reached() {
             &chain.parsed,
             &chain.models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &Cancel::new(),
         ))
@@ -1542,7 +1512,6 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             &chain.parsed,
             &chain.models,
             &DependencyInput::default(),
-            &LockEvidence::default(),
             limits,
             &Cancel::new(),
         ))
@@ -1586,7 +1555,6 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
                     &long.parsed,
                     &long.models,
                     &DependencyInput::default(),
-                    &LockEvidence::default(),
                     identity(value)[entry],
                     &Cancel::new(),
                 ))
@@ -1617,7 +1585,6 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
         &chain.parsed,
         &chain.models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &Cancel::new(),
     )
@@ -1651,7 +1618,6 @@ fn check_names_the_type_environment_limit_field_it_reached() {
                 &model.parsed,
                 &model.models,
                 &DependencyInput::default(),
-                &LockEvidence::default(),
                 limits,
                 &Cancel::new(),
             ))
@@ -1708,14 +1674,7 @@ fn check_names_the_dependency_limit_field_it_reached() {
                 &mut limits,
                 usize::try_from(value).expect("a test bound fits usize"),
             );
-            reached(check(
-                parsed,
-                models,
-                dependencies,
-                &LockEvidence::default(),
-                limits,
-                &Cancel::new(),
-            ))
+            reached(check(parsed, models, dependencies, limits, &Cancel::new()))
         }
     };
     assert_field(
@@ -1828,107 +1787,6 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
         fault.category(),
         quire_semantic_value::catalog::Category::InternalFailure
     );
-}
-
-/// FR-278: a library is compiled independently of whoever imports it. One
-/// library imported by two units that pass different lock evidence is the
-/// same package, whose `package_id` the import digest names; and a library
-/// that needs a lock the default evidence lacks is refused even when its
-/// importer's evidence supplies it.
-#[trace("TC-759", "FR-278-AC-1")]
-#[test]
-fn a_library_is_checked_under_its_own_lock_evidence_not_its_importers() {
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    let text_profile = || {
-        LockEvidence::default().with_text_profile(
-            DefinitionLock::pinned()
-                .entry(CatalogRole::TextProfile)
-                .reference(),
-        )
-    };
-    let limits = SpineLimits::default();
-    let importer = |library: &SuppliedLibrary, lock: &LockEvidence| {
-        let unit = format!(
-            "{HEADER}import \"test/geometry\" as g;\n\
-             function h using v(): Boolean pure {{ true }}\n"
-        );
-        let dependencies = DependencyInput::new(vec![library.clone()]).expect("admissible");
-        let live = Cancel::new();
-        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
-            .expect("the importing unit parses")
-            .into_value();
-        check(
-            &parsed,
-            &AdmittedModels::default(),
-            &dependencies,
-            lock,
-            limits,
-            &live,
-        )
-        .map(|checked| checked.into_value())
-    };
-
-    let geometry = geometry();
-    for lock in [LockEvidence::default(), text_profile()] {
-        importer(&geometry, &lock)
-            .unwrap_or_else(|failure| panic!("the import resolves under {lock:?}: {failure:?}"));
-    }
-
-    // A library comparing text needs the text law. Its importer supplies it,
-    // but the library is checked under the default evidence and refuses.
-    let texty = SuppliedLibrary {
-        bytes: format!(
-            "{HEADER}function f using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
-             {{ a = b }}\n"
-        )
-        .into_bytes(),
-        ..geometry
-    };
-    let refusal = refusal(
-        importer(&texty, &text_profile())
-            .expect_err("the library lacks the text law under its own evidence"),
-    );
-    assert_eq!(refusal.code().as_str(), "missing_declaration");
-}
-
-/// FR-278 (TC-759 step 1): `check` takes the package's lock evidence. A unit
-/// that compares two text values has a text law to select, so without lock
-/// evidence naming the text profile the check refuses, and with it the unit
-/// checks.
-#[trace("TC-759", "FR-278-AC-1")]
-#[test]
-fn check_takes_the_lock_evidence_the_text_law_comes_from() {
-    use qsl_semantics::value::{CatalogRole, DefinitionLock};
-    let unit = format!(
-        "{HEADER}function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure \
-         {{ a = b }}\n"
-    );
-    let limits = SpineLimits::default();
-    let live = Cancel::new();
-    let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
-        .expect("the unit parses")
-        .into_value();
-    let models = select(&parsed, &BTreeMap::new(), limits.model, &live)
-        .expect("a unit with no model selects nothing")
-        .into_value();
-    let run = |lock: &LockEvidence| {
-        check(
-            &parsed,
-            &models,
-            &DependencyInput::default(),
-            lock,
-            limits,
-            &live,
-        )
-    };
-    let without = run(&LockEvidence::default()).expect_err("no text law is selected");
-    let refusal = refusal(without);
-    assert_eq!(refusal.code().as_str(), "missing_declaration");
-    let text_profile = DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .reference();
-    run(&LockEvidence::default().with_text_profile(text_profile))
-        .expect("the lock evidence selects the text law");
 }
 
 /// The model fixture with an operation `touch` on `Widget` whose `pre`

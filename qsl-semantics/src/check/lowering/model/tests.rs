@@ -16,9 +16,7 @@ use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
 use sha2::{Digest, Sha256};
 
-use super::super::{
-    generated_location, type_declaration, LockEvidence, Lowering, SemanticGraph, SemanticNode,
-};
+use super::super::{generated_location, type_declaration, Lowering, SemanticGraph, SemanticNode};
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
@@ -437,7 +435,6 @@ fn lower_with_occurrences<T>(
     build: impl FnOnce(&mut Lowering<'_>) -> T,
 ) -> (T, SemanticGraph, OccurrenceMap<Location>) {
     let scope = empty_scope();
-    let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let owner = crate::check::SourceOwner::from(&fixture_source());
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
@@ -446,7 +443,7 @@ fn lower_with_occurrences<T>(
         &owner,
         models,
         units,
-        &lock,
+        None,
         0,
         &mut occurrences,
         &mut meter,
