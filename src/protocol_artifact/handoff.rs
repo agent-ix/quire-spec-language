@@ -387,7 +387,6 @@ mod tests {
                 .all(|component| matches!(component, Component::Normal(_)))
         }
 
-        #[cfg(feature = "handoff-writer")]
         fn written(
             write: fn(&Path) -> Result<(), super::super::writer::Error>,
         ) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -397,7 +396,6 @@ mod tests {
             (directory, root)
         }
 
-        #[cfg(feature = "handoff-writer")]
         #[test]
         #[trace("TC-121", "FR-042-AC-10")]
         fn written_v1_handoff_addresses_are_complete() {
@@ -440,7 +438,6 @@ mod tests {
             }
         }
 
-        #[cfg(feature = "handoff-writer")]
         #[test]
         #[trace("TC-138", "FR-050-AC-7")]
         fn written_handoff_addresses_resolve_the_owned_inventory() {

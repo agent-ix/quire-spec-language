@@ -68,6 +68,16 @@ fn written_handoff_interchange_records_are_complete() {
     case_ids.sort();
     case_ids.dedup();
     assert_eq!(case_ids.len(), manifest.cases.len(), "no duplicate case");
+    let case_files = fs::read_dir(root.join("mutations"))
+        .expect("written mutations directory")
+        .map(|entry| entry.expect("mutation entry").file_name())
+        .filter(|name| name.to_str() != Some("manifest.json"))
+        .count();
+    assert_eq!(
+        case_files,
+        manifest.cases.len(),
+        "one written case file per manifest case"
+    );
     let manifest_bytes =
         serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
     assert_eq!(
