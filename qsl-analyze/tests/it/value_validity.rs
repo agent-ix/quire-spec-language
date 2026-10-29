@@ -1073,8 +1073,30 @@ fn a_huge_domain_and_a_huge_budget_are_enumerated_lazily() {
         "breaks",
         &serde_json::json!({"role": "claim", "ordinal": 0}),
     );
-    let huge = run(&package, &breaks, "breaks", Some(u64::MAX));
-    assert!(matches!(terminal(&huge), TerminalValue::Refuted));
+    // A watchdog ends a run that never finds the violation, so a broken
+    // search fails this test after a minute instead of never returning.
+    let cancel = Cancel::new();
+    let watchdog = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        watchdog.cancel(quire_exact::CancelCause::Deadline);
+    });
+    let request = ValueTarget::select(&package, "breaks", &breaks).map(|target| ValueRequest {
+        target,
+        max_cases: NonZeroU64::new(u64::MAX),
+        reported: None,
+    });
+    let huge = analyze(
+        &Engines::qsl().unwrap(),
+        vec![value_item(index(), request)],
+        &cancel,
+    )
+    .remove(0);
+    assert!(
+        matches!(terminal(&huge), TerminalValue::Refuted),
+        "{:?}",
+        huge.settlement
+    );
     let found = huge.value_check.as_ref().unwrap();
     assert!(matches!(&found.reproduced.assignment()[0], Value::Integer(x) if x.to_string() == "5"));
 }
