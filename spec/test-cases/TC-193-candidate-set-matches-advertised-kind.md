@@ -53,7 +53,7 @@ still violating FR-075-AC-5.
    any enum or struct definition whose variants or fields name an FR-290
    capability-kind label, distinct from an import of the canonical
    `Capability` type.
-8. Build a registry with the fixture `qsl-model-check`, shaped as EN-1's descriptor (no `dynamics`) and
+8. Build a registry with the fixture `qsl-model-check`, a discrete-only temporal-satisfaction registration like the production engines en-1 and en-6 (no `dynamics`) and
    `hybrid-fixture` (`dynamics` `{hybrid}`, both solver budgets in `bounds`),
    in both orders; compute candidates for `SlowEnough`'s item, carrying
    `hybrid-dynamics`, for a temporal item without it, for the hybrid item
