@@ -15,18 +15,7 @@ use quire_contract_model::{
     CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
 };
 use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
-use serde_json::{json, Value};
-
-#[path = "../../qsl-semantics/tests/support/tc235_k2.rs"]
-#[allow(dead_code, reason = "this test uses part of the shared K2 builder")]
-#[allow(
-    clippy::duplicate_mod,
-    reason = "a test binary also loads the K2 builder directly"
-)]
-mod base;
-
-const NATIVE_BOOLEAN: &str = "ix://quire/native/Boolean";
-const NATIVE_INTEGER: &str = "ix://quire/native/Integer";
+use serde_json::Value;
 
 fn args(items: &[&Path]) -> Vec<OsString> {
     items
@@ -78,52 +67,6 @@ fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
     .to_vec()
 }
 
-/// A model with a Boolean field `on` and an operation `set(flag)` that
-/// modifies it (the shape of the derived Boolean model-field transition).
-fn switch_document() -> Vec<u8> {
-    let mut operation = base::operation("Switch", "set");
-    operation["params"] = json!([{
-        "identity": base::id("Switch/set/flag"), "name": "flag", "typeRef": NATIVE_BOOLEAN,
-        "presence": "required", "nullable": false, "defaultKind": "none",
-        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-        "origin": base::origin("Switch/set/flag"),
-    }]);
-    operation["frame"]["modifies"] = json!([base::id("Switch/on")]);
-    let switch = base::declaration(
-        "Switch",
-        "thing",
-        json!({
-            "identityFields": [base::id("Switch/sid")],
-            "fields": [
-                base::field("Switch", "sid", NATIVE_INTEGER),
-                base::field("Switch", "on", NATIVE_BOOLEAN),
-            ],
-            "operations": [operation],
-        }),
-    );
-    let document = base::domain_document(
-        vec![switch],
-        vec![base::construct(
-            "thing",
-            qsl_semantics::model::intake::meaning::OBJECT_TYPE,
-        )],
-    );
-    serde_json::to_vec(&document).unwrap()
-}
-
-fn switch_source(document: &[u8], clauses: &str) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
-         profile p = \"quire.protocol.finite-global/v1\";\n\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
-         {clauses}\n",
-        package = base::PACKAGE,
-    )
-}
-
 /// The checked-package v2 bytes of the spine fixtures, from the runnable
 /// output, are the producer's bytes and read back admitted; `--out` writes the
 /// same bytes the default stdout carries.
@@ -154,29 +97,29 @@ fn the_output_is_the_producers_bytes_and_reads_back() {
     assert_eq!(std::fs::read(&out).unwrap(), stdout);
 }
 
-/// The derived Boolean model-field transition (FR-105-AC-13) is emitted and
-/// the package reads back admitted: the producer's `state_transition` node is
-/// in the output, found by shape and not by a frozen id.
+/// The QSL-owned Boolean Switch pair (`examples/switch-transition/`): the
+/// derived Boolean model-field transition (FR-105-AC-13) is emitted from the
+/// checked-in source and domain model, and the package reads back admitted
+/// through IR's strict reader. The producer's `state_transition` node is found
+/// by shape and not by a frozen id, and the source's `digest` is checked
+/// against the model file rather than frozen in this test.
 #[test]
-fn a_boolean_model_field_transition_is_emitted_and_admitted() {
-    let document = switch_document();
-    let source = switch_source(&document, "post Q1 using v on M::Switch::set { self.on }\n");
-    let directory = tempfile::tempdir().unwrap();
-    let model = directory.path().join("switch.semantic-ir.json");
-    let program = directory.path().join("switch.native");
-    std::fs::write(&model, &document).unwrap();
-    std::fs::write(&program, &source).unwrap();
+fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
+    let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
+    let program = Path::new("examples/switch-transition/switch.native");
+    let document = std::fs::read(model).unwrap();
+    let source = std::fs::read_to_string(program).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let digest = qsl_semantics::model::key::hex(packages.keys().next().unwrap());
+    assert!(
+        source.contains(&format!("sha256-jcs:{digest}")),
+        "the source selects the model file by its digest"
+    );
 
-    let bytes = emit(
-        &Request::parse(&{
-            let mut command = strings(&["--model"]);
-            command.extend(args(&[&model, &program]));
-            command
-        })
-        .unwrap(),
-    )
-    .expect("the transition form emits");
-    assert_eq!(bytes, producer_bytes(&program, &source, &[&document]));
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[model, program]));
+    let bytes = emit(&Request::parse(&command).unwrap()).expect("the transition form emits");
+    assert_eq!(bytes, producer_bytes(program, &source, &[&document]));
     read_back(&bytes, &[&document]);
     let wire: Value = serde_json::from_slice(&bytes).unwrap();
     let transitions = wire["semantic_graph"]["nodes"]
