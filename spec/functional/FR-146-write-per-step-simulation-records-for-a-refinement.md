@@ -115,6 +115,15 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   type of the abstract model only SHALL NOT be listed in `hypotheses`,
   whether the abstract model comes from the declaring package or from a
   dependency.
+- A `Step` record's obligation is per application of its row's concrete
+  operation: one (receiver, argument vector) at a time, the rule negated for
+  each (FR-315 "Refinement queries").
+- The `hypotheses` list is the same set FR-315 asserts, in the record's identity
+  order; the two differ in order only. The order in which
+  FR-315 asserts the hypotheses in a query is structural, by clause name and
+  then object reference key (FR-315 "Refinement queries"), and a query for a
+  multi-application row negates the rule per application (FR-315-AC-53,
+  FR-315-AC-54).
 
 ### Row order
 
@@ -206,7 +215,7 @@ wording.
   record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`)
   `Inconclusive(CertificateRejected{rule, at})` and every other record
   `Uncertified`. A refinement with a row whose query FR-315 refuses to encode (a
-  `_` argument, an `any` row or a term outside `QF_LIA`) gets `Unencodable`
+  `_` argument, an `any` row, a protocol or `binds_result` row, or a term outside `QF_LIA`: FR-315 "Refinement queries") gets `Unencodable`
   from the checker (FR-314), so every record of it is `Uncertified` unless the
   checker rejects a part (that part's record is then
   `Inconclusive(CertificateRejected{rule, at})`); a backend counterexample still settles
