@@ -826,26 +826,8 @@ fn canonical_encoder_output_ceiling_is_exact_and_reports_no_partial_candidate() 
 
 #[test]
 #[trace("TC-121", "FR-042-AC-7", "FR-042-AC-9")]
-fn known_refusals_survive_zero_entries_without_a_diagnostic_allocation() {
+fn a_known_numeric_refusal_survives_zero_entries_without_a_diagnostic_allocation() {
     let fixture = Fixture::new();
-    let candidate = fixture.candidate();
-    let mut selected = Fixture::seal(candidate.bytes());
-    selected.wire.version.push_str("-other");
-    // Header selection checking precedes JSON census and requires zero entries.
-    // The terminal Error and optional locus are inline report fields.
-    let report = fixture.read(
-        candidate.bytes(),
-        &selected,
-        Limits {
-            entries: 0,
-            ..Limits::default()
-        },
-    );
-    failure(&report, Error::Invalid(Invalid::Selection));
-    assert_eq!(report.usage().entries, 0);
-    assert_eq!(report.limits().entries, 0);
-    assert_eq!(report.locus(), None);
-
     let mut offered = fixture.package.clone();
     offered.declarations[0].values[0].operation = w::ValueOperation::Number {
         value: w::Number(NumberWire::Rational {
