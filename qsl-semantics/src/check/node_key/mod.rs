@@ -63,10 +63,6 @@
 //! is a fixed-depth match and every preimage nests a depth the grammar fixes,
 //! whatever the expression's depth (ADR-030 D-2, FR-258).
 //!
-//! Conformance against QSpec's own published `operation_vectors` is the
-//! opt-in `conformance` test (`make conformance` with `QSPEC_DIR` pointing at
-//! a quire-specification checkout). QSpec is not public yet, so nothing of it
-//! is copied here; the test reads the vectors at run time.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 

@@ -130,14 +130,6 @@ cargo-deny-bans:
 # =============================================================================
 
 SIBLINGS ?= $(shell cd "$$(git rev-parse --path-format=absolute --git-common-dir)/../.." && pwd -P)
-ifeq ($(origin QSPEC_DIR),undefined)
-QSPEC_DIR := $(SIBLINGS)/quire-specification
-endif
-# Freeze the raw caller value before Make can expand literal '$' path bytes.
-# `override` and `export` stay separate statements: GNU Make 3.81 (macOS) turns a
-# combined `override export V :=` into a recursive variable that expands the `$`.
-override QSPEC_DIR := $(value QSPEC_DIR)
-export QSPEC_DIR
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
 	ix-trace-rs:ix-trace-rs:.
@@ -321,7 +313,7 @@ fuzz-deep-input:
 CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
-# canonicalizes QSPEC_DIR for every child lane.
+# validates the caller-provided QSPEC_DIR for every child lane.
 # Incremental compilation metadata is a multi-gigabyte part of this workspace's
 # local CI target tree, while the gate runs complete, fingerprinted checks
 # rather than edit/compile cycles. Disable that metadata and dev/test debug
@@ -336,7 +328,7 @@ ci: export CARGO_PROFILE_TEST_DEBUG_ASSERTIONS := true
 ci: check-spec-validation
 	@$(CONFORMANCE_XTASK) ci
 
-# The internal graph is used by xtask after it has canonicalized QSPEC_DIR.
+# The internal graph is used by xtask after it has validated QSPEC_DIR.
 # Scope the input prerequisite to this graph, so standalone targets such as
 # ci-clean-build retain their own process oracle.
 .PHONY: ci-internal
@@ -345,9 +337,9 @@ ifneq ($(filter ci-internal,$(MAKECMDGOALS)),)
 $(CI_TARGETS): check-conformance-input
 endif
 
-# Resolve and validate the raw QSPEC_DIR inside xtask. The exported Make value
-# reaches the recipe shell as data; Rust canonicalizes it before child Cargo runs.
-CONFORMANCE_XTASK = QSPEC_DIR="$$QSPEC_DIR" cargo run --locked --package xtask --
+# Require the caller-provided QSPEC_DIR. xtask prints an explicit error when it
+# is unset or does not name an available QSpec checkout.
+CONFORMANCE_XTASK = cargo run --locked --package xtask --
 .PHONY: check-conformance-input
 check-conformance-input:
 	@$(CONFORMANCE_XTASK) conformance-input

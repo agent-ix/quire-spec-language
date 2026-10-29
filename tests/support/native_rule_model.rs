@@ -5,9 +5,63 @@ use qsl_foundation::{Diagnostic, Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::native_model::{ModelLimits, NativeModel, NativeRoles};
+use serde_json::json;
+use std::sync::OnceLock;
 
-/// Separately authored, licensed native rule-model input.
-pub const FIXTURE: &str = include_str!("../fixtures/native-rule-model.json");
+/// The generated source used by QSL's native-model tests.
+///
+/// Keep the input in this QSL-owned test producer and pass it through
+/// `model_source::read`; do not read a fixture from another repository.
+pub fn fixture() -> &'static str {
+    static FIXTURE: OnceLock<String> = OnceLock::new();
+    FIXTURE.get_or_init(|| {
+        serde_json::to_string_pretty(&json!({
+            "license": "AGPL-3.0-only",
+            "package": "example/rule-tests",
+            "requirement": "RuleModel",
+            "revision": 1,
+            "scalars": [
+                {"name": "Version", "kind": "integer", "minimum": 0, "maximum": 1000, "unit": null},
+                {"name": "Signed", "kind": "integer", "minimum": -10, "maximum": 10, "unit": null},
+                {"name": "Count", "kind": "integer", "minimum": 0, "maximum": 3, "unit": null},
+                {"name": "Wide", "kind": "integer", "minimum": -9223372036854775808_i64, "maximum": 9223372036854775807_i64, "unit": null},
+                {"name": "Distance", "kind": "integer", "minimum": 0, "maximum": 1000, "unit": "metre"},
+                {"name": "Duration", "kind": "integer", "minimum": 0, "maximum": 1000, "unit": "second"},
+                {"name": "ObjectId", "kind": "text", "max_scalars": 256}
+            ],
+            "records": [
+                {"name": "Node", "fields": [
+                    {"name": "n", "type": {"kind": "scalar", "name": "Version"}},
+                    {"name": "signed", "type": {"kind": "scalar", "name": "Signed"}},
+                    {"name": "den", "type": {"kind": "scalar", "name": "Signed"}},
+                    {"name": "wide", "type": {"kind": "scalar", "name": "Wide"}},
+                    {"name": "count", "type": {"kind": "scalar", "name": "Count"}},
+                    {"name": "distance", "type": {"kind": "scalar", "name": "Distance"}},
+                    {"name": "duration", "type": {"kind": "scalar", "name": "Duration"}},
+                    {"name": "parent", "type": {"kind": "option", "value": {"kind": "record", "name": "NodeRef"}}},
+                    {"name": "peer", "type": {"kind": "record", "name": "NodeRef"}},
+                    {"name": "items", "type": {"kind": "sequence", "maximum": 3, "value": {"kind": "scalar", "name": "Version"}}}
+                ]},
+                {"name": "NodeRef", "fields": [
+                    {"name": "id", "type": {"kind": "scalar", "name": "ObjectId"}}
+                ]}
+            ],
+            "values": [
+                {"name": "self", "kind": "state", "type": {"kind": "record", "name": "Node"}},
+                {"name": "other", "kind": "state", "type": {"kind": "record", "name": "Node"}},
+                {"name": "step_result", "kind": "input", "type": {"kind": "boolean"}}
+            ],
+            "objects": [
+                {"record": "Node", "reference": "NodeRef", "identity_field": "id", "universe": "nodes"}
+            ],
+            "operations": [
+                {"name": "step", "context": "Node", "anchor": "step", "parameters": [], "result": "step_result",
+                 "frame": {"fields": [["Node", "n"]], "created": [], "deleted": []}}
+            ]
+        }))
+        .expect("QSL's generated native-model test input is serializable")
+    })
+}
 
 /// Fixture setup failure, distinct from a native model or checker judgment.
 #[derive(Debug, thiserror::Error)]
@@ -72,9 +126,9 @@ impl Parts {
     }
 }
 
-/// Read the separately authored fixture; setup failures cannot become judgments.
+/// Read QSL's generated model input; setup failures cannot become judgments.
 pub fn parts() -> Parts {
-    from_text(FIXTURE, "native-rule-model.json", "draft:1")
+    from_text(fixture(), "native-rule-model.json", "draft:1")
         .expect("valid source-derived rule-model fixture")
 }
 

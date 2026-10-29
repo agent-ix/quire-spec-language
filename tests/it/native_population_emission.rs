@@ -3,6 +3,7 @@
 //! No fixture supplies runtime populations or claims relationship correspondence.
 
 use crate::support::native_protocol as setup;
+use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
@@ -18,8 +19,7 @@ use serde_json::{json, Value};
 use setup::{Inputs, Unit};
 
 fn two_objects(owner: &str) -> NativeModel {
-    let mut document: Value =
-        serde_json::from_str(include_str!("../fixtures/native-rule-model.json")).unwrap();
+    let mut document: Value = serde_json::from_str(native_rule_model::fixture()).unwrap();
     document["package"] = json!(format!("test/{owner}"));
     document["records"].as_array_mut().unwrap().extend([
         json!({"name":"Other", "fields":[

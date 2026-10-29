@@ -105,7 +105,8 @@ fn hex(bytes: &[u8]) -> String {
 /// The key QSpec publishes for its nominal vector `name`, read from
 /// `$QSPEC_DIR`; `None` while it is unset.
 pub fn published_key(name: &str) -> Option<String> {
-    let dir = std::env::var_os("QSPEC_DIR")?;
+    let dir = std::env::var_os("QSPEC_DIR")
+        .unwrap_or_else(|| panic!("QSPEC_DIR must point to an available QSpec checkout"));
     let path =
         std::path::Path::new(&dir).join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =

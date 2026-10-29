@@ -211,7 +211,7 @@ fn tc_042_native_source_labels_and_formal_owner_participate_in_identity() {
                 revision: revision.into(),
             },
             "native-rule-model.json",
-            native_rule_model::FIXTURE.as_bytes(),
+            native_rule_model::fixture().as_bytes(),
             1_048_576,
         )
         .unwrap();
