@@ -202,16 +202,14 @@ O-14 "Sum types").
 
 ### An enum value carries its FR-141 member key and its canonical rank
 
-For an enum, each variant's `VariantId` SHALL be its QSpec FR-141 enum
-member node key, whose preimage names the enum's node key and the case
-(ADR-013 O-14, C-30). The kernel enum shape SHALL carry the FR-141
-canonical member list, and an enum value SHALL carry its `VariantId` and
-its rank, the variant's index in that list. Admission SHALL refuse a value
-whose rank disagrees with its `VariantId`'s index in the shape. Identity and
-equality of an enum value SHALL use its `VariantId` only, and its canonical
-key SHALL be its rank, which orders values as the QSpec FR-144 enumeration
-key row states. C-30 SHALL admit only an enum member node key as a
-`VariantId`.
+For an enum, each variant's `VariantId` SHALL be the enum member node key
+specified by QSpec FR-141 (ADR-013 O-14, C-30). The kernel enum shape SHALL
+carry the canonical member list in QSpec FR-144 order, and an enum value
+SHALL carry its `VariantId` and its rank, the variant's index in that list.
+Admission SHALL refuse a value whose rank disagrees with its `VariantId`'s
+index in the shape. Identity and equality of an enum value SHALL use its
+`VariantId` only, and its canonical key SHALL be its rank. C-30 SHALL admit
+only an enum member node key as a `VariantId`.
 
 ### A quantity type carries a two-domain UnitId
 
@@ -247,7 +245,7 @@ only a unit node key as a declared-arm `UnitId`.
 | FR-088-AC-9 | C-26's conversion function is total: for every checked type-node form (`scalar_type`, `composite_type`, `bounded_domain`, and the sum form), a test constructs a checked node of that form and confirms the function returns a kernel `ValueType` with no panic, no `_`-arm fallback, and no lossy substitution; a checked type-node form added without a corresponding match arm fails to compile (`clippy::wildcard_enum_match_arm`, following ADR-011 §5's convention for other exhaustive maps). | Test (TC-252) |
 | FR-088-AC-10 | For the sum form specifically, the source checked node's own id is not re-minted by C-26's conversion (it is the same content-addressed id the node carried before conversion, read from `CheckedGraph`/`CheckedPackage`, not a value the kernel shape carries); C-26's output kernel `ValueType` carries, per variant, a `VariantId` computed from the declaring sum and that member, and the kernel shape carries no `NodeKey` anywhere in its variant representation. A sum value built from this conversion carries its `VariantId`, and an adverse test confirms no code path reads or stores a bare variant index in place of the `VariantId`. | Test (TC-252) |
 | FR-088-AC-11 | For an enum `E` declared with cases `b`, `a`, `c` in that order, each variant's `VariantId` equals the node key over `{version: quire.enum-member-node/v1, declaration_node_id: E's node key, case}`. When `E` is ordered, the variants' ranks are `b` 0, `a` 1, `c` 2, and a set of all three values visits `b`, `a`, `c`. When `E` is unordered, its canonical member list is `a`, `b`, `c`, the ranks are `a` 0, `b` 1, `c` 2, and the set visits `a`, `b`, `c`. A value that pairs `E::a`'s `VariantId` with rank 2 is refused at admission. Renaming the declaration `E` to `F` changes every `VariantId` and changes no rank and no visiting order. C-30 refuses `E`'s own declaration node key as a `VariantId`. | Test (TC-409) |
-| FR-088-AC-12 | For declared units `m` and `km` (a scaled unit of `m`) and the compound unit `m^1`, the three `UnitId`s are pairwise unequal. `m`'s `UnitId` carries `m`'s node key under the `quire.checked-semantic-node/v1` label. The compound `UnitId`s of every entry in QSpec's compound-unit vectors equal the vector digests under the `quire.value.compound-unit/v1` label. C-30 refuses a dimension node key as a declared-arm `UnitId`. | Test (TC-411) |
+| FR-088-AC-12 | For declared units `m` and `km` (a scaled unit of `m`) and the compound unit `m^1`, the three `UnitId`s are pairwise unequal. `m`'s `UnitId` carries `m`'s node key under the `quire.checked-semantic-node/v1` label. For every vector defined by QSpec FR-142-AC-8, the compound `UnitId` equals its published digest under the `quire.value.compound-unit/v1` label. C-30 refuses a dimension node key as a declared-arm `UnitId`. | Test (TC-411) |
 
 For AC-6, a hand-written `PartialEq` or `Hash`, a name beside a filler field,
 a local map, and the root crate's lane-private `QualifiedName` types are

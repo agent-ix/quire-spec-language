@@ -183,6 +183,20 @@ impl<'a> ModelSystem<'a> {
         select: &dyn Fn(NodeKey) -> bool,
         budget: &mut Budget,
     ) -> Result<Applications, ExpansionStop> {
+        self.apply_operation_matching(observed, operation, select, None, budget)
+    }
+
+    /// As [`Self::apply_operation`], checking only candidate identities in
+    /// `selected_transitions` when supplied. The full argument domain is
+    /// still enumerated and charged against `budget`.
+    pub(crate) fn apply_operation_matching(
+        &self,
+        observed: &ModelSimState,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&std::collections::BTreeSet<ModelTransition>>,
+        budget: &mut Budget,
+    ) -> Result<Applications, ExpansionStop> {
         let walk = walk_of(self, observed, None)?;
         let mut contract = Vec::new();
         let mut successors = Vec::new();
@@ -201,6 +215,8 @@ impl<'a> ModelSystem<'a> {
                     contract: &mut contract,
                     successors: &mut successors,
                     enabled: None,
+                    enabled_transitions: None,
+                    selected_transitions,
                 },
             )?;
         }
@@ -208,6 +224,44 @@ impl<'a> ModelSystem<'a> {
             successors,
             findings: sorted_contract_findings(contract),
         })
+    }
+
+    /// FR-220 MA-1: the enabled transition identities at `observed`, checking
+    /// only candidate identities in `selected_transitions` when supplied.
+    /// Candidate enumeration and budget charges still cover the full domain.
+    pub(crate) fn enabled_transitions_matching(
+        &self,
+        observed: &ModelSimState,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&std::collections::BTreeSet<ModelTransition>>,
+        budget: &mut Budget,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        let walk = walk_of(self, observed, None)?;
+        let mut contract = Vec::new();
+        let mut successors = Vec::new();
+        let mut transitions = Vec::new();
+        for row in &walk.rows {
+            let Some(application) = self.application_at(row, operation) else {
+                continue;
+            };
+            let clauses = walk.selected(row, application, select);
+            frames::apply(
+                &walk,
+                row,
+                application,
+                &clauses,
+                budget,
+                frames::Outputs {
+                    contract: &mut contract,
+                    successors: &mut successors,
+                    enabled: None,
+                    enabled_transitions: Some(&mut transitions),
+                    selected_transitions,
+                },
+            )?;
+        }
+        Ok(transitions)
     }
 
     /// ADR-027 PD-4: how the first application of `operation` at

@@ -14,7 +14,7 @@ use qsl_replay::{
     CertificateRejection, CertificateRule, IncompleteCause, ModelCheckLimit, RefinementFailure,
     Taken, ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
-use qsl_route::deadlock::ItemObligation;
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Cancel;
 
 use crate::timed_refinement::{
@@ -117,8 +117,13 @@ fn the_treq_certificate_is_a_refinement_form_the_checker_accepts() {
         .refinement
         .as_ref()
         .expect("the refinement part");
-    assert_eq!(part.refinement, "Timed");
-    assert_eq!(certificate.initial.len(), 1);
+    // QSpec FR-418 `refinement_node`: the refinement node's id, the node
+    // of the refinement record's occurrence.
+    let ObligationKind::Refinement { occurrence, .. } = &obligation(&world).kind else {
+        panic!("a refinement obligation");
+    };
+    assert_eq!(part.refinement_node, occurrence.node());
+    assert_eq!(certificate.initials.len(), 1);
     assert_eq!(certificate.obligation, obligation(&world));
     assert!(certificate
         .nodes
@@ -133,7 +138,7 @@ fn the_treq_certificate_is_a_refinement_form_the_checker_accepts() {
             "{taken:?}"
         );
     }
-    assert_eq!(certificate.admitted.start, certificate.initial[0]);
+    assert_eq!(certificate.admitted.start, certificate.initials[0]);
     assert_eq!(
         verdict(&world, &certificate),
         ZoneCertificateVerdict::Accepted
@@ -229,7 +234,7 @@ fn a_tampered_treq_certificate_is_rejected() {
     // position.
     let first = 0;
     let target = certificate.edges[first].to;
-    let initial = certificate.initial[0];
+    let initial = certificate.initials[0];
     assert_ne!(
         certificate.nodes[target].automaton_state,
         certificate.nodes[initial].automaton_state
@@ -278,7 +283,7 @@ fn a_forged_initial_position_is_an_initial_mismatch() {
         TimedSafetyOutcome::Violated { .. }
     ));
     forged.obligation = obligation(&violated);
-    let initial = forged.initial[0];
+    let initial = forged.initials[0];
     assert_eq!(
         verdict(&violated, &forged),
         rejected(CertificateRule::InitialMismatch, node(initial))
@@ -376,8 +381,8 @@ fn three_initial_states_one_time_locked_are_certified() {
     let world = init3(1, true);
     let certificate = certified(&world);
     let reserved = reserved(&certificate);
-    let [first, locked, last] = certificate.initial[..] else {
-        panic!("three initial nodes: {:?}", certificate.initial);
+    let [first, locked, last] = certificate.initials[..] else {
+        panic!("three initial nodes: {:?}", certificate.initials);
     };
     assert!(certificate.nodes[locked].locked);
     assert_eq!(certificate.nodes[locked].automaton_state, reserved);
@@ -405,13 +410,13 @@ fn three_initial_states_one_time_locked_are_certified() {
     );
     let missing = CertificateLocus::ModelState(certificate.nodes[last].state_key);
     let mut replaced = certificate.clone();
-    replaced.initial[2] = first;
+    replaced.initials[2] = first;
     assert_eq!(
         verdict(&world, &replaced),
         rejected(CertificateRule::InitialMissing, missing.clone())
     );
     let mut dropped = certificate.clone();
-    dropped.initial.truncate(2);
+    dropped.initials.truncate(2);
     assert_eq!(
         verdict(&world, &dropped),
         rejected(CertificateRule::InitialMissing, missing)
@@ -427,8 +432,8 @@ fn three_initial_states_one_time_locked_are_certified() {
 fn a_locked_first_initial_state_does_not_decide_admitted() {
     let world = init3(0, true);
     let certificate = certified(&world);
-    let [locked, second, _] = certificate.initial[..] else {
-        panic!("three initial nodes: {:?}", certificate.initial);
+    let [locked, second, _] = certificate.initials[..] else {
+        panic!("three initial nodes: {:?}", certificate.initials);
     };
     assert!(certificate.nodes[locked].locked);
     assert_eq!(certificate.admitted.start, second);
@@ -463,7 +468,7 @@ fn a_forged_locked_initial_state_that_diverges_is_a_bad_state() {
     );
 
     let mut forged = certified(&init3(1, true));
-    let [first, locked, _] = forged.initial[..] else {
+    let [first, locked, _] = forged.initials[..] else {
         panic!("three initial nodes");
     };
     let package = qsl_package::emit_checked(&free.package)

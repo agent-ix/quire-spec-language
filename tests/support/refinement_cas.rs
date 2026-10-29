@@ -102,7 +102,12 @@ fn wire_type(package: &str, identity: &str, kind: &str, extra: Json) -> Json {
 
 /// `Level`, the integer type `Int[0, 2]`.
 fn level(package: &str) -> Json {
-    let identity = ident(package, "Level");
+    bounded(package, "Level", "2")
+}
+
+/// The integer type `name`, `Int[0, max]`.
+fn bounded(package: &str, name: &str, max: &str) -> Json {
+    let identity = ident(package, name);
     let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"), "keyword": keyword,
@@ -115,7 +120,7 @@ fn level(package: &str) -> Json {
         &identity,
         "value_type",
         json!({"scalar": "integer",
-            "constraints": [constraint("min", "0"), constraint("max", "2")]}),
+            "constraints": [constraint("min", "0"), constraint("max", max)]}),
     )
 }
 
@@ -131,9 +136,27 @@ fn field(package: &str, name: &str, type_ref: &str) -> Json {
 
 /// A parameterless operation of `Counter` modifying `modifies`.
 fn operation(package: &str, name: &str, modifies: &[&str]) -> Json {
+    operation_with(package, name, &[], modifies)
+}
+
+/// An operation of `Counter` taking `params` (name, type) and modifying
+/// `modifies`.
+fn operation_with(package: &str, name: &str, params: &[(&str, &str)], modifies: &[&str]) -> Json {
     let identity = ident(package, &format!("Counter/{name}"));
+    let params: Vec<Json> = params
+        .iter()
+        .map(|(parameter, type_ref)| {
+            let parameter_identity = format!("{identity}/{parameter}");
+            json!({
+                "identity": parameter_identity, "name": parameter, "typeRef": type_ref,
+                "presence": "required", "nullable": false, "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "origin": origin(&parameter_identity),
+            })
+        })
+        .collect();
     json!({
-        "identity": identity, "name": name, "params": [], "pre": [], "post": [],
+        "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident(package, "spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
         "frame": {
@@ -147,6 +170,18 @@ fn operation(package: &str, name: &str, modifies: &[&str]) -> Json {
 }
 
 fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>, sub_counter: bool) -> Vec<u8> {
+    document_with(package, fields, operations, sub_counter, false)
+}
+
+/// [`document`], also declaring `Bit`, the integer type `Int[0, 1]`, when
+/// `bit`.
+fn document_with(
+    package: &str,
+    fields: Vec<Json>,
+    operations: Vec<Json>,
+    sub_counter: bool,
+    bit: bool,
+) -> Vec<u8> {
     let counter = ident(package, "Counter");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -175,6 +210,9 @@ fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>, sub_counter
             }),
         ),
     ];
+    if bit {
+        types.push(bounded(package, "Bit", "1"));
+    }
     let mut members = vec![counter.clone()];
     if sub_counter {
         types.push(wire_type(
@@ -219,6 +257,9 @@ pub struct Variant {
     pub sub_counter: bool,
     /// The concrete initial snapshot's `value`.
     pub concrete_value: i64,
+    /// FR-315-AC-6's `CasRefinesCounterAdd`: `Spec::Counter` gains
+    /// `add(n: Bit)` and `Impl::Counter` gains `bump()` with an empty frame.
+    pub add: bool,
 }
 
 impl Variant {
@@ -227,22 +268,38 @@ impl Variant {
         lost_update: false,
         sub_counter: false,
         concrete_value: 0,
+        add: false,
     };
     /// The lost-update model.
     pub const LOST_UPDATE: Self = Self {
         lost_update: true,
         ..Self::CAS
     };
+    /// FR-315-AC-6's `CasRefinesCounterAdd`.
+    pub const ADD: Self = Self {
+        add: true,
+        ..Self::CAS
+    };
 }
 
-/// `Counter { value: Int[0, 2] }` with `inc()`, under the package identity
-/// `package`.
-fn spec_document(package: &str) -> Vec<u8> {
-    document(
+/// `Counter { value: Int[0, 2] }` with `inc()`, and `add(n: Bit)` when
+/// `add`, under the package identity `package`.
+fn spec_document(package: &str, add: bool) -> Vec<u8> {
+    let mut operations = vec![operation(package, "inc", &["value"])];
+    if add {
+        operations.push(operation_with(
+            package,
+            "add",
+            &[("n", &ident(package, "Bit"))],
+            &["value"],
+        ));
+    }
+    document_with(
         package,
         vec![field(package, "value", &ident(package, "Level"))],
-        vec![operation(package, "inc", &["value"])],
+        operations,
         false,
+        add,
     )
 }
 
@@ -260,6 +317,9 @@ fn cas_document(variant: Variant) -> Vec<u8> {
     if !variant.lost_update {
         operations.push(step("retryA", &["busyA"]));
         operations.push(step("retryB", &["busyB"]));
+    }
+    if variant.add {
+        operations.push(step("bump", &[]));
     }
     document(
         CAS,
@@ -320,6 +380,18 @@ pub fn cas_refines_counter() -> String {
      ensure fair weak each Spec::Counter::inc;\n\
      }"
     .to_owned()
+}
+
+/// FR-315-AC-6's `CasRefinesCounterAdd`: `CasRefinesCounter` with the row
+/// `step Impl::Counter::bump -> Spec::Counter::add(self, _);`, under
+/// [`Variant::ADD`].
+pub fn cas_refines_counter_add() -> String {
+    mutated(
+        &cas_refines_counter(),
+        "step Impl::Counter::peek -> stutter;\n",
+        "step Impl::Counter::peek -> stutter;\n\
+         step Impl::Counter::bump -> Spec::Counter::add(self, _);\n",
+    )
 }
 
 /// The divergence variant of `CasRefinesCounter` (ADR-020 §8): `assume` rows
@@ -383,21 +455,27 @@ fn unit_text(
          model Third = \"{THIRD}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
          post Inc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
-         {}{}{refinement}\n",
+         {}{}{}{refinement}\n",
         digest(SPEC),
         digest(CAS),
         digest(THIRD),
         worker("A", variant),
         worker("B", variant),
+        if variant.add {
+            "pre CanAdd using v on Spec::Counter::add { self.value + n <= 2 }\n\
+             post Add using v on Spec::Counter::add { pre(self.value) < 2 and self.value = pre(self.value) + n }\n"
+        } else {
+            ""
+        },
     )
 }
 
 /// The two domain packages' documents, by digest.
 pub fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
     package_input([
-        spec_document(SPEC).as_slice(),
+        spec_document(SPEC, variant.add).as_slice(),
         cas_document(variant).as_slice(),
-        spec_document(THIRD).as_slice(),
+        spec_document(THIRD, false).as_slice(),
     ])
 }
 
@@ -437,14 +515,18 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
         .map_err(|refusals| format!("{refusals:?}"))
 }
 
-/// An initialization snapshot of the one counter `c` of `package`, whose
-/// fields are `fields`.
+/// An initialization snapshot of the counters `keys` of `package`, whose
+/// fields are each `fields`.
 fn snapshot(
     package: &str,
     document: &[u8],
-    fields: Json,
+    (fields, keys): (Json, &[String]),
     snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
 ) -> DocumentRef {
+    let objects: Vec<Json> = keys
+        .iter()
+        .map(|key| json!({"key": key, "type": ident(package, "Counter"), "fields": fields}))
+        .collect();
     let model_digest = *package_input([document])
         .keys()
         .next()
@@ -459,7 +541,7 @@ fn snapshot(
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident(package, "counters"), "complete": true,
-            "objects": [{"key": "c", "type": ident(package, "Counter"), "fields": fields}]}],
+            "objects": objects}],
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -478,6 +560,7 @@ fn snapshot(
 
 /// The unit's package, the models' documents and their initial states.
 pub struct World {
+    keys: Vec<String>,
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
@@ -495,39 +578,51 @@ impl World {
 
     /// The world of the unit of `variant` with `refinement`.
     pub fn with(variant: Variant, refinement: &str) -> Self {
+        Self::with_keys(variant, refinement, &["c"])
+    }
+
+    /// The world of the unit of `variant` with `refinement`, whose
+    /// populations hold one counter per key of `keys` (TC-900's
+    /// `CasRefinesCounter2` holds `c0` and `c1`).
+    pub fn with_keys(variant: Variant, refinement: &str, keys: &[&str]) -> Self {
+        let keys: Vec<String> = keys.iter().map(|key| (*key).to_owned()).collect();
         let graph = check(variant, refinement).unwrap_or_else(|refusals| {
             panic!("{refinement}: the unit checks: {refusals}");
         });
         let mut snapshots = BTreeMap::new();
         let spec_initial = snapshot(
             SPEC,
-            &spec_document(SPEC),
-            json!({"value": {"integer": "0"}}),
+            &spec_document(SPEC, variant.add),
+            (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let spec_one = snapshot(
             SPEC,
-            &spec_document(SPEC),
-            json!({"value": {"integer": "1"}}),
+            &spec_document(SPEC, variant.add),
+            (json!({"value": {"integer": "1"}}), &keys),
             &mut snapshots,
         );
         let third_initial = snapshot(
             THIRD,
-            &spec_document(THIRD),
-            json!({"value": {"integer": "0"}}),
+            &spec_document(THIRD, false),
+            (json!({"value": {"integer": "0"}}), &keys),
             &mut snapshots,
         );
         let cas_initial = snapshot(
             CAS,
             &cas_document(variant),
-            json!({
-                "value": {"integer": variant.concrete_value.to_string()},
-                "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
-                "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
-            }),
+            (
+                json!({
+                    "value": {"integer": variant.concrete_value.to_string()},
+                    "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
+                    "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
+                }),
+                &keys,
+            ),
             &mut snapshots,
         );
         Self {
+            keys,
             package: CheckedPackage::link(graph),
             packages: packages(variant),
             snapshots,
@@ -569,7 +664,7 @@ impl World {
             initial,
             universes: vec![PopulationUniverse {
                 population: key(model, "counters"),
-                keys: vec!["c".to_owned()],
+                keys: self.keys.clone(),
             }],
             observation: ObservationLimits::default(),
             expansion: ExpansionLimits {

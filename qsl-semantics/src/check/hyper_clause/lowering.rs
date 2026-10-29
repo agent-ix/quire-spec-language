@@ -155,6 +155,12 @@ pub(crate) enum Site {
     ExistentialSlot(usize, usize),
     /// The `align skip` operation at this index.
     AlignSkip(usize),
+    /// A relation claim, indexed among model relations.
+    Relation(usize),
+    /// A model relation's body.
+    RelationBody(usize),
+    /// An execution entry of a model relation.
+    RelationExecution(usize, usize),
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of the hyper clause at
@@ -174,6 +180,11 @@ pub(crate) fn hyper_site(clause: usize, site: Site) -> String {
             format!("hyper {clause} match exists {index} slot {slot}")
         }
         Site::AlignSkip(index) => format!("hyper {clause} align {index}"),
+        Site::Relation(index) => format!("relation {index}"),
+        Site::RelationBody(index) => format!("relation {index} body"),
+        Site::RelationExecution(index, execution) => {
+            format!("relation {index} execution {execution}")
+        }
     }
 }
 
@@ -456,8 +467,18 @@ pub(crate) fn lower_conjunct<'a>(
         .iter()
         .filter_map(|read| Some((read.slot_name()?, read.slot_type()?)))
         .collect();
-    let mut typer =
-        typer(typing, cx, nodes, &bound, HyperTyping { labels }, location).map_err(refused)?;
+    let mut typer = typer(
+        typing,
+        cx,
+        nodes,
+        &bound,
+        HyperTyping {
+            labels,
+            ..HyperTyping::default()
+        },
+        location,
+    )
+    .map_err(refused)?;
     let body = typer
         .infer_subtree(expression, root, Some(&ValueType::Boolean), location)
         .map_err(refused)?;

@@ -576,16 +576,13 @@ fn node_input(body: &BodyTerm) -> NodeInput<'_> {
 }
 
 /// FR-092-AC-15: QSpec's `integer_encoding_vectors`, read at run time from
-/// `$QSPEC_DIR`, key through this module's key function to their recorded
+/// `the QSpec checkout`, key through this module's key function to their recorded
 /// keys: a recursion `size` of 2^53-1 is a number and 2^53 a string. Skipped
-/// (and passing) when `QSPEC_DIR` is unset; nothing of QSpec is copied here.
+/// The vectors are read in place from the QSpec checkout; nothing of QSpec is copied here.
 #[trace("FR-092-AC-15", "TC-910")]
 #[test]
 fn conformance_fr092_integer_encoding_vectors_match_qspec() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = qspec_directory();
     let path = std::path::Path::new(&qspec)
         .join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =
@@ -858,17 +855,13 @@ struct VectorDeclaration {
 }
 
 /// Every QSpec `operation_vectors` entry, read at run time from
-/// `$QSPEC_DIR/proposals/checked-package-v2/node-identity-vectors.json`:
+/// `the QSpec checkout/proposals/checked-package-v2/node-identity-vectors.json`:
 /// this module rebuilds each vector's node from its preimage, and its own
-/// preimage bytes and key must equal QSpec's. Skipped (and passing) when
-/// `QSPEC_DIR` is unset; `make conformance` requires it. Nothing of QSpec is
-/// copied into this repository.
+/// preimage bytes and key must equal QSpec's. The vectors are read in place
+/// from the QSpec checkout; nothing of QSpec is copied here.
 #[test]
 fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = qspec_directory();
     let path = std::path::Path::new(&qspec)
         .join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =
@@ -937,17 +930,14 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
 /// FR-334-AC-4 (TC-844): the keys QSpec's FR-322 publishes for the unbounded
 /// `Set<Reference<Order>>` (S1), the bounded population PO1 (`max` 3), the
 /// unbounded population PO0 (no `max` member) and the population with `max`
-/// 0 are read at run time from `$QSPEC_DIR`, and this module's key function
+/// 0 are read at run time from `the QSpec checkout`, and this module's key function
 /// keys the same nodes to them: S1 from its reference body, each population
-/// from S1 and its `max` binding. Skipped (and passing) when `QSPEC_DIR` is
-/// unset; `make conformance` requires it. Nothing of QSpec is copied here.
+/// from S1 and its `max` binding. The vector is read in place from the QSpec
+/// QSpec checkout; nothing of QSpec is copied here.
 #[trace("TC-844", "FR-334-AC-4")]
 #[test]
 fn conformance_fr334_collection_and_population_keys_match_qspec() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = qspec_directory();
     let path = std::path::Path::new(&qspec)
         .join("spec/objects/interfaces/FR-322-checked-package-artifact.md");
     let text = std::fs::read_to_string(&path)
@@ -1172,20 +1162,17 @@ fn an_owner_enters_a_declared_structural_key_only() {
 /// FR-092-AC-8: the nominal enum declaration and member are keyed by
 /// QSpec's own preimages, never `quire.structural-node/v1`: QSpec's
 /// `enum-status` and `enum-status-ready` vectors, read at run time from
-/// `$QSPEC_DIR`, recompute their recorded `sha256` through
+/// `the QSpec checkout`, recompute their recorded `sha256` through
 /// `value::enumeration`, and the member key `check` gives an enum-member
 /// literal (`mint_variant_id`) equals the member vector's. Skipped (and
-/// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
+/// vectors are read in place from the QSpec checkout; `make conformance` requires them.
 #[trace("FR-092-AC-8", "TC-413")]
 #[test]
 fn conformance_fr092_nominal_enum_keys_match_qspec_vectors() {
     use crate::value::enumeration::{mint_variant_id, EnumDeclarationPreimage, EnumMemberPreimage};
     use crate::value::semantic_node::NodeIdentityPreimage;
 
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = qspec_directory();
     let path = std::path::Path::new(&qspec)
         .join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =
@@ -1352,16 +1339,13 @@ fn the_case_operator_class_is_spelled_case() {
 
 /// QSpec FR-440-AC-11 and FR-441: the nullary and reference-payload
 /// `union_value` vectors of QSpec's `positive-union-nodes.json`, read at run
-/// time from `$QSPEC_DIR`, key through this module's key function to the node
-/// ids QSpec fixes for them. Skipped (and passing) when `QSPEC_DIR` is unset;
-/// `make conformance` requires it. Nothing of QSpec is copied here.
+/// time from `the QSpec checkout`, key through this module's key function to the node
+/// ids QSpec fixes for them. Vectors are read in place from the QSpec checkout;
+/// `make conformance` requires them. Nothing of QSpec is copied here.
 #[trace("FR-319-AC-4", "FR-320-AC-4", "TC-826")]
 #[test]
 fn conformance_fr440_union_value_keys_match_qspec_union_fixture() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+    let qspec = qspec_directory();
     let path = std::path::Path::new(&qspec)
         .join("proposals/checked-package-v2/fixtures/positive-union-nodes.json");
     let bytes =
@@ -1647,4 +1631,14 @@ fn an_execution_point_is_part_of_the_operation_anchor_key() {
     ];
     let distinct: BTreeSet<String> = keys.iter().map(|key| key.to_string()).collect();
     assert_eq!(distinct.len(), keys.len(), "{keys:?}");
+}
+
+fn qspec_directory() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        std::env::var_os("QSPEC_DIR")
+            .filter(|path| !path.is_empty())
+            .unwrap_or_else(|| {
+                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
+            }),
+    )
 }

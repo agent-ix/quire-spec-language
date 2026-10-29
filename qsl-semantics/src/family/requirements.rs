@@ -162,7 +162,7 @@ pub struct Requirements {
     hybrid_dynamics: bool,
     evidence: Option<ClaimEvidence>,
     property_form: Option<PropertyForm>,
-    dense_time: bool,
+    timed: bool,
 }
 
 impl Requirements {
@@ -177,22 +177,24 @@ impl Requirements {
             hybrid_dynamics: false,
             evidence: None,
             property_form: None,
-            dense_time: false,
+            timed: false,
         }
     }
 
-    /// The requirements of an item over a `time dense` subject (QSL FR-243,
-    /// FR-430): negotiation routes it to the engines that decide one (EN-6).
-    /// The mark is QSL's own; the item's wire `requirements` do not carry it.
+    /// The requirements of a timed item EN-6 decides (QSL FR-243, FR-430):
+    /// a clause over a timed subject, `dense` or `tick`, or a refinement
+    /// whose concrete model is `time dense`. Negotiation routes it to the
+    /// engines that decide timed subjects (EN-6). The mark is QSL's own; the
+    /// item's wire `requirements` do not carry it.
     #[must_use]
-    pub fn over_dense_time(mut self) -> Self {
-        self.dense_time = true;
+    pub fn over_timed(mut self) -> Self {
+        self.timed = true;
         self
     }
 
-    /// Whether the item is over a `time dense` subject.
-    pub fn dense_time(&self) -> bool {
-        self.dense_time
+    /// Whether the item is a timed item EN-6 decides ([`Self::over_timed`]).
+    pub fn timed(&self) -> bool {
+        self.timed
     }
 
     /// The requirements with the property form the record is routed and

@@ -10,11 +10,11 @@ relationships:
 
 ## Description
 
-Verify FR-088-AC-12. A kernel `UnitId` is a domain-labelled digest record
-over the two unit identities QSpec FR-142 defines: a declared unit's node
-key under the `quire.checked-semantic-node/v1` label, and a compound unit's
-`quire.value.compound-unit/v1` digest (ADR-013 T-6, OQ-B ruling). Equality
-is lexical on domain, then bytes. Scope: FR-088-AC-12.
+Verify FR-088-AC-12. QSL's kernel `UnitId` preserves the distinct identities
+for declared and compound units and compares the domain label before the
+digest bytes (ADR-013 T-6, OQ-B ruling). QSpec FR-142-AC-8 owns the
+compound-unit identity schema, vectors and digest derivation. Scope:
+FR-088-AC-12.
 
 This catches four faults: a single-domain `UnitId` that drops the label; a
 declared unit collapsed to its root, so that `km` equals `m`; a compound
@@ -27,8 +27,9 @@ as a declared-arm `UnitId` (ADR-013 C-30).
    `Length`, and the unit `km` with target `m` and scale 1000.
 2. Build the `UnitId`s of `m` and `km` through C-26, and the compound
    `UnitId` of `m^1` through `semantic_value`.
-3. For every entry of QSpec's compound-unit vectors
-   (`ix://agent-ix/quire-specification/proposals/quire-v1/definitions/value-compound-unit.md`),
+3. Read every entry of QSpec's compound-unit vectors in place from the QSpec
+   checkout at
+   `proposals/quire-v1/definitions/value-compound-unit-vectors.json` and
    build the compound `UnitId` from the entry's terms.
 4. Pass `Length`'s node key to C-30 as a declared-arm `UnitId`.
 

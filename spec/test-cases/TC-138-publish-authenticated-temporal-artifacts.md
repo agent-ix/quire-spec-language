@@ -50,12 +50,13 @@ and `/2` to the `/1` reader. For every added work dimension, take the successful
 amount (its byte work is at least the emitted bytes) and retry with exact,
 one-short and raised-above-default limits.
 
-Import the public `protocol_artifact::handoff` path, member-name and mutation
-format constants. Join each member name to `PUBLISHED_HANDOFF`, require every
-named file to exist, decode the named mutation manifest, and compare its base
-offer, artifact reference, independent selection and format fields with the
-published constants, and require each of those base files to exist, without consulting an environment variable or
-redeclaring a path, filename or format literal in the consumer harness.
+Import the public `protocol_artifact::handoff` member-name and mutation format
+constants. Call `write_v2` into a temporary directory, join each member name to
+that directory, require every named file to exist, decode the named mutation
+manifest, and compare its base offer, artifact reference, independent selection
+and format fields with the published constants, and require each of those base
+files to exist, without consulting an environment variable or redeclaring a
+path, filename or format literal in the consumer harness (FR-050-AC-7).
 
 Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
 twice, each time into a fresh temporary directory, from a test that calls only
@@ -69,12 +70,24 @@ reader, requiring the manifest's own recorded refusal code. Call `write_v2` a
 third time into an already-existing directory and require refusal, and confirm
 that directory's contents, including a sentinel file already there, are
 unchanged.
+
+Require `protocol_artifact::handoff::SOURCE_ROOT` to name the crate's manifest
+directory, with the authored sources the writers read beneath it (FR-050-AC-11).
+Require the handoff module to export none of `PUBLISHED_HANDOFF`,
+`PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, asserting each name
+separately (FR-050-AC-12).
+
 Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
 quire-spec-language --lib --no-default-features --features handoff-writer`:
 the no-dev-dependency acceptance this step's test cannot demonstrate by
 itself, because a test in this crate's own `tests/` always builds inside its
 dev-dependency closure. That `cargo check` line is what actually resolves
 `write_v2`'s dependency graph with no dev-dependency in it.
+
+Tracked-files step: in a git checkout (CI only; not in a crate tarball or git
+dependency), run `git ls-files artifacts/compiled-protocol-v2` and require empty
+output (FR-050-AC-9), and require `git ls-files` to list no checksum manifest
+of `/1` or `/2` handoff files (FR-050-AC-10).
 
 ## Expected Results
 
@@ -95,6 +108,7 @@ The existing `/1` L5 entry points retain their public signatures and prior
 unauthenticated-parameter results. The v2-specific entry points accept only the
 v2 admitted type; trace evaluation retains the artifact-authenticated parameter
 map, mapping classification claims none, and progress does not cross an artifact
-or clock-configuration identity. Every published handoff address resolves its
-owned committed member, and the decoded mutation manifest repeats exactly the
-published base-member and format identities.
+or clock-configuration identity. Every published member name resolves its
+member in a freshly written handoff, and the decoded mutation manifest repeats
+exactly the published base-member and format identities. No handoff tree,
+checksum manifest, digest or count is committed.

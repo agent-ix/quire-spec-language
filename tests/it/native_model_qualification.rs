@@ -20,7 +20,7 @@ use quire_spec_language::native_model::{
 use serde_json::{json, Value};
 
 fn authored(change: impl FnOnce(&mut Value)) -> Parts {
-    let mut data = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut data = serde_json::from_str(native_rule_model::fixture()).unwrap();
     change(&mut data);
     let text = serde_json::to_string_pretty(&data).unwrap();
     native_rule_model::from_text(&text, "qualification.json", "draft:1")

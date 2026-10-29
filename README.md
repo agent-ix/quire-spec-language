@@ -220,6 +220,9 @@ cd quire-spec-language
 cargo build --locked --bin quire-spec
 ```
 
+Conformance and qualification checks require `QSPEC_DIR` to name an available
+QSpec checkout. This repository stores no QSpec source or revision.
+
 **Format.** `format` prints the formatted source and leaves the file unchanged.
 The four arguments before the path are the source identity (authority, id,
 revision namespace, revision). Every diagnostic carries them.
@@ -275,17 +278,35 @@ category's code (22). The emitted bytes embed the source path exactly as given
 `package_id`), so pass an identical, fixed, cwd-relative path on every
 invocation to get stable bytes. The source is read under the source-size ceiling (a longer source is the
 producer's size refusal, exit 22, with its `--limit` hint removed because this
-tool has no such flag); a `--model` or `--library` file over the ceiling is an
-explicit refusal naming the file (exit 20), never truncated.
+tool has no such flag); a `--model`, `--library` or `--execution-points` file over the
+ceiling is an explicit refusal naming the file (exit 20), never truncated.
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
-  --model tests/fixtures/spine-model.semantic-ir.json \
-  tests/fixtures/spine-model.native > package.json
+  --model examples/switch-transition/switch.semantic-ir.json \
+  examples/switch-transition/switch.native > package.json
 ```
 
 The package is read back with the same domain documents as evidence
 (`CheckedPackageEvidence::insert_domain_package_document`).
+
+**Accepted execution points.** `--execution-points <file>` supplies accepted
+state-clause execution points (FR-104-AC-15) through the producer's
+`check_with_execution_points` (`qsl_replay::compile_package_with_execution_points`),
+so the emitted state clauses carry them. The file is a JSON object from the
+exact authored clause name to an execution point: `{"kind": "initialization" |
+"handler", "name": "<anchor>"}` or `{"kind": "pre" | "post", "operation":
+"<anchor>"}`. For example, `{"After": {"kind": "post", "operation": "probe"}}`
+accepts the point for `post After ... on X::Y::probe`. A malformed file is a
+refusal naming it; a point for no authored clause, or one the clause kind does
+not accept, is the checker's refusal. The points file is read under the same
+file ceiling as a `--model` file (over it is an explicit refusal, never
+truncated). A repeated clause name, an empty object, a member the point does
+not define and an unknown `kind` are each a refusal naming the file (a
+malformed anchor name is the checker's refusal instead); an
+empty object is refused rather than emitting point-free bytes, since passing
+the option means points are expected. In every refusal no bytes are written and
+the exit is nonzero. Without the option the clauses are point-free.
 
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
@@ -318,7 +339,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 
 | Repository | Role | Relation to QSL |
 | --- | --- | --- |
-| quire-specification (private) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
+| quire-specification | Owns the language standard, profiles, interchange formats and corpus contract. | QSL reads its source-of-truth specification and conformance vectors from the checkout named by `QSPEC_DIR`; `make ci` checks QSL against those vectors, and `make qualify` runs QSL against a supplied corpus. |
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
@@ -360,7 +381,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
 | `qsl-walk-grow`, `qsl-bench` | Deep-recursion stack growth, benchmarks. |
 | root crate | The `quire-spec` binary and the library facade. |
-| `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, conformance. |
+| `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, qualification and refinement. |
 
 Other directories:
 
@@ -377,11 +398,14 @@ Other directories:
 ## Contributing
 
 `make ci` is the local gate: formatting, clippy, tests across feature
-combinations, docs and the architecture lints. It reads the standard's test
-vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). The hosted
-native compiler CI runs only on manual dispatch, so run the gate before opening
-a pull request.
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+combinations, docs and the architecture lints. Set `QSPEC_DIR` to an available
+QSpec checkout before running conformance or CI; there is no default checkout
+path. `make qualify CORPUS=<dir>` reads QSpec-owned corpus contracts from
+`QSPEC_DIR` and runs the supplied corpus. The hosted native compiler CI runs
+only on manual dispatch, so run the
+gate before opening a pull request. The separate pull request language-boundary
+check reports only whether new executable paths respect the Rust containment
+rule. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 Contributions require the [CLA](CLA.md).
 

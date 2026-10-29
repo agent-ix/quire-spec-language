@@ -10,9 +10,10 @@ relationships:
 
 ## Description
 
-Verify `quire.simulation.sampler/v1`, sampled-trace reproducibility, replay
-and the sampler's refusals. Scope: FR-101-AC-3, FR-101-AC-4, FR-101-AC-5 and
-FR-101-AC-10.
+Verify QSL's conformance to QSpec TC-210's sampler vector, sampled-trace
+reproducibility, replay and the sampler's refusals. Read the vector in place
+from the QSpec checkout; do not copy its expected values here. Scope:
+FR-101-AC-3, FR-101-AC-4, FR-101-AC-5 and FR-101-AC-10.
 
 ## Test Procedure
 
@@ -21,16 +22,17 @@ public entries; `sample` and `Sampler` are `pub(crate)` (FR-101). Steps 1b
 and 3b observe draw internals no public entry exposes, and are in-crate unit
 tests in `qsl-eval/src/simulation/`.
 
-1. Call `sample_request` with an empty `domains` set and the `quire.simulation.sampler/v1` `DefinitionRef`, seed `424242`, trace `0`, `max_steps` 5, on a system where
-   every state has five successors with distinct transition identities, and
-   read the selected index at each step from the trace's transitions.
-   1b. In-crate: record the sampler's step-0 preimage bytes and digest at
-   seed `424242`, trace `0`, choice `0`, `n = 5`.
+1. Under the conformance target, read QSpec TC-210's sampler vector from the
+   QSpec checkout. Call `sample_request` on the vector's listed systems and
+   inputs, and compare the selected indices with the vector.
+   1b. In-crate: compare the sampler's step-0 preimage bytes and digest with
+   the matching evidence in that same vector.
 2. As step 1 at seed `424242`, trace `1`; then on a system where every state
    has three successors, at seed `424242`, trace `0`.
-3. Call `sample_request` with an empty `domains` set and the `quire.simulation.sampler/v1` `DefinitionRef`, seed `424242`, trace `0`, on a chain where every state has one
-   successor; then on a system whose states at steps 0 and 1 have one
-   successor and whose state at step 2 has five.
+3. Call `sample_request` with an empty `domains` set and the
+   `quire.simulation.sampler/v1` `DefinitionRef`, seed `424242`, trace `0`,
+   on a one-successor chain; then on a system whose states at steps 0 and 1
+   have one successor and whose state at step 2 has five.
    3b. In-crate: count the digests the sampler computes on the one-successor
    chain.
 4. Call `sample_request` with an empty `domains` set and the `quire.simulation.sampler/v1` `DefinitionRef` on a system whose initial state has no successors.
@@ -52,14 +54,15 @@ tests in `qsl-eval/src/simulation/`.
 
 ## Expected Results
 
-- Step 1: indices `1, 3, 3, 4, 4` (QSpec TC-210's vector).
-- Step 1b: preimage
-  `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}`;
-  digest the SHA-256 of that preimage.
-- Step 2: `4, 4, 1, 3, 4` and `1, 2, 0, 0, 1`.
-- Step 3: index 0 at every step. The mixed system
-  selects index `3` at step 2, the step counter having advanced over the two
-  steps with no draw; a counter that skips them selects `1`.
+- Step 1: selected indices equal the corresponding sequence in QSpec
+  TC-210, read from the QSpec checkout.
+- Step 1b: preimage and digest equal the vector's corresponding draw
+  evidence.
+- Step 2: the first system selects `4, 4, 1, 3, 4`; the second selects
+  `1, 2, 0, 0, 1`.
+- Step 3: index 0 at every step on the one-successor chain. The mixed system
+  selects index `3` at step 2, showing the counter advances across the two
+  steps without a draw; a counter that skips them selects `1`.
 - Step 3b: no digest computed.
 - Step 4: the trace has no steps and ends with `StopReason::NoSuccessors`.
 - Step 5: the two equal runs give equal traces and equal provenance, which

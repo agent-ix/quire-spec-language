@@ -34,5 +34,6 @@ pub mod replay;
 pub mod settle;
 pub mod smt_query;
 pub mod state_graph;
+pub mod step_safety;
 pub mod step_settle;
 pub mod subject_identity;

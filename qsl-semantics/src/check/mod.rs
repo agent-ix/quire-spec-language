@@ -197,7 +197,7 @@ pub use type_invariant::{
 };
 
 use crate::model::domain_package::DomainPackageRef;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use check::{bind_parameters, NamedScope, Typer};
 // `Signature` is public only under `test-support`: the layer-5 evaluator's
@@ -348,9 +348,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use step_simulation::{
-    step_row_refs, step_simulation_records, StepRowRefusal, StepSimulationEntry,
-};
+pub use step_simulation::StepSimulationEntry;
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -641,6 +639,8 @@ pub struct CheckedGraph {
     /// FR-488: every emitted hyper clause over `behaviours`, in declaration
     /// order, each carrying its `claim` occurrence.
     hyper_nodes: Vec<hyper_clause::CheckedHyperClause>,
+    /// FR-180: every checked model relation emitted as a step-relation claim.
+    step_relations: Vec<hyper_clause::CheckedModelRelation>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-447: every checked hybrid model, in declaration order.
@@ -3610,6 +3610,7 @@ impl PackageDeclarations {
             behaviours_checked: std::cell::Cell::new(0),
         };
         let mut checked_hyper: Vec<hyper_clause::CheckedHyperClause> = Vec::new();
+        let mut checked_relations: Vec<hyper_clause::CheckedModelRelation> = Vec::new();
         for clause in &self.hyper_clauses {
             let mut contract_cx = crate::family::CheckContext::new(
                 &hyper_declarations,
@@ -3628,9 +3629,8 @@ impl PackageDeclarations {
                             None => checked_hyper.push(*checked),
                         }
                     }
-                    relation => {
-                        let (name, span) = relation.name_and_span();
-                        refusals.push(hyper_clause::not_emitted(name, span));
+                    hyper_clause::CheckedHyper::Relation(relation) => {
+                        checked_relations.push(*relation);
                     }
                 },
                 Err(StageFailure::Limit(limit)) => {
@@ -3963,6 +3963,44 @@ impl PackageDeclarations {
                     .collect::<Vec<_>>()
             })
             .collect();
+        let relation_operations: Vec<
+            Vec<(
+                quire_exact::EffectiveId,
+                crate::model::operation::OperationDeclaration,
+                Location,
+            )>,
+        > = checked_relations
+            .iter()
+            .enumerate()
+            .map(|(relation_index, relation)| {
+                relation
+                    .executions()
+                    .iter()
+                    .zip(relation.execution_aliases())
+                    .enumerate()
+                    .filter_map(|(execution_index, ((_, operation), alias))| {
+                        let model = models
+                            .iter()
+                            .find(|model| model.alias() == Some(alias.as_str()))?;
+                        let declaring = model.effective_id(&operation.declaring)?;
+                        let declaration = scope
+                            .operation_declaration(declaring, operation.operation.as_str())?
+                            .clone();
+                        Some((
+                            declaring,
+                            declaration,
+                            hyper_clause::lowering::hyper_location(
+                                relation_index,
+                                hyper_clause::lowering::Site::RelationExecution(
+                                    relation_index,
+                                    execution_index,
+                                ),
+                            ),
+                        ))
+                    })
+                    .collect()
+            })
+            .collect();
         let mut source_ordered_anchors: Vec<(usize, lowering::AnchorInput<'_>)> =
             state_clause_forms
                 .iter()
@@ -4014,6 +4052,19 @@ impl PackageDeclarations {
                     reference: location,
                 },
             ));
+        }
+        for (relation_index, executions) in relation_operations.iter().enumerate() {
+            for (declaring, operation, location) in executions {
+                source_ordered_anchors.push((
+                    checked_relations[relation_index].span().start,
+                    lowering::AnchorInput {
+                        declaring: *declaring,
+                        operation,
+                        location,
+                        reference: location,
+                    },
+                ));
+            }
         }
         source_ordered_anchors.sort_by_key(|(source_order, _)| *source_order);
         let mut anchors: Vec<lowering::AnchorInput<'_>> = source_ordered_anchors
@@ -4286,6 +4337,74 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-180: lower every checked model relation once state-clause nodes
+        // and operation anchors are available for its closed FR-477 joins.
+        let mut lowered_relations = Vec::with_capacity(checked_relations.len());
+        for (index, relation) in checked_relations.iter().enumerate() {
+            let Some(operations) = relation_operations.get(index) else {
+                continue;
+            };
+            let anchors: Vec<lowering::AnchorInput<'_>> = operations
+                .iter()
+                .map(|(declaring, operation, location)| lowering::AnchorInput {
+                    declaring: *declaring,
+                    operation,
+                    location,
+                    reference: location,
+                })
+                .collect();
+            let mut subjects = Vec::new();
+            let mut seen_aliases = BTreeSet::new();
+            for alias in relation.execution_aliases() {
+                if !seen_aliases.insert(alias) {
+                    continue;
+                }
+                let Some(model) = models
+                    .iter()
+                    .find(|model| model.alias() == Some(alias.as_str()))
+                else {
+                    refusals.push(CheckRefusal {
+                        location: hyper_clause::lowering::hyper_location(
+                            index,
+                            hyper_clause::lowering::Site::Relation(index),
+                        ),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "S4",
+                                "step-relation-subject-selected",
+                            ),
+                        ))),
+                    });
+                    continue;
+                };
+                match model_root_key(model.selection(), self.identity) {
+                    Ok(key) => subjects.push((alias.clone(), key)),
+                    Err(_) => refusals.push(CheckRefusal {
+                        location: hyper_clause::lowering::hyper_location(
+                            index,
+                            hyper_clause::lowering::Site::Relation(index),
+                        ),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "S4",
+                                "step-relation-model-root-keyed",
+                            ),
+                        ))),
+                    }),
+                }
+            }
+            match lowering.step_relation(&lowering::StepRelationInput {
+                index,
+                relation,
+                anchors: &anchors,
+                subjects: &subjects,
+                state_forms: &state_clause_forms,
+                state_nodes: &lowered_clauses,
+            }) {
+                Ok(lowered) => lowered_relations.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         // FR-105 "Boolean model-field transitions": the derived
         // `state`/`transition` node of each eligible (operation, Boolean
         // field) pair, from the lowered `pre` and `post` clauses.
@@ -4415,6 +4534,13 @@ impl PackageDeclarations {
                 .iter()
                 .position(|protocol| protocol.name.name == *clause)
                 .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
+        }
+        // QSpec FR-368: each clause's own node, its subject's derived-item
+        // anchor; a clause with no node keeps none.
+        for (index, place) in protocol_places.iter().enumerate() {
+            if let Some(checked) = place.and_then(|place| checked_protocols.get_mut(place)) {
+                checked.node = lowering.protocol_key(index, &root(Origin::Expression)).ok();
+            }
         }
         // FR-337: each emitted temporal clause, after every function its
         // conditions may call, minting its node identity and recording its
@@ -4698,6 +4824,18 @@ impl PackageDeclarations {
                     cause: CheckCause::InternalFault(Box::new(fault)),
                 }]
             })?;
+        // FR-146 "Claim extent": the populations each operation's contract
+        // clauses range over, which its refinement `Step` records add.
+        let mut contract_populations: BTreeMap<
+            (quire_exact::EffectiveId, String),
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
+        // ... and the populations each clause ranges over, by its node, which
+        // a hypothesis adds to every record.
+        let mut clause_populations: BTreeMap<
+            quire_exact::NodeKey,
+            std::collections::BTreeSet<state_clause::PopulationDomain>,
+        > = BTreeMap::new();
         // FR-104 "Requirements": one `operation-contract` record per clause,
         // keyed by its `claim` occurrence, and one per frame of an operation
         // a `pre` or `post` clause names, keyed by the frame node's own
@@ -4721,6 +4859,20 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
+                let ranged = claims
+                    .iter()
+                    .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
+                    .flat_map(|claim| claim.populations.iter().copied());
+                if let Some(operation) = &form.operation {
+                    contract_populations
+                        .entry(state_clause::operation_reference(operation))
+                        .or_default()
+                        .extend(ranged.clone());
+                }
+                clause_populations
+                    .entry(lowered.key)
+                    .or_default()
+                    .extend(ranged);
                 let keyed = state_clause::clause_records(
                     &typed,
                     &claims,
@@ -4832,6 +4984,9 @@ impl PackageDeclarations {
         if lowered_hyper.len() != checked_hyper.len() {
             return Err(unlowered());
         }
+        if lowered_relations.len() != checked_relations.len() {
+            return Err(unlowered());
+        }
         if lowered_state_graph.len() != checked_state_graph_claims.len() {
             return Err(unlowered());
         }
@@ -4860,6 +5015,35 @@ impl PackageDeclarations {
                 for slot in 0..conjunct.slots().len() {
                     type_spans.insert(hyper_site(index, make(at, slot)), conjunct.span());
                 }
+            }
+        }
+        for (index, relation) in checked_relations.iter().enumerate() {
+            type_spans.insert(
+                hyper_clause::lowering::hyper_site(
+                    index,
+                    hyper_clause::lowering::Site::Relation(index),
+                ),
+                relation.span(),
+            );
+            type_spans.insert(
+                hyper_clause::lowering::hyper_site(
+                    index,
+                    hyper_clause::lowering::Site::RelationBody(index),
+                ),
+                relation.span(),
+            );
+            site_spans.insert(
+                format!("relation {} body", relation.name()),
+                relation.body_spans().clone(),
+            );
+            for execution in 0..relation.executions().len() {
+                type_spans.insert(
+                    hyper_clause::lowering::hyper_site(
+                        index,
+                        hyper_clause::lowering::Site::RelationExecution(index, execution),
+                    ),
+                    relation.span(),
+                );
             }
         }
         // FR-411: each terminal node's `claim` occurrence, the key a reader of
@@ -5013,11 +5197,11 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
-                    // FR-243: a clause over a `time dense` subject is EN-6's
-                    // item.
+                    // FR-243: a clause over a timed subject, `dense` or
+                    // `tick`, is EN-6's item.
                     let record = claims::RequirementRecord::unguarded(
-                        if checked.dense_time() {
-                            extent.over_dense_time()
+                        if checked.timed() {
+                            extent.over_timed()
                         } else {
                             extent
                         },
@@ -5131,10 +5315,8 @@ impl PackageDeclarations {
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             };
-            let node = checked
-                .v2_emission()
-                .map(|emission| claims::wire(emission.identity))
-                .map_err(|_| unkeyable())?;
+            let emission = checked.v2_emission().map_err(|_| unkeyable())?;
+            let node = claims::wire(emission.identity);
             let boolean = refinement_booleans
                 .get(checked.name())
                 .copied()
@@ -5144,17 +5326,15 @@ impl PackageDeclarations {
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
-            // EN-6's item.
+            // EN-6's item. EN-6's refinement product reads only a dense
+            // concrete subject, so a `tick` refinement is not marked and
+            // goes to the explicit-state engines.
             let dense = self.time_sources.iter().any(|source| {
                 source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(
-                if dense {
-                    wanted.over_dense_time()
-                } else {
-                    wanted
-                },
+                if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
                 claims::wire(boolean),
                 references::ModelReferences::new(Default::default(), [], None),
@@ -5169,6 +5349,40 @@ impl PackageDeclarations {
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
             checked.requirement = Some(occurrence);
+            // FR-146: the per-step simulation records beside it, each keyed
+            // by its O-07 `generated` occurrence at the refinement node.
+            let object_node = |object: quire_exact::EffectiveId| {
+                object_node_of(&object_types, &object_nodes, object)
+            };
+            let inputs = step_simulation::ExtentInputs {
+                node: emission.identity,
+                step_sources: &emission.step_sources,
+                boolean,
+                contracts: &contract_populations,
+                clauses: &clause_populations,
+                object_node: &object_node,
+                types: scope.types(),
+                position_limit: limits.nodes(),
+                location: &location,
+            };
+            checked.row_positions =
+                step_simulation::row_positions(&emission.step_sources, &location)
+                    .map_err(|refusal| vec![refusal])?;
+            let written = step_simulation::simulation_records(checked, &state_clauses, &inputs)
+                .map_err(|refusal| vec![refusal])?;
+            let mut entries = Vec::with_capacity(written.len());
+            for (entry, record) in written {
+                match requirements.entry(entry.occurrence().clone()) {
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(record);
+                    }
+                    std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {
+                    }
+                    std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                }
+                entries.push(entry);
+            }
+            checked.simulations = entries;
         }
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
@@ -5407,6 +5621,7 @@ impl PackageDeclarations {
                 .collect(),
             temporal_clauses,
             hyper_nodes,
+            step_relations: Vec::new(),
             state_graph_claims: state_graph_nodes,
             hybrid_models: checked_hybrid_models,
             hybrid_claims: checked_hybrid_claim_list,
@@ -5441,8 +5656,151 @@ impl PackageDeclarations {
                     .collect());
             }
         }
+        finish_step_relations(&mut graph, checked_relations, lowered_relations)?;
         Ok(graph)
     }
+}
+
+/// QSL-552: finalize FR-180 claims after the checked abstraction relation is
+/// known, because the implementation reference participates in claim
+/// identity and the abstraction node is keyed from the assembled graph.
+fn finish_step_relations(
+    graph: &mut CheckedGraph,
+    checked: Vec<hyper_clause::CheckedModelRelation>,
+    lowered: Vec<lowering::LoweredStepRelation>,
+) -> Result<(), Vec<CheckRefusal>> {
+    if checked.len() != lowered.len() {
+        return Err(vec![CheckRefusal {
+            location: root(Origin::Expression),
+            cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+        }]);
+    }
+    let mut relations = Vec::with_capacity(checked.len());
+    for (index, (relation, lowered)) in checked.into_iter().zip(lowered).enumerate() {
+        let location = hyper_clause::lowering::hyper_location(
+            index,
+            hyper_clause::lowering::Site::Relation(index),
+        );
+        let abstraction = graph.abstraction.as_ref();
+        let has_bound_frame = relation.executions().iter().any(|(_, operation)| {
+            abstraction.is_some_and(|relation| {
+                relation
+                    .get(&AbstractionKey::Frame(operation.clone()))
+                    .is_some()
+            })
+        });
+        let abstraction_node = if has_bound_frame {
+            let relation = abstraction.ok_or_else(|| {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                        quire_semantic_value::catalog::InternalFault::new(
+                            "S4",
+                            "bound-step-relation-has-abstraction",
+                        ),
+                    ))),
+                }]
+            })?;
+            Some(
+                graph
+                    .abstraction_nodes(relation)
+                    .map_err(|_| {
+                        vec![CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                                quire_semantic_value::catalog::InternalFault::new(
+                                    "S4",
+                                    "step-relation-abstraction-node-keyed",
+                                ),
+                            ))),
+                        }]
+                    })?
+                    .relation()
+                    .key(),
+            )
+        } else {
+            None
+        };
+        let boolean = lowered.boolean;
+        let (node, code_roots) = lowering::finish_step_relation(
+            lowered,
+            &relation,
+            abstraction,
+            abstraction_node,
+            graph.identity,
+        )
+        .map_err(|refusal| vec![refusal])?;
+        let key = node.key();
+        graph.semantic_graph.insert_finalized(node).map_err(|_| {
+            vec![CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+            }]
+        })?;
+        graph
+            .occurrences
+            .record(key, family::OccurrenceRole::Declaration, location.clone());
+        let claim_origin =
+            graph
+                .occurrences
+                .record(key, family::OccurrenceRole::Claim, location.clone());
+        let occurrence = OccurrenceKey::new(claims::wire(key), claim_origin);
+        let requirements = relation
+            .model_claim()
+            .requirements(claims::wire(key), &[], &[], &[])
+            .map_err(|_| {
+                vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            })?;
+        let record = claims::RequirementRecord::model_claim(requirements, claims::wire(boolean));
+        if graph
+            .requirements
+            .insert(occurrence.clone(), record)
+            .is_some()
+        {
+            return Err(vec![CheckRefusal {
+                location: root(Origin::Expression),
+                cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+            }]);
+        }
+        if let Some(code_claim) =
+            abstraction.and_then(|abstraction| relation.code_claim(abstraction))
+        {
+            let roots: Vec<_> = code_roots.iter().copied().map(claims::wire).collect();
+            let code_requirements = code_claim.requirements(&roots).map_err(|_| {
+                vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            })?;
+            let code_origin =
+                graph
+                    .occurrences
+                    .record(key, family::OccurrenceRole::Claim, location.clone());
+            let code_occurrence = OccurrenceKey::new(claims::wire(key), code_origin);
+            let code_record = claims::RequirementRecord::unguarded(
+                code_requirements,
+                ValueType::Boolean,
+                claims::wire(boolean),
+                references::ModelReferences::default(),
+            );
+            if graph
+                .requirements
+                .insert(code_occurrence, code_record)
+                .is_some()
+            {
+                return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]);
+            }
+        }
+        relations.push(relation.assembled_at(key, occurrence));
+    }
+    graph.step_relations = relations;
+    Ok(())
 }
 
 /// `found` with the refusals a protocol subject kept for its clause's check.
@@ -5711,6 +6069,19 @@ fn population_key_table(
         .collect()
 }
 
+/// The `model`/`object_type` node of the object type `object`.
+fn object_node_of(
+    object_types: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
+    object: quire_exact::EffectiveId,
+) -> Option<quire_exact::NodeKey> {
+    object_types
+        .iter()
+        .find_map(|(declaration, id)| (*id == object).then_some(declaration))
+        .and_then(|declaration| object_nodes.get(declaration))
+        .copied()
+}
+
 /// ADR-012 §15.7: the domain key of `domain` from the admitted models'
 /// object types and their `model`/`object_type` nodes: the one place a
 /// checked graph's `population_key` and the emitted `temporal-satisfaction`
@@ -5720,17 +6091,13 @@ fn population_domain_key(
     object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
-    let node = object_types
-        .iter()
-        .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
-        .and_then(|declaration| object_nodes.get(declaration))
-        .ok_or_else(|| {
-            quire_semantic_value::catalog::InternalFault::new(
-                "check.population-domain",
-                "member-type-has-a-model-node",
-            )
-        })?;
-    state_clause::population_key(&domain, *node)
+    let node = object_node_of(object_types, object_nodes, domain.object).ok_or_else(|| {
+        quire_semantic_value::catalog::InternalFault::new(
+            "check.population-domain",
+            "member-type-has-a-model-node",
+        )
+    })?;
+    state_clause::population_key(&domain, node)
 }
 
 impl CheckedGraph {
@@ -5754,6 +6121,23 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The identity of the domain package the model `model` selects, where
+    /// `model` names it as [`ModelTimeSource::model`] and
+    /// [`CheckedTerminal::model`] do: the alias of the `model` declaration
+    /// that selects it, or the package identity when no alias names it.
+    /// `None` for a name no selection carries.
+    pub fn model_package_identity(&self, model: &str) -> Option<&str> {
+        self.model_names
+            .get(model)
+            .map(abstraction::ModelNames::package)
+            .or_else(|| {
+                self.model_selections
+                    .iter()
+                    .find(|selection| selection.identity == model)
+                    .map(|selection| selection.identity.as_str())
+            })
     }
 
     /// QSpec FR-322: each selection with its `model_root` node key, in
@@ -6026,6 +6410,12 @@ impl CheckedGraph {
     /// order, each with its `claim` occurrence.
     pub fn hyper_clauses(&self) -> &[hyper_clause::CheckedHyperClause] {
         &self.hyper_nodes
+    }
+
+    /// FR-180: every admitted `relation` declaration, in source order, with
+    /// its keyed V2 step-relation claim identity.
+    pub fn step_relations(&self) -> &[hyper_clause::CheckedModelRelation] {
+        &self.step_relations
     }
 
     /// FR-337: every emitted temporal clause, in declaration order.

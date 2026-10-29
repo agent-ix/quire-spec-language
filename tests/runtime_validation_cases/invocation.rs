@@ -345,7 +345,7 @@ fn unrelated_duplicate_objects_or_fields_do_not_hide_known_frame_changes() {
 #[test]
 #[trace("TC-062", "FR-007-AC-4", "FR-007-AC-11")]
 fn field_and_population_permissions_do_not_extend_to_other_supplied_models() {
-    let mut data: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    let mut data: serde_json::Value = serde_json::from_str(native_rule_model::fixture()).unwrap();
     data["package"] = serde_json::json!("example/other-model");
     let text = serde_json::to_string_pretty(&data).unwrap();
     let source = qsl_foundation::Source::read(

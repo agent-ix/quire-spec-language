@@ -32,6 +32,7 @@
 
 mod items;
 
+use qsl_eval::simulation::protocol::ProtocolTransition;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample};
@@ -47,8 +48,9 @@ use quire_semantic_value::catalog::CatalogCode;
 
 pub use crate::value_check::value_item;
 pub use items::{
-    hyper_form_item, model_item, statistical_item, timed_refinement_item, zone_item, ModelItem,
-    RefinementReplayFn, TimedItem, TimedRefinementItem,
+    derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
+    protocol_item, statistical_item, timed_refinement_item, zone_item, DerivedItemMismatch,
+    ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 
 use crate::zone_check::ZoneCheckRecord;
@@ -293,6 +295,9 @@ pub struct Disposed {
 pub(crate) enum EngineReport {
     /// EN-1's record, settled by `settle_model_check`.
     Model(Box<ModelCheckRecord>),
+    /// EN-1's record over a protocol subject, settled by
+    /// `settle_protocol_check`.
+    Protocol(Box<ModelCheckRecord<ProtocolTransition>>),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
     /// The value-validity arm's finding.
@@ -415,6 +420,9 @@ pub struct AnalyzeRecord {
     pub settlement: Settlement,
     /// EN-1's full record, carrying the counterexample of a `refuted` item.
     pub model_check: Option<Box<ModelCheckRecord>>,
+    /// EN-1's full record over a protocol subject, carrying the
+    /// counterexample of a `refuted` item.
+    pub protocol_check: Option<Box<ModelCheckRecord<ProtocolTransition>>>,
     /// EN-6's full record, carrying the counterexample of a `refuted` item.
     pub zone_check: Option<Box<ZoneCheckRecord>>,
     /// The value-validity arm's counterexample, carried by a `refuted` item.
@@ -452,6 +460,13 @@ impl AnalyzeRecord {
             })
     }
 
+    /// The counterexample a `refuted` item over a protocol subject carries.
+    pub fn protocol_counterexample(&self) -> Option<&TemporalCounterexample<ProtocolTransition>> {
+        self.protocol_check
+            .as_ref()
+            .and_then(|record| record.counterexample.as_ref())
+    }
+
     /// The outcome item (FR-286) this record writes. An item refuted by a
     /// claim evaluation undefined at a state is `refuted`, category
     /// violation, with cause `undefined-evaluation` naming that state and
@@ -474,15 +489,20 @@ impl AnalyzeRecord {
                 ));
             }
         }
-        let undefined =
-            self.counterexample()
-                .and_then(|counterexample| match &counterexample.kind {
-                    CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
-                    CounterexampleKind::Formula
-                    | CounterexampleKind::Deadlock
-                    | CounterexampleKind::Race(_)
-                    | CounterexampleKind::TimeLock => None,
-                });
+        let kind = self
+            .counterexample()
+            .map(|counterexample| &counterexample.kind)
+            .or_else(|| {
+                self.protocol_counterexample()
+                    .map(|counterexample| &counterexample.kind)
+            });
+        let undefined = kind.and_then(|kind| match kind {
+            CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
+            CounterexampleKind::Formula
+            | CounterexampleKind::Deadlock
+            | CounterexampleKind::Race(_)
+            | CounterexampleKind::TimeLock => None,
+        });
         Some(match undefined {
             Some(evaluation) if matches!(terminal.value(), TerminalValue::Refuted) => {
                 undefined_item(self.request_index, evaluation)
@@ -533,6 +553,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         request_index: index,
         settlement,
         model_check: None,
+        protocol_check: None,
         zone_check: None,
         value_check: None,
     };
@@ -607,6 +628,7 @@ fn settle(
         request_index: index,
         settlement,
         model_check,
+        protocol_check: None,
         zone_check: None,
         value_check: None,
     };
@@ -637,6 +659,20 @@ fn settle(
             settled.value_check = counterexample.map(Box::new);
             settled
         }
+        EngineReport::Protocol(protocol) => AnalyzeRecord {
+            request_index: index,
+            // A refuted value without its reproduced counterexample is an
+            // engine fault, never a verdict.
+            settlement: terminal(
+                protocol
+                    .to_terminal(index, backend.clone())
+                    .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
+            ),
+            model_check: None,
+            protocol_check: Some(protocol),
+            zone_check: None,
+            value_check: None,
+        },
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
@@ -654,6 +690,7 @@ fn settle(
                 .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
             ),
             model_check: None,
+            protocol_check: None,
             zone_check: Some(zone),
             value_check: None,
         },

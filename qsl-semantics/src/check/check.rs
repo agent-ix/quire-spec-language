@@ -76,8 +76,10 @@ use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::EnumShape;
 use quire_exact::IllTypedCause;
+use quire_exact::IntegerInterval;
 use quire_exact::Presence;
 use quire_exact::Rational;
+use quire_exact::RationalDomain;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{NodeKey, VariantId};
@@ -1734,6 +1736,9 @@ pub(crate) struct HyperTyping {
     /// The text of each operation a label constant may name, by the
     /// qualified name the constant is written as.
     pub(crate) labels: BTreeMap<String, String>,
+    /// The fields of each HP-1 execution variable, with their shared body
+    /// binder slots and checked types.
+    pub(crate) executions: BTreeMap<String, BTreeMap<String, (usize, ValueType)>>,
 }
 
 /// One history field a refinement row's expression may read (FR-138).
@@ -2661,7 +2666,25 @@ impl<'a> Typer<'a> {
         hint: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        let relation_domain = || {
+            let ceiling = self.limits.rational_bits();
+            let bound = Integer::one().shifted_left(ceiling);
+            let numerator = IntegerInterval::new(bound.neg(), bound.clone()).ok()?;
+            let denominator = IntegerInterval::new(Integer::one(), bound).ok()?;
+            RationalDomain::new(numerator, denominator).ok()
+        };
+        let inferred_domain;
         let domain = match hint {
+            None if self
+                .hyper
+                .as_ref()
+                .is_some_and(|hyper| !hyper.executions.is_empty()) =>
+            {
+                inferred_domain = relation_domain().ok_or_else(|| {
+                    CheckRefusal::ill_typed(location, IllTypedCause::AmbiguousLiteral)
+                })?;
+                &inferred_domain
+            }
             None => {
                 return Err(CheckRefusal::ill_typed(
                     location,

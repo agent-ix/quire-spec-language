@@ -484,9 +484,9 @@ pub struct CheckedTemporalClause {
     time_binding: Option<ModelTimeBinding>,
     /// Under the timed profile: the clause's timed property form.
     timed_form: Option<TimedPropertyForm>,
-    /// Whether the clause's subject is a model that declares `time dense`
+    /// Whether the clause's subject is a model that is timed (dense or tick)
     /// (FR-243).
-    dense_time: bool,
+    timed: bool,
 }
 
 /// What a fairness constraint over a protocol names beside an operation
@@ -673,10 +673,10 @@ impl CheckedTemporalClause {
         self.time_binding.as_ref()
     }
 
-    /// FR-243: whether the clause's subject is a model that declares `time
-    /// dense`, under any profile, so its item routes to EN-6.
-    pub fn dense_time(&self) -> bool {
-        self.dense_time
+    /// FR-243: whether the clause's subject is a timed model, of a `dense`
+    /// or a `tick` source, under any profile, so its item routes to EN-6.
+    pub fn timed(&self) -> bool {
+        self.timed
     }
 
     /// The clause's timed property form (FR-234 "Forms"), under the timed
@@ -1027,9 +1027,9 @@ fn check_clause(
         types.push(resolved);
     }
     let bounded = profile.is_bounded();
-    let dense_time = types
+    let timed = types
         .first()
-        .is_some_and(|over| timed::over_dense_time(over, declarations));
+        .is_some_and(|over| timed::over_timed(over, declarations));
     // FR-234: the timed profile reads its intervals in the clause's
     // `model-time` binding's unit, so the binding comes first.
     let time_binding = match profile {
@@ -1278,7 +1278,7 @@ fn check_clause(
         property_form,
         time_binding,
         timed_form,
-        dense_time,
+        timed,
     })
 }
 

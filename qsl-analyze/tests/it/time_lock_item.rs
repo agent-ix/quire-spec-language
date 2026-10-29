@@ -5,21 +5,30 @@
 use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_route::deadlock::{
-    deadlock_freedom_items, time_lock_freedom_items, ModelTemporalItem, ObligationKind,
-};
-use qsl_route::request::ExtentClassification;
+use qsl_route::deadlock::{ItemObligation, ModelTemporalItem, ObligationKind};
+use qsl_route::request::{ExtentClassification, ItemKind, RequestItem};
 use qsl_semantics::check::Capability;
 use quire_exact::{Origin, Role};
 
-use crate::counter::{document, package, timed_package, Documents, CONTRACT};
+use crate::counter::{document, package, timed_package, Documents, CONTRACT, PACKAGE};
+use crate::derived_request::derived_items;
 
 const TIMED: &str = "dimension Time;\nunit s : Time = rational(1, 1);\n\
      unit ms : Time = rational(1, 1000) * s;\ntime M dense unit ms;\n";
 
-/// Every subject here ranges over the one model `M`.
-fn over_m<S>(_: &S) -> Vec<String> {
-    vec!["M".to_owned()]
+/// Every subject here reads the one model `M`'s selection.
+const OVER_M: &[&str] = &[PACKAGE];
+
+/// The derived items of `kind` among `derived`.
+fn of_kind<S: Clone>(
+    derived: &[(RequestItem, ItemObligation<S>)],
+    kind: ItemKind,
+) -> Vec<(RequestItem, ItemObligation<S>)> {
+    derived
+        .iter()
+        .filter(|(item, _)| item.item_kind() == Some(kind))
+        .cloned()
+        .collect()
 }
 
 fn occurrence(byte: u8) -> OccurrenceKey {
@@ -61,26 +70,23 @@ fn one_time_lock_freedom_item_per_timed_subject() {
             package: timed.graph(),
         },
     ];
-    let deadlock = deadlock_freedom_items(&both, &[], &[], over_m);
-    let time_lock = time_lock_freedom_items(&both, &[], over_m);
+    let derived = derived_items(&both, &[], &[], OVER_M);
+    let deadlock = of_kind(&derived, ItemKind::DeadlockFreedom);
+    let time_lock = of_kind(&derived, ItemKind::TimeLockFreedom);
     assert_eq!(deadlock.len(), 1);
     assert_eq!(time_lock.len(), 1);
-    assert_eq!(time_lock[0].subject(), &rpc);
-    assert_eq!(time_lock[0].kind(), Capability::TemporalSatisfaction);
+    let (item, obligation) = &time_lock[0];
+    assert_eq!(obligation.subject, rpc);
+    assert_eq!(item.kind(), Capability::TemporalSatisfaction);
     assert_eq!(
-        time_lock[0].extent(),
+        item.extent(),
         ExtentClassification::Unbounded {
             finite_bound_available: false
         }
     );
-    assert_eq!(
-        time_lock[0].obligation().kind,
-        ObligationKind::TimeLockFreedom
-    );
-    assert_ne!(time_lock[0].obligation(), deadlock[0].obligation());
-    assert!(both
-        .iter()
-        .all(|item| item.obligation() != time_lock[0].obligation()));
+    assert_eq!(obligation.kind, ObligationKind::TimeLockFreedom);
+    assert_ne!(*obligation, deadlock[0].1);
+    assert!(both.iter().all(|item| item.obligation() != *obligation));
 
     let mixed = [
         ModelTemporalItem {
@@ -94,19 +100,27 @@ fn one_time_lock_freedom_item_per_timed_subject() {
             package: untimed.graph(),
         },
     ];
-    let time_lock = time_lock_freedom_items(&mixed, &[], over_m);
+    let time_lock = of_kind(
+        &derived_items(&mixed, &[], &[], OVER_M),
+        ItemKind::TimeLockFreedom,
+    );
     assert_eq!(time_lock.len(), 1);
-    assert_eq!(time_lock[0].subject(), &rpc);
+    assert_eq!(time_lock[0].1.subject, rpc);
 
     let terminal_any = [ModelTemporalItem {
         occurrence: &first,
         subject: &rpc,
         package: opted_out.graph(),
     }];
-    assert!(deadlock_freedom_items(&terminal_any, &[], &[], over_m).is_empty());
-    assert_eq!(time_lock_freedom_items(&terminal_any, &[], over_m).len(), 1);
+    let opted_out = derived_items(&terminal_any, &[], &[], OVER_M);
+    assert!(of_kind(&opted_out, ItemKind::DeadlockFreedom).is_empty());
+    assert_eq!(of_kind(&opted_out, ItemKind::TimeLockFreedom).len(), 1);
 
-    // A subject over another model than the package's timed `M` is not
-    // timed.
-    assert!(time_lock_freedom_items(&both, &[], |_| vec!["N".to_owned()]).is_empty());
+    // A subject reading another selection than the package's timed `M` is
+    // not timed.
+    let reading = |selection: &str| {
+        qsl_route::deadlock::SubjectReading::read(timed.graph(), |identity| identity == selection)
+    };
+    assert!(reading(PACKAGE).timed());
+    assert!(!reading("test/other").timed());
 }

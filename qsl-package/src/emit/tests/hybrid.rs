@@ -496,12 +496,8 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
 #[trace("TC-1220", "FR-447-AC-12", "QSpec-FR-481-AC-8", "QSpec-FR-481-AC-9")]
 #[test]
 fn braking2_restored_nodes_match_qspec_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let path = std::path::PathBuf::from(qspec)
-        .join("proposals/checked-package-v2/hybrid-node-vectors.json");
+    let qspec = qspec_directory();
+    let path = qspec.join("proposals/checked-package-v2/hybrid-node-vectors.json");
     let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("QSpec vectors"))
         .expect("QSpec vector JSON");
     let expected = fixture["restored_nodes"]
@@ -1029,4 +1025,14 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
     ));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
     assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
+}
+
+fn qspec_directory() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        std::env::var_os("QSPEC_DIR")
+            .filter(|path| !path.is_empty())
+            .unwrap_or_else(|| {
+                panic!("QSPEC_DIR must point to an available QSpec checkout; no default is used")
+            }),
+    )
 }
