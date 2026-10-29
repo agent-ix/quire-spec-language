@@ -16,7 +16,7 @@ Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-11 and FR-345-AC-13.
+Scope: FR-345-AC-4 to FR-345-AC-11, FR-345-AC-13 and FR-345-AC-14.
 
 ## Test Procedure
 
@@ -82,6 +82,8 @@ quire-contract-codegen's `negotiate_*`.
    function that settles every request `supported`; then call it without a
    negotiation function. Capture both reports and process streams, and read
    `cargo tree -p xtask -e normal,build,dev`.
+10. In a repository root holding only the config-version model file, generate
+    the real corpus; edit the model's package version and generate it again.
 
 Each expected result is a literal in the test. Tag the test
 `#[trace("TC-868", "FR-345-AC-n")]` over the criteria each step backs.
@@ -141,3 +143,7 @@ Each expected result is a literal in the test. Tag the test
   reports all six witness results as `unresolved (unsupported)`, reason
   `not-negotiated`. Neither call writes to stdout or stderr, and the dependency tree contains no
   quire-contract-codegen crate.
+- Step 10: both runs write the whole corpus; each unit over the model names
+  the version and the digest computed from the model bytes, and after the
+  edit the edited version and a different digest, with no other digest
+  (FR-345-AC-14).

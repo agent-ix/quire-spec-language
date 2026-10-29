@@ -482,26 +482,79 @@ fn the_temporal_edge_holds_and_its_missing_entries_are_named() {
     assert_eq!(report.exit, 30);
 }
 
-/// The generator reads only the untimed model file: from a root holding
-/// nothing else it writes the same corpus, each model statement carrying
-/// the digest computed from the model bytes.
-#[trace("TC-868")]
+/// The `model M = ...;` statement of every unit in `corpus` that selects
+/// the config-version model, and how many entries the corpus holds.
+fn config_model_statements(corpus: &Path) -> (BTreeSet<String>, usize) {
+    let mut statements = BTreeSet::new();
+    let mut entries = 0;
+    for entry in fs::read_dir(corpus).expect("the corpus directory") {
+        let entry = entry.expect("an entry").path();
+        entries += 1;
+        for file in fs::read_dir(&entry).expect("the entry directory") {
+            let file = file.expect("a file").path();
+            if file.extension().and_then(|extension| extension.to_str()) != Some("native") {
+                continue;
+            }
+            let text = fs::read_to_string(&file).expect("a unit");
+            statements.extend(
+                text.lines()
+                    .filter(|line| line.starts_with("model M = \"example/config-version\""))
+                    .map(str::to_owned),
+            );
+        }
+    }
+    (statements, entries)
+}
+
+/// The `sha256-jcs` digest of `bytes`, as a `model` statement writes it.
+fn digest_of(bytes: &[u8]) -> String {
+    let packages = qsl_semantics::model::intake::package_input([bytes]);
+    qsl_semantics::model::key::hex(packages.keys().next().expect("one package"))
+}
+
+/// FR-345-AC-14: from a root holding only the config-version model file the
+/// generator writes the whole corpus (24 entries), every unit over that
+/// model naming its version and the digest computed from its bytes; after
+/// the model's package version is edited, generating again gives the
+/// edited version and the new digest and no other. A root without the
+/// model file generates nothing.
+#[trace("TC-868", "FR-345-AC-14")]
 #[test]
 fn the_corpus_is_generated_from_the_model_file_alone() {
-    let root = tempfile::tempdir().expect("a temporary directory");
     let model = "examples/config-version/model.semantic-ir.json";
+    let root = tempfile::tempdir().expect("a temporary directory");
     fs::create_dir_all(root.path().join("examples/config-version")).unwrap();
-    fs::copy(repository().join(model), root.path().join(model)).unwrap();
-    let alone = tempfile::tempdir().unwrap();
-    generate(root.path(), alone.path()).expect("the corpus generates");
-    let real = real_corpus();
-    let unit = |corpus: &Path| {
-        fs::read_to_string(corpus.join("witness-state-core/unit.native")).expect("the witness unit")
+    let original = fs::read(repository().join(model)).unwrap();
+    fs::write(root.path().join(model), &original).unwrap();
+    let generated = |label: &str| {
+        let out = tempfile::tempdir().unwrap();
+        generate(root.path(), out.path()).unwrap_or_else(|error| panic!("{label}: {error}"));
+        config_model_statements(out.path())
     };
-    assert_eq!(unit(alone.path()), unit(real.path()));
-    let bytes = fs::read(repository().join(model)).unwrap();
-    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().expect("one package"));
-    assert!(unit(alone.path()).contains(&format!("digest \"sha256-jcs:{digest}\"")));
-    assert!(generate(tempfile::tempdir().unwrap().path(), alone.path()).is_err());
+
+    let digest = digest_of(&original);
+    let statement = |version: &str, digest: &str| {
+        format!("model M = \"example/config-version\" version \"{version}\" digest \"sha256-jcs:{digest}\";")
+    };
+    assert_eq!(
+        generated("the original model"),
+        (BTreeSet::from([statement("1.0.0", &digest)]), 24)
+    );
+
+    let mut edited: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    edited["package"]["version"] = serde_json::json!("1.0.1");
+    let edited = serde_json::to_vec(&edited).unwrap();
+    fs::write(root.path().join(model), &edited).unwrap();
+    let edited_digest = digest_of(&edited);
+    assert_ne!(edited_digest, digest);
+    assert_eq!(
+        generated("the edited model"),
+        (BTreeSet::from([statement("1.0.1", &edited_digest)]), 24)
+    );
+
+    assert!(generate(
+        tempfile::tempdir().unwrap().path(),
+        tempfile::tempdir().unwrap().path()
+    )
+    .is_err());
 }
