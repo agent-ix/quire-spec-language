@@ -56,8 +56,18 @@ The public Rust consumer entry point SHALL be
 The public Rust producer entry point SHALL be
 `protocol_artifact::native::admit_v2(proofs, selected, temporal, limits) -> Report<AdmissionV2>`.
 
-When a Rust consumer locates the committed `/2` handoff, the compiler crate
-SHALL publish `protocol_artifact::handoff::PUBLISHED_HANDOFF` and the exact
+The `/2` handoff is generated, never committed. The repository SHALL commit no
+tree under `artifacts/compiled-protocol-v2`, and no checksum manifest, frozen
+digest or file count of handoff files. The only producer of the handoff is
+`protocol_artifact::handoff::write_v2(directory)` (behind the `handoff-writer`
+feature), which a consumer's build or test calls to write the handoff into a
+directory the consumer chooses, under its own build output. That call is the
+generation command; there is no second producer and no make target. A consumer obtains the compiler crate as a
+dependency with that feature enabled and SHALL NOT vendor or copy a handoff
+tree.
+
+When a Rust consumer addresses the members of a written `/2` handoff, the
+compiler crate SHALL publish the exact
 member-name constants `PUBLISHED_OFFER_FILE`,
 `PUBLISHED_ARTIFACT_REFERENCE_FILE`, `PUBLISHED_SELECTION_FILE`,
 `PUBLISHED_MUTATION_MANIFEST_FILE` and `MUTATION_MANIFEST_FORMAT`. Their values SHALL respectively name
@@ -65,6 +75,11 @@ member-name constants `PUBLISHED_OFFER_FILE`,
 `expected-v2.json`, `mutations/manifest.json` and
 `quire.protocol.v2-mutations/1`. A consumer SHALL NOT require an environment
 variable or redeclare those producer-owned values to address the handoff.
+Where a consumer must compare the written sources with their authored
+originals, the compiler crate SHALL publish
+`protocol_artifact::handoff::SOURCE_ROOT`, the crate's manifest directory
+(`CARGO_MANIFEST_DIR`), beneath which the authored sources live. No constant names a committed
+handoff directory.
 
 The producer's `temporal` input SHALL be a complete table of
 `native::TemporalSelection` records keyed by exact source `ArtifactRef` and
@@ -206,8 +221,12 @@ extension.
 | FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138) |
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results, while the existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138) |
-| FR-050-AC-7 | The public handoff path, four member filenames and mutation format constants resolve the committed `/2` inventory and decoded manifest without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
+| FR-050-AC-7 | The four member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, artifact reference, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
 | FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, artifact reference, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138) |
+| FR-050-AC-9 | In a git checkout, `git ls-files` lists no file under `artifacts/compiled-protocol-v2`. | Test (TC-138) |
+| FR-050-AC-10 | In a git checkout, `git ls-files` lists no checksum manifest of `/1` or `/2` handoff files. | Test (TC-138) |
+| FR-050-AC-11 | `protocol_artifact::handoff::SOURCE_ROOT` names the crate's manifest directory, and the authored sources the writers read exist beneath it. | Test (TC-138) |
+| FR-050-AC-12 | `protocol_artifact::handoff` exports none of `PUBLISHED_HANDOFF`, `PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, each asserted by name. | Test (TC-138) |
 
 ## Dependencies
 
