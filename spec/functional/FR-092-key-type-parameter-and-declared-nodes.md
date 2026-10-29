@@ -123,11 +123,8 @@ preimage: a body `reference` target, its `semantic_type`, an application's
 A node's **recursion group** is its strongly connected component in the graph
 of these edges when that component has more than one node or a node that
 names itself. Recursive functions form groups (a function node, its body's
-conditional and its recursive call), and so do the recursive records that
-QSpec FR-143 admits (a record and the `Option` or collection node that its
-field names). FR-143 admits a record cycle only through an optional field,
-an `Option` or a collection whose minimum is zero, and admits no cycle
-through a tuple position.
+conditional and its recursive call). Source-level recursive record forms
+follow QSpec FR-143; this requirement adds no record-cycle admission rule.
 
 `check` SHALL key nodes in dependency order. It keys a node outside every
 group after every node that node names. It keys a group after every node
