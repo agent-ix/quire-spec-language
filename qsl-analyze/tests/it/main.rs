@@ -7,6 +7,7 @@ mod closure_certificate;
 mod component_certificate;
 mod counter;
 mod deadlock_item;
+mod derived_request;
 mod dense_route;
 mod exact_probabilistic;
 mod example_units;

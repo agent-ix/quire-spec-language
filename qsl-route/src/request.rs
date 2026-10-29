@@ -1694,4 +1694,86 @@ mod tests {
             [Candidate::new(BackendId::new("en1"))]
         );
     }
+
+    /// QSpec FR-368-AC-13 and AC-21: a temporal item over a model subject
+    /// has one of exactly five kinds, `formula`, `deadlock-freedom`,
+    /// `time-lock-freedom`, `race-freedom` and `refinement`; `transfer` is
+    /// none of them, and the three derived kinds are the derived ones.
+    #[trace("QSpec-TC-431", "QSpec-FR-368-AC-13")]
+    #[trace("QSpec-TC-431", "QSpec-FR-368-AC-21")]
+    #[test]
+    fn a_model_items_kind_is_one_of_five_spellings() {
+        let spelled: Vec<_> = ItemKind::ALL.into_iter().map(ItemKind::to_wire).collect();
+        assert_eq!(
+            spelled,
+            [
+                "formula",
+                "deadlock-freedom",
+                "time-lock-freedom",
+                "race-freedom",
+                "refinement"
+            ]
+        );
+        assert!(!spelled.contains(&"transfer"));
+        let derived: Vec<_> = ItemKind::ALL
+            .into_iter()
+            .filter(|kind| kind.is_derived())
+            .collect();
+        assert_eq!(
+            derived,
+            [
+                ItemKind::DeadlockFreedom,
+                ItemKind::TimeLockFreedom,
+                ItemKind::RaceFreedom
+            ]
+        );
+    }
+
+    /// QSpec FR-368-AC-20: a derived item's `limits` hold a caller's
+    /// setting of `max_states`, `max_transitions`, `max_clocks`,
+    /// `max_store_buffer`, `max_messages`, `max_live_instances`,
+    /// `max_solver_steps` and `max_solver_time` only; `max_automaton_states`,
+    /// `max_walk_steps`, `max_witness_set` and `max_relation_tuples` are each
+    /// refused `invalid_runtime_input`/`unknown-member`, and a limit the
+    /// caller does not set is absent, so the provider's default applies.
+    #[trace("QSpec-TC-431", "QSpec-FR-368-AC-20")]
+    #[test]
+    fn a_derived_items_limits_hold_only_exhaustive_check_limits() {
+        let names = [
+            "max_states",
+            "max_transitions",
+            "max_clocks",
+            "max_store_buffer",
+            "max_messages",
+            "max_live_instances",
+            "max_solver_steps",
+            "max_solver_time",
+        ];
+        let all = DerivedLimits::from_settings(names.iter().zip(1..).map(|(n, v)| (*n, v)))
+            .expect("every exhaustive-check limit is a member");
+        assert_eq!(
+            all.iter()
+                .map(|(limit, value)| (limit.name(), value))
+                .collect::<Vec<_>>(),
+            names.iter().copied().zip(1..).collect::<Vec<_>>()
+        );
+        for refused in [
+            "max_automaton_states",
+            "max_walk_steps",
+            "max_witness_set",
+            "max_relation_tuples",
+        ] {
+            let refusal = DerivedLimits::from_settings([("max_states", 5), (refused, 1)])
+                .expect_err(refused);
+            assert_eq!(refusal.name, refused);
+            assert_eq!(
+                refusal.catalog_code(),
+                CatalogCode::new("invalid_runtime_input", "unknown-member")
+            );
+        }
+        let one = DerivedLimits::from_settings([("max_clocks", 4)]).expect("a member");
+        assert_eq!(one.get(DerivedLimit::MaxClocks), Some(4));
+        assert_eq!(one.get(DerivedLimit::MaxStates), None);
+        assert_eq!(DerivedLimits::default().iter().count(), 0);
+    }
 }

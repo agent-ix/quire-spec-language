@@ -27,6 +27,12 @@
 //! [`race_freedom_items`]. It is the same shape, `always holds(not raced)`,
 //! with the fixed kind `race-freedom` and the subject's resolved models in its
 //! identity.
+//!
+//! Which subjects get which item is read from each caller item's
+//! [`SubjectReading`]: the selections its subject reads, and whether one of
+//! their models opts out, is timed or is dense. The request writer,
+//! [`crate::model_request::ModelRequest::derived`], writes the items in
+//! QSpec FR-368's order and anchors each at its subject's `model_root`.
 
 use std::collections::BTreeSet;
 
