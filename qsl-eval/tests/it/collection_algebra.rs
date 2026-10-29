@@ -799,7 +799,6 @@ mod checked {
     // admitted enum values visits an unordered enum's members in
     // case-identifier byte order and an ordered enum's in declaration order.
     #[trace("TC-409", "FR-088-AC-11")]
-    #[trace("TC-136", "FR-049-AC-3")]
     #[test]
     fn c05_enum_keys_order_unordered_members_by_identifier_bytes() {
         let color = admit("Color", false, &["blue", "green", "red"]);
