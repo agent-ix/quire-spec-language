@@ -626,7 +626,6 @@ fn a_source_without_an_ix_native_header_goes_to_native() {
     }
 }
 
-
 /// [`spine_request`], with `document` written as `orders.json` and selected
 /// as a `semantic-ir/2.0.0` model.
 fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {

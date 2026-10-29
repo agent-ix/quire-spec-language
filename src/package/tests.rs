@@ -36,10 +36,7 @@ fn canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing() {
         assert!(usage.encode.is_none());
         let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
         assert_eq!(package.bytes(), vector.artifact);
-        assert_eq!(
-            package.canonical_identity().to_string(),
-            vector.digest
-        );
+        assert_eq!(package.canonical_identity().to_string(), vector.digest);
     }
 }
 

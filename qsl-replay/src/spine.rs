@@ -1842,7 +1842,6 @@ impl Default for DependencyLimits {
 mod dependency_tests;
 
 #[cfg(test)]
-#[path = "../../tests/support/spine_model.rs"]
 pub(crate) mod spine_model;
 
 #[cfg(test)]

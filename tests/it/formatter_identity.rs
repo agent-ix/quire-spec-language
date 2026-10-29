@@ -2126,10 +2126,7 @@ fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
             "spine-run.native",
             include_bytes!("../fixtures/spine-run.native").as_slice(),
         ),
-        (
-            "spine-model.native",
-            spine_model.as_bytes(),
-        ),
+        ("spine-model.native", spine_model.as_bytes()),
         (
             "value-format.native",
             include_bytes!("../fixtures/value-format.native").as_slice(),

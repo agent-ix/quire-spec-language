@@ -636,9 +636,13 @@ fn a_cancel_inside_select_stops_within_one_charge() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]);
     let limits = SpineLimits::default();
     let live = Cancel::new();
-    let parsed = parse(&request(spine_model::unit().as_bytes()), limits.source, &live)
-        .expect("the model fixture parses")
-        .into_value();
+    let parsed = parse(
+        &request(spine_model::unit().as_bytes()),
+        limits.source,
+        &live,
+    )
+    .expect("the model fixture parses")
+    .into_value();
     let run = |cancel: &Cancel| select(&parsed, &packages, limits.model, cancel);
     let total = charges_of(run);
     assert!(total > 2, "select made only {total} charges");
@@ -939,9 +943,13 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
     assert_eq!(syntax.code().as_str(), "invalid_syntax");
     assert_eq!(syntax.stage(), SpineStage::Source);
 
-    let parsed = parse(&request(spine_model::unit().as_bytes()), limits.source, &live)
-        .expect("the model fixture parses")
-        .into_value();
+    let parsed = parse(
+        &request(spine_model::unit().as_bytes()),
+        limits.source,
+        &live,
+    )
+    .expect("the model fixture parses")
+    .into_value();
     let missing = refusal(
         select(&parsed, &BTreeMap::new(), limits.model, &live)
             .expect_err("no document is supplied"),

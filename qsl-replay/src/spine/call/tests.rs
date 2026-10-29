@@ -478,7 +478,8 @@ fn typed_model_values_bind_without_integer_coercion() {
 fn tc_792_driver_returns_the_admitted_reference_identity() {
     let unit = crate::spine::spine_model::unit();
     let bytes = unit.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]);
+    let packages =
+        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]);
     let cancel = Cancel::new();
     let identity = source();
     let parsed = crate::spine::parse(
