@@ -380,7 +380,7 @@ impl World {
     pub(crate) fn replay_witness(
         &self,
         claim: &CheckedStateGraphClaim,
-        over: ModelInstance,
+        over: Option<ModelInstance>,
         path: ModelPath,
         source: WitnessSource,
         keys: &[&str],
@@ -441,7 +441,7 @@ impl World {
             BackendId::new("qsl-en-1"),
             GraphEvidence::Witness {
                 paths: vec![(WitnessPath::Path(path), source)],
-                over: Some(over),
+                over,
             },
         );
         let wire = ReplayRequestWire {

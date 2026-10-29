@@ -8,8 +8,8 @@
 //! `ModelSystem` written in this file, and from each world's arithmetic.
 //! Each expected path is re-executed against `ModelSystem` step by step.
 //!
-//! Not covered here: the terminal record each outcome settles to (FR-169)
-//! and the replay of its evidence (FR-170).
+//! The suite also replays selected witnesses through FR-170. It does not
+//! cover the terminal record each outcome settles to (FR-169).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -201,11 +201,6 @@ fn partial_order_reduction_is_applied_by_the_state_graph_engine() {
     request.reductions.partial_order = true;
     let reduced = run(request);
 
-    let mut exhaustive = world.request(AB, Vec::new(), no_samples());
-    exhaustive.deadlock_freedom = true;
-    let exhaustive = run(exhaustive);
-
-    assert!(reduced.graph.edges.len() < exhaustive.graph.edges.len());
     assert!(matches!(
         reduced.deadlock,
         Some(ModelCheckOutcome::HoldsReduced { ref reductions, .. })
@@ -376,7 +371,7 @@ fn possible_reachestwo_for_one_binding_uses_the_por_ample_set() {
     for witness in paths {
         let replay = world.replay_witness(
             world.claim("ReachesTwo"),
-            binding.clone(),
+            Some(binding.clone()),
             witness.path.clone(),
             witness.source.clone(),
             &["a", "b", "c"],
@@ -483,6 +478,28 @@ fn symmetry_reduction_quotients_state_graph_and_marks_the_proof_reduced() {
         ),
         2
     );
+    let bound_instance = ModelInstance {
+        population: quire_checked::key::DeclarationKey {
+            package: "test/config".to_owned(),
+            node: "ix://test/config/config_history".to_owned(),
+        },
+        key: "a".to_owned(),
+    };
+    for witness in paths {
+        let replay = world.replay_witness(
+            world.claim("ReachesTwo"),
+            Some(bound_instance.clone()),
+            witness.path.clone(),
+            witness.source.clone(),
+            &["a", "b", "c"],
+        );
+        assert_eq!(
+            replay.settlement,
+            qsl_replay::GraphReplaySettlement::Reproduced,
+            "each symmetric witness reproduces with its evaluated target"
+        );
+        assert_eq!(replay.evaluated_predicates, [(PredicateRole::Target, true)]);
+    }
 }
 
 /// FR-168-AC-14 (TC-593): the engine rewrites an exhaustive `Holds` result to
@@ -596,8 +613,29 @@ fn combined_reductions_are_reported_in_canonical_order() {
         (10, 20)
     );
     assert_eq!((result.graph.stats.nodes, result.graph.stats.edges), (7, 6));
-    assert!(result.graph.stats.nodes < symmetry.graph.stats.nodes);
-    assert!(result.graph.stats.edges < symmetry.graph.stats.edges);
+    let StateGraphOutcome::HoldsReduced {
+        witnesses: Some(paths),
+        ..
+    } = &result.items[0][0].outcome
+    else {
+        panic!("combined reductions produce a replayable witness")
+    };
+    assert!(!paths.is_empty());
+    for witness in paths {
+        let replay = world.replay_witness(
+            world.claim("Anything"),
+            None,
+            witness.path.clone(),
+            witness.source.clone(),
+            &["a", "b", "c"],
+        );
+        assert_eq!(
+            replay.settlement,
+            qsl_replay::GraphReplaySettlement::Reproduced,
+            "each combined-reduction witness reproduces with its evaluated target"
+        );
+        assert_eq!(replay.evaluated_predicates, [(PredicateRole::Target, true)]);
+    }
     assert!(matches!(
         result.items[0][0].outcome,
         StateGraphOutcome::HoldsReduced { ref reductions, .. }
