@@ -1160,32 +1160,31 @@ fn assembler_checked_owner_and_declaration_variants_keep_format_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
-    for (path, bytes) in [
+    use crate::support::package_vector_setup::{cases, vectors};
+    let model = vectors::model();
+    let mut fixtures: Vec<(String, Vec<u8>)> = vec![
         (
-            "composed-choreography.native",
-            include_bytes!("../fixtures/composed-choreography.native").as_slice(),
+            "composed-choreography.native".to_owned(),
+            include_bytes!("../fixtures/composed-choreography.native").to_vec(),
         ),
         (
-            "parent.native",
-            include_bytes!("../fixtures/parent.native").as_slice(),
+            "parent.native".to_owned(),
+            include_bytes!("../fixtures/parent.native").to_vec(),
         ),
         (
-            "native-package/controls.native",
-            include_bytes!("../fixtures/native-package/controls.native").as_slice(),
+            "native-package/header.native".to_owned(),
+            include_bytes!("../fixtures/native-package/header.native").to_vec(),
         ),
+    ];
+    // The legacy native-package vectors, composed over their model.
+    fixtures.extend(cases(&model).map(|vector| {
         (
-            "native-package/header.native",
-            include_bytes!("../fixtures/native-package/header.native").as_slice(),
-        ),
-        (
-            "native-package/minimal.native",
-            include_bytes!("../fixtures/native-package/minimal.native").as_slice(),
-        ),
-        (
-            "native-package/multiple.native",
-            include_bytes!("../fixtures/native-package/multiple.native").as_slice(),
-        ),
-    ] {
+            format!("native-package/{}.native", vector.name),
+            vector.source.into_bytes(),
+        )
+    }));
+    for (path, bytes) in &fixtures {
+        let path = path.as_str();
         let refusal = emitted(
             SourceIdentity::new("test", path, "fixture", "1"),
             path,
