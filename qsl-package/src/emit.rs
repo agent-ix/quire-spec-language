@@ -870,6 +870,7 @@ fn omissions(
     candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
     source: &RawSourceRef,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
+    external: &BTreeSet<CheckedNodeId>,
 ) -> Vec<OmittedNode> {
     let mut omitted: BTreeMap<CheckedNodeId, OmissionCause> = BTreeMap::new();
     for (id, candidate) in candidates {
@@ -886,7 +887,7 @@ fn omissions(
             candidate
                 .names
                 .iter()
-                .find(|name| !candidates.contains_key(*name))
+                .find(|name| !candidates.contains_key(*name) && !external.contains(*name))
                 .map(|absent| OmissionCause::NamesAbsentNode(absent.clone()))
         };
         if let Some(cause) = cause {
@@ -1935,7 +1936,8 @@ fn emit_package_inner(
         });
     }
     let candidates = candidates_of(graph, abstraction.as_ref())?;
-    let omitted = omissions(&candidates, graph.source(), decodes);
+    let model_roots: BTreeSet<_> = graph.model_roots().map(|(_, key)| node_id(key)).collect();
+    let omitted = omissions(&candidates, graph.source(), decodes, &model_roots);
     stale_protocol_reference(&candidates, &omitted)?;
     let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
     let kept: Vec<&Candidate<'_>> = candidates

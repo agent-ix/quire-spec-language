@@ -23,12 +23,13 @@ use quire_semantic_value::location::Location;
 
 use super::temporal::{stage_fault, FormulaCondition, FormulaInput};
 use super::{Binder, Binders, Lowering};
+use crate::check::abstraction::{AbstractionKey, CheckedAbstractionRelation};
 use crate::check::family::OccurrenceRole;
 use crate::check::hyper_clause::lowering::{hyper_location, Site};
-use crate::check::hyper_clause::{CheckedHyperClause, MatchPart};
+use crate::check::hyper_clause::{CheckedHyperClause, CheckedModelRelation, MatchPart};
 use crate::check::node_key::{
-    Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
-    NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
+    AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm,
+    MemberTerm, NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
 };
 use crate::check::refusal::CheckRefusal;
 
@@ -43,6 +44,16 @@ pub(crate) struct HyperClauseInput<'a> {
     pub(crate) align_skip: &'a [NodeKey],
 }
 
+/// One checked FR-180 step relation and the already keyed nodes it joins.
+pub(crate) struct StepRelationInput<'a> {
+    pub(crate) index: usize,
+    pub(crate) relation: &'a CheckedModelRelation,
+    pub(crate) anchors: &'a [super::AnchorInput<'a>],
+    pub(crate) subjects: &'a [(String, NodeKey)],
+    pub(crate) state_forms: &'a [crate::check::state_clause::StateClauseDeclaration],
+    pub(crate) state_nodes: &'a [Option<super::LoweredClause>],
+}
+
 /// A lowered hyper clause's keys.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LoweredHyperClause {
@@ -50,7 +61,212 @@ pub(crate) struct LoweredHyperClause {
     pub(crate) key: NodeKey,
 }
 
+/// A lowered FR-180 `claim`/`step_relation` node.
+#[derive(Clone, Debug)]
+pub(crate) struct LoweredStepRelation {
+    /// The Boolean type node shared by the claim and its expression.
+    pub(crate) boolean: NodeKey,
+    /// The roots of FR-180's operation-contract extent, receiver then
+    /// arguments for each execution, excluding any result binder.
+    pub(crate) code_roots: Vec<NodeKey>,
+    /// The closed claim body, pending its checked abstraction node reference.
+    body: BodyTerm,
+    /// The source declaration identifier.
+    declaration: Identifier,
+    /// The source owner included in its identity.
+    owner: super::SourceOwner,
+    /// The relation's claim location.
+    location: Location,
+    /// Whether each execution has a bound abstraction frame.
+    bound_implementations: Vec<bool>,
+}
+
 impl Lowering<'_> {
+    /// Lower and key a checked FR-180 step relation using its checked body,
+    /// selected model roots, operation anchors, state clauses, and optional
+    /// abstraction relation.
+    pub(crate) fn step_relation(
+        &mut self,
+        input: &StepRelationInput<'_>,
+    ) -> Result<LoweredStepRelation, CheckRefusal> {
+        let relation = input.relation;
+        if input.anchors.len() != relation.executions().len() {
+            return Err(stage_fault(
+                &hyper_location(input.index, Site::Relation(input.index)),
+                "execution-anchor-count-matches",
+            ));
+        }
+        let claim = hyper_location(input.index, Site::Relation(input.index));
+        let boolean = self.type_node(&ValueType::Boolean, &claim)?;
+        let mut subjects = Vec::with_capacity(input.subjects.len());
+        for (alias, model) in input.subjects {
+            subjects.push(GroupMember::Binding(Binding::new(
+                alias.clone(),
+                LeafTerm::reference(*model),
+            )));
+        }
+
+        let mut all_parameters = Vec::new();
+        let mut code_roots = Vec::new();
+        let mut execution_terms = Vec::with_capacity(relation.executions().len());
+        let mut next_level = 0usize;
+        for (((variable, operation), alias), anchor) in relation
+            .executions()
+            .iter()
+            .zip(relation.execution_aliases())
+            .zip(input.anchors)
+        {
+            // FR-180's relation span is the source owner for generated
+            // anchor and binder nodes. It is a non-empty source region and
+            // remains stable when expression-local body locations differ.
+            let at = claim.clone();
+            if operation.operation.as_str() != anchor.operation.name() {
+                return Err(stage_fault(&at, "execution-anchor-names-operation"));
+            }
+            let binding = self.operation_anchor(anchor, None, &at)?;
+            self.record(binding.anchor, OccurrenceRole::Anchor, at.clone());
+            let mut parameters = Vec::new();
+            let receiver_type = ValueType::Reference(anchor.declaring);
+            let mut parameter_specs = vec![("self".to_owned(), receiver_type)];
+            if let Some(value_type) = anchor.operation.result() {
+                parameter_specs.push(("result".to_owned(), value_type.clone()));
+            }
+            parameter_specs.extend(anchor.operation.parameters().iter().cloned());
+            let has_result = anchor.operation.result().is_some();
+            for (parameter_index, (name, value_type)) in parameter_specs.into_iter().enumerate() {
+                let parameter_at = claim.clone();
+                let semantic_type = self.binder_type(&value_type, None, &parameter_at)?;
+                let key = self.parameter(&name, next_level, semantic_type, &parameter_at)?;
+                self.record(semantic_type, OccurrenceRole::Type, parameter_at.clone());
+                self.record_binder(
+                    super::BinderSite {
+                        binder: parameter_at.clone(),
+                        slot: next_level,
+                    },
+                    key,
+                );
+                parameters.push(LeafTerm::reference(key));
+                all_parameters.push(key);
+                if parameter_index == 0 || (parameter_index > 1 || !has_result) {
+                    code_roots.push(key);
+                }
+                next_level += 1;
+            }
+            let mut preconditions = Vec::new();
+            let mut postconditions = Vec::new();
+            for (form, node) in input.state_forms.iter().zip(input.state_nodes) {
+                let Some(node) = node else { continue };
+                let Some(selected) = form.operation.as_ref() else {
+                    continue;
+                };
+                if form.selection.alias != *alias
+                    || selected.declaring != anchor.declaring
+                    || selected.declaration.name() != anchor.operation.name()
+                {
+                    continue;
+                }
+                match form.kind {
+                    qsl_forms::StateClauseKind::Precondition => preconditions.push(node.key),
+                    qsl_forms::StateClauseKind::Postcondition => postconditions.push(node.key),
+                    qsl_forms::StateClauseKind::Invariant
+                    | qsl_forms::StateClauseKind::Constraint => {}
+                }
+            }
+            preconditions.sort();
+            postconditions.sort();
+            let _ = operation;
+            let implementation = BindingValue::Group(GroupTerm::new(Vec::new()));
+            let alias = self.text_literal(alias, &at)?;
+            execution_terms.push(MemberTerm::binding(
+                variable.clone(),
+                BindingValue::Aggregate(AggregateTerm::new(vec![
+                    MemberTerm::binding("alias", BindingValue::Leaf(alias)),
+                    MemberTerm::binding(
+                        "operation",
+                        BindingValue::Leaf(LeafTerm::reference(binding.anchor)),
+                    ),
+                    MemberTerm::binding(
+                        "parameters",
+                        BindingValue::Group(GroupTerm::new(
+                            parameters.into_iter().map(GroupMember::Leaf).collect(),
+                        )),
+                    ),
+                    MemberTerm::binding(
+                        "preconditions",
+                        BindingValue::Group(GroupTerm::references(preconditions)),
+                    ),
+                    MemberTerm::binding(
+                        "postconditions",
+                        BindingValue::Group(GroupTerm::references(postconditions)),
+                    ),
+                    MemberTerm::binding("implementation", implementation),
+                ])),
+            ));
+        }
+
+        let mut invariant_terms = Vec::with_capacity(input.subjects.len());
+        for (alias, _) in input.subjects {
+            let mut invariants = Vec::new();
+            for (form, node) in input.state_forms.iter().zip(input.state_nodes) {
+                let Some(node) = node else { continue };
+                if form.kind == qsl_forms::StateClauseKind::Invariant
+                    && form.selection.alias == *alias
+                {
+                    invariants.push(node.key);
+                }
+            }
+            invariants.sort();
+            invariant_terms.push(MemberTerm::binding(
+                alias.clone(),
+                BindingValue::Group(GroupTerm::references(invariants)),
+            ));
+        }
+
+        let mut binders_scope = Vec::with_capacity(all_parameters.len());
+        for (slot, parameter) in all_parameters.iter().copied().enumerate() {
+            let semantic_type = self
+                .graph
+                .node(parameter)
+                .and_then(|node| node.content.semantic_type)
+                .ok_or_else(|| stage_fault(&claim, "step-relation-parameter-has-type"))?;
+            binders_scope.push(Binder {
+                slot,
+                parameter,
+                semantic_type,
+            });
+        }
+        let body_slot_names: Vec<String> = relation
+            .body_parameters()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+        let mut binders = Binders::new(&body_slot_names, &binders_scope);
+        let body = self.expression(relation.typed_body().root(), &mut binders)?;
+        let declaration = Identifier::new(relation.name().to_owned())
+            .map_err(|_| stage_fault(&claim, "step-relation-name-is-identifier"))?;
+        let body = BodyTerm::aggregate(vec![
+            MemberTerm::binding("subjects", BindingValue::Group(GroupTerm::new(subjects))),
+            MemberTerm::binding(
+                "executions",
+                BindingValue::Aggregate(AggregateTerm::new(execution_terms)),
+            ),
+            MemberTerm::binding(
+                "invariants",
+                BindingValue::Aggregate(AggregateTerm::new(invariant_terms)),
+            ),
+            MemberTerm::bound("body", body),
+        ]);
+        Ok(LoweredStepRelation {
+            boolean,
+            code_roots,
+            body,
+            declaration,
+            owner: self.owner.clone(),
+            location: claim,
+            bound_implementations: Vec::new(),
+        })
+    }
+
     /// Lower and key the hyper clause `input`, recording its one `claim`
     /// occurrence at its declared name and the body wrapper's at
     /// `hyper <c> body`.
@@ -329,6 +545,122 @@ impl Lowering<'_> {
         }
         Ok(GroupTerm::new(members))
     }
+}
+
+/// Finish the step-relation node after the checked abstraction relation is
+/// available. The relation key is late-bound because QSL computes it from
+/// the assembled graph's exact model declaration nodes.
+pub(crate) fn finish_step_relation(
+    mut lowered: LoweredStepRelation,
+    relation: &CheckedModelRelation,
+    abstraction: Option<&CheckedAbstractionRelation>,
+    abstraction_node: Option<NodeKey>,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<(super::SemanticNode, Vec<NodeKey>), CheckRefusal> {
+    let code_roots = lowered.code_roots.clone();
+    lowered.bound_implementations = relation
+        .executions()
+        .iter()
+        .map(|(_, operation)| {
+            abstraction.is_some_and(|relation| {
+                relation
+                    .get(&AbstractionKey::Frame(operation.clone()))
+                    .is_some()
+            })
+        })
+        .collect();
+    if lowered.bound_implementations.iter().any(|bound| *bound) && abstraction_node.is_none() {
+        return Err(stage_fault(
+            &lowered.location,
+            "bound-step-relation-has-abstraction-node",
+        ));
+    }
+    let BodyTerm::Aggregate(body) = &mut lowered.body else {
+        return Err(stage_fault(
+            &lowered.location,
+            "step-relation-body-is-aggregate",
+        ));
+    };
+    let executions = body
+        .members
+        .get_mut(1)
+        .and_then(|member| match member {
+            MemberTerm::Binding(binding) if binding.name == "executions" => {
+                match &mut binding.value {
+                    BindingValue::Aggregate(aggregate) => Some(aggregate),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .ok_or_else(|| stage_fault(&lowered.location, "step-relation-executions-aggregate"))?;
+    if executions.members.len() != lowered.bound_implementations.len() {
+        return Err(stage_fault(
+            &lowered.location,
+            "step-relation-implementation-count-matches",
+        ));
+    }
+    for (execution, bound) in executions
+        .members
+        .iter_mut()
+        .zip(&lowered.bound_implementations)
+    {
+        if !bound {
+            continue;
+        }
+        let MemberTerm::Binding(entry) = execution else {
+            return Err(stage_fault(
+                &lowered.location,
+                "step-relation-execution-is-binding",
+            ));
+        };
+        let BindingValue::Aggregate(entry) = &mut entry.value else {
+            return Err(stage_fault(
+                &lowered.location,
+                "step-relation-execution-value-is-aggregate",
+            ));
+        };
+        let Some(MemberTerm::Binding(implementation)) = entry.members.get_mut(5) else {
+            return Err(stage_fault(
+                &lowered.location,
+                "step-relation-implementation-binding-exists",
+            ));
+        };
+        if implementation.name != "implementation" {
+            return Err(stage_fault(
+                &lowered.location,
+                "step-relation-implementation-is-last",
+            ));
+        }
+        implementation.value =
+            BindingValue::Leaf(LeafTerm::reference(abstraction_node.ok_or_else(|| {
+                stage_fault(
+                    &lowered.location,
+                    "bound-step-relation-has-abstraction-node",
+                )
+            })?));
+    }
+    let content = super::NodeContent {
+        owner_model: None,
+        node_tag: NodeTag::Claim,
+        semantic_form: "step_relation",
+        semantic_type: Some(lowered.boolean),
+        declaration: Some(vec![lowered.declaration]),
+        owner: Some(super::Owner::Source(lowered.owner)),
+        body: lowered.body,
+    };
+    let keyed = super::node_key(&content.input(), identity)
+        .map_err(|refusal| super::preimage_refusal(&lowered.location, refusal))?;
+    Ok((
+        super::SemanticNode {
+            key: keyed.key,
+            preimage: keyed.preimage,
+            recursion: None,
+            content,
+            nominal: None,
+        },
+        code_roots,
+    ))
 }
 
 /// `esc(x)` of FR-488 "Slot node names": each UTF-8 byte of `x` that is an

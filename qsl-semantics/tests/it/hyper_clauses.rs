@@ -829,10 +829,8 @@ fn a_bound_step_relation_has_a_code_claim_beside_its_model_claim() {
 }
 
 /// FR-361-AC-4: a `hyper` clause and a `relation` are gated by neither layer.
-/// Under the value profile and under the model profile alike, the unit
-/// assembles; a hyper clause is emitted and a relation is refused only as not
-/// emitted, with
-/// no layer refusal and no model-construct family.
+/// Under the value profile and under the model profile alike, both clauses
+/// assemble without a layer refusal.
 #[trace("TC-1015", "FR-361-AC-4")]
 #[test]
 fn hyper_clauses_are_ungated_by_the_model_profile() {
@@ -845,18 +843,7 @@ fn hyper_clauses_are_ungated_by_the_model_profile() {
                 checked.unwrap_or_else(|refusals| panic!("{layer}: {refusals:?}"));
                 continue;
             }
-            let refusals = checked.expect_err("a relation is refused as not emitted");
-            let [CheckRefusal {
-                cause: CheckCause::Temporal(cause),
-                ..
-            }] = &refusals[..]
-            else {
-                panic!("{layer}: {declaration}: one temporal refusal, not {refusals:?}");
-            };
-            assert!(
-                matches!(**cause, TemporalCause::NotEmitted { .. }),
-                "{layer}: {declaration}: {cause:?}"
-            );
+            checked.unwrap_or_else(|refusals| panic!("{layer}: {declaration}: {refusals:?}"));
         }
     }
 }
@@ -1070,13 +1057,10 @@ fn a_name_used_twice_refuses_at_the_second() {
 }
 
 /// What the unit's check says of the clauses of `declarations` over the
-/// vault: `Ok` when each is emitted or refused only as not emitted (every body
-/// typed),
-/// otherwise the hyper causes found.
+/// vault: `Ok` when each is emitted, otherwise the hyper causes found.
 fn body_outcome(declarations: &str) -> Result<(), Vec<HyperCause>> {
     let (_, package) = assemble(&["V"], INFINITE, declarations);
-    // A checked hyper clause is emitted (FR-488); a relation is refused as
-    // not emitted.
+    // Checked hyper clauses and step relations are emitted.
     let Err(refusals) = package.check(CheckingLimits::default()) else {
         return Ok(());
     };
