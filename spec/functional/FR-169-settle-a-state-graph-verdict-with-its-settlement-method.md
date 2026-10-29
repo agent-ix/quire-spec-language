@@ -154,6 +154,11 @@ item.
 
 ## Behavior
 
+QSpec FR-331 owns the terminal-record shape, and QSpec FR-360 and FR-243 own
+the wire labels and settlement bases named in the map below. This
+requirement specifies QSL's projection from state-graph outcomes, replay and
+certificate checks to those QSpec values.
+
 - When it settles an HP-5 item, `settle_existential` SHALL read "the
   checker" in each row below as FR-163's `check_product_closure` and "the
   certificate" as the `ProductClosureCertificate` FR-181's `Witnessed`
