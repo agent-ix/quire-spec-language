@@ -152,8 +152,6 @@ pub enum DigestDomain {
     DiagnosticCatalogBytesV1,
     /// `quire.generated-artifact.bytes/v1`.
     GeneratedArtifactBytesV1,
-    /// `quire.tool-manifest.jcs/v1`.
-    ToolManifestJcsV1,
     /// `quire.simulation.state-key/v1`.
     SimulationStateKeyV1,
     /// `typed-expression-identity`.
@@ -171,7 +169,7 @@ pub enum DigestDomain {
 impl DigestDomain {
     /// Every closed variant, in FR-201's own table order, for exhaustive
     /// round-trip tests.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 20] = [
         Self::IrCanonical,
         Self::IrBound,
         Self::IrSemantic,
@@ -186,7 +184,6 @@ impl DigestDomain {
         Self::ContractIrSemanticV1,
         Self::DiagnosticCatalogBytesV1,
         Self::GeneratedArtifactBytesV1,
-        Self::ToolManifestJcsV1,
         Self::SimulationStateKeyV1,
         Self::TypedExpressionIdentity,
         Self::VerificationJcs,
@@ -214,7 +211,6 @@ impl DigestDomain {
             Self::ContractIrSemanticV1 => "quire.contract-ir.semantic/v1",
             Self::DiagnosticCatalogBytesV1 => "quire.diagnostic-catalog.bytes/v1",
             Self::GeneratedArtifactBytesV1 => "quire.generated-artifact.bytes/v1",
-            Self::ToolManifestJcsV1 => "quire.tool-manifest.jcs/v1",
             Self::SimulationStateKeyV1 => "quire.simulation.state-key/v1",
             Self::TypedExpressionIdentity => "typed-expression-identity",
             Self::VerificationJcs => "quire.verification.jcs",
@@ -568,14 +564,14 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both `[(...); 21]` and `DigestDomain::
-    /// ALL: [Self; 21]` are fixed-length arrays, so a 21st-to-22nd-entry
+    /// itself (#260 review item 4). Both `[(...); 20]` and `DigestDomain::
+    /// ALL: [Self; 20]` are fixed-length arrays, so a 20th-to-21st-entry
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
-        let labels: [(DigestDomain, &str); 21] = [
+        let labels: [(DigestDomain, &str); 20] = [
             (DigestDomain::IrCanonical, "ir-canonical"),
             (DigestDomain::IrBound, "ir-bound"),
             (DigestDomain::IrSemantic, "ir-semantic"),
@@ -603,10 +599,6 @@ mod digest_record_tests {
                 "quire.generated-artifact.bytes/v1",
             ),
             (
-                DigestDomain::ToolManifestJcsV1,
-                "quire.tool-manifest.jcs/v1",
-            ),
-            (
                 DigestDomain::SimulationStateKeyV1,
                 "quire.simulation.state-key/v1",
             ),
@@ -628,8 +620,8 @@ mod digest_record_tests {
                 "quire.model.object-universe/v2",
             ),
         ];
-        assert_eq!(DigestDomain::ALL.len(), 21);
-        assert_eq!(labels.len(), 21);
+        assert_eq!(DigestDomain::ALL.len(), 20);
+        assert_eq!(labels.len(), 20);
         for (domain, expected_label) in labels {
             assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
             let record = DigestRecord::mint(domain, bytes(0xab));
@@ -733,10 +725,10 @@ mod digest_record_tests {
     /// back a digest whose domain matches the one the reader requires.
     #[test]
     fn from_wire_expecting_admits_the_required_domain() {
-        let record = DigestRecord::mint(DigestDomain::ToolManifestJcsV1, bytes(0xcd));
+        let record = DigestRecord::mint(DigestDomain::Sha256Jcs, bytes(0xcd));
         let read = DigestRecord::from_wire_expecting(
-            DigestDomain::ToolManifestJcsV1,
-            Some(DigestDomain::ToolManifestJcsV1.as_str()),
+            DigestDomain::Sha256Jcs,
+            Some(DigestDomain::Sha256Jcs.as_str()),
             &record.hex(),
         )
         .expect("the required domain reads back");
@@ -754,38 +746,34 @@ mod digest_record_tests {
         let wrong = DigestDomain::SourceBytesV1;
         assert_eq!(
             DigestRecord::from_wire_expecting(
-                DigestDomain::ToolManifestJcsV1,
+                DigestDomain::Sha256Jcs,
                 Some(wrong.as_str()),
                 &"ab".repeat(32),
             ),
             Err(InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
+                expected: DigestDomain::Sha256Jcs,
                 found: wrong,
             })
         );
         assert_eq!(
             DigestRecord::from_wire_expecting(
-                DigestDomain::ToolManifestJcsV1,
+                DigestDomain::Sha256Jcs,
                 Some(wrong.as_str()),
                 "not-hex",
             ),
             Err(InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
+                expected: DigestDomain::Sha256Jcs,
                 found: wrong,
             }),
             "the domain is checked before the hex bytes"
         );
         assert_eq!(
-            DigestRecord::from_wire_expecting(
-                DigestDomain::ToolManifestJcsV1,
-                None,
-                &"ab".repeat(32)
-            ),
+            DigestRecord::from_wire_expecting(DigestDomain::Sha256Jcs, None, &"ab".repeat(32)),
             Err(InvalidDigestRecord::AbsentDomain)
         );
         assert!(
             InvalidDigestRecord::WrongDomain {
-                expected: DigestDomain::ToolManifestJcsV1,
+                expected: DigestDomain::Sha256Jcs,
                 found: wrong,
             }
             .is_domain_mismatch(),
