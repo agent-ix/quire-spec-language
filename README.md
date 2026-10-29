@@ -220,9 +220,6 @@ cd quire-spec-language
 cargo build --locked --bin quire-spec
 ```
 
-Conformance and qualification checks require `QSPEC_DIR` to name an available
-QSpec checkout. This repository stores no QSpec source or revision.
-
 **Format.** `format` prints the formatted source and leaves the file unchanged.
 The four arguments before the path are the source identity (authority, id,
 revision namespace, revision). Every diagnostic carries them.
@@ -353,7 +350,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 
 | Repository | Role | Relation to QSL |
 | --- | --- | --- |
-| quire-specification | Owns the language standard, profiles, interchange formats and corpus contract. | QSL reads its source-of-truth specification and conformance vectors from the checkout named by `QSPEC_DIR`; `make ci` checks QSL against those vectors, and `make qualify` runs QSL against a supplied corpus. |
+| quire-specification (private) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
@@ -412,14 +409,11 @@ Other directories:
 ## Contributing
 
 `make ci` is the local gate: formatting, clippy, tests across feature
-combinations, docs and the architecture lints. Set `QSPEC_DIR` to an available
-QSpec checkout before running conformance or CI; there is no default checkout
-path. `make qualify CORPUS=<dir>` reads QSpec-owned corpus contracts from
-`QSPEC_DIR` and runs the supplied corpus. The hosted native compiler CI runs
-only on manual dispatch, so run the
-gate before opening a pull request. The separate pull request language-boundary
-check reports only whether new executable paths respect the Rust containment
-rule. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+combinations, docs and the architecture lints. It reads the standard's test
+vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). The hosted
+native compiler CI runs only on manual dispatch, so run the gate before opening
+a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 Contributions require the [CLA](CLA.md).
 

@@ -1143,21 +1143,13 @@ mod intake_proofs {
     use super::*;
 
     fn fixture_node(form: &str) -> CheckedSemanticNodeV2 {
-        let directory = std::path::PathBuf::from(
-            std::env::var_os("QSPEC_DIR")
-                .filter(|path| !path.is_empty())
-                .unwrap_or_else(|| {
-                    panic!(
-                        "QSPEC_DIR must point to an available QSpec checkout; no default is used"
-                    )
-                }),
-        );
+        let directory = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR supplies owner fixtures");
         let fixture = if form == "time_source" {
             "positive-tick-timed-model-nodes.json"
         } else {
             "positive-timed-model-nodes.json"
         };
-        let path = directory
+        let path = std::path::Path::new(&directory)
             .join("proposals/checked-package-v2/fixtures")
             .join(fixture);
         let bytes = std::fs::read(path).expect("the published timed-model fixture is readable");
