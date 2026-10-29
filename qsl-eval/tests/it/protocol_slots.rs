@@ -6,7 +6,7 @@ use qsl_eval::value::{
     CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply, SuppliedValue,
 };
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedActivation, NodeTag, PackageDeclarations};
+use qsl_semantics::check::{NodeTag, PackageDeclarations};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, FamilyOutcome};
 use quire_exact::{Meter, ScalarLimits, Value};
 use quire_semantic_value::catalog::CatalogCode;
