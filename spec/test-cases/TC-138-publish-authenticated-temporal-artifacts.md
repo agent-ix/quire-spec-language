@@ -71,13 +71,11 @@ third time into an already-existing directory and require refusal, and confirm
 that directory's contents, including a sentinel file already there, are
 unchanged.
 
-List the repository's tracked files and require none under
-`artifacts/compiled-protocol-v1` or `artifacts/compiled-protocol-v2`, and none
-that is a checksum manifest or a frozen digest or count of handoff files
-(FR-050-AC-9). Require `protocol_artifact::handoff::SOURCE_ROOT` to name a
-directory beneath which the authored sources the writers read exist, and require
-the handoff module to export no `PUBLISHED_HANDOFF`, `PUBLISHED_V1_HANDOFF` or
-`PUBLISHED_CHECKSUMS_FILE` (FR-050-AC-10).
+Require `protocol_artifact::handoff::SOURCE_ROOT` to name the crate's manifest
+directory, with the authored sources the writers read beneath it (FR-050-AC-11).
+Require the handoff module to export none of `PUBLISHED_HANDOFF`,
+`PUBLISHED_V1_HANDOFF` and `PUBLISHED_CHECKSUMS_FILE`, asserting each name
+separately (FR-050-AC-12).
 
 Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
 quire-spec-language --lib --no-default-features --features handoff-writer`:
@@ -85,6 +83,11 @@ the no-dev-dependency acceptance this step's test cannot demonstrate by
 itself, because a test in this crate's own `tests/` always builds inside its
 dev-dependency closure. That `cargo check` line is what actually resolves
 `write_v2`'s dependency graph with no dev-dependency in it.
+
+Tracked-files step: in a git checkout (CI only; not in a crate tarball or git
+dependency), run `git ls-files artifacts/compiled-protocol-v2` and require empty
+output (FR-050-AC-9), and require `git ls-files` to list no checksum manifest
+of `/1` or `/2` handoff files (FR-050-AC-10).
 
 ## Expected Results
 

@@ -69,7 +69,8 @@ The `/1` handoff is generated, never committed. The repository SHALL commit no
 tree under `artifacts/compiled-protocol-v1`, and no checksum manifest, frozen
 digest or file count of handoff files. `protocol_artifact::handoff::write_v1`
 is its only producer: a consumer's build or test calls it to write the handoff
-into a directory the consumer chooses, under its own build output, and the
+into a directory the consumer chooses, under its own build output. That call
+is the generation command; there is no second producer and no make target. The
 consumer SHALL NOT vendor or copy a handoff tree. The crate publishes the `/1`
 member-name constants but no constant naming a committed directory.
 [FR-050](FR-050-publish-authenticated-temporal-artifacts.md) states the same
@@ -425,7 +426,8 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-13 | Over an admitted domain package, a declaration over a domain object type's population input and a domain operation (an operation clause, an attempt with a domain event record, and a FIFO channel keyed by a domain object) check, emit exactly one population/closure pair per covering declaration and anchor and the operation's own export, and read back unchanged. A changed package digest, an export the package does not declare, a population pair keyed to another object type and an operation context other than its owner each refuse; an object type with no covering population declaration refuses emission as `Unsupported::Export`. | Test (TC-121) |
 | FR-042-AC-14 | Over an admitted domain package, a precondition reading a domain operation's parameter and a postcondition reading its parameters and `result` check, emit each parameter as an `invocation_parameter` binder at the `invocation_input` anchor and the result as the `result` binder at `invocation_post`, typed by the package's exports or `Boolean`, with a domain object parameter's population pair at that anchor, and read back unchanged. A parameter or result whose type has no native type here refuses checking as `DomainRepresentation`, and a clause reading a name the operation does not declare refuses at scope resolution. | Test (TC-121) |
 | FR-042-AC-15 | `protocol_artifact::handoff::write_v1(directory)`, in the normal (non-dev) dependency surface behind the `handoff-writer` feature and adding no dependency, lets a downstream crate compile the authored recipe fresh and write a complete handoff -- original sources, model source, every selected dependency's exact bytes, the independent `expected.json` selection and the artifact reference -- to a caller-chosen new directory, in-process, without building this crate's examples or dev-dependencies. It reads the emitted bytes back through the strict public reader before writing anything. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-121) |
-| FR-042-AC-16 | The repository tracks no file under `artifacts/compiled-protocol-v1`, and no checksum manifest, frozen digest or file count of `/1` handoff files; every `/1` handoff file exists only as `write_v1` output, and the crate exports no `PUBLISHED_V1_HANDOFF`. | Test (TC-121) |
+| FR-042-AC-16 | In a git checkout, `git ls-files` lists no file under `artifacts/compiled-protocol-v1`. | Test (TC-121) |
+| FR-042-AC-17 | `protocol_artifact::handoff` exports no `PUBLISHED_V1_HANDOFF`. | Test (TC-121) |
 
 ## Dependencies
 
