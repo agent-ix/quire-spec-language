@@ -130,6 +130,9 @@ pub fn check_contract(
         .max_cases
         .unwrap_or(manifest::DEFAULT_MAX_CASES)
         .get();
+    if let Some(reason) = request.claim.refusal() {
+        return Err(ContractRefusal::Unsupported(form, reason));
+    }
     let (concrete, abstract_system) = open(&request)?;
     let target = match ContractTarget::new(
         request.claim,

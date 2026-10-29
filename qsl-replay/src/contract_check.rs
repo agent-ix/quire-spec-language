@@ -92,6 +92,11 @@ pub enum ContractCheckUnsupported {
     ClockMember,
     /// A field of the model has no finite domain.
     FieldDomain,
+    /// A refinement with a hidden abstract field, a history field or an
+    /// `any` row (QSpec FR-146 writes no step-simulation record for it): a
+    /// step check over the visible part alone could prove what it did not
+    /// check, so the arm decides none of its rules.
+    NotStepSimulable,
 }
 
 impl ContractCheckUnsupported {
@@ -103,6 +108,7 @@ impl ContractCheckUnsupported {
             Self::RelationshipState => "relationship-state-not-enumerable",
             Self::ClockMember => "clock-member-not-enumerable",
             Self::FieldDomain => "field-domain-not-enumerable",
+            Self::NotStepSimulable => "refinement-not-step-simulable",
         }
     }
 }
@@ -147,6 +153,8 @@ enum Target {
     },
     /// An operation's frame.
     Frame,
+    /// A rule of a refinement that is not proof-eligible (FR-146).
+    NotStepSimulable,
     /// A refinement's initial-state rule (ordinal 0) or step row `source`.
     Simulation {
         refinement: usize,
@@ -179,6 +187,21 @@ impl ContractClaim {
     /// Whether the item's operation has an FR-353 implementation binding.
     pub fn bound(&self) -> bool {
         self.bound
+    }
+
+    /// Why the arm does not decide the claim, when its form alone says so:
+    /// a bound item (no implementation engine), an unbound frame (no
+    /// contract-level reading) or a rule of a refinement that is not
+    /// proof-eligible. Read before any model system is opened.
+    pub fn refusal(&self) -> Option<ContractCheckUnsupported> {
+        if self.bound {
+            return Some(ContractCheckUnsupported::NoImplementationEngine);
+        }
+        match self.target {
+            Target::Frame => Some(ContractCheckUnsupported::NoContractLevelReading),
+            Target::NotStepSimulable => Some(ContractCheckUnsupported::NotStepSimulable),
+            _ => None,
+        }
     }
 }
 
@@ -316,7 +339,7 @@ pub fn select_contract(
             Ok(selected(ContractForm::Frame, Target::Frame, bound))
         }
         ("generated", _) => {
-            let (refinement, entry) = graph
+            let entry = graph
                 .refinements()
                 .iter()
                 .enumerate()
@@ -326,8 +349,15 @@ pub fn select_contract(
                         .iter()
                         .find(|entry| entry.occurrence() == claim)
                         .map(|entry| (index, entry))
-                })
-                .ok_or(ContractSelection::NoForm)?;
+                });
+            let Some((refinement, entry)) = entry else {
+                not_step_simulable(package, claim)?;
+                return Ok(selected(
+                    ContractForm::Simulation,
+                    Target::NotStepSimulable,
+                    false,
+                ));
+            };
             let row = match entry.record().obligation {
                 StepObligation::Initial => None,
                 StepObligation::Step { row } => {
@@ -345,6 +375,28 @@ pub fn select_contract(
             ))
         }
         _ => Err(ContractSelection::NoForm),
+    }
+}
+
+/// A `generated` claim with no step-simulation entry: `Ok` when it names a
+/// rule of a refinement that is not proof-eligible (ordinal 0, or k + 1 for
+/// one of its step rows), else no form.
+fn not_step_simulable(
+    package: &CheckedPackage,
+    claim: &OccurrenceKey,
+) -> Result<(), ContractSelection> {
+    let ordinal = claim.origin().ordinal();
+    let names = package.graph().refinements().iter().any(|refinement| {
+        !refinement.proof_eligible()
+            && usize::try_from(ordinal).is_ok_and(|ordinal| ordinal <= refinement.steps().len())
+            && refinement
+                .v2_emission()
+                .is_ok_and(|emission| emission.identity.as_bytes() == claim.node().as_bytes())
+    });
+    if names {
+        Ok(())
+    } else {
+        Err(ContractSelection::NoForm)
     }
 }
 
@@ -534,11 +586,19 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
         concrete: &'s ModelSystem<'a>,
         abstract_system: Option<&'s ModelSystem<'a>>,
     ) -> Result<Result<Self, ContractCheckUnsupported>, InternalFault> {
-        if claim.bound {
-            return Ok(Err(ContractCheckUnsupported::NoImplementationEngine));
+        if let Some(reason) = claim.refusal() {
+            return Ok(Err(reason));
         }
         match &claim.target {
-            Target::Frame => return Ok(Err(ContractCheckUnsupported::NoContractLevelReading)),
+            Target::Simulation { refinement, .. }
+                if !package
+                    .graph()
+                    .refinements()
+                    .get(*refinement)
+                    .is_some_and(CheckedRefinement::proof_eligible) =>
+            {
+                return Ok(Err(ContractCheckUnsupported::NotStepSimulable))
+            }
             Target::Invariant { context, .. } => {
                 let relation = package.abstraction();
                 for (declaring, name) in concrete.context_operations(*context) {
@@ -791,7 +851,9 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 context,
                 operation,
             } => self.postcondition(case.state(), *clause, *context, operation),
-            Target::Frame => Err(Stop::Fault(fault("a-frame-item-is-not-evaluated"))),
+            Target::Frame | Target::NotStepSimulable => {
+                Err(Stop::Fault(fault("an-unsupported-item-is-not-evaluated")))
+            }
             Target::Simulation { refinement, row } => {
                 let refinement = self
                     .package

@@ -565,3 +565,53 @@ fn a_bound_clause_reading_an_unbound_element_is_declined_incomplete_input() {
     };
     assert_eq!(cause.as_str(), "incomplete-input");
 }
+
+// ---- a refinement with a hidden abstract field ----
+
+/// FR-141-AC-4's `Coin` with `side` hidden: QSpec FR-146 writes no
+/// step-simulation record for it, and a step check over the visible part
+/// alone could prove what it did not check, so a rule of it is
+/// `unsupported`, never proved.
+#[trace("QSpec-TC-974", "QSpec-FR-485-AC-9")]
+#[trace("TC-551", "FR-146-AC-2")]
+#[test]
+fn a_rule_of_a_refinement_with_a_hidden_field_is_unsupported() {
+    use crate::refinement_aux::{coin_refines, Unit};
+    use qsl_analyze::contract_check::AbstractSubject;
+
+    let unit = Unit::coin(1);
+    let world = unit.world(&coin_refines(""));
+    let refinement = world.refinement();
+    assert!(!refinement.proof_eligible());
+    assert!(refinement.step_simulations().is_empty());
+    let node = refinement.v2_emission().expect("emits").identity;
+    for ordinal in [0, 1] {
+        let claim = OccurrenceKey::new(
+            WireNodeId::from_digest(*node.as_bytes()),
+            Origin::new(Role::new("generated"), ordinal),
+        );
+        let request = select_contract(world.package(), &claim).map(|selected| ContractRequest {
+            package: world.package(),
+            claim: selected,
+            subject: world.concrete_request(UNLIMITED),
+            abstract_subject: Some(AbstractSubject {
+                package: world.package(),
+                initial: vec![world.abstract_initial()],
+            }),
+            max_cases: None,
+        });
+        let record = analyze(
+            &Engines::qsl().expect("the linked engines register"),
+            vec![contract_item(RequestIndex::new(0), request)],
+            &Cancel::new(),
+        )
+        .remove(0);
+        let TerminalValue::Unsupported(UnavailabilityCause::ContractCheck { form, reason }) =
+            terminal(&record)
+        else {
+            panic!("expected unsupported: {:?}", terminal(&record));
+        };
+        assert_eq!(form.as_str(), "simulation");
+        assert_eq!(reason.as_str(), "refinement-not-step-simulable");
+    }
+}
