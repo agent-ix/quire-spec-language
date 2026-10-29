@@ -891,6 +891,8 @@ enum Keyed {
         semantic_type: NodeKey,
         member: String,
     },
+    /// A present option's payload binding, typed at its option node.
+    OptionValue(NodeKey),
 }
 
 /// A node over its operands' terms.
@@ -3591,6 +3593,10 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Value, plain("quire.op.option.value")),
                 Operands::One(operand),
             ),
+            NodeKind::OptionSome(operand) => {
+                let semantic_type = self.value_type_node(node, binders)?;
+                (Keyed::OptionValue(semantic_type), Operands::One(operand))
+            }
             NodeKind::Call {
                 function,
                 arguments,
@@ -4194,6 +4200,20 @@ impl<'a> Lowering<'a> {
                     )]),
                 )
             }
+            Keyed::OptionValue(semantic_type) => self.value_node(
+                node,
+                "option_value",
+                semantic_type,
+                BodyTerm::aggregate(vec![MemberTerm::binding(
+                    "value",
+                    BindingValue::Leaf(
+                        terms
+                            .into_iter()
+                            .next()
+                            .ok_or_else(|| fault(node.location(), KeyFault::RecordSlotCount))?,
+                    ),
+                )]),
+            ),
         }
         .map(LowerStep::Lowered)
     }
@@ -4418,7 +4438,7 @@ impl<'a> Lowering<'a> {
                         TupleMember::Group(parameters),
                         TupleMember::Leaf(term),
                     ])),
-                ));
+                ))
             }
         }
         self.open_arm(frame, binders, frames)
@@ -4672,7 +4692,7 @@ impl<'a> Lowering<'a> {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),
-                ))
+                ));
             }
         };
         Ok(Operation::plain(&format!("quire.op.{family}.{suffix}")))

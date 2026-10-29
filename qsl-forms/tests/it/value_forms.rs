@@ -354,6 +354,7 @@ fn each_expression_construct_maps_to_its_variant() {
     let cases = [
         ("true", "true"),
         ("false", "false"),
+        ("none", "absent"),
         ("42", "42"),
         ("rational(1, -2)", "rational(1,-2)"),
         ("a", "a"),
@@ -569,7 +570,6 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
     let cases = [
         ("decimal(1, 2)", Production::ExactNumber, "decimal(1, 2)"),
         ("xs[0]", Production::Postfix, "xs[0]"),
-        ("none", Production::Primary, "none"),
         // FR-102: a single-segment `reaches` edge now builds
         // (`each_expression_construct_maps_to_its_variant`); a
         // multi-segment edge still refuses, but at the qualified edge

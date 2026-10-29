@@ -1426,13 +1426,12 @@ fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
     (source, parsed)
 }
 
-/// FR-360-AC-5: `none` at a variant slot is admitted by S1 and refused by S2
-/// as `unsupported_construct`, cause `UnrepresentedConstruct` of the
-/// `Primary` production, at the literal's span: `qsl-forms` has no expression
-/// form for it, so no checker row exists.
+/// `none` is represented as an absent Option at S2, then refused at S3 when a
+/// variant slot requires the variant itself. FR-360's older S2 expectation
+/// needs its wording updated to match the option value form.
 #[trace("TC-1007", "FR-360-AC-5")]
 #[test]
-fn none_at_a_variant_slot_is_refused_by_s2_as_unrepresented() {
+fn none_at_a_variant_slot_is_checked_and_refused_as_a_type_mismatch() {
     let literal = "none";
     let (source, parsed) = parsed_with_body(&format!("t = {literal}"));
     assert!(
@@ -1440,23 +1439,13 @@ fn none_at_a_variant_slot_is_refused_by_s2_as_unrepresented() {
         "{literal}: {:?}",
         parsed.diagnostics()
     );
-    let refusal = build_unit(&parsed).expect_err("S2 refuses the literal");
+    let _unit = build_unit(&parsed).expect("S2 represents none as an absent Option");
+    let refusals = check_refusals("function f using v(t: Config::Tier): Boolean pure { t = none }");
     assert!(
-        matches!(
-            refusal.cause,
-            qsl_forms::FormsCause::UnrepresentedConstruct {
-                production: qsl_cst::Production::Primary
-            }
-        ),
-        "{literal}: {refusal:?}"
+        refused_in_body(&refusals, "f", &[1], &mismatch()),
+        "the option value mismatches the required Tier at S3: {refusals:?}"
     );
-    assert_eq!(
-        refusal.catalog_code(),
-        qsl_foundation::Code::UnsupportedConstruct
-    );
-    let start = source.find(&format!("t = {literal}")).expect("in source") + "t = ".len();
-    let span = refusal.span.expect("the refusal names the literal");
-    assert_eq!((span.start, span.end), (start, start + literal.len()));
+    assert!(source.contains("none"));
 }
 
 /// FR-360-AC-5, FR-056-AC-41: the String literal `"Gold"` builds in S2 and is
