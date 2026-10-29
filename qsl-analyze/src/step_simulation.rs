@@ -72,8 +72,21 @@ pub struct StepSimulationRecords {
 /// Why the records could not be settled.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepSimulationRefusal {
-    /// There is no `Initial` record.
+    /// The request names no refinement of its package, or one that writes
+    /// no per-step simulation record (a hidden field, a history field or an
+    /// `any` row: FR-146).
     NoRecords,
+    /// The results are not one per record the refinement writes: the
+    /// `Initial` record and one per step row.
+    RecordCount {
+        /// The records the refinement writes.
+        expected: usize,
+        /// The results given.
+        given: usize,
+    },
+    /// The hypothesis items are not exactly the invariant clauses the
+    /// refinement's records list, in their order.
+    Hypotheses,
     /// The backend returned a result FR-468 gives no meaning for an
     /// `operation-contract` obligation (`tested`, `measured` or
     /// `declined`).
@@ -88,8 +101,10 @@ pub enum StepSimulationRefusal {
 ///
 /// # Errors
 ///
-/// [`StepSimulationRefusal`] when `item` has no record or a record's result
-/// has no FR-468 meaning.
+/// [`StepSimulationRefusal`] when the request's refinement writes no record,
+/// when `item` does not give one result per record the refinement writes or
+/// one hypothesis item per clause its records list, or when a record's
+/// result has no FR-468 meaning.
 pub fn settle_step_simulations(
     item: StepSimulationItem<'_>,
     cancel: &Cancel,
@@ -103,10 +118,33 @@ pub fn settle_step_simulations(
         certificate_limits,
         replay_initial,
     } = item;
-    let rows = records
-        .len()
-        .checked_sub(1)
+    let entries = request
+        .package
+        .graph()
+        .refinements()
+        .iter()
+        .find(|refinement| {
+            refinement
+                .v2_emission()
+                .is_ok_and(|emission| emission.identity == request.refinement)
+        })
+        .map(|refinement| refinement.step_simulations())
+        .filter(|entries| !entries.is_empty())
         .ok_or(StepSimulationRefusal::NoRecords)?;
+    if records.len() != entries.len() {
+        return Err(StepSimulationRefusal::RecordCount {
+            expected: entries.len(),
+            given: records.len(),
+        });
+    }
+    let clauses: Vec<_> = hypotheses.iter().map(|(clause, _)| *clause).collect();
+    if entries
+        .iter()
+        .any(|entry| entry.record().hypotheses != clauses)
+    {
+        return Err(StepSimulationRefusal::Hypotheses);
+    }
+    let rows = entries.len() - 1;
     let verdicts = records
         .iter()
         .map(|record| match &record.result {

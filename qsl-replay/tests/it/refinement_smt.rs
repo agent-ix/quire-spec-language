@@ -557,7 +557,7 @@ fn values(settled: &StepRecordsSettlement) -> Vec<TerminalValue> {
 /// FR-314 verifies the refinement's certificate, `Uncertified` with no
 /// certificate, and every record of `CasRefinesCounterAdd`, whose `_` row
 /// FR-315 refuses to encode, `Uncertified`.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-4")]
 #[test]
 fn step_records_are_certified_only_by_a_verified_certificate() {
     let holds = vec![StepRecordVerdict::Holds; 8];
@@ -671,7 +671,7 @@ fn a_rejected_part_rejects_only_its_record() {
 /// `proved`, step counterexample, certificate shown wrong, other backend
 /// result, then the proof, `Certified` only when every record and every
 /// hypothesis item is.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn the_safety_half_settles_by_the_first_rule_that_applies() {
     let hypothesis = quire_exact::NodeKey::from_digest([7; 32]);
@@ -753,7 +753,7 @@ fn the_safety_half_settles_by_the_first_rule_that_applies() {
 /// neither holds nor fails settles its record as FR-331 records it, and the
 /// safety half takes the first such record's result in record order, after
 /// every rule before it.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn other_backend_results_settle_the_record_and_the_half() {
     let solver = TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
@@ -850,7 +850,7 @@ fn a_proof_over_ill_sorted_literals_is_rejected() {
 /// limit or a cancellation stops settles every holding record V-7 with its
 /// cause, and one that faults settles them `failed`, never `Uncertified`;
 /// the safety half takes the first record's result.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-8")]
 #[test]
 fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
     let holds = vec![StepRecordVerdict::Holds; 8];
@@ -882,7 +882,7 @@ fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
 /// rejects the base part `QueryMismatch` at `Base`, so the `Initial` record
 /// is `CertificateRejected{QueryMismatch, Base}`, every other record
 /// `Uncertified`, and the safety half `CertificateRejected`.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-4")]
 #[test]
 fn a_refused_initial_query_rejects_the_initial_record() {
     let world = World::new(&mutated(
