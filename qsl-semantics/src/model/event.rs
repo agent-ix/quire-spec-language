@@ -2,7 +2,7 @@
 //! FR-208 event-type binder.
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
 use crate::model::domain_package::{DomainPackageRecord, EventTypeRecord};
