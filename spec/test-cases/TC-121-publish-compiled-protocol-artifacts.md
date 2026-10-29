@@ -34,8 +34,7 @@ observations belong only to the later consumer fixture.
 1. Admit the complete source inventory through the real edition parser,
    namespace/definition/model/scope binding, value types, actual definedness and
    family admission. Emit through the production Rust entry point. Check the
-   exact selectors and external SHA-256 over the emitted bytes (BLOCKED-BY QSL-1270 (draco),
-   ArtifactRef digest). Attempt emission
+   exact selectors and external ArtifactRef identity. Attempt emission
    with type-only/unfinished evidence and a decoded wire value; no accepted
    artifact can result.
    The [native producer recipe](../../examples/protocol-handoff/README.md)
@@ -58,9 +57,11 @@ observations belong only to the later consumer fixture.
    malformed, unreduced, wrong-domain, bare-number and structural-number mutants.
 3. Mutate each reference component independently, retaining the expected
    accepted selection. Include native versus formal source revisions, rule
-   bytes, domain package identity and declaration keys,
+   bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
-   optional feature; require typed refusal.
+   optional feature. Change the domain package `sha256-jcs` value in the
+   compiled `Model` while retaining the independently selected package; require
+   typed refusal. Do not use a digest as an external ArtifactRef member.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
    representations and immutable capture origins. Individually break a reference
@@ -209,9 +210,9 @@ observations belong only to the later consumer fixture.
 7. Give exact emitted bytes and external reference to the bounded public reader
    without invoking native parsing. Mutate every closed object/tag/member,
    duplicate equal entries, introduce invalid indices/cycles/noncanonical bytes,
-   then change graph/literal/profile claims. Under the
-   original expected selection all mutants refuse. Compare typed causes/loci,
-   never English messages.
+   then change graph/literal/profile claims. Under the original expected
+   selection all semantically invalid mutants refuse. Compare typed
+   causes/loci, never English messages.
 8. Refuse one required family/export beside an independent valid declaration;
    retain both compilation dispositions but no full-package artifact. Keep
    unsupported reader/version/canonical-domain, known input refusal and resource
@@ -252,7 +253,7 @@ observations belong only to the later consumer fixture.
     its domain package through the real FR-056 intake seam (parts, interfaces,
     ports and a connection between two ports, as IT-012 exercises), link a
     native package that references it, and emit the compiled-protocol package.
-    Decode the emitted `Model` and confirm its identity and version,
+    Decode the emitted `Model` and confirm its identity, version and digest,
     read directly from the `Model` record, equal the `DomainPackageRef` the
     intake seam admitted, with no `correspondence`, `producer` or `interface`
     member present. Separately, hand-construct a decoder input whose `Model`
@@ -291,8 +292,8 @@ observations belong only to the later consumer fixture.
     Confirm each `Pump` input carries one population and one closure
     requirement naming `population` export `[Pump, <population>]`, the
     operation is named by its `operation` export `[Pump, run]` with `Pump` as
-    context, and the strict reader reads the bytes back unchanged. Require an
-    undeclared population or operation export, a
+    context, and the strict reader reads the bytes back unchanged. Require a
+    changed package digest, an undeclared population or operation export, a
     population pair keyed to `Sys` and a precondition context of `Sys` each to
     refuse, and a `Pump` covered by no population declaration, or by two, to
     refuse emission as `Unsupported::Export`. Drop the population pair of a
@@ -321,9 +322,9 @@ observations belong only to the later consumer fixture.
     temporary directory, from a test that calls only that public function --
     exactly as a downstream crate would, never an example, a private helper or
     a dev-dependency-only type. Confirm the two written trees are
-    byte-identical, that the written `expected.json` selection's artifact
-    reference and digest (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest) match the written offer and reference files, and that
-    the strict public reader (used in step 7 and by
+    byte-identical. Confirm that the written `expected.json` selection contains
+    the selected artifact identity and that the strict public reader (used in
+    step 7 and by
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the
     written offer against that written selection with no other input. Call
     `write_v1` a third time into an already-existing directory and require

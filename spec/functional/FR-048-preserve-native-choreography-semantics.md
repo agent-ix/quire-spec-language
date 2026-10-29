@@ -56,9 +56,7 @@ names; the selected L5 temporal declarations; F-owned observation-role
 definitions; and finite compiler admission/emission limits.
 
 Static compilation consumes each declaration by its declaration key (domain
-package identity, IR node identity). The domain package identity
-stays separate from the native source identity and the compiled-artifact
-seal (BLOCKED-BY QSL-1270 (draco), ArtifactRef seal). Snapshot, window, member, relationship-instance and closure identities are
+package identity, IR node identity, `sha256-jcs`). Snapshot, window, member, relationship-instance and closure identities are
 assessment selections, not static compiler inputs.
 
 F owns concrete record admission, mapping a record to its exact workflow/node/
@@ -175,7 +173,7 @@ compiler SHALL return an explicit unsupported prerequisite without omitting or
 fabricating the dependent record.
 
 The compiler SHALL preserve independent source, domain-package, dependency,
-compiled-artifact and protocol-result identity domains across the
+compiled-artifact and protocol-result identity/digest domains across the
 compiler/consumer handoff.
 
 The compiler SHALL produce the same static subject when only valid concrete
@@ -196,7 +194,7 @@ resource incompleteness and emits no static subject.
 | FR-048-AC-6 | Split shipments, one authored payment attempt under distinct supplied repeat ordinals, and refund paths preserve separate static subjects and required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation or minting another static attempt. | Test (TC-134) |
 | FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
 | FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
-| FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/artifact/result identity substitution or recanonicalization refuses. | Test (TC-135) |
+| FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/result digest substitution or recanonicalization refuses. | Test (TC-135) |
 | FR-048-AC-10 | A's release compiler contributes the exact source-derived artifact, selection and static binding requirements to the separately owned campaign run. The contribution is byte-identical at B's intake and retains every required domain-package, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
 
 ## Dependencies
@@ -227,7 +225,7 @@ choreography emission.
 owns artifact intake, [#6](https://github.com/agent-ix/quire-protocol/issues/6)
 owns PT02 conformance, and
 [#12](https://github.com/agent-ix/quire-protocol/issues/12) owns the temporal/
-observation integration. D owns the Rust integration
+observation integration. D owns the version-lock manifest, Rust integration
 driver and aggregate campaign record under
 [quire-research#39](https://github.com/agent-ix/quire-research/issues/39) and
 [IN01 #49](https://github.com/agent-ix/quire-research/issues/49) until an
