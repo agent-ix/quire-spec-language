@@ -15,8 +15,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
-    check_state_graph, GraphEdge, ModelCheckRefusal, NodeIndex, StateGraphRequest, StateGraphRun,
+    check_state_graph, GraphEdge, ModelCheckRefusal, NodeIndex, StateGraphItem, StateGraphRequest,
+    StateGraphRun,
 };
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{StopReason, TransitionSystem};
 use qsl_foundation::digest::DigestRecord;
@@ -31,8 +33,8 @@ use quire_exact::{Cancel, CancelCause, ObjectReference};
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
     config_version, config_world, config_world_over, detour_world, fork_world, game_world,
-    job_world, job_world_with_claims, ladder_world, Field, Model, Operation, World, CAN_STILL_WIN,
-    DIVIDES, REACHES_THREE, REACHES_TWO,
+    job_world, job_world_with_claims, ladder_world, por_reachestwo_world, Field, Model, Operation,
+    World, CAN_STILL_WIN, DIVIDES, REACHES_THREE, REACHES_TWO,
 };
 
 pub(crate) const AB: &[&str] = &["a", "b"];
@@ -120,14 +122,22 @@ fn partial_order_reduction_refuses_unique_path_before_expansion() {
 #[trace("TC-592", "FR-167-AC-4")]
 #[test]
 fn symmetry_reduction_refuses_unique_path_before_expansion() {
-    let job = job_world(false, false);
-    let mut request = job.request(&["j"], vec![job.item("InOneWay")], no_samples());
+    let world = crate::graph_world::symmetric_config_world_over(
+        "",
+        "unique path Once using v over (c: Config::ConfigVersion) from (c.versionNumber = 0) to (c.versionNumber = 2);\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(&["a", "b", "c"], vec![world.item("Once")], no_samples());
     request
         .reductions
         .symmetry
         .push(qsl_route::reductions::SymmetryDeclaration {
-            population: quire_checked::key::DeclarationKey::fixture("jobs"),
-            classes: Vec::new(),
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
         });
 
     let result = run(request);
@@ -202,6 +212,401 @@ fn partial_order_reduction_is_applied_by_the_state_graph_engine() {
             if matches!(reductions.as_slice(), [qsl_replay::AppliedReduction::PartialOrder {
                 proviso: qsl_replay::Proviso::BreadthFirstRevisit
             }])
+    ));
+}
+
+/// FR-168-AC-14 (TC-593): a completed POR proof of `possible` is reported as
+/// reduced and retains one concrete witness per initial state.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn possible_under_por_returns_holds_reduced_with_witnesses() {
+    let world = crate::graph_world::config_world_over(
+        "pre CanAdvance using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 2 }\n",
+        "possible Anything using v { true }\n\
+         always possible AlwaysReachesTwo using v over (x: Config::ConfigVersion) { x.versionNumber = 2 }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples());
+    request.reductions.partial_order = true;
+
+    let result = run(request);
+    let plain = run(world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples()));
+    assert_eq!((plain.graph.stats.nodes, plain.graph.stats.edges), (27, 54));
+    assert_eq!((result.graph.stats.nodes, result.graph.stats.edges), (7, 6));
+    assert_eq!(
+        result
+            .graph
+            .edges
+            .iter()
+            .filter(|edge| edge.source.index() == 0)
+            .count(),
+        1
+    );
+    let system = system(&world, &["a", "b", "c"]);
+    assert_eq!(
+        system
+            .successors(&system.initial()[0])
+            .unwrap()
+            .successors
+            .len(),
+        3
+    );
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::HoldsReduced { ref reductions, witnesses: Some(ref paths) }
+            if !reductions.is_empty() && paths.len() == 1
+    ));
+    let mut always = world.request(
+        &["a", "b", "c"],
+        vec![world.item("AlwaysReachesTwo")],
+        no_samples(),
+    );
+    always.reductions.partial_order = true;
+    let refused = run(always);
+    assert!(
+        refused.graph.nodes.is_empty(),
+        "non-preserving POR refuses before expansion"
+    );
+    assert!(matches!(
+        refused.items[0][0].outcome,
+        StateGraphOutcome::ReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::PartialOrder,
+            form: qsl_replay::StateGraphPropertyForm::AlwaysPossible,
+        }
+    ));
+}
+
+/// FR-168-AC-14 (TC-593): a per-instance request retains the full three-key
+/// subject but computes POR visibility for `x = a` alone.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn possible_reachestwo_for_one_binding_uses_the_por_ample_set() {
+    let world = por_reachestwo_world();
+    let binding = ModelInstance {
+        population: quire_checked::key::DeclarationKey {
+            package: "test/por".to_owned(),
+            node: "ix://test/por/counters".to_owned(),
+        },
+        key: "a".to_owned(),
+    };
+    let mut request = world.request(
+        &["a", "b", "c"],
+        vec![StateGraphItem::for_binding(
+            world.claim("ReachesTwo"),
+            binding.clone(),
+        )],
+        no_samples(),
+    );
+    request.reductions.partial_order = true;
+
+    let subject_system = system(&world, &["a", "b", "c"]);
+    assert_eq!(
+        subject_system
+            .successors(&subject_system.initial()[0])
+            .unwrap()
+            .successors
+            .len(),
+        3,
+        "the unreduced root has three enabled successors"
+    );
+    let result = run(request);
+    let exhaustive = run(world.request(
+        &["a", "b", "c"],
+        vec![world.item("ReachesTwo")],
+        no_samples(),
+    ));
+    assert_eq!(
+        (exhaustive.graph.stats.nodes, exhaustive.graph.stats.edges),
+        (27, 54)
+    );
+    assert_eq!((result.graph.stats.nodes, result.graph.stats.edges), (7, 6));
+    assert_eq!(
+        result
+            .graph
+            .edges
+            .iter()
+            .filter(|edge| edge.source.index() == 0)
+            .count(),
+        1,
+        "the root has three enabled successors but the ample set retains one"
+    );
+    let [instance] = result.items[0].as_slice() else {
+        panic!(
+            "the request is for one bound instance: {:?}",
+            result.items[0]
+        )
+    };
+    assert_eq!(instance.over, Some(world.reference("a")));
+    let StateGraphOutcome::HoldsReduced {
+        reductions,
+        witnesses: Some(paths),
+    } = &instance.outcome
+    else {
+        panic!(
+            "the single-bound possible claim is reduced with a witness: {:?}",
+            instance.outcome
+        )
+    };
+    assert_eq!(
+        reductions,
+        &[qsl_replay::AppliedReduction::PartialOrder {
+            proviso: qsl_replay::Proviso::BreadthFirstRevisit,
+        }]
+    );
+    assert_eq!(paths.len(), 1);
+    assert_eq!(
+        paths[0]
+            .path
+            .steps
+            .iter()
+            .map(|step| (operation(step), receiver(step)))
+            .collect::<Vec<_>>(),
+        [
+            ("bump".to_owned(), "b".to_owned()),
+            ("bump".to_owned(), "b".to_owned()),
+            ("bump".to_owned(), "c".to_owned()),
+            ("bump".to_owned(), "c".to_owned()),
+            ("bump".to_owned(), "a".to_owned()),
+            ("bump".to_owned(), "a".to_owned()),
+        ]
+    );
+    let replayed = positions(&world, &["a", "b", "c"], &paths[0].path);
+    assert_eq!(world.value(&replayed[6], "a", "v"), 2);
+    for witness in paths {
+        let replay = world.replay_witness(
+            world.claim("ReachesTwo"),
+            binding.clone(),
+            witness.path.clone(),
+            witness.source.clone(),
+            &["a", "b", "c"],
+        );
+        assert_eq!(
+            replay.settlement,
+            qsl_replay::GraphReplaySettlement::Reproduced,
+            "each returned path reproduces with its evaluated witness"
+        );
+        assert_eq!(replay.evaluated_predicates, [(PredicateRole::Target, true)]);
+    }
+}
+
+/// FR-167-AC-6 (TC-592): state-graph exploration canonicalises roots and
+/// successors under the selected symmetric population group.
+#[trace("TC-592", "FR-167-AC-6")]
+#[test]
+fn symmetry_reduction_quotients_state_graph_and_marks_the_proof_reduced() {
+    let world = crate::graph_world::symmetric_config_world_over(
+        "",
+        REACHES_TWO,
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(
+        &["a", "b", "c"],
+        vec![world.item("ReachesTwo")],
+        no_samples(),
+    );
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let reduced = run(request);
+    let plain = run(world.request(
+        &["a", "b", "c"],
+        vec![world.item("ReachesTwo")],
+        no_samples(),
+    ));
+    assert_eq!(reduced.graph.stats.nodes, 18);
+    assert_eq!(plain.graph.stats.nodes, 27);
+    assert_eq!(reduced.graph.stats.edges, 54);
+    assert!(reduced
+        .graph
+        .edges
+        .iter()
+        .any(|edge| edge.permutation != qsl_eval::simulation::Permutation::identity()));
+    let StateGraphOutcome::HoldsReduced {
+        reductions,
+        witnesses: Some(paths),
+    } = &reduced.items[0][0].outcome
+    else {
+        panic!("the possible claim has a reduced witness")
+    };
+    let [qsl_replay::AppliedReduction::Symmetry {
+        groups,
+        orbit,
+        stabiliser,
+    }] = reductions.as_slice()
+    else {
+        panic!("symmetry is the applied reduction: {reductions:?}")
+    };
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].keys, ["a", "b", "c"]);
+    assert_eq!(
+        orbit.iter().map(String::as_str).collect::<Vec<_>>(),
+        ["a", "b", "c"]
+    );
+    assert_eq!(
+        stabiliser
+            .iter()
+            .map(|class| class.keys.iter().map(String::as_str).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        [vec!["a"], vec!["b", "c"]]
+    );
+    assert_eq!(paths.len(), 1);
+    assert_eq!(
+        names(&paths[0].path.steps),
+        ["attemptUpdate", "attemptUpdate"]
+    );
+    assert_eq!(
+        paths[0].path.steps.iter().map(receiver).collect::<Vec<_>>(),
+        ["a", "a"]
+    );
+    let StateGraphOutcome::HoldsReduced {
+        witnesses: Some(paths),
+        ..
+    } = &reduced.items[0][0].outcome
+    else {
+        unreachable!("the completed possible item has a reduced witness")
+    };
+    assert_eq!(
+        world.value(
+            &positions(&world, &["a", "b", "c"], &paths[0].path)[2],
+            "a",
+            "versionNumber"
+        ),
+        2
+    );
+}
+
+/// FR-168-AC-14 (TC-593): the engine rewrites an exhaustive `Holds` result to
+/// `HoldsReduced` when symmetry was selected, with no possible-only witness.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn always_possible_under_symmetry_returns_holds_reduced_without_witnesses() {
+    let world = crate::graph_world::symmetric_config_world_over(
+        "",
+        "always possible AlwaysReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(
+        &["a", "b", "c"],
+        vec![world.item("AlwaysReachesTwo")],
+        no_samples(),
+    );
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let result = run(request);
+    let instance = &result.items[0][0];
+    assert!(
+        instance.over.is_some(),
+        "the claim is bound to its least representative"
+    );
+    assert_eq!(instance.over, Some(world.reference("a")));
+    let StateGraphOutcome::HoldsReduced {
+        reductions,
+        witnesses: None,
+    } = &instance.outcome
+    else {
+        panic!(
+            "always possible target is reachable from every state under symmetry: {:?}",
+            instance.outcome
+        )
+    };
+    let [qsl_replay::AppliedReduction::Symmetry {
+        groups,
+        orbit,
+        stabiliser,
+    }] = reductions.as_slice()
+    else {
+        panic!("symmetry is the applied reduction: {reductions:?}")
+    };
+    assert_eq!(groups[0].keys, ["a", "b", "c"]);
+    assert_eq!(
+        orbit.iter().map(String::as_str).collect::<Vec<_>>(),
+        ["a", "b", "c"]
+    );
+    assert_eq!(
+        stabiliser
+            .iter()
+            .map(|class| class.keys.iter().map(String::as_str).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        [vec!["a"], vec!["b", "c"]]
+    );
+}
+
+/// FR-168-AC-14 (TC-593): applied reductions are reported in the specified
+/// symmetry-then-partial-order order when both reduce the shared graph.
+#[trace("TC-593", "FR-168-AC-14")]
+#[test]
+fn combined_reductions_are_reported_in_canonical_order() {
+    let world = crate::graph_world::symmetric_config_world_over(
+        "pre CanAdvance using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 2 }\n",
+        "possible Anything using v { true }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut request = world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples());
+    request.reductions.partial_order = true;
+    request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let result = run(request);
+    let plain = run(world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples()));
+    let mut symmetry_request =
+        world.request(&["a", "b", "c"], vec![world.item("Anything")], no_samples());
+    symmetry_request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+    let symmetry = run(symmetry_request);
+    assert_eq!((plain.graph.stats.nodes, plain.graph.stats.edges), (27, 54));
+    assert_eq!(
+        (symmetry.graph.stats.nodes, symmetry.graph.stats.edges),
+        (10, 20)
+    );
+    assert_eq!((result.graph.stats.nodes, result.graph.stats.edges), (7, 6));
+    assert!(result.graph.stats.nodes < symmetry.graph.stats.nodes);
+    assert!(result.graph.stats.edges < symmetry.graph.stats.edges);
+    assert!(matches!(
+        result.items[0][0].outcome,
+        StateGraphOutcome::HoldsReduced { ref reductions, .. }
+            if matches!(reductions.as_slice(), [
+                qsl_replay::AppliedReduction::Symmetry { .. },
+                qsl_replay::AppliedReduction::PartialOrder {
+                    proviso: qsl_replay::Proviso::BreadthFirstRevisit,
+                },
+            ])
     ));
 }
 
@@ -594,6 +999,7 @@ fn the_deadlock_item_and_the_subject_refusals() {
         alias: "O",
         object: "Counter",
         population: "counters",
+        symmetric: false,
         fields: vec![Field {
             name: "value",
             range: None,

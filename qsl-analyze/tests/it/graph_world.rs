@@ -12,13 +12,18 @@
 use std::collections::BTreeMap;
 
 use qsl_analyze::model_check::{StateGraphItem, StateGraphRequest};
-use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::{BackendId, ByteDigest, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_replay::ModelCheckLimits;
+use qsl_replay::{
+    GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
+    ModelTraceSubject, ObligationIdentity, RawSourceRef, ReplayLimits, ReplayRequestWire,
+    ReplayResult, ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+};
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -61,6 +66,8 @@ pub(crate) struct Model {
     pub(crate) object: &'static str,
     /// The population of the type.
     pub(crate) population: &'static str,
+    /// Whether the population is declared symmetric.
+    pub(crate) symmetric: bool,
     pub(crate) fields: Vec<Field>,
     pub(crate) operations: Vec<Operation>,
 }
@@ -198,6 +205,7 @@ impl Model {
                 "identity": population, "displayName": population,
                 "kind": {"module": self.package, "name": "population"},
                 "members": [object], "extent": "closed", "origin": Self::origin(&population),
+            "symmetric": self.symmetric,
             }],
         })
         .to_string()
@@ -214,6 +222,7 @@ pub(crate) struct World {
     pub(crate) model: Model,
     pub(crate) package: CheckedPackage,
     document: Vec<u8>,
+    source: Vec<u8>,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) initial: Vec<DocumentRef>,
@@ -283,6 +292,7 @@ impl World {
             model,
             package,
             document,
+            source: text.into_bytes(),
             packages,
             snapshots: BTreeMap::new(),
             initial: Vec::new(),
@@ -366,6 +376,114 @@ impl World {
             .package_id()
     }
 
+    /// Recompile and replay one state-graph witness through FR-170.
+    pub(crate) fn replay_witness(
+        &self,
+        claim: &CheckedStateGraphClaim,
+        over: ModelInstance,
+        path: ModelPath,
+        source: WitnessSource,
+        keys: &[&str],
+    ) -> GraphReplayResult {
+        let source_record = DigestRecord::mint(
+            DigestDomain::SourceBytesV1,
+            ByteDigest::of(&self.source).as_bytes(),
+        );
+        let source_wire: (String, String, String, String, Option<String>, String) = (
+            "agent-ix".to_owned(),
+            "graph".to_owned(),
+            "git".to_owned(),
+            "1".to_owned(),
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            source_record.hex(),
+        );
+        let package_id = self.package_id().record();
+        let sha256_jcs = |digest: [u8; 32]| {
+            (
+                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+                DigestRecord::mint(DigestDomain::Sha256Jcs, digest).hex(),
+            )
+        };
+        let mut byte_provision = vec![
+            (
+                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+                source_record.hex(),
+                self.source.clone(),
+            ),
+            {
+                let (domain, hex) = sha256_jcs(digest_of(&self.document));
+                (domain, hex, self.document.clone())
+            },
+        ];
+        byte_provision.extend(self.snapshots.iter().map(|(digest, bytes)| {
+            let (domain, hex) = sha256_jcs(*digest);
+            (domain, hex, bytes.clone())
+        }));
+        let obligation = [3; 32];
+        let occurrence = claim
+            .occurrence()
+            .expect("a checked claim has an occurrence");
+        let envelope = GraphEvidenceEnvelope::new(
+            ObligationIdentity::from_digest(obligation),
+            occurrence.clone(),
+            occurrence.node(),
+            package_id,
+            vec![RawSourceRef::new(
+                "agent-ix".to_owned(),
+                "graph".to_owned(),
+                "git".to_owned(),
+                "1".to_owned(),
+                source_record,
+            )],
+            Vec::new(),
+            UNLIMITED,
+            Vec::new(),
+            BackendId::new("qsl-en-1"),
+            GraphEvidence::Witness {
+                paths: vec![(WitnessPath::Path(path), source)],
+                over: Some(over),
+            },
+        );
+        let wire = ReplayRequestWire {
+            profile_selections: Vec::new(),
+            package_id: (
+                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+                package_id.hex(),
+            ),
+            source_digests: vec![source_wire],
+            dependencies: Vec::new(),
+            replay_target: RequestTargetWire::default(),
+            source: ReplaySource::ModelGraph(Box::new(envelope)),
+            obligation_identity: obligation,
+            backend: "qsl-en-1".to_owned(),
+            state_environment: StateEnvironment::new(Vec::new()),
+            accounting_limits: UNLIMITED,
+            stage_limits: BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
+            declared_domains: Vec::new(),
+            byte_provision,
+        };
+        let subject = ModelTraceSubject {
+            timed: None,
+            initial: self.initial.clone(),
+            universes: vec![PopulationUniverse {
+                population: self.model.key(self.model.population),
+                keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            }],
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+        };
+        let ReplayResult::ModelGraph(replayed) =
+            qsl_replay::replay_model_graph(wire, &subject, ReplayLimits::default())
+                .expect("the state-graph witness replays")
+        else {
+            panic!("state-graph replay returns its typed result arm")
+        };
+        replayed
+    }
+
     /// The reference of the object `key` of the world's type.
     pub(crate) fn reference(&self, key: &str) -> ObjectReference {
         let (effective, universe) = declared_type_universe_for(
@@ -391,9 +509,7 @@ impl World {
 
     /// The item `name`; its instances are the subject's universe keys.
     pub(crate) fn item(&self, name: &str) -> StateGraphItem<'_> {
-        StateGraphItem {
-            claim: self.claim(name),
-        }
+        StateGraphItem::new(self.claim(name))
     }
 
     /// A request over universe `keys` for `items`, with no deadlock item, no
@@ -436,6 +552,7 @@ pub(crate) fn config_version() -> Model {
         alias: "Config",
         object: "ConfigVersion",
         population: "config_history",
+        symmetric: false,
         fields: vec![Field {
             name: "versionNumber",
             range: Some((0, 3)),
@@ -444,6 +561,13 @@ pub(crate) fn config_version() -> Model {
             name: "attemptUpdate",
             modifies: &["versionNumber"],
         }],
+    }
+}
+
+pub(crate) fn symmetric_config_version() -> Model {
+    Model {
+        symmetric: true,
+        ..config_version()
     }
 }
 
@@ -470,9 +594,55 @@ pub(crate) fn config_world(claims: &str, starts: &[(i64, i64)]) -> World {
     config_world_over("", claims, &["a", "b"], &starts)
 }
 
+/// ADR-021 §7.2's three-counter POR instance, with `ReachesTwo` bound to
+/// `x = a` and all three counters initially zero.
+pub(crate) fn por_reachestwo_world() -> World {
+    let model = Model {
+        package: "test/por",
+        alias: "M",
+        object: "Counter",
+        population: "counters",
+        symmetric: false,
+        fields: vec![Field {
+            name: "v",
+            range: Some((0, 2)),
+        }],
+        operations: vec![Operation {
+            name: "bump",
+            modifies: &["v"],
+        }],
+    };
+    let source = concat!(
+        "pre CanBump using v on M::Counter::bump { self.v < 2 }\n",
+        "post Bumped using v on M::Counter::bump { (pre(self.v) = 0 and self.v = 1) or (pre(self.v) = 1 and self.v = 2) }\n",
+        "possible ReachesTwo using v over (x: M::Counter) { x.v = 2 }\n",
+    );
+    let counters: [Object<'_>; 3] = [("a", &[("v", 0)]), ("b", &[("v", 0)]), ("c", &[("v", 0)])];
+    World::new(model, source, &[&counters])
+}
+
 /// §7.1's world with `extra` added to its contract, universe `keys`, and one
 /// snapshot per entry of `starts`, each the version of every key in order.
 pub(crate) fn config_world_over(
+    extra: &str,
+    claims: &str,
+    keys: &[&str],
+    starts: &[Vec<i64>],
+) -> World {
+    config_world_over_model(config_version(), extra, claims, keys, starts)
+}
+
+pub(crate) fn symmetric_config_world_over(
+    extra: &str,
+    claims: &str,
+    keys: &[&str],
+    starts: &[Vec<i64>],
+) -> World {
+    config_world_over_model(symmetric_config_version(), extra, claims, keys, starts)
+}
+
+fn config_world_over_model(
+    model: Model,
     extra: &str,
     claims: &str,
     keys: &[&str],
@@ -497,11 +667,7 @@ pub(crate) fn config_world_over(
         })
         .collect();
     let starts: Vec<&[Object<'_>]> = objects.iter().map(Vec::as_slice).collect();
-    World::new(
-        config_version(),
-        &format!("{CONFIG_CONTRACT}{extra}{claims}"),
-        &starts,
-    )
+    World::new(model, &format!("{CONFIG_CONTRACT}{extra}{claims}"), &starts)
 }
 
 /// §7.2's game: `phase` is `Start` 0, `Mid` 1, `Lost` 2 or `Won` 3, so
@@ -548,6 +714,7 @@ pub(crate) fn game(count: bool, restart: bool) -> Model {
         alias: "G",
         object: "Game",
         population: "games",
+        symmetric: false,
         fields,
         operations,
     }
@@ -629,6 +796,7 @@ pub(crate) fn job(reset: bool) -> Model {
         alias: "M",
         object: "Job",
         population: "jobs",
+        symmetric: false,
         fields: vec![flag("a"), flag("b"), flag("done")],
         operations,
     }
@@ -744,6 +912,7 @@ fn moves_world(
         alias,
         object,
         population,
+        symmetric: false,
         fields: vec![Field {
             name: "pos",
             range: Some((0, high)),

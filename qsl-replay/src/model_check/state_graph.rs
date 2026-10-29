@@ -462,10 +462,14 @@ pub enum StateGraphOutcome {
     },
     /// The state-graph claim held over a reduced graph. No core certificate
     /// covers that quotient, so settlement retains the reductions and marks
-    /// the proof uncertified (FR-169, ADR-021 RV-1).
+    /// the proof uncertified (FR-169, ADR-021 RV-1). A reduced `Possible`
+    /// result also carries one concrete witness per initial state.
     HoldsReduced {
         /// The applied reductions, in symmetry then partial-order order.
         reductions: Vec<AppliedReduction>,
+        /// Concrete witnesses for a reduced `Possible` proof, one per
+        /// initial state. `None` for `AlwaysPossible`.
+        witnesses: Option<Vec<GraphWitness>>,
     },
     /// A selected reduction's preservation table rejects this form before
     /// expansion (FR-169, ADR-021 RV-2).
