@@ -786,8 +786,8 @@ fn a_certificate_or_evidence_of_another_package_never_settles() {
         assert_eq!(
             record.value,
             TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: elsewhere,
-                recompiled: world.package_id().record(),
+                requested: qsl_replay::StaleIdentity::Package(elsewhere),
+                recompiled: qsl_replay::StaleIdentity::Package(world.package_id().record()),
             }),
             "{claim}"
         );
@@ -815,8 +815,8 @@ fn a_certificate_or_evidence_of_another_package_never_settles() {
         assert_eq!(
             record.value,
             TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
-                requested: world.package_id().record(),
-                recompiled: other.record(),
+                requested: qsl_replay::StaleIdentity::Package(world.package_id().record()),
+                recompiled: qsl_replay::StaleIdentity::Package(other.record()),
             }),
             "{claim}: {:?}",
             instance.outcome

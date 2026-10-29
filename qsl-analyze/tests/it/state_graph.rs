@@ -179,6 +179,32 @@ fn partial_order_reduction_filters_claims_before_shared_exploration() {
     ));
 }
 
+/// FR-167 (TC-592): the real shared explorer applies an ample set and reports
+/// the deadlock-freedom proof as reduced after the breadth-first revisit
+/// proviso has completed the graph.
+#[trace("TC-592", "FR-167-AC-4")]
+#[test]
+fn partial_order_reduction_is_applied_by_the_state_graph_engine() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let mut request = world.request(AB, Vec::new(), no_samples());
+    request.deadlock_freedom = true;
+    request.reductions.partial_order = true;
+    let reduced = run(request);
+
+    let mut exhaustive = world.request(AB, Vec::new(), no_samples());
+    exhaustive.deadlock_freedom = true;
+    let exhaustive = run(exhaustive);
+
+    assert!(reduced.graph.edges.len() < exhaustive.graph.edges.len());
+    assert!(matches!(
+        reduced.deadlock,
+        Some(ModelCheckOutcome::HoldsReduced { ref reductions, .. })
+            if matches!(reductions.as_slice(), [qsl_replay::AppliedReduction::PartialOrder {
+                proviso: qsl_replay::Proviso::BreadthFirstRevisit
+            }])
+    ));
+}
+
 /// The state at each position of `path`, re-executed from its initial
 /// state: each step's post-state is the successor of its transition whose
 /// digest it records.

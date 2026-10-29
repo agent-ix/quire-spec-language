@@ -35,6 +35,7 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
@@ -42,13 +43,13 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{
-    translate_itself, translate_negation, AtomSymmetry, AutomatonError, PropertyAutomaton, StateId,
+    translate_itself, translate_negation, AtomSymmetry, AutomatonError, AutomatonStateKey,
+    PropertyAutomaton, StateId,
 };
 use crate::hyper::copy_swap::{CopySwap, CopySwapInputs};
 use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
 use crate::hyper::seam::{HyperLetters, ParameterBinding, StepLabel, StepMatch};
 use crate::hyper::witness::{Partner, WitnessSet};
-use crate::simulation::model::encode::Enc;
 use crate::simulation::model::{ModelFinding, ModelKey, ModelSimState, ModelSystem};
 use crate::simulation::{
     EncodingRefusal, Expansion, ExpansionStop, OfferedReductions, Permutation, SymmetryGroup,
@@ -91,12 +92,33 @@ pub enum Property {
 }
 
 /// A product state: the components' model states and the property state.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HyperState {
     /// One model state per trace variable, in quantifier order.
     pub components: Vec<ModelSimState>,
     /// Where the automaton is after reading this joint position.
     pub property: Property,
+    /// The typed canonical key of an `After` state, captured when the
+    /// automaton transition creates it. Hyper-product state-key calls then
+    /// need no interior-mutability borrow of the automaton.
+    property_key: Option<Rc<PropertyKey>>,
+}
+
+impl HyperState {
+    /// Creates a product state whose automaton key will be supplied by its
+    /// product when the state is admitted.
+    pub fn new(components: Vec<ModelSimState>, property: Property) -> Self {
+        Self {
+            components,
+            property,
+            property_key: None,
+        }
+    }
+
+    pub(super) fn with_property_key(mut self, key: PropertyKey) -> Self {
+        self.property_key = Some(Rc::new(key));
+        self
+    }
 }
 
 /// One component's part of a joint step.
@@ -167,16 +189,63 @@ impl Encode for HyperTransition {
 /// order and the property state.
 pub struct HyperKey {
     components: Vec<ModelKey>,
-    property: PropertyKey,
+    property: Rc<PropertyKey>,
 }
 
-enum PropertyKey {
-    After(Result<Enc, AutomatonError>),
+pub(super) enum PropertyKey {
+    After(Result<AutomatonStateKey, AutomatonError>),
     Dead,
     Undefined,
     Rejected,
     MatchUndefined,
-    Witnesses(Vec<(Vec<ModelKey>, Result<Enc, AutomatonError>)>),
+    Witnesses(Vec<(Vec<ModelKey>, Result<AutomatonStateKey, AutomatonError>)>),
+}
+
+impl HyperKey {
+    pub(super) fn property_key(
+        systems: &[&ModelSystem<'_>],
+        state: &HyperState,
+        automaton: &PropertyAutomaton,
+    ) -> PropertyKey {
+        let state_key = |state| automaton.state_key(state, IdentityLimits::default().input_bytes);
+        match &state.property {
+            Property::After(state) => PropertyKey::After(state_key(*state)),
+            Property::Dead => PropertyKey::Dead,
+            Property::Undefined { .. } => PropertyKey::Undefined,
+            Property::Rejected => PropertyKey::Rejected,
+            Property::MatchUndefined { .. } => PropertyKey::MatchUndefined,
+            Property::Witnesses(set) => {
+                let offset = state.components.len();
+                let mut members = Vec::with_capacity(set.members().len());
+                for member in set.members() {
+                    let keys: Vec<ModelKey> = member
+                        .states()
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, held)| {
+                            systems.get(offset + index).map(|system| system.key(held))
+                        })
+                        .collect();
+                    members.push((keys, state_key(member.automaton())));
+                }
+                PropertyKey::Witnesses(members)
+            }
+        }
+    }
+
+    pub(super) fn automaton_error(&self) -> Option<AutomatonError> {
+        match self.property.as_ref() {
+            PropertyKey::After(Err(error)) => Some(*error),
+            PropertyKey::Witnesses(members) => members
+                .iter()
+                .find_map(|(_, key)| key.as_ref().err().copied()),
+            PropertyKey::After(Ok(_))
+            | PropertyKey::Dead
+            | PropertyKey::Undefined
+            | PropertyKey::Rejected
+            | PropertyKey::MatchUndefined => None,
+        }
+    }
 }
 
 impl HyperKey {
@@ -185,39 +254,49 @@ impl HyperKey {
     pub(super) fn of(
         systems: &[&ModelSystem<'_>],
         state: &HyperState,
-        automaton: &PropertyAutomaton,
+        automaton: Option<&PropertyAutomaton>,
     ) -> Self {
-        let state_key = |state| automaton.state_key_value(state);
+        let state_key = |state| {
+            automaton.map_or_else(
+                || Err(AutomatonError::UnknownState { state }),
+                |automaton| automaton.state_key(state, IdentityLimits::default().input_bytes),
+            )
+        };
+        let property = state.property_key.clone().unwrap_or_else(|| {
+            Rc::new(match &state.property {
+                Property::After(at) => PropertyKey::After(state_key(*at)),
+                Property::Dead => PropertyKey::Dead,
+                Property::Undefined { .. } => PropertyKey::Undefined,
+                Property::Rejected => PropertyKey::Rejected,
+                Property::MatchUndefined { .. } => PropertyKey::MatchUndefined,
+                Property::Witnesses(set) => {
+                    let offset = state.components.len();
+                    PropertyKey::Witnesses(
+                        set.members()
+                            .iter()
+                            .map(|member| {
+                                let keys = member
+                                    .states()
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(index, held)| {
+                                        systems.get(offset + index).map(|system| system.key(held))
+                                    })
+                                    .collect();
+                                (keys, state_key(member.automaton()))
+                            })
+                            .collect(),
+                    )
+                }
+            })
+        });
         Self {
             components: systems
                 .iter()
                 .zip(&state.components)
                 .map(|(system, component)| system.key(component))
                 .collect(),
-            property: match &state.property {
-                Property::After(at) => PropertyKey::After(state_key(*at)),
-                Property::Dead => PropertyKey::Dead,
-                Property::Undefined { .. } => PropertyKey::Undefined,
-                Property::Rejected => PropertyKey::Rejected,
-                Property::MatchUndefined { .. } => PropertyKey::MatchUndefined,
-                Property::Witnesses(set) => PropertyKey::Witnesses(
-                    set.members()
-                        .iter()
-                        .map(|member| {
-                            let offset = state.components.len();
-                            let keys = member
-                                .states()
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(index, held)| {
-                                    systems.get(offset + index).map(|system| system.key(held))
-                                })
-                                .collect();
-                            (keys, state_key(member.automaton()))
-                        })
-                        .collect(),
-                ),
-            },
+            property,
         }
     }
 }
@@ -234,7 +313,7 @@ impl Encode for HyperKey {
         }
         writer.end_array()?;
         writer.begin_array()?;
-        match &self.property {
+        match self.property.as_ref() {
             PropertyKey::After(index) => {
                 writer.string("after")?;
                 encode_property_state_key(index, writer)?;
@@ -261,7 +340,7 @@ impl Encode for HyperKey {
 }
 
 fn encode_property_state_key<S: Sink + ?Sized>(
-    key: &Result<Enc, AutomatonError>,
+    key: &Result<AutomatonStateKey, AutomatonError>,
     writer: &mut Writer<'_, S>,
 ) -> Result<(), quire_canonical::Error> {
     let key = key.as_ref().map_err(|error| match error {
@@ -272,7 +351,30 @@ fn encode_property_state_key<S: Sink + ?Sized>(
             invariant: "hyper-product-automaton-key-encoding-failed",
         },
     })?;
-    key.encode_into(writer)
+    let text =
+        std::str::from_utf8(key.as_bytes()).map_err(|_| quire_canonical::Error::Internal {
+            invariant: "automaton-state-key-is-canonical-utf8",
+        })?;
+    writer.string(text)
+}
+
+#[cfg(test)]
+mod key_error_tests {
+    use std::rc::Rc;
+
+    use super::{HyperKey, PropertyKey};
+    use crate::automaton::AutomatonError;
+
+    #[test]
+    fn hyper_key_carries_the_typed_automaton_key_failure() {
+        let error = AutomatonError::KeyEncodingLimit { limit: 7 };
+        let key = HyperKey {
+            components: Vec::new(),
+            property: Rc::new(PropertyKey::After(Err(error))),
+        };
+
+        assert_eq!(key.automaton_error(), Some(error));
+    }
 }
 
 /// What an expansion found beside its successors.
@@ -352,6 +454,10 @@ pub enum Halt {
     Cancelled(CancelCause),
     /// The automaton reached `max_automaton_states`.
     Automaton(u64),
+    /// A reached property state could not be encoded. The retained graph's
+    /// generic key API reports the canonical-writer failure; callers recover
+    /// this original typed automaton cause from the product before settling.
+    AutomatonKey(AutomatonError),
     /// A state or transition identity has no canonical encoding.
     Encoding(EncodingRefusal),
     /// An invariant of the product broke.
@@ -418,6 +524,10 @@ pub struct HyperProduct<'r, 's> {
 }
 
 impl<'r, 's> HyperProduct<'r, 's> {
+    pub(super) fn property_key(&self, property: &Property) -> PropertyKey {
+        let state = HyperState::new(Vec::new(), property.clone());
+        HyperKey::property_key(&self.joint.systems, &state, &self.automaton.borrow())
+    }
     /// Translate the body, negated or itself as `inputs.sense` says, and bind
     /// the product to its inputs. The initial states are read by
     /// [`Self::start`].
@@ -492,6 +602,7 @@ impl<'r, 's> HyperProduct<'r, 's> {
             for property in self.step(Before::Start, &reading)? {
                 initial.push(HyperState {
                     components: components.clone(),
+                    property_key: Some(Rc::new(self.property_key(&property))),
                     property,
                 });
             }
@@ -563,7 +674,11 @@ impl TransitionSystem for HyperProduct<'_, '_> {
     }
 
     fn key(&self, state: &HyperState) -> HyperKey {
-        HyperKey::of(&self.joint.systems, state, &self.automaton.borrow())
+        let key = HyperKey::of(&self.joint.systems, state, None);
+        if let Some(error) = key.automaton_error() {
+            self.joint.record(Halt::AutomatonKey(error));
+        }
+        key
     }
 
     fn offered_reductions(&self) -> OfferedReductions {
@@ -647,6 +762,7 @@ impl TransitionSystem for HyperProduct<'_, '_> {
                     step.clone(),
                     HyperState {
                         components: posts.clone(),
+                        property_key: Some(Rc::new(self.property_key(&property))),
                         property,
                     },
                 ));

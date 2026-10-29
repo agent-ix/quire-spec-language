@@ -26,8 +26,9 @@ mod decide;
 mod explore;
 mod sample;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
@@ -35,11 +36,13 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::ReplayRefusal;
 use qsl_replay::{
-    settle_state_graph, GraphReplayResult, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
-    ModelCheckOutcome, OpenCause, ReachedLimit, RunEnd, StateGraphInstanceOutcome,
-    StateGraphMethod, StateGraphOutcome, StateGraphRecord, DEFAULT_WITNESS_SEED,
+    settle_state_graph, AppliedReduction, GraphReplayResult, IncompleteCause, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, OpenCause, Proviso, ReachedLimit, RunEnd,
+    StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
+    DEFAULT_WITNESS_SEED,
 };
 use qsl_route::reductions::Reductions;
+use qsl_semantics::check::footprint::SymbolicLocation;
 use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
     StateGraphForm,
@@ -230,6 +233,7 @@ struct InstanceView<'a> {
     item: usize,
     instance: usize,
     over: Option<ObjectReference>,
+    model_instance: Option<ModelInstance>,
     predicates: Vec<(PredicateRole, Option<&'a CheckedPredicateBody>)>,
 }
 
@@ -253,27 +257,29 @@ fn instances<'a>(
                     (role, body)
                 })
                 .collect();
-            let bindings: Vec<Option<ObjectReference>> = match entry.claim.over() {
-                None => vec![None],
-                Some(over) => system
-                    .instances(&ValueType::Reference(over.object))
-                    .map_err(bounds_refusal)?
-                    .iter()
-                    .map(|instance| {
-                        system
-                            .bound_reference(over.object, instance)
-                            .map(Some)
-                            .map_err(|_| fault("state-graph-instance-references"))
-                    })
-                    .collect::<Result<_, _>>()?,
-            };
+            let bindings: Vec<(Option<ObjectReference>, Option<ModelInstance>)> =
+                match entry.claim.over() {
+                    None => vec![(None, None)],
+                    Some(over) => system
+                        .instances(&ValueType::Reference(over.object))
+                        .map_err(bounds_refusal)?
+                        .iter()
+                        .map(|instance| {
+                            system
+                                .bound_reference(over.object, instance)
+                                .map(|reference| (Some(reference), Some(instance.clone())))
+                                .map_err(|_| fault("state-graph-instance-references"))
+                        })
+                        .collect::<Result<_, _>>()?,
+                };
             Ok(bindings
                 .into_iter()
                 .enumerate()
-                .map(|(instance, over)| InstanceView {
+                .map(|(instance, (over, model_instance))| InstanceView {
                     item,
                     instance,
                     over,
+                    model_instance,
                     predicates: bodies.clone(),
                 })
                 .collect())
@@ -520,6 +526,39 @@ pub fn check_state_graph(
             ));
         }
     };
+    let por_instances: Vec<ModelInstance> = views
+        .iter()
+        .flatten()
+        .filter_map(|view| view.model_instance.clone())
+        .collect();
+    let por = if request.reductions.partial_order {
+        let mut reads = BTreeSet::<SymbolicLocation>::new();
+        for item in &request.items {
+            let Some(over) = item.claim.over() else {
+                continue;
+            };
+            let parameter = (over.name.clone(), ValueType::Reference(over.object));
+            for (_, predicate) in predicates(item.claim.form()) {
+                let CheckedStatePredicate::Checked(body) = predicate else {
+                    continue;
+                };
+                reads.extend(
+                    system
+                        .atom_reads(&parameter, body.body())
+                        .map_err(|refusal| ModelCheckRefusal::Footprint(refusal.into()))?,
+                );
+            }
+        }
+        Some(super::ample::Por::with_atom_reads(
+            &system,
+            reads,
+            &por_instances,
+            &[],
+            None,
+        )?)
+    } else {
+        None
+    };
     let explored = explore::Exploration {
         system: &system,
         package,
@@ -529,6 +568,7 @@ pub fn check_state_graph(
         budgets,
         views: &views,
         deadlock_freedom: request.deadlock_freedom,
+        por: por.as_ref(),
     }
     .run()?;
     let items = views
@@ -561,6 +601,14 @@ pub fn check_state_graph(
                         view,
                         sampled.witnesses(view),
                     )?;
+                    let outcome =
+                        if explored.reduced && matches!(outcome, StateGraphOutcome::Holds { .. }) {
+                            StateGraphOutcome::HoldsReduced {
+                                reductions: applied_reductions(explored.partial_order_reduced),
+                            }
+                        } else {
+                            outcome
+                        };
                     Ok(StateGraphInstanceOutcome {
                         over: view.over.clone(),
                         outcome,
@@ -577,6 +625,16 @@ pub fn check_state_graph(
         deadlock: explored.deadlock,
         seed,
     })
+}
+
+fn applied_reductions(partial_order: bool) -> Vec<AppliedReduction> {
+    if partial_order {
+        vec![AppliedReduction::PartialOrder {
+            proviso: Proviso::BreadthFirstRevisit,
+        }]
+    } else {
+        Vec::new()
+    }
 }
 
 /// ADR-022 GR-1: selected state-space reductions are rejected by the form's
