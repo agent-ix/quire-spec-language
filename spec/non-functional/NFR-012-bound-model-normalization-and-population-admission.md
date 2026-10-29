@@ -70,7 +70,7 @@ per-charge record, so its memory does not grow with the work it bounds.
 | Derivation facts | At most the selected ceiling (default 1600000) per normalization | 1600000 facts by default | negative-abuse-testing |
 | Effective declarations | At most the selected ceiling (default 1600000) per normalization | 1600000 declarations by default | negative-abuse-testing |
 | Dispatch candidates | At most the selected ceiling (default 1600000) per dispatch link | 1600000 candidates by default | negative-abuse-testing |
-| Hashed preimage bytes | **RETIRED (QSL computes no hash and meters none).** None. | None | negative-abuse-testing |
+| Hashed preimage bytes | **RETIRED (QSL computes no hash and meters none).** None. | None | Withdrawn |
 | Normalization work | At most the selected ceiling (default 16777216 work units) per normalization | 16777216 units by default | negative-abuse-testing |
 | Ancestor steps | At most the selected ceiling (default 16777216 edges) per conformance walk | 16777216 edges by default | negative-abuse-testing |
 | Family steps | At most the selected ceiling (default 16777216 edges) per dispatch-family link | 16777216 edges by default | negative-abuse-testing |

@@ -295,12 +295,12 @@ impl StateModel {
     pub fn new(
         model_selections: &[DomainPackageRef],
         types: &TypeEnvironment,
-        packages: &BTreeMap<[u8; 32], Vec<u8>>,
+        packages: &BTreeMap<DomainPackageIdentity, Vec<u8>>, // keyed by package identity (FR-056); code: CODE-LANE QSL-1260
         limits: ModelNormalizationLimits,
     ) -> Result<Self, AdmissionFailure>;
     pub fn admit_initial(
         &self,
-        provision: &BTreeMap<[u8; 32], Vec<u8>>,
+        provision: &BTreeMap<DomainPackageIdentity, Vec<u8>>, // keyed by package identity (FR-056)
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure>;

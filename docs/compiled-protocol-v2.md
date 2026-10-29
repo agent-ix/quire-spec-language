@@ -63,8 +63,8 @@ There is exactly one binding for every temporal declaration and none for other
 declaration families. Bindings sort by `declaration` and cannot repeat.
 `definition` equals that declaration's `profile` index. The selected definition
 identity/revision is the indexed `Definition`; its `artifact` selects the exact
-dependency `ArtifactRef`, and admission recomputes that reference's digest from
-the independently supplied original bytes (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest). The clock tag is determined by the
+dependency `ArtifactRef`, the dependency-digest recompute is removed with
+ArtifactRef.digest (BLOCKED-BY QSL-1270 (draco), QSpec #516). The clock tag is determined by the
 selected exact profile identity:
 
 | Definition identity | Required clock tag and fields |

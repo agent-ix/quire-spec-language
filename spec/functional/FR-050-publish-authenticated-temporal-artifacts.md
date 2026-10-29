@@ -172,9 +172,8 @@ The strict `/2` reader SHALL reject a binding whose definition index differs
 from its declaration profile or whose configuration alternative differs from
 that exact registered profile.
 
-The strict `/2` reader SHALL recompute the selected definition dependency digest
-from the independently supplied original bytes rather than trust the offered
-artifact reference alone (BLOCKED-BY QSL-1270 (draco), ArtifactRef digest).
+The dependency-digest recompute is removed with ArtifactRef.digest (BLOCKED-BY
+QSL-1270 (draco), QSpec #516); no replacement contract.
 
 The strict `/2` reader SHALL apply FR-042's canonical byte comparison, closed
 shape validation, complete inventory checks and charge-before-work limits to the

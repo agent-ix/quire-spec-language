@@ -58,7 +58,7 @@ definitions; and finite compiler admission/emission limits.
 Static compilation consumes each declaration by its declaration key (domain
 package identity, IR node identity). The domain package identity
 stays separate from the native source identity and the compiled-artifact
-seal. Snapshot, window, member, relationship-instance and closure identities are
+seal (BLOCKED-BY QSL-1270 (draco), ArtifactRef seal). Snapshot, window, member, relationship-instance and closure identities are
 assessment selections, not static compiler inputs.
 
 F owns concrete record admission, mapping a record to its exact workflow/node/
