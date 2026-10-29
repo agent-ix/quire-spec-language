@@ -30,7 +30,7 @@ feature or backend numeric/object support is claimed.
 ## Outputs
 
 Per-case model/program/snapshot/invocation files, clause requests and
-native-compile/1 requests with actual selected byte digests and explicit authored,
+native-compile/1 requests with selected source identity labels and explicit authored,
 native/formal and runtime identities. Extracted Markdown units retain the
 original document mapping. Existing historical standard fixture bytes remain
 unchanged. The new inputs and their expected judgments are example data; only
@@ -63,7 +63,7 @@ exhaustion. Extracted Markdown execution retains its distinct source identity.
 | FR-032-AC-1 | The actual model frontend admits ConfigVersion with exact integer, optional-reference and operation-frame roles; the clause spine gives the independently expected parent, cycle and identity judgments across the 17-case corpus. | Test (TC-110, TC-469) |
 | FR-032-AC-2 | The generated pre/post observations give `evaluate/success/true` for an unchanged version, `evaluate/violation/false` for a permitted version change and `admit/refusal/frame_violation` for a forbidden parent change, retaining the case identities. | Test (TC-469) |
 | FR-032-AC-3 | Dangling/incomplete populations, missing model and exhausted work give their independently expected refusal or incomplete stage and code without Boolean truth; a fresh healthy clause request succeeds. | Test (TC-469) |
-| FR-032-AC-4 | A request pinned to the emitted package id gives the same clause report; direct and Quire-extracted runs agree on stage, category, truth and exit code, and the extracted run carries the package id independently compiled from its body. The boundary refusal's object and field survive an FR-267 native-run-result/2 write and read. | Test (TC-469) |
+| FR-032-AC-4 | A request selecting the emitted package by its identity and version gives the same clause report; direct and Quire-extracted runs agree on stage, category, truth and exit code, and the extracted run carries the package identity and version independently compiled from its body. The boundary refusal's object and field survive an FR-267 native-run-result/2 write and read. | Test (TC-469) |
 
 ## Dependencies
 

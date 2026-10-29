@@ -19,8 +19,8 @@ construction outcome.
 
 ## Test Procedure
 
-Generate a bounded family of ASCII/Unicode labels, scalar extrema, empty/nonempty vectors, field-order permutations and snapshot/invocation artifacts. Compare bytes to independently authored envelope expectations and SHA-256 to an independent known-vector check. Repeat identical requests and mutate each identity/body field independently; include empty labels and role-specific reference API compile checks.
+Generate a bounded family of ASCII/Unicode labels, scalar extrema, empty/nonempty vectors, field-order permutations and snapshot/invocation artifacts. Compare bytes to independently authored envelope expectations. Repeat identical requests and mutate each identity/body field independently; include empty labels and role-specific reference API compile checks.
 
 ## Expected Results
 
-Repeated exact input reproduces bytes/digests. Altered labels and fields yield the expected changed bytes. Vector order remains byte-significant even when later semantic equality ignores it. Snapshot/Invocation refs cannot substitute for each other's Rust type; invalid labels produce a structured error with no digest invented.
+Repeated exact input reproduces bytes. Altered labels and fields yield the expected changed bytes. Vector order remains byte-significant even when later semantic equality ignores it. Snapshot/Invocation refs cannot substitute for each other's Rust type; invalid labels produce a structured error with no identity invented.

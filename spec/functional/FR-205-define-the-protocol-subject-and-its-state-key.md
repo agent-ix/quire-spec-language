@@ -40,7 +40,7 @@ A verification operator asks whether a claim holds over a protocol that
 forks two branches over one cell. They name the model subject, the
 protocol, the object its `over` parameter binds and the model each static
 role plays. Every engine and replay reads one definition of what a protocol
-state is, so a counterexample's state digests mean the same thing to the
+state is, so a counterexample's state keys mean the same thing to the
 model checker and to replay, and a loop that forks again reaches a state it
 has already seen instead of a new one.
 
@@ -80,9 +80,9 @@ has already seen instead of a new one.
   `invalid-value`, naming the protocol.
 - A static role on a whole model (FR-218, `role w on M`) is bound by
   construction: its binding is the subject's model subject, which holds
-  every `model_selections` row of the package (QSpec FR-361, FR-425), and
+  every model the package selects, each recorded by its `model_root` node (QSpec FR-361, FR-425), and
   its `roles` entry is `{"type":"model-binding","selection":"<identity>"}`
-  with the identity of `M`'s row (QSpec FR-425-AC-13). Two such roles on two
+  with the identity of the package `M` selects (QSpec FR-425-AC-13). Two such roles on two
   aliases are each bound. The request supplies no binding for it.
 - When a static role on a model type has no binding, a binding names a model
   the role does not admit, or the request supplies a binding for a role on a

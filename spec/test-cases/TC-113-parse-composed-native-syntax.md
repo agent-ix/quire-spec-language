@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Exercise the public parser against the composed grammar and the frozen historical
+Exercise the public parser against the composed grammar and the historical
 corpus. The public Rust tests are in `tests/composed_syntax.rs`, including the
 authored choreography fixture and balanced-but-incomplete refusal controls.
 
@@ -32,7 +32,7 @@ authored choreography fixture and balanced-but-incomplete refusal controls.
 5. Insert CRLF, comments, escaped quotes and multibyte string values. Check spans
    by slicing the original bytes at every selected declaration/reference/literal,
    including delimiters, rather than comparing decoded-character offsets.
-6. Run exact-limit and one-step-over token/node controls, then the frozen
+6. Run exact-limit and one-step-over token/node controls, then the
    historical parse/format/refusal/package corpus through its original selection.
 
 ## Expected Results

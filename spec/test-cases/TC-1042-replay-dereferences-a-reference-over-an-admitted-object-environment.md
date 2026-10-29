@@ -67,10 +67,10 @@ objects (each lists every declared field, `next` absent unless stated):
 | `h` | `Hub` | `[9]` | |
 | `z` | `Lone` | | `4` |
 
-Variants of S1, each with its own digest in the request's `object_environment`
-and its document under that digest in the byte provision unless a row says
+Variants of S1, each with its own identity in the request's `object_environment`
+and its document under that identity in the byte provision unless a row says
 otherwise: **S1-anchor** (anchor name `other`); **S1-pre** (observation
-`pre`, no `anchor`); **S1-model** (a `model` digest that is none of the
+`pre`, no `anchor`); **S1-model** (a `model` identity that is none of the
 package's selections); **S1-dup** (a second object `a` of type `Node` after
 `z`); **S1-shape** (`a`'s `items` is `{"integer":"3"}`); **S1-range** (`a`'s
 `items` is `{"sequence":[{"integer":"12"}]}`); **S1-gone** (`a`'s `next` is
@@ -85,11 +85,11 @@ Tag the tests `#[trace("TC-1042", "FR-098-AC-n")]` with the AC each backs.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 1 | a request whose `object_environment` is `{"digest": <S1's sha256-jcs digest>, "identity": {...}}`, with no byte-provision entry under that digest | constructs; the member serializes and reads back equal |
+| 1 | a request whose `object_environment` is `{"identity": {...}}` naming S1, with no byte-provision entry under that identity | constructs; the member serializes and reads back equal |
 | 2 | `object_environment` is the string `"S1"` | `invalid_runtime_input`/`wrong-value-kind` naming `object_environment` |
-| 3 | `object_environment` is `{"identity": {...}}` | `missing-member` naming `object_environment.digest` |
-| 4 | `object_environment` is `{"digest": ..., "identity": {...}, "role": "current"}` | `unknown-member` naming `object_environment.role` |
-| 5 | `object_environment.digest` in the `quire.source.bytes/v1` domain; then a `sha256-jcs` digest of 63 hex digits | `invalid-value` naming `object_environment.digest`, twice |
+| 3 | `object_environment` is `{}` | `missing-member` naming `object_environment.identity` |
+| 4 | `object_environment` is `{"identity": {...}, "role": "current"}` | `unknown-member` naming `object_environment.role` |
+| 5 | (Retired with FR-106: `object_environment` carries only `identity`, so there is no further member value to refuse.) | none |
 | 6 | decode the `Canonical` entry `P={"identity":"61","object_type":"<64 digits 2>","type":"reference","universe":"<64 digits 1>"}`; then the same with `"identity":""` | one `WitnessValue::Reference` with universe 64 digits `1`, object type 64 digits `2` and identity bytes `61`; then one with empty identity bytes (decode reads the form only) |
 | 7 | decode each of: `universe` of 63 digits; `object_type` of 63 digits `2` and `A`; `"identity":"616"`; the members written `{"type":"reference","universe":...,"object_type":...,"identity":...}`; no `identity`; `{"extra":"y","identity":"61",...}`; `"universe":1` | `DecodeRefusal::Malformed` naming the parameter, seven times |
 
@@ -109,7 +109,7 @@ Tag the tests `#[trace("TC-1042", "FR-098-AC-n")]` with the AC each backs.
 
 ### Reference conversion, before the document is read
 
-Rows 17 to 19 give `object_environment` a digest with no byte-provision
+Rows 17 to 19 give `object_environment` an identity with no byte-provision
 entry, so a refusal other than `unavailable_observation` shows the document was
 never read.
 
@@ -123,7 +123,7 @@ never read.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 20 | `fc`, `Input` `x` = integer 7, `object_environment` with a digest that has no byte-provision entry | `UnusedObjectEnvironment`: `invalid_runtime_input`/`unknown-member` naming `object_environment`, not `unavailable_observation` |
+| 20 | `fc`, `Input` `x` = integer 7, `object_environment` with an identity that has no byte-provision entry | `UnusedObjectEnvironment`: `invalid_runtime_input`/`unknown-member` naming `object_environment`, not `unavailable_observation` |
 | 21 | `fc`, `Input` `x` = `WitnessValue::Boolean(true)`, S1 in the provision | the row 20 refusal, not `WrongValueKind`: the check precedes conversion |
 
 ### Environment admission
@@ -133,7 +133,7 @@ All rows are `fa` over `ref(a, TN)` unless stated, with the refusal
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 22 | S1's digest, no byte-provision entry | `Incomplete`, `unavailable_observation`/`missing-required-artifact` (check 1) |
+| 22 | S1's identity, no byte-provision entry | `Incomplete`, `unavailable_observation`/`missing-required-artifact` (check 1) |
 | 23 | **S1-pre** | `wrong_snapshot`/`wrong-observation` (check 3) |
 | 24 | **S1-model** | `invalid_model_binding`/`wrong-model-selection` (check 4) |
 | 25 | **S1-dup**, with `ref(n9, TN)` as the argument | `invalid_runtime_input`/`conflicting-identity` at the second `a` of `G` (check 6.3), not the dangling `n9` |

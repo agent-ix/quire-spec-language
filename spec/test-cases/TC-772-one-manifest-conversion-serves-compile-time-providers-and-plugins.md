@@ -33,6 +33,6 @@ Layer R owns steps 5 and 6 (FR-288-AC-5, FR-288-AC-6), tested in `qsl-route`. St
 - Step 1: the two descriptors are equal except for their origin.
 - Step 2: the `BackendId` equals the backend identity; each change gives different advertised capabilities and the same `BackendId`.
 - Step 3: the conversion refuses with the FR-331 reader's cause; the registry holds only the valid manifest.
-- Step 4: the three `BackendId` values are equal; the two manifests give the same `BackendId`.
+- Step 4: the three `BackendId` values are equal; the two manifests give the same `BackendId` and different descriptors, differing in the QSpec FR-331 member `tool.version`.
 - Step 5: each descriptor holds the origin it was built with, with the same `BackendId`.
 - Step 6: the differing origins conflict in both orders: both are withdrawn and one `duplicate-backend` refusal keyed by the `BackendId` is recorded; the repeat is idempotent.

@@ -167,7 +167,7 @@ here, and #212 can check them from this record alone.
 - AD-016's IR `requires-bound` classifies which lowered forms carry an
   unbounded domain. QSL writes the item's extent classification, including
   whether a finite bound is available, into the FR-331 request (ADR-014 §4),
-  and IR's form predicate agrees with it, pinned by a conformance test. CG
+  and IR's form predicate agrees with it, enforced by a conformance test. CG
   `negotiate_*` settles from that classification and the candidate's
   advertised modes (AD-016 arrow 4, ADR-013 O-20).
   Whether a backend advertises a mode beside each kind is
@@ -569,7 +569,7 @@ the table, independent of registration order.
   - one unit test per §5.2 row.
 - **Dispositions end to end.** The #185 and #217 end-to-end disposition
   test runs in CG over the candidate-set wire and the v2 bytes as data, at
-  the QSL revision CG pins, and never calls `route`. It runs the #185 exit
+  the QSL revision CG depends on, and never calls `route`. It runs the #185 exit
   corpus, including the backend-absence case of §3, and asserts §7.3:
   `unsupported` with its warning, no artifact, and one accounting record per
   `request_index`. QSL tests only `route`'s candidate-set output.
@@ -801,9 +801,9 @@ ticket run the same scan in their repositories.
 |---|---|---|---|
 | `"allocation"` relationship category (`QSL:qsl-semantics/src/model/systems.rs:269`) | yes | typed category enum; QSL PR #200 removes the string | QSL `StateModel` |
 | `"quire.protocol.finite-global/v1"` (`QSL:src/protocol_artifact/validate.rs:287,291`) | yes | typed profile enum decoded once at protocol-artifact intake. Done: intake resolves each definition to the closed `RegisteredDefinition`, and validation reads that, not the identity string | QSL `ProtocolClause` |
-| `"filament-canonical-json-1"` (`QSL:src/state/evaluation.rs:2478-2484`) | yes | typed canonicalization enum decoded at state-input intake. Done: `CanonicalizationDomain` and the `sha256`-typed `CanonicalDigest` | QSL `StateModel` |
+| `"filament-canonical-json-1"` (`QSL:src/state/evaluation.rs:2478-2484`) | yes | typed canonicalization enum decoded at state-input intake. Done: `CanonicalizationDomain` | QSL `StateModel` |
 | `"quire.state.authority-adapter"` (`QSL:src/state/evaluation.rs:2781-2783`) | yes | typed adapter-kind enum decoded at intake. Done: `AdapterArtifact` is constructed once from the wire reference by `TryFrom` | QSL `StateModel` |
-| `"clock:"` prefix (`QSL:src/temporal.rs:50`) | yes | a typed clock-role field carried on the wire, so readers stop re-parsing the prefix. Done: version-2's `temporal_bindings` delta carries a typed `clock_name: String` field alongside `v1`'s frozen `clock:`-prefixed binding name (FR-050 extends `/1` without changing its bytes, meaning or strict reader). `ClockNames::of_v2` reads that typed field directly for every v2 admission and emission path, so no v2 reader re-parses the prefix; the prefix itself is still parsed twice — once at v2 emission, to derive `clock_name` from the legacy name, and once at v2 intake's consistency check, to refuse an offer whose typed field disagrees with the inherited legacy spelling (`v2.binding.offer-clock-name`) — plus once more at `/1`-only admission, where `ClockNames::of`'s legacy parsing remains the sole source of the name. The two facts cannot silently diverge, but the prefix is not parsed "once, at lexing"; it is parsed at each of those three sites. | QSL `TemporalTrace` |
+| `"clock:"` prefix (`QSL:src/temporal.rs:50`) | yes | a typed clock-role field carried on the wire, so readers stop re-parsing the prefix. Done: version-2's `temporal_bindings` delta carries a typed `clock_name: String` field alongside `v1`'s `clock:`-prefixed binding name (FR-050 extends `/1` without changing its bytes, meaning or strict reader). `ClockNames::of_v2` reads that typed field directly for every v2 admission and emission path, so no v2 reader re-parses the prefix; the prefix itself is still parsed twice — once at v2 emission, to derive `clock_name` from the legacy name, and once at v2 intake's consistency check, to refuse an offer whose typed field disagrees with the inherited legacy spelling (`v2.binding.offer-clock-name`) — plus once more at `/1`-only admission, where `ClockNames::of`'s legacy parsing remains the sole source of the name. The two facts cannot silently diverge, but the prefix is not parsed "once, at lexing"; it is parsed at each of those three sites. | QSL `TemporalTrace` |
 | composed `Backend{identity: &str}` (`QSL:src/linking/composed/requests.rs:80`) | no | removed from the linker; candidates use `BackendId` in the #185 registry (§7) | #185 |
 | value call by function name `&str` (`QSL:src/value/expression/mod.rs:635`) | no | this is the replay executor entry; keyed by a typed `QualifiedName` (ADR-013 O-11, owner ruling on OQ-5), the one name lookup after checking that ADR-013 R-06 allows | #214 |
 | backend CLI argument | no | resolved to `BackendId` by registry lookup in `route`; it is the only backend choice. `--target` and `ProjectionTarget` (`QSL:src/lowering/target.rs:39-46`) are deleted with `lowering` (ADR-011 §7.3 M-6a). | #185 |
@@ -946,7 +946,7 @@ Tests: scoped anchor forms; anchor resolution through nested scopes; one
 refusal each for a missing anchor, an ambiguous name, a shadowing binder, a
 wrong target kind and a wrong channel; an attempt bound to its operation's
 frame with no second frame node; the frame run's success and violation
-verdicts; stale identity and version refusals; frame counterexample replay;
+verdicts; frame counterexample replay;
 a downstream `operation-contract` item settling `unsupported`; the backend-absence corpus case for
 `operation-contract`. No `Value` or `SumCase` module changes, and
 `TemporalTrace` and `Relation` do not change.
@@ -1039,7 +1039,7 @@ item settles `invalid-request` with no preference order
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes `Value`'s `check` lowers; temporal admission reads the v2 temporal nodes `TemporalTrace`'s `check` lowers. The S4 v2 emitter writes both (§2 "Packaging"). QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19), which identifies the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Yes. In addition to the mode and extent vocabulary (Q222-3), QSL records each probabilistic item's evidence kind and each backend's evidence-kind set; candidate matching requires the exact item evidence kind. Other selection rules are unchanged. |
-| ADR-013: how RT obtains `NodeKey`s | RT may hold shared `NodeKey`s inside `quire_exact::Value` and constructs none in non-test code, preserving one kernel with no RT copy. No backend module may call `NodeKey::decode_admitted` (ADR-011 T-12), the CG-generated harnesses hold no key, and RT has no QSL edge, so no production source of a key held in a `Value` is specified yet: until one is, keys held in a `Value` come only from test code (`NodeKey::from_digest`, exempt under T12-B), and a production source, for example keys passed through from the QSL `replay` facade, needs its own spec decision. RT sees `WireNodeId`s from the wire (ADR-013 O-04) in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
+| ADR-013: how RT obtains `NodeKey`s | RT may hold shared `NodeKey`s inside `quire_exact::Value` and constructs none in non-test code, preserving one kernel with no RT copy. No backend module may call `NodeKey::decode_admitted` (ADR-011 T-12), the CG-generated harnesses hold no key, and RT has no QSL edge, so no production source of a key held in a `Value` is specified yet: until one is, keys held in a `Value` come only from test code (a `NodeKey` mint, exempt under T12-B), and a production source, for example keys passed through from the QSL `replay` facade, needs its own spec decision. RT sees `WireNodeId`s from the wire (ADR-013 O-04) in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
 | ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family that implements `ReferenceEvaluation`, per §2 and §16.6, including the simulation lane; a `StateModel` cause travels in the enclosing family's result, ADR-016 FP-3): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`, otherwise as ADR-017 RF-4 (tool failure → `internal failure`, unresolved → `unsupported` or `incomplete`). `Relation` has no S6a result (§2). `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: QSpec FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the QSpec FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
@@ -1236,7 +1236,7 @@ operation anchor node they share.
   whether or not a package's lowering keyed that node. Ascending name
   order follows §15.7's population ordinal, an ascending declaration-key
   sort, so reordering field declarations shifts no key; like that ordinal,
-  the key is stable within one domain-package digest only.
+  the key is stable within one domain package identity and version only.
   `qsl_replay::call_site` computes it for a `FieldName` selection
   (FR-121).
 - **Operation anchor identity.** One anchor per (declaring object type,
@@ -1269,9 +1269,9 @@ operation anchor node they share.
 
 ### 15.5 Observations
 
-A snapshot is a document with its own FR-001 labels and a `sha256-jcs`
-digest, and an invocation names its pre and post snapshots by that identity
-(FR-106). The run entry receives them by digest, like domain packages, and
+A snapshot is a document with its own FR-001 labels, and an invocation names
+its pre and post snapshots by that identity (FR-106). The run entry receives
+them by identity, like domain packages, and
 reads no path, environment variable or search location. Admission converts
 them into the `StateModel` types that exist today (`PopulationBinding`,
 `ObjectEnvironment`, `admit_invocation`) and adds what they lack: every field
@@ -1297,7 +1297,6 @@ that produce one. None adds a category.
 | admission (FR-106) | a document over a reader limit | incomplete | `stage_limit_exceeded` |
 | admission (FR-106) | a re-run `model.*` walk past its `ModelNormalizationLimitsV1` ceiling | incomplete | `resource_exhausted` |
 | admission (FR-106) | a wrong format | refusal | `unknown_wire` |
-| admission (FR-106) | a digest or label mismatch | refusal | `stale_dependency` |
 | admission (FR-106) | a bad document, selection or value | refusal | `invalid_runtime_input`, `wrong_snapshot`, `invalid_model_binding` |
 | admission (FR-106) | a reference to a key absent from a complete population | refusal | `dangling_reference` |
 | admission (FR-106) | a required population declared incomplete | incomplete | `incomplete_population` |
@@ -1325,8 +1324,8 @@ subject: `DomainKey::Population{member_type, ordinal}` (ADR-014 §4), with
 `ordinal` its ordinal among the package's population declarations in
 ascending `DeclarationKey` order (`package`, then `node`, as UTF-8 bytes).
 It is not a `DomainKey::Node`, so it never coincides with a state field's
-key under the same object type node (§15.4). The ordinal is stable within one domain-package
-digest only; domain keys are not compared across digests. The context
+key under the same object type node (§15.4). The ordinal is stable within one domain package identity and
+version only; domain keys are not compared across versions. The context
 population is the one population with no maximum whose member types include
 the context type. A clause whose context type belongs to two or more such
 populations cannot name exactly one, and refuses at S3 with
@@ -1506,7 +1505,7 @@ acceptance criterion with a test.
 
 | ID | Requirement |
 | --- | --- |
-| SC-R1 | A union's node id and every member identity are the same after S4 emission and the I2 read (the `WireNodeId` equals the emitted id), and after replay's S1 to S4 recompile of the digest-addressed source (E9). The replay executor's recompiled `package_id` equals the proved package's `package_id` (O-26). |
+| SC-R1 | A union's node id and every member identity are the same after S4 emission and the I2 read (the `WireNodeId` equals the emitted id), and after replay's S1 to S4 recompile of the identity-addressed source (E9). The replay executor's recompiled package has the same `package_id` as the proved package (O-26). |
 | SC-R2 | A presentation-only edit changes no union node id, no `VariantId`, no `case` node id and no `package_id`. Examples are whitespace, comments, and reordering the arms of a `case` (arms lower in member order, per the row above). Renaming a member, adding a member or changing a payload type changes the union's node id. It also changes the identity of every value, expression and function node that names the union (O-04 content addressing). |
 | SC-R3 | A kernel union value converts to its v2 `union_value` node spelling (QSpec FR-440) and back without loss (C-07 extended to unions). Argument admission refuses a supplied union value with `invalid_runtime_input`/`wrong-value-kind`, before evaluation or any charge, in four cases (FR-143): its union node key is not a union of the evaluating package; its `VariantId` is not a member of that union; its payload count differs from the member's declared arity; or a payload value is not admitted by the member's declared position type. Admission walks union payloads for nested references exactly as it walks record slots. Kernel `ValueType::admits` checks only a composite's key (`quire-exact/src/value.rs:221-242`), so these member and payload checks belong to QSL argument admission (`qsl-eval/src/value/expression/mod.rs:176-229`), which reads the type environment. A value that passes admission therefore always matches an arm. |
 | SC-R4 | The `VariantId` computed at check time (C-26) and the one computed at argument admission for the same member are equal. A `VariantId` of another union, or of an enum, never selects an arm (C-30 extended). |
@@ -1817,7 +1816,7 @@ spelling (FR-320).
 
 | ID | Question | Options | Ruling |
 | --- | --- | --- | --- |
-| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a), ruled by the ADR-013 owner on 2026-09-29 (ADR-013 §8 OQ-I). O-14's original "inline sum shape" decision predates QSpec's acceptance of AD-015/FR-143-AC-13 (recursive unions), which an inline shape cannot represent — this is not a preference between two working designs, (b) is incompatible with an accepted spec requirement that postdates the original decision. Option (a) reuses the kernel's existing record/tuple precedent, so it introduces no new kernel invariant, and the blast radius is compile-forced arms for one new `Value` variant in RT and CG, nothing else. The ruling authorizes #221 to reopen the O-14 cell it amends (ADR-013 Status, OQ-I). |
+| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId`s. The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a), ruled by the ADR-013 owner on 2026-09-29 (ADR-013 §8 OQ-I). O-14's original "inline sum shape" decision predates QSpec's acceptance of AD-015/FR-143-AC-13 (recursive unions), which an inline shape cannot represent — this is not a preference between two working designs, (b) is incompatible with an accepted spec requirement that postdates the original decision. Option (a) reuses the kernel's existing record/tuple precedent, so it introduces no new kernel invariant, and the blast radius is compile-forced arms for one new `Value` variant in RT and CG, nothing else. The ruling authorizes #221 to reopen the O-14 cell it amends (ADR-013 Status, OQ-I). |
 
 These parts of §16 are written for option (a), now settled:
 

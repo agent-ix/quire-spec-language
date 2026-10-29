@@ -14,8 +14,8 @@ Authored before implementation; now executed with the public link API and actual
 
 ## Test Procedure
 
-Construct the real IR BoundedCounter environment with self State value and count field. Hash its existing V1 canonical bytes for the native import and link a parsed current invariant. Inspect the owned source bytes/opaque labels, selected RequirementRef, type/field identities and both native and IR spans. Substitute IR CanonicalDigest and a different environment's canonical byte digest independently.
+Construct the real IR BoundedCounter environment with self State value and count field. Link a parsed current invariant against the native import of its existing V1 environment, identified by its identity labels. Inspect the owned source bytes/opaque labels, selected RequirementRef, type/field identities and both native and IR spans. Substitute a different environment's identity and a foreign semantic identity independently.
 
 ## Expected Results
 
-The exact byte binding links with unchanged native source and correct owner-qualified loci. Both foreign digest substitutions refuse without a LinkedPackage; no semantic digest is relabeled as a raw artifact digest.
+The identified environment links with unchanged native source and correct owner-qualified loci. Both foreign substitutions refuse without a LinkedPackage; no semantic identity is relabeled as a source identity.

@@ -1,12 +1,12 @@
 ---
 id: TC-414
-title: "Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner"
+title: "Parameter, literal and function nodes key to their expected structural keys, and a function key carries its owner"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092
     type: verifies
 ---
-# TC-414: Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner
+# TC-414: Parameter, literal and function nodes key to their expected structural keys, and a function key carries its owner
 
 ## Description
 

@@ -15,8 +15,8 @@ failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure
 
-Use a successfully checked source with two authored clauses and exact native model artifacts. Alter selected RequirementRef/ClauseId, model owner/digest, operation context/name/anchor, snapshot digest/labels and observation role one at a time. Add duplicate/conflicting artifact inventory entries, foreign model bindings, unselected inventory and same labels with snapshot/invocation kinds.
+Use a successfully checked source with two authored clauses and exact native model artifacts. Alter selected RequirementRef/ClauseId, model owner/identity, operation context/name/anchor, snapshot identity/labels and observation role one at a time. Add duplicate/conflicting artifact inventory entries, foreign model bindings, unselected inventory and same labels with snapshot/invocation kinds.
 
 ## Expected Results
 
-Valid selection retains exact bindings. Foreign model/clause bindings receive invalid_model_binding, stale bytes receive stale_dependency, inventory conflicts receive invalid_runtime_input and invocation/role mismatches receive wrong_snapshot. No first-match or latest-revision selection and no predicate evaluation occurs.
+Valid selection retains exact bindings. Foreign model/clause bindings receive invalid_model_binding, inventory conflicts receive invalid_runtime_input and invocation/role mismatches receive wrong_snapshot. No first-match or latest-revision selection and no predicate evaluation occurs.

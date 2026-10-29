@@ -36,15 +36,15 @@ call shape (ADR-029 OP-1):
   `ParsedSource`.
 - `select` admits the domain packages the units' `model` declarations select
   (I1 `model::intake`, FR-056). It takes the domain package documents by
-  digest and the model selections of every unit, and returns
+  identity and the model selections of every unit, and returns
   `Staged<AdmittedModels>`.
 - `check` checks and links (S3, S4). It takes every unit's `ParsedSource`,
   in request order (FR-480), the
-  `AdmittedModels`, the dependency input (ADR-015 D-1, FR-099) and the lock
-  evidence (ADR-011 §2.4), and returns `Staged<CheckedPackage>`.
+  `AdmittedModels`, the dependency input (ADR-015 D-1, FR-099) and the package
+  selections (ADR-011 §2.4), and returns `Staged<CheckedPackage>`.
 - `package` emits the checked package (E4). It takes `&CheckedPackage` and
   returns `Staged<EmittedPackage>`: the `quire.checked-package/v2` bytes with
-  the digest-addressed source provision another party needs to import (I2)
+  the source provision, keyed by source identity, another party needs to import (I2)
   or replay (E9) the package.
 
 The composition `parse`, `select`, `check`, `package` is the spine compile: S1
@@ -68,7 +68,7 @@ the refusing stage's own typed causes.
 - The `parse` operation shall run S1 and S2 over the given source bytes and
   return the `ParsedSource` or S1's or S2's refusal.
 - The `select` operation shall admit each domain package the unit's model
-  selections name, by digest, and return the `AdmittedModels` or I1's
+  selections name, by identity, and return the `AdmittedModels` or I1's
   refusal.
 - The `check` operation shall check and link the `ParsedSource` against the
   `AdmittedModels` and the dependency input, and return the
@@ -88,7 +88,7 @@ the refusing stage's own typed causes.
 | --- | --- | --- |
 | FR-278-AC-1 | `parse`, `select`, `check` and `package` composed over `tests/fixtures/spine-compile.native`, over FR-027-AC-9's domain-package request and over FR-027-AC-10's library request each return the bytes FR-027's `compile` command writes for the same source and inputs (FR-027-AC-5, AC-9, AC-10), and QSL's I2 reader reads each back Verified. | Test (TC-759) |
 | FR-278-AC-2 | A source with a syntax error is refused by `parse` with `invalid_syntax`; a `model` declaration naming a document the request does not supply is refused by `select` at the `model` declaration; FR-100-AC-5's `inv` function is refused by `check` with `ill_typed`. Each refusal's stage and cause code equal those FR-027's `compile` command reports for the same source. | Test (TC-759) |
-| FR-278-AC-3 | The `EmittedPackage` from `package` carries a source provision whose digests name every source the package was compiled from, and FR-098's `replay`, given that provision, recompiles the package to the same `package_id`. | Test (TC-759) |
+| FR-278-AC-3 | The `EmittedPackage` from `package` carries a source provision whose identities name every source the package was compiled from, and FR-098's `replay`, given that provision, recompiles the package to an equal package (identity, version, selections and source labels). | Test (TC-759) |
 
 ## Dependencies
 

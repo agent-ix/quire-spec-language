@@ -136,7 +136,7 @@ pub struct UndefinedPath {
     pub steps: Vec<PathStep>,            // the model steps from the initial state, in order
     pub probability: Rational,           // the product of the steps' probabilities
     pub position: u64,                   // the trace position of the state: the number of steps
-    pub state_key: DigestRecord,         // the quire.simulation.state-key/v1 digest of the model state
+    pub state_key: StateKey,             // the quire.simulation.state-key/v1 canonical byte string of the model state
     pub key: ProbKey,                    // the complete pre-read product key at the undefined read (ADR-028 WS-1)
     pub read: UndefinedRead,             // the event atom or the state predicate (From, Until, Target) that has no value
     pub cause: UndefinedCause,
@@ -198,7 +198,7 @@ Canonical semantic action bodies use exactly `["identity",schedule]`,
 `["post-state",product_key]`, `["terminal-stutter"]`, `["delay"]`,
 `["enter-idle-delay"]`, `["idle-delay"]` and `["idle-observe"]` respectively,
 where schedule uses the full existing schedule form below and product_key
-is a parsed full canonical key, not a local index/digest/string wrapper.
+is a parsed full canonical key, not a local index/string wrapper.
 Unknown/extra/missing members refuse. Action equality/order uses complete
 JCS UTF-8 bytes. These are explicit new semantic choices, not a claim that
 QSpec FR-413/412 transport already accepts these spellings. No fake operation
@@ -225,12 +225,12 @@ The following is a new normative representation decision. The producer
 and checker SHALL use the complete canonical representation below for
 product identity in certificate values, ranking, policy, component bias,
 undefined-evaluation evidence and certificate rejection loci. A model
-state digest alone or a digest of a partial tuple SHALL NOT replace it.
+state key alone or a partial tuple SHALL NOT replace it.
 
 `probabilityProductKey` SHALL be the RFC 8785 UTF-8 JCS octets of
 `["quire.probability-product-key/v1",binding,model,monitor,accumulator,pending]`,
-through ADR-013/FR-259's one encoder. These are complete octets, not a
-new digest domain. Equality SHALL compare complete canonical octets;
+through ADR-013/FR-259's one encoder. These are complete octets.
+Equality SHALL compare complete canonical octets;
 ordering SHALL be ascending unsigned lexicographic octet order. All
 array members are required. JSON null denotes actual None and SHALL NOT
 be replaced with an initial/default/zero value. This defines the semantic
@@ -268,12 +268,9 @@ state names the binding that state was reached under.
 `model` is `["quire.simulation.state-key/v1",model_form]`, with
 `model_form` the full FR-101/QSpec FR-181 typed simulation-state form,
 including semantic state, control, queues, roles, observations, bounds
-and memory. Exploration compares its full octets, not a hash. The
-existing model digest in this same domain may continue to name a model
-state in traces; a certificate's complete product key contains the full
-canonical model form. A strict consumer SHALL recompute any separately
-supplied model digest and check its domain before using it to resolve
-that form.
+and memory. Exploration compares its full octets, not a hash. Traces
+name a model state by this same state key; a certificate's complete product
+key contains the full canonical model form.
 
 For FR-204 the **new closed timed alternative** is
 `model = ["quire.simulation.state-key/v1",["digital",discrete,unit,scale,clocks,deadline,tail]]`.
@@ -292,7 +289,7 @@ is 1/scale of that unit. A different multiple is not an alternate encoding.
 `[declaring_type_node,field_identifier,receiver]`: the checked declaring
 object type's existing NodeId, its exact declared field Identifier, and
 that object's complete FR-181 reference triple. The field Identifier is
-resolved in that type; no new clock-node digest or display-name alias is
+resolved in that type; no new clock-node key or display-name alias is
 invented. Entries are sorted by ascending canonical clock-identity bytes,
 with exactly one entry per actual object/clock field. Clock identity is
 independent of object allocation/field traversal order; symmetry moves the
@@ -328,7 +325,7 @@ For bounded forms its closed alternatives are:
 
 | Event/measure | Canonical monitor |
 | --- | --- |
-| bounded event-position formula | `["formula",automaton_key]`, where `automaton_key` is the parsed complete FR-338 canonical key array, not its local u32 index, digest or transport base64url string. Its context selects this checked formula, profile, origin activation and actual binding. |
+| bounded event-position formula | `["formula",automaton_key]`, where `automaton_key` is the parsed complete FR-338 canonical key array, not its local u32 index or transport base64url string. Its context selects this checked formula, profile, origin activation and actual binding. |
 | timed deadline event | `["deadline",kind,phase]`, where kind is `"eventually"` or `"until"` and phase is `"pending"`, `"accept"` or `"reject"`; D and the exact elapsed clock are retained in the model member above, never inferred from a position horizon. |
 | accumulate / steps comparison or quantile | `["measure",remaining,phase]`, with remaining future model positions in `0..h` and phase one of `"inactive"`, `"active"`, `"complete"`, `"censored"`, `"unactivated"`. The last three phases are decided and absorbing. |
 | fraction comparison or mean of fraction | `["fraction",remaining,phase]`, with phase `"collecting"` or `"complete"`; remaining is the number of included positions whose contribution is still unread, initially `h+1`, including position zero. Completion has remaining `"0"`. |
@@ -486,14 +483,14 @@ qualified-name alias. Each operation contributes that named reward, or
 zero when it declares none. The checker resolves the exact identifier
 through the checked model before accumulation. `unit` is null for a
 plain numeric reward with no unit, otherwise the admitted UnitId represented as
-`[domain,hex]`: domain `quire.checked-semantic-node/v1` for a declared
-unit or `quire.value.compound-unit/v1` for a compound unit, and its exact
-32-byte identity as 64 lowercase hexadecimal digits (ADR-013 T-6,
+`["declared",unit_key]` for a declared unit, with `unit_key` the unit
+declaration's structural node key, or `["compound",unit_form]` for a compound
+unit, with `unit_form` its canonical unit-expression form (ADR-013 T-6,
 QSpec FR-142). Neither a display `ms` nor another equal-dimension unit
 substitutes for the selected unit. Amounts use the checked claim's
 normalized comparison unit for accumulate, and the checked weight's
 unit for weighted fraction; conversion is the existing exact unit graph.
-No new unit or digest domain is minted by this representation.
+No new unit domain is minted by this representation.
 An explicitly dimensionless compound-unit quantity still retains its
 actual compound UnitId; it is not a plain numeric reward with null unit.
 
@@ -590,7 +587,7 @@ default monitor, default accumulator or fabricated pending data.
 Hold the actual rederived binding B, model form M, checked reward/model/unit
 identities and FR-338 formula context fixed for each pair. `P(B,M,N,A,D)` is exactly
 the JCS UTF-8 array defined above; this parameterized notation specifies
-full key octets without guessing a semantic model digest. Component body
+full key octets without guessing a semantic model form. Component body
 strings below are exact ASCII octets; embedding them uses these same
 JSON values, not an additional JSON/base64 string layer.
 
@@ -612,7 +609,7 @@ JSON values, not an additional JSON/base64 string layer.
 Timed vectors use ADR-028 §15.5's actual checked Retx/Deadline context.
 Let S be its complete non-clock state with delivered false, U its actual
 ms UnitId, and I the resolved Msg::x clock identity for object m; these
-three existing semantic leaves are rederived, never invented digests.
+three existing semantic leaves are rederived, never invented values.
 The **entire digital model body**, in its specified array order, is
 `["digital",S,U,"1",[[I,"0","3"]],["deadline","4","0"],"running"]`
 initially and

@@ -14,7 +14,7 @@ relationships:
 
 ## Description
 
-Verify the compiler's real, bounded contribution to the pinned order/payment/
+Verify the compiler's real, bounded contribution to the fixed order/payment/
 fulfillment campaign scenario and define the external gate that consumes it,
 without making A's local evidence claim B/F semantics.
 
@@ -22,7 +22,7 @@ without making A's local evidence claim B/F semantics.
 
 1. Run A's release compiler over the reusable native OrderFlow source containing
    split shipments, retry, refund, compensation and a temporal deadline. Select
-   the admitted domain package by identity and `sha256-jcs` digest and merged L5
+   the admitted domain package by identity and merged L5
    PR #70's
    FR-043/044/045 Rust-interface baseline. Require the reviewed
    `quire.compiled-protocol/2` extension carrying every selected temporal
@@ -33,20 +33,19 @@ without making A's local evidence claim B/F semantics.
    clock and observation-role handles. Re-run with sufficient compiler limits;
    changing only future runtime values produces the same bytes. One-short
    compiler limits produce no artifact.
-3. Mutate one A-owned selection at a time: source/native revision or digest,
-   domain package identity or digest, profile/configuration identity or digest,
+3. Mutate one A-owned selection at a time: source/native revision,
+   domain package identity, profile/configuration identity,
    compiled-artifact reference, and recanonicalized bytes. Assert FR-042's exact
-   typed refusal/unsupported/resource-incomplete cause; do not accept a protocol
-   result digest in a domain-package or artifact domain.
+   typed refusal/unsupported/resource-incomplete cause.
 4. Offer the unchanged compiler output to B #11. B independently rederives its
-   selection and artifact digest; byte identity at this intake is the terminal
+   selection and artifact reference; byte identity at this intake is the terminal
    assertion of A's contribution.
 5. Treat the composed run as a separate D-owned integration gate under
    [quire-research#39](https://github.com/agent-ix/quire-research/issues/39) and
    [IN01 #49](https://github.com/agent-ix/quire-research/issues/49). Until an
-   integration repository transfer is approved, #49 owns the version-lock
-   manifest, Rust driver and aggregate record; no local A fixture substitutes.
-   That driver pins accepted B #6/#11/#12 and F revisions, binds concrete O1/O2
+   integration repository transfer is approved, #49 owns the Rust
+   driver and aggregate record; no local A fixture substitutes.
+   That driver consumes B #6/#11/#12 and F outputs, binds concrete O1/O2
    instances, obtains F's record/correlation/availability/membership/
    completeness/progress/closure handoff under the domain package's declaration
    identities, and records B's
@@ -66,9 +65,8 @@ none.
 
 These assertions discharge only A's compilation, preservation and handoff
 contribution. Campaign acceptance remains Planned under D's research #39/#49
-until that owner records one version-locked run in which F supplies the admitted
+until that owner records one run in which F supplies the admitted
 runtime facts, B #6/#12 owns the conformance/result classifications, and batch/
-incremental results agree. As of 2026-09-11 no accepted B #6/#12 plus F consumer
-revision set exists to pin; branch or unreviewed snapshots cannot fill that slot.
+incremental results agree.
 That external record may reference this passing compiler leg; this TC cannot by
 itself mark PT02, observation adequacy or the composed campaign complete.

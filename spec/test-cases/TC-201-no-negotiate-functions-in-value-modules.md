@@ -26,7 +26,7 @@ doc comment), one per removed public name — `negotiate_ieee`,
 `negotiate_integer_division`, `IeeeBackendCapabilities`,
 `IeeeItemRequirement`, `IeeeUnsupportedCause`, `IeeeDisposition`,
 `IntegerDivisionBounds`, `IntegerDivisionConsumer` and
-`IntegerDivisionDisposition` — each pinning the unresolved-import diagnostic
+`IntegerDivisionDisposition` — each asserting the unresolved-import diagnostic
 rather than an untagged or type-error `compile_fail`, plus a positive-control
 doctest confirming a surviving name (`AdmittedIeeeProfile`) still resolves
 from the same path. `cargo test --doc -p quire-spec-language` runs them.

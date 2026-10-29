@@ -135,7 +135,7 @@ pub struct RefinementPart {                     // FR-430
   The certificate has no other new member, and the obligation identity is
   the refinement item's.
 - The certificate SHALL carry the obligation identity of the item, the
-  canonical identity digest that binds it to the exact subject and claim.
+  structural identity that binds it to the exact subject and claim.
 - The certificate SHALL be canonical: nodes in discovery order, edges in
   canonical transition order, so equal runs give byte-equal certificates.
 

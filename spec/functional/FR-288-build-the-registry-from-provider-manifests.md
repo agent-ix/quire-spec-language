@@ -31,8 +31,7 @@ every manifest into a `BackendDescriptor` by one conversion, whatever its
 source. The registry reaches each consumer as an argument (ADR-012 §7.1).
 
 A provider's `BackendId` is its backend identity alone, the identity
-string its manifest states (ADR-013 O-19). The `BackendId` is the backend
-member of the cache key (QSpec FR-306, FR-292), and a `proved` record names
+string its manifest states (ADR-013 O-19). A `proved` record names
 the provider that produced it by its `BackendId` (FR-290).
 
 `BackendId` is one type, defined in `qsl-foundation`, holding exactly that
@@ -41,7 +40,7 @@ registry and descriptors, and layer 6's replay envelopes and terminal
 records. A `BackendDescriptor` holds the `BackendId` and the manifest's
 advertised capabilities, and no other identity of the tool; the
 manifest's `tool` member (QSpec FR-331) reaches it only through the manifest
-digest. A descriptor
+descriptor value. A descriptor
 also holds a `ProviderOrigin` (`Linked` or `Process`), a fact the host
 supplies when it builds the descriptor and that no manifest member states.
 

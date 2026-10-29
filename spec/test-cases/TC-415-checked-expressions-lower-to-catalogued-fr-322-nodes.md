@@ -126,7 +126,7 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   naming `Int[0, 9]`; `c3` gives `quire.op.numeric.convert`; `fm`'s body
   is one `quire.op.collection.flat_map` node with no map node.
 - Step 5: levels 1, 2 and 1; the `forall` arguments are as FR-093-AC-5 gives.
-- Step 6: it carries law `text_profile` with the `DefinitionLock` catalog's
+- Step 6: the node carries law `text_profile` with the layer table's
   text-profile `DefinitionRef` and mode `nfc`.
 - Step 7: no `_` arm.
 - Step 8: every check succeeds; the four nodes key to E14 to E17 with the
@@ -134,9 +134,9 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   P10 to P16; declaring `B` first gives the same keys.
 - Step 9: `R` and `S` each give one leaf at `field:t`, `inner`, and `W` one
   at `field:t`; `Tree2` and `Two` give the lists FR-093-AC-11 states;
-  `List` gives `[]` for both operations; `eq` under the node limit refuses
-  with `stage_limit_exceeded`/`node-count-exceeded` at that limit and
-  yields no node.
+  `List` gives `[]` for both operations; `eq` under the node limit refuses with
+  `stage_limit_exceeded`/`node-count-exceeded`
+  at that limit, yielding no node.
 - Step 10: the default-limit chain checks. Each form checks at 2 and at
   1,000 deep, except the unguarded `value` chain, which refuses at both
   depths as an unproved presence. The first `pre` refuses as a forbidden

@@ -142,7 +142,7 @@ ordering and arithmetic, and the lowering of each admitted form.
 | S1 | `blob` `{"kind":"bytes","text":"00ff"}`, `doc` `{"kind":"json_object","text":"{\"a\":1}"}`, `span` the quantity form of `3/2` over `s` | admitted |
 | S2 | `blob` `00FF`; `doc` `{"a": 1}` | `invalid_runtime_input`/`invalid-value` |
 | S3 | the Bytes object in `doc`; the JsonObject object in `blob`; a String object in either | `wrong-value-kind` |
-| S4 | the same snapshot with its document members in another JSON order | one digest |
+| S4 | the same snapshot with its document members in another JSON order | one admitted value |
 
 ## Expected Results
 
@@ -164,6 +164,5 @@ ordering and arithmetic, and the lowering of each admitted form.
   `quire.op.bytes.length` with result `Integer`, `concat` to
   `quire.op.bytes.concat` with result `bytes`; the literals lower to
   `value`/`literal` nodes of `value_kind` `bytes` and `json_object` with the
-  canonical text as `value`; no text-profile definition is in the lock
-  evidence.
+  canonical text as `value`; no text-profile definition is referenced.
 - Step 7: each S-row gives its stated outcome.

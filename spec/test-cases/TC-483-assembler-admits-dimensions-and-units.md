@@ -51,7 +51,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
    and `g2`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
 7. Assemble each unit of FR-091-AC-45, AC-46 and AC-47.
-8. With admitted domain packages `P` and `Q` selected in that lock order, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `unit tick : M::Rate` and `unit tick : Rate` units; then FR-091-AC-55's shared dimension names (FR-091-AC-55).
+8. With admitted domain packages `P` and `Q` selected in that order, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `unit tick : M::Rate` and `unit tick : Rate` units; then FR-091-AC-55's shared dimension names (FR-091-AC-55).
 9. Declare FR-093-AC-36's additional dimensions and units beside
    FR-091-AC-44's. Check and lower each of its bodies `p1` to `p6`, pass each
    checked package to IR's v2 reader, and evaluate each lowered body with the
@@ -103,7 +103,7 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 7: each refused unit refuses with exactly the one error its AC
   names, the first defect in FR-142's order; each admitted unit assembles.
 - Step 8: each vector's TC-187 result, with `P`'s node refusals located at
-  `/lock/model_selections/0`; `unit tick : M::Rate` admitted and `unit tick : Rate`
+  `P`'s `model_root` node; `unit tick : M::Rate` admitted and `unit tick : Rate`
   refused `missing_declaration`/`missing-name` at `Rate`; the source `Time` beside the package `Time`, and two
   packages' `Rate`, assemble with no error; the two `ms` units check.
 - Step 9: each of `p1` to `p6` checks and lowers, its divisions to

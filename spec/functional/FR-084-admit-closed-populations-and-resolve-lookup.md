@@ -173,8 +173,8 @@ of the model's object-type supertype graph, with the identity that
 quire-specification `model-complete.md` ("Object universe") defines, and
 SHALL NOT compute one universe for a whole model or one per root type. A
 reference key SHALL carry the universe of its object type's component, and
-its object component SHALL be the member's authored object identity, never
-a digest of it (ADR-013 O-05, OQ-C and OQ-E rulings).
+its object component SHALL be the member's authored object identity
+itself (ADR-013 O-05, OQ-C and OQ-E rulings).
 
 ### Conflicting identity refuses admission outright
 
@@ -182,7 +182,7 @@ If two runtime member records name the same universe and object identity but
 different most-specific types, the model checker SHALL refuse admission with
 a conflicting-identity cause and SHALL admit no binding from that input.
 Duplicate records SHALL collapse into one member only when both their key and
-their content digest are equal.
+their content are equal.
 
 ## Constraints
 
@@ -197,10 +197,10 @@ their content digest are equal.
 | FR-084-AC-1 | Given a population declared with an `open` extent, admission reports the distinct unknown-closure outcome, carrying no binding; given the same closed-extent population whose generalization graph is not itself closed (`GeneralizationClosure::Open`), admission likewise reports the distinct unknown-closure outcome, naming the unresolved type, and carries no binding; given the same population declared `closed`, with a closed generalization graph and every member covered, admission succeeds; given a member of a type the population does not declare, admission is refused (not unknown-closure). | Test (TC-226) |
 | FR-084-AC-2 | Given a successfully admitted population, `allInstances<T>` returns a complete deduplicated set in canonical reference-key order exactly when `T` conforms to at least one declared member type, including when `T` equals that member type; otherwise it returns a typed incomplete result naming subtype closure and `T`, with no collection. Object closure is guaranteed by successful admission under the admission rule above. | Test (TC-227; `qsl-eval/tests/it/model_reference_queries.rs::tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate`) |
 | FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode, a genuine completed result. | Test (TC-228) |
-| FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
+| FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content, admission collapses them into one member. | Test (TC-229) |
 | FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |
 | FR-084-AC-6 | Given an object whose most-specific effective type `C` is a proper subtype of `A`, selecting it through `allInstances<A>` and separately through `allInstances<C>` against the same binding yields the same `ReferenceKey` in both results, whose type component names `C` in both cases, never `A`. | Test (TC-242) |
-| FR-084-AC-7 | Given a model whose object types form three disconnected supertype components, `A` with subtype `B`, `C` and `D` with common subtype `E`, and `X` alone, the reference keys of a `B`, an `E` and an `X` member, each admitted in its own population, carry three different universes: the `quire.model.object-universe/v2` digests over the model selection with root types `[A]`, `[C, D]` and `[X]`. Each key's object component equals the member's authored object identity bytes. | Test (TC-410) |
+| FR-084-AC-7 | Given a model whose object types form three disconnected supertype components, `A` with subtype `B`, `C` and `D` with common subtype `E`, and `X` alone, the reference keys of a `B`, an `E` and an `X` member, each admitted in its own population, carry three different universes: the structural universe keys over the model selection with root types `[A]`, `[C, D]` and `[X]`. Each key's object component equals the member's authored object identity bytes. | Test (TC-410) |
 
 ## Dependencies
 

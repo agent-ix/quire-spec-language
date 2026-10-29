@@ -57,23 +57,22 @@ invocation authority remains owned by
 observation contract; QSL does not mint or duplicate that authority.
 
 The retired `StaticAuthority` boundary accepted four caller-supplied identity
-and digest pairs (document, model, profile and configuration), independently
-recomputed JCS digests, refused malformed or wrong-domain digests, and selected
+artifacts (document, model, profile and configuration) and selected
 the first refusal in document, model, profile, configuration order. That
 boundary is retired with the artifact-graph evaluator under ADR-011 §7.3 M-6c
 and FR-405 item 1: checked-term evaluation accepts none of those four raw
-artifact/digest pairs, so it cannot preserve that validator as a runtime
+artifacts, so it cannot preserve that validator as a runtime
 operation. The corresponding live authorities remain checked at their owning
 boundaries: source and compile configuration provenance by FR-036, model
-package identity and `sha256-jcs` by FR-056, header profile identity by
-FR-110, and snapshot/invocation document identity and `sha256-jcs` by FR-106.
+package identity by FR-056, header profile identity by
+FR-110, and snapshot/invocation document identity by FR-106.
 These owners' refusal causes and loci apply before evaluation; no profile or
-configuration digest check is added to FR-056 or FR-106.
+configuration check is added to FR-056 or FR-106.
 
 The retiring public Rust surface comprises `evaluate`/`evaluate_v2`;
 `EvaluationRequest`; `ObservationKey`, `ObservationIdentity`, `ObjectKey`,
-`CanonicalDigest` and `ObservationDigest`; `StaticAuthority`,
-`StaticAuthorityMember`, `StaticAuthorityDigestCause`, `AssessmentAuthority`,
+`StaticAuthority`,
+`StaticAuthorityMember`, `AssessmentAuthority`,
 `AuthorityEvidence`, `AuthorityAdapter`, `AdapterArtifact` and
 `InvalidAdapterArtifact`; `MissingInput`, `ValuePathSegment`, `InputSlot`,
 `ContextualSlot`, `ContextualValue`, `ContextualValueKind`, `FieldValue`,
@@ -87,15 +86,14 @@ The retiring public Rust surface comprises `evaluate`/`evaluate_v2`;
 | `evaluate` / `evaluate_v2`, `EvaluationRequest` | The checked source pipeline selects a `CheckedPackage` and checked expression; `CheckedPackageEvaluation::{call, evaluate}` plus the applicable checked-family function such as `evaluate_closed`, `evaluate_state_predicate` or `evaluate_refinement_row` (FR-046/FR-047; TC-136) |
 | `StateView`, `BinderInput`, `PopulationInput`, `ObjectInput`, `FieldInput`, `FieldValue`, `InputSlot`, `ContextualSlot`, `ContextualValue`, `ContextualValueKind`, `Value`, `ValueKind`, `ValuePathSegment` | `ObjectEnvironment` and the checked clause environment from FR-107; family inputs are owned by FR-046/FR-047 and observation selections by FR-106 (TC-136) |
 | `ObjectKey`, `ObservationKey`, `ObservationIdentity` | The full object and observation identities admitted by FR-106 and retained by FR-107; duplicate and cross-observation cases are exercised in TC-136 (FR-106 AC-1/AC-2 and FR-107 AC-1/AC-2) |
-| `StaticAuthority` document identity/digest | The checked source package selected by the compile path; FR-036 and its package identity checks replace a caller-supplied artifact/digest pair (TC-136; FR-036-AC-1/AC-3) |
-| `StaticAuthority` model identity/digest | The selected domain `ModelSelection` and JCS package digest admitted by FR-056, with its declared model identities (TC-136; FR-056-AC-1/AC-3) |
-| `StaticAuthority` profile identity/digest | The source `ProfileSelection` resolved against the closed definition catalog by FR-110; the checked package lock records selected definition identities (TC-136; FR-110 profile-resolution criteria) |
-| `StaticAuthority` configuration identity/digest | There is no same-shaped replacement digest pair: the old JSON configuration digest is retired with `StaticAuthority`. FR-036-AC-5 retains resource-only compile configuration provenance; typed temporal clock configurations remain a distinct FR-050 contract and are not substituted for it (TC-136) |
-| `StaticAuthorityMember`, `StaticAuthorityDigestCause`, `CanonicalDigest` | The independent four-member digest validator, its malformed/wrong-domain causes, and its document→model→profile→configuration refusal order retire with the native artifact-graph input boundary described above; the replacement owners retain their own typed digest refusal contracts (TC-136; FR-056/FR-106) |
+| `StaticAuthority` document identity | The checked source package selected by the compile path; FR-036 and its package identity checks replace a caller-supplied artifact (TC-136; FR-036-AC-1/AC-3) |
+| `StaticAuthority` model identity | The selected domain `ModelSelection` admitted by FR-056, with its declared model identities (TC-136; FR-056-AC-1/AC-3) |
+| `StaticAuthority` profile identity | The source `ProfileSelection` resolved against the closed definition catalog by FR-110 (TC-136; FR-110 profile-resolution criteria) |
+| `StaticAuthority` configuration identity | There is no same-shaped replacement: the old JSON configuration identity is retired with `StaticAuthority`. FR-036-AC-5 retains resource-only compile configuration provenance; typed temporal clock configurations remain a distinct FR-050 contract and are not substituted for it (TC-136) |
+| `StaticAuthorityMember` | The independent four-member validator and its document→model→profile→configuration refusal order retire with the native artifact-graph input boundary described above; the replacement owners retain their own typed refusal contracts (TC-136; FR-056/FR-106) |
 | `AssessmentAuthority` | FR-106's selected `AdmittedObservations` supplies the admitted snapshot/invocation authority; TC-136 covers current and pre/post observations plus a foreign observation selection |
 | `AuthorityEvidence` | FR-106's admitted observation set, invocation identity and population manifests replace the evaluator's bundled evidence input; TC-136 checks the admitted identities against the selected clause |
 | `AuthorityAdapter`, `AdapterArtifact`, `InvalidAdapterArtifact` | There is no evaluator adapter artifact input in the checked-term path. Snapshot and invocation documents enter through FR-106's typed admission; the native evaluator adapter/refusal types retire with that boundary (TC-136 verifies only the FR-106 document inputs reach evaluation) |
-| `ObservationDigest` | FR-106 owns the snapshot/invocation `sha256-jcs` digests; TC-136 substitutes a raw-byte digest and malformed/wrong-domain spellings and checks FR-106's cause and input locus |
 | Evaluate compensation guards, captures, retry and recovery expressions | `CheckedPackageEvaluation::evaluate_protocol_slot` with `ProtocolSlot`, `ProtocolSupply` and shared `Meter` (FR-390, TC-1070–TC-1073); TC-142's eval portion is re-homed there |
 | `MissingInput`, `Refusal`, `EvaluationOutcome`, `EvaluationReport` | The owning checked-term entry point's typed `Evaluation`, `FamilyOutcome` and `CallFailure` categories; FR-107/FR-390 (TC-136, TC-1071–TC-1073) |
 | `Refusal::UnpublishedArtifact` | No corresponding runtime state exists: checked evaluation selects only a `CheckedPackage` with the identity established by its compile/read path. FR-042/FR-107 own package admission; TC-142 verifies strict read-back and evaluation through that admitted package, including that no caller-supplied artifact identity can be substituted |
@@ -154,8 +152,8 @@ source pipeline and its FR-046/047/048/390 entry points.
 | FR-049-AC-7 | Each applicable `accounting.<counter>` setting in FR-255's shared `quire.value.accounting/v1` table has zero/no-work, exact-usage and one-short evidence; over-budget work produces no completed partial value and stops at the owning requirement's charge point. | Test (TC-137, TC-1073) |
 | FR-049-AC-8 | Repeating an evaluation over the same immutable checked package and runtime environment with a fresh sufficient meter returns the same result and leaves inputs unchanged; sequential protocol-slot calls on one meter accumulate in call order. | Test (TC-137, TC-1073) |
 | FR-049-AC-9 | A checked protocol package evaluates its exact compensation guard, capture, retry and recovery slots through FR-390's `evaluate_protocol_slot`; crossed slot/supply selections refuse before charge, unavailable inputs and resource stops remain distinct, and no `/1` or `/2` state evaluator or compatibility entry point exists. | Test (TC-142, TC-1070–TC-1073) |
-| FR-049-AC-10 | The compile path retains the selected source, model, profile and configuration identities under FR-036/FR-056/FR-110/FR-050; observation identities and digests are admitted by FR-106. No runtime API accepts independent `StaticAuthority` member digests. | Test (TC-115, TC-136, TC-138, TC-442, TC-465, TC-490) |
-| FR-049-AC-11 | Model and observation document digest defects are refused by their owning intake boundary with that owner's cause and locus before evaluation; malformed/wrong-domain `StaticAuthorityDigest` cases and its four-member refusal order are retired because no such digest pair is accepted by checked evaluation. A checked evaluation uses only the identities from the successful owning admissions. | Test (TC-136, TC-442, TC-465) |
+| FR-049-AC-10 | The compile path retains the selected source, model, profile and configuration identities under FR-036/FR-056/FR-110/FR-050; observation identities are admitted by FR-106. No runtime API accepts independent `StaticAuthority` members. | Test (TC-115, TC-136, TC-138, TC-465, TC-490) |
+| FR-049-AC-11 | Model and observation document defects are refused by their owning intake boundary with that owner's cause and locus before evaluation; the `StaticAuthority` four-member refusal order is retired because no such member set is accepted by checked evaluation. A checked evaluation uses only the identities from the successful owning admissions. | Test (TC-136, TC-465) |
 
 ## Dependencies
 

@@ -37,13 +37,13 @@ public entries; `explore` and `sample` are `pub(crate)` (FR-101).
 
 - Step 1: `Cancelled` with `cause` `CatalogCode::new("cancelled",
   "caller-cancelled")`, category incomplete. State 1 was about to be
-  expanded, so the frontier is 1's digest then 2's.
+  expanded, so the frontier is 1's state key then 2's.
 - Step 2: each smaller limit returns `Bounded` with its `Limit` and a
-  frontier of digests, category incomplete; `max_depth` 2 returns
+  frontier of state keys, category incomplete; `max_depth` 2 returns
   `BoundReached{depth: 2}` with frontier `[<2>]`, category inconclusive;
   each larger value returns `Exhaustive`. For this chain those are the counts FR-101-AC-7 names: 3
   states, 2 transitions, deepest depth 2.
-- Step 3: `Bounded` at `Limit::States` with frontier 1's, 2's, 3's digests:
+- Step 3: `Bounded` at `Limit::States` with frontier 1's, 2's, 3's state keys:
   the blocked successor follows the queue.
 - Step 4: `NotSimulated::RequiresBound` naming the parameter's domain key
   and kind `Integer`, no `Outcome` or `Trace`, and no recorded

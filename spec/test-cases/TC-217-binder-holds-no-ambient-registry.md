@@ -17,10 +17,10 @@ calls or on any static/global table. Scope: FR-081-AC-5.
 Catches an implementation that caches a declaration or an intermediate
 derivation fact in a process-global or static table keyed by something
 weaker than the full `DomainPackage` value (for example, keyed only by
-domain-package identity and version, ignoring the digest) — a defect that a
+domain-package identity and version, ignoring the declarations) — a defect that a
 single-call test can never observe, because the first call always populates
 the cache correctly; it only surfaces when two different packages sharing an
-identity/version but differing digest are bound in the same process and the
+identity/version but differing declarations are bound in the same process and the
 second run's result is compared against a fresh, isolated run of the same
 input.
 
@@ -31,7 +31,7 @@ input.
    (original keys, effective identities, ordering).
 2. In the same process, immediately run the model binder over a second,
    unrelated domain package Q that shares P's identity and version label but
-   has a different digest and different declarations, and record its output.
+   has different declarations, and record its output.
 3. In the same process, run the model binder over P again and record its
    output a second time.
 4. In an independent process invocation (a fresh process, no shared state

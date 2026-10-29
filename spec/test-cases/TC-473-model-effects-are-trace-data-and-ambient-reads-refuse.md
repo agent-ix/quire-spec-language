@@ -22,7 +22,7 @@ Scope: FR-120-AC-10, FR-120-AC-11, FR-120-AC-12.
 Integration tests in `qsl-eval/tests/it/`, with TC-471's package and
 compile path. Each step effect is read from a `ModelTrace` built by
 `replay` of a hand-written FR-101 `Trace` (its transition identities and
-state-key digests written out in the test), which is the path
+state keys written out in the test), which is the path
 `sample_model` takes after sampling.
 
 1. `isZero(): Boolean` (empty frame, `post Z { result = (self.value = 0)

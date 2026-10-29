@@ -36,7 +36,7 @@ is the one source grammar, and the type report is produced by the S3 binding
 phase and family checkers of ADR-011, from the same parse that feeds the
 checker.** One `Source` is read once. One parse of it yields the `CheckedGraph`
 and the `TypeReport`. The checked unit carries that source's one reference; no
-copied digest comparison re-establishes their shared origin. The composed
+copied comparison re-establishes their shared origin. The composed
 linker and checker are not re-read over the new forms: each composed
 family is deleted when that family's type phase moves into S3, as ADR-011
 rules, and the label-only match is deleted when the producer lands.
@@ -69,11 +69,10 @@ Measured on main when this was written.
   `qsl_forms::build_unit` maps the CST to a `ParsedUnit`.
   `PackageDeclarations::assemble` takes that unit and a `RawSourceRef`, and
   `check` returns the `CheckedGraph`, which carries the `RawSourceRef`
-  (authority, identity, digest).
+  (authority, identity).
 - **The type path.** `parse_native_source` (root crate, `src/parser.rs`) reads
   the composed grammar into a `ComposedUnit`. `linking::admit_namespace`
-  checks it against an explicit `SourceInventory` whose entries carry a
-  digest. `binding::bind` builds the `binding::Report`.
+  checks it against an explicit `SourceInventory`. `binding::bind` builds the `binding::Report`.
   `checking::composed::admit_types` returns the `TypeReport`. Each namespace
   unit holds its own `Source` and `Source::reference()`.
 - **Callers of the graph path.** The production path is the spine
@@ -94,10 +93,10 @@ Measured on main when this was written.
   match; `qsl_inventory` lives beside it.
 - **The grammars differ.** The shared header is `language "ix:native" edition
   "1-draft";`. After it, complete-V1 reads `profile <alias> = "<identity>";`: a
-  definition resolves by identity alone, with no version or digest in the
+  definition resolves by identity alone, with no version in the
   selection (`qsl-foundation` `selection`). The composed grammar reads `profile
-  <alias> = "<identity>" version "<v>" digest "<d>";` and resolves the
-  definition by identity, revision and digest. `import` and `model`
+  <alias> = "<identity>" version "<v>";` and resolves the
+  definition by identity and revision. `import` and `model`
   declarations read the same in both. So `qsl_cst::parse` returns a recovered
   `ParsedSource` with an `invalid_syntax` diagnostic at `version` for the
   composed binding source, and `build_unit` refuses it
@@ -110,8 +109,8 @@ Measured on main when this was written.
   with `UnimplementedTemporalClause` (`unsupported_construct`) until its
   checker lands. The composed syntax has four declaration kinds (predicate,
   state, temporal, protocol); `relation` and `hyper` exist only in `qsl-cst`.
-- **The digests cannot agree today.** The graph test fixture and the composed
-  binding fixture are two different texts, so the bytes and the digests
+- **The sources cannot agree today.** The graph test fixture and the composed
+  binding fixture are two different texts, so their bytes
   differ. The label-only `CheckedUnit::new` therefore compares authority and
   identity only.
 
@@ -131,8 +130,8 @@ Measured on main when this was written.
   through `parse_with_cancel`, `build_unit`, `assemble` and `check`.
 - *Type path:* binding and typing become S3 phases over the S2 forms of the
   same `ParsedUnit`. They resolve a profile alias by identity alone, as the
-  graph side does, through `DefinitionLock::pinned`. The type phase takes no caller definition inventory. The
-  composed binder's per-profile revision and digest matching
+  graph side does, through the layer table. The type phase takes no caller definition inventory. The
+  composed binder's per-profile revision matching
   (`linking/composed/definitions.rs`) is deleted, not ported.
 - *Order:* ADR-011 M-6e deletes one composed family per implementing PR. A
   family moves when its binding and typing run in S3 over S2 forms; the same
@@ -148,24 +147,24 @@ Measured on main when this was written.
   namespace comes from the producer once its families have moved);
   `src/checking/source_inventory.rs`; the `parse_native*` re-exports in
   `src/lib.rs`.
-- *Migration cost:* high. Composed `profile X = ".." version ".." digest ".."`
+- *Migration cost:* high. Composed `profile X = ".." version ".."`
   lines appear in 18 source and test files (including format-string
   generators): `src/linking/composed/arena.rs`, `src/parser.rs`,
   `src/protocol_artifact/handoff/writer.rs`, twelve `tests/it` files,
   `tests/support/composed_types`, `tests/support/protocol_artifact` and
-  `tests/fixtures/composed-choreography.native`. A
-  `model M = ".." version ".." digest ".."` line is complete-V1 and is not
-  composed; only `profile` and `import` are identity-only. Each surviving
+  `tests/fixtures/composed-choreography.native`; and in 40 files under
+  `artifacts/compiled-protocol-v1` and `artifacts/compiled-protocol-v2`. A
+  `model M = ".."` line (identity only) is complete-V1 and is not
+  composed; `profile` and `import` are identity-only too. Each surviving
   fixture takes the identity-only profile spelling and a complete-V1 profile
   binding. A test that asserts the composed grammar's own shape
   (`composed_syntax`, `parser_differential`) is deleted with the parser it
   tests.
-- *Fixtures and goldens:* the `native_*_emission` goldens belong to the protocol-artifact lane that is
-  deleted; they are not re-digested. Model digests, checked node identities
-  and `package_id` do not depend on the profile line's spelling.
+- *Fixtures and snapshots:* the `native_*_emission` snapshots belong to the
+  protocol-artifact lane that is deleted; they are not regenerated.
 - *Source reference:* the checked unit carries the `Source`'s single
   `RawSourceRef`. The graph and type report do not carry separate unit-level
-  source digest fields; their source locations resolve through the checked
+  source reference fields; their source locations resolve through the checked
   unit's reference, without a copied-reference binding guard.
 - *The interim constructor:* `UnitLabel`, `UnitLabelMismatch` and the
   constructor that accepts a formal source, graph and type report separately
@@ -179,7 +178,7 @@ Measured on main when this was written.
 - *Several source units (amended 2026-10-22 by FR-480):* a package compiled from several source
   units has one `spine::CheckedUnit` per source unit, each reading its own
   `Source` once with the one grammar and carrying that source's reference; the shared
-  checked graph lists every unit in `lock.sources`. "One source text" holds
+  checked graph lists every unit in `sources`. "One source text" holds
   for each unit, and a package is not limited to one unit, because QSpec
   FR-151 and FR-322 define a package of linked source units, each with its
   own source owner.
@@ -237,10 +236,11 @@ text. These points follow from it and are decided.
   `hyper` clause over a finite trace domain and a `relation` over names
   that are not model operations keep the finite reading of QSpec FR-191.
 - **Profile selection.** A source selects a profile by identity alone
-  (FR-110). A profile line that states `version` or `digest` after the
+  (FR-110). A profile line that states `version` after the
   identity is not the single grammar and is refused. The type phase resolves
-  profiles through `DefinitionLock::pinned`; there is no caller definition inventory parameter, and the source never
-  carries a revision or digest.
+  profiles through the layer table;
+  there is no caller definition inventory parameter, and the source never
+  carries a revision.
 - **Refusal and exhaustion.** A unit the S3 type phase refuses is an error
   outcome of `check` and yields no partial inventory rows. The exhaustion stops
   `TypeWorkExhausted` and `TypeAdmissionUnfinished` are a different case: they
@@ -276,13 +276,13 @@ The implementing slice is sequenced after the supplied-budget and union slices.
 
 ## Alternatives Considered
 
-- **Compare the digest of the graph's source with the type report's and
+- **Compare the source of the graph with the type report's and
   accept that fixtures use two texts.** Rejected: the comparison would fail for
   every real source, since the two stages cannot read one text.
 - **A shared text with a pre-pass that strips the composed profile suffix.**
   Rejected as Option C: a second reading of the text in a grammar the
   complete-V1 parser does not define.
-- **Keep the label match and add a digest check beside it.** Rejected: it keeps
+- **Keep the label match and add a second check beside it.** Rejected: it keeps
   a duplicate binding guard after the producer has already established the
   source association by construction.
 - **A second `CheckedUnit` beside the spine's.** Rejected: two public types

@@ -11,6 +11,6 @@ relationships:
 ---
 ## Scope
 
-Consume the existing pinned Rust extractor in A's optional compiler integration.
+Consume the existing Rust extractor in A's optional compiler integration.
 Verify exact original/body correspondence, retain extraction metadata and execute
 real native cases. Preserve C's producer ownership and submit a reviewed PR.

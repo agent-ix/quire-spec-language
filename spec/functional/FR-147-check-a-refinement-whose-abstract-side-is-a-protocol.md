@@ -163,7 +163,7 @@ shared grammar), and QSpec's refinement grammar has no `internal` row, so the
 list is not source. QSpec owns it: the list is the compilation's optional
 `refinement_internals` input, supplied beside the source as a supplied
 library is, and its shape, class spellings, resolution, refusals, effect on
-the refinement node, lock and replay are QSpec FR-375's and FR-432's. This
+the refinement node, package member and replay are QSpec FR-375's and FR-432's. This
 requirement states how S3 applies them. The names `AbstractStepClass` and
 `abstract_internal` are QSL's own Rust-side names for what QSpec describes.
 

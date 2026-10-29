@@ -24,14 +24,14 @@ relationships:
 ## Scope
 
 Execute QSL #122: typed lifecycle APIs and matching CLI outcomes, exact provider
-negotiation, isolated Rust plugin wire, deterministic compilation/cache identity
+negotiation, isolated Rust plugin wire, deterministic compilation identity
 and effect-free evaluator boundaries.
 
 ## Subtasks
 
 - [ ] Write TC-220/221/225/226 and API/CLI parity vectors first.
 - [ ] Expose every lifecycle operation with stable typed envelopes and exit codes.
-- [ ] Implement provider/plugin containment and exact AOT/JIT cache invalidation.
+- [ ] Implement provider/plugin containment.
 - [ ] Repeat TC-180 before/after real backend/provider installation and prove identical syntax admission and identity.
 - [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-054.
 

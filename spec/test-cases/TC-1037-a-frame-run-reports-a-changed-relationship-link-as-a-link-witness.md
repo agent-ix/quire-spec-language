@@ -34,7 +34,7 @@ and `t2` and lists only `Pump-housing-Tank`, complete, with `p1`-`t1` and
 with `p1`-`t2` and `p2`-`t1`. The unit selects the `orders` package as
 `Orders`. Every row runs `Frame { operation: Orders::Pump::rehome,
 invocation: I' }` where `I'` is I with the row's change, in memory, with the
-provision digests recomputed for every changed document. Each row applies one
+changed documents provided under their unchanged identities. Each row applies one
 change to I unless it says otherwise. Tag the tests
 `#[trace("TC-1037", "FR-115-AC-n")]`.
 

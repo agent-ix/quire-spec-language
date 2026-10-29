@@ -72,8 +72,7 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-315-AC-49, FR-315-AC-51, FR-315-AC-52, F
    instance `w`. Then settle with the item's `instance` empty.
 7. With `settle_hyper_smt` for the same item, settle outcomes carrying its
    identity: `BoundReached{depth: 2}`; the leaky vault's `Violated`
-   `Lockstep` lasso (method `SmtUnrolling`), then the same lasso with one
-   post-state digest altered, then the same lasso with its `instance`
+   `Lockstep` lasso (method `SmtUnrolling`), then the same lasso with its `instance`
    binding `w`; FR-315-AC-9's undefined-match base model as an `Undefined`
    counterexample (method `KInduction`); `Unknown{depth: 1, method:
    KInduction}`; `Cancelled{source: Requested, method:
@@ -112,7 +111,7 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   `encode_hyper_query`; the altered clause gets the same `Fault` from both.
 - Step 4: the crate compiles; all three compile-fail cases fail to compile.
 - Step 5: the two identities are equal; the reversed listings give an
-  equal identity with an equal hash; the subject with no emission is
+  equal identity; the subject with no emission is
   refused `SubjectIdentityRefusal::Package`.
 - Step 6: `proved`, `decisive-witness`, `Uncertified`, method `k-induction`
   with the matched witness; `inconclusive`, `VacuousMatch` with the
@@ -122,7 +121,7 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   `ItemIdentity` carrying `instance-binding` for the empty instance.
 - Step 7: `inconclusive`, `BoundReached{depth: 2}`, method `smt-unrolling`;
   `refuted`, `decisive-counterexample`, method `smt-unrolling`, from
-  QSL's own replay; `inconclusive`, `ReplayRefused`; no record and
+  QSL's own replay; no record and
   `ProductMismatch` naming `instance` for the `w` lasso, never `refuted`;
   `refuted`, `UndefinedEvaluation`, method `k-induction`; `inconclusive`,
   `InductionNotClosed{depth: 1}`, method `k-induction`;

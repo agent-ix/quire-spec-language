@@ -18,8 +18,7 @@ Scope: FR-105-AC-3, FR-105-AC-4, FR-105-AC-6, FR-105-AC-12.
 
 ## Test Procedure
 
-1. Read TC-462's emitted bytes through QSL's `checked_v2` I2 reader, and
-   recompute the `package_id`.
+1. Read TC-462's emitted bytes through QSL's `checked_v2` I2 reader.
 2. Compile the unit twice. Then rename `ParentOrder` to `ParentFirst`; then
    change its `<` to `<=`; then add `ParentOrder2` with `ParentOrder`'s body;
    then add `post Also using v on Config::ConfigVersion::attemptUpdate
@@ -39,8 +38,7 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: the read admits the package, including its frame step, and the
-  recomputed `package_id` equals the emitted one.
+- Step 1: the read admits the package, including its frame step.
 - Step 2: identical bytes twice; the rename changes no node id; `<=` changes
   `ParentOrder`'s `state_clause` node id and the `package_id`;
   `ParentOrder2` adds no node and gives `ParentOrder`'s node a second `claim`

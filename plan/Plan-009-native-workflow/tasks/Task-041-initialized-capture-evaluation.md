@@ -24,8 +24,7 @@ for the evaluation, and continue to refuse caller-supplied capture binders.
 - [x] Resolve initialized captures without accepting a substituted `StateView` value.
 - [x] Preserve exact missing-input, source-refusal, exhaustion and replay outcomes.
 - [x] Run the required local Rust gates and PR-readiness reviews.
-- [x] Record issue #105 closure and the dependent `quire-protocol` repin as
-  post-merge delivery actions.
+- [x] Record issue #105 closure as a post-merge delivery action.
 
 ## Delivery
 
@@ -34,7 +33,7 @@ evaluates its admitted initializer at the original anchor, and retains that
 immutable value for later reads in the same request. TC-142 exercises Full and
 Partial retry/recovery expressions, exact replay and accounting, unavailable
 sources, caller substitution, and malformed foreign/cyclic initializer graphs.
-Issue #105 closes with the PR; `quire-protocol` #5 repins to the merge commit.
+Issue #105 closes with the PR.
 Independent consumer replay then exposed the distinct forward-effect admission
 gap tracked and completed by issue #108 / Task-042; Task-041's initializer and
 cycle behavior was preserved.
