@@ -130,6 +130,12 @@ enum Halt {
     /// An evaluator stop located at a node other than the current task's
     /// (a `sum` seed is located at its summand, not at the `sum` node).
     Located(Box<LocatedStop>),
+    /// FR-390: the selected caller supplied a known source as unavailable,
+    /// and evaluation reached that local read.
+    Unavailable {
+        binder: quire_exact::NodeKey,
+        cause: quire_semantic_value::catalog::CatalogCode,
+    },
     /// A family-owned evaluation-time refusal or undefined result.
     Family(FamilyResult),
     /// An S6a invariant break: never converted to an `Outcome`.
@@ -605,6 +611,21 @@ pub(crate) struct Machine<'a, 'm> {
     frames: Vec<Vec<Option<Value>>>,
     /// Per-slot provenance parallel to `frames`.
     frame_guard_provenance: Vec<Vec<bool>>,
+    /// FR-390 source slots whose caller supplied an unavailable value.
+    unavailable_slots: std::collections::BTreeMap<
+        Slot,
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::catalog::CatalogCode,
+        ),
+    >,
+    /// The first unavailable read, recorded by the task loop so the
+    /// protocol-slot API can retain the exact read location.
+    unavailable_read: Option<(
+        quire_exact::NodeKey,
+        quire_semantic_value::catalog::CatalogCode,
+        Location,
+    )>,
     tasks: Vec<Task<'a>>,
     losses: Vec<LocatedLoss>,
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
@@ -749,6 +770,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             value_guard_provenance: Vec::new(),
             frames: Vec::new(),
             frame_guard_provenance: Vec::new(),
+            unavailable_slots: std::collections::BTreeMap::new(),
+            unavailable_read: None,
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
@@ -882,6 +905,43 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.drive(root)
     }
 
+    /// FR-390's protocol-slot frame with unavailable caller sources. An
+    /// unavailable source stops only when the checked expression reads its
+    /// local slot, preserving all charges made before that read.
+    pub(crate) fn run_protocol_frame(
+        mut self,
+        root: CheckedNode<'a>,
+        frame: Vec<Option<Value>>,
+        unavailable: std::collections::BTreeMap<
+            Slot,
+            (
+                quire_exact::NodeKey,
+                quire_semantic_value::catalog::CatalogCode,
+            ),
+        >,
+    ) -> Result<
+        Result<
+            Evaluation,
+            (
+                quire_exact::NodeKey,
+                quire_semantic_value::catalog::CatalogCode,
+                Location,
+            ),
+        >,
+        InternalFault,
+    > {
+        self.unavailable_slots = unavailable;
+        let provenance = vec![false; frame.len()];
+        self.push_frame(frame, provenance);
+        match self.drive(root) {
+            Ok(evaluation) => Ok(Ok(evaluation)),
+            Err(fault) => match self.unavailable_read.take() {
+                Some(read) => Ok(Err(read)),
+                None => Err(fault),
+            },
+        }
+    }
+
     /// FR-265: [`Self::run`] over a state clause's body, returning the
     /// evaluation and the trail recorded beside it. The machine must carry
     /// a trail ([`Self::with_trail`]).
@@ -947,6 +1007,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let located = self.imported.first().copied().unwrap_or(located);
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
+                    Halt::Unavailable { binder, cause } => {
+                        self.unavailable_read = Some((binder, cause, located.location().clone()));
+                        Err(InternalFault::new(
+                            "S6a",
+                            "protocol-slot-unavailable-source-read",
+                        ))
+                    }
                     // FR-090-OQ-3 ruling: a family-owned result is located
                     // like a `Stop`, at the task that produced it.
                     Halt::Family(result) => Ok(Evaluation {
@@ -970,6 +1037,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         let value = match self.pop() {
             Ok(value) => value,
             Err(Halt::Fault(fault)) => return Err(fault),
+            Err(Halt::Unavailable { .. }) => {
+                return Err(InternalFault::new(
+                    "S6a",
+                    "protocol-slot-unavailable-source-read",
+                ));
+            }
             Err(Halt::Family(result)) => {
                 return Ok(Evaluation {
                     outcome: FamilyOutcome::FamilyEvaluated(result),
@@ -1519,6 +1592,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return Ok(());
             }
             NodeKind::Local(slot) => {
+                if let Some((binder, cause)) = self.unavailable_slots.get(slot) {
+                    return Err(Halt::Unavailable {
+                        binder: *binder,
+                        cause: *cause,
+                    });
+                }
                 let value = self
                     .slot(*slot)?
                     .clone()
