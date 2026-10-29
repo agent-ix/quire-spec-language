@@ -127,7 +127,7 @@ pub use certificate::zone_certificate::{
     ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
-pub use compile::{compile_package, CompiledPackage};
+pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,

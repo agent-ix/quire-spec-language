@@ -7,7 +7,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::intake::package_input;
 
 use crate::bounds::ReplayLimits;
-use crate::execute::{request_limits, run_spine, Recompiled, ReplayRefusal};
+use crate::execute::{request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
 use crate::DigestRecord;
@@ -60,12 +60,44 @@ pub fn compile_package<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
-    let compiled = recompile_unit(
+    compile_package_with_execution_points(
         source,
         path,
         bytes,
         packages,
         dependencies,
+        &spine::StateClauseExecutionPoints::new(),
+        limits,
+        replay_limits,
+    )
+}
+
+/// [`compile_package`] with accepted state-clause execution points keyed by
+/// exact authored state clause name (FR-104-AC-15), checked through
+/// `spine::check_with_execution_points`, so the emitted clauses carry them.
+/// A point for no authored clause, or one the clause kind does not accept,
+/// is the checker's refusal and no package is emitted.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "compile_package's arguments plus the accepted points"
+)]
+pub fn compile_package_with_execution_points<'a>(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    execution_points: &spine::StateClauseExecutionPoints,
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<CompiledPackage, ReplayRefusal> {
+    let compiled = recompile_unit_with_execution_points(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        execution_points,
         limits,
         replay_limits,
     )?;
@@ -83,6 +115,32 @@ pub(crate) fn recompile_unit<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    recompile_unit_with_execution_points(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        &spine::StateClauseExecutionPoints::new(),
+        limits,
+        replay_limits,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "recompile_unit's arguments plus the accepted points"
+)]
+fn recompile_unit_with_execution_points<'a>(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    execution_points: &spine::StateClauseExecutionPoints,
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<Recompiled, ReplayRefusal> {
     let limits = request_limits(
         &limits,
         crate::limits::AccountingLimits::default().0,
@@ -91,12 +149,13 @@ pub(crate) fn recompile_unit<'a>(
     dependencies
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;
-    run_spine(
+    run_spine_with_execution_points(
         &source,
         path,
         bytes,
         &package_input(packages),
         dependencies,
+        execution_points,
         limits.spine,
     )
 }
