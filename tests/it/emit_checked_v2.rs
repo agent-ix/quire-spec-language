@@ -269,3 +269,83 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
     assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
     assert!(refused.is_empty());
 }
+
+/// Accepted execution points (FR-104-AC-15) supplied with
+/// `--execution-points` reach the emitted state clause, the bytes differ from
+/// the point-free emission, and IR's strict reader admits them; an unknown
+/// clause, a clause kind that does not accept the point and a malformed file
+/// each write no bytes and exit nonzero.
+#[test]
+fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
+    let document = switch_document();
+    let source = switch_source(&document, "post Q1 using v on M::Switch::set { self.on }\n");
+    let directory = tempfile::tempdir().unwrap();
+    let model = directory.path().join("switch.semantic-ir.json");
+    let program = directory.path().join("switch.native");
+    std::fs::write(&model, &document).unwrap();
+    std::fs::write(&program, &source).unwrap();
+    let points = |text: &str| {
+        let file = directory.path().join(format!("points-{}.json", text.len()));
+        std::fs::write(&file, text).unwrap();
+        file
+    };
+    let command = |extra: &[&Path]| {
+        let mut command = strings(&["--model"]);
+        command.extend(args(&[&model]));
+        for file in extra {
+            command.extend(strings(&["--execution-points"]));
+            command.extend(args(&[file]));
+        }
+        command.extend(args(&[&program]));
+        command
+    };
+
+    let plain = emit(&Request::parse(&command(&[])).unwrap()).expect("point-free emits");
+    let accepted = points(r#"{"Q1": {"kind": "post", "operation": "set"}}"#);
+    let mut stdout = Vec::new();
+    run(&command(&[&accepted]), &mut stdout).expect("the accepted point emits");
+    assert_ne!(stdout, plain, "the point changes the emitted bytes");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let clause = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["semantic_form"] == "state_clause")
+        .expect("the state clause node");
+    assert_eq!(
+        clause["body"]["operation"]["member"]["execution_point"],
+        json!({"kind": "post", "operation": "set"}),
+    );
+    let bare: Value = serde_json::from_slice(&plain).unwrap();
+    assert!(bare["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .all(|node| node["body"]["operation"]["member"]["execution_point"].is_null()));
+
+    for (text, producer) in [
+        (
+            r#"{"NotAClause": {"kind": "post", "operation": "set"}}"#,
+            true,
+        ),
+        (r#"{"Q1": {"kind": "pre", "operation": "set"}}"#, true),
+        (r#"{"Q1": {"kind": "sideways"}}"#, false),
+        ("not json", false),
+    ] {
+        let mut refused = Vec::new();
+        let refusal = run(&command(&[&points(text)]), &mut refused).expect_err(text);
+        assert_eq!(
+            matches!(refusal, Error::Producer(_)),
+            producer,
+            "{text}: {refusal:?}"
+        );
+        assert!(
+            producer || matches!(refusal, Error::Points { .. }),
+            "{text}: {refusal:?}"
+        );
+        assert_ne!(refusal.exit_code(), 0);
+        assert!(refused.is_empty(), "{text}");
+    }
+}

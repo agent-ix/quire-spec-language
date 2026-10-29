@@ -28,15 +28,16 @@ use std::path::{Path, PathBuf};
 use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_replay::{
-    compile_package,
-    spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary},
+    compile_package_with_execution_points,
+    spine::{DependencyInput, DependencyInputRefusal, StateClauseExecutionPoints, SuppliedLibrary},
     ReplayLimits, ReplayRefusal, StageLimits,
 };
 use quire_semantic_value::catalog::Category;
 
 /// The usage line, shown on a malformed command line.
 pub const USAGE: &str = "usage: emit_checked_v2 [--model <domain-package-file>]... \
-[--library <identity>=<source-file>]... [--out <path>] <source-file>";
+[--library <identity>=<source-file>]... [--execution-points <json-file>] \
+[--out <path>] <source-file>";
 
 /// Why no bytes were emitted.
 #[derive(Debug, thiserror::Error)]
@@ -71,6 +72,15 @@ pub enum Error {
         /// The ceiling in bytes.
         limit: usize,
     },
+    /// An execution-points file is not a JSON object from authored state
+    /// clause name to execution point.
+    #[error("execution points {path}: {message}")]
+    Points {
+        /// The file.
+        path: String,
+        /// What is wrong with it.
+        message: String,
+    },
     /// The producer refused the source.
     #[error("{}", without_limit_hint(.0))]
     Producer(Box<ReplayRefusal>),
@@ -83,7 +93,11 @@ impl Error {
         let code: Option<Code> = match self {
             Self::Producer(refusal) => Some(refusal.code()),
             Self::Dependencies(refusal) => Some(refusal.code()),
-            Self::Usage | Self::Read { .. } | Self::Write { .. } | Self::TooLarge { .. } => None,
+            Self::Usage
+            | Self::Read { .. }
+            | Self::Write { .. }
+            | Self::TooLarge { .. }
+            | Self::Points { .. } => None,
         };
         code.map_or(Category::Refusal.exit_code(), |code| {
             code.category().exit_code()
@@ -100,6 +114,10 @@ pub struct Request {
     pub models: Vec<PathBuf>,
     /// Library sources: the identity an `import` names, and the file.
     pub libraries: Vec<(String, PathBuf)>,
+    /// A JSON file of accepted state-clause execution points (FR-104-AC-15):
+    /// an object from exact authored clause name to an execution point such
+    /// as `{"kind": "post", "operation": "set"}`.
+    pub execution_points: Option<PathBuf>,
     /// Where to write the bytes instead of stdout.
     pub out: Option<PathBuf>,
 }
@@ -111,6 +129,7 @@ impl Request {
         let mut models = Vec::new();
         let mut libraries = Vec::new();
         let mut out = None;
+        let mut execution_points = None;
         let mut source = None;
         let mut rest = arguments.iter();
         while let Some(argument) = rest.next() {
@@ -121,6 +140,9 @@ impl Request {
                     let (identity, file) =
                         pair.and_then(|p| p.split_once('=')).ok_or(Error::Usage)?;
                     libraries.push((identity.to_owned(), PathBuf::from(file)));
+                }
+                Some("--execution-points") if execution_points.is_none() => {
+                    execution_points = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
                 }
                 Some("--out") if out.is_none() => {
                     out = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
@@ -134,6 +156,7 @@ impl Request {
             source: source.ok_or(Error::Usage)?,
             models,
             libraries,
+            execution_points,
             out,
         })
     }
@@ -184,6 +207,18 @@ fn identity(kind: &str, path: &Path) -> SourceIdentity {
     SourceIdentity::new("local", format!("{kind}:{}", path.display()), "file", "1")
 }
 
+/// The accepted execution points `path` holds, keyed by authored clause name.
+/// An unknown `kind` or a malformed anchor name is a
+/// [`Error::Points`] refusal; whether a clause exists and accepts its point is
+/// the checker's, reported as [`Error::Producer`].
+fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
+    let bytes = read(path, true)?;
+    serde_json::from_slice(&bytes).map_err(|error| Error::Points {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    })
+}
+
 /// Emit the `quire.checked-package/v2` bytes of `request`'s source through
 /// [`qsl_replay::compile_package`].
 pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
@@ -206,12 +241,19 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
         })
         .collect::<Result<Vec<_>, Error>>()?;
     let dependencies = DependencyInput::new(libraries).map_err(Error::Dependencies)?;
-    let compiled = compile_package(
+    let points = request
+        .execution_points
+        .as_deref()
+        .map(execution_points)
+        .transpose()?
+        .unwrap_or_default();
+    let compiled = compile_package_with_execution_points(
         identity("source", &request.source),
         &request.source.display().to_string(),
         &source,
         models.iter().map(Vec::as_slice),
         &dependencies,
+        &points,
         StageLimits::default(),
         ReplayLimits::default(),
     )

@@ -287,6 +287,18 @@ cargo run --locked --example emit_checked_v2 -- \
 The package is read back with the same domain documents as evidence
 (`CheckedPackageEvidence::insert_domain_package_document`).
 
+**Accepted execution points.** `--execution-points <file>` supplies accepted
+state-clause execution points (FR-104-AC-15) through the producer's
+`check_with_execution_points` (`qsl_replay::compile_package_with_execution_points`),
+so the emitted state clauses carry them. The file is a JSON object from the
+exact authored clause name to an execution point: `{"kind": "initialization" |
+"handler", "name": "<anchor>"}` or `{"kind": "pre" | "post", "operation":
+"<anchor>"}`. For example, `{"After": {"kind": "post", "operation": "probe"}}`
+accepts the point for `post After ... on X::Y::probe`. A malformed file is a
+refusal naming it; a point for no authored clause, or one the clause kind does
+not accept, is the checker's refusal. Either way no bytes are written and the
+exit is nonzero. Without the option the clauses are point-free.
+
 The [ConfigVersion example](examples/config-version/README.md) lists all
 seventeen cases: parents, cycles, object identity, operation frames, and refused
 and incomplete runs. `run` can also evaluate one pure function;
