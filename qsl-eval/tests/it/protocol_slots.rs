@@ -498,9 +498,9 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
 }
 
 #[test]
-// Covers TC-1070 rows 2-4, 6, 8 and 12 only (capture, trigger, retry and
-// recovery slots over supplied values); the remaining rows are not asserted
-// here, so TC-1070 itself is not tagged.
+// Covers only the capture, trigger, retry and recovery rows of the
+// compensation matrix (rows 2-4, 6, 8 and 12); the remaining rows are not
+// asserted here, so the whole matrix is not tagged.
 #[trace("TC-142", "FR-049-AC-9", "FR-390-AC-1", "FR-390-AC-2")]
 fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes() {
     let package = compensation_package();
