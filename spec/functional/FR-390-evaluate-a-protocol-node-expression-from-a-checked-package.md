@@ -153,10 +153,11 @@ the proof before emission and a termination claim is their only reader
 - `ProtocolSlotEvaluation::Unavailable`, holding the binder supplied as
   `Unavailable`, its cause and the location of the read that met it.
   Category incomplete.
-- `CallFailure::Input(InputRefusal::Supply(AdmissionFailure))` for a selection
-  or supply refused before S6a, as FR-106's `AdmissionFailure`: `Refused` or
-  `Incomplete`, one record holding the catalog code, cause and the locus it
-  names (the node, member, index or binder). Nothing is charged.
+- `CallFailure::Admission(Box<CallAdmissionFailure>)` for a selection or
+  supply refused or left incomplete before S6a. `CallAdmissionFailure` is the
+  one closed `Refused`/`Incomplete` result owned by quire-eval; each variant
+  carries its catalog code, cause and node/member/binder locus. No QSL-owned
+  mirror admission type is introduced, and nothing is charged.
 - `CallFailure::Fault(InternalFault)` for an S6a invariant break, as FR-107.
 
 Exit statuses are FR-285's `Category::exit_code` of the outcome's category and
@@ -182,12 +183,12 @@ FR-100's outcome mapping, unchanged: a completed value 0, an undefined result
 ### API contract
 
 The result of `evaluate_protocol_slot` is `Result<ProtocolSlotEvaluation,
-CallFailure>` with exactly these shapes: `ProtocolSlotEvaluation::Evaluated`
-and `ProtocolSlotEvaluation::Unavailable`; a selection or supply refused before
-S6a is `CallFailure::Input(InputRefusal::Supply(AdmissionFailure))`, and an S6a
-invariant break is `CallFailure::Fault(InternalFault)`. The protocol slot is
-selected only by this call: `run_clause` and FR-312's request carry no protocol
-slot.
+CallFailure>` with exactly these success shapes: `ProtocolSlotEvaluation::Evaluated`
+and `ProtocolSlotEvaluation::Unavailable`; a selection or supply refused or
+left incomplete before S6a is `CallFailure::Admission(Box<CallAdmissionFailure>)`,
+and an S6a invariant break is `CallFailure::Fault(InternalFault)`. The protocol
+slot is selected only by this call: `run_clause` and FR-312's request carry no
+protocol slot.
 
 ### Charge points and their order
 

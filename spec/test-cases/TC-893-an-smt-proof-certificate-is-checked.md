@@ -15,7 +15,7 @@ FR-315 encodes, both for an inductive proof, and rejects a query mismatch,
 an invalid proof step, a proof that does not refute and a
 certificate of the wrong shape.
 
-Scope: FR-314-AC-1 to FR-314-AC-4.
+Scope: FR-314-AC-1 to FR-314-AC-4 and FR-314-AC-9.
 
 ## Test Procedure
 
@@ -38,6 +38,7 @@ Scope: FR-314-AC-1 to FR-314-AC-4.
    with the third step part's query replaced by the fourth's, with the fifth step part's proof (at least four commands) having its
    command 3 not follow from its premises, and with command 3 of the base
    proof using `hole`, and over `CasRefinesCounterAdd` (FR-315-AC-6) with a base part and eight step parts, valid for the seven rows other than `bump`, the part at `bump`'s position being present but neither compared nor checked.
+6. Over `CasRefinesCounter` with a mapping row outside `QF_LIA` (FR-314-AC-9), check a certificate with a base part carrying the query of an in-fragment initial state and seven step parts, then the same certificate with an empty base part and with a `hole` proof in a step part; then check the step 5 `CasRefinesCounterAdd` certificate again. Settle each.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -62,4 +63,9 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `QueryMismatch` at `base`; the swapped query `QueryMismatch` at `step/2`;
   the invalid command `ProofStepInvalid` at `ProofStep { Step { row: 4 }, 3 }`;
   the `hole` `Unverifiable { Base, 3 }`; the `bump` row `Unencodable { Step { row: r } }`, `r` its position in the `steps` order; each rejection `inconclusive`,
-  `CertificateRejected`.
+  `CertificateRejected`. `Unverifiable` and `Unencodable` each settle `proved`,
+  `Uncertified`, never `Verified` or `Certified`.
+- Step 6: each of the three certificates is rejected `QueryMismatch` at
+  `Base`, never `Unencodable` or `Unverifiable`, and settles `inconclusive`,
+  `CertificateRejected`; the `CasRefinesCounterAdd` certificate again returns
+  `Unencodable { Step { row: r } }`, `proved`, `Uncertified`.

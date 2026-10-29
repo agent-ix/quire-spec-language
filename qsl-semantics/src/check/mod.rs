@@ -377,7 +377,8 @@ pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
-    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedProtocol, CheckedProtocolBinderKey, CheckedProtocolNodeKeys, CheckedRole, CheckedVia,
+    ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -619,6 +620,9 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-390: emitted protocol node keys mapped back to their one S3
+    /// checked protocol declaration and slot rows.
+    protocol_node_keys: BTreeMap<String, CheckedProtocolNodeKeys>,
     /// FR-337: every emitted temporal clause, in declaration order.
     temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-488: every emitted hyper clause over `behaviours`, in declaration
@@ -4637,11 +4641,12 @@ impl PackageDeclarations {
         // FR-094: `check` is the model correspondence's only writer; it
         // holds exactly the model declaration nodes lowering keyed, and a
         // conflicting entry refused the lowering above (FR-303).
-        let (semantic_graph, model_correspondence, identities, binders) = (
+        let (semantic_graph, model_correspondence, identities, binders, lowered_protocol_members) = (
             lowered.graph,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
+            lowered.protocol_members,
         );
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
@@ -5427,6 +5432,24 @@ impl PackageDeclarations {
             abstractions: self.abstractions,
             model_names,
             protocols: checked_protocols,
+            protocol_node_keys: lowered_protocol_members
+                .into_iter()
+                .map(|(name, members)| {
+                    (
+                        name,
+                        CheckedProtocolNodeKeys {
+                            clause: Some(members.clause),
+                            nodes: members.nodes,
+                            channels: members.channels,
+                            roles: members.roles,
+                            compensations: members.compensations,
+                            terminal: members.terminal,
+                            binders: members.binders,
+                            expressions: members.expressions,
+                        },
+                    )
+                })
+                .collect(),
             temporal_clauses,
             hyper_nodes,
             state_graph_claims: state_graph_nodes,
@@ -6067,6 +6090,13 @@ impl CheckedGraph {
     /// FR-113: the checked protocol declared `name`, or `None`.
     pub fn protocol(&self, name: &str) -> Option<&CheckedProtocol> {
         self.protocols.iter().find(|protocol| protocol.name == name)
+    }
+
+    /// FR-390's keyed protocol member identities, read by the selected
+    /// protocol's declaration name. The mapping contains no expression
+    /// bodies; evaluation resolves those from this graph's checked protocol.
+    pub fn protocol_node_keys(&self, name: &str) -> Option<&CheckedProtocolNodeKeys> {
+        self.protocol_node_keys.get(name)
     }
 
     /// FR-115 (ADR-017 PF-3): the operation `model::object::operation`
