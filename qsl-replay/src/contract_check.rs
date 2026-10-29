@@ -86,7 +86,10 @@ pub enum ContractCheckUnsupported {
     /// holds no implementation engine (FR-485 "Clause", "Frame").
     NoImplementationEngine,
     /// A `frame` item whose operation has no implementation binding: the
-    /// contract relation assumes the frame (FR-485 "Frame").
+    /// contract relation assumes the frame (FR-485 "Frame"); or a
+    /// `simulation` item over a refinement that declares a hidden field, a
+    /// history field or an `any` row, which has no per-step reading
+    /// (FR-485 "Simulation", FR-485-AC-14).
     NoContractLevelReading,
     /// The model's pre-states hold a relationship extent, which the arm does
     /// not range over.
@@ -95,11 +98,6 @@ pub enum ContractCheckUnsupported {
     ClockMember,
     /// A field of the model has no finite domain.
     FieldDomain,
-    /// A refinement with a hidden abstract field, a history field or an
-    /// `any` row (QSpec FR-146 writes no step-simulation record for it): a
-    /// step check over the visible part alone could prove what it did not
-    /// check, so the arm decides none of its rules.
-    NotStepSimulable,
 }
 
 impl ContractCheckUnsupported {
@@ -111,7 +109,6 @@ impl ContractCheckUnsupported {
             Self::RelationshipState => "relationship-state-not-enumerable",
             Self::ClockMember => "clock-member-not-enumerable",
             Self::FieldDomain => "field-domain-not-enumerable",
-            Self::NotStepSimulable => "refinement-not-step-simulable",
         }
     }
 }
@@ -156,7 +153,9 @@ enum Target {
     },
     /// An operation's frame.
     Frame,
-    /// A rule of a refinement that is not proof-eligible (FR-146).
+    /// A rule of a refinement that declares a hidden field, a history field
+    /// or an `any` row: it has no per-step reading (QSpec FR-485
+    /// "Simulation", FR-485-AC-14).
     NotStepSimulable,
     /// A bound step relation; it is always bound, so never evaluated.
     StepRelation,
@@ -195,16 +194,18 @@ impl ContractClaim {
     }
 
     /// Why the arm does not decide the claim, when its form alone says so:
-    /// a bound item (no implementation engine), an unbound frame (no
-    /// contract-level reading) or a rule of a refinement that is not
-    /// proof-eligible. Read before any model system is opened.
+    /// a bound item (no implementation engine); an unbound frame, or a rule
+    /// of a refinement that declares a hidden field, a history field or an
+    /// `any` row (no contract-level reading, QSpec FR-485-AC-6 and
+    /// FR-485-AC-14). Read before any model system is opened, so no check
+    /// runs and no counterexample is recorded.
     pub fn refusal(&self) -> Option<ContractCheckUnsupported> {
         if self.bound {
             return Some(ContractCheckUnsupported::NoImplementationEngine);
         }
         match self.target {
             Target::Frame => Some(ContractCheckUnsupported::NoContractLevelReading),
-            Target::NotStepSimulable => Some(ContractCheckUnsupported::NotStepSimulable),
+            Target::NotStepSimulable => Some(ContractCheckUnsupported::NoContractLevelReading),
             _ => None,
         }
     }
@@ -658,7 +659,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                     .get(*refinement)
                     .is_some_and(CheckedRefinement::proof_eligible) =>
             {
-                return Ok(Err(ContractCheckUnsupported::NotStepSimulable))
+                return Ok(Err(ContractCheckUnsupported::NoContractLevelReading))
             }
             Target::Invariant { context, .. } => {
                 let relation = package.abstraction();

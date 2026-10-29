@@ -566,22 +566,20 @@ fn a_bound_clause_reading_an_unbound_element_is_declined_incomplete_input() {
     assert_eq!(cause.as_str(), "incomplete-input");
 }
 
-// ---- a refinement with a hidden abstract field ----
+// ---- a refinement with no per-step reading (QSpec FR-485-AC-14) ----
 
-/// FR-141-AC-4's `Coin` with `side` hidden: QSpec FR-146 writes no
-/// step-simulation record for it, and a step check over the visible part
-/// alone could prove what it did not check, so a rule of it is
-/// `unsupported`, never proved.
-#[trace("QSpec-TC-974", "QSpec-FR-485-AC-9")]
-#[trace("TC-551", "FR-146-AC-2")]
-#[test]
-fn a_rule_of_a_refinement_with_a_hidden_field_is_unsupported() {
-    use crate::refinement_aux::{coin_refines, Unit};
+/// Run the simulation items of `refinement` at ordinal 0 (OC-24, the
+/// initial rule) and 1 (OC-23, step row 0) and assert each settles
+/// `unsupported` `no-contract-level-reading` with the FR-483 diagnostic,
+/// runs no check and records no counterexample.
+fn assert_no_per_step_reading(
+    package: &qsl_package::CheckedPackage,
+    refinement: &qsl_semantics::check::CheckedRefinement,
+    subject: qsl_eval::simulation::model::ModelSimulationRequest<'_>,
+    abstract_initial: qsl_semantics::model::observation::DocumentRef,
+) {
     use qsl_analyze::contract_check::AbstractSubject;
 
-    let unit = Unit::coin(1);
-    let world = unit.world(&coin_refines(""));
-    let refinement = world.refinement();
     assert!(!refinement.proof_eligible());
     assert!(refinement.step_simulations().is_empty());
     let node = refinement.v2_emission().expect("emits").identity;
@@ -590,15 +588,16 @@ fn a_rule_of_a_refinement_with_a_hidden_field_is_unsupported() {
             WireNodeId::from_digest(*node.as_bytes()),
             Origin::new(Role::new("generated"), ordinal),
         );
-        let request = select_contract(world.package(), &claim).map(|selected| ContractRequest {
-            package: world.package(),
+        let request = select_contract(package, &claim).map(|selected| ContractRequest {
+            package,
             claim: selected,
-            subject: world.concrete_request(UNLIMITED),
+            subject: subject.clone(),
             abstract_subject: Some(AbstractSubject {
-                package: world.package(),
-                initial: vec![world.abstract_initial()],
+                package,
+                initial: vec![abstract_initial.clone()],
             }),
-            max_cases: None,
+            // A budget of one case: a check that ran would reach it.
+            max_cases: NonZeroU64::new(1),
         });
         let record = analyze(
             &Engines::qsl().expect("the linked engines register"),
@@ -606,14 +605,62 @@ fn a_rule_of_a_refinement_with_a_hidden_field_is_unsupported() {
             &Cancel::new(),
         )
         .remove(0);
-        let TerminalValue::Unsupported(UnavailabilityCause::ContractCheck { form, reason }) =
-            terminal(&record)
-        else {
-            panic!("expected unsupported: {:?}", terminal(&record));
+        let TerminalValue::Unsupported(cause) = terminal(&record) else {
+            panic!(
+                "ordinal {ordinal}: expected unsupported: {:?}",
+                terminal(&record)
+            );
+        };
+        assert_eq!(cause.code(), Some("unsupported_projection"));
+        assert_eq!(cause.as_str(), "unsupported-requested-capability");
+        let UnavailabilityCause::ContractCheck { form, reason } = cause else {
+            panic!("the arm's own cause: {cause:?}");
         };
         assert_eq!(form.as_str(), "simulation");
-        assert_eq!(reason.as_str(), "refinement-not-step-simulable");
+        assert_eq!(reason.as_str(), "no-contract-level-reading");
+        assert!(record.contract_check.is_none(), "no counterexample");
     }
+}
+
+/// QSpec FR-485-AC-14 (OC-23, OC-24): FR-141-AC-4's `Coin` with `side`
+/// hidden. (A refinement with a history field has no V2 refinement node, so
+/// no claim can name one of its rules.)
+#[trace("QSpec-TC-974", "QSpec-FR-485-AC-14")]
+#[test]
+fn a_rule_of_a_refinement_with_a_hidden_field_has_no_contract_level_reading() {
+    use crate::refinement_aux::{coin_refines, Unit};
+    let unit = Unit::coin(1);
+    let world = unit.world(&coin_refines(""));
+    assert_no_per_step_reading(
+        world.package(),
+        world.refinement(),
+        world.concrete_request(UNLIMITED),
+        world.abstract_initial(),
+    );
+}
+
+/// QSpec FR-485-AC-14 (OC-23, OC-24): the lost-update refinement with its
+/// commit rows `-> any`.
+#[trace("QSpec-TC-974", "QSpec-FR-485-AC-14")]
+#[test]
+fn a_rule_of_a_refinement_with_an_any_row_has_no_contract_level_reading() {
+    use crate::refinement_fixture::{lost_update_refinement, Variant, World as Cas};
+    let any = lost_update_refinement()
+        .replace(
+            "step Impl::Counter::commitA -> Spec::Counter::inc(self);",
+            "step Impl::Counter::commitA -> any;",
+        )
+        .replace(
+            "step Impl::Counter::commitB -> Spec::Counter::inc(self);",
+            "step Impl::Counter::commitB -> any;",
+        );
+    let world = Cas::with(Variant::LOST_UPDATE, &any);
+    assert_no_per_step_reading(
+        world.package(),
+        world.refinement(),
+        world.concrete_request(UNLIMITED),
+        world.abstract_initial(),
+    );
 }
 
 /// QSpec FR-485 "Forms" over a QSL-emitted step relation (FR-180): with

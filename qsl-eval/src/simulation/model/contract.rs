@@ -529,6 +529,7 @@ impl<'a> ModelSystem<'a> {
                     successors: &mut successors,
                     enabled: Some(&mut enabled),
                     enabled_transitions: None,
+                    selected_transitions: None,
                 },
             )?;
         }
