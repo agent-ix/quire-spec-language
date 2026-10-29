@@ -182,7 +182,7 @@ fn the_timed_refinement_record_routes_to_en6_alone() {
         .requirement_occurrence()
         .expect("the refinement has a record");
     let record = graph.requirements().get(occurrence).expect("its record");
-    assert!(record.requirements().dense_time());
+    assert!(record.requirements().timed());
     let registry = crate::dense_route::registry();
     let items = items_from_requirements(graph.requirements(), &registry, None);
     let item = items

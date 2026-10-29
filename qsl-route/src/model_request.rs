@@ -18,7 +18,7 @@
 //! and, within one subject, `deadlock-freedom` then `time-lock-freedom`, so
 //! adding or removing a derived item never moves a caller's item. Each
 //! derived item's claim is its subject's anchor; a subject that reads
-//! several `model_selections` rows has none, and its derived items are
+//! no `model_selections` row or several has none, and its derived items are
 //! settled `unsupported` with no request item ([`UnanchoredItem`]).
 
 use std::collections::BTreeSet;
@@ -31,7 +31,7 @@ use quire_semantic_value::fairness::PropertyForm;
 
 use crate::deadlock::{
     by_subject, ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem,
-    ObligationKind, SubjectReading,
+    NoAnchor, ObligationKind, SubjectReading,
 };
 use crate::reductions::{ObligationReductions, Reductions};
 use crate::request::{AbstractSubject, DerivedLimits, ItemKind, RequestItem, RequestWriter};
@@ -193,17 +193,17 @@ impl<S: Clone + Eq> ModelRequest<S> {
                 let kind = derived.item_kind();
                 let claim = match reading.anchor() {
                     Ok(claim) => claim,
-                    Err(rows) => {
+                    Err(cause) => {
                         unanchored.push(UnanchoredItem {
                             subject: subject.clone(),
                             kind,
-                            rows,
+                            cause,
                         });
                         continue;
                     }
                 };
                 let candidates = registry.restrict_to_reductions(
-                    registry.restrict_to_dense_time(
+                    registry.restrict_to_timed(
                         registry.candidates_for_temporal_dynamics(
                             Capability::TemporalSatisfaction,
                             named,
@@ -318,19 +318,21 @@ impl<S: Eq> WrittenRequest<S> {
     }
 }
 
-/// A derived item over a model subject with no stated anchor (QSpec
-/// FR-368-AC-22): the subject reads `rows` `model_selections` rows, not
-/// one, so the producer settles the item `unsupported` with
+/// A derived item over a model subject with no anchor (QSpec
+/// FR-361-AC-17, FR-368-AC-22): the subject reads no `model_selections`
+/// row or several, so the producer settles the item `unsupported` with
 /// `unsupported_projection`/`unsupported-requested-capability` and writes
-/// no request item for it.
+/// no request item for it. It is settled here, before any request is
+/// negotiated or run, so before any `requires-bound`, `no-initial-state`
+/// or `no-instance` outcome.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnanchoredItem<S> {
     /// The subject.
     pub subject: S,
     /// The derived item's kind.
     pub kind: ItemKind,
-    /// The number of `model_selections` rows the subject reads.
-    pub rows: usize,
+    /// Why the subject has no anchor.
+    pub cause: NoAnchor,
 }
 
 impl<S> UnanchoredItem<S> {
@@ -340,12 +342,16 @@ impl<S> UnanchoredItem<S> {
     }
 
     /// The diagnostic's `detail`: the item kind and that the subject reads
-    /// several model selections.
+    /// no model selection or several.
     pub fn detail(&self) -> String {
-        format!(
-            "the {} item's subject reads {} model selections, so it has no anchor",
-            self.kind.to_wire(),
-            self.rows
-        )
+        let kind = self.kind.to_wire();
+        match self.cause {
+            NoAnchor::NoSelection => {
+                format!("the {kind} item's subject reads no model selection, so it has no anchor")
+            }
+            NoAnchor::SeveralSelections { rows } => format!(
+                "the {kind} item's subject reads {rows} model selections, so it has no anchor"
+            ),
+        }
     }
 }

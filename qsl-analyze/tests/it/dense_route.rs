@@ -70,7 +70,7 @@ fn routes(world: &World) -> Routes {
         .get(&occurrence)
         .expect("the clause's record")
         .requirements()
-        .dense_time();
+        .timed();
     let items = items_from_requirements(records, &registry, None);
     let item = items
         .iter()
@@ -304,7 +304,7 @@ fn an_untimed_refinement_record_routes_to_explicit_state_alone() {
         .get(occurrence)
         .expect("its record")
         .requirements()
-        .dense_time());
+        .timed());
     let items = items_from_requirements(records, &registry(), None);
     let item = items
         .iter()
@@ -351,7 +351,7 @@ fn a_mixed_package_routes_each_record_by_its_own_subject() {
             .get(occurrence)
             .expect("its record")
             .requirements()
-            .dense_time();
+            .timed();
         let item = items
             .iter()
             .find(|item| item.occurrence() == occurrence)

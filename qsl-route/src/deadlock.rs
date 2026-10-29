@@ -279,15 +279,32 @@ impl SubjectReading {
     /// claim of a derived item over the subject, the `model_root` node of
     /// the one selection it reads and that node's one occurrence, of role
     /// `generated` and ordinal 0 (QSpec FR-322-AC-132). A subject that
-    /// reads another number of rows has no stated anchor, and the count is
-    /// returned.
-    pub fn anchor(&self) -> Result<OccurrenceKey, usize> {
+    /// reads no row or several has no anchor (QSpec FR-361-AC-17).
+    pub fn anchor(&self) -> Result<OccurrenceKey, NoAnchor> {
         let mut roots = self.roots.iter();
         match (roots.next(), roots.next()) {
             (Some(root), None) => Ok(OccurrenceKey::generated(*root)),
-            _ => Err(self.roots.len()),
+            (None, _) => Err(NoAnchor::NoSelection),
+            (Some(_), Some(_)) => Err(NoAnchor::SeveralSelections {
+                rows: self.roots.len(),
+            }),
         }
     }
+}
+
+/// Why a model subject has no anchor for its derived items (QSpec
+/// FR-361-AC-17, FR-368-AC-22): it reads not exactly one `model_selections`
+/// row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoAnchor {
+    /// The subject reads no row: no universe of it covers a population of a
+    /// selected domain package.
+    NoSelection,
+    /// The subject reads several rows.
+    SeveralSelections {
+        /// The number of rows it reads.
+        rows: usize,
+    },
 }
 
 /// The subjects of `readings`, in the order each first occurs, each with

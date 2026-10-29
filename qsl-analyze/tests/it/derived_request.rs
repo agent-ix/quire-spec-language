@@ -22,16 +22,18 @@ use qsl_eval::simulation::model::{PopulationUniverse, TimedSystem, DEFAULT_MAX_C
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
+use qsl_replay::node_occurrence;
 use qsl_replay::SubjectIdentity;
 use qsl_replay::{
     CertificateCheckLimits, CertifiedItem, IncompleteCause, ModelCheckLimit, TerminalValue,
     ZoneCertificateRequest,
 };
 use qsl_route::deadlock::{
-    ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem,
+    ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem, NoAnchor,
 };
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::reductions::Reductions;
+use qsl_route::request::items_from_requirements;
 use qsl_route::request::{
     AbstractSubject, DerivedLimits, ExtentClassification, ItemKind, RequestItem,
 };
@@ -323,9 +325,10 @@ fn a_dense_subjects_derived_items_settle_on_en6() {
 }
 
 /// FR-243 over a `time tick` subject (SR-1786001 FND-001): a timed subject
-/// whose source is a tick, not `time dense`, still routes both derived
-/// items to EN-6 alone, never to EN-1, which has no time-lock-freedom item;
-/// its deadlock-freedom item settles proved on EN-6.
+/// whose source is a tick, not `time dense`, routes its authored clause's
+/// record and both derived items to EN-6 alone, never to EN-1, which has no
+/// time-lock-freedom item; its deadlock-freedom item settles proved on
+/// EN-6.
 #[trace("TC-698", "FR-243-AC-1")]
 #[trace("TC-687", "FR-232-AC-1")]
 #[test]
@@ -347,6 +350,23 @@ fn a_tick_subjects_derived_items_route_to_en6_alone() {
         simulation: world.request(),
         proof_bounds: Vec::new(),
     };
+    // FR-243: the authored clause over the tick subject is a timed item,
+    // so its record routes to EN-6 alone too.
+    let graph = world.package.graph();
+    let occurrence = node_occurrence(&graph.temporal_clauses()[0]);
+    assert!(graph
+        .requirements()
+        .get(&occurrence)
+        .expect("the clause's record")
+        .requirements()
+        .timed());
+    let records = items_from_requirements(graph.requirements(), &registry(), None);
+    let clause = records
+        .iter()
+        .find(|item| *item.occurrence() == occurrence)
+        .expect("the clause's item");
+    assert_eq!(ids(clause.candidates()), [en6::BACKEND_ID]);
+
     let written = written(&subject, &DerivedLimits::default());
     assert_eq!(
         kinds(&written),
@@ -575,17 +595,48 @@ fn a_subject_reading_several_model_selections_has_no_derived_request_item() {
     let settled: Vec<_> = unanchored
         .unanchored()
         .iter()
-        .map(|item| (item.kind, item.rows, item.catalog_code()))
+        .map(|item| (item.kind, item.cause, item.catalog_code()))
         .collect();
     let code = CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
+    let several = NoAnchor::SeveralSelections { rows: 2 };
     assert_eq!(
         settled,
         [
-            (ItemKind::DeadlockFreedom, 2, code),
-            (ItemKind::TimeLockFreedom, 2, code)
+            (ItemKind::DeadlockFreedom, several, code),
+            (ItemKind::TimeLockFreedom, several, code)
         ]
     );
     assert!(unanchored.unanchored()[0]
         .detail()
         .contains("deadlock-freedom"));
+}
+
+/// QSpec FR-361-AC-17 (STD-560) and FR-368-AC-22's "or none" (TC-290 step
+/// 10): a subject with no universe reads no `model_selections` row, so it
+/// has no anchor. Its deadlock-freedom item is settled `unsupported`,
+/// `unsupported_projection`/`unsupported-requested-capability`, with no
+/// request item, and the authored clause over it is written as before.
+#[trace("QSpec-TC-290", "QSpec-FR-361-AC-17")]
+#[trace("QSpec-TC-290", "QSpec-FR-368-AC-22")]
+#[test]
+fn a_subject_reading_no_model_selection_has_no_derived_request_item() {
+    let world = rpc(4);
+    let mut simulation = world.request();
+    simulation.universes.clear();
+    let subject = ModelSubject {
+        simulation,
+        proof_bounds: Vec::new(),
+    };
+    let written = written(&subject, &DerivedLimits::default());
+    assert_eq!(kinds(&written), [Some(ItemKind::Formula)]);
+    let [unanchored] = written.unanchored() else {
+        panic!("one unanchored item: {:?}", written.unanchored());
+    };
+    assert_eq!(unanchored.kind, ItemKind::DeadlockFreedom);
+    assert_eq!(unanchored.cause, NoAnchor::NoSelection);
+    assert_eq!(
+        unanchored.catalog_code(),
+        CatalogCode::new("unsupported_projection", "unsupported-requested-capability")
+    );
+    assert!(unanchored.detail().contains("reads no model selection"));
 }

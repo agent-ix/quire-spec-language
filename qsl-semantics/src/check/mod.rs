@@ -4997,11 +4997,11 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
-                    // FR-243: a clause over a `time dense` subject is EN-6's
-                    // item.
+                    // FR-243: a clause over a timed subject, `dense` or
+                    // `tick`, is EN-6's item.
                     let record = claims::RequirementRecord::unguarded(
-                        if checked.dense_time() {
-                            extent.over_dense_time()
+                        if checked.timed() {
+                            extent.over_timed()
                         } else {
                             extent
                         },
@@ -5128,17 +5128,15 @@ impl PackageDeclarations {
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
-            // EN-6's item.
+            // EN-6's item. EN-6's refinement product reads only a dense
+            // concrete subject, so a `tick` refinement is not marked and
+            // goes to the explicit-state engines.
             let dense = self.time_sources.iter().any(|source| {
                 source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
             });
             let wanted = checked.requirements(node);
             let record = claims::RequirementRecord::unguarded(
-                if dense {
-                    wanted.over_dense_time()
-                } else {
-                    wanted
-                },
+                if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
                 claims::wire(boolean),
                 references::ModelReferences::new(Default::default(), [], None),

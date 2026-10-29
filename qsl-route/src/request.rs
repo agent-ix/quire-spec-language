@@ -317,8 +317,8 @@ impl RequestItem {
         self.abstract_subject.as_ref()
     }
 
-    /// A derived item's candidates, computed by the writer (FR-243: a
-    /// `time dense` subject's to the backends deciding one); `None` for an
+    /// A derived item's candidates, computed by the writer (FR-243: a timed
+    /// subject's to the backends deciding timed items); `None` for an
     /// item whose candidates come from its record.
     pub fn candidates(&self) -> Option<&CandidateOutcome> {
         self.derived.as_ref().map(|derived| &derived.candidates)
@@ -1074,9 +1074,9 @@ fn reduced_candidates(
 
 /// The candidate outcome of one item's `requirements`: backends of its
 /// capability kind that advertise every fairness kind it uses (FR-134) and,
-/// for an item over a `time dense` subject, decide one (FR-243); a
-/// refinement record over any other subject goes to the explicit-state
-/// engines alone (FR-144). An item the writer disposes `Unsupported` has no
+/// for a timed item ([`Requirements::timed`]), decide timed items (FR-243);
+/// a refinement record that is not marked timed goes to the explicit-state
+/// engines alone (FR-144, FR-430). An item the writer disposes `Unsupported` has no
 /// candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
@@ -1100,10 +1100,10 @@ fn candidates_of(
         requirements.property_form(),
         Some(quire_semantic_value::fairness::PropertyForm::Refinement { .. })
     );
-    let outcome = if refinement && !requirements.dense_time() {
+    let outcome = if refinement && !requirements.timed() {
         registry.restrict_to_untimed_refinement(outcome)
     } else {
-        registry.restrict_to_dense_time(outcome, requirements.dense_time())
+        registry.restrict_to_timed(outcome, requirements.timed())
     };
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).

@@ -287,7 +287,7 @@ pub struct BackendDescriptor {
     evidence_kinds: BTreeSet<EvidenceKind>,
     dynamics: Option<BTreeSet<DynamicsKind>>,
     solver_bounds: Option<SolverBounds>,
-    dense_time: bool,
+    timed: bool,
 }
 
 /// The optional FR-331 manifest members [`descriptor_from_manifest`] reads
@@ -414,7 +414,7 @@ pub fn descriptor_from_manifest<'a>(
         solver_bounds: None,
         memory_models,
         reductions,
-        dense_time: false,
+        timed: false,
     })
 }
 
@@ -642,23 +642,23 @@ impl BackendDescriptor {
             evidence_kinds,
             dynamics: None,
             solver_bounds: None,
-            dense_time: false,
+            timed: false,
         })
     }
 
-    /// The descriptor of an engine that decides items over a `time dense`
-    /// subject (QSL FR-243, FR-430): EN-6. The attribute is QSL's own, read
-    /// by [`Registry::restrict_to_dense_time`]; FR-331's manifest has no
+    /// The descriptor of an engine that decides timed items, over a `time
+    /// dense` or a `time tick` subject (QSL FR-243, FR-430): EN-6. The attribute is QSL's own, read
+    /// by [`Registry::restrict_to_timed`]; FR-331's manifest has no
     /// member for it, so it is never read from or written to a manifest.
     #[must_use]
-    pub fn with_dense_time(mut self) -> Self {
-        self.dense_time = true;
+    pub fn with_timed(mut self) -> Self {
+        self.timed = true;
         self
     }
 
-    /// Whether the engine decides items over a `time dense` subject.
-    pub fn decides_dense_time(&self) -> bool {
-        self.dense_time
+    /// Whether the engine decides timed items (QSL FR-243).
+    pub fn decides_timed(&self) -> bool {
+        self.timed
     }
 
     /// Admit typed temporal dynamics and their published solver bounds.
@@ -1560,17 +1560,13 @@ impl Registry {
     }
 
     /// QSL FR-243 and FR-430: `outcome`, a candidate set computed for an
-    /// item, restricted to the engines that decide a `time dense` subject
-    /// when the item is over one (`dense`), so such an item routes to EN-6
-    /// alone. An item over no dense subject keeps its candidates. An unknown
-    /// named backend is returned unchanged.
-    pub fn restrict_to_dense_time(
-        &self,
-        outcome: CandidateOutcome,
-        dense: bool,
-    ) -> CandidateOutcome {
-        if dense {
-            self.keep_candidates(outcome, BackendDescriptor::decides_dense_time)
+    /// item, restricted to the engines that decide timed items when the
+    /// item is one (`timed`), so such an item routes to EN-6 alone. Any
+    /// other item keeps its candidates. An unknown named backend is returned
+    /// unchanged.
+    pub fn restrict_to_timed(&self, outcome: CandidateOutcome, timed: bool) -> CandidateOutcome {
+        if timed {
+            self.keep_candidates(outcome, BackendDescriptor::decides_timed)
         } else {
             outcome
         }
@@ -1578,12 +1574,12 @@ impl Registry {
 
     /// FR-144 and QSpec FR-430: `outcome`, a candidate set computed for a
     /// refinement record over an untimed or `time tick` concrete subject,
-    /// restricted to the explicit-state engines: those that do not decide a
-    /// `time dense` subject, since EN-6's refinement product reads only a
-    /// dense concrete subject. An unknown named backend is returned
+    /// restricted to the explicit-state engines: those that do not decide
+    /// timed items, since EN-6's refinement product reads only a dense
+    /// concrete subject. An unknown named backend is returned
     /// unchanged.
     pub fn restrict_to_untimed_refinement(&self, outcome: CandidateOutcome) -> CandidateOutcome {
-        self.keep_candidates(outcome, |descriptor| !descriptor.decides_dense_time())
+        self.keep_candidates(outcome, |descriptor| !descriptor.decides_timed())
     }
 
     /// `outcome` keeping the candidates whose descriptor `keep` holds for.
