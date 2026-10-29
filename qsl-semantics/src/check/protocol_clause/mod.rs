@@ -296,6 +296,7 @@ pub fn check(
             roles,
             parallels,
             pending_predicate_joins,
+            node: None,
             finish,
             resolved_anchors: resolved,
             attempts: Vec::new(),

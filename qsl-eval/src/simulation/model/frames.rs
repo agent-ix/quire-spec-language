@@ -182,6 +182,7 @@ pub(super) fn apply(
         contract,
         successors,
         mut enabled,
+        mut enabled_transitions,
     } = outputs;
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
@@ -256,6 +257,18 @@ pub(super) fn apply(
             postconditions,
             footprint: footprint.as_ref(),
         };
+
+        // FR-220 access classification needs only whether this transition
+        // completes when no attempt constraint reads a completed result. Keep
+        // the transition only if at least one candidate post-state succeeds.
+        if let Some(transitions) = enabled_transitions.as_deref_mut() {
+            let mut first_successor = Vec::new();
+            if application_run.first_candidate(budget, contract, &mut first_successor)? {
+                transitions.push(transition);
+            }
+            continue;
+        }
+
         let first = successors.len();
         application_run.candidates(budget, contract, successors)?;
         if let Some(enabled) = enabled.as_deref_mut() {
@@ -363,6 +376,9 @@ pub(super) struct Outputs<'o> {
     pub(super) successors: &'o mut Vec<Applied>,
     /// Each enabled argument vector, when the caller records them.
     pub(super) enabled: Option<&'o mut Vec<EnabledVector>>,
+    /// Enabled transition identities when the caller needs access
+    /// classification without enumerating every candidate post-state.
+    pub(super) enabled_transitions: Option<&'o mut Vec<ModelTransition>>,
 }
 
 /// One argument vector of an application whose effective precondition holds
@@ -454,6 +470,7 @@ struct Run<'w, 's, 'a> {
 struct Plan<'p> {
     slots: &'p [Slot],
     writable: &'p WritableFields,
+    stop_after_first: bool,
 }
 
 /// An unused universe key an operation may create an object under.
@@ -604,12 +621,37 @@ impl Run<'_, '_, '_> {
         contract: &mut Vec<ContractFinding>,
         successors: &mut Vec<Applied>,
     ) -> Result<(), ExpansionStop> {
+        self.generate_candidates(budget, contract, successors, false)
+    }
+
+    /// Find the first completed candidate post-state, if one exists. Access
+    /// classification needs to know whether an application completes, but
+    /// without an attempt constraint it does not need every post-state.
+    fn first_candidate(
+        &self,
+        budget: &mut Budget,
+        contract: &mut Vec<ContractFinding>,
+        successors: &mut Vec<Applied>,
+    ) -> Result<bool, ExpansionStop> {
+        let initial = successors.len();
+        self.generate_candidates(budget, contract, successors, true)?;
+        Ok(successors.len() > initial)
+    }
+
+    fn generate_candidates(
+        &self,
+        budget: &mut Budget,
+        contract: &mut Vec<ContractFinding>,
+        successors: &mut Vec<Applied>,
+        stop_after_first: bool,
+    ) -> Result<(), ExpansionStop> {
         let deletable = self.deletable();
         let slots = self.slots();
         let writable = self.writable_fields()?;
         let plan = Plan {
             slots: &slots,
             writable: &writable,
+            stop_after_first,
         };
         let mut deletions = Odometer::new(vec![2; deletable.len()]);
         while let Some(deleted) = deletions.next_digits() {
@@ -626,7 +668,11 @@ impl Run<'_, '_, '_> {
                     .collect(),
             );
             while let Some(created) = creations.next_digits() {
-                self.fields_of_choice(&deleted, &plan, &created, budget, contract, successors)?;
+                let found =
+                    self.fields_of_choice(&deleted, &plan, &created, budget, contract, successors)?;
+                if stop_after_first && found {
+                    return Ok(());
+                }
             }
         }
         Ok(())
@@ -643,7 +689,8 @@ impl Run<'_, '_, '_> {
         budget: &mut Budget,
         contract: &mut Vec<ContractFinding>,
         successors: &mut Vec<Applied>,
-    ) -> Result<(), ExpansionStop> {
+    ) -> Result<bool, ExpansionStop> {
+        let initial = successors.len();
         let system = self.walk.system;
         let mut members: Vec<Member> = Vec::new();
         for row in &self.walk.rows {
@@ -740,8 +787,11 @@ impl Run<'_, '_, '_> {
                 contract,
                 successors,
             )?;
+            if plan.stop_after_first && successors.len() > initial {
+                return Ok(true);
+            }
         }
-        Ok(())
+        Ok(successors.len() > initial)
     }
 
     /// The candidate state one choice describes.

@@ -3,7 +3,10 @@
 //! (FR-344 "Invocation and exit"). `cargo xtask refinement versioning
 //! <corpus>` checks that a superseding revision of a specification admits
 //! every case its prior revision admitted (FR-340); `layering <corpus>` runs
-//! the FR-345 gate over the linked production registry (FR-489).
+//! the FR-345 gate over the linked production registry (FR-489);
+//! `generate-versioning` and `generate-layering` write the two real corpora
+//! at run time; `layering-check <corpus>` runs the layering CLI and passes
+//! only its expected no-negotiation run (FR-345-AC-9).
 //!
 //! The module owns the three pieces FR-340, FR-343 and FR-344 name:
 //! [`versioning`] reads a corpus and runs each case through the spine,
@@ -18,11 +21,14 @@ use crate::error::{Error, Result};
 use crate::Outcome;
 
 pub mod compare;
+pub mod corpus;
 pub mod layering;
+pub mod layering_check;
+pub mod layering_corpus;
 pub mod report;
 pub mod versioning;
 
-const USAGE: &str = "usage: cargo xtask refinement versioning <corpus> | layering <corpus>";
+const USAGE: &str = "usage: cargo xtask refinement versioning <corpus> | layering <corpus> | generate-versioning <dir> | generate-layering <dir> | layering-check <corpus>";
 
 /// `cargo xtask refinement <gate> <corpus>`: run the selected gate and return
 /// its report with the exit code of its verdict (FR-344).
@@ -39,6 +45,23 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                 .to_json()
                 .map_err(|source| Error::RefinementReport { source })?;
             (stdout, report.verdict.exit_code())
+        }
+        Some("generate-versioning") => {
+            corpus::generate(workspace_root, path)?;
+            (String::new(), 0)
+        }
+        Some("generate-layering") => {
+            layering_corpus::generate(workspace_root, path)?;
+            (String::new(), 0)
+        }
+        Some("layering-check") => {
+            let cli = std::env::current_exe()
+                .map_err(|source| Error::io("the running xtask executable", source))?;
+            layering_check::check(&cli, path)?;
+            (
+                "refinement-layering: the expected unsupported run\n".to_owned(),
+                0,
+            )
         }
         Some("layering") => {
             let outcome = run_layering(path, layering::RegistrySnapshot::production())?;

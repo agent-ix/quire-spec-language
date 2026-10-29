@@ -7,7 +7,7 @@
 //! is frozen.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
@@ -15,7 +15,7 @@ use quire_contract_model::{
     CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
 };
 use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn args(items: &[&Path]) -> Vec<OsString> {
     items
@@ -26,6 +26,15 @@ fn args(items: &[&Path]) -> Vec<OsString> {
 
 fn strings(items: &[&str]) -> Vec<OsString> {
     items.iter().map(OsString::from).collect()
+}
+
+/// `tests/fixtures/spine-model.native` with its model digest filled in
+/// (`crate::support::spine_model::unit`), written to `directory` for the
+/// runnable output to read.
+fn spine_model_source(directory: &Path) -> PathBuf {
+    let path = directory.join("spine-model.native");
+    std::fs::write(&path, crate::support::spine_model::unit()).unwrap();
+    path
 }
 
 /// IR's strict read of `bytes`, supplied `documents` as domain evidence.
@@ -72,20 +81,21 @@ fn producer_bytes(path: &Path, source: &str, documents: &[&[u8]]) -> Vec<u8> {
 /// same bytes the default stdout carries.
 #[test]
 fn the_output_is_the_producers_bytes_and_reads_back() {
-    let source = std::fs::read_to_string("tests/fixtures/spine-model.native").unwrap();
-    let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
+    let source = crate::support::spine_model::unit();
+    let document = crate::support::spine_model::DOCUMENT;
     let directory = tempfile::tempdir().unwrap();
     let out = directory.path().join("package.json");
     let model = Path::new("tests/fixtures/spine-model.semantic-ir.json");
-    let program = Path::new("tests/fixtures/spine-model.native");
+    let program = spine_model_source(directory.path());
+    let program = program.as_path();
 
     let mut stdout = Vec::new();
     let mut command = strings(&["--model"]);
     command.extend(args(&[model, program]));
     run(&command, &mut stdout).expect("the fixture emits");
     assert!(!stdout.is_empty());
-    assert_eq!(stdout, producer_bytes(program, &source, &[&document]));
-    read_back(&stdout, &[&document]);
+    assert_eq!(stdout, producer_bytes(program, &source, &[document]));
+    read_back(&stdout, &[document]);
 
     let mut elsewhere = Vec::new();
     let mut command = strings(&["--out"]);
@@ -142,9 +152,10 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
 /// line and an unreadable file fail the same way.
 #[test]
 fn a_refused_source_writes_nothing_and_exits_nonzero() {
-    let program = Path::new("tests/fixtures/spine-model.native");
+    let directory = tempfile::tempdir().unwrap();
+    let program = spine_model_source(directory.path());
     let mut stdout = Vec::new();
-    let refusal = run(&args(&[program]), &mut stdout).expect_err("the model is not supplied");
+    let refusal = run(&args(&[&program]), &mut stdout).expect_err("the model is not supplied");
     assert!(matches!(refusal, Error::Producer(_)), "{refusal:?}");
     assert_ne!(refusal.exit_code(), 0);
     assert!(!refusal.to_string().is_empty());
@@ -217,4 +228,166 @@ fn the_size_ceiling_is_exact_and_over_cap_inputs_refuse_explicitly() {
     let refusal = run(&command, &mut refused).expect_err("an over-cap library file");
     assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
     assert!(refused.is_empty());
+}
+
+/// Accepted execution points (FR-104-AC-15) supplied with
+/// `--execution-points` reach the emitted state clause, the bytes differ from
+/// the point-free emission, and IR's strict reader admits them; an unknown
+/// clause, a clause kind that does not accept the point and a malformed file
+/// each write no bytes and exit nonzero.
+#[test]
+fn accepted_execution_points_are_emitted_and_bad_points_refuse() {
+    let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
+    let program = Path::new("examples/switch-transition/switch.native");
+    let document = std::fs::read(model).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let points = |text: &str| {
+        let file = directory.path().join(format!("points-{:x}.json", {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            text.hash(&mut hasher);
+            hasher.finish()
+        }));
+        std::fs::write(&file, text).unwrap();
+        file
+    };
+    let command = |extra: &[&Path]| {
+        let mut command = strings(&["--model"]);
+        command.extend(args(&[model]));
+        for file in extra {
+            command.extend(strings(&["--execution-points"]));
+            command.extend(args(&[file]));
+        }
+        command.extend(args(&[program]));
+        command
+    };
+
+    let plain = emit(&Request::parse(&command(&[])).unwrap()).expect("point-free emits");
+    let accepted = points(r#"{"Q1": {"kind": "post", "operation": "set"}}"#);
+    let mut stdout = Vec::new();
+    run(&command(&[&accepted]), &mut stdout).expect("the accepted point emits");
+    assert_ne!(stdout, plain, "the point changes the emitted bytes");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let clause = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["semantic_form"] == "state_clause")
+        .expect("the state clause node");
+    assert_eq!(
+        clause["body"]["operation"]["member"]["execution_point"],
+        json!({"kind": "post", "operation": "set"}),
+    );
+    let bare: Value = serde_json::from_slice(&plain).unwrap();
+    assert!(bare["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .all(|node| node["body"]["operation"]["member"]["execution_point"].is_null()));
+
+    // (file text, refused by the checker rather than by the points reader)
+    for (text, producer) in [
+        (
+            r#"{"NotAClause": {"kind": "post", "operation": "set"}}"#,
+            true,
+        ),
+        (r#"{"Q1": {"kind": "pre", "operation": "set"}}"#, true),
+        (
+            r#"{"Q1": {"kind": "post", "operation": "not a name!"}}"#,
+            true,
+        ),
+        (r#"{"Q1": {"kind": "sideways"}}"#, false),
+        (
+            r#"{"Q1": {"kind": "post", "operation": "set"}, "Q1": {"kind": "post", "operation": "set"}}"#,
+            false,
+        ),
+        ("{}", false),
+        (
+            r#"{"Q1": {"kind": "post", "operation": "set", "extra": 1}}"#,
+            false,
+        ),
+        ("not json", false),
+    ] {
+        let mut refused = Vec::new();
+        let refusal = run(&command(&[&points(text)]), &mut refused).expect_err(text);
+        if producer {
+            assert!(matches!(refusal, Error::Producer(_)), "{text}: {refusal:?}");
+        } else {
+            assert!(
+                matches!(refusal, Error::Points { .. }),
+                "{text}: {refusal:?}"
+            );
+            assert_eq!(refusal.exit_code(), 20, "{text}");
+        }
+        assert_ne!(refusal.exit_code(), 0);
+        assert!(refused.is_empty(), "{text}");
+    }
+}
+
+/// Several accepted points in one file each reach their own clause: the
+/// example source plus a second clause, both over operation `set`.
+#[test]
+fn several_accepted_execution_points_each_reach_their_clause() {
+    let model = Path::new("examples/switch-transition/switch.semantic-ir.json");
+    let document = std::fs::read(model).unwrap();
+    let source = std::fs::read_to_string("examples/switch-transition/switch.native").unwrap()
+        + "pre Q0 using v on M::Switch::set { true }\n";
+    let directory = tempfile::tempdir().unwrap();
+    let program = directory.path().join("two-clauses.native");
+    std::fs::write(&program, source).unwrap();
+    let file = directory.path().join("points.json");
+    std::fs::write(
+        &file,
+        r#"{"Q0": {"kind": "pre", "operation": "set"}, "Q1": {"kind": "post", "operation": "set"}}"#,
+    )
+    .unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[model]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&file, &program]));
+    let mut stdout = Vec::new();
+    run(&command, &mut stdout).expect("both points emit");
+    read_back(&stdout, &[&document]);
+    let wire: Value = serde_json::from_slice(&stdout).unwrap();
+    let mut points: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause")
+        .map(|node| node["body"]["operation"]["member"]["execution_point"].to_string())
+        .collect();
+    points.sort();
+    let mut expected = vec![
+        json!({"kind": "pre", "operation": "set"}).to_string(),
+        json!({"kind": "post", "operation": "set"}).to_string(),
+    ];
+    expected.sort();
+    assert_eq!(points, expected, "each clause carries its own point");
+}
+
+/// A points file over the file ceiling is an explicit refusal naming it
+/// (exit 20), never truncated.
+#[test]
+fn an_over_cap_points_file_is_refused_explicitly() {
+    use qsl_foundation::source::MAX_SOURCE_BYTES;
+    let directory = tempfile::tempdir().unwrap();
+    let points = directory.path().join("big-points.json");
+    std::fs::write(&points, vec![b' '; MAX_SOURCE_BYTES + 1]).unwrap();
+    let mut command = strings(&["--model"]);
+    command.extend(args(&[Path::new(
+        "examples/switch-transition/switch.semantic-ir.json",
+    )]));
+    command.extend(strings(&["--execution-points"]));
+    command.extend(args(&[&points]));
+    command.extend(args(&[Path::new(
+        "examples/switch-transition/switch.native",
+    )]));
+    let mut stdout = Vec::new();
+    let refusal = run(&command, &mut stdout).expect_err("an over-cap points file");
+    assert!(matches!(refusal, Error::TooLarge { .. }), "{refusal:?}");
+    assert_eq!(refusal.exit_code(), 20);
+    assert!(refusal.to_string().contains("big-points.json"), "{refusal}");
+    assert!(stdout.is_empty());
 }

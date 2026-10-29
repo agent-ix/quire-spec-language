@@ -1055,7 +1055,7 @@ mod quantities {
     // QSpec's nominal vectors, by name; each key is recomputed from the
     // hand-written preimage (`spec_vectors::local_key`), and
     // `the_nominal_keys_are_qspecs_published_vectors` compares them with
-    // QSpec's published vectors when `$QSPEC_DIR` is set.
+    // QSpec's published vectors from the caller-provided checkout.
     const LENGTH: &str = "dimension-length";
     const TIME: &str = "dimension-time";
     const METRE: &str = "unit-metre";
@@ -1072,15 +1072,12 @@ mod quantities {
     }
 
     /// The recomputed keys are the ones QSpec publishes for the same nodes
-    /// (compared only when `$QSPEC_DIR` is set; `make conformance` requires
-    /// it).
+    /// The test requires the caller-provided QSpec checkout.
     #[test]
     fn the_nominal_keys_are_qspecs_published_vectors() {
         for name in [LENGTH, TIME, METRE, SECOND] {
-            let Some(published) = crate::check::spec_vectors::published_key(name) else {
-                println!("skipped: QSPEC_DIR not set");
-                return;
-            };
+            let published = crate::check::spec_vectors::published_key(name)
+                .unwrap_or_else(|| panic!("QSpec does not publish the {name} vector"));
             assert_eq!(resolved(name), published, "{name}");
         }
     }

@@ -21,12 +21,12 @@ fn main() {
         .iter()
         .position(|(name, _)| *name == selection)
         .expect("required selection");
+    let checkout = std::env::var("QSPEC_DIR").unwrap_or_else(|_| {
+        eprintln!("QSPEC_DIR must point to an available QSpec checkout; no default is used");
+        std::process::exit(2);
+    });
     let mut calls = fs::read_to_string(&log).unwrap_or_default();
-    calls.push_str(&format!(
-        "{}\t{}\n",
-        selection,
-        std::env::var("QSPEC_DIR").unwrap()
-    ));
+    calls.push_str(&format!("{}\t{}\n", selection, checkout));
     fs::write(log, calls).unwrap();
     println!("selected: {selection}");
     let fail_at = std::env::var("CONFORMANCE_DOUBLE_FAIL_AT").unwrap();
@@ -54,7 +54,7 @@ fn main() {
         ),
     }
     if mode == "skip" {
-        println!("skipped: QSPEC_DIR not set");
+        println!("skipped: simulated missing vector evidence");
     }
     std::process::exit(if mode == "nonzero" { 23 } else { 0 });
 }

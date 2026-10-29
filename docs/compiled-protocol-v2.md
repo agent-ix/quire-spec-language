@@ -164,7 +164,7 @@ progress.
 A consumer handoff names the final published compiler implementation
 that retains this contract and names the exact public surface it consumes:
 
-- `protocol_artifact::handoff::{PUBLISHED_HANDOFF, PUBLISHED_OFFER_FILE,
+- `protocol_artifact::handoff::{SOURCE_ROOT, PUBLISHED_OFFER_FILE,
   PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_SELECTION_FILE,
   PUBLISHED_MUTATION_MANIFEST_FILE,
   MUTATION_MANIFEST_FORMAT}`;
@@ -230,11 +230,12 @@ typed `Allocation`, `Json`, `Numeric`, `Invalid`, `Unsupported` or `Incomplete`
 refusal with its report limits, usage and source locus; no partial admission is
 written.
 
-The repository commits one generated instance at
-[`artifacts/compiled-protocol-v2/`](../artifacts/compiled-protocol-v2/). TC-138
-decodes both interchange files with the published record types. The public
+The repository commits no instance of this directory. A consumer's build or
+test calls `protocol_artifact::handoff::write_v2` to generate it into a
+directory the consumer chooses. TC-138 decodes both interchange files of a
+freshly written instance with the published record types. The public
 `protocol_artifact::handoff`
-constants name this directory, its four consumer-facing members and the
+constants name its four consumer-facing members and the
 mutation-corpus format; downstream Rust consumers import those values rather
 than discovering them through an environment variable or shadow vocabulary.
 

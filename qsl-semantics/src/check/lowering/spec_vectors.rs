@@ -94,8 +94,18 @@ fn parse(tag: &str, spec: &str, raw: &mut Raw) {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    qsl_foundation::ByteDigest::of(bytes)
+/// The lower-case hex SHA-256 of the RFC 8785 bytes of the JSON `text`,
+/// through `quire-canonical` (the only canonical encoder in QSL). The specs'
+/// preimages are RFC 8785 text, so this is also the digest of their bytes.
+fn hex(text: &str) -> String {
+    let value: Value = serde_json::from_str(text)
+        .unwrap_or_else(|error| panic!("a vector preimage is JSON ({error}): {text}"));
+    digest_of(&value)
+}
+
+fn digest_of(value: &Value) -> String {
+    quire_canonical::sha256(value, quire_canonical::Limits::new(1 << 20))
+        .expect("a preimage encodes canonically")
         .as_bytes()
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -103,9 +113,13 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// The key QSpec publishes for its nominal vector `name`, read from
-/// `$QSPEC_DIR`; `None` while it is unset.
+/// `$QSPEC_DIR`; `None` while it is unset. Test-only (`cfg(test)`): the
+/// qualified core reads no ambient environment or filesystem in shipped
+/// source, and `test-support` is shipped source.
+#[cfg(test)]
 pub fn published_key(name: &str) -> Option<String> {
-    let dir = std::env::var_os("QSPEC_DIR")?;
+    let dir = std::env::var_os("QSPEC_DIR")
+        .unwrap_or_else(|| panic!("QSPEC_DIR must point to an available QSpec checkout"));
     let path =
         std::path::Path::new(&dir).join("proposals/checked-package-v2/node-identity-vectors.json");
     let bytes =
@@ -131,9 +145,7 @@ fn owner_json() -> Value {
 /// bytes. No production identity type is used, which keeps this recomputation
 /// independent of the code under test when `QSPEC_DIR` is unset.
 fn key_of(preimage: &Value) -> String {
-    hex(serde_json::to_string(preimage)
-        .expect("a preimage serialises")
-        .as_bytes())
+    digest_of(preimage)
 }
 
 /// The key of QSpec's nominal vector `name` (`dimension-length`,
@@ -231,7 +243,7 @@ impl Resolver<'_> {
             return known.clone();
         }
         let preimage = self.preimage(tag, name);
-        let key = preimage.map(|preimage| hex(preimage.as_bytes()));
+        let key = preimage.map(|preimage| hex(&preimage));
         self.keys.insert(id, key.clone());
         key
     }
@@ -259,7 +271,7 @@ impl Resolver<'_> {
         for member in &members {
             let raw = &self.raw.preimages[&(tag.to_owned(), member.clone())];
             let local = raw.replacen(&marker, "", 1);
-            locals.push(self.resolve(tag, &local).map(|local| hex(local.as_bytes())));
+            locals.push(self.resolve(tag, &local).map(|local| hex(&local)));
         }
         locals.into_iter().collect()
     }
@@ -278,7 +290,7 @@ impl Resolver<'_> {
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            hex(array.as_bytes())
+            hex(&array)
         });
         self.group_digests.insert(id, digest.clone());
         digest
@@ -307,7 +319,7 @@ pub fn vectors(tag: &str) -> BTreeMap<String, Vector> {
         .filter(|(vector_tag, _)| vector_tag == tag)
         .filter_map(|(_, name)| {
             let preimage = resolver.preimage(tag, name)?;
-            Some((name.clone(), (hex(preimage.as_bytes()), preimage)))
+            Some((name.clone(), (hex(&preimage), preimage)))
         })
         .collect()
 }

@@ -341,12 +341,28 @@ pub enum Error {
         #[source]
         source: serde_json::Error,
     },
+    /// FR-340: the run-time versioning corpus could not be generated.
+    #[error("refinement: cannot generate the corpus at {path}: {source}")]
+    RefinementCorpus {
+        /// The model file or corpus path that failed.
+        path: String,
+        /// The I/O failure.
+        #[source]
+        source: std::io::Error,
+    },
     /// FR-489: a production linked-provider snapshot could not be built.
     #[error("refinement: cannot build the production provider registry: {source}")]
     RefinementRegistryBuild {
         /// The descriptor-source or registration failure.
         #[source]
         source: crate::refinement::layering::RegistryBuildError,
+    },
+    /// FR-345-AC-9: the layering CLI's run is not the expected
+    /// no-negotiation run.
+    #[error("refinement-layering: {mismatch}")]
+    LayeringUnexpectedRun {
+        /// Why the run is not the expected one.
+        mismatch: crate::refinement::layering_check::Mismatch,
     },
     /// FR-353: corpus preflight or invocation refused before any vector ran.
     #[error("qualify: {0}")]
@@ -395,9 +411,10 @@ impl Error {
             | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
-            Self::RefinementReport { .. } | Self::RefinementRegistryBuild { .. } => {
-                Code::Refinement
-            }
+            Self::RefinementReport { .. }
+            | Self::RefinementCorpus { .. }
+            | Self::RefinementRegistryBuild { .. }
+            | Self::LayeringUnexpectedRun { .. } => Code::Refinement,
             Self::QualificationRefusal(_) => Code::Qualification,
         }
     }

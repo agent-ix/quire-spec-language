@@ -302,6 +302,7 @@ fn expand(
                     contract: &mut contract,
                     successors: &mut successors,
                     enabled: enabled.as_deref_mut(),
+                    enabled_transitions: None,
                 },
             )?;
         }

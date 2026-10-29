@@ -30,6 +30,7 @@ use qsl_replay::{
 };
 use qsl_route::deadlock::{
     ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem, NoAnchor,
+    ProtocolTemporalItem,
 };
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::reductions::Reductions;
@@ -49,7 +50,7 @@ use crate::counter::{clause_text, CONTRACT};
 use crate::dense_route::{ids, registry};
 use crate::model_settle::case;
 use crate::timed_world::{World, PACKAGE};
-use crate::zone_search::{rpc, INFINITE};
+use crate::zone_search::{rpc, rpc_claim, INFINITE};
 
 /// The derived items, each with its obligation, that
 /// `ModelRequest::derived` writes, with EN-1 and EN-6 registered, after
@@ -102,6 +103,55 @@ pub(crate) fn derived_items<S: Clone + Eq>(
         .collect()
 }
 
+/// The request `ModelRequest::derived` writes, with EN-1 and EN-6
+/// registered, after the temporal items `items` over protocol subjects, in
+/// that order, each written with a bounded `temporal-satisfaction` record.
+pub(crate) fn protocol_request<S: Clone + Eq>(
+    items: &[ProtocolTemporalItem<'_, S>],
+) -> WrittenRequest<S> {
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let mut request = ModelRequest::new();
+    for item in items {
+        request.protocol(item, &record);
+    }
+    request.derived(&registry(), None, &DerivedLimits::default())
+}
+
+/// The items of `written` of kind `kind`, each with its obligation.
+pub(crate) fn items_of_kind<S: Clone + Eq>(
+    written: &WrittenRequest<S>,
+    kind: ItemKind,
+) -> Vec<(RequestItem, ItemObligation<S>)> {
+    written
+        .items()
+        .iter()
+        .filter(|item| item.item_kind() == Some(kind))
+        .map(|item| {
+            let obligation = written.obligation(item.index()).expect("its obligation");
+            (item.clone(), obligation.clone())
+        })
+        .collect()
+}
+
+/// The subject of each derived item of kind `kind` that `written`
+/// derives, in derivation order among the written ones and then among the
+/// ones settled `unsupported` for want of an anchor.
+pub(crate) fn derived_subjects<S: Clone + Eq>(
+    written: &WrittenRequest<S>,
+    kind: ItemKind,
+) -> Vec<S> {
+    let unanchored = written
+        .unanchored()
+        .iter()
+        .filter(|item| item.kind == kind)
+        .map(|item| item.subject.clone());
+    items_of_kind(written, kind)
+        .into_iter()
+        .map(|(_, obligation)| obligation.subject)
+        .chain(unanchored)
+        .collect()
+}
+
 /// The claim QSpec FR-368 gives a derived item over a subject reading the
 /// selection `identity` of `package`: its `model_root` node's `generated`
 /// occurrence at ordinal 0.
@@ -146,7 +196,7 @@ fn settled(record: &AnalyzeRecord) -> (String, TerminalValue) {
 
 /// QSpec FR-368-AC-17 and AC-18 with FR-243, and the producer half of
 /// AC-14 (the model subject's `model_root` anchor; the protocol anchor is
-/// QSL-1235's) and of AC-16 (`unbounded`, no finite bound, no
+/// `race_freedom`'s) and of AC-16 (`unbounded`, no finite bound, no
 /// `extent.bounds`; QSL writes no extent domain list): over the dense
 /// `Rpc`, the request holds the authored clause at index 0, then the
 /// deadlock-freedom and then the time-lock-freedom item. Both derived
@@ -639,4 +689,80 @@ fn a_subject_reading_no_model_selection_has_no_derived_request_item() {
         CatalogCode::new("unsupported_projection", "unsupported-requested-capability")
     );
     assert!(unanchored.detail().contains("reads no model selection"));
+}
+
+/// QSpec FR-368-AC-25 over a timed model: in the dense `Rpc` unit, which
+/// selects no protocol profile, the protocol `P` over `M::Call` is a protocol
+/// subject whose checked clause has no node. A request with an item over the
+/// model subject and one over `P` gives the model subject its
+/// deadlock-freedom and time-lock-freedom items, and `P` only its
+/// deadlock-freedom item, settled `unsupported` with no anchor
+/// (FR-368-AC-24): `P` has no time-lock-freedom item, written or settled.
+#[trace("QSpec-TC-431", "QSpec-FR-368-AC-25")]
+#[test]
+fn a_protocol_subject_over_a_timed_model_gains_no_time_lock_freedom_item() {
+    let world = rpc_claim(
+        4,
+        INFINITE,
+        "temporal NoLateReply using inf over (c: M::Call) clock \"model-steps\" on origin \
+         { always holds(not c.late) }\n\
+         protocol P using v over (c: M::Call) on origin {\n\
+         role w on M::Call;\n\
+         run sequence Main { }\n\
+         finish Done as (d: Boolean) { true };\n\
+         }\n",
+    );
+    let graph = world.package.graph();
+    let protocol = graph.protocol("P").expect("P");
+    assert_eq!(protocol.node(), None);
+    let clause = node_occurrence(&graph.temporal_clauses()[0]);
+    let record = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+    let selections: BTreeSet<&str> = [PACKAGE].into_iter().collect();
+    let mut request = ModelRequest::new();
+    request.authored(
+        &ModelTemporalItem {
+            occurrence: &clause,
+            subject: &"Rpc",
+            package: graph,
+        },
+        &record,
+        &selections,
+    );
+    request.protocol(
+        &ProtocolTemporalItem {
+            occurrence: &clause,
+            subject: &"P",
+            protocol,
+            models: &[],
+            non_atomic_access: false,
+        },
+        &record,
+    );
+    let written = request.derived(&registry(), None, &DerivedLimits::default());
+    let items: Vec<_> = written
+        .items()
+        .iter()
+        .map(|item| {
+            let obligation = written.obligation(item.index()).expect("its obligation");
+            (obligation.subject, item.item_kind())
+        })
+        .collect();
+    assert_eq!(
+        items,
+        [
+            ("Rpc", Some(ItemKind::Formula)),
+            ("P", Some(ItemKind::Formula)),
+            ("Rpc", Some(ItemKind::DeadlockFreedom)),
+            ("Rpc", Some(ItemKind::TimeLockFreedom)),
+        ]
+    );
+    let unanchored: Vec<_> = written
+        .unanchored()
+        .iter()
+        .map(|item| (item.subject, item.kind, item.cause))
+        .collect();
+    assert_eq!(
+        unanchored,
+        [("P", ItemKind::DeadlockFreedom, NoAnchor::NoProtocolProfile)]
+    );
 }

@@ -42,7 +42,7 @@ pub struct Side {
 }
 
 /// FR-343's case result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, serde::Deserialize)]
 pub enum CaseResult {
     /// The superseding revision admits what the prior admitted.
     #[serde(rename = "holds")]

@@ -42,8 +42,8 @@ use serde_json::{json, Value as Json};
 
 use crate::fill::{reachable, Reached};
 use crate::litmus::{
-    attempt, contracts, core, document, field, key, package, protocol, protocol_with, sb_run,
-    sb_unit, unit_text, Documents, NO_BOTH_ZERO,
+    attempt, contracts, core, document, field, key, package, protocol, protocol_profiled_package,
+    protocol_with, sb_run, sb_unit, unit_text, Documents, NO_BOTH_ZERO,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -89,6 +89,15 @@ impl Case {
         }
     }
 
+    /// [`Self::with_letters`] with the protocol profile selected, so `SB`'s
+    /// clause has its node.
+    pub(crate) fn protocol_profiled(body: &str, letters: &'static dyn ModelLetters) -> Self {
+        Self {
+            checked: protocol_profiled_package(body),
+            ..Self::with_letters(body, letters)
+        }
+    }
+
     /// The unit with `body`, `SB` over the object `object` of `population`;
     /// `spare` adds the `Spare` object `z` to the universe.
     fn over_object(body: &str, population: &str, object: &str, spare: bool) -> Self {
@@ -112,6 +121,11 @@ impl Case {
         let mut case = Self::over_object(body, "cells", object, false);
         case.documents = Documents::with_cells(&["x", "y", "z"]);
         case
+    }
+
+    /// The unit's checked package.
+    pub(crate) fn checked(&self) -> &CheckedPackage {
+        &self.checked
     }
 
     pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {

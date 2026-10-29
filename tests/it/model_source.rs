@@ -62,7 +62,8 @@ fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
 fn source_sequence_maxima_are_checked_at_native_admission() {
     for maximum in [10_000, 10_001, u32::MAX] {
         for unused in [false, true] {
-            let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+            let mut input: Value =
+                serde_json::from_str(setup::native_rule_model::fixture()).unwrap();
             if unused {
                 input["values"].as_array_mut().unwrap().push(json!({
                     "name":"unused_sequence", "kind":"state",
@@ -105,7 +106,7 @@ fn source_sequence_maxima_are_checked_at_native_admission() {
 #[test]
 #[trace("TC-101", "FR-025-AC-2")]
 fn source_forms_and_repeated_names_keep_exact_original_occurrences() {
-    let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+    let mut input: Value = serde_json::from_str(setup::native_rule_model::fixture()).unwrap();
     input["license"] = json!("Declared metadata Ω");
     input["enums"] = json!([{"name":"Status", "variants":["Ready","Paused"]}]);
     input["records"]
@@ -174,7 +175,7 @@ fn source_forms_and_repeated_names_keep_exact_original_occurrences() {
 #[test]
 #[trace("TC-102", "FR-025-AC-3")]
 fn profile_decode_formal_and_admission_failures_retain_the_original_source() {
-    let original = setup::native_rule_model::FIXTURE;
+    let original = setup::native_rule_model::fixture();
     let binding = source(original, "draft:1");
     let failure = read(binding.clone(), "unknown", ModelSourceLimits::default()).unwrap_err();
     assert_eq!(failure.code(), Code::UnknownWire);
@@ -241,7 +242,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
         type_depth: usize::MAX,
     };
     let draft = read(
-        source(setup::native_rule_model::FIXTURE, "effective"),
+        source(setup::native_rule_model::fixture(), "effective"),
         FORMAT,
         overlarge,
     )
@@ -254,7 +255,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
         })
         .unwrap_err();
     assert_eq!(failure.source_limits(), effective);
-    let binding = source(setup::native_rule_model::FIXTURE, "draft:1");
+    let binding = source(setup::native_rule_model::fixture(), "draft:1");
     for limits in [
         ModelSourceLimits {
             source_bytes: 0,
@@ -328,7 +329,7 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
 #[trace("TC-101", "FR-025-AC-5")]
 fn public_model_source_reaches_real_aggregate_and_operation_execution() {
     let model = read(
-        source(setup::native_rule_model::FIXTURE, "draft:1"),
+        source(setup::native_rule_model::fixture(), "draft:1"),
         FORMAT,
         ModelSourceLimits::default(),
     )
@@ -403,7 +404,7 @@ fn public_model_source_reaches_real_aggregate_and_operation_execution() {
 #[test]
 #[trace("TC-102", "FR-025-AC-3")]
 fn duplicate_scalar_retains_the_exact_declared_name() {
-    let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+    let mut input: Value = serde_json::from_str(setup::native_rule_model::fixture()).unwrap();
     let scalar = input["scalars"][0].clone();
     let name = scalar["name"].as_str().unwrap().to_owned();
     input["scalars"].as_array_mut().unwrap().push(scalar);
@@ -424,7 +425,7 @@ fn duplicate_scalar_retains_the_exact_declared_name() {
 #[test]
 #[trace("TC-102", "FR-025-AC-3")]
 fn unknown_scalar_retains_the_exact_referenced_name() {
-    let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+    let mut input: Value = serde_json::from_str(setup::native_rule_model::fixture()).unwrap();
     input["records"][0]["fields"][0]["type"] = json!({"kind":"scalar","name":"MissingScalar"});
     let text = input.to_string();
     let failure = read(
