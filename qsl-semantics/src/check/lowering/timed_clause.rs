@@ -456,7 +456,6 @@ impl Lowering<'_> {
             return false;
         };
         wrapper.node_tag == NodeTag::Expression
-            && wrapper.semantic_form == "reference"
             && content(target.0).is_some_and(|literal| {
                 matches!(
                     &literal.body,

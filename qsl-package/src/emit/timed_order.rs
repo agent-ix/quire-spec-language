@@ -110,6 +110,9 @@ impl<'g> Graph<'g> {
     }
 
     /// FR-322-AC-265's member key of the timed node `id`.
+    // Intake proof: conformance_the_clause_member_key_vectors_replay and
+    // conformance_the_aggregate_order_vectors_replay.
+    #[ix_trace_rs::string_edge]
     fn member_key(&self, id: &CheckedNodeId) -> Result<Vec<Token>, OrderFault> {
         let node = self.node(id)?;
         let form = TimedModelForm::from_wire(&node.semantic_form).ok_or(OrderFault::Malformed)?;
@@ -196,6 +199,9 @@ impl<'g> Graph<'g> {
     /// by its name, a tuple by its index, a union by its case, a slot by
     /// its collection, minimum and maximum, `unbounded` above every
     /// integer. Neither the selector nor `resolved_path` is read.
+    // Intake proof: conformance_the_clause_member_key_vectors_replay and
+    // conformance_the_aggregate_order_vectors_replay.
+    #[ix_trace_rs::string_edge]
     fn path_key(&self, path: &CheckedTerm, key: &mut Vec<Token>) -> Result<(), OrderFault> {
         key.push(Token::Open);
         for step in members_of(path)? {
@@ -234,6 +240,9 @@ impl<'g> Graph<'g> {
     }
 
     /// The operation name of the `operation_anchor` `reference` names.
+    // Intake proof: conformance_the_clause_member_key_vectors_replay and
+    // conformance_the_aggregate_order_vectors_replay.
+    #[ix_trace_rs::string_edge]
     fn operation_name(&self, reference: &CheckedTerm) -> Result<Box<str>, OrderFault> {
         let anchor = self.node(target(reference)?)?;
         let members = match &anchor.body {
@@ -481,14 +490,9 @@ fn number(value: u64) -> Token {
 }
 
 fn comparison(term: &CheckedTerm, key: &mut Vec<Token>) -> Result<(), OrderFault> {
-    let rank = match text(term)? {
-        "lt" => 0,
-        "le" => 1,
-        "eq" => 2,
-        "ge" => 3,
-        "gt" => 4,
-        _ => return Err(OrderFault::Malformed),
-    };
+    // The comparisons are declared in their rank.
+    let rank = crate::checked_v2::ClockComparison::from_wire(text(term)?)
+        .ok_or(OrderFault::Malformed)? as u64;
     key.push(number(rank));
     Ok(())
 }

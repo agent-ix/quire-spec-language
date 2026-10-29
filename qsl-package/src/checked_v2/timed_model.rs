@@ -1080,6 +1080,9 @@ fn project_reset(node: &CheckedSemanticNodeV2) -> Result<CheckedClockReset, &'st
     })
 }
 
+// Intake proof: clause_intake_is_total_and_round_trips_the_clause_fixture.
+// A part's leading binding must be `predicate`; any other name refuses.
+#[ix_trace_rs::string_edge]
 fn project_guard(node: &CheckedSemanticNodeV2) -> Result<CheckedClockGuard, &'static str> {
     if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Guard) {
         return Err("clock guard reference has wrong form");
