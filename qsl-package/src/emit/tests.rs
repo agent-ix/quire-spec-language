@@ -2620,31 +2620,29 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
 #[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
 #[test]
 fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
-    // QSpec's published fixture, read from the checkout `QSPEC_DIR` names;
-    // without it the row digest is arbitrary and only the independent hash
-    // below is checked (`make conformance` requires it).
-    let published: Option<Value> = std::env::var_os("QSPEC_DIR").map(|qspec| {
-        let path = std::path::Path::new(&qspec)
-            .join("proposals/checked-package-v2/fixtures/positive-all-families.json");
-        serde_json::from_slice(&std::fs::read(path).expect("the fixture reads"))
-            .expect("the fixture parses")
-    });
-    let published_root = published.as_ref().map(|fixture| {
-        fixture["semantic_graph"]["nodes"]
-            .as_array()
-            .and_then(|nodes| {
-                nodes.iter().find(|node| {
-                    node["semantic_form"] == "model_root"
-                        && node["owner"]["identity"] == "acme/orders"
-                })
+    // The QSpec fixture is required so this test always checks the published
+    // model-root identity, including when run outside `make conformance`.
+    let qspec = std::env::var_os("QSPEC_DIR")
+        .unwrap_or_else(|| panic!("QSPEC_DIR must point to an available QSpec checkout"));
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/fixtures/positive-all-families.json");
+    let published: Value = serde_json::from_slice(
+        &std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display())),
+    )
+    .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let published_root = published["semantic_graph"]["nodes"]
+        .as_array()
+        .and_then(|nodes| {
+            nodes.iter().find(|node| {
+                node["semantic_form"] == "model_root"
+                    && node["owner"]["identity"] == "acme/orders"
             })
-            .expect("the fixture holds the acme/orders model root")
-            .clone()
-    });
-    let row_hex = published_root.as_ref().map_or_else(
-        || "17".repeat(32),
-        |root| root["owner"]["digest"].as_str().unwrap().to_owned(),
-    );
+        })
+        .expect("the fixture holds the acme/orders model root");
+    let row_hex = published_root["owner"]["digest"]
+        .as_str()
+        .expect("the model root owner carries its digest")
+        .to_owned();
     let mut digest = [0_u8; 32];
     for (byte, pair) in digest.iter_mut().zip(row_hex.as_bytes().chunks(2)) {
         *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
@@ -2665,9 +2663,7 @@ fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
         .as_bytes(),
     );
     assert_eq!(root.node_id.digest.as_ref(), expected);
-    if let Some(published_root) = published_root {
-        assert_eq!(published_root["node_id"]["digest"], expected);
-    }
+    assert_eq!(published_root["node_id"]["digest"], expected);
     assert_eq!(root.semantic_type, root.node_id);
 }
 

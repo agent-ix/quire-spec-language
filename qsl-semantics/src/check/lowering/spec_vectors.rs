@@ -113,7 +113,8 @@ fn digest_of(value: &Value) -> String {
 }
 
 /// The key QSpec publishes for its nominal vector `name`, read from
-/// `$QSPEC_DIR`; `None` while it is unset. Test-only (`cfg(test)`): the
+/// `$QSPEC_DIR`. The checkout is required; this returns `None` only when the
+/// named vector is absent. Test-only (`cfg(test)`): the
 /// qualified core reads no ambient environment or filesystem in shipped
 /// source, and `test-support` is shipped source.
 #[cfg(test)]
