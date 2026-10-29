@@ -144,10 +144,102 @@ pub(crate) enum Term {
     Other(Rc<str>),
 }
 
+/// An interpreted SMT-LIB operator, which a rule or the sort check reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Op {
+    Not,
+    And,
+    Or,
+    Implies,
+    Xor,
+    Eq,
+    Distinct,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Mod,
+    Abs,
+    ToReal,
+    ToInt,
+    IsInt,
+    Ite,
+}
+
+/// The interpreted operator an application's head spells; `None` for an
+/// uninterpreted function symbol. `#[string_edge]`: the one place the
+/// SMT-LIB operator spellings a query or proof carries are read.
+#[ix_trace_rs::string_edge]
+fn op(head: &str) -> Option<Op> {
+    Some(match head {
+        "not" => Op::Not,
+        "and" => Op::And,
+        "or" => Op::Or,
+        "=>" => Op::Implies,
+        "xor" => Op::Xor,
+        "=" => Op::Eq,
+        "distinct" => Op::Distinct,
+        "<" => Op::Lt,
+        "<=" => Op::Le,
+        ">" => Op::Gt,
+        ">=" => Op::Ge,
+        "+" => Op::Add,
+        "-" => Op::Sub,
+        "*" => Op::Mul,
+        "/" => Op::Div,
+        "div" => Op::IntDiv,
+        "mod" => Op::Mod,
+        "abs" => Op::Abs,
+        "to_real" => Op::ToReal,
+        "to_int" => Op::ToInt,
+        "is_int" => Op::IsInt,
+        "ite" => Op::Ite,
+        _ => return None,
+    })
+}
+
+/// A binder's quantifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Quantifier {
+    Forall,
+    Exists,
+    Choice,
+    Lambda,
+}
+
+/// The quantifier a binder's keyword spells. `#[string_edge]`: reads the
+/// SMT-LIB binder keyword.
+#[ix_trace_rs::string_edge]
+fn quantifier(keyword: &str) -> Option<Quantifier> {
+    match keyword {
+        "forall" => Some(Quantifier::Forall),
+        "exists" => Some(Quantifier::Exists),
+        "choice" => Some(Quantifier::Choice),
+        "lambda" => Some(Quantifier::Lambda),
+        _ => None,
+    }
+}
+
+/// The Boolean constant a symbol spells, if it is `true` or `false`.
+/// `#[string_edge]`: reads the SMT-LIB constant spelling.
+#[ix_trace_rs::string_edge]
+fn boolean_literal(symbol: &str) -> Option<bool> {
+    match symbol {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
 impl Term {
     fn app(head: &str, args: Vec<Rc<Term>>) -> Rc<Term> {
         let mut args = args;
-        if head == "=" && args.len() == 2 && args[0] > args[1] {
+        if op(head) == Some(Op::Eq) && args.len() == 2 && args[0] > args[1] {
             args.swap(0, 1);
         }
         Rc::new(Term::App(head.into(), args))
@@ -210,6 +302,8 @@ struct Names {
 
 impl Names {
     /// Read `sexpr` as a term, recording each `:named` proxy it introduces.
+    /// `#[string_edge]`: reads an S-expression of the query or proof text into a term.
+    #[ix_trace_rs::string_edge]
     fn term(&mut self, sexpr: &Sexpr) -> Option<Rc<Term>> {
         match sexpr {
             Sexpr::Atom(atom) => Some(self.atom(atom)),
@@ -449,7 +543,7 @@ fn alpha_equal(left: &Term, right: &Term) -> bool {
                 f == g
                     && xs.len() == ys.len()
                     && (xs.iter().zip(ys).all(|(x, y)| equal(x, y, pairs))
-                        || (&**f == "="
+                        || (op(f) == Some(Op::Eq)
                             && xs.len() == 2
                             && equal(&xs[0], &ys[1], pairs)
                             && equal(&xs[1], &ys[0], pairs)))
@@ -557,6 +651,8 @@ pub(crate) struct Query {
 
 /// Read `bytes` as an SMT-LIB script: its `declare-const` commands and its
 /// assertions. `None` when it does not parse.
+/// `#[string_edge]`: reads the SMT-LIB script's command keywords and sorts.
+#[ix_trace_rs::string_edge]
 pub(crate) fn read_query(bytes: &[u8]) -> Option<Query> {
     let text = std::str::from_utf8(bytes).ok()?;
     let mut names = Names::default();
@@ -602,6 +698,8 @@ enum Sort {
 }
 
 impl Sort {
+    /// `#[string_edge]`: reads a sort's SMT-LIB spelling.
+    #[ix_trace_rs::string_edge]
     fn named(text: &str) -> Self {
         match text {
             "Bool" => Self::Bool,
@@ -634,9 +732,9 @@ fn sort_of(term: &Term, query: &Query, scope: &mut Vec<(Rc<str>, Sort)>) -> Resu
             if let Some((_, sort)) = scope.iter().rev().find(|(bound, _)| bound == name) {
                 return Ok(sort.clone());
             }
-            match &**name {
-                "true" | "false" => Ok(Sort::Bool),
-                _ => query.sorts.get(name).cloned().ok_or(Unsorted::Unknown),
+            match boolean_literal(name) {
+                Some(_) => Ok(Sort::Bool),
+                None => query.sorts.get(name).cloned().ok_or(Unsorted::Unknown),
             }
         }
         Term::Number { real, .. } => Ok(if *real { Sort::Real } else { Sort::Int }),
@@ -660,10 +758,12 @@ fn sort_of(term: &Term, query: &Query, scope: &mut Vec<(Rc<str>, Sort)>) -> Resu
             let body = sort_of(body, query, scope);
             scope.truncate(depth);
             let body = body?;
-            match &**quantifier {
-                "forall" | "exists" if body == Sort::Bool => Ok(Sort::Bool),
-                "forall" | "exists" => Err(Unsorted::IllSorted),
-                "choice" => match vars.as_slice() {
+            match self::quantifier(quantifier) {
+                Some(Quantifier::Forall | Quantifier::Exists) if body == Sort::Bool => {
+                    Ok(Sort::Bool)
+                }
+                Some(Quantifier::Forall | Quantifier::Exists) => Err(Unsorted::IllSorted),
+                Some(Quantifier::Choice) => match vars.as_slice() {
                     [(_, sort)] if body == Sort::Bool => Ok(Sort::named(sort)),
                     [_] => Err(Unsorted::IllSorted),
                     _ => Err(Unsorted::Unknown),
@@ -686,19 +786,22 @@ fn application_sort(head: &str, sorts: &[Sort]) -> Result<Sort, Unsorted> {
         }
     };
     let ill = Err(Unsorted::IllSorted);
-    match head {
-        "not" => match sorts {
+    let Some(op) = op(head) else {
+        return Err(Unsorted::Unknown);
+    };
+    match op {
+        Op::Not => match sorts {
             [Sort::Bool] => Ok(Sort::Bool),
             _ => ill,
         },
-        "and" | "or" | "=>" | "xor" => {
+        Op::And | Op::Or | Op::Implies | Op::Xor => {
             if all(&|sort| *sort == Sort::Bool) {
                 Ok(Sort::Bool)
             } else {
                 ill
             }
         }
-        "=" | "distinct" => match sorts {
+        Op::Eq | Op::Distinct => match sorts {
             [first, rest @ ..] if !rest.is_empty() => {
                 let agree = rest
                     .iter()
@@ -711,58 +814,57 @@ fn application_sort(head: &str, sorts: &[Sort]) -> Result<Sort, Unsorted> {
             }
             _ => ill,
         },
-        "<" | "<=" | ">" | ">=" => {
+        Op::Lt | Op::Le | Op::Gt | Op::Ge => {
             if sorts.len() >= 2 && all(&Sort::is_numeric) {
                 Ok(Sort::Bool)
             } else {
                 ill
             }
         }
-        "+" | "*" | "-" => {
+        Op::Add | Op::Mul | Op::Sub => {
             if !sorts.is_empty() && all(&Sort::is_numeric) {
                 Ok(numeric())
             } else {
                 ill
             }
         }
-        "/" => {
+        Op::Div => {
             if sorts.len() >= 2 && all(&Sort::is_numeric) {
                 Ok(Sort::Real)
             } else {
                 ill
             }
         }
-        "div" | "mod" => {
+        Op::IntDiv | Op::Mod => {
             if sorts.len() >= 2 && all(&|sort| *sort == Sort::Int) {
                 Ok(Sort::Int)
             } else {
                 ill
             }
         }
-        "abs" => match sorts {
+        Op::Abs => match sorts {
             [Sort::Int] => Ok(Sort::Int),
             _ => ill,
         },
-        "to_real" => match sorts {
+        Op::ToReal => match sorts {
             [Sort::Int] => Ok(Sort::Real),
             _ => ill,
         },
-        "to_int" => match sorts {
+        Op::ToInt => match sorts {
             [Sort::Real] => Ok(Sort::Int),
             _ => ill,
         },
-        "is_int" => match sorts {
+        Op::IsInt => match sorts {
             [Sort::Real] => Ok(Sort::Bool),
             _ => ill,
         },
-        "ite" => match sorts {
+        Op::Ite => match sorts {
             [Sort::Bool, then, otherwise] if then == otherwise => Ok(then.clone()),
             [Sort::Bool, then, otherwise] if then.is_numeric() && otherwise.is_numeric() => {
                 Ok(Sort::Real)
             }
             _ => ill,
         },
-        _ => Err(Unsorted::Unknown),
     }
 }
 
@@ -1043,6 +1145,8 @@ fn context_of(frames: &[Frame]) -> Rc<[Entry]> {
 }
 
 /// An anchor's `:args`: each `(x S)` fixes `x`, each `(:= (x S) t)` maps it.
+/// `#[string_edge]`: reads an anchor's `:args` text.
+#[ix_trace_rs::string_edge]
 fn anchor_arguments(value: Option<&Sexpr>, names: &mut Names) -> Option<Vec<Entry>> {
     let Some(value) = value else {
         return Some(Vec::new());
@@ -1079,6 +1183,8 @@ fn anchor_arguments(value: Option<&Sexpr>, names: &mut Names) -> Option<Vec<Entr
 }
 
 /// The single literal of `(cl l)` as written, when it is an equality.
+/// `#[string_edge]`: reads a clause's single equality as written in the proof text.
+#[ix_trace_rs::string_edge]
 fn oriented_literal(clause: &Sexpr, names: &mut Names) -> Oriented {
     let Sexpr::List(items) = clause else {
         return None;
@@ -1099,6 +1205,8 @@ fn oriented_literal(clause: &Sexpr, names: &mut Names) -> Oriented {
 /// `charge` is called with the edge count of each command (one, plus one per
 /// `:premises` and `:discharge` entry) before the command is read, and stops
 /// the read when it returns `false`.
+/// `#[string_edge]`: reads the Alethe proof's command keywords and attributes.
+#[ix_trace_rs::string_edge]
 pub(crate) fn read_proof(
     bytes: &[u8],
     query: &Query,
@@ -1397,6 +1505,8 @@ fn id_list(value: Option<&Sexpr>) -> Option<Vec<Rc<str>>> {
 }
 
 /// A step's `(cl l1 … ln)`.
+/// `#[string_edge]`: reads a `(cl ...)` clause from the proof text.
+#[ix_trace_rs::string_edge]
 fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<Vec<Rc<Term>>> {
     let Sexpr::List(items) = sexpr else {
         return None;
@@ -2396,11 +2506,11 @@ fn normalized(literal: &Rc<Term>) -> Option<(Linear, Relation)> {
         Some(atom) => {
             let (head, [s1, s2]) = comparison(atom)?;
             match head {
-                "<" => (Relation::Greater, s2, s1),
-                "<=" => (Relation::GreaterEqual, s2, s1),
-                ">" => (Relation::Greater, s1, s2),
-                ">=" => (Relation::GreaterEqual, s1, s2),
-                "=" => (Relation::Equal, s1, s2),
+                Op::Lt => (Relation::Greater, s2, s1),
+                Op::Le => (Relation::GreaterEqual, s2, s1),
+                Op::Gt => (Relation::Greater, s1, s2),
+                Op::Ge => (Relation::GreaterEqual, s1, s2),
+                Op::Eq => (Relation::Equal, s1, s2),
                 _ => return None,
             }
         }
@@ -2408,10 +2518,10 @@ fn normalized(literal: &Rc<Term>) -> Option<(Linear, Relation)> {
         None => {
             let (head, [s1, s2]) = comparison(literal)?;
             match head {
-                ">" => (Relation::GreaterEqual, s2, s1),
-                ">=" => (Relation::Greater, s2, s1),
-                "<" => (Relation::GreaterEqual, s1, s2),
-                "<=" => (Relation::Greater, s1, s2),
+                Op::Gt => (Relation::GreaterEqual, s2, s1),
+                Op::Ge => (Relation::Greater, s2, s1),
+                Op::Lt => (Relation::GreaterEqual, s1, s2),
+                Op::Le => (Relation::Greater, s1, s2),
                 _ => return None,
             }
         }
@@ -2433,13 +2543,14 @@ fn normalized(literal: &Rc<Term>) -> Option<(Linear, Relation)> {
 }
 
 /// A comparison's operator and its two operands.
-fn comparison(term: &Rc<Term>) -> Option<(&str, [&Rc<Term>; 2])> {
+fn comparison(term: &Rc<Term>) -> Option<(Op, [&Rc<Term>; 2])> {
     match &**term {
         Term::App(head, args) => {
             let [a, b] = args.as_slice() else {
                 return None;
             };
-            matches!(&**head, "<" | "<=" | ">" | ">=" | "=").then_some((&**head, [a, b]))
+            let op = op(head)?;
+            matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Eq).then_some((op, [a, b]))
         }
         _ => None,
     }
@@ -2568,14 +2679,15 @@ fn la_mult(clause: &[Rc<Term>], positive: bool) -> bool {
     let Some((sign_head, [t1, z])) = comparison(sign) else {
         return false;
     };
-    let expected_sign = if positive { ">" } else { "<" };
+    let expected_sign = if positive { Op::Gt } else { Op::Lt };
     if sign_head != expected_sign || !matches!(&**z, Term::Number { value, .. } if value.is_zero())
     {
         return false;
     }
     let product = |t: &Rc<Term>| Term::app("*", vec![t1.clone(), t.clone()]);
     if let (Some(inner), Some(outer)) = (relation.negated(), conclusion.negated()) {
-        let (Some(("=", [t2, t3])), Some(("=", [p2, p3]))) = (comparison(inner), comparison(outer))
+        let (Some((Op::Eq, [t2, t3])), Some((Op::Eq, [p2, p3]))) =
+            (comparison(inner), comparison(outer))
         else {
             return false;
         };
@@ -2589,16 +2701,16 @@ fn la_mult(clause: &[Rc<Term>], positive: bool) -> bool {
     };
     let inverted = match (positive, head) {
         (true, head) => head,
-        (false, "<") => ">",
-        (false, "<=") => ">=",
-        (false, ">") => "<",
-        (false, ">=") => "<=",
+        (false, Op::Lt) => Op::Gt,
+        (false, Op::Le) => Op::Ge,
+        (false, Op::Gt) => Op::Lt,
+        (false, Op::Ge) => Op::Le,
         (false, head) => head,
     };
     if outer_head != inverted {
         return false;
     }
-    if head == "=" {
+    if head == Op::Eq {
         (*p2 == product(t2) && *p3 == product(t3)) || (*p2 == product(t3) && *p3 == product(t2))
     } else {
         *p2 == product(t2) && *p3 == product(t3)
