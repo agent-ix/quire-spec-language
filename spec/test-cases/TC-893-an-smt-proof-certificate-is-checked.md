@@ -39,6 +39,12 @@ Scope: FR-314-AC-1 to FR-314-AC-4 and FR-314-AC-9.
    command 3 not follow from its premises, and with command 3 of the base
    proof using `hole`, and over `CasRefinesCounterAdd` (FR-315-AC-6) with a base part and eight step parts, valid for the seven rows other than `bump`, the part at `bump`'s position being present but neither compared nor checked.
 6. Over `CasRefinesCounter` with a mapping row outside `QF_LIA` (FR-314-AC-9), check a certificate with a base part carrying the query of an in-fragment initial state and seven step parts, then the same certificate with an empty base part and with a `hole` proof in a step part; then check the step 5 `CasRefinesCounterAdd` certificate again. Settle each.
+6. Assemble a `RefinementSmtCertificate` for `CasRefinesCounter` from a CG
+   `Base` record and seven `Step{row}` records (FR-314-AC-9), supplied out of
+   row order. Then assemble from the same records with the `Base` record
+   missing, with the `Step{row: 3}` record missing, with it supplied twice,
+   with a `Step{row: 7}` record added, and with the `Step{row: 3}` record
+   carrying no proof (FR-314-AC-10); settle each.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -69,3 +75,7 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `Base`, never `Unencodable` or `Unverifiable`, and settles `inconclusive`,
   `CertificateRejected`; the `CasRefinesCounterAdd` certificate again returns
   `Unencodable { Step { row: r } }`, `proved`, `Uncertified`.
+- Step 6: the assembled certificate holds `format` `Alethe`, `base` and
+  `steps[0..7]` with each record's query and proof bytes unchanged, in row
+  order; each of the five defective record sets assembles no certificate and
+  settles `proved`, `Uncertified`.
