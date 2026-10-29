@@ -76,8 +76,12 @@ the printed script.
     clause has its atom removed, and repeat FR-315-AC-21's requests.
 25. Over `CasRefinesCounter2`, encode the `Initial` query and the `commitA`
     `Step` query, read the command heads in order, rename and reorder the
-    invariant clauses, apply each FR-315-AC-53 mutation and check FR-314's
-    verdict on the unmutated certificate.
+    invariant clauses, apply each of the six FR-315-AC-53 mutations (two
+    applications swapped; `AaInv` and `CasInv` swapped; a hypothesis on `s1`;
+    the initial-state predicate in a `Step` query; one assertion per
+    application; the global negation beside a separate disjunction) and check,
+    for each, that FR-314 returns `QueryMismatch` at that row's part for the
+    unmutated certificate.
 26. Over the lost-update variant, add the FR-315-AC-54 equalities to the
     `commitB` query and solve it for each of the two pre-states; encode a row
     with one application and a row with none.
@@ -85,6 +89,40 @@ the printed script.
     each refusal's code, locus and FR-314 `Unencodable` part.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
+
+## Fixtures
+
+`CasRefinesCounter2` is ADR-020 §8's `CasRefinesCounter` (fixture
+`tests/support/refinement_cas.rs`) with the population `counters` holding two
+`Impl::Counter` objects with keys `c0` < `c1` (and the `Spec::counters` objects
+mapped one to one), and three invariants: `AaInv` on `Impl::Counter`,
+`self.tmpA <= 2`; `CasInv` on `Impl::Counter`, `self.busyA or self.tmpA <=
+self.value` (FR-146-AC-3); `AbsInv` on `Spec::Counter`, `self.value <= 2`,
+which is no hypothesis. The lost-update variant has `commitB`'s precondition
+`self.busyB and self.tmpB < 2` and postcondition `pre(self.tmpB) < 2 and
+self.value = pre(self.tmpB) + 1 and not self.busyB`, frame `modifies [value,
+busyB]`, and the abstract `inc` of ADR-020 §8 (precondition `self.value < 2`,
+postcondition `self.value = pre(self.value) + 1`).
+
+A counter's tuple is `(value, tmpA, busyA, tmpB, busyB)`, the declaration
+order of the fixture; the script's constants are ordered by field name.
+FR-315-AC-54's `s0` tuples, added as equalities, are:
+
+| Case | `c0` | `c1` | Result |
+| --- | --- | --- | --- |
+| `c0` not enabled, `c1` loses an update | `(0, 0, f, 0, f)` | `(1, 0, f, 0, t)` | sat |
+| `c0` enabled and obeying the rule, `c1` not enabled | `(0, 0, f, 0, t)` | `(0, 0, f, 0, f)` | unsat |
+
+Each tuple satisfies both hypotheses on both counters (`tmpA = 0`, and `0 <=
+value`), and the definedness `D` is `true` (total integer terms). The
+postcondition and frame fix `s1` deterministically for an enabled application:
+the written fields are `value = tmpB + 1` and `busyB = false`, and every other
+field of every counter equals `s0`. In the first case `c1`'s application gives
+`s1.c1.value = 1` from `s0.c1.value = 1`, which the mapped abstract `inc`
+(`value` must become 2) does not admit, so the rule fails and the script is
+satisfiable; no application of `c0` is enabled. In the second case `c0`'s
+application gives `s1.c0.value = 1` from `s0.c0.value = 0`, which `inc` admits,
+and no other application is enabled, so the script is unsatisfiable.
 
 ## Expected Results
 

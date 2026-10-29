@@ -115,7 +115,11 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   type of the abstract model only SHALL NOT be listed in `hypotheses`,
   whether the abstract model comes from the declaring package or from a
   dependency.
-- The `hypotheses` order is the record's identity order. The order in which
+- A `Step` record's obligation is per application of its row's concrete
+  operation: one (receiver, argument vector) at a time, the rule negated for
+  each (FR-315 "Refinement queries").
+- The `hypotheses` list is the same set FR-315 asserts, in the record's identity
+  order; the two differ in order only. The order in which
   FR-315 asserts the hypotheses in a query is structural, by clause name and
   then object reference key (FR-315 "Refinement queries"), and a query for a
   multi-application row negates the rule per application (FR-315-AC-53,
