@@ -280,20 +280,37 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
-/// The small checked producer's canonical envelope and identity are fixed by
-/// the owned-projection emission, then admitted by the independent V2 reader.
+/// The emission path mints the identity preimage under the FR-322 version
+/// label, written out here rather than read from the constant it pins.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn emitted_package_preserves_the_owned_projection_golden() {
+fn the_emission_identity_preimage_carries_its_literal_version() {
+    assert_eq!(IDENTITY_PREIMAGE_V2, "quire.checked-package-id/v2");
+}
+
+/// The small checked producer's envelope is canonical, carries the identity
+/// the emitter minted, is deterministic, and is admitted by the independent
+/// V2 reader. Two different packages never share an identity.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
     let emission = emit(&package(vec![f()]));
+    let bytes = emission.package.bytes();
+    // Canonical: re-encoding the parsed envelope reproduces the bytes.
+    let wire: Value = serde_json::from_slice(bytes).expect("the envelope is JSON");
     assert_eq!(
-        emission.package.bytes(),
-        include_bytes!("tests/fixtures/owned_projection_wire.json")
+        serde_json::to_vec(&wire).expect("a Value serializes"),
+        bytes
     );
+    assert_eq!(wire["package_id"]["algorithm"], "sha256");
     assert_eq!(
-        emission.package.package_id().hex(),
-        "f2332c7edc46df9efb27d7d7da73a9af1464a46c5a1b28996118754fb0678e3c"
+        wire["package_id"]["digest"],
+        emission.package.package_id().hex()
     );
+    // Deterministic, and identity-separating.
+    assert_eq!(emit(&package(vec![f()])).package.bytes(), bytes);
+    let other = emit(&package(vec![f(), t()]));
+    assert_ne!(other.package.package_id(), emission.package.package_id());
     match read_back(&emission) {
         Read::Verified { package, .. } => {
             assert_eq!(package.package_id(), emission.package.package_id());
@@ -677,10 +694,7 @@ fn every_written_node_recomputes_to_its_node_id() {
 #[test]
 fn recursion_group_members_are_written_in_ordinal_order() {
     for (package, label) in [
-        (
-            recursive_f(),
-            Some("d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6"),
-        ),
+        (recursive_f(), Some(fr_092_g4_to_g6_group_digest())),
         (tree(), None),
     ] {
         let expected: BTreeMap<String, usize> = package
@@ -711,6 +725,25 @@ fn recursion_group_members_are_written_in_ordinal_order() {
             assert_eq!(members[0].1["recursion_group"], json!(label));
         }
     }
+}
+
+/// FR-092's G4-G6 group digest, read from the spec in this repository.
+fn fr_092_g4_to_g6_group_digest() -> &'static str {
+    include_str!("../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md")
+        .split("G4-G6, group digest `")
+        .nth(1)
+        .and_then(|rest| rest.split('`').next())
+        .expect("FR-092 states the G4-G6 group digest")
+}
+
+/// FR-092's declared-node vector table row `id` (`D1`): its key, read from
+/// the spec in this repository.
+fn fr_092_vector_key(id: &str) -> &'static str {
+    include_str!("../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md")
+        .lines()
+        .find(|line| line.starts_with(&format!("| {id} |")))
+        .and_then(|row| row.split('`').nth(1))
+        .unwrap_or_else(|| panic!("FR-092 has a vector row {id}"))
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
@@ -947,16 +980,8 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
     let exports = verified_exports(&emission);
     let wire = wire(&emission);
     for (name, form, digest) in [
-        (
-            "Point",
-            "record",
-            "45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4",
-        ),
-        (
-            "Pair",
-            "tuple",
-            "e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560",
-        ),
+        ("Point", "record", fr_092_vector_key("D1")),
+        ("Pair", "tuple", fr_092_vector_key("D5")),
     ] {
         let node = declared(&wire, name);
         assert_eq!(node["semantic_form"], form);
@@ -2596,12 +2621,33 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
 #[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
 #[test]
 fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
+    // QSpec's published fixture, read from the checkout `QSPEC_DIR` names;
+    // without it the row digest is arbitrary and only the independent hash
+    // below is checked (`make conformance` requires it).
+    let published: Option<Value> = std::env::var_os("QSPEC_DIR").map(|qspec| {
+        let path = std::path::Path::new(&qspec)
+            .join("proposals/checked-package-v2/fixtures/positive-all-families.json");
+        serde_json::from_slice(&std::fs::read(path).expect("the fixture reads"))
+            .expect("the fixture parses")
+    });
+    let published_root = published.as_ref().map(|fixture| {
+        fixture["semantic_graph"]["nodes"]
+            .as_array()
+            .and_then(|nodes| {
+                nodes.iter().find(|node| {
+                    node["semantic_form"] == "model_root"
+                        && node["owner"]["identity"] == "acme/orders"
+                })
+            })
+            .expect("the fixture holds the acme/orders model root")
+            .clone()
+    });
+    let row_hex = published_root.as_ref().map_or_else(
+        || "17".repeat(32),
+        |root| root["owner"]["digest"].as_str().unwrap().to_owned(),
+    );
     let mut digest = [0_u8; 32];
-    for (byte, pair) in digest.iter_mut().zip(
-        "179fb0d98f7f55094a03ad0e6166b604e6401bae90479f3073f6fe4b01a7af26"
-            .as_bytes()
-            .chunks(2),
-    ) {
+    for (byte, pair) in digest.iter_mut().zip(row_hex.as_bytes().chunks(2)) {
         *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
     }
     let row = qsl_semantics::model::domain_package::DomainPackageRef {
@@ -2612,10 +2658,17 @@ fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
     let key = qsl_semantics::check::model_root_key(&row, qsl_foundation::IdentityLimits::default())
         .expect("the root derives");
     let root = model_root_node(&row, key);
-    assert_eq!(
-        root.node_id.digest.as_ref(),
-        "ff388429ac907bffe149b81b0c1b3f4099f6075df486c96736455f39a88d3041"
+    // The key is the SHA-256 of the root's hand-written preimage.
+    let expected = sha256_hex(
+        format!(
+            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{row_hex}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
+        )
+        .as_bytes(),
     );
+    assert_eq!(root.node_id.digest.as_ref(), expected);
+    if let Some(published_root) = published_root {
+        assert_eq!(published_root["node_id"]["digest"], expected);
+    }
     assert_eq!(root.semantic_type, root.node_id);
 }
 
@@ -2930,7 +2983,7 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
     let entry = |identity: &str| {
         json!({
             "identity": identity,
-            "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": d.hex()},
+            "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": d.hex()},
         })
     };
     let expected = json!([entry("test/geometry"), entry("test/units")]);

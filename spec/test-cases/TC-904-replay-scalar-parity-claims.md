@@ -110,5 +110,5 @@ the encoded-size bound.
 - Step 15: `ScalarIdentity` (`content-mismatch`) cause `Obligation`, naming both digests.
 - Step 16: `Node`, `Operator`, `Occurrence`, `OperandChild`, `NotInlineLiteral`, `LiteralValue` and `OperandCount`; the mixed claim passes.
 - Step 17: cause `Encoding` for the first, `Obligation` for the second.
-- Step 18: the digest `4c36290f8830ff25cbb3915fa955b093f802fb801de2074415a6c4884fc9659f` for the entry; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
+- Step 18: the digest of the entry, the SHA-256 of its canonical text; the whole preimage equals its text's digest; bounds ordered `[0, 0]` before `[0]`, `[10]` before `[2]`; a repeat refuses.
 - Step 19: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming the entry and `function`, before the recompile; the function claim holds no `function` (FR-357-AC-20).

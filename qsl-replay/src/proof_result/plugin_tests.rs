@@ -1063,20 +1063,27 @@ fn tc_774_process_provider_preimage_encodes_and_digests() {
     let without =
         process_provider_obligation(node, &origin, &BoundEntries::new(Vec::new()).unwrap())
             .unwrap();
-    let hex = |bytes: &[u8; 32]| {
-        bytes
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
+    // The identity is the SHA-256 of the RFC 8785 text of the item's
+    // proof bounds, node, kind and occurrence, written out by hand here and
+    // hashed independently of `quire-canonical`.
+    let (node_id, bound_node) = ("11".repeat(32), "22".repeat(32));
+    let text = |entries: &str| {
+        format!(
+            r#"{{"declared_domains":{{"entries":[{entries}],"tag":"bounds"}},"node":"{node_id}","obligation_kind":"value-validity","occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"process-provider"}}"#
+        )
     };
-    assert_eq!(
-        hex(with.as_bytes()),
-        "3df483b143782f27840dd0d42eca97ba51fdb60c01cb3ddbc48db020de6ac899"
+    let entry = format!(
+        r#"{{"bound":{{"lower":"0","tag":"integer_range","upper":"9"}},"key":{{"node_id":"{bound_node}","path":[],"tag":"node"}}}}"#
     );
     assert_eq!(
-        hex(without.as_bytes()),
-        "95905de0c8797755b51edf13b26a4fcdb41908a1e55f43b60784e280fa8e3a1c"
+        with.as_bytes(),
+        &qsl_foundation::ByteDigest::of(text(&entry).as_bytes()).as_bytes()
     );
+    assert_eq!(
+        without.as_bytes(),
+        &qsl_foundation::ByteDigest::of(text("").as_bytes()).as_bytes()
+    );
+    assert_ne!(with.as_bytes(), without.as_bytes());
 }
 
 /// FR-290-AC-14.

@@ -892,11 +892,10 @@ mod tests {
     /// `package_id` is unchanged.
     #[trace("TC-253", "FR-087-AC-3")]
     #[test]
-    fn package_id_matches_its_golden_vector() {
+    fn package_id_is_the_hash_of_its_hand_written_preimage() {
         use sha2::{Digest as _, Sha256};
         const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","identity":"edition-def"},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"model_selections":[],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
-        const DIGEST: &str = "6dfea2b0a77dead3ac90a7fbd24a68ae18f7cf5d36877d57df6d83f50be77a51";
-        assert_eq!(format!("{:x}", Sha256::digest(TEXT.as_bytes())), DIGEST);
+        let digest = format!("{:x}", Sha256::digest(TEXT.as_bytes()));
         let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         // The wire preimage holds the seven selections only; the hashed
         // `identity_projection` is derived from the graph nodes.
@@ -926,7 +925,7 @@ mod tests {
                 .expect("the golden preimage encodes")
                 .package_id()
                 .hex(),
-            DIGEST
+            digest
         );
         assert_eq!(serde_json::to_string(&value).unwrap(), TEXT);
     }

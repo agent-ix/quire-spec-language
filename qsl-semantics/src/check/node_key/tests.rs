@@ -16,6 +16,9 @@ use qsl_forms::StateClauseKind;
 use super::*;
 use crate::value::semantic_node::NodeIdDocument;
 
+const FR_092: &str =
+    include_str!("../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md");
+
 // ---------------------------------------------------------------------
 // Test-only wire decoding. Production never reads these types from wire
 // bytes (ADR-013 R-10: a wire node id becomes a key only by lookup in a
@@ -679,20 +682,30 @@ fn a_one_member_group_keys_to_g1() {
 
     let group = keys_of(&[node], &[handle]).expect("G1 keys");
 
-    let expected = r#"{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}"#;
+    let template = r#"{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"@GROUP@","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}"#;
+    // FR-092's G1 group digest and member signature, read from the spec in
+    // this repository at run time. The member's key is the SHA-256 of its
+    // preimage bytes, hashed here independently of the key function.
+    let group_digest = FR_092
+        .split("G1, group digest `")
+        .nth(1)
+        .and_then(|rest| rest.split('`').next())
+        .expect("FR-092 states G1's group digest");
+    let signature = FR_092
+        .lines()
+        .find(|line| line.starts_with("| 0 | G1 |"))
+        .and_then(|row| row.split('`').nth(1))
+        .expect("FR-092 states G1's signature");
+    let expected = template.replace("@GROUP@", group_digest);
     assert_eq!(
         String::from_utf8(group.members[0].preimage.clone()).expect("UTF-8"),
         expected
     );
     assert_eq!(
-        group.members[0].key.to_string(),
-        "7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31"
+        group.members[0].key,
+        NodeKey::from_digest(Sha256::digest(expected.as_bytes()).into())
     );
-    assert_eq!(
-        hex(&group.digest),
-        "4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b"
-    );
-    let signature = "3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4";
+    assert_eq!(hex(&group.digest), group_digest);
     assert_eq!(group.anonymous, [signature]);
     assert_eq!(group.full, [signature]);
     assert_eq!((group.ordinals.as_slice(), group.size), (&[0][..], 1));
@@ -1036,15 +1049,18 @@ fn structural<'a>(body: &'a BodyTerm) -> NodeInput<'a> {
 /// node and no `owner` member for an undeclared one.
 #[trace("FR-092-AC-1", "TC-413")]
 #[test]
-fn a_structural_preimage_is_pinned() {
+fn a_structural_preimage_keys_to_the_hash_of_its_bytes() {
     let body = empty_aggregate();
     let keyed =
         node_key(&structural(&body), IdentityLimits::default()).expect("a builtin scalar keys");
     let expected = r#"{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"boolean","semantic_type":null,"version":"quire.structural-node/v1"}"#;
-    assert_eq!(String::from_utf8(keyed.preimage).expect("UTF-8"), expected);
     assert_eq!(
-        keyed.key.to_string(),
-        "9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa"
+        String::from_utf8(keyed.preimage.clone()).expect("UTF-8"),
+        expected
+    );
+    assert_eq!(
+        keyed.key,
+        NodeKey::from_digest(Sha256::digest(expected.as_bytes()).into())
     );
 }
 

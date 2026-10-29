@@ -58,14 +58,15 @@ use qsl_package::CheckedPackage;
 use qsl_replay::{
     check_initial, check_step, open_systems, CertifiedPosition, ConcreteStep, CounterexampleKind,
     ReachedLimit, RefinementFailure, RefinementPart, RefinementPosition, RefinementSystems,
-    StepVerdict, SubjectRefusal, Taken, TemporalCounterexample, UndefinedEvaluation, Undetermined,
-    ZoneCertificate,
+    StepVerdict, SubjectRefusal, Taken, TemporalCounterexample, UnavailabilityCause,
+    UndefinedEvaluation, Undetermined, ZoneCertificate,
 };
 use qsl_route::deadlock::ItemObligation;
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::fairness::FairnessKind;
 
 use super::certificate::Proof;
 use super::concretise::{concretise, Stage, Target};
@@ -75,6 +76,8 @@ use super::search::{
     ZoneCheckRefusal, ZoneStats, ZoneStop, ZoneUndecided,
 };
 use super::Dbm;
+
+mod live;
 
 /// A request to decide a timed refinement's safety half.
 pub struct TimedRefinementRequest<'a, S> {
@@ -155,6 +158,74 @@ pub enum TimedSafetyOutcome<S> {
     },
 }
 
+/// A timed refinement's outcome (QSpec FR-430; FR-142 and FR-143
+/// Outputs).
+#[derive(Clone, Debug)]
+pub struct TimedRefinementOutcome<S> {
+    /// The safety half.
+    pub safety: TimedSafetyOutcome<S>,
+    /// The liveness half: `None` with `F_A` empty. With a non-empty `F_A`
+    /// it is `Unsupported` for a refinement with a hidden abstract field or
+    /// a strong `F_A` constraint, whatever the safety half is; otherwise it
+    /// is `None` when the safety half is other than `Holds`, and `Checked`
+    /// when it holds.
+    pub liveness: Option<TimedLivenessHalf>,
+}
+
+/// The liveness half of a timed refinement (FR-143 Outputs, ADR-020 RE-1).
+#[derive(Clone, Debug)]
+pub enum TimedLivenessHalf {
+    /// The second phase ran on the symbolic product.
+    Checked(TimedLivenessOutcome),
+    /// The second phase did not run (ADR-020 AX-5).
+    Unsupported(UnavailabilityCause),
+}
+
+/// The second phase's outcome over a timed concrete subject: only
+/// time-divergent concrete behaviours are read (ADR-026 TS-4).
+#[derive(Clone, Debug)]
+pub enum TimedLivenessOutcome {
+    /// Every time-divergent behaviour of the concrete subject that is fair
+    /// under `F_C` satisfies `F_A`. Each variant's counts are the liveness
+    /// product's own, not the safety half's. It has no certificate, since the core
+    /// has no checker for it (ADR-020 CT-4), so its `proved` is
+    /// `Uncertified`.
+    Holds {
+        /// The run's counts.
+        stats: ZoneStats,
+    },
+    /// A timed lasso with positive loop delay, fair under `F_C`, on which a
+    /// class of `F_A` is enabled throughout and never taken: its failure is
+    /// `Divergence` or `AbstractUnfair` (FR-143, FR-241).
+    Violated {
+        /// The counterexample.
+        counterexample: Box<TemporalCounterexample>,
+        /// The run's counts.
+        stats: ZoneStats,
+    },
+    /// The run decided nothing.
+    Undecided {
+        /// Why.
+        cause: TimedRefinementUndecided,
+        /// The run's counts.
+        stats: ZoneStats,
+    },
+    /// The run stopped.
+    Stopped {
+        /// Why.
+        cause: TimedRefinementStop,
+        /// The run's counts.
+        stats: ZoneStats,
+    },
+    /// An internal fault of the evaluator.
+    Fault {
+        /// The fault.
+        fault: InternalFault,
+        /// The run's counts.
+        stats: ZoneStats,
+    },
+}
+
 /// Why EN-6 does not take a timed refinement.
 #[derive(Debug, thiserror::Error)]
 pub enum TimedRefinementRefusal {
@@ -175,7 +246,8 @@ impl From<ZoneCheckRefusal> for TimedRefinementRefusal {
     }
 }
 
-/// QSpec FR-430: decide `request`'s safety half on EN-6's symbolic product.
+/// QSpec FR-430: decide `request`'s safety half on EN-6's symbolic product
+/// and, when it holds and `F_A` is non-empty, its liveness half there.
 ///
 /// # Errors
 ///
@@ -185,7 +257,7 @@ impl From<ZoneCheckRefusal> for TimedRefinementRefusal {
 pub fn check_timed_refinement<S>(
     request: TimedRefinementRequest<'_, S>,
     cancel: &Cancel,
-) -> Result<TimedSafetyOutcome<S>, TimedRefinementRefusal> {
+) -> Result<TimedRefinementOutcome<S>, TimedRefinementRefusal> {
     let refinement = request.refinement;
     let RefinementSystems {
         concrete,
@@ -248,10 +320,10 @@ pub fn check_timed_refinement<S>(
             })
         }
     });
-    match ended {
-        Ok(outcome) => Ok(outcome),
-        Err(Halt::Refusal(refusal)) => Err(refusal.into()),
-        Err(Halt::Outcome(searched)) => Ok(match *searched {
+    let safety = match ended {
+        Ok(outcome) => outcome,
+        Err(Halt::Refusal(refusal)) => return Err(refusal.into()),
+        Err(Halt::Outcome(searched)) => match *searched {
             Searched::Stopped { cause, stats } => TimedSafetyOutcome::Stopped {
                 cause: TimedRefinementStop::Zone(cause),
                 stats,
@@ -263,8 +335,89 @@ pub fn check_timed_refinement<S>(
             Searched::Holds { .. } | Searched::HoldsReduced { .. } | Searched::Violated { .. } => {
                 return Err(ZoneCheckRefusal::Fault("refinement-halt").into())
             }
-        }),
+        },
+    };
+    let liveness = match unsupported_liveness(refinement) {
+        Some(unsupported) => Some(unsupported),
+        None if refinement.abstract_operation_fairness().next().is_some()
+            && matches!(safety, TimedSafetyOutcome::Holds { .. }) =>
+        {
+            Some(TimedLivenessHalf::Checked(liveness(
+                &mut product,
+                &mut run,
+            )?))
+        }
+        None => None,
+    };
+    Ok(TimedRefinementOutcome { safety, liveness })
+}
+
+/// The liveness half of a refinement it does not run on: none with `F_A`
+/// empty; `Unsupported` with a hidden abstract field, then with a strong
+/// `F_A` constraint, as for an untimed subject (FR-143).
+fn unsupported_liveness(refinement: &CheckedRefinement) -> Option<TimedLivenessHalf> {
+    if refinement.abstract_operation_fairness().next().is_none() {
+        None
+    } else if refinement
+        .objects()
+        .iter()
+        .any(|object| !object.hidden.is_empty())
+    {
+        Some(TimedLivenessHalf::Unsupported(
+            UnavailabilityCause::HiddenFieldLiveness,
+        ))
+    } else if refinement
+        .abstract_operation_fairness()
+        .any(|constraint| constraint.kind() == FairnessKind::Strong)
+    {
+        Some(TimedLivenessHalf::Unsupported(
+            UnavailabilityCause::StrongAbstractFairness,
+        ))
+    } else {
+        None
     }
+}
+
+/// The liveness half over the product of a holding safety half; its
+/// counts are the liveness product's own.
+fn liveness(
+    product: &mut Product<'_, '_>,
+    run: &mut Run<'_, '_, '_>,
+) -> Result<TimedLivenessOutcome, TimedRefinementRefusal> {
+    let (decided, stats) = product.liveness(run);
+    Ok(match decided {
+        Ok(live::Lived::Holds) => TimedLivenessOutcome::Holds { stats },
+        Ok(live::Lived::Violated(counterexample)) => TimedLivenessOutcome::Violated {
+            counterexample,
+            stats,
+        },
+        Ok(live::Lived::Ends(ends)) => match ends {
+            TimedSafetyOutcome::Undecided { cause, .. } => {
+                TimedLivenessOutcome::Undecided { cause, stats }
+            }
+            TimedSafetyOutcome::Stopped { cause, .. } => {
+                TimedLivenessOutcome::Stopped { cause, stats }
+            }
+            TimedSafetyOutcome::Fault { fault, .. } => TimedLivenessOutcome::Fault { fault, stats },
+            TimedSafetyOutcome::Holds { .. } | TimedSafetyOutcome::Violated { .. } => {
+                return Err(ZoneCheckRefusal::Fault("liveness-end").into())
+            }
+        },
+        Err(Halt::Refusal(refusal)) => return Err(refusal.into()),
+        Err(Halt::Outcome(searched)) => match *searched {
+            Searched::Stopped { cause, .. } => TimedLivenessOutcome::Stopped {
+                cause: TimedRefinementStop::Zone(cause),
+                stats,
+            },
+            Searched::Undecided { cause, .. } => TimedLivenessOutcome::Undecided {
+                cause: TimedRefinementUndecided::Zone(cause),
+                stats,
+            },
+            Searched::Holds { .. } | Searched::HoldsReduced { .. } | Searched::Violated { .. } => {
+                return Err(ZoneCheckRefusal::Fault("liveness-halt").into())
+            }
+        },
+    })
 }
 
 /// The key of a refinement position: the concrete state's key, the history

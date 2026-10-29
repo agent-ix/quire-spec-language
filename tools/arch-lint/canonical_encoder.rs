@@ -1539,7 +1539,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
     }
 
     /// Intake's exemption is pinned to its `raw_bytes_digest`
-    /// call. The pre-#389 `check_package_digest` (55db8a4c), hashing a
+    /// call. The pre-#389 `check_package_digest`, hashing a
     /// `jcs_bytes` JSON producer with `Sha256` directly, fails on both
     /// counts, and hashing JSON through the pinned call still fails.
     #[test]

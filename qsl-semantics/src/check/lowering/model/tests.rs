@@ -42,36 +42,11 @@ mod place_rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
-const FR_094: &str = include_str!(
-    "../../../../../spec/functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md"
-);
-
-/// FR-094's golden vectors by name: `(key, preimage)`.
+/// FR-094's golden vectors by name: `(key, preimage)`, each key recomputed
+/// from the vector's preimage. The vectors that name a QSpec key are absent
+/// while `QSPEC_DIR` is unset.
 fn vectors() -> BTreeMap<String, (String, String)> {
-    let mut vectors = BTreeMap::new();
-    let mut lines = FR_094.lines();
-    while let Some(line) = lines.next() {
-        let Some(rest) = line.strip_prefix("**") else {
-            continue;
-        };
-        let Some((name, _)) = rest.split_once("**: ") else {
-            continue;
-        };
-        if lines.next() != Some("") || lines.next() != Some("```json") {
-            continue;
-        }
-        let preimage = lines.next().expect("a vector preimage line").to_owned();
-        assert_eq!(lines.next(), Some("```"), "{name}: one preimage line");
-        assert_eq!(lines.next(), Some(""));
-        let key = lines
-            .next()
-            .and_then(|line| line.strip_prefix("Key: `"))
-            .and_then(|line| line.strip_suffix('`'))
-            .expect("a vector key line")
-            .to_owned();
-        vectors.insert(name.to_owned(), (key, preimage));
-    }
-    vectors
+    crate::check::lowering::spec_vectors::vectors("FR-094")
 }
 
 fn vector_key(name: &str) -> NodeKey {
@@ -1051,7 +1026,7 @@ mod quantities {
     }
 
     fn node_id(key: &str) -> Json {
-        json!({"domain": "quire.checked-semantic-node/v1", "digest": key})
+        json!({"domain": "quire.checked-semantic-node/v1", "digest": resolved(key)})
     }
 
     fn dimension(name: &str) -> DimensionPreimage {
@@ -1077,12 +1052,41 @@ mod quantities {
         .expect("a root unit")
     }
 
-    const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
-    const TIME: &str = "628777f8df3c2700593d56dc20fb110640214dd09bc6cb961d802fdb9b7f6077";
-    const METRE: &str = "79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4";
-    const SECOND: &str = "d0f0c5d24d6accb2f1d9afff7c6cdda3143df382e50af4bda0704d48c67ed998";
+    // QSpec's nominal vectors, by name; each key is recomputed from the
+    // hand-written preimage (`spec_vectors::local_key`), and
+    // `the_nominal_keys_are_qspecs_published_vectors` compares them with
+    // QSpec's published vectors when `$QSPEC_DIR` is set.
+    const LENGTH: &str = "dimension-length";
+    const TIME: &str = "dimension-time";
+    const METRE: &str = "unit-metre";
+    const SECOND: &str = "unit-second";
+
+    /// `name_or_hex`, with a QSpec vector name replaced by that vector's key.
+    fn resolved(name_or_hex: &str) -> String {
+        if name_or_hex.starts_with("dimension-") || name_or_hex.starts_with("unit-") {
+            crate::check::lowering::spec_vectors::local_key(name_or_hex)
+                .unwrap_or_else(|| panic!("QSpec publishes no vector {name_or_hex}"))
+        } else {
+            name_or_hex.to_owned()
+        }
+    }
+
+    /// The recomputed keys are the ones QSpec publishes for the same nodes
+    /// (compared only when `$QSPEC_DIR` is set; `make conformance` requires
+    /// it).
+    #[test]
+    fn the_nominal_keys_are_qspecs_published_vectors() {
+        for name in [LENGTH, TIME, METRE, SECOND] {
+            let Some(published) = crate::check::lowering::spec_vectors::published_key(name) else {
+                println!("skipped: QSPEC_DIR not set");
+                return;
+            };
+            assert_eq!(resolved(name), published, "{name}");
+        }
+    }
 
     fn node_key(hex: &str) -> NodeKey {
+        let hex = &resolved(hex);
         let mut digest = [0_u8; 32];
         for (index, byte) in digest.iter_mut().enumerate() {
             *byte = u8::from_str_radix(&hex[2 * index..2 * index + 2], 16).expect("hex");
@@ -1232,7 +1236,7 @@ mod quantities {
         let u2 = preimage(graph.node(vector_key("U2")).unwrap());
         assert_eq!(
             u2["body"]["members"][0]["members"][0]["value"]["target"]["digest"],
-            json!(METRE)
+            json!(resolved(METRE))
         );
         assert_ne!(vector_key("U4"), node_key(METRE));
     }

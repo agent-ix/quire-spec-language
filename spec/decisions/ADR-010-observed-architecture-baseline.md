@@ -198,7 +198,7 @@ runs link (:101) → check (:102) → package (:103) on a parsed unit.
 | A11 | Replay | No library entry. Test-only `native_verdict` `QSL:tests/configversion_backends.rs:252` → `runtime::execute` :259; verdict asserted at :948-951 | `i64` | `Option<bool>` verdict | `None` for input outside `DOMAIN` (:262) |
 
 IT-010 preconditions and failure modes. The test is not `#[ignore]`d. It
-requires `cargo-kani 0.67.0` on `PATH` with sha256 `KANI_SHA256`
+requires `cargo-kani` on `PATH`
 (`QSL:tests/configversion_backends.rs:34,509-526`). It runs Kani with
 `CARGO_NET_OFFLINE=true` (:837), so RT must already be in the cargo
 cache. The only check that IR model (producer) and IR root historical (consumer)

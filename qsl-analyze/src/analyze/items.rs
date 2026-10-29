@@ -227,9 +227,10 @@ pub type RefinementReplayFn<'a> =
 
 /// The `temporal-satisfaction` refinement item over a `time dense`
 /// concrete subject, run on EN-6 and settled by `settle_timed_refinement`.
-/// A half that holds settles `proved` only when FR-245's
+/// A safety half that holds settles `proved` only when FR-245's
 /// `check_zone_certificate` accepts its certificate (FR-144,
-/// FR-430-AC-8).
+/// FR-430-AC-8); the item is then its liveness half's, when `F_A` is
+/// non-empty.
 pub fn timed_refinement_item<'a, S: Clone + Eq + 'a>(
     index: RequestIndex,
     item: TimedRefinementItem<'a, S>,

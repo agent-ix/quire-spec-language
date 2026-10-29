@@ -120,10 +120,16 @@ pub(crate) fn domain_document(types: Vec<Value>, mut constructs: Vec<Value>) -> 
 
 #[test]
 fn qsl_owned_digest_fixture_uses_sha256_jcs() {
+    // The digest of the value's hand-written RFC 8785 text, hashed
+    // independently of `quire-canonical`.
+    let expected = qsl_semantics::model::key::hex(&ByteDigest::of(br#"{"a":1}"#).as_bytes());
+    assert_eq!(jcs_digest(&json!({"a": 1})), format!("sha256:{expected}"));
+    // Key order and whitespace do not change the digest; the value does.
     assert_eq!(
-        jcs_digest(&json!({"a": 1})),
-        "sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+        jcs_digest(&serde_json::from_str::<Value>(r#"{ "b": 2, "a": 1 }"#).unwrap()),
+        jcs_digest(&serde_json::from_str::<Value>(r#"{"a":1,"b":2}"#).unwrap())
     );
+    assert_ne!(jcs_digest(&json!({"a": 1})), jcs_digest(&json!({"a": 2})));
 }
 
 pub(crate) fn k2() -> Value {

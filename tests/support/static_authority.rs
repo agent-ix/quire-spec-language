@@ -1,15 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-049 StaticAuthority digest vectors shared by state evaluation fixtures.
+//! FR-049 StaticAuthority digests shared by state evaluation fixtures.
+//!
+//! Each digest is computed, never stored: the member's FR-049 source text is
+//! parsed, encoded with the independent RFC 8785 canonicalizer and hashed
+//! with SHA-256. `static_authority_jcs_vectors_and_refusal_order` compares
+//! them with the table FR-049 publishes, read from the spec file at run time.
 
 use quire_spec_language::state::CanonicalDigest;
+use sha2::{Digest, Sha256};
 
 pub fn canonical(value: char) -> CanonicalDigest {
-    let digest = match value {
-        '1' => "17bb26d31aa70e4655fc93485f8ffd9facabf1f09becf1db75c9ebcfe470dfe5",
-        '2' => "0f987e2b9547cc4ed5e157315e4a8be8f85fc76681fe458b1caacc60b3518c87",
-        '3' => "aba201d44fbf1cfd79c04cf9c813ffd60db7bb5433493fa5665e180b137f338e",
-        '4' => "07039deac03f89e3778cf7cd496733e99664000cc534995317b725f04e31de0f",
+    let source = match value {
+        '1' => r#"{ "version": 1, "name": "orders" }"#,
+        '2' => r#"{"objects": ["Order", "Line"], "id": "orders-model"}"#,
+        '3' => r#"{"limits": {"depth": 8}, "profile": "strict"}"#,
+        '4' => r#"{"enabled": true, "mode": "batch"}"#,
         _ => panic!("unknown StaticAuthority vector"),
     };
-    CanonicalDigest(format!("sha256-jcs:{digest}"))
+    let parsed: serde_json::Value = serde_json::from_str(source).expect("source parses");
+    let preimage = serde_json_canonicalizer::to_vec(&parsed).expect("independent JCS encoding");
+    let hex: String = Sha256::digest(&preimage)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    CanonicalDigest(format!("sha256-jcs:{hex}"))
 }

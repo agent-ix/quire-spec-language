@@ -116,7 +116,9 @@ pub fn replay_refinement_trace(
 /// `refinement` whose concrete model is timed, over `systems`. The prefix
 /// is re-executed over time by FR-237's rules, each step after its exact
 /// delay; the checks then run along it as [`replay_refinement_trace`]
-/// runs them, a delay taking no abstract step. A reproduced failing step
+/// runs them, a delay taking no abstract step. A lasso (FR-143) is replayed
+/// as [`replay_refinement_trace`] replays one, its loop closed over time
+/// with a positive total delay (ADR-026 TS-4). A reproduced failing step
 /// stands only where the behaviour goes on from it with time diverging:
 /// the valuation it reaches has a time-divergent continuation (ADR-026
 /// TV-1 and TS-4), which a fresh exploration bounded by `exploration`
@@ -125,8 +127,10 @@ pub fn replay_refinement_trace(
 /// # Errors
 ///
 /// [`ReplayRefusal`] when the concrete subject is not timed, the prefix
-/// does not re-execute over time (FR-237's refusals), the payload names no
-/// refinement failure or is a lasso, or an internal fault occurs.
+/// does not re-execute over time or a lasso's loop does not close over
+/// time (FR-237's refusals), the payload names no refinement failure, a
+/// lasso's history or candidates drift, it is unfair under `F_C`, or an
+/// internal fault occurs.
 pub fn replay_timed_refinement_trace(
     refinement: &CheckedRefinement,
     systems: &RefinementSystems<'_>,
@@ -136,9 +140,6 @@ pub fn replay_timed_refinement_trace(
     let Some(recorded) = payload.refinement.as_ref() else {
         return Err(refused(ModelTraceRefusal::NoRefinementFailure));
     };
-    if payload.lasso.is_some() {
-        return Err(refused(ModelTraceRefusal::NoRefinementFailure));
-    }
     let timed = TimedSystem::new(&systems.concrete, refinement.concrete_model())
         .map_err(|refusal| refused(ModelTraceRefusal::TimedSubject(refusal)))?;
     let Some((positions, states)) = timed_prefix(&timed, payload)? else {

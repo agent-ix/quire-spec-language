@@ -116,7 +116,7 @@ impl FromStr for ByteDigest {
 // ---------------------------------------------------------------------------
 
 /// The closed FR-201 canonical-identity-domain vocabulary, as amended by
-/// QSpec#138 (QC-2, merged `f4128c45`): the sixteen domains FR-201 already
+/// QSpec#138 (QC-2): the sixteen domains FR-201 already
 /// named, plus the three QSL-derived model-schema domains QC-2 adds
 /// (`ModelEffectiveDeclarationV2`, `ModelEffectiveViewV2`,
 /// `ModelObjectUniverseV2`). Exhaustive: a domain FR-201 does not list is not
