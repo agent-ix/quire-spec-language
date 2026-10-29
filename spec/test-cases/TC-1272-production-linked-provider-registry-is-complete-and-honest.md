@@ -18,7 +18,8 @@ the currently absent refinement-witness providers as absent.
 
 1. Build two independent snapshots with
    `RegistrySnapshot::production()`.
-2. Query each snapshot for EN-1's `temporal-satisfaction` capability. Query
+2. Query each snapshot for the `temporal-satisfaction` capability (EN-1 and
+   EN-6). Query
    EN-4's `probabilistic-satisfaction` capability with the evidence kind in
    EN-4's descriptor, following FR-075-AC-13. Then query for the
    `ValueValidity` and `OperationContract` capabilities used by FR-345's
@@ -39,10 +40,10 @@ assertion verifies.
 ## Expected Results
 
 - The two snapshots are equal. The registration accessor yields exactly the
-  EN-1 `temporal-satisfaction` descriptor and the EN-4
+  EN-1 and EN-6 `temporal-satisfaction` descriptors and the EN-4
   `probabilistic-satisfaction` descriptor owned by `Engines::qsl()`. For each
   descriptor, the snapshot retains its exact `BackendId`, origin and
-  capability set. Candidate queries yield EN-1 only for
+  capability set. Candidate queries yield EN-1 and EN-6 only for
   `temporal-satisfaction` and EN-4 only for `probabilistic-satisfaction` when
   supplied the evidence kind in EN-4's descriptor;
   neither descriptor is replaced or supplemented with an ad hoc candidate.

@@ -26,17 +26,23 @@ mod decide;
 mod explore;
 mod sample;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
+use qsl_replay::ReplayRefusal;
 use qsl_replay::{
-    IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, OpenCause, ReachedLimit,
-    RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, DEFAULT_WITNESS_SEED,
+    settle_state_graph, AppliedReduction, GraphReplayResult, IncompleteCause, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, OpenCause, Proviso, ReachedLimit, RunEnd,
+    StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
+    DEFAULT_WITNESS_SEED,
 };
+use qsl_route::reductions::Reductions;
+use qsl_semantics::check::footprint::SymbolicLocation;
 use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
     StateGraphForm,
@@ -62,6 +68,8 @@ pub struct StateGraphRequest<'a> {
     pub subject: ModelSubject<'a>,
     /// The subject's state-graph items.
     pub items: Vec<StateGraphItem<'a>>,
+    /// State-space reductions selected by the request (FR-159, ADR-022 GR-1).
+    pub reductions: Reductions,
     /// Whether the run also decides the subject's derived deadlock-freedom
     /// item (FR-124).
     pub deadlock_freedom: bool,
@@ -225,6 +233,7 @@ struct InstanceView<'a> {
     item: usize,
     instance: usize,
     over: Option<ObjectReference>,
+    model_instance: Option<ModelInstance>,
     predicates: Vec<(PredicateRole, Option<&'a CheckedPredicateBody>)>,
 }
 
@@ -248,27 +257,29 @@ fn instances<'a>(
                     (role, body)
                 })
                 .collect();
-            let bindings: Vec<Option<ObjectReference>> = match entry.claim.over() {
-                None => vec![None],
-                Some(over) => system
-                    .instances(&ValueType::Reference(over.object))
-                    .map_err(bounds_refusal)?
-                    .iter()
-                    .map(|instance| {
-                        system
-                            .bound_reference(over.object, instance)
-                            .map(Some)
-                            .map_err(|_| fault("state-graph-instance-references"))
-                    })
-                    .collect::<Result<_, _>>()?,
-            };
+            let bindings: Vec<(Option<ObjectReference>, Option<ModelInstance>)> =
+                match entry.claim.over() {
+                    None => vec![(None, None)],
+                    Some(over) => system
+                        .instances(&ValueType::Reference(over.object))
+                        .map_err(bounds_refusal)?
+                        .iter()
+                        .map(|instance| {
+                            system
+                                .bound_reference(over.object, instance)
+                                .map(|reference| (Some(reference), Some(instance.clone())))
+                                .map_err(|_| fault("state-graph-instance-references"))
+                        })
+                        .collect::<Result<_, _>>()?,
+                };
             Ok(bindings
                 .into_iter()
                 .enumerate()
-                .map(|(instance, over)| InstanceView {
+                .map(|(instance, (over, model_instance))| InstanceView {
                     item,
                     instance,
                     over,
+                    model_instance,
                     predicates: bodies.clone(),
                 })
                 .collect())
@@ -455,6 +466,41 @@ pub fn check_state_graph(
             seed,
         });
     }
+    let reductions = request
+        .items
+        .iter()
+        .map(|item| non_preserving(&request.reductions, item.claim.form()))
+        .collect::<Vec<_>>();
+    if !request.deadlock_freedom
+        && reductions.iter().all(Option::is_some)
+        && views.iter().all(|instances| !instances.is_empty())
+    {
+        return Ok(StateGraphRun {
+            graph: explore::empty(RunEnd::Completed),
+            items: views
+                .iter()
+                .zip(&request.items)
+                .zip(reductions)
+                .map(|((instances, item), reduction)| {
+                    let reduction = reduction.expect("all populated items reject a reduction");
+                    instances
+                        .iter()
+                        .map(|view| StateGraphInstanceOutcome {
+                            over: view.over.clone(),
+                            outcome: StateGraphOutcome::ReductionNotPreserving {
+                                reduction,
+                                form: item.claim.form().into(),
+                            },
+                            sampled: Vec::new(),
+                            walks_stopped: 0,
+                        })
+                        .collect()
+                })
+                .collect(),
+            deadlock: None,
+            seed,
+        });
+    }
     let possible: Vec<&InstanceView<'_>> = views
         .iter()
         .zip(&request.items)
@@ -480,6 +526,39 @@ pub fn check_state_graph(
             ));
         }
     };
+    let por_instances: Vec<ModelInstance> = views
+        .iter()
+        .flatten()
+        .filter_map(|view| view.model_instance.clone())
+        .collect();
+    let por = if request.reductions.partial_order {
+        let mut reads = BTreeSet::<SymbolicLocation>::new();
+        for item in &request.items {
+            let Some(over) = item.claim.over() else {
+                continue;
+            };
+            let parameter = (over.name.clone(), ValueType::Reference(over.object));
+            for (_, predicate) in predicates(item.claim.form()) {
+                let CheckedStatePredicate::Checked(body) = predicate else {
+                    continue;
+                };
+                reads.extend(
+                    system
+                        .atom_reads(&parameter, body.body())
+                        .map_err(|refusal| ModelCheckRefusal::Footprint(refusal.into()))?,
+                );
+            }
+        }
+        Some(super::ample::Por::with_atom_reads(
+            &system,
+            reads,
+            &por_instances,
+            &[],
+            None,
+        )?)
+    } else {
+        None
+    };
     let explored = explore::Exploration {
         system: &system,
         package,
@@ -489,14 +568,30 @@ pub fn check_state_graph(
         budgets,
         views: &views,
         deadlock_freedom: request.deadlock_freedom,
+        por: por.as_ref(),
     }
     .run()?;
     let items = views
         .iter()
         .zip(&request.items)
-        .map(|(item, entry)| {
+        .enumerate()
+        .map(|(index, (item, entry))| {
             if item.is_empty() {
                 return Ok(vec![no_instance()]);
+            }
+            if let Some(reduction) = reductions[index] {
+                return Ok(item
+                    .iter()
+                    .map(|view| StateGraphInstanceOutcome {
+                        over: view.over.clone(),
+                        outcome: StateGraphOutcome::ReductionNotPreserving {
+                            reduction,
+                            form: entry.claim.form().into(),
+                        },
+                        sampled: Vec::new(),
+                        walks_stopped: 0,
+                    })
+                    .collect());
             }
             item.iter()
                 .map(|view| {
@@ -506,6 +601,14 @@ pub fn check_state_graph(
                         view,
                         sampled.witnesses(view),
                     )?;
+                    let outcome =
+                        if explored.reduced && matches!(outcome, StateGraphOutcome::Holds { .. }) {
+                            StateGraphOutcome::HoldsReduced {
+                                reductions: applied_reductions(explored.partial_order_reduced),
+                            }
+                        } else {
+                            outcome
+                        };
                     Ok(StateGraphInstanceOutcome {
                         over: view.over.clone(),
                         outcome,
@@ -522,6 +625,114 @@ pub fn check_state_graph(
         deadlock: explored.deadlock,
         seed,
     })
+}
+
+fn applied_reductions(partial_order: bool) -> Vec<AppliedReduction> {
+    if partial_order {
+        vec![AppliedReduction::PartialOrder {
+            proviso: Proviso::BreadthFirstRevisit,
+        }]
+    } else {
+        Vec::new()
+    }
+}
+
+/// ADR-022 GR-1: selected state-space reductions are rejected by the form's
+/// preservation row before any expansion.
+fn non_preserving(
+    reductions: &Reductions,
+    form: &StateGraphForm,
+) -> Option<qsl_foundation::ReductionKind> {
+    reductions
+        .selected()
+        .into_iter()
+        .find(|reduction| match reduction {
+            qsl_foundation::ReductionKind::Symmetry => {
+                matches!(form, StateGraphForm::UniquePath { .. })
+            }
+            qsl_foundation::ReductionKind::PartialOrder => {
+                !matches!(form, StateGraphForm::Possible { .. })
+            }
+            qsl_foundation::ReductionKind::StateConstraint => false,
+        })
+}
+
+/// A state-graph run and the FR-169 settlement record for each claim instance.
+#[derive(Debug)]
+pub struct SettledStateGraphRun {
+    /// The explored graph and per-instance evidence produced by FR-168.
+    pub run: StateGraphRun,
+    /// FR-169 records in item and instance order, aligned with `run.items`.
+    pub records: Vec<Vec<StateGraphRecord>>,
+}
+
+/// Why the combined state-graph check and settlement could not run.
+#[derive(Debug, thiserror::Error)]
+pub enum StateGraphPipelineRefusal {
+    /// The engine refused before producing a run.
+    #[error(transparent)]
+    Engine(#[from] ModelCheckRefusal),
+    /// The request horizon cannot be represented in FR-169's `u64` record.
+    #[error("the state-graph search horizon is outside the terminal record range")]
+    HorizonOutOfRange,
+}
+
+/// Run FR-166–FR-168 and settle every state-graph item instance under FR-169.
+///
+/// `replay` is called only for evidence rows whose verdict requires replay;
+/// package identity and certificate checks remain in the core settlement map.
+/// The optional deadlock-freedom result remains on `run` for its own FR-127
+/// settlement path.
+pub fn check_and_settle_state_graph(
+    request: StateGraphRequest<'_>,
+    package_id: DigestRecord,
+    cancel: &Cancel,
+    mut replay: impl FnMut(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
+) -> Result<SettledStateGraphRun, StateGraphPipelineRefusal> {
+    let max_depth = request
+        .max_depth
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|_| StateGraphPipelineRefusal::HorizonOutOfRange)?;
+    let claims = request
+        .items
+        .iter()
+        .map(|item| item.claim)
+        .collect::<Vec<_>>();
+    let simulation = request.subject.simulation.clone();
+    let proof_bounds = request.subject.proof_bounds.clone();
+    let limits = request.limits;
+    let run = check_state_graph(request, cancel)?;
+    let subject = ModelSubject {
+        simulation,
+        proof_bounds,
+    };
+    let method = StateGraphMethod {
+        limits,
+        max_depth,
+        seed: run.seed,
+    };
+    let records = claims
+        .into_iter()
+        .zip(&run.items)
+        .map(|(claim, instances)| {
+            instances
+                .iter()
+                .map(|instance| {
+                    settle_state_graph(
+                        instance,
+                        &method,
+                        &package_id,
+                        &subject,
+                        claim,
+                        cancel,
+                        |_| replay(instance),
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    Ok(SettledStateGraphRun { run, records })
 }
 
 /// The run phase 0 stopped before any exploration: every instance and the

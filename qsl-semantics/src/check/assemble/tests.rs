@@ -1711,11 +1711,11 @@ fn unordered_and_not_unique_selects_bag() {
 // Enums and predicates (TC-481)
 // ----------------------------------------------------------------------
 
-/// FR-091 vectors N1 to N4, the SHA-256 of the RFC 8785 preimage bytes.
-const N1: &str = "e5e7c1d5b51c76e84c928b616d266d45a570e8211404c302b47dbec62ae00d27";
-const N2: &str = "499f4989da1b6790fcda8c1e6e64ed04041d8cd304f336133c48f58c424d65ec";
-const N3: &str = "0757650a7514f2f86e2101a0d02e5055d1152c36fc7e01ea2dfc8eabc21dae62";
-const N4: &str = "239e86987c45808a71cb0d23e7b25f8f70d6adb426288280c7eaf566f0f145e9";
+/// FR-091's vector `id` (`N1`, `Q7`): its key, recomputed from the preimage
+/// content the spec states for it and never recorded.
+fn fr_091_vector(id: &str) -> String {
+    crate::check::fr091_vectors::key(id)
+}
 
 const STATUS: &str = "ordered enum Status { READY, DONE }\n";
 
@@ -1740,11 +1740,11 @@ fn enums_are_admitted_with_nominal_keys_over_the_units_owner() {
     let names: Vec<&str> = package.enums.iter().map(|b| b.name.as_str()).collect();
     assert_eq!(names, ["Status", "Color"]);
     let status = binding(&package, "Status");
-    assert_eq!(status.declaration.key().to_string(), N1);
+    assert_eq!(status.declaration.key().to_string(), fr_091_vector("N1"));
     assert_eq!(cases(status), ["READY", "DONE"]);
-    assert_eq!(status.members[0].member().to_string(), N2);
+    assert_eq!(status.members[0].member().to_string(), fr_091_vector("N2"));
     let color = binding(&package, "Color");
-    assert_eq!(color.declaration.key().to_string(), N3);
+    assert_eq!(color.declaration.key().to_string(), fr_091_vector("N3"));
     assert_eq!(cases(color), ["BLUE", "RED"]);
     assert_eq!(
         package.declared_type_spans.get("Status"),
@@ -1759,12 +1759,18 @@ fn enums_are_admitted_with_nominal_keys_over_the_units_owner() {
     // enters its key.
     let (_, other) = assemble("enum Color { RED, BLUE }");
     let other = other.expect("the unit assembles");
-    assert_eq!(binding(&other, "Color").declaration.key().to_string(), N3);
+    assert_eq!(
+        binding(&other, "Color").declaration.key().to_string(),
+        fr_091_vector("N3")
+    );
 
     // The owner enters the key.
     let moved =
         assemble_as("a", "w", &text_with(&[PROFILE_V], STATUS)).expect("the unit assembles");
-    assert_eq!(binding(&moved, "Status").declaration.key().to_string(), N4);
+    assert_eq!(
+        binding(&moved, "Status").declaration.key().to_string(),
+        fr_091_vector("N4")
+    );
 }
 
 #[trace("FR-091-AC-28", "TC-481")]
@@ -2020,10 +2026,10 @@ fn predicate_and_enum_nodes_lower_to_their_fr_092_forms() {
             .find(|node| node.key().to_string() == key)
             .unwrap_or_else(|| panic!("the checked graph holds {key}"))
     };
-    let declaration = by_key(N1);
+    let declaration = by_key(&fr_091_vector("N1"));
     assert_eq!(declaration.node_tag(), NodeTag::ScalarType);
     assert_eq!(declaration.semantic_form(), "enum");
-    let member = by_key(N2);
+    let member = by_key(&fr_091_vector("N2"));
     assert_eq!(member.node_tag(), NodeTag::Value);
     assert_eq!(member.semantic_form(), "enum_value");
 }
@@ -2060,19 +2066,11 @@ fn the_preimage_constructors_apply_the_reader_checks() {
 // Dimensions and units (TC-483)
 // ----------------------------------------------------------------------
 
-/// FR-091 vectors Q1 to Q10.
-const Q: [&str; 10] = [
-    "ff856699d6710bab9b9a893db4b7cf079f203258f543f02f990191d0e4834028",
-    "e277e2dae0f9bae883f80b677af21b3ab95e9ae4c5406864d1dd307d0024f927",
-    "3843d2d5c9906e126f8310cf148fa9b8f7366e0d5bdb762db7b8567e0968c10e",
-    "7d3bb56f6ff61b76783c608273c6c9b773376958449b3b1ace348ff582fa08d7",
-    "3e5ab5ca1538a74d998648ec764c1dc6081acbc0dcdce0c8e81011fd7603730d",
-    "4c5aa30d2878d6197f7292492907082ccc857c60da88979b0a99eee5a5aecb0b",
-    "700256858942ebde86f19abdfa12423cfc5f7e58d830ba3c5903c2d189cd2edd",
-    "83b004fb06bbc9fbe56999ac263d2f3eafe87a25c3182c90acbf1131c0d260ee",
-    "5cc7dfb7cedf23b3dff8012718e3cea37586ed90c6b824affb6fafee10db49db",
-    "12b65987f369f8908be0d690d372e2b3fc3bae7623672a83a942a950663c67fa",
-];
+/// FR-091 vectors Q1 to Q10, from the spec's table (see [`fr_091_vector`]).
+static Q: std::sync::LazyLock<[&'static str; 10]> = std::sync::LazyLock::new(|| {
+    ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"]
+        .map(|id| &*Box::leak(fr_091_vector(id).into_boxed_str()))
+});
 
 const Q_SOURCES: &str = "dimension Length;\n\
     dimension Time;\n\

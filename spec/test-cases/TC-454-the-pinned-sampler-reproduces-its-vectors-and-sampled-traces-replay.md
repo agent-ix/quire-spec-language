@@ -55,7 +55,7 @@ tests in `qsl-eval/src/simulation/`.
 - Step 1: indices `1, 3, 3, 4, 4` (QSpec TC-210's vector).
 - Step 1b: preimage
   `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}`;
-  digest `d5160380d7495443315376de306a5d3613f3e010df74a5db92853829205995f2`.
+  digest the SHA-256 of that preimage.
 - Step 2: `4, 4, 1, 3, 4` and `1, 2, 0, 0, 1`.
 - Step 3: index 0 at every step. The mixed system
   selects index `3` at step 2, the step counter having advanced over the two

@@ -3327,7 +3327,28 @@ mod operator_arm {
         let (text, code, settled, report) = refusal_of(stale, add_claim());
         assert!(text.contains("content-mismatch"), "{text}");
         assert_eq!(code, Code::StaleDependency);
-        assert_eq!(settled, stale_code);
+        let TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+            requested,
+            recompiled,
+        }) = settled
+        else {
+            panic!("a package mismatch names both package identities: {settled:?}");
+        };
+        assert_eq!(
+            requested,
+            crate::StaleIdentity::Package(DigestRecord::mint(
+                DigestDomain::PackageSemanticV2,
+                [1; 32],
+            ))
+        );
+        assert!(
+            matches!(
+                recompiled,
+                crate::StaleIdentity::Package(package)
+                    if package.domain() == DigestDomain::PackageSemanticV2
+            ),
+            "the refusal carries the recompiled package identity"
+        );
         assert!(matches!(
             report.result(),
             OperatorParityResult::Refused(refusal)

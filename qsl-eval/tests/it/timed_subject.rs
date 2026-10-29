@@ -240,6 +240,17 @@ fn world_holding(document: Vec<u8>, profiles: &str, unit_body: &str, fields: Jso
 
 /// [`world_over`] whose initial state holds the `Call` objects `objects`.
 fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -> World {
+    try_world_of(document, profiles, unit_body, objects)
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
+}
+
+/// [`world_of`], or the refusals S3 gives the unit.
+fn try_world_of(
+    document: Vec<u8>,
+    profiles: &str,
+    unit_body: &str,
+    objects: Json,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -276,8 +287,7 @@ fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -
     )
     .expect("the unit assembles")
     .with_unwritten_timed_members()
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    .check(CheckingLimits::default())?;
     let header = json!({"identity": PACKAGE, "version": "1.0.0",
         "digest": format!("sha256-jcs:{}", hex(&digest))});
     let document = json!({
@@ -293,7 +303,7 @@ fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -
     let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
         .expect("canonical fixture")
         .as_bytes();
-    World {
+    Ok(World {
         package: CheckedPackage::link(graph),
         packages,
         snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
@@ -304,7 +314,7 @@ fn world_of(document: Vec<u8>, profiles: &str, unit_body: &str, objects: Json) -
             revision: "fixture:1".to_owned(),
             digest: snapshot_digest,
         },
-    }
+    })
 }
 
 /// The initial `Call`'s field values: `phase` 0, `inflight` and `late`
@@ -4371,6 +4381,265 @@ fn a_permutation_renames_a_clock_place_argument() {
     );
 }
 
+/// `Call` with `q: Sequence<Option<Clock>>[0, 2]` (a presence-optional
+/// `Clock` field of multiplicity `[0, 2]`), `work` writing the fields
+/// `granted`.
+fn option_sequence_world(granted: &[&str], body: &str) -> World {
+    let mut document: Json = serde_json::from_slice(&cells_document(
+        vec![],
+        vec![(
+            "q",
+            "ix://quire/native/Clock".to_owned(),
+            Some(json!({"lower": 0, "upper": 2, "ordered": true, "unique": false})),
+        )],
+        granted,
+        &[],
+    ))
+    .expect("JSON");
+    for field in document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+    {
+        if field["name"] == "q" {
+            field["presence"] = json!("optional");
+        }
+    }
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(&["work"], body),
+        json!({"t": timer}),
+    )
+}
+
+/// The presence bits of `c`'s `q` at `state`, one for each element.
+fn option_bits(state: &TimedState) -> Vec<bool> {
+    let quire_exact::Value::Collection(bits) = field_of(state, "c", "q") else {
+        panic!("q holds its bits");
+    };
+    bits.elements()
+        .iter()
+        .map(|bit| matches!(bit, quire_exact::Value::Boolean(true)))
+        .collect()
+}
+
+/// FR-230-AC-41, AC-42 and AC-46 (TC-685), the timed subject's part, over
+/// `q: Sequence<Option<Clock>>[0, 2]`: each element holds a presence bit,
+/// so the initial states are every count from 0 to 2 with every bit of
+/// each element, `1 + 2 + 4 = 7` of them in ascending count. An element is
+/// live exactly while its bit is set, and every present initial clock is 0.
+/// Each state has its own key, which writes each element's option shell,
+/// `null` when absent and a `Clock` shell when present, so two states that
+/// differ only in one bit have different keys.
+#[trace("TC-685")]
+#[test]
+fn a_sequence_of_option_clocks_holds_one_bit_per_element() {
+    let world = option_sequence_world(&[], "");
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    let bits: Vec<Vec<bool>> = initial.iter().map(option_bits).collect();
+    assert_eq!(
+        bits,
+        [
+            vec![],
+            vec![false],
+            vec![true],
+            vec![false, false],
+            vec![false, true],
+            vec![true, false],
+            vec![true, true],
+        ]
+    );
+    let slot_of = |place: &qsl_eval::simulation::model::ClockPlace| {
+        timed
+            .model()
+            .clock(place.clock())
+            .is_some_and(|clock| clock.name() == "q.[slot]")
+    };
+    for state in &initial {
+        let live: Vec<bool> = timed
+            .places()
+            .iter()
+            .filter(|place| slot_of(place))
+            .map(|place| timed.live(place, state.discrete()))
+            .collect();
+        let mut expected = option_bits(state);
+        expected.resize(live.len(), false);
+        assert_eq!(live, expected, "{:?}", option_bits(state));
+        for (at, place) in timed.places().iter().enumerate() {
+            if slot_of(place) && timed.live(place, state.discrete()) {
+                assert_eq!(state.clocks().get(at), Some(&exact(0, 1)));
+            }
+        }
+    }
+    let keys: std::collections::BTreeSet<Vec<u8>> = initial
+        .iter()
+        .map(|state| held.state_key(state.discrete()).expect("a key").0)
+        .collect();
+    assert_eq!(keys.len(), 7);
+    let (mixed, _) = held.state_key(initial[5].discrete()).expect("a key");
+    let text = String::from_utf8(mixed).expect("UTF-8");
+    assert_eq!(
+        (
+            text.matches(r#"{"type":"option","value":null}"#).count(),
+            text.matches(
+                r#"{"type":"option","value":{"components":[],"name":"Clock","type":"tuple"}}"#
+            )
+            .count()
+        ),
+        (1, 1),
+        "{text}"
+    );
+}
+
+/// FR-230 "Presence bit" and QSpec FR-415-AC-21 (TC-685, SR-1763001
+/// FND-001, SR-1763002 FND-002), no implicit reset or drop of an element of
+/// `q: Sequence<Option<Clock>>[0, 2]`: `work`, whose frame writes `q` and
+/// which resets no clock, keeps the bit of every element the collection
+/// still holds, and every element it adds is absent: `[] -> [true]` and
+/// `[false] -> [false, true]` are no successors.
+#[trace("TC-685")]
+#[test]
+fn an_option_element_keeps_its_bit_without_a_write() {
+    let world = option_sequence_world(&["q"], "");
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    for state in &initial {
+        let before = option_bits(state);
+        let after: Vec<Vec<bool>> = timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| option_bits(&next))
+            .collect();
+        assert!(!after.is_empty(), "{before:?}");
+        for bits in &after {
+            let kept = bits.len().min(before.len());
+            assert_eq!(bits[..kept], before[..kept], "{before:?} -> {bits:?}");
+            assert!(
+                bits[kept..].iter().all(|bit| !bit),
+                "{before:?} -> {bits:?}: an added element is absent"
+            );
+        }
+        if before.len() < 2 {
+            assert!(
+                after.iter().any(|bits| bits.len() == before.len() + 1),
+                "{before:?}: q grows"
+            );
+        }
+    }
+}
+
+/// FR-230 "Presence bit" and QSpec FR-415 "Reset by selection" (TC-685,
+/// SR-1763001 FND-002, SR-1763002 FND-001): `forall(e in self.q : e = 0
+/// ms)` writes every element the post-state holds, so each is present at 0
+/// ms after `work`, from every initial state, `[false]` and `[false,
+/// false]` included.
+#[trace("TC-685")]
+#[test]
+fn a_reset_over_option_elements_makes_each_present() {
+    let world = option_sequence_world(
+        &["q"],
+        "post Reset using v on M::Call::work { forall(e in self.q : e = 0 ms) }\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    for state in &timed.initial() {
+        let before = option_bits(state);
+        let steps: Vec<_> = timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .collect();
+        assert!(!steps.is_empty(), "{before:?}");
+        for (_, next) in &steps {
+            let bits = option_bits(next);
+            assert!(bits.iter().all(|bit| *bit), "{before:?} -> {bits:?}");
+            for (place, value) in timed.places().iter().zip(next.clocks().values()) {
+                if !place.slots().is_empty() && timed.live(place, next.discrete()) {
+                    assert!(value.numerator().is_zero(), "{before:?} -> {bits:?}");
+                }
+            }
+        }
+    }
+}
+
+/// FR-230 "Presence bit" (TC-685, SR-1763002 FND-003): a present element
+/// that a shrink drops and a later step regrows is absent unless written:
+/// from `[true]`, `work` reaches `[]`, and from there every `[_]` successor
+/// is `[false]`.
+#[trace("TC-685")]
+#[test]
+fn a_dropped_element_regrows_absent() {
+    let world = option_sequence_world(&["q"], "");
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let work = |state: &TimedState| -> Vec<TimedState> {
+        timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| next)
+            .collect()
+    };
+    let present = timed
+        .initial()
+        .into_iter()
+        .find(|state| option_bits(state) == [true])
+        .expect("an initial [true]");
+    let empty = work(&present)
+        .into_iter()
+        .find(|next| option_bits(next).is_empty())
+        .expect("[true] -> []");
+    let regrown: Vec<Vec<bool>> = work(&empty)
+        .iter()
+        .map(option_bits)
+        .filter(|bits| bits.len() == 1)
+        .collect();
+    assert_eq!(regrown, [[false]]);
+}
+
+/// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), the timed
+/// subject's part: over `q: Sequence<Option<Clock>>[0, 2]`, `forall(e in
+/// self.q : present(e))` holds exactly where every element `q` holds is
+/// present, an empty `q` included, and `exists(e in self.q : present(e))`
+/// where some is. A time invariant `when` the first bounds `x` there, and
+/// `urgent Due when` the second is urgent there, in each of the seven
+/// initial states.
+#[trace("TC-685")]
+#[test]
+fn quantified_presence_reads_the_element_bits() {
+    let world = option_sequence_world(
+        &[],
+        "time invariant All when { forall(e in self.q : present(e)) } { self.x <= 5 ms }\n\
+         urgent Due when { exists(e in self.q : present(e)) };\n",
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let initial = timed.initial();
+    assert_eq!(initial.len(), 7);
+    for state in &initial {
+        let bits = option_bits(state);
+        let bounded = timed
+            .invariants(state.discrete())
+            .expect("decided")
+            .iter()
+            .any(|bound| bound.bound() == &exact(5, 1));
+        assert_eq!(bounded, bits.iter().all(|bit| *bit), "{bits:?}");
+        assert_eq!(
+            timed.is_urgent(state.discrete()).expect("decided"),
+            bits.iter().any(|bit| *bit),
+            "{bits:?}"
+        );
+    }
+}
+
 /// FR-230-AC-46, AC-47 and AC-48 (TC-685), the bare-clock collections: a
 /// pure-clock collection's initial element count ranges over `[min, max]`,
 /// one initial state each. `s: Sequence<Clock>[1, 3]` gives 3, `b:
@@ -4659,6 +4928,224 @@ fn present_reads_the_bit_in_invariants_bounds_and_urgency() {
     assert!(timed.is_urgent(present.discrete()).expect("decided"));
 }
 
+/// QSpec FR-322-AC-155 and QSL FR-230 "Presence is derived" (TC-685 step
+/// 34), the timed subject's part: with `c1` and `c2` each the other's
+/// `peer`, `present(self.peer.v)` reads the presence bit of the referenced
+/// object's `v` as data. `time invariant P when { present(self.peer.v) } {
+/// self.x <= 5 ms }` bounds an object's `x` exactly where its peer's `v` is
+/// present, in each of the four initial states; `urgent Due when {
+/// present(self.peer.v) }` makes a state urgent exactly where some peer's
+/// `v` is present (SR-1754002 FND-003), and the guard `pre G {
+/// present(self.peer.v) }` enables an object's `work` exactly where its
+/// peer's `v` is present (SR-1754001 FND-002).
+#[trace("TC-685")]
+#[test]
+fn another_objects_presence_reads_its_bit() {
+    let mut document: Json = serde_json::from_slice(&option_clock_document()).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(wire_field("peer", &ident("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let peer = |key: &str| json!({"reference": {"population": ident("calls"), "key": key}});
+    let object = |key: &str, other: &str| {
+        json!({"key": key, "type": ident("Call"),
+            "fields": initial_fields(json!({"peer": peer(other)}))})
+    };
+    let world = world_of(
+        document,
+        "",
+        &only(
+            &["work"],
+            "time invariant P when { present(self.peer.v) } { self.x <= 5 ms }\n\
+             urgent Due when { present(self.peer.v) };\n\
+             pre G using v on M::Call::work { present(self.peer.v) }\n",
+        ),
+        json!([object("c1", "c2"), object("c2", "c1")]),
+    );
+    let system = system_over(&world, &["c1", "c2"]);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let key = |place: usize| timed.places()[place].object().object().as_str().to_owned();
+    let name = |place: usize| {
+        timed
+            .model()
+            .clock(timed.places()[place].clock())
+            .expect("a clock")
+            .name()
+            .to_owned()
+    };
+    let initial = timed.initial();
+    assert_eq!(initial.len(), 4, "{initial:?}");
+    let mut seen = Vec::new();
+    for state in &initial {
+        let mut bounded: Vec<String> = timed
+            .invariants(state.discrete())
+            .expect("decided")
+            .iter()
+            .map(|bound| key(bound.place()))
+            .collect();
+        bounded.sort();
+        let mut expected: Vec<String> = (0..timed.places().len())
+            .filter(|place| {
+                name(*place) == "v" && timed.live(&timed.places()[*place], state.discrete())
+            })
+            .map(|place| if key(place) == "c1" { "c2" } else { "c1" }.to_owned())
+            .collect();
+        expected.sort();
+        assert_eq!(bounded, expected);
+        assert_eq!(
+            timed.is_urgent(state.discrete()).expect("decided"),
+            !expected.is_empty()
+        );
+        let mut working: Vec<String> = timed
+            .steps(state)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(step, _)| step.receiver().object().as_str().to_owned())
+            .collect();
+        working.sort();
+        working.dedup();
+        assert_eq!(working, expected);
+        seen.push(bounded);
+    }
+    seen.sort();
+    assert_eq!(
+        seen,
+        [
+            vec![],
+            vec!["c1".to_owned()],
+            vec!["c1".to_owned(), "c2".to_owned()],
+            vec!["c2".to_owned()]
+        ]
+    );
+}
+
+/// FR-230 "Presence bit" (TC-685), the timed subject's part of a
+/// postcondition presence requirement: `work`, whose postcondition is
+/// `present(self.v)` and which writes no clock, steps only from the state
+/// with `v` present, keeping it; with `not present(self.v)` only from the
+/// absent state.
+#[trace("TC-685")]
+#[test]
+fn a_postcondition_presence_filters_the_successors() {
+    for (post, from_present) in [("present(self.v)", true), ("not present(self.v)", false)] {
+        let world = world_over(
+            option_clock_document(),
+            "",
+            &only(
+                &["work"],
+                &format!("post Kept using v on M::Call::work {{ {post} }}\n"),
+            ),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let initial = timed.initial();
+        let [absent, present] = &initial[..] else {
+            panic!("two initial states: {initial:?}");
+        };
+        let v = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("v's place");
+        let work = |state: &TimedState| {
+            timed
+                .steps(state)
+                .expect("decided")
+                .into_iter()
+                .filter(|(step, _)| step.operation().contains("Call/work"))
+                .map(|(_, next)| timed.live(&timed.places()[v], next.discrete()))
+                .collect::<Vec<_>>()
+        };
+        let (from, other) = if from_present {
+            (present, absent)
+        } else {
+            (absent, present)
+        };
+        assert!(work(other).is_empty(), "{post}");
+        let kept = work(from);
+        assert!(!kept.is_empty(), "{post}");
+        assert!(kept.iter().all(|live| *live == from_present), "{post}");
+    }
+}
+
+/// FR-230 "Presence bit" (TC-685), SR-1743001 FND-001 and SR-1743002
+/// FND-001: the successors of `work`, which writes `v`'s frame, from the
+/// absent and the present initial state, as `v`'s presence in each. A
+/// requirement contradicting a write leaves no successor, in either
+/// conjunct order; `not (self.v = absent)` requires `v` present as `self.v
+/// != absent` does; with no postcondition the frame keeps each bit, since
+/// nothing resets or drops `v` implicitly.
+#[trace("TC-685")]
+#[test]
+fn a_presence_requirement_contradicting_a_write_leaves_no_successor() {
+    let none: &[bool] = &[];
+    for (post, from_absent, from_present) in [
+        ("self.v = absent and present(self.v)", none, none),
+        ("present(self.v) and self.v = absent", none, none),
+        ("self.v = 0 ms and not present(self.v)", none, none),
+        ("not present(self.v) and self.v = 0 ms", none, none),
+        ("present(self.v) and not present(self.v)", none, none),
+        (
+            "self.v = 0 ms and present(self.v)",
+            &[true][..],
+            &[true][..],
+        ),
+        (
+            "self.v = absent and not present(self.v)",
+            &[false][..],
+            &[false][..],
+        ),
+        ("not (self.v = absent)", none, &[true][..]),
+        ("not (self.v != absent)", &[false][..], none),
+        ("true", &[false][..], &[true][..]),
+    ] {
+        let world = world_over(
+            option_clock_document(),
+            "",
+            &only(
+                &["work"],
+                &format!("post P using v on M::Call::work {{ {post} }}\n"),
+            ),
+        );
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let initial = timed.initial();
+        let [absent, present] = &initial[..] else {
+            panic!("two initial states: {initial:?}");
+        };
+        let v = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("v's place");
+        let work = |state: &TimedState| {
+            let mut live: Vec<bool> = timed
+                .steps(state)
+                .expect("decided")
+                .into_iter()
+                .filter(|(step, _)| step.operation().contains("Call/work"))
+                .map(|(_, next)| timed.live(&timed.places()[v], next.discrete()))
+                .collect();
+            live.dedup();
+            live
+        };
+        assert_eq!(work(absent), from_absent, "{post}: from absent");
+        assert_eq!(work(present), from_present, "{post}: from present");
+    }
+}
+
 /// FR-230-AC-12 (TC-685): `self.v = 0 ms` makes an absent `v` present at
 /// 0: from the absent initial state, `work`'s write gives the one state
 /// with `v` present, never one keeping it absent.
@@ -4734,5 +5221,207 @@ fn absent_drops_an_option_clock() {
         let key =
             String::from_utf8(held.state_key(next.discrete()).expect("a key").0).expect("UTF-8");
         assert!(key.contains(r#"{"name":"v","value":{"type":"option","value":null}}"#));
+    }
+}
+
+/// QSpec FR-415-AC-21 (TC-685): exercise every published Option<Clock>
+/// frame vector through the timed subject and compare successors or refusal.
+#[trace("TC-685", "FR-230-AC-52")]
+#[test]
+fn the_clock_presence_frame_vectors_step_as_published() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/clock-presence-frame-vectors.json");
+    let vectors: Json = serde_json::from_slice(
+        &std::fs::read(&path).unwrap_or_else(|failure| panic!("{}: {failure}", path.display())),
+    )
+    .expect("the vectors are JSON");
+    let millis = |text: &Json| -> Option<Rational> {
+        let text = text.as_str()?;
+        let amount: i64 = text.strip_suffix(" ms")?.parse().ok()?;
+        Some(exact(amount, 1))
+    };
+    let mut ran = 0;
+    for vector in vectors["cases"].as_array().expect("cases") {
+        let id = vector["id"].as_str().expect("an id");
+        let requires = vector["requires"].as_str();
+        let write = match &vector["write"] {
+            Json::Null => None,
+            write if write["absent"] == true => Some("self.v = absent".to_owned()),
+            write => Some(format!(
+                "self.v = {}",
+                write["clock"].as_str().expect("clock")
+            )),
+        };
+        if let Some(refused) = vector["expected"].get("refused") {
+            let body = format!(
+                "pre Absent using v on M::Call::work {{ not present(self.v) }}\n\
+                 post P using v on M::Call::work {{ {} }}\n",
+                requires.expect("a requirement")
+            );
+            let refusals = match try_world_of(
+                option_clock_document(),
+                "",
+                &only(&["work"], &body),
+                json!([{"key": "c", "type": ident("Call"), "fields": initial_fields(json!({}))}]),
+            ) {
+                Ok(_) => panic!("{id}: expected the published refusal"),
+                Err(refusals) => refusals,
+            };
+            let [refusal] = refusals.as_slice() else {
+                panic!("{id}: one refusal: {refusals:?}");
+            };
+            assert_eq!(
+                (refusal.cause.code().as_str(), refusal.cause.cause()),
+                (
+                    refused["code"].as_str().expect("a code"),
+                    refused["cause"].as_str()
+                ),
+                "{id}"
+            );
+            ran += 1;
+            continue;
+        }
+        let conjuncts: Vec<String> = requires
+            .map(str::to_owned)
+            .into_iter()
+            .chain(write)
+            .collect();
+        let post = if conjuncts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "post P using v on M::Call::work {{ {} }}\n",
+                conjuncts.join(" and ")
+            )
+        };
+        let world = world_over(option_clock_document(), "", &only(&["work"], &post));
+        let held = system(&world);
+        let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        let at = timed
+            .places()
+            .iter()
+            .position(|place| {
+                timed
+                    .model()
+                    .clock(place.clock())
+                    .is_some_and(|clock| clock.name() == "v")
+            })
+            .expect("the option clock place");
+        let initial = timed.initial();
+        let start = initial
+            .iter()
+            .find(|state| {
+                timed.live(&timed.places()[at], state.discrete())
+                    == (vector["pre"]["present"] == true)
+            })
+            .unwrap_or_else(|| panic!("{id}: the pre-state"));
+        let start = TimedState::new(
+            start.discrete().clone(),
+            start.clocks().delayed(&exact(3, 1)),
+        );
+        let mut observed: Vec<(bool, Option<Rational>)> = timed
+            .steps(&start)
+            .expect("decided")
+            .into_iter()
+            .filter(|(step, _)| step.operation().contains("Call/work"))
+            .map(|(_, next)| {
+                let live = timed.live(&timed.places()[at], next.discrete());
+                (live, live.then(|| next.clocks().get(at).cloned()).flatten())
+            })
+            .collect();
+        let mut expected: Vec<(bool, Option<Rational>)> = vector["expected"]
+            .as_array()
+            .expect("successors")
+            .iter()
+            .map(|successor| (successor["present"] == true, millis(&successor["clock"])))
+            .collect();
+        for successors in [&mut observed, &mut expected] {
+            successors.sort();
+            successors.dedup();
+        }
+        assert_eq!(observed, expected, "{id}: {post}");
+        ran += 1;
+    }
+    // Every published case ran (stepped or refused), and each id is its own:
+    // the count is the published file's, never a copy of it.
+    let cases = vectors["cases"].as_array().expect("cases");
+    let mut ids: Vec<&str> = cases
+        .iter()
+        .map(|case| case["id"].as_str().expect("an id"))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert!(!cases.is_empty(), "the file publishes cases");
+    assert_eq!(ids.len(), cases.len(), "each published id is distinct");
+    assert_eq!(ran, cases.len());
+}
+
+/// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21), the timed subject's
+/// part: over `work(c: Clock)` with a frame naming `v: Option<Clock>` and
+/// `x`, the postcondition `c = 0 ms and present(self.v)` is decided per
+/// instance. From the state where `v` is absent the instance binding `c` to
+/// `v` writes `v`, present at 0 ms, and the instance binding `c` to `x`
+/// leaves `v` unwritten and absent, contradicting the requirement, so it
+/// has no successor.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_reset_writes_the_place_its_instance_binds() {
+    let mut document: Json = serde_json::from_slice(&clock_operation_document(
+        &[("c", CLOCK)],
+        &["v", "x"],
+        &[],
+        None,
+    ))
+    .expect("JSON");
+    let mut v = wire_field("v", CLOCK);
+    v["presence"] = json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let world = world_over(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &only(
+            &["work"],
+            "post P using v on M::Call::work { c = 0 ms and present(self.v) }\n",
+        ),
+    );
+    let held = system(&world);
+    let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+    let v = timed
+        .places()
+        .iter()
+        .position(|place| {
+            timed
+                .model()
+                .clock(place.clock())
+                .is_some_and(|clock| clock.name() == "v")
+        })
+        .expect("v's place");
+    let absent = timed
+        .initial()
+        .into_iter()
+        .find(|state| !timed.live(&timed.places()[v], state.discrete()))
+        .expect("an initial state with v absent");
+    let steps: Vec<_> = timed
+        .steps(&absent)
+        .expect("decided")
+        .into_iter()
+        .filter(|(step, _)| step.operation().contains("Call/work"))
+        .collect();
+    assert!(!steps.is_empty(), "the instance binding c to v steps");
+    for (step, next) in &steps {
+        let arguments = step.transition().arguments();
+        let [place] = arguments else {
+            panic!("one argument: {arguments:?}");
+        };
+        assert!(place.contains("Call/v"), "only c bound to v steps: {place}");
+        assert!(timed.live(&timed.places()[v], next.discrete()));
+        assert!(next.clocks().values()[v].numerator().is_zero());
     }
 }

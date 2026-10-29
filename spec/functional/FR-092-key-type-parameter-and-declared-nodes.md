@@ -491,61 +491,61 @@ builds; they are listed here because F2 and E2 depend on them.
 
 | Vector | Node | Key |
 |---|---|---|
-| T1 | Boolean | `9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa` |
-| T2 | Integer | `07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32` |
-| T3 | Text scalar | `0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659` |
-| T4 | Int[0, 9] | `652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477` |
-| T5 | Option<Int[0, 9]> | `7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e` |
-| T6 | Sequence<Int[0, 9]> | `27355f7b7768c0596876c2173262651d3d36946f3e8e53cef42d51551c804956` |
-| T7 | Sequence<Int[0, 9]>[0, 5] | `515cb5664eae047ff9a2568809e02e6936cc6c8ab63fe54864f1e8f546e5f2c2` |
-| T8 | Text[0, 64; nfc] | `bc0a6c39a41f825ff618b1c046130085607d7003db84df32c4c5059ebf57b297` |
-| T9 | Rational scalar | `9587ede6610978546ca75deb5ff42a874e1b623c9c16f25678062ecc32c24ae9` |
-| T10 | Rational[-9, 9; 1, 9] | `07d677acac076563319745323e09e3a6b3e83d658f0c1ea7e572e08f33732b9e` |
-| T11 | Decimal scalar | `61e127863156fc90ecc98bf5563dc20687f4e481cfa6752c25cffb654c61ef2d` |
-| T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc` |
-| T13 | Int[0, 18446744073709551615] | `f9ea36c52345743ae98ce1c1449610c7e955d986a3ecb08597ca427c6f1b4230` |
-| T14 | Int[0, 9223372036854775808] | `e30482372257edea6ae4eff49914af6476db7fb17a33a498ecf15ce7563d3220` |
-| T15 | Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727] | `6644ae14c8b9d7b64f26034401d81e9bbcfcffe983708df9649c06f835a5132d` |
-| T16 | Int[0, 18446744073709551616] | `811c72084566b1c44e2c052c052f302359b804b29767746da4850304f595aef2` |
-| D1 | record Point, owner (a, u) | `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4` |
-| D2 | record Point, owner (a, w) | `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88` |
-| D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
-| D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | `11e8d0d336ec22793fc88addb6b493975d8064dcd2de4c2184f15a1302925600` |
-| D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | `e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560` |
-| P1 | parameter a: Boolean, level 0 | `838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1` |
-| P2 | parameter b: Boolean, level 1 | `555416913f6f787765eeb816c83af4650d7a0e122b8e3202f8b8d13b144fef59` |
-| P3 | let binder y: Boolean, level 1 | `2acded6f19f94b965e38043f06716f9b775e790cecd3f9557baa4f4b17073365` |
-| P4 | parameter x: Int[0, 9], level 0 | `ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda` |
-| L1 | literal true | `03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9` |
-| L2 | literal 7 | `9f42fd255e4db2821dffdd2da201755df67dec54e8b0814f8160cab40a44b29b` |
-| L3 | literal rational(1, 2) of type Rational[-9, 9; 1, 9] | `2ada675e3655813b63b63a9d926d9a3969c7950e53bb6d78b72dd64948911c71` |
-| L7 | literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091) | `c3aa30b239d70dea497badfb4fd426fb7b57e441aeb22d2eb450a19ad6617c5b` |
-| F1 | function f() -> Boolean { true }, owner (a, u) | `dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79` |
-| E1 | a and b | `a98896386ccee595ae1cc04f4f83c8792fc04e1027e779ac7def428592c8b21e` |
-| F2 | function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u) | `2597b9bf514c3dd93654daca8fbea64d0a4622ea8bc5002888ce72ecb2520454` |
-| E2 | both(a, true) | `d5af48cd20c8ebceb650b0137d834b4ae764dd99ae910214d33a3f3cd2785b36` |
-| E3 | let y = a in y | `faa9bf455e92d25b5622dd31501c1341fe447b1e641407dae5522ee6dd5e8a4a` |
-| F3 | function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u) | `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3` |
-| L5 | literal `0` | `22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779` |
-| L6 | literal `1` | `833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366` |
-| E11 | `x > 0` | `68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e` |
-| E12 | `x - 1` | `101e991caf696035ca3d473de8012601e56154645930af1441e649073ce35213` |
-| E13 | `x - 1` narrowed into `Int[0, 9]` | `9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693` |
-| G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
-| G2 | `record List { next: List?; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
-| G3 | `Option<List>`, ordinal 0 | `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b` |
-| G4 | function `f`, ordinal 2 | `9fd4b3fb06b5a727df74774798b7220d934eb598987c56622045ecfbbe4ba9a3` |
-| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `5691ee9ebe7780ad5287470deaaf302412aa13e87360e55c9145538c0d909617` |
-| G6 | `f(x - 1)`, ordinal 1 | `0e9afeddfe174f02196c9f5a7fc0c9b68b90aef15034f63701402b156ed1612c` |
-| G7 | `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0 | `5dd245d1f95885f7c628dfa8424f4b4ddb616a218369984e488731a5e3061c64` |
-| G8 | `Sequence<Tree>`, ordinal 1 | `5dab1d21b36212959d997c17b88ab44822bf4078e35ae1b993c17db591425756` |
-| G9 | `Sequence<Tree>[0, 3]`, ordinal 2 | `6bd6dd7f2b655affb65a4b49dfcff572129d960f9d45766bf954cfc8ce6a4028` |
-| G10 | function `ping`, ordinal 4 | `4f29492069f3f08c3e52ce8f81479eff391c940ed829c8f8df899b5783273cdf` |
-| G11 | function `pong`, ordinal 5 | `46f5eb3b9bab9aa99b74a47052fa624359fedacf07520ad10178c7ee1791b2ce` |
-| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1 | `0257162f337343fe6fcb2615ab1b0884c6750b873a8469de1674069037adb72d` |
-| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0 | `b4f9738986a8bab7b0d8f3a825e8c9dc3fcb71e355690f442b35536179e447ec` |
-| G14 | `ping(x - 1)`, in `pong`, ordinal 2 | `6f93f5ae215036bb695a7c6789e14c5d904e262aa48cec79aee115be53912a3d` |
-| G15 | `pong(x - 1)`, in `ping`, ordinal 3 | `2bad40930170fade2eca0f863281ebe7427104e1b453e65943953dc04b04fa95` |
+| T1 | Boolean | the SHA-256 of its preimage |
+| T2 | Integer | the SHA-256 of its preimage |
+| T3 | Text scalar | the SHA-256 of its preimage |
+| T4 | Int[0, 9] | the SHA-256 of its preimage |
+| T5 | Option<Int[0, 9]> | the SHA-256 of its preimage |
+| T6 | Sequence<Int[0, 9]> | the SHA-256 of its preimage |
+| T7 | Sequence<Int[0, 9]>[0, 5] | the SHA-256 of its preimage |
+| T8 | Text[0, 64; nfc] | the SHA-256 of its preimage |
+| T9 | Rational scalar | the SHA-256 of its preimage |
+| T10 | Rational[-9, 9; 1, 9] | the SHA-256 of its preimage |
+| T11 | Decimal scalar | the SHA-256 of its preimage |
+| T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | the SHA-256 of its preimage |
+| T13 | Int[0, 18446744073709551615] | the SHA-256 of its preimage |
+| T14 | Int[0, 9223372036854775808] | the SHA-256 of its preimage |
+| T15 | Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727] | the SHA-256 of its preimage |
+| T16 | Int[0, 18446744073709551616] | the SHA-256 of its preimage |
+| D1 | record Point, owner (a, u) | the SHA-256 of its preimage |
+| D2 | record Point, owner (a, w) | the SHA-256 of its preimage |
+| D3 | record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u) | the SHA-256 of its preimage |
+| D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | the SHA-256 of its preimage |
+| D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | the SHA-256 of its preimage |
+| P1 | parameter a: Boolean, level 0 | the SHA-256 of its preimage |
+| P2 | parameter b: Boolean, level 1 | the SHA-256 of its preimage |
+| P3 | let binder y: Boolean, level 1 | the SHA-256 of its preimage |
+| P4 | parameter x: Int[0, 9], level 0 | the SHA-256 of its preimage |
+| L1 | literal true | the SHA-256 of its preimage |
+| L2 | literal 7 | the SHA-256 of its preimage |
+| L3 | literal rational(1, 2) of type Rational[-9, 9; 1, 9] | the SHA-256 of its preimage |
+| L7 | literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091) | the SHA-256 of its preimage |
+| F1 | function f() -> Boolean { true }, owner (a, u) | the SHA-256 of its preimage |
+| E1 | a and b | the SHA-256 of its preimage |
+| F2 | function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u) | the SHA-256 of its preimage |
+| E2 | both(a, true) | the SHA-256 of its preimage |
+| E3 | let y = a in y | the SHA-256 of its preimage |
+| F3 | function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u) | the SHA-256 of its preimage |
+| L5 | literal `0` | the SHA-256 of its preimage |
+| L6 | literal `1` | the SHA-256 of its preimage |
+| E11 | `x > 0` | the SHA-256 of its preimage |
+| E12 | `x - 1` | the SHA-256 of its preimage |
+| E13 | `x - 1` narrowed into `Int[0, 9]` | the SHA-256 of its preimage |
+| G1 | an `option` node over itself, a one-member group, ordinal 0 | the SHA-256 of its preimage |
+| G2 | `record List { next: List?; }`, ordinal 1 | the SHA-256 of its preimage |
+| G3 | `Option<List>`, ordinal 0 | the SHA-256 of its preimage |
+| G4 | function `f`, ordinal 2 | the SHA-256 of its preimage |
+| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | the SHA-256 of its preimage |
+| G6 | `f(x - 1)`, ordinal 1 | the SHA-256 of its preimage |
+| G7 | `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0 | the SHA-256 of its preimage |
+| G8 | `Sequence<Tree>`, ordinal 1 | the SHA-256 of its preimage |
+| G9 | `Sequence<Tree>[0, 3]`, ordinal 2 | the SHA-256 of its preimage |
+| G10 | function `ping`, ordinal 4 | the SHA-256 of its preimage |
+| G11 | function `pong`, ordinal 5 | the SHA-256 of its preimage |
+| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1 | the SHA-256 of its preimage |
+| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0 | the SHA-256 of its preimage |
+| G14 | `ping(x - 1)`, in `pong`, ordinal 2 | the SHA-256 of its preimage |
+| G15 | `pong(x - 1)`, in `ping`, ordinal 3 | the SHA-256 of its preimage |
 
 **T1**: Boolean
 
@@ -553,7 +553,7 @@ builds; they are listed here because F2 and E2 depend on them.
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"boolean","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T2**: Integer
 
@@ -561,7 +561,7 @@ Key: `9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa`
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"integer","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T3**: Text scalar
 
@@ -569,47 +569,47 @@ Key: `07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32`
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"text","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T4**: Int[0, 9]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T5**: Option<Int[0, 9]>
 
 ```json
-{"body":{"members":[{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T6**: Sequence<Int[0, 9]>
 
 ```json
-{"body":{"members":[{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `27355f7b7768c0596876c2173262651d3d36946f3e8e53cef42d51551c804956`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T7**: Sequence<Int[0, 9]>[0, 5]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"27355f7b7768c0596876c2173262651d3d36946f3e8e53cef42d51551c804956","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"5","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"<digest of T6>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `515cb5664eae047ff9a2568809e02e6936cc6c8ab63fe54864f1e8f546e5f2c2`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T8**: Text[0, 64; nfc]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"64","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"64","value_kind":"integer"}},{"name":"text_profile","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"nfc","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"text_bounds","semantic_type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `bc0a6c39a41f825ff618b1c046130085607d7003db84df32c4c5059ebf57b297`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T9**: Rational scalar
 
@@ -617,15 +617,15 @@ Key: `bc0a6c39a41f825ff618b1c046130085607d7003db84df32c4c5059ebf57b297`
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"rational","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `9587ede6610978546ca75deb5ff42a874e1b623c9c16f25678062ecc32c24ae9`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T10**: Rational[-9, 9; 1, 9]
 
 ```json
-{"body":{"members":[{"name":"numerator_min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-9","value_kind":"integer"}},{"name":"numerator_max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}},{"name":"denominator_min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}},{"name":"denominator_max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"rational_range","semantic_type":{"digest":"9587ede6610978546ca75deb5ff42a874e1b623c9c16f25678062ecc32c24ae9","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"numerator_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-9","value_kind":"integer"}},{"name":"numerator_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}},{"name":"denominator_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}},{"name":"denominator_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"rational_range","semantic_type":{"digest":"<digest of T9>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `07d677acac076563319745323e09e3a6b3e83d658f0c1ea7e572e08f33732b9e`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T11**: Decimal scalar
 
@@ -633,199 +633,199 @@ Key: `07d677acac076563319745323e09e3a6b3e83d658f0c1ea7e572e08f33732b9e`
 {"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"decimal","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `61e127863156fc90ecc98bf5563dc20687f4e481cfa6752c25cffb654c61ef2d`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T12**: Decimal[-100000, 100000; 2, 2; nearest-even]
 
 ```json
-{"body":{"members":[{"name":"coefficient_min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-100000","value_kind":"integer"}},{"name":"coefficient_max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"100000","value_kind":"integer"}},{"name":"scale_min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"scale_max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"rounding","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"nearest-even","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"decimal_range","semantic_type":{"digest":"61e127863156fc90ecc98bf5563dc20687f4e481cfa6752c25cffb654c61ef2d","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"coefficient_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-100000","value_kind":"integer"}},{"name":"coefficient_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"100000","value_kind":"integer"}},{"name":"scale_min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"scale_max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"2","value_kind":"integer"}},{"name":"rounding","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"nearest-even","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"decimal_range","semantic_type":{"digest":"<digest of T11>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T13**: Int[0, 18446744073709551615]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551615","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `f9ea36c52345743ae98ce1c1449610c7e955d986a3ecb08597ca427c6f1b4230`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T14**: Int[0, 9223372036854775808]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"9223372036854775808","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `e30482372257edea6ae4eff49914af6476db7fb17a33a498ecf15ce7563d3220`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T15**: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"170141183460469231731687303715884105727","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `6644ae14c8b9d7b64f26034401d81e9bbcfcffe983708df9649c06f835a5132d`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **T16**: Int[0, 18446744073709551616]
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"18446744073709551616","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"integer_range","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `811c72084566b1c44e2c052c052f302359b804b29767746da4850304f595aef2`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **D1**: record Point, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **D2**: record Point, owner (a, w)
 
 ```json
-{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"w","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"x","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"y","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Point"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"w","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **D3**: record Opt { a: Int[0, 9]; b: Int[0, 9]?; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"<digest of T5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **D4**: record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"target":{"digest":"<digest of T5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `11e8d0d336ec22793fc88addb6b493975d8064dcd2de4c2184f15a1302925600`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **D5**: tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u)
 
 ```json
-{"body":{"members":[{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":{"qualified_name":["Pair"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"tuple","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":{"qualified_name":["Pair"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"tuple","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **P1**: parameter a: Boolean, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **P2**: parameter b: Boolean, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `555416913f6f787765eeb816c83af4650d7a0e122b8e3202f8b8d13b144fef59`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **P3**: let binder y: Boolean, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `2acded6f19f94b965e38043f06716f9b775e790cecd3f9557baa4f4b17073365`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **P4**: parameter x: Int[0, 9], level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T3>","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **L1**: literal true
 
 ```json
-{"body":{"term":"literal","type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **L2**: literal 7
 
 ```json
-{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"7","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"7","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `9f42fd255e4db2821dffdd2da201755df67dec54e8b0814f8160cab40a44b29b`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **L7**: literal `-170141183460469231731687303715884105728` (`i128::MIN`, folded; FR-091)
 
 ```json
-{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"-170141183460469231731687303715884105728","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `c3aa30b239d70dea497badfb4fd426fb7b57e441aeb22d2eb450a19ad6617c5b`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **L3**: literal rational(1, 2) of type Rational[-9, 9; 1, 9]
 
 ```json
-{"body":{"term":"literal","type":{"digest":"07d677acac076563319745323e09e3a6b3e83d658f0c1ea7e572e08f33732b9e","domain":"quire.checked-semantic-node/v1"},"value":"1/2","value_kind":"rational"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07d677acac076563319745323e09e3a6b3e83d658f0c1ea7e572e08f33732b9e","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T10>","domain":"quire.checked-semantic-node/v1"},"value":"1/2","value_kind":"rational"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T10>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `2ada675e3655813b63b63a9d926d9a3969c7950e53bb6d78b72dd64948911c71`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **F1**: function f() -> Boolean { true }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **E1**: a and b
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"555416913f6f787765eeb816c83af4650d7a0e122b8e3202f8b8d13b144fef59","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.boolean.and","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.boolean.and","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `a98896386ccee595ae1cc04f4f83c8792fc04e1027e779ac7def428592c8b21e`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **F2**: function both(a: Boolean, b: Boolean): Boolean { a and b }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"555416913f6f787765eeb816c83af4650d7a0e122b8e3202f8b8d13b144fef59","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"a98896386ccee595ae1cc04f4f83c8792fc04e1027e779ac7def428592c8b21e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["both"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of E1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["both"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `2597b9bf514c3dd93654daca8fbea64d0a4622ea8bc5002888ce72ecb2520454`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **E2**: both(a, true)
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"2597b9bf514c3dd93654daca8fbea64d0a4622ea8bc5002888ce72ecb2520454","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of F2>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `d5af48cd20c8ebceb650b0137d834b4ae764dd99ae910214d33a3f3cd2785b36`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **E3**: let y = a in y
 
 ```json
-{"body":{"arguments":[{"name":"y","term":"binding","value":{"target":{"digest":"838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"target":{"digest":"2acded6f19f94b965e38043f06716f9b775e790cecd3f9557baa4f4b17073365","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.let","laws":[],"leaves":[],"member":null,"mode":null},"operator":"let","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"let","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"name":"y","term":"binding","value":{"target":{"digest":"<digest of P1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"target":{"digest":"<digest of P3>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.let","laws":[],"leaves":[],"member":null,"mode":null},"operator":"let","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"let","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `faa9bf455e92d25b5622dd31501c1341fe447b1e641407dae5522ee6dd5e8a4a`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **F3**: function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["m"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["m"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 #### Recursion-group vectors
 
@@ -867,178 +867,178 @@ that the group digest binds.
 **L5**: literal `0`
 
 ```json
-{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **L6**: literal `1`
 
 ```json
-{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **E11**: `x > 0`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"<digest of L5>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **E12**: `x - 1`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `101e991caf696035ca3d473de8012601e56154645930af1441e649073ce35213`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **E13**: `x - 1` narrowed into `Int[0, 9]`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"101e991caf696035ca3d473de8012601e56154645930af1441e649073ce35213","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E12>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"<digest of T4>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G1**: an `option` node over itself, a one-member group, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G1>","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G2**: `record List { next: List?; }`, ordinal 1
 
 ```json
-{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G2>","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G3**: `Option<List>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G2>","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G4**: function `f`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G4>","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `9fd4b3fb06b5a727df74774798b7220d934eb598987c56622045ecfbbe4ba9a3`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G5**: `if x > 0 then f(x - 1) else true`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `5691ee9ebe7780ad5287470deaaf302412aa13e87360e55c9145538c0d909617`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G6**: `f(x - 1)`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `0e9afeddfe174f02196c9f5a7fc0c9b68b90aef15034f63701402b156ed1612c`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G7**: `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0
 
 ```json
-{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G7>","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `5dd245d1f95885f7c628dfa8424f4b4ddb616a218369984e488731a5e3061c64`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G8**: `Sequence<Tree>`, ordinal 1
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"<group digest of G7>","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `5dab1d21b36212959d997c17b88ab44822bf4078e35ae1b993c17db591425756`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G9**: `Sequence<Tree>[0, 3]`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"<digest of T2>","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"<group digest of G7>","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `6bd6dd7f2b655affb65a4b49dfcff572129d960f9d45766bf954cfc8ce6a4028`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G10**: function `ping`, ordinal 4
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b386b2aa8","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G10>","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `4f29492069f3f08c3e52ce8f81479eff391c940ed829c8f8df899b5783273cdf`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G11**: function `pong`, ordinal 5
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b386b2aa8","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"<digest of P4>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"<group digest of G10>","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `46f5eb3b9bab9aa99b74a47052fa624359fedacf07520ad10178c7ee1791b2ce`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G12**: `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `0257162f337343fe6fcb2615ab1b0884c6750b873a8469de1674069037adb72d`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G13**: `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"<digest of E11>","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"<digest of L1>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `b4f9738986a8bab7b0d8f3a825e8c9dc3fcb71e355690f442b35536179e447ec`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G14**: `ping(x - 1)`, in `pong`, ordinal 2
 
 ```json
-{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":{"digest":"9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `6f93f5ae215036bb695a7c6789e14c5d904e262aa48cec79aee115be53912a3d`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 **G15**: `pong(x - 1)`, in `ping`, ordinal 3
 
 ```json
-{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":{"digest":"9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":{"digest":"<digest of E13>","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":{"digest":"<digest of T1>","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `2bad40930170fade2eca0f863281ebe7427104e1b453e65943953dc04b04fa95`
+Key: the SHA-256 of the preimage above, as lowercase hex.
 
 
-G1, group digest `4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b`:
+G1, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member | Anonymous signature | Full signature |
 |---|---|---|---|
-| 0 | G1 | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` |
+| 0 | G1 | the group member's own signature digest | the group member's own signature digest |
 
-G2-G3, group digest `c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc`:
+G2-G3, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
 | 0 | G3 `Option<List>` |
 | 1 | G2 `List` |
 
-G4-G6, group digest `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6`:
+G4-G6, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
@@ -1046,7 +1046,7 @@ G4-G6, group digest `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3
 | 1 | G6 call |
 | 2 | G4 `f` |
 
-G7-G9, group digest `098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b`:
+G7-G9, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
@@ -1054,7 +1054,7 @@ G7-G9, group digest `098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b9
 | 1 | G8 `Sequence<Tree>` |
 | 2 | G9 `Sequence<Tree>[0, 3]` |
 
-G10-G15, group digest `59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b386b2aa8`:
+G10-G15, group digest (the SHA-256 of the group preimage):
 
 | Ordinal | Member |
 |---|---|
@@ -1090,7 +1090,7 @@ G10-G15, group digest `59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b3
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 | FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
 | FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` and `Int[0, 18446744073709551616]` give type nodes with the preimage bytes and keys of vectors T13, T14, T15 and T16 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |
-| FR-092-AC-15 | Keying writes each counter by the 2^53-1 rule and never refuses one for its magnitude: `NodeKeyRefusal` has no magnitude variant. Encoding QSpec's `integer_encoding_vectors` preimages (`proposals/checked-package-v2/node-identity-vectors.json`, QSpec FR-322) through QSL's key function gives their recorded keys: `recursion-size-safe-maximum` (`recursion` `{size: 9007199254740991, ordinal: 9007199254740990}`, both JSON numbers) keys to `bc6fe35a2c34a7162fe0ed0a20473ffb3284bd70236f96feb75b386c55992874`, and `recursion-size-two-pow-53` (`size` the string `"9007199254740992"`, `ordinal` the number 9007199254740991) keys to `89ec1ac87a8b82a05d5414f0c3b314f363e49328988ff5d8c3fc9a88014839bc`. A `group_reference` `ordinal` and an `operation.member` `position` take the same two spellings at 9007199254740991 and 9007199254740992. | Test (TC-910) |
+| FR-092-AC-15 | QSL's node-key builder encodes `recursion.size`, `recursion.ordinal`, `group_reference.ordinal` and `operation.member.position` according to QSpec FR-322's counter rule. For both `group_reference.ordinal` and `operation.member.position`, the encoded preimage uses the JSON number `9007199254740991` at that value and the canonical decimal string `"9007199254740992"` at the next value; each key equals the SHA-256 of the RFC 8785 bytes of its encoded preimage. The result also equals every published `integer_encoding_vectors` key (FR-322-AC-58). Keying never refuses a counter for its magnitude: `NodeKeyRefusal` has no magnitude variant. | Test (TC-910) |
 | FR-092-AC-16 | A unit that declares `protocol Fill` and holds `protocol Fill` as an expression emits a graph with one `protocol`/`protocol_reference` node whose body is exactly `{term: "reference", target: Fill's node key}`, whose `semantic_type` equals the `Fill` node's, whose `dependencies` are exactly that key, and which has one `expression` occurrence at the reference's region (ordinal 0) and no `declaration`, `owner`, nominal preimage or recursion group. The graph has one node collection and no protocol-reference collection. The emitted package admits through the IR v2 reader as `ProtocolForm::ProtocolReference`. | Test (TC-1021) |
 | FR-092-AC-17 | Changing the target protocol so its node key changes, and re-emitting, changes the reference node's key and the package identity; a unit with two protocols and the reference written against each gives two different reference keys; the same unit emitted twice gives equal keys. A unit that holds `protocol Fill` twice emits one `protocol_reference` node for `Fill` with two `expression` occurrences, ordinals 0 and 1 in source order at the two references' regions, each with its own source-map row, and the node's key, body and `dependencies` equal the one-reference unit's carrier. Removing the second occurrence and its source-map row from that emitted package leaves the carrier key and the package identity unchanged. The reference's key equals the SHA-256 of the RFC 8785 bytes of its `quire.structural-node/v1` preimage. | Test (TC-1021) |
 | FR-092-AC-18 | A unit that declares `protocol Fill` made only of the constructs FR-383's staged-emission paragraph lists as emitted (static and replicated roles, channels and their queues, `sequence`/`branch`/`case` controls, binders, captures and an `each` guard with no declaration read, a finish with no declaration read, scheduling) and that checks emits one `protocol`/`protocol_clause` node whose body is a `quire.op.protocol.control` application carrying the selected `protocol_profile` law and the `protocol` `profile_operator` member and the thirteen clause arguments of FR-383, whose `semantic_type` is the Boolean scalar type node, which is keyed by `quire.application-node/v1`, and which has one `declaration` occurrence at the declaration's region. The IR v2 reader admits it, and a reference to `Fill` (AC-16) resolves to this node's key. The unit selects a protocol profile by a header `profile` (FR-110): QSpec FR-322-AC-22 admits no `protocol_control` application without a selected law, so a unit that selects none emits no protocol node and no refusal for the declaration, and a reference to a protocol in it refuses `missing_declaration`/`missing-selection` (FR-218-AC-8). A protocol that names a construct FR-383 lists as not yet emitted refuses `unsupported_construct`/`not-yet-implemented` at the construct, naming it and the ticket that writes it, and writes no clause node. | Test (TC-1021) |

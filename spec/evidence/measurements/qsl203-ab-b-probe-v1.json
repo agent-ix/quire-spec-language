@@ -1,6 +1,5 @@
 {
   "collectionId": "qsl203-ab-b-probe-v1",
-  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
   "environment": {
     "loads": [
       {
@@ -56,7 +55,7 @@
     ],
     "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
     "role": "candidate (B, task/203-tarjan-termination)",
-    "session": "qsl203-ab: A = 67f44989, B = 59da8964, rounds A1 B1 A2 B2 ... A5 B5",
+    "session": "qsl203-ab: A = baseline, B = candidate, rounds A1 B1 A2 B2 ... A5 B5",
     "sharedLoad": "QSL-203 interleaved A/B session, A and B alternating per round; a concurrent QSL-197 parser A/B session and other QSL builds ran on the same machine; loadavg recorded per round"
   },
   "observations": [
@@ -397,34 +396,14 @@
     "inputs": 5,
     "repetitions": 5
   },
-  "sourceRevision": "59da89640956bbc87ea96d38c9b269c4ffb64778",
   "subject": "quire-spec-language qsl-bench-probe check",
   "timestamp": "2026-09-24T04:26:47.000Z",
   "toolIdentity": "qsl-bench-probe check chain <n>, one process per input",
-  "toolVersion": "rustc 1.98.1 (48a229cea 2026-09-01)",
   "verificationStack": {
-    "artifacts": {
-      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7"
-    },
     "buildProfile": "release",
     "capabilities": [
       "probe.wall-time",
       "probe.peak-rss"
-    ],
-    "executableDigest": "sha256:0d382277183afe89e6f56faf8cb338ba26666066bd34231d4a2332a4fd5abac7",
-    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
-    "schemaVersion": "verification-stack-attestation-v1",
-    "sources": {
-      "quire-spec-language": {
-        "remote": "https://github.com/agent-ix/quire-spec-language",
-        "revision": "59da89640956bbc87ea96d38c9b269c4ffb64778",
-        "sourceState": "clean"
-      }
-    },
-    "toolchains": {
-      "node": null,
-      "python": null,
-      "rust": "rustc 1.98.1 (48a229cea 2026-09-01)"
-    }
+    ]
   }
 }

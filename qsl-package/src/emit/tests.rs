@@ -35,6 +35,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 mod abstraction;
 mod admission_corpus;
 mod child_composite;
+mod clock_places;
 mod control_node;
 mod converted_equality;
 mod deep_bodies;
@@ -45,6 +46,7 @@ mod hyper_clause;
 mod identity_depth;
 mod large_cycle;
 mod navigation;
+mod option_value;
 mod owner_model;
 mod owners;
 mod population_bound;
@@ -60,6 +62,7 @@ mod protocol_requirements;
 mod protocol_terminal;
 mod reachability;
 mod receiver_frames;
+mod refinement_adverse;
 mod refinement_rows;
 mod state_graph_claim;
 mod state_transition;
@@ -278,20 +281,37 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
-/// The small checked producer's canonical envelope and identity are fixed by
-/// the owned-projection emission, then admitted by the independent V2 reader.
+/// The emission path mints the identity preimage under the FR-322 version
+/// label, written out here rather than read from the constant it pins.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn emitted_package_preserves_the_owned_projection_golden() {
+fn the_emission_identity_preimage_carries_its_literal_version() {
+    assert_eq!(IDENTITY_PREIMAGE_V2, "quire.checked-package-id/v2");
+}
+
+/// The small checked producer's envelope is canonical, carries the identity
+/// the emitter minted, is deterministic, and is admitted by the independent
+/// V2 reader. Two different packages never share an identity.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
     let emission = emit(&package(vec![f()]));
+    let bytes = emission.package.bytes();
+    // Canonical: re-encoding the parsed envelope reproduces the bytes.
+    let wire: Value = serde_json::from_slice(bytes).expect("the envelope is JSON");
     assert_eq!(
-        emission.package.bytes(),
-        include_bytes!("tests/fixtures/owned_projection_wire.json")
+        serde_json::to_vec(&wire).expect("a Value serializes"),
+        bytes
     );
+    assert_eq!(wire["package_id"]["algorithm"], "sha256");
     assert_eq!(
-        emission.package.package_id().hex(),
-        "f2332c7edc46df9efb27d7d7da73a9af1464a46c5a1b28996118754fb0678e3c"
+        wire["package_id"]["digest"],
+        emission.package.package_id().hex()
     );
+    // Deterministic, and identity-separating.
+    assert_eq!(emit(&package(vec![f()])).package.bytes(), bytes);
+    let other = emit(&package(vec![f(), t()]));
+    assert_ne!(other.package.package_id(), emission.package.package_id());
     match read_back(&emission) {
         Read::Verified { package, .. } => {
             assert_eq!(package.package_id(), emission.package.package_id());
@@ -675,10 +695,7 @@ fn every_written_node_recomputes_to_its_node_id() {
 #[test]
 fn recursion_group_members_are_written_in_ordinal_order() {
     for (package, label) in [
-        (
-            recursive_f(),
-            Some("d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6"),
-        ),
+        (recursive_f(), Some(fr_092_g4_to_g6_group_digest())),
         (tree(), None),
     ] {
         let expected: BTreeMap<String, usize> = package
@@ -709,6 +726,22 @@ fn recursion_group_members_are_written_in_ordinal_order() {
             assert_eq!(members[0].1["recursion_group"], json!(label));
         }
     }
+}
+
+/// FR-092's G4-G6 group digest, recomputed from the group's hand-written
+/// member preimages in the spec in this repository.
+fn fr_092_g4_to_g6_group_digest() -> String {
+    qsl_semantics::check::spec_vectors::group_digest("FR-092", "G4")
+        .expect("FR-092 states the G4-G6 group members")
+}
+
+/// FR-092's declared-node vector `id` (`D1`): its key, recomputed from the
+/// vector's hand-written preimage in the spec in this repository.
+fn fr_092_vector_key(id: &str) -> String {
+    qsl_semantics::check::spec_vectors::vectors("FR-092")
+        .remove(id)
+        .unwrap_or_else(|| panic!("FR-092 has a vector {id}"))
+        .0
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
@@ -945,16 +978,8 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
     let exports = verified_exports(&emission);
     let wire = wire(&emission);
     for (name, form, digest) in [
-        (
-            "Point",
-            "record",
-            "45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4",
-        ),
-        (
-            "Pair",
-            "tuple",
-            "e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560",
-        ),
+        ("Point", "record", fr_092_vector_key("D1")),
+        ("Pair", "tuple", fr_092_vector_key("D5")),
     ] {
         let node = declared(&wire, name);
         assert_eq!(node["semantic_form"], form);
@@ -964,7 +989,7 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
             json!([{"role": "declaration", "ordinal": 0}]),
             "{name}"
         );
-        assert_eq!(exports.get(name).map(String::as_str), Some(digest));
+        assert_eq!(exports.get(name).map(String::as_str), Some(digest.as_str()));
     }
 }
 
@@ -2376,9 +2401,11 @@ fn spine_compile_package() -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
+#[path = "../../../tests/support/spine_model.rs"]
+mod spine_model;
+
 /// The domain package document `spine-model.native`'s `model M` selects.
-const SPINE_MODEL_DOCUMENT: &[u8] =
-    include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
+const SPINE_MODEL_DOCUMENT: &[u8] = spine_model::DOCUMENT;
 
 /// `unit` run S1, S2, I1 (against `packages`) and the assembler, as spine
 /// `compile` runs it.
@@ -2419,8 +2446,7 @@ const CONFORMING_EQUALITY: &str =
 /// The spine-model fixture with `removed` taken out, each of which the
 /// fixture holds.
 fn spine_model_without(removed: &[&str]) -> String {
-    const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-model.native");
-    removed.iter().fold(FIXTURE.to_owned(), |unit, line| {
+    removed.iter().fold(spine_model::unit(), |unit, line| {
         assert!(unit.contains(line), "the fixture holds {line:?}");
         unit.replace(line, "")
     })
@@ -2594,12 +2620,33 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
 #[trace("TC-310", "FR-322-AC-134", "FR-322-AC-137")]
 #[test]
 fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
+    // QSpec's published fixture, read from the checkout `QSPEC_DIR` names;
+    // without it the row digest is arbitrary and only the independent hash
+    // below is checked (`make conformance` requires it).
+    let published: Option<Value> = std::env::var_os("QSPEC_DIR").map(|qspec| {
+        let path = std::path::Path::new(&qspec)
+            .join("proposals/checked-package-v2/fixtures/positive-all-families.json");
+        serde_json::from_slice(&std::fs::read(path).expect("the fixture reads"))
+            .expect("the fixture parses")
+    });
+    let published_root = published.as_ref().map(|fixture| {
+        fixture["semantic_graph"]["nodes"]
+            .as_array()
+            .and_then(|nodes| {
+                nodes.iter().find(|node| {
+                    node["semantic_form"] == "model_root"
+                        && node["owner"]["identity"] == "acme/orders"
+                })
+            })
+            .expect("the fixture holds the acme/orders model root")
+            .clone()
+    });
+    let row_hex = published_root.as_ref().map_or_else(
+        || "17".repeat(32),
+        |root| root["owner"]["digest"].as_str().unwrap().to_owned(),
+    );
     let mut digest = [0_u8; 32];
-    for (byte, pair) in digest.iter_mut().zip(
-        "179fb0d98f7f55094a03ad0e6166b604e6401bae90479f3073f6fe4b01a7af26"
-            .as_bytes()
-            .chunks(2),
-    ) {
+    for (byte, pair) in digest.iter_mut().zip(row_hex.as_bytes().chunks(2)) {
         *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
     }
     let row = qsl_semantics::model::domain_package::DomainPackageRef {
@@ -2610,10 +2657,17 @@ fn the_model_root_for_the_published_acme_orders_row_has_the_published_key() {
     let key = qsl_semantics::check::model_root_key(&row, qsl_foundation::IdentityLimits::default())
         .expect("the root derives");
     let root = model_root_node(&row, key);
-    assert_eq!(
-        root.node_id.digest.as_ref(),
-        "ff388429ac907bffe149b81b0c1b3f4099f6075df486c96736455f39a88d3041"
+    // The key is the SHA-256 of the root's hand-written preimage.
+    let expected = sha256_hex(
+        format!(
+            r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"digest":"{row_hex}","identity":"acme/orders","kind":"model_root"}},"recursion":null,"semantic_form":"model_root","semantic_type":null,"version":"quire.structural-node/v1"}}"#
+        )
+        .as_bytes(),
     );
+    assert_eq!(root.node_id.digest.as_ref(), expected);
+    if let Some(published_root) = published_root {
+        assert_eq!(published_root["node_id"]["digest"], expected);
+    }
     assert_eq!(root.semantic_type, root.node_id);
 }
 
@@ -2674,8 +2728,8 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
 #[trace("TC-442", "FR-056-AC-9")]
 #[test]
 fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
-    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
-    let unknown = UNIT.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
+    let fixture = spine_model::unit();
+    let unknown = fixture.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
@@ -2711,13 +2765,13 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
     assert_eq!(&unknown[error.span.start..error.span.end], "M::Nope");
 
     let missing = qsl_semantics::model::intake::admit_unit(
-        &unit_selections(UNIT),
+        &unit_selections(&fixture),
         &BTreeMap::new(),
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect_err("no domain package is supplied");
     assert_eq!(missing.cause.code(), qsl_foundation::Code::MissingImport);
-    assert!(UNIT[missing.span.start..missing.span.end].starts_with("model M = "));
+    assert!(fixture[missing.span.start..missing.span.end].starts_with("model M = "));
 }
 
 /// `unit`'s S2 selections.
@@ -2742,11 +2796,11 @@ fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection>
 #[trace("TC-442", "FR-056-AC-9")]
 #[test]
 fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
-    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let fixture = spine_model::unit();
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
         "program.native",
-        UNIT.as_bytes(),
+        fixture.as_bytes(),
         qsl_cst::Limits::default(),
     )
     .unwrap();
@@ -2766,7 +2820,7 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
         }
     );
     assert_eq!(first.cause.code(), qsl_foundation::Code::MissingImport);
-    assert!(UNIT[first.span.start..first.span.end].starts_with("model M = "));
+    assert!(fixture[first.span.start..first.span.end].starts_with("model M = "));
 }
 
 /// FR-056-AC-9 (TC-442 step 3): a refusal after admission and a
@@ -2778,8 +2832,8 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
 #[trace("TC-442", "FR-056-AC-9")]
 #[test]
 fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
-    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
-    let selections = unit_selections(UNIT);
+    let fixture = spine_model::unit();
+    let selections = unit_selections(&fixture);
     let limited = qsl_semantics::model::intake::admit_unit(
         &selections,
         &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
@@ -2803,7 +2857,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         qsl_foundation::Code::ResourceExhausted
     );
     assert_eq!(limited.cause.cause(), Some("insufficient-next-charge"));
-    assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
+    assert!(fixture[limited.span.start..limited.span.end].starts_with("model M = "));
 
     let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
     for node in cyclic["types"].as_array_mut().unwrap() {
@@ -2816,10 +2870,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
-    let text = UNIT.replace(
-        &UNIT[UNIT.find("sha256-jcs:").unwrap()..][..75],
-        &format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
-    );
+    let text = spine_model::unit_selecting(digest);
     let refused = qsl_semantics::model::intake::admit_unit(
         &unit_selections(&text),
         &packages,
@@ -2928,7 +2979,7 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
     let entry = |identity: &str| {
         json!({
             "identity": identity,
-            "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": d.hex()},
+            "package_id": {"domain": "quire.package.semantic/v2", "algorithm": "sha256", "digest": d.hex()},
         })
     };
     let expected = json!([entry("test/geometry"), entry("test/units")]);

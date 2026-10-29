@@ -15,10 +15,10 @@
 //! `finish` obligation (declared at `P`, `finish` and its name, FR-465).
 //!
 //! What this writes is what QSL can prove IR admits. A protocol that names a
-//! construct whose node is not written yet (a role, a channel, a `choice`,
-//! `parallel` or `repeat`, a `terminal` member, a protocol reference written
-//! directly in a capture, guard,
-//! terminal, control or `finish` body) is refused with that construct named
+//! construct whose node is not written yet (a role, a channel, a
+//! predicate-joined `parallel`, a post-test `repeat`, a `terminal` member, a
+//! protocol reference written directly in a capture, guard, terminal, control
+//! or `finish` body) is refused with that construct named
 //! ([`ProtocolConstruct`]) rather than written without it: its package would
 //! lack part of the graph its `package_id` stands for. A reference binds the
 //! clause node's key and is itself a `{term: "reference", target}` leaf keyed
@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, JoinPolicy, LossSelector,
+    ActivationForm, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
     ProtocolDeclarationForm, ProtocolNodeKind,
 };
 use qsl_foundation::MemoryModelName;
@@ -41,7 +41,7 @@ pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
-use crate::check::ir::CheckedNode;
+use crate::check::ir::{CheckedBody, CheckedNode, NodeKind};
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
@@ -118,6 +118,9 @@ pub(crate) enum ProtocolSite<'a> {
     Control(&'a [String]),
     /// The constraint or condition tree of the control at this path.
     ControlBody(&'a [String]),
+    /// A `visible` entry, guard, invariant or variant of the `choice` or
+    /// `repeat` at this path, told apart by its source span.
+    Decision(&'a [String], qsl_foundation::Span),
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of protocol `protocol`.
@@ -146,6 +149,12 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::ControlBody(path) => {
             format!("protocol {protocol} run {} body", path.join(" "))
         }
+        ProtocolSite::Decision(path, span) => format!(
+            "protocol {protocol} run {} decision {}..{}",
+            path.join(" "),
+            span.start,
+            span.end
+        ),
     }
 }
 
@@ -199,16 +208,14 @@ impl ProtocolInput<'_> {
         let mut kinds: Vec<ProtocolNodeKind> = Vec::new();
         for control in &self.checked.controls.controls {
             // A `branch` and a `case` are held by the `parallel` and the
-            // `choice` that hold them. A `parallel` is written unless its
-            // join is a predicate, which names a function written after the
-            // protocols.
+            // `choice` that hold them. A `parallel` is written whatever its
+            // join: a predicate join's function is keyed before the
+            // protocol (`dependencies`).
             let refused = match control.kind {
-                ProtocolNodeKind::Choice | ProtocolNodeKind::Repeat => true,
-                ProtocolNodeKind::Parallel => form
+                ProtocolNodeKind::Parallel => !form
                     .parallels
                     .iter()
-                    .find(|parallel| parallel.declaration == control.node.0)
-                    .is_none_or(|parallel| matches!(parallel.join.value, JoinPolicy::Predicate(_))),
+                    .any(|parallel| parallel.declaration == control.node.0),
                 _ => false,
             };
             if refused && !kinds.contains(&control.kind) {
@@ -223,12 +230,94 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::ProtocolReferenceInBody);
         }
+        if slots.repeats.iter().any(|repeat| repeat.post_test) {
+            unemitted.push(ProtocolConstruct::PostTestRepeat);
+        }
+        if slots
+            .repeats
+            .iter()
+            .any(|repeat| repeat.decisions_read_body && !repeat.post_test)
+        {
+            unemitted.push(ProtocolConstruct::RepeatDecisionReadsBody);
+        }
+        if slots
+            .choices
+            .iter()
+            .flat_map(|choice| &choice.visible)
+            .chain(slots.repeats.iter().flat_map(|repeat| &repeat.visible))
+            .any(|entry| {
+                matches!(
+                    entry.root().kind(),
+                    NodeKind::Literal(_) | NodeKind::Local(_)
+                )
+            })
+        {
+            unemitted.push(ProtocolConstruct::VisibleEntryNotAnExpression);
+        }
+        if self.repeat_steps_through_repeat() {
+            unemitted.push(ProtocolConstruct::RepeatStepsThroughRepeat);
+        }
         if matches!(form.activation, ActivationForm::Each { .. })
             && matches!(&slots.terminal, CheckedTerminalMember::When(body) if body.reads_local(0))
         {
             unemitted.push(ProtocolConstruct::TerminalReadsOverUnderEach);
         }
         unemitted
+    }
+
+    /// Whether some `repeat`'s body does not necessarily step when no
+    /// `repeat` counts as stepping: S3 admitted it through a nested repeat
+    /// whose exit is infeasible (QSpec FR-464 "Nested `repeat` rule",
+    /// STD-539). It is withheld until IR's reader decides that rule
+    /// (IR-1100).
+    fn repeat_steps_through_repeat(&self) -> bool {
+        use ProtocolNodeKind as K;
+        let tree = &self.checked.controls;
+        let mut steps: BTreeMap<ProtocolNodeId, bool> = BTreeMap::new();
+        // Children follow their holder in `controls`, so in reverse each
+        // child is decided before its holder.
+        for control in tree.controls.iter().rev() {
+            let child = |index: usize| {
+                control
+                    .children
+                    .get(index)
+                    .and_then(|child| steps.get(child))
+                    .copied()
+                    .unwrap_or(false)
+            };
+            let necessarily = match control.kind {
+                K::Send
+                | K::Receive
+                | K::Attempt
+                | K::Effect
+                | K::Event
+                | K::Commit
+                | K::Fence
+                | K::Await
+                | K::Parallel => true,
+                K::Check | K::Repeat | K::Finish | K::CompensateTemplate => false,
+                K::Branch | K::Case => child(0),
+                K::Sequence => (0..control.children.len()).any(child),
+                K::Choice => (0..control.children.len()).all(child),
+            };
+            steps.insert(control.node, necessarily);
+        }
+        self.form.repeats.iter().any(|repeat| {
+            tree.control(ProtocolNodeId(repeat.declaration))
+                .is_some_and(|control| {
+                    !control.children.iter().any(|child| {
+                        steps.get(child).copied().unwrap_or(false)
+                            && self
+                                .form
+                                .declarations
+                                .get(child.0)
+                                .is_some_and(|declaration| {
+                                    repeat.body.start <= declaration.name.span.start
+                                        && declaration.name.span.end <= repeat.body.end
+                                })
+                    })
+                })
+        })
     }
 
     /// Whether the `run` tree holds an `attempt`, whose node names the
@@ -278,13 +367,21 @@ impl ProtocolInput<'_> {
         if let CheckedTerminalMember::When(body) = &self.checked.slots.terminal {
             roots.push(body.root());
         }
-        roots.extend(
-            self.checked
-                .slots
-                .bodies
-                .iter()
-                .map(|body| body.body.root()),
-        );
+        let slots = &self.checked.slots;
+        roots.extend(slots.bodies.iter().map(|body| body.body.root()));
+        // The `choice` and `repeat` decision slots (FR-466 "Decision facts").
+        for choice in &slots.choices {
+            roots.extend(choice.visible.iter().map(CheckedBody::root));
+            roots.extend(choice.cases.iter().map(|case| case.guard.root()));
+        }
+        for repeat in &slots.repeats {
+            roots.extend(repeat.visible.iter().map(CheckedBody::root));
+            roots.push(repeat.guard.root());
+            if let Some(proof) = &repeat.loop_proof {
+                roots.push(proof.invariant.root());
+                roots.push(proof.variant.root());
+            }
+        }
         roots
     }
 
@@ -300,6 +397,14 @@ impl ProtocolInput<'_> {
             functions.extend(root.callees());
             protocols.extend(root.protocol_references());
         }
+        // A predicate join's function is referenced by the `parallel`'s
+        // `join` (FR-466 "Control layouts").
+        functions.extend(
+            self.checked
+                .pending_predicate_joins
+                .iter()
+                .map(|join| join.function),
+        );
         for list in [&mut functions, &mut protocols] {
             list.sort_unstable();
             list.dedup();
@@ -505,7 +610,7 @@ impl Lowering<'_> {
             return Ok(Vec::new());
         }
         let requirements = self.required_temporal_keys(protocol, &location)?;
-        match self.protocol_node(
+        match self.protocol_node_for(
             protocol,
             &law,
             owner,
@@ -571,7 +676,7 @@ impl Lowering<'_> {
             let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
             let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
             let requirements = self.required_temporal_keys(protocol, &location)?;
-            let key = self.protocol_node(
+            let key = self.protocol_node_for(
                 protocol,
                 &law,
                 owner,
@@ -725,6 +830,22 @@ impl Lowering<'_> {
         Ok(key)
     }
 
+    fn protocol_node_for(
+        &mut self,
+        protocol: &ProtocolInput<'_>,
+        law: &OperationLaw,
+        owner: EffectiveId,
+        members: ProtocolClauseMembers<'_>,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let previous = self
+            .active_protocol
+            .replace(protocol.form.name.name.clone());
+        let result = self.protocol_node(protocol, law, owner, members, location);
+        self.active_protocol = previous;
+        result
+    }
+
     /// The nodes of one protocol whose every part is written, and its
     /// `protocol_clause` node's key.
     fn protocol_node(
@@ -809,6 +930,8 @@ impl Lowering<'_> {
             trigger,
             boolean,
         )?;
+        let compensation_keys = compensations.clone();
+        let terminal_key = terminal;
         let finish_node = protocol.checked.finish.as_ref().ok_or_else(unchecked)?.0;
         let mut nodes = run.nodes;
         nodes.insert(finish_node, finish);
@@ -886,6 +1009,13 @@ impl Lowering<'_> {
                 nodes,
                 channels: named_channels.into_iter().collect(),
                 roles: named_roles,
+                compensations: compensation_keys,
+                terminal: terminal_key,
+                binders: self.protocol_binder_keys.remove(name).unwrap_or_default(),
+                expressions: self
+                    .protocol_expression_binders
+                    .remove(name)
+                    .unwrap_or_default(),
             },
         );
         Ok(clause)
@@ -2036,7 +2166,7 @@ fn catalog_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
 /// (FR-432): the clause itself (`activate`), its channels and roles by name,
 /// and its step nodes by declaration index: every control the `run` tree
 /// writes and the `finish` node. A clause holding a control that is not
-/// written yet (`choice`, `repeat`, a predicate-joined `parallel`) has no
+/// written yet (a predicate-joined `parallel`, a post-test `repeat`) has no
 /// node, so a refinement over it stays not emitted.
 #[derive(Clone, Debug)]
 pub(crate) struct ProtocolMembers {
@@ -2044,6 +2174,10 @@ pub(crate) struct ProtocolMembers {
     pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
     pub(crate) channels: BTreeMap<String, NodeKey>,
     pub(crate) roles: BTreeMap<String, NodeKey>,
+    pub(crate) compensations: Vec<NodeKey>,
+    pub(crate) terminal: Option<NodeKey>,
+    pub(crate) binders: Vec<super::super::protocol_clause::CheckedProtocolBinderKey>,
+    pub(crate) expressions: Vec<super::super::protocol_clause::CheckedProtocolExpressionBindings>,
 }
 
 /// What lowering holds for one protocol declaration.

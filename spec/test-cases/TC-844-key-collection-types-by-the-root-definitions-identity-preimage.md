@@ -23,8 +23,10 @@ Scope: FR-334-AC-1 to FR-334-AC-4.
 2. Lower `Population<Account>`, `Population<Account>[4]` and an unbounded
    `Set<Reference<Account>>`; compare node keys.
 3. Compile one bounded unit twice.
-4. Read QSpec's FR-144-AC-9, AC-13 and FR-153-AC-9 type vectors in place
-   from the QSpec repository and key each with QSL's emitter.
+4. Read QSpec FR-322's collection and population node identity vectors in
+   place from the QSpec repository and key each with QSL's emitter; the
+   vectors exercise the type cases covered by FR-144-AC-9, AC-13 and
+   FR-153-AC-9.
 
 Tag the tests `#[trace("TC-844", "FR-334-AC-n")]`.
 

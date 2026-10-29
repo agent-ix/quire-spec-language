@@ -1415,6 +1415,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: a postcondition writes a clock place or clock collection \
                      at most once"
                 ),
+                TemporalCause::ClockPresenceUnwritten { .. } => format!(
+                    "{message}: a postcondition requires a clock place present that it \
+                     does not write, though the precondition establishes it absent"
+                ),
                 TemporalCause::UnprovedPresence { .. } => format!(
                     "{message}: `value(p)` of a guarded clock place is read only where \
                      `present(p)` holds"
@@ -1836,6 +1840,9 @@ impl Default for DependencyLimits {
 
 #[cfg(test)]
 mod dependency_tests;
+
+#[cfg(test)]
+pub(crate) mod spine_model;
 
 #[cfg(test)]
 mod wide_integer_tests;

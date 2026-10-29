@@ -12,7 +12,7 @@ const FR_093: &str = include_str!(
 
 /// FR-093's Recursive text-leaf vectors by name: `(key, preimage)`.
 fn fr093_vectors() -> BTreeMap<String, (String, String)> {
-    let vectors = spec_vectors(FR_093);
+    let vectors = spec_vectors("FR-093");
     assert_eq!(vectors.len(), 21, "FR-093 publishes 21 golden vectors");
     vectors
 }
@@ -149,7 +149,7 @@ fn vector_lock() -> LockEvidence {
 #[trace("FR-093-AC-10", "TC-415")]
 #[test]
 fn fr_093_published_tables_agree_with_its_vectors() {
-    assert_published_tables_agree(FR_093);
+    assert_published_tables_agree("FR-093", FR_093);
 }
 
 /// The node of `graph` a recursion-group vector's label names: `record X`

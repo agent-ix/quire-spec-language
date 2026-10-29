@@ -326,10 +326,9 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                     members: members.into_values().collect(),
                 }),
             };
-            initial.push(HyperState {
-                components,
-                property,
-            });
+            let state = HyperState::new(components, property);
+            let key = HyperKey::property_key(&self.joint.systems, &state, &self.automaton());
+            initial.push(state.with_property_key(key));
         }
         self.initial = initial;
         Ok(())
@@ -504,7 +503,11 @@ impl TransitionSystem for WitnessProduct<'_, '_> {
     }
 
     fn key(&self, state: &HyperState) -> HyperKey {
-        HyperKey::of(&self.joint.systems, state)
+        let key = HyperKey::of(&self.joint.systems, state, None);
+        if let Some(error) = key.automaton_error() {
+            self.joint.record(Halt::AutomatonKey(error));
+        }
+        key
     }
 
     fn successors(
@@ -569,27 +572,26 @@ impl TransitionSystem for WitnessProduct<'_, '_> {
             }
             let (next, undefined) =
                 self.carry(members, &step, &posts, &mut expansions, &mut findings)?;
-            successors.push((
-                step.clone(),
-                HyperState {
-                    components: posts.clone(),
-                    property: Property::Witnesses(WitnessSet {
-                        members: next.into_values().collect(),
-                    }),
-                },
-            ));
+            let next_state = HyperState::new(
+                posts.clone(),
+                Property::Witnesses(WitnessSet {
+                    members: next.into_values().collect(),
+                }),
+            );
+            let key = HyperKey::property_key(&self.joint.systems, &next_state, &self.automaton());
+            successors.push((step.clone(), next_state.with_property_key(key)));
             if let Some((atom, cause, partner)) = undefined {
-                successors.push((
-                    step,
-                    HyperState {
-                        components: posts,
-                        property: Property::Undefined {
-                            atom,
-                            cause,
-                            partner: Some(partner),
-                        },
+                let next_state = HyperState::new(
+                    posts,
+                    Property::Undefined {
+                        atom,
+                        cause,
+                        partner: Some(partner),
                     },
-                ));
+                );
+                let key =
+                    HyperKey::property_key(&self.joint.systems, &next_state, &self.automaton());
+                successors.push((step, next_state.with_property_key(key)));
             }
         }
         Ok(Expansion {

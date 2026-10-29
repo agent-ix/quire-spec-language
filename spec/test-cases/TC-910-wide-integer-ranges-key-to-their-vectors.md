@@ -11,8 +11,8 @@ relationships:
 ## Description
 
 Verify that `Int` ranges up to the i128 extremes key to FR-092's T13 to
-T16, that existing vectors are unchanged, and that a counter is a JSON
-number up to 2^53-1 and a decimal string beyond it, never a refusal.
+T16, existing vectors are unchanged, and QSL's counter encodings conform to
+QSpec FR-322 without refusing a counter for its magnitude.
 
 Scope: FR-092-AC-14, FR-092-AC-15.
 
@@ -24,21 +24,21 @@ Scope: FR-092-AC-14, FR-092-AC-15.
    170141183460469231731687303715884105727]`, `Int[0, 18446744073709551616]`
    and `Int[0, 9]`.
 2. Re-run the existing TC-413 and TC-414 vector checks.
-3. Read QSpec's `integer_encoding_vectors` from a quire-specification
-   checkout at run time (as the `conformance` test reads its vectors) and
-   key `recursion-size-safe-maximum` and `recursion-size-two-pow-53` through
-   QSL's key function.
-4. Encode preimages whose `group_reference` `ordinal` and `operation.member`
-   `position` are 9007199254740991 and then 9007199254740992.
+3. Run every QSpec FR-322 `integer_encoding_vectors` preimage through QSL's
+   key function.
+4. For each of `group_reference.ordinal` and `operation.member.position`,
+   key one preimage with `9007199254740991` and one with `9007199254740992`.
+   Assert the first is encoded as the JSON number `9007199254740991` and the
+   second as the canonical decimal string `"9007199254740992"`, per QSpec
+   FR-322's counter rule.
 
 ## Expected Results
 
 1. The type nodes' preimage bytes and keys equal T13, T14, T15, T16 and T4
    exactly; every bound is a decimal string.
 2. Every existing vector is unchanged.
-3. The keys are `bc6fe35a2c34a7162fe0ed0a20473ffb3284bd70236f96feb75b386c55992874`
-   and `89ec1ac87a8b82a05d5414f0c3b314f363e49328988ff5d8c3fc9a88014839bc`,
-   the recorded ones.
-4. At 9007199254740991 the canonical bytes hold the JSON number; at
-   9007199254740992 they hold the string `"9007199254740992"`. No encoding
+3. Each key equals its QSpec FR-322 published expected key.
+4. For both counter fields, the preimages encode `9007199254740991` as a JSON
+   number and `9007199254740992` as a canonical decimal string; each key is
+   the SHA-256 of the RFC 8785 bytes of its encoded preimage. No encoding
    refuses, and `NodeKeyRefusal` has no magnitude variant.

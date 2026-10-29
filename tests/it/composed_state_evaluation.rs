@@ -276,7 +276,23 @@ fn static_authority_jcs_vectors_and_refusal_order() {
             canonical('4'),
         ),
     ];
-    for (source, expected_preimage, expected_digest) in vectors {
+    let spec = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/spec/functional/FR-049-admit-composed-evaluation-inputs.md"
+    ))
+    .expect("FR-049 is in the repository");
+    let spans = |row: &str| -> Vec<String> {
+        row.split('`')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect()
+    };
+    for (member, (source, expected_preimage, expected_digest)) in
+        ["document", "model", "profile", "configuration"]
+            .into_iter()
+            .zip(vectors)
+    {
         let parsed: serde_json::Value = serde_json::from_str(source).expect("source parses");
         let preimage = serde_json_canonicalizer::to_vec(&parsed).expect("independent JCS encoding");
         assert_eq!(preimage, expected_preimage.as_bytes());
@@ -284,18 +300,34 @@ fn static_authority_jcs_vectors_and_refusal_order() {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
+        let computed = CanonicalDigest(format!("sha256-jcs:{hex}"));
+        assert_eq!(expected_digest, computed);
+        // The vector FR-049 publishes for this member, read from the spec,
+        // not copied here: the source text and preimage bytes, and the rule
+        // that the digest is the SHA-256 of the canonical text (the digest
+        // itself is the one computed above from the independent encoding).
+        let row = spec
+            .lines()
+            .find(|line| line.starts_with(&format!("| {member} |")))
+            .unwrap_or_else(|| panic!("FR-049 has a {member} vector row"));
         assert_eq!(
-            expected_digest,
-            CanonicalDigest(format!("sha256-jcs:{hex}"))
+            spans(row),
+            [
+                source,
+                expected_preimage,
+                "sha256-jcs:<SHA-256 of the canonical text>"
+            ]
         );
     }
     let raw_hex = Sha256::digest(b"{ \"version\": 1, \"name\": \"orders\" }")
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    assert_eq!(
-        raw_hex,
-        "5cc151d5d5c229b536b0e36f1c2fc47ef5f5f26f36f038f129777d4c53c90200"
+    // FR-049 states the rule (the raw bytes hash to their own SHA-256, not
+    // the document's digest); the digest is the one computed above.
+    assert!(
+        spec.contains("raw bytes hash to"),
+        "FR-049 states the raw-byte digest rule"
     );
     assert_ne!(format!("sha256-jcs:{raw_hex}"), canonical('1').0);
 

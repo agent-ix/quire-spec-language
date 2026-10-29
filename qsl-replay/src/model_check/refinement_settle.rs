@@ -14,7 +14,8 @@
 //! accepts its certificate. A rejected certificate settles `inconclusive`
 //! with `CertificateRejected{rule, at}` (ADR-018 PC-2), a check that a limit
 //! or a cancellation stops settles V-7 naming the limit, and a certificate
-//! that names another refinement settles `ReplayRefused(stale_dependency)`.
+//! that names another refinement settles `StaleDependency` with both
+//! refinement names.
 //!
 //! [`settle_refinement`] settles the whole item from its two halves. A
 //! liveness half that holds settles `proved` `Uncertified`, since the core
@@ -24,8 +25,9 @@
 //! is the liveness half's: `Unsupported` carries the proved safety half
 //! beside it (ADR-020 AX-5).
 //!
-//! What this does not do yet: the requirement record and its `Refinement`
-//! property form and the obligation identity.
+//! The item's requirement record and its `Refinement` property form are
+//! S3's (`CheckedRefinement::property_form`), and its obligation identity is
+//! the request writer's (`qsl_route::deadlock::ModelRefinementItem`).
 
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
@@ -211,7 +213,10 @@ pub fn settle_refinement_safety(
     let row = match outcome {
         SafetyOutcome::Holds { certificate, .. } => {
             match check_simulation_certificate(certified, certificate, limits, cancel) {
-                Err(SimulationRefusal::Stale { .. }) => Row::stale(),
+                Err(SimulationRefusal::Stale {
+                    certificate,
+                    request,
+                }) => Row::stale_refinement(certificate, request),
                 Err(SimulationRefusal::Subject(refusal)) => Row::of_check(Err(refusal), || {
                     Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
                 }),

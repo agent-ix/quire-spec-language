@@ -1371,6 +1371,12 @@ fn settle(
 fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {
         CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
+        // This path calls the named function facade, which admits arguments
+        // through `InputRefusal`; it never selects a checked protocol slot.
+        CallFailure::Admission(_) => ReplayRefusal::Fault(InternalFault::new(
+            "call",
+            "function-replay-has-no-protocol-slot-admission",
+        )),
         CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
         // The request replay path constructs no registered host body. Body
         // failures are surfaced unchanged by the checked application facade.
@@ -1438,6 +1444,28 @@ pub(crate) fn run_spine(
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    run_spine_with_execution_points(
+        unit,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        &spine::StateClauseExecutionPoints::new(),
+        limits,
+    )
+}
+
+/// [`run_spine`] with accepted state-clause execution points
+/// (FR-104-AC-15), checked through `spine::check_with_execution_points`.
+pub(crate) fn run_spine_with_execution_points(
+    unit: &SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    execution_points: &spine::StateClauseExecutionPoints,
+    limits: SpineLimits,
+) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
@@ -1467,9 +1495,17 @@ pub(crate) fn run_spine(
         .entry(CatalogRole::TextProfile)
         .reference();
     let lock = spine::LockEvidence::default().with_text_profile(text_profile);
-    let checked = spine::check(&parsed, &models, dependencies, &lock, limits, &cancel)
-        .map_err(refusal)?
-        .into_value();
+    let checked = spine::check_with_execution_points(
+        &parsed,
+        execution_points,
+        &models,
+        dependencies,
+        &lock,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();

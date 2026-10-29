@@ -27,11 +27,12 @@ use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{
     Activation, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId, UnaryTemporal,
 };
-use quire_canonical::{Limits, Node, NodeRef};
+use quire_canonical::{Node, NodeRef};
 
 use crate::automaton::key::{
-    ascending, canonical, decimal, exactly, AutomatonStateKey, ContextActivation, KeyRefusal,
-    NotTranslated, StateContext, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
+    ascending, canonical, canonical_state_key, decimal, exactly, AutomatonStateKey,
+    ContextActivation, KeyRefusal, NotTranslated, StateContext, TranslationRefusal,
+    AUTOMATON_STATE_KEY_V1,
 };
 use crate::simulation::model::encode::Enc;
 
@@ -192,13 +193,7 @@ impl BoundedTranslation {
     /// [`KeyRefusal::Encoding`] when the key exceeds the identity byte
     /// budget; no truncated key is produced.
     pub fn key(&self, state: BoundedState) -> Result<AutomatonStateKey, KeyRefusal> {
-        let key = Enc::Array(vec![
-            Enc::text(AUTOMATON_STATE_KEY_V1),
-            self.context.clone(),
-            self.state_enc(state),
-        ]);
-        quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
-            .map(AutomatonStateKey)
+        canonical_state_key(&self.context, self.state_enc(state), self.max_bytes)
             .map_err(|_| KeyRefusal::Encoding)
     }
 

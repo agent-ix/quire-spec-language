@@ -14,6 +14,11 @@
 //! these facts alone, never of the order states were reached, and no graph
 //! index enters it.
 //!
+//! The safety shape above describes [`SafetyTranslation`]. The general
+//! [`PropertyAutomaton::state_key`] encoder uses the same outer discriminator
+//! and a context for the automaton kind, subject algebra, lowered formula and
+//! activation, followed by the reached translation configuration.
+//!
 //! Both items here are `G a` over one current atom. Reading a letter expands
 //! the carried root: the atom is discharged when it holds and removes the
 //! branch otherwise, and `G a` is carried to the next position. So the
@@ -59,7 +64,9 @@ const RACE_FREEDOM: &str = "race-freedom";
 /// order is ascending unsigned lexicographic octet order.
 ///
 /// A [`SafetyTranslation`] builds a key by encoding one of its states or by
-/// admitting octets against its context. [`AutomatonStateKey::imported`]
+/// admitting octets against its context. [`PropertyAutomaton::state_key`](super::PropertyAutomaton::state_key)
+/// uses the same type for reached bounded, safety and liveness states.
+/// [`AutomatonStateKey::imported`]
 /// wraps octets read from a certificate as they arrived: such a key is
 /// unadmitted, and a checker admits it against its own context before it
 /// is used for membership.
@@ -86,6 +93,35 @@ impl AutomatonStateKey {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+/// The one FR-338 envelope writer used by every automaton representation.
+/// Form-specific translators only supply their checked context and typed
+/// state algebra; they do not define another byte-key scheme.
+pub(crate) fn canonical_state_key(
+    context: &Enc,
+    state: Enc,
+    max_bytes: u64,
+) -> Result<AutomatonStateKey, quire_canonical::Error> {
+    canonical_key_value(&canonical_state_key_value(context, state), max_bytes)
+}
+
+/// The FR-338 envelope value, shared by the writer and product-key callers.
+pub(crate) fn canonical_state_key_value(context: &Enc, state: Enc) -> Enc {
+    Enc::Array(vec![
+        Enc::text(AUTOMATON_STATE_KEY_V1),
+        context.clone(),
+        state,
+    ])
+}
+
+/// Encode an already assembled FR-338 key value with the shared bounded
+/// canonical writer.
+pub(crate) fn canonical_key_value(
+    value: &Enc,
+    max_bytes: u64,
+) -> Result<AutomatonStateKey, quire_canonical::Error> {
+    quire_canonical::to_vec(value, Limits::new(max_bytes)).map(AutomatonStateKey)
 }
 
 /// The root of a [`StateContext`].
@@ -452,13 +488,7 @@ impl SafetyTranslation {
     /// [`KeyRefusal::Encoding`] when the key exceeds the identity byte
     /// budget; no truncated key is produced.
     pub fn key(&self, state: SafetyState) -> Result<AutomatonStateKey, KeyRefusal> {
-        let key = Enc::Array(vec![
-            Enc::text(AUTOMATON_STATE_KEY_V1),
-            self.context.clone(),
-            state.enc(),
-        ]);
-        quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
-            .map(AutomatonStateKey)
+        canonical_state_key(&self.context, state.enc(), self.max_bytes)
             .map_err(|_| KeyRefusal::Encoding)
     }
 
@@ -713,14 +743,12 @@ impl SafetyStates {
     /// obligation-free-subsumption normalization, are a state this context
     /// would refuse.
     pub fn key(&self, branches: &[Configuration]) -> Result<AutomatonStateKey, KeyRefusal> {
-        let key = Enc::Array(vec![
-            Enc::text(AUTOMATON_STATE_KEY_V1),
-            self.context.clone(),
+        let key = canonical_state_key(
+            &self.context,
             safety_enc(branches, self.max_bytes)?,
-        ]);
-        let key = quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
-            .map(AutomatonStateKey)
-            .map_err(|_| KeyRefusal::Encoding)?;
+            self.max_bytes,
+        )
+        .map_err(|_| KeyRefusal::Encoding)?;
         // A key is written only if this context would admit it back.
         self.admit(key.as_bytes())?;
         Ok(key)

@@ -7,7 +7,7 @@ use quire_spec_language::package::PackagePassUsage;
 #[trace("TC-088", "FR-020-AC-9")]
 fn elevated_input_limit_cannot_admit_one_byte_over_the_hard_ceiling() {
     let models = [model()];
-    let [vector, _, _] = package_vector_setup::cases();
+    let [vector, _, _] = package_vector_setup::cases(&models[0]);
     let bindings = package_vector_setup::checked(&vector, &models)
         .bindings()
         .clone();
@@ -54,12 +54,12 @@ fn count(value: &Value, depth: usize, usage: &mut PackagePassUsage) {
 #[trace("TC-088", "FR-020-AC-9", "FR-021-AC-6")]
 fn exact_public_pass_counts_and_lowered_limits_preserve_inputs_and_retries() {
     let models = [model()];
-    for vector in package_vector_setup::cases() {
+    for vector in package_vector_setup::cases(&models[0]) {
         let checked = package_vector_setup::checked(&vector, &models);
         let bindings = checked.bindings().clone();
         let original_model = models[0].artifact_bytes().to_vec();
         let original_source = bindings.source.source().text().to_string();
-        let parsed: Value = serde_json::from_slice(vector.artifact).unwrap();
+        let parsed: Value = serde_json::from_slice(&vector.artifact).unwrap();
         let mut expected = PackagePassUsage::default();
         count(&parsed, 0, &mut expected);
         let exact = PackageLimits {
@@ -70,8 +70,8 @@ fn exact_public_pass_counts_and_lowered_limits_preserve_inputs_and_retries() {
         };
         let request = |package| {
             NativePackage::read_verified(
-                vector.artifact,
-                NativePackageRef::new(ByteDigest::of(vector.artifact)),
+                &vector.artifact,
+                NativePackageRef::new(ByteDigest::of(&vector.artifact)),
                 bindings.clone(),
                 &models,
                 &PackageSupport::default(),

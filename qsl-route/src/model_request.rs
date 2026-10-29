@@ -12,7 +12,7 @@
 use qsl_foundation::RequestIndex;
 use qsl_semantics::family::Requirements;
 
-use crate::deadlock::{ItemObligation, ModelTemporalItem};
+use crate::deadlock::{ItemObligation, ModelRefinementItem, ModelTemporalItem};
 use crate::reductions::Reductions;
 use crate::request::{RequestItem, RequestWriter};
 
@@ -70,6 +70,26 @@ impl<S: Clone + Eq> ModelRequest<S> {
         let index = self.writer.item(item.occurrence.clone(), requirements);
         self.obligations.push(obligation);
         index
+    }
+
+    /// Write the item for the refinement `item` with its record's
+    /// `requirements` (FR-144), as [`Self::authored`] writes a clause's: the
+    /// item is keyed by the refinement's occurrence, and its obligation is
+    /// the concrete subject, the occurrence and the abstract subject's
+    /// initial snapshots. `None` for a refinement with no record.
+    pub fn refinement(
+        &mut self,
+        item: &ModelRefinementItem<'_, S>,
+        requirements: &Requirements,
+    ) -> Option<RequestIndex> {
+        let occurrence = item.occurrence()?.clone();
+        let obligation = item.obligation()?.reduced(self.writer.reductions());
+        if let Some(index) = self.index_of(&obligation) {
+            return Some(index);
+        }
+        let index = self.writer.item(occurrence, requirements);
+        self.obligations.push(obligation);
+        Some(index)
     }
 
     /// The obligation of the item at `index`: the join of a result that

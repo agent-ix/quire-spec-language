@@ -544,31 +544,31 @@ fn cancellation_frontier_keeps_fifo_order_not_key_order() {
     assert_eq!(cause, CatalogCode::new("cancelled", "caller-cancelled"));
 }
 
-/// TC-453 step 6, FR-101-AC-2: the pinned digests of the signed-zero and
-/// distinct-NaN-payload float64 states, and that the two of each pair
-/// remain two states.
+/// TC-453 step 6, FR-101-AC-2: the state key of each signed-zero and
+/// distinct-NaN-payload float64 state is the SHA-256 of its hand-written RFC
+/// 8785 envelope text (hashed here with `sha2`, independent of
+/// `quire_canonical`), and the two of each pair remain two states.
 #[trace("TC-453", "FR-101-AC-2")]
 #[test]
-fn float64_state_keys_pin_their_digests_and_stay_distinct() {
-    let vectors = [
-        (
-            "0000000000000000",
-            "943ae638f84583f2a35a7a92f1eac7f58c380c045298892fb1412756a1cc95e6",
-        ),
-        (
-            "8000000000000000",
-            "92a3e9557f9aaf672a61aaab71eb2bfad13a0d88662953998de4057ed54e4b01",
-        ),
-        (
-            "7ff8000000000000",
-            "a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec",
-        ),
-        (
-            "7ff8000000000001",
-            "62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955",
-        ),
+fn float64_state_keys_are_the_hash_of_their_envelope_and_stay_distinct() {
+    let bits_list = [
+        "0000000000000000",
+        "8000000000000000",
+        "7ff8000000000000",
+        "7ff8000000000001",
     ];
-    for (bits, expected_hex) in vectors {
+    let vectors = bits_list.map(|bits| {
+        use sha2::{Digest, Sha256};
+        let text = format!(
+            r#"{{"bounds":{{"entries":[],"type":"map"}},"control":{{"entries":[],"type":"map"}},"observations":{{"entries":[],"type":"map"}},"queues":{{"entries":[],"type":"map"}},"roles":{{"entries":[],"type":"map"}},"semantic":{{"bits":"{bits}","type":"float64"}},"type":"simulation-state"}}"#
+        );
+        let hex: String = Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        (bits, hex)
+    });
+    for (bits, expected_hex) in &vectors {
         let system = EnvelopeGraph {
             states: vec![float64_envelope(bits)],
             edges: vec![],
@@ -579,7 +579,7 @@ fn float64_state_keys_pin_their_digests_and_stay_distinct() {
         };
         assert_eq!(frontier.len(), 1);
         assert_eq!(frontier[0].domain(), DigestDomain::SimulationStateKeyV1);
-        assert_eq!(frontier[0].hex(), expected_hex);
+        assert_eq!(frontier[0].hex(), *expected_hex);
     }
 
     for (a, b) in [

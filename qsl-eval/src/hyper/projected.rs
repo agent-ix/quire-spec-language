@@ -149,10 +149,9 @@ impl<'r, 's> ProjectedProduct<'r, 's> {
         for components in cartesian(&lists) {
             let reading = self.joint.reading(&components)?;
             let property = self.read(None, &reading)?;
-            initial.push(HyperState {
-                components,
-                property,
-            });
+            let state = HyperState::new(components, property);
+            let key = HyperKey::property_key(&self.joint.systems, &state, &self.automaton());
+            initial.push(state.with_property_key(key));
         }
         self.initial = initial;
         Ok(())
@@ -230,7 +229,11 @@ impl TransitionSystem for ProjectedProduct<'_, '_> {
     }
 
     fn key(&self, state: &HyperState) -> HyperKey {
-        HyperKey::of(&self.joint.systems, state)
+        let key = HyperKey::of(&self.joint.systems, state, None);
+        if let Some(error) = key.automaton_error() {
+            self.joint.record(Halt::AutomatonKey(error));
+        }
+        key
     }
 
     fn successors(
@@ -288,13 +291,9 @@ impl TransitionSystem for ProjectedProduct<'_, '_> {
                 components[component] = post.clone();
                 let mut joint = vec![ComponentStep::Stay; components.len()];
                 joint[component] = step.clone();
-                successors.push((
-                    HyperTransition(joint),
-                    HyperState {
-                        components,
-                        property: state.property.clone(),
-                    },
-                ));
+                let next = HyperState::new(components, state.property.clone());
+                let key = HyperKey::property_key(&self.joint.systems, &next, &self.automaton());
+                successors.push((HyperTransition(joint), next.with_property_key(key)));
             }
         }
         // The visible moves: every component takes a visible step together.
@@ -327,13 +326,9 @@ impl TransitionSystem for ProjectedProduct<'_, '_> {
                     continue;
                 }
             };
-            successors.push((
-                step,
-                HyperState {
-                    components: posts,
-                    property,
-                },
-            ));
+            let next = HyperState::new(posts, property);
+            let key = HyperKey::property_key(&self.joint.systems, &next, &self.automaton());
+            successors.push((step, next.with_property_key(key)));
         }
         Ok(Expansion {
             successors,

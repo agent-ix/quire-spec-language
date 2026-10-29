@@ -13,15 +13,15 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::{check_and_settle_state_graph, StateGraphItem, StateGraphRequest};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_replay::{
-    settle_state_graph, CertificateLocus, CertificateRule, Certification, DisagreementCause,
-    Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness, IncompleteCause,
-    InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelPath, OpenCause, ProofBasis,
-    ReachedLimit, ResultLabel, RunEnd, SettlementBasis, StateGraphCertificate,
+    settle_state_graph, AppliedReduction, CertificateLocus, CertificateRule, Certification,
+    DisagreementCause, Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness,
+    IncompleteCause, InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelPath, OpenCause,
+    ProofBasis, ReachedLimit, ResultLabel, RunEnd, SettlementBasis, StateGraphCertificate,
     StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
     TerminalValue, Truth, Verdict, WitnessSource, DEFAULT_WITNESS_SEED, EXPLICIT_STATE,
 };
@@ -80,11 +80,12 @@ fn settle_with(
     settling: &Settling,
     replays: &mut u32,
 ) -> StateGraphRecord {
+    let subject = world.subject(keys, UNLIMITED);
     settle_state_graph(
         instance,
         &settling.method,
         &settling.package_id,
-        world.subject(keys, UNLIMITED),
+        &subject,
         world.claim(claim),
         &settling.cancel,
         |_| {
@@ -174,6 +175,74 @@ fn assert_rejected(record: &StateGraphRecord, rule: CertificateRule, at: DigestR
         )
     );
     assert_eq!(record.value.category(), Category::Inconclusive);
+}
+
+/// FR-390/FR-391: the public state-graph pipeline runs the checker, sends its
+/// evidence through the settlement map, and returns the corresponding
+/// terminal record for each claim instance.
+#[trace("FR-390-AC-3", "FR-391-AC-9")]
+#[test]
+fn the_state_graph_pipeline_runs_and_settles_each_instance() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let request = StateGraphRequest {
+        subject: world.subject(AB, UNLIMITED),
+        items: vec![StateGraphItem {
+            claim: world.claim("ReachesTwo"),
+        }],
+        reductions: Default::default(),
+        deadlock_freedom: false,
+        max_depth: None,
+        limits: no_samples(),
+        seed: None,
+    };
+    let settled =
+        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
+            Ok(GraphReplayResult {
+                settlement: GraphReplaySettlement::Reproduced,
+                package_id: world.package_id(),
+                evaluated_predicates: Vec::new(),
+                closure_nodes: None,
+                first_target: None,
+            })
+        })
+        .expect("the state-graph engine and settlement map both complete");
+
+    assert_eq!(settled.records.len(), 1);
+    assert_eq!(settled.records[0].len(), AB.len());
+    assert!(settled.records[0].iter().all(|record| matches!(
+        record.value,
+        TerminalValue::Proved {
+            certification: Certification::Certified,
+            ..
+        }
+    )));
+    assert!(settled.records[0]
+        .iter()
+        .all(|record| record.method == EXPLICIT_STATE));
+}
+
+/// FR-167-AC-4 and FR-169-AC-9: the public check-and-settle pipeline returns
+/// a selected non-preserving reduction without expanding or invoking replay.
+#[trace("TC-592", "FR-167-AC-4", "FR-169-AC-9")]
+#[test]
+fn the_pipeline_settles_non_preserving_reduction_before_expansion() {
+    let world = job_world(false, false);
+    let mut request = world.request(&["j"], vec![world.item("InOneWay")], no_samples());
+    request.reductions.partial_order = true;
+
+    let settled =
+        check_and_settle_state_graph(request, world.package_id().record(), &Cancel::new(), |_| {
+            panic!("a refusal before exploration has no evidence to replay")
+        })
+        .expect("the request is settled");
+    assert!(settled.run.graph.nodes.is_empty());
+    assert!(matches!(
+        settled.records[0][0].value,
+        TerminalValue::Inconclusive(InconclusiveCause::StateGraphReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::PartialOrder,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        })
+    ));
 }
 
 /// FR-169-AC-9 (settlement half): `ReachesTwo` for `c = a` under default
@@ -288,6 +357,99 @@ fn accepted_certificates_settle_proved_certified() {
     assert_eq!(record.value, exhaustive);
     assert_eq!(record.basis, SettlementBasis::ClosedScope);
     assert_eq!(replays, 0, "a `Holds` outcome carries no evidence");
+}
+
+/// FR-169-AC-9: a reduced state-graph proof keeps its reduction provenance
+/// and is never reported as a certified exhaustive proof.
+#[trace("FR-169-AC-6", "FR-169-AC-9")]
+#[test]
+fn a_reduced_holds_outcome_settles_uncertified_with_its_reductions() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let result = run(world.request(AB, vec![world.item("ReachesTwo")], no_samples()));
+    let instance = &result.items[0][0];
+    assert!(matches!(
+        instance.outcome,
+        StateGraphOutcome::Witnessed { .. }
+    ));
+    let reductions = vec![AppliedReduction::PartialOrder {
+        proviso: qsl_replay::Proviso::BreadthFirstRevisit,
+    }];
+    let reduced = StateGraphInstanceOutcome {
+        outcome: StateGraphOutcome::HoldsReduced {
+            reductions: reductions.clone(),
+        },
+        ..instance.clone()
+    };
+
+    let mut replays = 0;
+    let record = settle(
+        &world,
+        AB,
+        "ReachesTwo",
+        &reduced,
+        no_samples(),
+        &mut replays,
+    );
+
+    assert_eq!(
+        record.value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Reduced { reductions },
+            certification: Certification::Uncertified,
+        }
+    );
+    assert_eq!(record.basis, SettlementBasis::ClosedScope);
+    assert_eq!(replays, 0, "a reduced proof carries no replayed witness");
+
+    let wire = serde_json::to_value(qsl_replay::OutcomeItem::from_state_graph(
+        qsl_foundation::RequestIndex::new(3),
+        &record,
+    ))
+    .expect("the state-graph terminal record writes");
+    assert_eq!(wire["request_index"], 3);
+    assert_eq!(wire["method"], EXPLICIT_STATE);
+    assert_eq!(wire["max_depth"], serde_json::Value::Null);
+    assert_eq!(wire["seed"], record.seed);
+    assert_eq!(wire["witness_samples"], record.witness_samples);
+    for (limit, value) in record.limits {
+        assert_eq!(wire["limits"][limit.as_str()], value);
+    }
+}
+
+/// FR-169-AC-9: a state-graph reduction rejected by its preservation table
+/// settles with the state-graph form and reduction named on the cause.
+#[trace("FR-169-AC-9")]
+#[test]
+fn a_non_preserving_state_graph_reduction_settles_with_its_form() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let result = run(world.request(AB, vec![world.item("ReachesTwo")], no_samples()));
+    let instance = &result.items[0][0];
+    let rejected = StateGraphInstanceOutcome {
+        outcome: StateGraphOutcome::ReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::Symmetry,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        },
+        ..instance.clone()
+    };
+
+    let mut replays = 0;
+    let record = settle(
+        &world,
+        AB,
+        "ReachesTwo",
+        &rejected,
+        no_samples(),
+        &mut replays,
+    );
+
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::StateGraphReductionNotPreserving {
+            reduction: qsl_foundation::ReductionKind::Symmetry,
+            form: qsl_replay::StateGraphPropertyForm::UniquePath,
+        })
+    );
+    assert_eq!(replays, 0, "a refused reduction has no evidence to replay");
 }
 
 /// FR-169-AC-10 (settlement half): AC-9's `ReachesTwo` outcome with its
@@ -571,7 +733,7 @@ fn a_bad_state_certificate_settles_certificate_rejected() {
 
 /// FR-282's package binding of a state-graph certificate and its evidence:
 /// a `Witnessed` or `Holds` outcome of a run that checked another package
-/// settles `inconclusive`, `ReplayRefused(stale_dependency)` with nothing
+/// settles `inconclusive`, `StaleDependency{requested, recompiled}` with nothing
 /// checked or replayed; evidence of a `Witnessed`, `WitnessedUnchecked`,
 /// `Trapped` or `PathPair` outcome replayed against another package settles
 /// the same, never `proved` or `refuted`; and a check whose package
@@ -579,8 +741,6 @@ fn a_bad_state_certificate_settles_certificate_rejected() {
 #[trace("TC-644")]
 #[test]
 fn a_certificate_or_evidence_of_another_package_never_settles() {
-    let stale =
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency));
     let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
     let other = job_world(true, false).package_id();
 
@@ -623,7 +783,14 @@ fn a_certificate_or_evidence_of_another_package_never_settles() {
             &run_elsewhere(world, no_samples()),
             &mut replays,
         );
-        assert_eq!(record.value, stale, "{claim}");
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+                requested: qsl_replay::StaleIdentity::Package(elsewhere),
+                recompiled: qsl_replay::StaleIdentity::Package(world.package_id().record()),
+            }),
+            "{claim}"
+        );
     }
     assert_eq!(replays, 0, "a stale certificate is not checked or replayed");
 
@@ -645,7 +812,15 @@ fn a_certificate_or_evidence_of_another_package_never_settles() {
             &replayed_elsewhere(world, limits),
             &mut replays,
         );
-        assert_eq!(record.value, stale, "{claim}: {:?}", instance.outcome);
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::StaleDependency {
+                requested: qsl_replay::StaleIdentity::Package(world.package_id().record()),
+                recompiled: qsl_replay::StaleIdentity::Package(other.record()),
+            }),
+            "{claim}: {:?}",
+            instance.outcome
+        );
         assert_eq!((record.end, record.limit_reached), (None, None));
     }
     assert_eq!(replays, 4);
@@ -1173,11 +1348,12 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
     ));
     let instance = &result.items[0][0];
     let mut replays = 0;
+    let foreign_subject = foreign.subject(AB, UNLIMITED);
     let record = settle_state_graph(
         instance,
         &method(ModelCheckLimits::default()),
         &foreign.package_id().record(),
-        foreign.subject(AB, UNLIMITED),
+        &foreign_subject,
         world.claim("ReachesTwo"),
         &Cancel::new(),
         |_| {

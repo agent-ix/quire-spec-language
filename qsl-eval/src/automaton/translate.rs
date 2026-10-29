@@ -41,13 +41,16 @@ use crate::automaton::dnf::Dnf;
 use crate::automaton::error::AutomatonError;
 use crate::automaton::formula::{invariant, lower, FutureKind, Ir, Lowered, Node, NodeId, Window};
 use crate::automaton::gba::{Gba, GbaBuilder, Transition};
-use crate::automaton::key::SubjectKind;
+use crate::automaton::key::{
+    canonical_key_value, canonical_state_key_value, AutomatonStateKey, SubjectKind,
+};
 use crate::automaton::key_buchi::{BuchiPhase, BuchiState};
 use crate::automaton::key_state::{Configuration, Obligation, Occurrence, Window as KeyWindow};
 use crate::automaton::letter::{Atom, Guard, Letter};
 use crate::automaton::numbering::Numbering;
 use crate::automaton::past::{Memory, Outcome, Past};
 use crate::automaton::state::StateId;
+use crate::simulation::model::encode::Enc;
 
 /// How the steps of a behaviour count for interval distance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,6 +142,72 @@ impl PropertyAutomaton {
             .ok_or(AutomatonError::UnknownState { state })?;
         self.translator
             .buchi_state(config, &self.eventualities, max_key_bytes)
+    }
+
+    /// The canonical key of a reached property state, independent of its
+    /// run-local [`StateId`]. The same scheme covers bounded, safety and
+    /// liveness translations. Its context binds the key to this automaton's
+    /// kind, subject algebra and lowered formula.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `state` was not reached, or
+    /// [`AutomatonError::KeyEncodingLimit`] when its canonical encoding is
+    /// larger than `max_key_bytes`.
+    pub fn state_key(
+        &self,
+        state: StateId,
+        max_key_bytes: u64,
+    ) -> Result<AutomatonStateKey, AutomatonError> {
+        let key = self.state_key_value(state)?;
+        canonical_key_value(&key, max_key_bytes)
+            .map_err(|error| state_key_encoding_error(error, max_key_bytes))
+    }
+
+    /// The canonical value underlying a reached property-state key. Hyper
+    /// product identities encode this value in their own bounded writer,
+    /// avoiding an intermediate allocation outside that writer's limit.
+    pub(crate) fn state_key_value(&self, state: StateId) -> Result<Enc, AutomatonError> {
+        let config = self
+            .reached
+            .key(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        let kind = Enc::text(match self.kind {
+            AutomatonKind::Bounded => "bounded",
+            AutomatonKind::Safety => "safety",
+            AutomatonKind::Liveness => "liveness",
+        });
+        let subject = Enc::text(match self.translator.subject {
+            SubjectKind::Ordinary => "ordinary",
+            SubjectKind::Protocol => "protocol",
+        });
+        let atom =
+            |atom: Option<Atom>| atom.map_or(Enc::Null, |atom| Enc::text(atom.index().to_string()));
+        let context = Enc::Array(vec![
+            Enc::text("property-automaton-context/v1"),
+            kind,
+            subject,
+            Enc::Array(
+                self.atoms
+                    .iter()
+                    .map(|node| Enc::text(node.index().to_string()))
+                    .collect(),
+            ),
+            self.translator.ir.key_context(),
+            self.initial.key_value(),
+            Enc::Array(vec![
+                atom(self.when),
+                atom(self.live),
+                atom(self.uncounted),
+                self.translator
+                    .activation_root
+                    .map_or(Enc::Null, |root| Enc::text(root.index().to_string())),
+                self.translator
+                    .activation_guarded
+                    .map_or(Enc::Null, Enc::Bool),
+            ]),
+        ]);
+        Ok(canonical_state_key_value(&context, config.key_value()))
     }
 
     /// The `holds` atoms of the clause: atom `i` of the letter is
@@ -396,6 +465,50 @@ impl PropertyAutomaton {
             *slot = Some(row);
         }
         Ok(())
+    }
+}
+
+fn state_key_encoding_error(error: quire_canonical::Error, max_key_bytes: u64) -> AutomatonError {
+    match error {
+        quire_canonical::Error::Limit(limit)
+            if limit.kind == quire_canonical::LimitKind::CanonicalBytes =>
+        {
+            AutomatonError::KeyEncodingLimit {
+                limit: max_key_bytes,
+            }
+        }
+        _ => invariant("property-automaton-key-canonical-encoding"),
+    }
+}
+
+#[cfg(test)]
+mod state_key_encoding_tests {
+    use super::state_key_encoding_error;
+    use crate::automaton::AutomatonError;
+    use quire_canonical::{Error, LimitExceeded, LimitKind};
+
+    #[test]
+    fn only_the_canonical_byte_limit_is_reported_as_key_encoding_limit() {
+        let limit = LimitExceeded {
+            kind: LimitKind::CanonicalBytes,
+            bound: 12,
+            required: 13,
+        };
+        assert_eq!(
+            state_key_encoding_error(Error::Limit(limit), 12),
+            AutomatonError::KeyEncodingLimit { limit: 12 }
+        );
+        assert_eq!(
+            state_key_encoding_error(
+                Error::Internal {
+                    invariant: "test-invariant",
+                },
+                12,
+            ),
+            AutomatonError::Invariant {
+                invariant: "property-automaton-key-canonical-encoding",
+            }
+        );
     }
 }
 
@@ -797,6 +910,63 @@ struct Config {
     shifts: BTreeMap<NodeId, BTreeSet<u64>>,
     /// The memory of every past operator.
     memory: BTreeMap<NodeId, Memory>,
+}
+
+impl Config {
+    fn key_value(&self) -> Enc {
+        let id = |node: NodeId| Enc::text(node.index().to_string());
+        let must = Enc::Array(self.must.iter().copied().map(id).collect());
+        let counters = Enc::Array(
+            self.counters
+                .iter()
+                .map(|(node, counter)| {
+                    let (kind, pending, remaining) = match counter {
+                        Counter::Deadline(counter) => {
+                            ("deadline", counter.is_pending(), counter.remaining())
+                        }
+                        Counter::Extent(counter) => {
+                            ("extent", counter.is_pending(), counter.remaining())
+                        }
+                    };
+                    Enc::Array(vec![
+                        id(*node),
+                        Enc::text(kind),
+                        Enc::Bool(pending),
+                        Enc::text(remaining.to_string()),
+                    ])
+                })
+                .collect(),
+        );
+        let shifts = Enc::Array(
+            self.shifts
+                .iter()
+                .map(|(node, values)| {
+                    Enc::Array(vec![
+                        id(*node),
+                        Enc::Array(
+                            values
+                                .iter()
+                                .map(|value| Enc::text(value.to_string()))
+                                .collect(),
+                        ),
+                    ])
+                })
+                .collect(),
+        );
+        let memory = Enc::Array(
+            self.memory
+                .iter()
+                .map(|(node, value)| Enc::Array(vec![id(*node), value.key_value()]))
+                .collect(),
+        );
+        Enc::Array(vec![
+            Enc::text("property-state/v1"),
+            must,
+            counters,
+            shifts,
+            memory,
+        ])
+    }
 }
 
 impl Config {

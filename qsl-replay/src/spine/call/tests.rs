@@ -426,11 +426,8 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
     let result = run(
         source(),
         "spine-model.native",
-        include_bytes!("../../../../tests/fixtures/spine-model.native"),
-        &qsl_semantics::model::intake::package_input([include_bytes!(
-            "../../../../tests/fixtures/spine-model.semantic-ir.json"
-        )
-        .as_slice()]),
+        crate::spine::spine_model::unit().as_bytes(),
+        &qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]),
         &DependencyInput::default(),
         SpineLimits::default(),
         &call,
@@ -479,9 +476,10 @@ fn typed_model_values_bind_without_integer_coercion() {
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
 fn tc_792_driver_returns_the_admitted_reference_identity() {
-    let bytes = include_bytes!("../../../../tests/fixtures/spine-model.native");
-    let document = include_bytes!("../../../../tests/fixtures/spine-model.semantic-ir.json");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let unit = crate::spine::spine_model::unit();
+    let bytes = unit.as_bytes();
+    let packages =
+        qsl_semantics::model::intake::package_input([crate::spine::spine_model::DOCUMENT]);
     let cancel = Cancel::new();
     let identity = source();
     let parsed = crate::spine::parse(
@@ -1520,7 +1518,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
+                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
                 );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.start.line, 3);
@@ -1679,7 +1677,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     let locus = locus.expect("a record locus");
                     assert_eq!(
                         locus.source_digest,
-                        "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
+                        qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
                     );
                     assert_eq!(locus.span.start.byte, 132);
                     assert_eq!(locus.span.end.byte, 133);
@@ -1715,7 +1713,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
+                    qsl_foundation::ByteDigest::of(FIXTURE_F.as_bytes()).to_string()
                 );
                 assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.end.byte, 133);

@@ -659,12 +659,27 @@ pub(super) fn object_enc(
         if *type_key != object.type_identity {
             continue;
         }
-        let Some(Value::Integer(count)) = object.fields.get(&field.key) else {
-            continue;
+        let elements = match object.fields.get(&field.key) {
+            Some(Value::Integer(count)) => (0..count.to_u64().unwrap_or(0))
+                .map(|_| clock_shell_enc())
+                .collect(),
+            // FR-230-AC-42: a `Sequence<Option<Clock>>` writes each element's
+            // option shell, `null` when absent and a `Clock` shell when
+            // present.
+            Some(Value::Collection(bits)) => bits
+                .elements()
+                .iter()
+                .map(|bit| {
+                    let shell = if matches!(bit, Value::Boolean(true)) {
+                        clock_shell_enc()
+                    } else {
+                        Enc::Null
+                    };
+                    Enc::tagged("option", vec![("value", shell)])
+                })
+                .collect(),
+            _ => continue,
         };
-        let elements = (0..count.to_u64().unwrap_or(0))
-            .map(|_| clock_shell_enc())
-            .collect();
         fields.push(Enc::Object(vec![
             ("name", Enc::text(field.name.clone())),
             (

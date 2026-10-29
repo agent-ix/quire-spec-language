@@ -98,6 +98,7 @@ mod state_graph;
 mod state_transition;
 mod temporal;
 mod terminal;
+mod urgency;
 mod wire;
 
 pub(crate) use abstraction::{object_type_node, population_node, relation_node};
@@ -111,8 +112,8 @@ pub(crate) use model::{
     QuantityKind, RecordKeyError,
 };
 pub use model::{
-    model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView, ModelClause,
-    ModelRootKeyError, PlaceStep,
+    collection_kind, model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView,
+    ModelClause, ModelRootKeyError, PlaceRow, PlaceStep,
 };
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
@@ -578,6 +579,9 @@ pub(crate) struct Lowered {
     /// Each declared composite's node key, by its declaration key: the final
     /// key a union is sealed under (FR-319).
     pub(crate) composites: BTreeMap<NodeKey, NodeKey>,
+    /// The S4 identities of each protocol's clause and emitted members,
+    /// retained for FR-390's checked-body selector.
+    pub(crate) protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -696,6 +700,15 @@ pub(crate) struct Lowering<'a> {
     protocol_compensations: Vec<Vec<protocol::CompensationNodes>>,
     /// Temporal clause nodes keyed before a protocol that requires them.
     temporal_keys: BTreeMap<usize, NodeKey>,
+    /// Parameter nodes minted while lowering one protocol's expression
+    /// bodies, by enclosing protocol declaration.
+    protocol_binder_keys:
+        BTreeMap<String, Vec<crate::check::protocol_clause::CheckedProtocolBinderKey>>,
+    /// Exact source-parameter mapping for each protocol expression body.
+    protocol_expression_binders:
+        BTreeMap<String, Vec<crate::check::protocol_clause::CheckedProtocolExpressionBindings>>,
+    /// The protocol whose S4 bodies are being lowered, when any.
+    active_protocol: Option<String>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -898,6 +911,8 @@ enum Keyed {
         semantic_type: NodeKey,
         member: String,
     },
+    /// A present option's payload binding, typed at its option node.
+    OptionValue(NodeKey),
 }
 
 /// A node over its operands' terms.
@@ -1619,6 +1634,9 @@ impl<'a> Lowering<'a> {
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
             temporal_keys: BTreeMap::new(),
+            protocol_binder_keys: BTreeMap::new(),
+            protocol_expression_binders: BTreeMap::new(),
+            active_protocol: None,
         }
     }
 
@@ -1684,6 +1702,7 @@ impl<'a> Lowering<'a> {
             parameter_spans,
             population_nodes: self.population_nodes,
             composites: self.composites,
+            protocol_members: self.protocol_members,
         }
     }
 
@@ -2633,6 +2652,17 @@ impl<'a> Lowering<'a> {
                 MemberTerm::bound("level", level_literal),
             ]),
         )?;
+        if let Some(protocol) = &self.active_protocol {
+            self.protocol_binder_keys
+                .entry(protocol.clone())
+                .or_default()
+                .push(crate::check::protocol_clause::CheckedProtocolBinderKey {
+                    name: name.to_owned(),
+                    level,
+                    node: key,
+                    semantic_type,
+                });
+        }
         self.record(key, OccurrenceRole::Expression, location.clone());
         Ok(key)
     }
@@ -3193,6 +3223,29 @@ impl<'a> Lowering<'a> {
         root: CheckedNode<'_>,
         binders: &mut Binders<'_>,
     ) -> Result<LeafTerm, CheckRefusal> {
+        if let Some(protocol) = &self.active_protocol {
+            let expression_binders = binders
+                .scope
+                .iter()
+                .filter_map(|binder| {
+                    Some(crate::check::protocol_clause::CheckedProtocolBinderKey {
+                        name: binders.slot_names.get(binder.slot)?.clone(),
+                        level: binder.slot,
+                        node: binder.parameter,
+                        semantic_type: binder.semantic_type,
+                    })
+                })
+                .collect();
+            self.protocol_expression_binders
+                .entry(protocol.clone())
+                .or_default()
+                .push(
+                    crate::check::protocol_clause::CheckedProtocolExpressionBindings {
+                        location: root.location().clone(),
+                        binders: expression_binders,
+                    },
+                );
+        }
         let scope = binders.scope.len();
         let lowered = self.lower(root, binders);
         if lowered.is_err() {
@@ -3578,8 +3631,13 @@ impl<'a> Lowering<'a> {
             // FR-139, FR-138: a population-valued form and a history read
             // live in a refinement row, which S4 does not emit yet
             // (FR-310's node): no FR-093 row lowers either.
+            // FR-230 "Presence is derived": a presence read lives in a timed
+            // predicate, which S4 does not emit yet; S3 keeps it out of
+            // every lowered clause body.
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
+            | NodeKind::PlacePresence { .. }
+            | NodeKind::SlotPresence { .. }
             | NodeKind::Seq { .. } => {
                 return Err(refuse(
                     node.location(),
@@ -3596,6 +3654,10 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Value, plain("quire.op.option.value")),
                 Operands::One(operand),
             ),
+            NodeKind::OptionSome(operand) => {
+                let semantic_type = self.value_type_node(node, binders)?;
+                (Keyed::OptionValue(semantic_type), Operands::One(operand))
+            }
             NodeKind::Call {
                 function,
                 arguments,
@@ -4199,6 +4261,20 @@ impl<'a> Lowering<'a> {
                     )]),
                 )
             }
+            Keyed::OptionValue(semantic_type) => self.value_node(
+                node,
+                "option_value",
+                semantic_type,
+                BodyTerm::aggregate(vec![MemberTerm::binding(
+                    "value",
+                    BindingValue::Leaf(
+                        terms
+                            .into_iter()
+                            .next()
+                            .ok_or_else(|| fault(node.location(), KeyFault::RecordSlotCount))?,
+                    ),
+                )]),
+            ),
         }
         .map(LowerStep::Lowered)
     }
@@ -4423,7 +4499,7 @@ impl<'a> Lowering<'a> {
                         TupleMember::Group(parameters),
                         TupleMember::Leaf(term),
                     ])),
-                ));
+                ))
             }
         }
         self.open_arm(frame, binders, frames)
@@ -4677,7 +4753,7 @@ impl<'a> Lowering<'a> {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),
-                ))
+                ));
             }
         };
         Ok(Operation::plain(&format!("quire.op.{family}.{suffix}")))

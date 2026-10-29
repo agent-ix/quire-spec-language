@@ -777,8 +777,8 @@ pub enum ProtocolReferenceCause {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ProtocolConstruct {
     /// A static role `on` a whole model alias (FR-465 "Role": `model` is the
-    /// text identity of a `model_selections` row). IR's protocol reader at
-    /// `quire-contract-ir` `9a84e654` admits only the reference form of
+    /// text identity of a `model_selections` row). IR's protocol reader
+    /// admits only the reference form of
     /// `model`, so the node cannot be proved admitted: an IR gap, IR-874.
     WholeModelRole,
     /// A control of the `run` tree other than a `sequence`, by its keyword
@@ -803,8 +803,7 @@ pub enum ProtocolConstruct {
     ProtocolReferenceInBody,
     /// A `terminal when` condition that reads `over` under `activation on
     /// each`. QSpec FR-464 stage `terminal` and vector TC-947 TM11 admit it,
-    /// but IR's reader (`protocol_body.rs` `check_finish_terminal`, at
-    /// 8b49bd4 and c103a5e) lets only an `origin` protocol's terminal read
+    /// but IR's reader (`protocol_body.rs` `check_finish_terminal`) lets only an `origin` protocol's terminal read
     /// `over`, so the package would be refused: IR-1069.
     TerminalReadsOverUnderEach,
     /// A `relationship` member (FR-464 "Clause body"): a real model package
@@ -814,8 +813,8 @@ pub enum ProtocolConstruct {
     /// A `channel` that carries a bounded scalar or collection
     /// (`Int[a, b]`, `Text`, `Decimal`, `Rational`, `Float`, a bounded
     /// `Sequence`/`Set`/`Bag`; FR-465 "Channel"). Each lowers to a
-    /// `bounded_domain` node, which IR's reader at `quire-contract-ir`
-    /// `9a84e654` does not admit as `carries`: QSL-1137.
+    /// `bounded_domain` node, which IR's reader
+    /// does not admit as `carries`: QSL-1137.
     ChannelCarriesBounded,
     /// A FIFO `channel` whose key type IR's reader does not take as
     /// equality-stable (FR-465 "Channel"): the key's type is, or contains
@@ -824,6 +823,25 @@ pub enum ProtocolConstruct {
     /// it but the reader refuses the key (`ill_typed`/`operator-ineligible`):
     /// QSL-1142.
     ChannelKeyNotEqualityStable,
+    /// A post-test `repeat`, whose `while` guard reads a binder its body
+    /// declares (QSL FR-218). QSpec FR-466 "No post-test `repeat`" settles
+    /// that the checked package has no post-test form (STD-539).
+    PostTestRepeat,
+    /// A `repeat` whose `visible` entry, invariant or variant reads a binder
+    /// its body declares, while its guard does not. QSpec FR-466 "Binder
+    /// scope" reads them at the repeat's entry only (a `repeat` is
+    /// pre-test), so they have no node form (STD-539).
+    RepeatDecisionReadsBody,
+    /// A `choice` or `repeat` `visible` entry that is a literal or a bare
+    /// binder read: QSpec FR-466 "A `visible` entry is an `expression` node"
+    /// settles that neither has an encoding (STD-539).
+    VisibleEntryNotAnExpression,
+    /// A `repeat` whose body steps only through a nested `repeat` whose
+    /// guard cannot be false (QSL FR-218-AC-32). QSpec #481 (STD-539) now
+    /// supports it (FR-464 "Nested `repeat` rule"); it is withheld until
+    /// IR's reader decides that rule (IR-1100), which today refuses the
+    /// outer repeat.
+    RepeatStepsThroughRepeat,
     /// A reference, from a function or a clause, to a protocol that holds an
     /// `attempt`: that protocol's node is written after the state clauses
     /// its attempts list, which are written after the functions. QSL-1121g.
@@ -849,6 +867,10 @@ impl ProtocolConstruct {
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
             Self::NoOwnerModel => "QSL-1147",
+            Self::PostTestRepeat
+            | Self::RepeatDecisionReadsBody
+            | Self::VisibleEntryNotAnExpression => "STD-539",
+            Self::RepeatStepsThroughRepeat => "IR-1100",
         }
     }
 }
@@ -1296,6 +1318,14 @@ pub enum TemporalCause {
     /// its clocks no one value. Located at the later write.
     ConflictingClockWrite {
         /// The later write's span.
+        span: Span,
+    },
+    /// QSpec FR-415-AC-21 "No implicit reset on a presence change": a
+    /// postcondition requires `present(p)` of a guarded place it does not
+    /// write, where the operation's precondition establishes `p` absent,
+    /// so no successor exists. Located at the requirement.
+    ClockPresenceUnwritten {
+        /// The `present(...)` requirement's span.
         span: Span,
     },
     /// FR-230 "Guards": `value(p)` of a guarded place read where the guard
@@ -1841,6 +1871,7 @@ impl TemporalCause {
             | Self::NotAPlaceExpression { span }
             | Self::ClockWrite { span }
             | Self::ConflictingClockWrite { span }
+            | Self::ClockPresenceUnwritten { span }
             | Self::UnprovedPresence { span }
             | Self::PresenceNotChecked { span }
             | Self::TimeInvariantShape { span }
@@ -1925,6 +1956,7 @@ impl TemporalCause {
             | Self::ClockBoundNotConstant { .. }
             | Self::ClockWrite { .. }
             | Self::ConflictingClockWrite { .. }
+            | Self::ClockPresenceUnwritten { .. }
             | Self::TimeInvariantShape { .. }
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
@@ -1998,6 +2030,7 @@ impl TemporalCause {
             Self::ClockBoundNotConstant { .. } => "clock-bound-not-constant",
             Self::ClockWrite { .. } => "clock-write",
             Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
+            Self::ClockPresenceUnwritten { .. } => "clock-presence-unwritten",
             Self::UnprovedPresence { .. } => "unproved-presence",
             Self::PresenceNotChecked { .. } => "not-yet-implemented",
             Self::TimeInvariantShape { .. } => "time-invariant-shape",

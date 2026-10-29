@@ -427,6 +427,33 @@ fn a_lasso_with_an_uncounted_step_is_read_in_counted_steps() {
     assert_eq!(at(vec![1], true), TemporalOutcome::Holds);
 }
 
+/// Reading a lasso in counted steps pays one unit per trace position, named
+/// `temporal.visit`; a meter that runs out during that read stops `Incomplete`
+/// at that point.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn the_counted_step_read_is_charged_at_temporal_visit() {
+    let fixture = counter(INFINITE, "eventually[0,1] holds(c.level = 2)");
+    let lasso = TemporalTrace::Lasso {
+        prefix: 1,
+        loop_len: 2,
+    };
+    let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
+    letters.uncounted = vec![1];
+    let outcome = evaluate(
+        &fixture.clause,
+        lasso,
+        &mut letters,
+        &mut Meter::new(limits(1)),
+    )
+    .expect("the lasso is readable");
+    let TemporalOutcome::Incomplete(incomplete) = outcome else {
+        panic!("one unit cannot read three positions: {outcome:?}");
+    };
+    assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+    assert_eq!(incomplete.charge_point, ChargePoint::TemporalVisit);
+}
+
 /// ADR-027 PB-3 (FR-338): a loop with no counted step keeps every distance
 /// from a position before it constant. `eventually[1,1] holds(c.level = 2)`
 /// is not met on the lasso `0 | 1 2` when the loop's steps and its closing
@@ -646,7 +673,7 @@ fn work_is_charged_per_visit_and_exhaustion_returns_no_truth_value() {
     assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
     assert_eq!(incomplete.limit, 3);
     assert_eq!(incomplete.consumed, 3);
-    assert_eq!(incomplete.charge_point, ChargePoint::GraphExpand);
+    assert_eq!(incomplete.charge_point, ChargePoint::TemporalVisit);
     assert_eq!(spent, 3);
     assert_eq!(
         TemporalOutcome::Incomplete(incomplete).category(),
@@ -1171,6 +1198,7 @@ fn a_window_over_unrepresented_positions_is_paid_per_step_and_stops_on_the_meter
         panic!("the meter stops the scan: {settled:?}");
     };
     assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+    assert_eq!(incomplete.charge_point, ChargePoint::TemporalVisit);
     assert_eq!(spent, 10_000);
 }
 

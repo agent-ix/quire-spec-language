@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: references
+  - target: ix://agent-ix/quire-specification/FR-375
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-245
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-276
@@ -37,7 +39,8 @@ LA-3). FR-127's settlement map runs the check: a proof whose certificate it
 verifies settles `proved`, `Certified`; one it shows wrong
 settles `inconclusive`, `CertificateRejected{rule, at}`; one it cannot
 verify because a step uses an unchecked rule settles `proved`,
-`Uncertified`, as an SMT proof that arrives with no certificate does.
+`Uncertified`, as an SMT proof that arrives with no certificate does. The
+settlement rule under "Outputs" states the whole mapping once.
 
 For a refinement's per-step simulation obligations (QSpec FR-468),
 `check_refinement_smt_proof` SHALL accept a `RefinementSmtCertificate` exactly
@@ -160,10 +163,16 @@ Each entry returns `Result<SmtProofCheck, CertificateRejection>`:
 - `Err(CertificateRejection{rule, at})` naming the first rule that failed
   and where.
 
-FR-127's settlement map reads each alternative: `Verified` settles `proved`,
-`Certified`; `Unverifiable` and `Unencodable` settle `proved`, `Uncertified`;
-`Stopped` settles V-7; `Fault` settles `failed`; `Err` settles
-`inconclusive`, `CertificateRejected{rule, at}`.
+**Settlement rule.** FR-127's settlement map reads each alternative, and this
+is the one statement of the mapping: `Verified` settles `proved`, `Certified`;
+`Unverifiable` and `Unencodable` each settle `proved`, `Uncertified`; `Stopped`
+settles V-7; `Fault` settles `failed`; `Err` settles `inconclusive`,
+`CertificateRejected{rule, at}`. `Verified` is the only alternative that
+settles `Certified`. `Unverifiable` and `Unencodable` are never `Verified` and
+never `Certified`: neither shows the certificate wrong, and neither shows the
+query refuted by checked rules, so a caller never reports either as verified,
+and a refinement's records are `Certified` only when the checker returned
+`Verified` for the whole certificate (FR-146).
 
 ## Behavior
 
@@ -296,8 +305,8 @@ number of step rows of the recompiled refinement's `steps` array.
   `Step { row: Some(r) }`, the first part in the order `base`, then rows
   `0..N`, whose carried query differs byte for byte. A step part carried in
   the `base` position therefore rejects `QueryMismatch` at `Base`. A row
-  whose query FR-315 refuses to encode (a `_` argument, an `any` row or a term
-  outside `QF_LIA`) has no expected query: its part is neither compared nor
+  whose query FR-315 refuses to encode (a `_` argument, an `any` row, a
+  protocol or `binds_result` row, or a term outside `QF_LIA`: FR-315 "Refinement queries") has no expected query: its part is neither compared nor
   checked.
 - The checker SHALL then check the proofs of `base` and of the encodable
   `steps[r]` in that order by the proof rules above, naming
@@ -308,8 +317,52 @@ number of step rows of the recompiled refinement's `steps` array.
   order, `Unencodable { part: Step { row: Some(r) } }` naming that row; a
   certificate with a refused row is never `Verified`. `Unencodable` is distinct
   from `Unverifiable`, so no command index stands for a whole part.
+- When FR-315 refuses the `Initial` query, whatever the code (`out-of-fragment`
+  for a mapping row outside `QF_LIA` included), the checker SHALL reject with
+  `QueryMismatch` at `Base`: FR-315 prints no initial query, so no carried
+  base query equals one, and the base part has no expected query to compare.
+  The refusal is not `Unencodable`, which names a step row only. A certificate with
+  the wrong number of step parts is still rejected `ShapeMismatch` first, because
+  the shape check precedes every query comparison. The refinement
+  fails closed at `Base`, the first part in the order above: no step part is
+  compared or checked, and the half settles `inconclusive`,
+  `CertificateRejected{QueryMismatch, Base}`, never `proved`.
 - The checker SHALL return `Verified` only when every row is encodable and the
   base and every step part refute their queries using checked rules alone.
+
+### Assembly from CG run records
+
+A `RefinementSmtCertificate` is assembled by the QSL adapter (QSL-908) from
+the CG run records of the refinement item; it is never read from the QSpec
+wire, which carries no refinement SMT certificate (QSpec FR-331). The record
+kinds and their serialization are defined by the CG run-record format (the
+STD-566 delta to the CG SMT adapter), not by QSL or QSpec. QSL states only the
+adapter's input contract: one `Base` record, and one step record per step row
+identified by its zero-based `row`, the row indexing the recompiled
+refinement's `steps` array (QSpec FR-375). Let `N` be the number of step rows
+of the recompiled refinement's `steps` array.
+
+- The adapter SHALL set `format` to `Alethe`, `base` to a `RefutedQuery` built
+  from the `Base` record, and `steps[r]` to a `RefutedQuery` built from the
+  step record of row `r`, for each `r` in `0..N`, in row order whatever order
+  the records arrive in.
+- For each record the adapter SHALL set `RefutedQuery.query` to the record's
+  FR-315 canonical query bytes and `RefutedQuery.proof` to the record's Alethe
+  proof bytes, each unchanged.
+- The adapter SHALL assemble no certificate when the `Base` record is
+  missing, when the step record of a row in `0..N` is missing, when two step
+  records name the same row, when a step record names a row outside `0..N`,
+  or when a record's query field or its proof field is absent (`None`).
+- A query or proof field that is present is carried unchanged whatever its
+  bytes: an empty or malformed proof is not a refusal of assembly, and
+  `check_refinement_smt_proof` rejects it as above (`NotRefutation` or
+  `Malformed` at `Query { part }`), as it rejects a wrong query with
+  `QueryMismatch`.
+- When the adapter assembles no certificate, the refinement's records settle
+  as FR-146 settles a record whose certificate is absent: `Proved{Inductive{depth:
+  1}, Uncertified}` (ADR-018 PC-6), never `CertificateRejected`. This is the
+  refinement path of FR-146, not FR-127's `SmtProofOutcome` path for a
+  `BoundedComplete` or `Inductive` temporal item.
 
 ### Checked Alethe rules
 
@@ -340,6 +393,15 @@ command. Every other rule is unchecked.
 | FR-314-AC-6 | Each entry returns `Result<SmtProofCheck, CertificateRejection>`, and its `Ok` is never empty: AC-1's accepted bounded and inductive certificates return `Ok(SmtProofCheck::Verified)`; AC-2's `QueryMismatch` certificate returns `Err(CertificateRejection{rule: QueryMismatch, at: Query { part: Unrolling }})`; AC-2's `hole` certificate returns `Ok(Unverifiable { part: Unrolling, step })` at that step; AC-4's `CasRefinesCounterAdd` certificate returns `Ok(Unencodable { part: Step { row: Some(r) } })`; AC-5's limit-stopped certificate returns `Ok(Stopped(LimitReached{..}))`. AC-1's bounded certificate checked for the TP-2 `on origin` claim `always[0,3] holds(c.value * c.value <= 9)` at `BoundedComplete{depth: 3}`, whose unrolling FR-315 refuses `out-of-fragment`, returns `Err` with `QueryMismatch` at `Query { part: Unrolling }` and settles `inconclusive`, `CertificateRejected`. | Test (TC-1199) |
 | FR-314-AC-7 | FR-314-AC-1's bounded certificate for `always[0,3] holds(c.value <= 3)` at `BoundedComplete{depth: 3}`, whose unrolling query declares eight constants, checked with a `CertificateRequest` whose `smt_encoding` has `max_constants` 8 and every other member at its default, returns `Verified`: the checker rebuilds the query under 8 and it equals the carried one byte for byte. The same certificate with `smt_encoding.max_constants` 7 is rejected `QueryMismatch` at `Query { part: Unrolling }`, FR-315 refusing the rebuild `too-large` naming `constants`, value 8, limit 7 and setting `smt_encoding.max_constants`, and settles `inconclusive`, `CertificateRejected`, never `proved`. A request recording the defaults returns `Verified`. | Test (TC-1250) |
 | FR-314-AC-8 | Over FR-314-AC-1's `Counter` under event-position false-extension, the TP-2 `on origin` claim `always[0,3] eventually[0,1] holds(c.value = 3)`, horizon 4, which FR-315-AC-35 refutes: a `BoundedComplete{depth: 0}` certificate whose carried query and proof are otherwise well formed is rejected `ShapeMismatch` at `Query { part: Unrolling }` before any query is encoded, and settles `inconclusive`, `CertificateRejected`, never `proved`; a `BoundedComplete{depth: 0}` result for it with no certificate settles the same. FR-314-AC-1's `always[0,3] holds(c.value <= 3)` with a `BoundedComplete{depth: 2}` basis, below its horizon 3, is rejected the same way, and so is a `BoundedComplete{depth: 3}` basis for the TP-1 item `always holds(c.value <= 3)`. FR-314-AC-1's accepted `BoundedComplete{depth: 3}` certificate is still accepted. | Test (TC-1201) |
+| FR-314-AC-9 | Over `CasRefinesCounter` with a mapping row outside `QF_LIA`, so that FR-315 refuses `Initial` `out-of-fragment` naming the row, a certificate with a base part and seven step parts, the base part carrying the query of an in-fragment initial state, and the same certificate with an empty base part, are each rejected `QueryMismatch` at `Base`, never `Unencodable` and never `Unverifiable`, whatever the step parts carry (a certificate with six or eight step parts is rejected `ShapeMismatch` first, as in AC-4) (a `hole` proof in a step part included), and the refinement's `Initial` record settles `inconclusive`, `CertificateRejected{QueryMismatch, Base}`. Over `CasRefinesCounterAdd`, whose `bump` query alone is refused, the same certificate is not rejected: it returns `Unencodable`, `proved`, `Uncertified`. | Test (TC-893) |
+| FR-314-AC-10 | Assembly: given a `Base` record and the step records of rows 0 to 6, supplied out of row order, each with a query and a proof, the adapter assembles a `RefinementSmtCertificate` with `format` `Alethe`, `base` carrying the `Base` record's query and proof bytes unchanged and `steps[r]` carrying row `r`'s query and proof bytes unchanged, for every `r`, in row order. | Test (TC-893) |
+| FR-314-AC-11 | Over `CasRefinesCounter` (seven step rows), given the step records of rows 0 to 6 and no `Base` record, the adapter assembles no certificate and the refinement's records settle `Proved{Inductive{depth: 1}, Uncertified}`, never `CertificateRejected`. | Test (TC-893) |
+| FR-314-AC-12 | Over `CasRefinesCounter` (seven step rows), given the `Base` record and the step records of rows 0 to 6 except row 3, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
+| FR-314-AC-13 | Over `CasRefinesCounter` (seven step rows), given AC-10's records and a second step record for row 3, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
+| FR-314-AC-14 | Over `CasRefinesCounter` (seven step rows), given AC-10's records and a step record for row 7, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
+| FR-314-AC-15 | Over `CasRefinesCounter` (seven step rows), given AC-10's records with the row-3 record's query absent, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
+| FR-314-AC-16 | Over `CasRefinesCounter` (seven step rows), given AC-10's records with the row-3 record's proof absent, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
+| FR-314-AC-17 | Over `CasRefinesCounter` (seven step rows), given AC-10's records with the `Base` record's proof present and of no bytes, the adapter assembles the certificate with that empty proof unchanged, and `check_refinement_smt_proof` rejects it `NotRefutation` at `Query { part: Base }`, settling `inconclusive`, `CertificateRejected`. | Test (TC-893) |
 
 ## Dependencies
 
@@ -347,7 +409,8 @@ command. Every other rule is unchecked.
 - [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) (the encoding
   and its canonical printing), [FR-338](FR-338-check-an-en-1-closure-certificate.md)
   (the request, rule and rejection types and the wire spelling of a
-  `QueryPart`), QSpec FR-468 (the refinement's queries and certificate),
+  `QueryPart`), QSpec FR-468 (the refinement's queries and certificate), QSpec FR-375
+  (the `steps` order the CG records follow),
   [FR-163](FR-163-check-a-hyper-item-s-product-closure-certificate.md)
   (the `Malformed` rule),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)

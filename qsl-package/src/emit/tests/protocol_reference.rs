@@ -77,6 +77,7 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
          profile v = \"quire.model.complete/v1\";\n{profile}\
          model Config = \"example/config-version\" version \"1\" digest \
          \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+         record Ack {{ ok: Boolean; }}\n\
          {function}\
          protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
          role R on Config::ConfigVersion;\n\
@@ -86,8 +87,9 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
     )
 }
 
-const CHOICE_ROOT: &str = "sequence Main { choice Pick by R visible () { \
-     case yes when { true } sequence A { } case no when { false } sequence B { } } }";
+/// A post-test `repeat`, whose guard reads its body's binder: no node form.
+const POST_TEST_ROOT: &str = "sequence Main { repeat Again by R visible (e.ok) \
+     while { not e.ok } sequence Body { event E by R as (e: Ack) { true }; } }";
 
 const ATTEMPT_ROOT: &str = "attempt Update by R on Config::ConfigVersion::attemptUpdate \
      contracts [] as (tried: Boolean) { true };";
@@ -121,7 +123,7 @@ fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
 #[trace("FR-092-AC-18", "FR-218-AC-8", "TC-1021")]
 #[test]
 fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
-    let attempt = not_emitted(ProtocolConstruct::Control("choice"));
+    let attempt = not_emitted(ProtocolConstruct::PostTestRepeat);
     assert_eq!(attempt.code(), qsl_foundation::Code::UnsupportedConstruct);
     assert_eq!(attempt.cause(), Some("not-yet-implemented"));
     for (construct, ticket) in [
@@ -129,20 +131,22 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::Relationships, "QSL-1141"),
         (ProtocolConstruct::ChannelCarriesBounded, "QSL-1137"),
         (ProtocolConstruct::ChannelKeyNotEqualityStable, "QSL-1142"),
-        (ProtocolConstruct::Control("choice"), "QSL-1126"),
+        (ProtocolConstruct::Control("parallel"), "QSL-1126"),
+        (ProtocolConstruct::PostTestRepeat, "STD-539"),
+        (ProtocolConstruct::VisibleEntryNotAnExpression, "STD-539"),
         (ProtocolConstruct::ReferenceCycle, "QSL-844"),
     ] {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
     }
 
-    let declared = check_attempt_unit(&rooted(CHOICE_ROOT, true, false), false)
+    let declared = check_attempt_unit(&rooted(POST_TEST_ROOT, true, false), false)
         .expect_err("the protocol names an unwritten construct");
     assert_eq!(
         declared.iter().map(|r| &r.cause).collect::<Vec<_>>(),
         [&attempt]
     );
 
-    let referred = check_attempt_unit(&rooted(CHOICE_ROOT, true, true), false)
+    let referred = check_attempt_unit(&rooted(POST_TEST_ROOT, true, true), false)
         .expect_err("the reference refuses too");
     assert_eq!(referred.len(), 2, "{referred:?}");
     assert!(referred.iter().all(|r| r.cause == attempt));

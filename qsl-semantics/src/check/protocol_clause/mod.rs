@@ -50,12 +50,14 @@ mod tests;
 
 pub use awaits::Selections;
 pub use coverage::content;
-pub(crate) use graph::dominates;
+pub(crate) use graph::{dominates, repeat_body};
 use types::PendingPredicateJoin;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
-    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedProtocol, CheckedProtocolBinderKey, CheckedProtocolExpressionBindings,
+    CheckedProtocolNodeKeys, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef,
+    ProtocolNodeId,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -243,9 +245,14 @@ pub fn check(
             qsl_forms::JoinPolicy::Any => Some(CheckedJoinPolicy::Any),
             qsl_forms::JoinPolicy::Quorum(count) => Some(CheckedJoinPolicy::Quorum(*count)),
             qsl_forms::JoinPolicy::Predicate(name) => {
+                // `check_predicate_joins` refused a name that is no
+                // function signature.
+                let Some(function) = signatures.position(name) else {
+                    continue;
+                };
                 pending_predicate_joins.push(PendingPredicateJoin {
                     node,
-                    name: name.clone(),
+                    function,
                     joined: joined.clone(),
                     outstanding,
                 });

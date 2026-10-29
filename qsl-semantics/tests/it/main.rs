@@ -67,6 +67,7 @@ mod native_snapshot_values;
 mod observation_composites;
 mod operation_bodies;
 mod operation_clauses;
+mod option_values;
 #[cfg(feature = "test-support")]
 mod population_bound;
 mod probabilistic_declarations;

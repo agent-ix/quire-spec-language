@@ -858,10 +858,20 @@ mod tests {
                 column: 55,
             },
         };
+        // The digest is opaque to rendering: the refusal's `locus` carries
+        // whatever the call recorded. It is the SHA-256 of the fixture's
+        // own source text, so input and expectation share one value.
+        let source_digest = {
+            use sha2::{Digest, Sha256};
+            let hex: String = Sha256::digest(b"fixture.native source")
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!("sha256:{hex}")
+        };
         let locus = CallLocus {
             file: "fixture.native".to_owned(),
-            source_digest:
-                "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26".to_owned(),
+            source_digest: source_digest.clone(),
             span,
         };
         let location = Location::at(
@@ -891,7 +901,7 @@ mod tests {
                 "cause": "absent-key",
                 "fields": fields,
                 "locus": {
-                    "source_digest": "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26",
+                    "source_digest": source_digest,
                     "span": {
                         "start": {"byte": 225, "line": 3, "column": 54},
                         "end": {"byte": 226, "line": 3, "column": 55},

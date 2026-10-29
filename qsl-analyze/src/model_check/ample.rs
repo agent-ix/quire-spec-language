@@ -77,9 +77,6 @@ impl<'r, 'a> Por<'r, 'a> {
         fairness: &[FairnessConstraint],
         constraint: Option<&str>,
     ) -> Result<Self, ModelCheckRefusal> {
-        system
-            .check_footprints_derivable()
-            .map_err(ModelCheckRefusal::Footprint)?;
         let mut atom_reads = BTreeSet::new();
         if let Some(atoms) = &atoms {
             for node in atoms.nodes {
@@ -99,6 +96,22 @@ impl<'r, 'a> Por<'r, 'a> {
                 );
             }
         }
+        Self::with_atom_reads(system, atom_reads, instances, fairness, constraint)
+    }
+
+    /// Construct POR from already-derived atom footprints. State-graph
+    /// predicates are checked bodies rather than temporal formula atoms, so
+    /// their callers derive these reads through `ModelSystem::atom_reads`.
+    pub(super) fn with_atom_reads(
+        system: &'r ModelSystem<'a>,
+        atom_reads: BTreeSet<SymbolicLocation>,
+        instances: &'r [ModelInstance],
+        fairness: &[FairnessConstraint],
+        constraint: Option<&str>,
+    ) -> Result<Self, ModelCheckRefusal> {
+        system
+            .check_footprints_derivable()
+            .map_err(ModelCheckRefusal::Footprint)?;
         let constraint_reads = match constraint {
             Some(name) => system
                 .constraint_reads(name)

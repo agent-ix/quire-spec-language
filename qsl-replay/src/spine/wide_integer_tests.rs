@@ -21,8 +21,14 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 const TWO_POW_127: &str = "170141183460469231731687303715884105728";
 const I128_MAX: &str = "170141183460469231731687303715884105727";
 const I128_MIN: &str = "-170141183460469231731687303715884105728";
-/// FR-092 vector L7: the folded `i128::MIN` literal.
-const L7_KEY: &str = "c3aa30b239d70dea497badfb4fd426fb7b57e441aeb22d2eb450a19ad6617c5b";
+/// FR-092 vector L7's key: the folded `i128::MIN` literal, recomputed from
+/// the vector's hand-written preimage in the spec in this repository.
+fn l7_key() -> String {
+    qsl_semantics::check::spec_vectors::vectors("FR-092")
+        .remove("L7")
+        .expect("FR-092 publishes vector L7")
+        .0
+}
 
 /// `function u using v(x: <parameter>): Boolean pure { <body> }`.
 fn unit(parameter: &str, body: &str) -> String {
@@ -202,7 +208,7 @@ fn a_directly_negated_two_pow_127_is_one_literal() {
             compile(&unit(&parameter, &body)).unwrap_or_else(|refusal| panic!("{body}: {refusal}"));
         assert!(!has_negate(&compiled), "{body}: no Negate node");
         assert!(
-            integer_literals(&compiled).contains(&(I128_MIN.to_owned(), L7_KEY.to_owned())),
+            integer_literals(&compiled).contains(&(I128_MIN.to_owned(), l7_key())),
             "{body}: the literal is L7"
         );
     }

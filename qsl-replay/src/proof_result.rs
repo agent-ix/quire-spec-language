@@ -15,13 +15,14 @@ use crate::execute::ReplayRefusal;
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::hybrid_replay::{HybridTrace, ReplayRecord};
 use crate::model_check::limits::ModelCheckLimit;
-use crate::model_check::state_graph::WitnessSource;
+use crate::model_check::state_graph::{StateGraphPropertyForm, WitnessSource};
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
 use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_foundation::RequestIndex;
@@ -639,6 +640,14 @@ pub enum InconclusiveCause {
     /// ([`ReplayRefusal::code`]). A fault is never this cause: it settles
     /// [`TerminalValue::Failed`].
     ReplayRefused(Code),
+    /// A requested package or refinement identity differs from the current
+    /// package or refinement identity (FR-149, FR-282, FR-331).
+    StaleDependency {
+        /// The identity the request or certificate names.
+        requested: StaleIdentity,
+        /// The identity the current package or request names.
+        recompiled: StaleIdentity,
+    },
     /// `scalar_agrees`: a scalar-parity counterexample (FR-357), operator-
     /// or function-level, did not reproduce, because the exact outcome
     /// equals the generated one. The harness reported a divergence there is
@@ -691,6 +700,14 @@ pub enum InconclusiveCause {
         /// The claim's property form.
         form: PropertyForm,
     },
+    /// ADR-021 RV-2: a state-graph reduction's preservation-table row reads
+    /// "no" for the claim's form.
+    StateGraphReductionNotPreserving {
+        /// The first selected reduction the table refuses.
+        reduction: ReductionKind,
+        /// The state-graph claim's property form.
+        form: StateGraphPropertyForm,
+    },
     /// ADR-021 RV-3: a symmetry declaration's initial states are not closed
     /// under its group.
     SymmetryBroken {
@@ -730,6 +747,17 @@ pub enum InconclusiveCause {
         /// The instance-limited states.
         states: u64,
     },
+}
+
+/// The domain-specific identity retained by a stale-dependency result.
+/// Package IDs remain package semantic identities; refinement names remain
+/// refinement identities. They are tagged on the FR-331 result wire.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StaleIdentity {
+    /// A `quire.package.semantic/v2` package identity.
+    Package(DigestRecord),
+    /// An FR-149 refinement name.
+    Refinement(String),
 }
 
 /// The instance bound a run used (ADR-027 AE-4): the value of the request
@@ -810,6 +838,7 @@ impl InconclusiveCause {
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => REPLAY_PARITY_KIND,
             Self::ReplayRefused(_) => REPLAY_REFUSED_KIND,
+            Self::StaleDependency { .. } => "stale-dependency",
             Self::ScalarAgrees(_) => "scalar-agrees",
             Self::SolverInconclusive { .. } => "solver-inconclusive",
             Self::InsufficientHorizon { .. } => "insufficient-horizon",
@@ -818,6 +847,7 @@ impl InconclusiveCause {
             Self::LassoNotConcretized => "lasso-not-concretized",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
+            Self::StateGraphReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
             Self::ConstraintReached { .. } => "constraint-reached",
             Self::ReductionHorizon { .. } => "reduction-horizon",
@@ -846,6 +876,8 @@ impl InconclusiveCause {
             | Self::SolverInconclusive { .. }
             | Self::InsufficientHorizon { .. }
             | Self::ReductionNotPreserving { .. }
+            | Self::StateGraphReductionNotPreserving { .. }
+            | Self::StaleDependency { .. }
             | Self::ConstraintReached { .. }
             | Self::ReductionHorizon { .. }
             | Self::MemoryBoundReached { .. }
@@ -1042,6 +1074,13 @@ impl TerminalValue {
             ReplayRefusal::Fault(_) | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => {
                 Self::Failed
             }
+            ReplayRefusal::PackageIdMismatch {
+                requested,
+                recompiled,
+            } => Self::Inconclusive(InconclusiveCause::StaleDependency {
+                requested: StaleIdentity::Package(*requested),
+                recompiled: StaleIdentity::Package(recompiled.record()),
+            }),
             _ => Self::Inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         }
     }
@@ -1270,6 +1309,26 @@ impl TerminalRecord {
         diagnostic: CatalogCode,
     ) -> Self {
         Self::failed(request_index, backend).with_diagnostic(Some(diagnostic))
+    }
+
+    /// The record of `value`, a model-check settlement map's (FR-127's,
+    /// FR-235's or FR-144's), produced by `backend`: a `refuted` value only
+    /// with the counterexample `reproduced`, which its replay reproduced.
+    ///
+    /// # Errors
+    ///
+    /// [`TerminalRecordRefusal::RefutedWithoutCounterexample`] for a
+    /// `refuted` value with no reproduced counterexample.
+    pub fn of_model_settlement<T: qsl_eval::simulation::SubjectTransition>(
+        request_index: RequestIndex,
+        backend: BackendId,
+        value: TerminalValue,
+        reproduced: Option<&crate::model_check::counterexample::TemporalCounterexample<T>>,
+    ) -> Result<Self, TerminalRecordRefusal> {
+        if matches!(value, TerminalValue::Refuted) && reproduced.is_none() {
+            return Err(TerminalRecordRefusal::RefutedWithoutCounterexample);
+        }
+        Ok(Self::with_backend(request_index, backend, value))
     }
 
     pub(crate) fn with_backend(

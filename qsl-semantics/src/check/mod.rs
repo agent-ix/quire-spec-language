@@ -113,6 +113,17 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
+// FR-092/093/094's golden vectors, resolved from the specs' hand-written
+// preimages; the package emitter's and the evaluator's tests recompute the
+// keys through it, so only `test-support` exposes it.
+#[cfg(any(test, feature = "test-support"))]
+#[path = "lowering/spec_vectors.rs"]
+pub mod spec_vectors;
+// FR-091's dimension, unit and enum key vectors, recomputed from the spec's
+// stated preimage content.
+#[cfg(any(test, feature = "test-support"))]
+#[path = "lowering/fr091_vectors.rs"]
+pub mod fr091_vectors;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 mod hybrid;
@@ -245,6 +256,25 @@ pub fn builtin_rational_type_key() -> quire_exact::NodeKey {
         .key
 }
 
+/// The structural key of QSpec's built-in Integer scalar type (FR-092): the
+/// symbolic element selector of a `clock_place` slot step (QSpec FR-322
+/// "Timed-model nodes") references it.
+pub fn builtin_integer_type_key() -> quire_exact::NodeKey {
+    let body = BodyTerm::aggregate(Vec::new());
+    let input = node_key::NodeInput {
+        owner: None,
+        node_tag: NodeTag::ScalarType,
+        semantic_form: "integer",
+        semantic_type: None,
+        declaration: None,
+        body: &body,
+        owner_model: None,
+    };
+    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
+        .expect("the built-in Integer scalar has a valid structural key")
+        .key
+}
+
 /// The structural key of QSpec's built-in Text scalar type (FR-092).
 /// Timed source metadata uses this primitive even when no source expression
 /// already caused its scalar node to enter the checked graph.
@@ -360,7 +390,8 @@ pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
-    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedProtocol, CheckedProtocolBinderKey, CheckedProtocolNodeKeys, CheckedRole, CheckedVia,
+    ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -400,7 +431,7 @@ pub use state_graph_claim::{
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
 
-pub use lowering::{CollectionShape, PlaceStep};
+pub use lowering::{collection_kind, CollectionShape, PlaceRow, PlaceStep};
 pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
@@ -602,6 +633,9 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-390: emitted protocol node keys mapped back to their one S3
+    /// checked protocol declaration and slot rows.
+    protocol_node_keys: BTreeMap<String, CheckedProtocolNodeKeys>,
     /// FR-337: every emitted temporal clause, in declaration order.
     temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-488: every emitted hyper clause over `behaviours`, in declaration
@@ -2478,7 +2512,7 @@ impl PackageDeclarations {
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
         // FR-230: each timed model's guard parts, time invariants and
         // `urgent when` predicates, each typed as a Boolean over the state.
-        let timed_models = {
+        let mut timed_models = {
             let location = Location::root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
                 scope: &scope,
@@ -2504,6 +2538,7 @@ impl PackageDeclarations {
                 complete_value: crate::value::definition::DefinitionLock::pinned()
                     .closure(&header_layers)
                     .contains(&crate::value::layer::HeaderLayer::ValueComplete),
+                presence_places: &[],
             };
             match timed_model::check(timed_drafts, &checking, &mut contract_cx) {
                 Ok((checked, used)) => {
@@ -2521,6 +2556,13 @@ impl PackageDeclarations {
                 }
             }
         };
+        // FR-230: each `urgent when` predicate S3 lowers is located at its own
+        // site, so its nodes' occurrences resolve.
+        for model in &mut timed_models {
+            for (_, _, predicate) in model.urgency_predicates_mut() {
+                site_spans.insert(predicate.site.clone(), predicate.spans.clone());
+            }
+        }
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
         // state-clause bodies over the concrete object. FR-147: the
         // `refinement_internals` value is parsed once. A refinement over a
@@ -4513,6 +4555,28 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-230, QSpec FR-322 "Timed-model nodes": each `urgent when`
+        // predicate's expression node, which its `urgency` node references.
+        for model in &mut timed_models {
+            for (_, urgency, predicate) in model.urgency_predicates_mut() {
+                let timed_model::Urgency::When {
+                    context,
+                    alternatives,
+                    ..
+                } = urgency
+                else {
+                    continue;
+                };
+                let [alternative] = alternatives.as_slice() else {
+                    continue;
+                };
+                match lowering.urgency_predicate(*context, alternative.predicate(), &predicate.site)
+                {
+                    Ok(key) => predicate.node = Some(key),
+                    Err(refusal) => refusals.push(refusal),
+                }
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -4554,6 +4618,7 @@ impl PackageDeclarations {
         // row expression located at its own site. A refinement whose
         // catalog names a node not written yet, or a row a form with no
         // node, is not emitted, so its rows are not keyed.
+        let mut refinement_booleans = std::collections::BTreeMap::new();
         for checked in &mut refinements {
             if (checked.class_catalog.is_some() && checked.class_catalog_keys.is_none())
                 || !checked.rows_have_nodes()
@@ -4568,6 +4633,13 @@ impl PackageDeclarations {
             });
             match lowering.refinement_rows(checked, &location) {
                 Ok(rows) => checked.row_keys = Some(rows),
+                Err(refusal) => refusals.push(refusal),
+            }
+            // FR-144: the `Boolean` result bound of the refinement's record.
+            match lowering.refinement_result_type(&location) {
+                Ok(boolean) => {
+                    refinement_booleans.insert(checked.name().to_owned(), boolean);
+                }
                 Err(refusal) => refusals.push(refusal),
             }
         }
@@ -4628,11 +4700,12 @@ impl PackageDeclarations {
         // FR-094: `check` is the model correspondence's only writer; it
         // holds exactly the model declaration nodes lowering keyed, and a
         // conflicting entry refused the lowering above (FR-303).
-        let (semantic_graph, model_correspondence, identities, binders) = (
+        let (semantic_graph, model_correspondence, identities, binders, lowered_protocol_members) = (
             lowered.graph,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
+            lowered.protocol_members,
         );
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
@@ -4644,10 +4717,7 @@ impl PackageDeclarations {
                 }]);
             };
             for pending in std::mem::take(&mut checked.pending_predicate_joins) {
-                let name = &pending.name;
-                let identity = signatures
-                    .position(name)
-                    .and_then(|index| identities.get(index).copied().flatten());
+                let identity = identities.get(pending.function).copied().flatten();
                 let Some(identity) = identity else {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
@@ -4995,8 +5065,14 @@ impl PackageDeclarations {
                                 ))),
                             }]
                         })?;
+                    // FR-243: a clause over a `time dense` subject is EN-6's
+                    // item.
                     let record = claims::RequirementRecord::unguarded(
-                        extent,
+                        if checked.dense_time() {
+                            extent.over_dense_time()
+                        } else {
+                            extent
+                        },
                         ValueType::Boolean,
                         claims::wire(lowered.boolean),
                         references::ModelReferences::new(objects.clone(), [], None),
@@ -5088,6 +5164,63 @@ impl PackageDeclarations {
                 }
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
+        }
+        // FR-144 "Requirement record and request": one `temporal-satisfaction`
+        // record per refinement the package emits, keyed by the `declaration`
+        // occurrence of its V2 node (QSpec FR-375), with the TP-5 form. A
+        // refinement the V2 slice does not emit is refused below unless a
+        // test asked for its package unwritten, and then has no node to key.
+        for checked in &mut refinements {
+            if !checked.v2_emittable() {
+                continue;
+            }
+            let location = root(Origin::TypeDeclaration {
+                name: refinement_origin(checked.name()),
+            });
+            let unkeyable = || {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            };
+            let node = checked
+                .v2_emission()
+                .map(|emission| claims::wire(emission.identity))
+                .map_err(|_| unkeyable())?;
+            let boolean = refinement_booleans
+                .get(checked.name())
+                .copied()
+                .ok_or_else(unkeyable)?;
+            let occurrence = OccurrenceKey::new(
+                node,
+                quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
+            );
+            // FR-430: a refinement whose concrete model is `time dense` is
+            // EN-6's item.
+            let dense = self.time_sources.iter().any(|source| {
+                source.model == checked.concrete_model() && source.source == TimeSourceKind::Dense
+            });
+            let wanted = checked.requirements(node);
+            let record = claims::RequirementRecord::unguarded(
+                if dense {
+                    wanted.over_dense_time()
+                } else {
+                    wanted
+                },
+                ValueType::Boolean,
+                claims::wire(boolean),
+                references::ModelReferences::new(Default::default(), [], None),
+            );
+            // Two refinements of one meaning share one node and so one
+            // record; S4 refuses the pair naming both (FR-375).
+            match requirements.entry(occurrence.clone()) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(record);
+                }
+                std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {}
+                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+            }
+            checked.requirement = Some(occurrence);
         }
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
@@ -5269,7 +5402,7 @@ impl PackageDeclarations {
             unwritten.extend(
                 timed_models
                     .iter()
-                    .filter(|model| model.has_members())
+                    .filter(|model| model.has_unwritten_members())
                     .map(timed_model::not_emitted),
             );
         }
@@ -5306,6 +5439,24 @@ impl PackageDeclarations {
             abstractions: self.abstractions,
             model_names,
             protocols: checked_protocols,
+            protocol_node_keys: lowered_protocol_members
+                .into_iter()
+                .map(|(name, members)| {
+                    (
+                        name,
+                        CheckedProtocolNodeKeys {
+                            clause: Some(members.clause),
+                            nodes: members.nodes,
+                            channels: members.channels,
+                            roles: members.roles,
+                            compensations: members.compensations,
+                            terminal: members.terminal,
+                            binders: members.binders,
+                            expressions: members.expressions,
+                        },
+                    )
+                })
+                .collect(),
             temporal_clauses,
             hyper_nodes,
             state_graph_claims: state_graph_nodes,
@@ -5939,6 +6090,13 @@ impl CheckedGraph {
         self.protocols.iter().find(|protocol| protocol.name == name)
     }
 
+    /// FR-390's keyed protocol member identities, read by the selected
+    /// protocol's declaration name. The mapping contains no expression
+    /// bodies; evaluation resolves those from this graph's checked protocol.
+    pub fn protocol_node_keys(&self, name: &str) -> Option<&CheckedProtocolNodeKeys> {
+        self.protocol_node_keys.get(name)
+    }
+
     /// FR-115 (ADR-017 PF-3): the operation `model::object::operation`
     /// names, resolved once against this package: `model` to the domain
     /// package selection its `model` declaration binds, and `object` to the
@@ -6479,6 +6637,51 @@ fn register_protocol_sites(
                 protocol_site(name, ProtocolSite::ControlBody(&control.path)),
                 body.expression.spans.clone(),
             );
+        }
+    }
+    for (node, entries) in protocol
+        .choices
+        .iter()
+        .map(|choice| {
+            (
+                choice.declaration,
+                choice
+                    .visible
+                    .iter()
+                    .chain(choice.cases.iter().map(|case| &case.guard))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .chain(protocol.repeats.iter().map(|repeat| {
+            (
+                repeat.declaration,
+                repeat
+                    .visible
+                    .iter()
+                    .chain([&repeat.guard])
+                    .chain(
+                        repeat
+                            .loop_proof
+                            .iter()
+                            .flat_map(|proof| [&proof.invariant, &proof.variant]),
+                    )
+                    .collect(),
+            )
+        }))
+    {
+        let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(node))
+        else {
+            continue;
+        };
+        for entry in entries {
+            if let Some(span) = protocol_slots::decision_span(entry) {
+                site_spans.insert(
+                    protocol_site(name, ProtocolSite::Decision(&control.path, span)),
+                    entry.spans.clone(),
+                );
+            }
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {

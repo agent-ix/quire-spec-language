@@ -13,6 +13,56 @@ use crate::check::state_clause::{ClauseOperation, PopulationDomain};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProtocolNodeId(pub usize);
 
+/// FR-390's checked identity map for one emitted protocol. The S3 checked
+/// bodies remain authoritative; these keys only connect the S4 node
+/// identities to those bodies for selection.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CheckedProtocolNodeKeys {
+    /// The emitted `protocol_clause` node.
+    pub clause: Option<quire_exact::NodeKey>,
+    /// Run-tree and finish nodes, by their S3 declaration identity.
+    pub nodes: std::collections::BTreeMap<ProtocolNodeId, quire_exact::NodeKey>,
+    /// Channel nodes, by declared channel name.
+    pub channels: std::collections::BTreeMap<String, quire_exact::NodeKey>,
+    /// Role nodes, by declared role name.
+    pub roles: std::collections::BTreeMap<String, quire_exact::NodeKey>,
+    /// Compensation nodes, by declaration order.
+    pub compensations: Vec<quire_exact::NodeKey>,
+    /// The terminal obligation node, when the protocol declares one.
+    pub terminal: Option<quire_exact::NodeKey>,
+    /// Parameter identities emitted for this protocol, including nested
+    /// expression binders. A slot's checked local reads select only the
+    /// entries in scope for that expression.
+    pub binders: Vec<CheckedProtocolBinderKey>,
+    /// Exact parameter identities for each checked protocol expression,
+    /// keyed by source location to distinguish same-named binders in other
+    /// slots.
+    pub expressions: Vec<CheckedProtocolExpressionBindings>,
+}
+
+/// One keyed protocol expression binder, retained for FR-390 supply
+/// admission and local-frame construction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProtocolBinderKey {
+    /// The authored binder name.
+    pub name: String,
+    /// The FR-464 binder level.
+    pub level: usize,
+    /// The `value`/`parameter` node key used by the expression graph.
+    pub node: quire_exact::NodeKey,
+    /// The checked semantic type node key.
+    pub semantic_type: quire_exact::NodeKey,
+}
+
+/// Parameter identities captured while lowering one checked protocol body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProtocolExpressionBindings {
+    /// The checked body's root source location.
+    pub location: quire_semantic_value::location::Location,
+    /// Its parameter identities in local-slot order.
+    pub binders: Vec<CheckedProtocolBinderKey>,
+}
+
 /// One protocol `attempt` FR-114's own S3 binding checked: its resolved
 /// operation (already resolved by the FR-091 assembler, `AttemptDeclaration`
 /// -- this only checks its `contracts` list against it) and each `contracts`
@@ -144,7 +194,9 @@ pub struct CheckedProtocol {
 #[derive(Clone, Debug)]
 pub(crate) struct PendingPredicateJoin {
     pub(crate) node: ProtocolNodeId,
-    pub(crate) name: String,
+    /// The named function's declaration index among the unit's
+    /// signatures, which lowering keys before the protocol (FR-093).
+    pub(crate) function: usize,
     pub(crate) joined: Vec<String>,
     pub(crate) outstanding: Option<CheckedOutstanding>,
 }

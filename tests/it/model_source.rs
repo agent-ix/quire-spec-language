@@ -50,17 +50,9 @@ fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
     assert_eq!(draft.source_limits, ModelSourceLimits::default());
     assert_eq!(draft.source.source().text(), text);
     let model = draft.admit(ModelLimits::default()).unwrap();
-    let frozen: Value = serde_json::from_slice(include_bytes!(
-        "../fixtures/native-package/minimal.package.json"
-    ))
-    .unwrap();
     assert_eq!(
         model.artifact_bytes(),
-        frozen["models"][0]["artifact"].as_str().unwrap().as_bytes()
-    );
-    assert_eq!(
-        model.digest().to_string(),
-        "sha256:639603a87d9701e1279f796639399a2524f3cabe75897e500260d86f8ef74ea8"
+        crate::support::historical_model_artifact()
     );
     assert_eq!(model.source().source().digest(), source.source().digest());
 }

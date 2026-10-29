@@ -1660,7 +1660,7 @@ impl<'c> Mapping<'c> {
                                     break;
                                 }
                                 Some(Item::Token(_) | Item::Node(_)) | None => {
-                                    return Err(unexpected(node))
+                                    return Err(unexpected(node));
                                 }
                             }
                         }
@@ -1773,8 +1773,8 @@ impl<'c> Mapping<'c> {
         match token.spelling() {
             b"true" => self.leaf(Shape::Boolean(true), &task),
             b"false" => self.leaf(Shape::Boolean(false), &task),
-            b"absent" => self.leaf(Shape::Absent, &task),
-            b"null" | b"none" => Err(unrepresented(Production::Primary, node.span())),
+            b"absent" | b"none" => self.leaf(Shape::Absent, &task),
+            b"null" => Err(unrepresented(Production::Primary, node.span())),
             b"self" => self.leaf(Shape::SelfRef, &task),
             b"result" => self.leaf(Shape::Result, &task),
             b"protocol" => {

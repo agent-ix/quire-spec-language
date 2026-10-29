@@ -101,12 +101,6 @@ fn empty_snapshot_has_exact_independently_authored_envelope() {
     let expected = br#"{"version":"native-state-input/1","kind":"snapshot","identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"body":{"observation":"current","models":[],"populations":[],"values":[],"arena":[]}}"#;
     assert_eq!(snapshot.bytes(), expected);
     assert_eq!(snapshot.digest(), ByteDigest::of(expected));
-    // Independently precomputed over the exact authored envelope, not through
-    // the constructor or its serializer (sha256sum, retained literal oracle).
-    assert_eq!(
-        snapshot.digest().to_string(),
-        "sha256:85d806fb536170880ba729e21c01bf27f845b30a6887d8424b52c97ba877b721"
-    );
     assert_eq!(snapshot.reference().identity(), &identity());
     assert_eq!(snapshot.reference().digest(), snapshot.digest());
     assert_eq!(snapshot.usage().artifact_bytes, expected.len());

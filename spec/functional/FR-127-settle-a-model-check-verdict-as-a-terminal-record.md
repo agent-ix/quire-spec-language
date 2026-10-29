@@ -95,8 +95,8 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 //   UndecidedSuccessor, NoInitialState, NoInstance,
 //   CertificateRejected { rule: CertificateRule, at: CertificateLocus },
 //   written certificate-rejected{rule, at} (QSpec FR-331)
-//   StaleDependency { requested: PackageId, recompiled: PackageId },
-//   written stale-dependency{requested, recompiled} (QSpec FR-331)
+//   StaleDependency { requested, recompiled },
+//   using QSpec FR-331's tagged stale-identity union
 //   RefutedIgnoringConstraints, written as the QSpec FR-331 inconclusive
 //   cause refuted-ignoring-constraints; its lasso violates an explicitly
 //   ignored memory constraint and is not an ordinary counterexample.
@@ -153,6 +153,11 @@ The certificate types and checkers are FR-338's and FR-339's. Their closed
 the existing `LimitReached{limit,value,setting}` or `Cancelled{source}`; it
 adds no kernel or wire cause.
 
+`StaleDependency` uses the tagged stale-identity union defined by QSpec
+FR-331. QSL supplies the local orientation: `requested` is the identity named
+by the request or certificate, and `recompiled` is the identity of the
+recompiled result. The FR-331 contract owns the union members and wire form.
+
 and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label, its QSpec FR-243 basis and its O-16 category.
 
 ## Behavior
@@ -173,7 +178,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-6 | `Violated` whose replay settles `inconclusive` (`Verdicts` or `NoValue`) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::UnfairLasso` (FR-131), an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | The protocol liveness engine returns `RefutedIgnoringConstraints` (FR-228), because its lasso violates an ignored memory fairness constraint | `inconclusive` | `unsettled` | `Inconclusive(RefutedIgnoringConstraints)` | inconclusive |
-| V-6 | `Violated` whose replay refuses with `ReplayRefusal::PackageIdMismatch{requested, recompiled}` (ADR-013 O-26), the request's `package_id` and the recompiled one | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, written `stale-dependency{requested, recompiled}` | inconclusive |
+| V-6 | `Violated` whose replay refuses with `ReplayRefusal::PackageIdMismatch{requested, recompiled}` (ADR-013 O-26), the request's `package_id` and the recompiled one; or whose FR-149 simulation certificate names a different refinement than its request | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, written `stale-dependency{requested, recompiled}` using QSpec FR-331's tagged identity union | inconclusive |
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | — | An SMT result whose `check_smt_proof` or `check_refinement_smt_proof` returns `SmtProofCheck::Fault` (FR-314, FR-315 "Internal faults") | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
@@ -329,6 +334,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-15 | Over FR-314-AC-1's `Counter` under event-position false-extension, an SMT `BoundedComplete{depth: 0}` result for `always[0,3] eventually[0,1] holds(c.value = 3)` (horizon 4) with no certificate settles `inconclusive`, `Inconclusive(CertificateRejected{ShapeMismatch, Query { part: Unrolling }})`, with no check run and the request's certificate meters unchanged, never `Proved{.., Uncertified}`; the same result with a certificate settles the same before any query is encoded; `BoundedComplete{depth: 3}` with no certificate for the TP-1 item `always holds(c.value <= 3)` settles the same; `BoundedComplete{depth: 3}` with no certificate for `always[0,3] holds(c.value <= 3)` (horizon 3) still settles `Proved{BoundedComplete{depth: 3}, Uncertified}`. | Test (TC-1201) |
 | FR-127-AC-16 | The settlement map settles `Stopped{ResourceExhausted, {EvaluationMeter{work_units}, 0}}` (FR-126-AC-19's run) as FR-360 `failed`, execution `resource-incomplete`, `unavailable`, `Incomplete(LimitReached{limit: work_units, value: 0, setting: accounting.work_units})`, category incomplete; `{EvaluationMeter{value_occurrences}, 7}` as `Incomplete(LimitReached{limit: value_occurrences, value: 7, setting: accounting.value_occurrences})`; `{EvaluationMeter{integer_bits}, 18446744073709551615}` as `Incomplete(LimitReached{limit: integer_bits, value: 18446744073709551615, setting: accounting.integer_bits})`; and `{MaxCandidates, 1}` as `Incomplete(LimitReached{limit: max_candidates, value: 1, setting: expansion.max_candidates})`. Each record equals the one FR-203 writes for the same stop, each `setting` is a name the FR-255 settings operation accepts (`accounting.work_units=1` returns accounting limits with `work_units` 1), and no record writes the setting `meter`, a bare counter name or a bare `max_candidates`. | Test (TC-522) |
 | FR-127-AC-17 | FR-228-AC-10's `RefutedIgnoringConstraints` engine result settles as `inconclusive`, `unsettled`, `Inconclusive(RefutedIgnoringConstraints)`, with no basis and no standard counterexample record; it is never readable as `refuted`, `Refuted` or any proof. | Test (TC-673) |
+| FR-127-AC-18 | FR-149-AC-4's refinement-name mismatch and FR-127-AC-12's package-ID mismatch each settle as the shared QSpec FR-331 tagged stale-identity cause. In both cases `requested` names the identity in the request or certificate and `recompiled` names the rebuilt result; QSL preserves the identity kinds and relies on FR-331 for their union and wire representation. | Test (TC-556) |
 
 ## Dependencies
 

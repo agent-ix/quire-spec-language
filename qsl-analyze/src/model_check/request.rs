@@ -15,9 +15,10 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_package::EmitRefusal;
 use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal};
-use qsl_route::deadlock::ModelTemporalItem;
+use qsl_route::deadlock::{ModelRefinementItem, ModelTemporalItem};
 use qsl_route::model_request::ModelRequest;
-use qsl_semantics::check::TemporalClauseNode;
+use qsl_semantics::check::{CheckedRefinement, TemporalClauseNode};
+use qsl_semantics::model::observation::DocumentRef;
 
 /// Why [`SubjectContext::author_clause`] wrote no item.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -28,6 +29,13 @@ pub enum RequestRefusal {
     NoRequirementRecord {
         /// The clause's occurrence key.
         occurrence: OccurrenceKey,
+    },
+    /// The subject's checked package wrote no requirement record for the
+    /// refinement (FR-144), so it has no item.
+    #[error("the subject's package has no requirement record for the refinement {name}")]
+    NoRefinementRecord {
+        /// The refinement's declared name.
+        name: String,
     },
     /// The subject's checked package has no canonical identity.
     #[error(transparent)]
@@ -95,5 +103,44 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             package,
         };
         Ok(request.authored(&item, record.requirements()))
+    }
+
+    /// Write the item of the checked `refinement` (FR-144), with this subject
+    /// as its concrete subject and `abstract_initial` as the abstract
+    /// subject's initial snapshots, into `request` and return its index.
+    ///
+    /// The item's record is the refinement's own, read from the subject's
+    /// checked package. Its obligation is the subject's identity, the
+    /// refinement's occurrence and the abstract initial snapshots, so the
+    /// same refinement against other abstract initial states is another
+    /// item.
+    ///
+    /// # Errors
+    ///
+    /// [`RequestRefusal::NoRefinementRecord`] when the package has no record
+    /// for the refinement.
+    pub fn author_refinement(
+        &self,
+        request: &mut ModelRequest<SubjectIdentity>,
+        refinement: &CheckedRefinement,
+        abstract_initial: &[DocumentRef],
+    ) -> Result<RequestIndex, RequestRefusal> {
+        let package = self.subject.simulation.package.graph();
+        let missing = || RequestRefusal::NoRefinementRecord {
+            name: refinement.name().to_owned(),
+        };
+        let record = refinement
+            .requirement_occurrence()
+            .and_then(|occurrence| package.requirements().get(occurrence))
+            .ok_or_else(missing)?;
+        let item = ModelRefinementItem {
+            refinement,
+            subject: &self.identity,
+            abstract_initial,
+            package,
+        };
+        request
+            .refinement(&item, record.requirements())
+            .ok_or_else(missing)
     }
 }

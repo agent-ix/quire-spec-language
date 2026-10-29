@@ -122,11 +122,12 @@ pub use certificate::zone::{LuBounds, Zone, ZoneError};
 pub use certificate::zone_certificate::{
     check_zone_certificate, AcceptanceSet, CertEdge, CertNode, CertificateCheckLimits,
     CertificateItem, CertifiedItem, CheckerFault, ComponentReason, Components, DivergenceWitness,
-    DivergentTarget, FairnessMember, ItemIdentity, ProductMark, SilentMove, ZoneCertificate,
-    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
+    DivergentTarget, FairnessMember, ItemIdentity, ProductMark, RefinementIdentity, RefinementPart,
+    SilentMove, ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateRequest,
+    ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
-pub use compile::{compile_package, CompiledPackage};
+pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,
@@ -223,8 +224,8 @@ pub use model_check::smt_query::{
 };
 pub use model_check::state_graph::{
     GraphEvidence, GraphEvidenceEnvelope, GraphUndefined, GraphWitness, LassoWitness, ModelLasso,
-    ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, TrapClosure,
-    WitnessPath, WitnessSource,
+    ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
+    StateGraphPropertyForm, TrapClosure, WitnessPath, WitnessSource,
 };
 pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
@@ -263,9 +264,10 @@ pub use proof_result::{
     DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis,
     ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
-    ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
-    StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
-    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault, WeakAccessFailure,
+    ReportedInconclusiveCause, SettlementBasis, StaleIdentity, StatedInstanceBound,
+    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
+    WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

@@ -115,6 +115,15 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   type of the abstract model only SHALL NOT be listed in `hypotheses`,
   whether the abstract model comes from the declaring package or from a
   dependency.
+- A `Step` record's obligation is per application of its row's concrete
+  operation: one (receiver, argument vector) at a time, the rule negated for
+  each (FR-315 "Refinement queries").
+- The `hypotheses` list is the same set FR-315 asserts, in the record's identity
+  order; the two differ in order only. The order in which
+  FR-315 asserts the hypotheses in a query is structural, by clause name and
+  then object reference key (FR-315 "Refinement queries"), and a query for a
+  multi-application row negates the rule per application (FR-315-AC-53,
+  FR-315-AC-54).
 
 ### Row order
 
@@ -155,10 +164,16 @@ wording.
   concrete operation's receiver (`self`), result and parameter types; the
   parameter domain of each `_` argument of its abstract operation; the
   context population, the one population that covers the receiver's type
-  (FR-104); and each population a `reaches` in the operation's contract
-  clauses or in the refinement's state mapping walks. An `Initial` record's
-  roots SHALL be the population covering each concrete object type the state
-  mapping maps. A population of the concrete model that none of these names
+  (FR-104); each population the operation's contract clauses (precondition,
+  postcondition, invariant) range over (QSL FR-104,
+  [FR-391](FR-391-name-a-population-in-a-state-clause.md)), whether by a
+  quantifier, an `allInstances` or a `reaches`, because the record reads the
+  clause bodies; and each population a `reaches` in the refinement's state mapping
+  walks. An `Initial` record's roots SHALL be the population covering each
+  concrete object type the state mapping maps and each population a `reaches`
+  in the state mapping walks, because the record evaluates the mapping at
+  every concrete initial state; they are a superset of the covering
+  populations. A population of the concrete model that none of these names
   adds no domain, and an abstract population adds no domain of its own,
   since its universe is the concrete universe of its source population
   (ADR-020 RM-2).
@@ -201,13 +216,16 @@ wording.
   record of a refinement `Certified` exactly when `check_refinement_smt_proof`
   (FR-314 "Refinement certificates") returns `Verified` for the refinement's
   certificate, against the queries FR-315 encodes (FR-315 "Refinement
-  queries"); `Uncertified` when it returns `Unverifiable` or no certificate
-  came; and, when it rejects at a part, the record of that part (the `Initial`
+  queries"); `Uncertified` when it returns `Unverifiable` or `Unencodable`
+  or no certificate came, and never `Certified` in those cases; and, when it rejects at a part, the record of that part (the `Initial`
   record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`)
   `Inconclusive(CertificateRejected{rule, at})` and every other record
   `Uncertified`. A refinement with a row whose query FR-315 refuses to encode (a
-  `_` argument, an `any` row or a term outside `QF_LIA`) gets `Unencodable`
-  from the checker (FR-314), so every record of it is `Uncertified` unless the
+  `_` argument, an `any` row, a protocol or `binds_result` row, or a term in the row outside `QF_LIA`: FR-315 "Refinement queries") gets `Unencodable`
+  from the checker (FR-314). A mapping row outside `QF_LIA` also refuses the `Initial`
+  query, and a refused `Initial` query is not `Unencodable`: the checker rejects the base
+  part `QueryMismatch` at `Base` (FR-314 "Refinement certificates"), so the `Initial` record is
+  `Inconclusive(CertificateRejected{QueryMismatch, Base})` and every other record `Uncertified`. For a refused step row, every record of the refinement is `Uncertified`, never `Certified`, unless the
   checker rejects a part (that part's record is then
   `Inconclusive(CertificateRejected{rule, at})`); a backend counterexample still settles
   `Inconclusive(InductionNotClosed{depth: 1})`.
@@ -229,13 +247,13 @@ wording.
 | FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the invariant clauses whose context is a concrete-model object type (none) as hypotheses. With the `commitB` row changed to `-> any` it writes none. | Test (TC-551) |
 | FR-146-AC-2 | `RegisterHistory` (FR-138) and `Coin` with `side` hidden (FR-141-AC-4) write no `StepSimulationRecord`; each still writes its refinement record. | Test (TC-551) |
 | FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record. | Test (TC-551) |
-| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` for every record of a refinement whose certificate `check_refinement_smt_proof` verifies, a refinement with a `_` row (`CasRefinesCounterAdd`, FR-315-AC-6) having every record `Uncertified` ; for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
+| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` for every record of a refinement whose certificate `check_refinement_smt_proof` verifies, a refinement with a `_` row (`CasRefinesCounterAdd`, FR-315-AC-6) having every record `Uncertified`, and a refinement whose mapping row outside `QF_LIA` makes FR-315 refuse `Initial` having its `Initial` record `Inconclusive(CertificateRejected{QueryMismatch, Base})` and every other record `Uncertified` (FR-314-AC-9); for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
 | FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the `steps` order QSpec FR-375 fixes (node-key digest of the first named declaration, then member name). For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. Over FR-136-AC-7's protocol (with its `unknown`-delivery channel and `tso` `parallel`) the `Step` records name the positions of FR-375's protocol order (a `memory` row after every declaration-naming row, ties by alias-free class spelling), and reversing the source order of the rows changes none. | Test (TC-551) |
 | FR-146-AC-6 | With a package that holds `Spec::Counter` and `Impl::Counter` and an invariant `AbsInv` on `Spec::Counter` beside `CasInv` on `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` and not `AbsInv` in `hypotheses`, and writing the clauses in the opposite source order leaves each record's `hypotheses` unchanged. | Test (TC-551) |
 | FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
 | FR-146-AC-8 | Under a backend that advertises `operation-contract` in unbounded mode, the safety half of `CasRefinesCounter` settles from its eight records and hypothesis items by QSpec FR-468: `proved`, `Certified` when all eight records are proved with verified certificates and every hypothesis item is certified; `proved`, `Uncertified` when one hypothesis item is `Uncertified`; `inconclusive`, `hypotheses-not-established` for the invariant `self.value < 0` whose hypothesis items are not proved, although every step record is proved; `Inconclusive(InductionNotClosed{depth: 1})` for a backend counterexample for one `Step` record; `refuted` through FR-145's replay for a counterexample for the `Initial` record. | Test (TC-551) |
 | FR-146-AC-9 | Each of `CasRefinesCounter`'s eight `StepSimulationRecord`s is written with the occurrence key ADR-013 O-07 gives it: the refinement node, role `generated`, ordinal 0 for the `Initial` record and `i + 1` for the `Step { row: i }` record. | Test (TC-551) |
-| FR-146-AC-10 | `CheckedGraph::requirements()` of `CasRefinesCounter` holds its eight `StepSimulationRecord`s, each of kind `operation-contract`, keyed by its FR-146-AC-9 occurrence, with extent `Unbounded` and one domain, the `Impl::counters` population, of kind population and boundable by `Cardinality`; `Spec::counters` adds no domain. With `bound CountersBound on Impl::counters [2]` (FR-380) each of the eight is `Bounded`. A variant whose concrete package adds an object type `Audit` with an unbounded population `audits` that no contract clause or state mapping reads gives the eight records the same single domain, `audits` adding none. A variant whose concrete operation `peek` takes a parameter `n: Integer` (no range) gives `peek`'s `Step` record a second unbounded domain, the `Integer` of `n`, and one whose `peek` returns `Integer` (no range) gives it the result's `Integer` domain; the other seven records' domains are unchanged. Under a backend that advertises `operation-contract` only in bounded mode, each `Unbounded` record settles `requires-bound`. A variant whose concrete package adds a second population `spare` of `Impl::Counter` refuses `ambiguous_declaration`/`ambiguous-name` at each step row, naming `counters` and `spare` in ascending `DeclarationKey` order, and writes no `StepSimulationRecord`. | Test (TC-551) |
+| FR-146-AC-10 | `CheckedGraph::requirements()` of `CasRefinesCounter` holds its eight `StepSimulationRecord`s, each of kind `operation-contract`, keyed by its FR-146-AC-9 occurrence, with extent `Unbounded` and one domain, the `Impl::counters` population, of kind population and boundable by `Cardinality`; `Spec::counters` adds no domain. With `bound CountersBound on Impl::counters [2]` (FR-380) each of the eight is `Bounded`. A variant whose concrete package adds an object type `Audit` with an unbounded population `audits` that no contract clause ranges over and no state mapping reads gives the eight records the same single domain, `audits` adding none; one that a contract clause of `peek` ranges over, without a `reaches`, adds its population domain to `peek`'s `Step` record alone; one that only the state mapping's `reaches` walks adds it to the `Initial` record and to every `Step` record. A variant whose concrete operation `peek` takes a parameter `n: Integer` (no range) gives `peek`'s `Step` record a second unbounded domain, the `Integer` of `n`, and one whose `peek` returns `Integer` (no range) gives it the result's `Integer` domain; the other seven records' domains are unchanged. Under a backend that advertises `operation-contract` only in bounded mode, each `Unbounded` record settles `requires-bound`. A variant whose concrete package adds a second population `spare` of `Impl::Counter` refuses `ambiguous_declaration`/`ambiguous-name` at each step row, naming `counters` and `spare` in ascending `DeclarationKey` order, and writes no `StepSimulationRecord`. | Test (TC-551) |
 
 ## Dependencies
 

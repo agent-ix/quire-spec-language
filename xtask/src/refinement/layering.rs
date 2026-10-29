@@ -1222,7 +1222,7 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1 and EN-4 registrations and leaves the missing witness kinds empty.
+    /// EN-1, EN-4 and EN-6 registrations and leaves the missing witness kinds empty.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1233,7 +1233,7 @@ mod tests {
         let CandidateOutcome::Candidates(temporal) =
             first.candidates(Capability::TemporalSatisfaction)
         else {
-            panic!("EN-1 gives a temporal candidate set");
+            panic!("EN-1 and EN-6 give a temporal candidate set");
         };
         assert_eq!(
             temporal
@@ -1241,7 +1241,7 @@ mod tests {
                 .iter()
                 .map(|candidate| candidate.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1"]
+            ["en-1", "en-6"]
         );
 
         let engines = Engines::qsl().expect("linked engine descriptors are admitted");
@@ -1318,13 +1318,24 @@ mod tests {
         let temp = crate::test_support::tempdir();
         let root = temp.path().join("state-core-witness");
         fs::create_dir_all(&root).unwrap();
-        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:ecfa214e5426e184e57a3ddee21e655bafba118888b1bbeab7cbd6789470926d\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
-        fs::write(root.join("witness.native"), source).unwrap();
+        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:@DIGEST@\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
         let package = fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .expect("xtask manifest has a workspace root")
                 .join("examples/config-version/model.semantic-ir.json"),
+        )
+        .unwrap();
+        // The model's `sha256-jcs` digest, computed from the document: the
+        // SHA-256 of its RFC 8785 encoding.
+        let digest = {
+            let parsed: serde_json::Value = serde_json::from_slice(&package).unwrap();
+            let canonical = serde_json_canonicalizer::to_vec(&parsed).unwrap();
+            format!("{:x}", ByteDigest::of(&canonical))
+        };
+        fs::write(
+            root.join("witness.native"),
+            source.replace("@DIGEST@", &digest),
         )
         .unwrap();
         fs::write(root.join("model.semantic-ir.json"), &package).unwrap();

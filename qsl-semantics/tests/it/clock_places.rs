@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-230 "Places": a clock below an object's field, through a package
-//! record, a clock alias or a union case, read and reset by its path.
+//! record or a clock alias, read and reset by its path.
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
@@ -2146,10 +2146,9 @@ fn two_writes_of_an_option_clock_conflict() {
 /// absence; `not present(self.v) or self.late` in a time invariant's `when`
 /// is two alternatives, one requiring `v` absent and one reading `late`;
 /// `urgent U when { present(self.v) and self.late }` requires `v` present.
-/// A presence read this slice does not read (a postcondition, a quantifier
-/// body, another object's place) refuses
-/// `unsupported_construct`/`not-yet-implemented` at the read, never as a
-/// clock read.
+/// A presence read of `self` this slice does not read (under `or` in a
+/// postcondition) refuses `unsupported_construct`/`not-yet-implemented` at
+/// the read, never as a clock read.
 #[trace("TC-685")]
 #[test]
 fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
@@ -2197,23 +2196,16 @@ fn present_is_a_data_predicate_beyond_a_guard_conjunct() {
         .collect();
     assert_eq!(urgent, [vec![(v, true)]]);
 
-    for (clause, read) in [
+    let either = "post Either using v on Config::Call::bump { present(self.v) or self.late }\n";
+    let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{either}"));
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
         (
-            "post Kept using v on Config::Call::bump { present(self.v) }\n",
-            "present(self.v)",
-        ),
-        (
-            "time invariant All when { forall(c in allInstances<Config::Call>(Config::calls) : present(c.v)) } { self.x <= 5 ms }\n",
-            "present(c.v)",
-        ),
-    ] {
-        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{clause}"));
-        assert_eq!(
-            (cause.code(), cause.tag(), text.as_str()),
-            (Code::UnsupportedConstruct, "not-yet-implemented", read),
-            "{clause}"
-        );
-    }
+            Code::UnsupportedConstruct,
+            "not-yet-implemented",
+            "present(self.v)"
+        )
+    );
 }
 
 /// The STD-493 `absent` ruling (TC-685), lowering: `absent` lowers to QSpec
@@ -2257,4 +2249,404 @@ fn absent_lowers_to_the_none_literal_of_its_option() {
     assert!(nodes
         .iter()
         .any(|node| node["semantic_form"] == "option" && node["node_tag"] == "composite_type"));
+}
+
+/// FR-230 "Presence bit" (TC-685), part of FR-230-AC-39: a top-level
+/// postcondition conjunct `present(self.v)`, `self.v != absent` or `not
+/// (self.v = absent)` requires `v` present in the post-state, and `not
+/// present(self.v)` or `not (self.v != absent)` requires it absent; each is recorded on the postcondition's resets, with no reset or
+/// drop.
+#[trace("TC-685")]
+#[test]
+fn a_postcondition_requires_a_presence_of_its_post_state() {
+    let document = option_clock_document();
+    for (conjunct, present) in [
+        ("present(self.v)", true),
+        ("self.v != absent", true),
+        ("not (self.v = absent)", true),
+        ("not present(self.v)", false),
+        ("not (self.v != absent)", false),
+    ] {
+        let body =
+            format!("{UNITS}{DENSE}post Kept using v on Config::Call::bump {{ {conjunct} }}\n");
+        let graph =
+            check(&document, &body).unwrap_or_else(|refusals| panic!("{conjunct}: {refusals:?}"));
+        let model = timed(&graph);
+        let (v, _) = model
+            .clock_fields()
+            .find(|(_, field)| field.name() == "v")
+            .expect("v is a place");
+        let [resets] = model.resets() else {
+            panic!("{conjunct}: one postcondition");
+        };
+        assert_eq!(resets.requires(), [(v, present)], "{conjunct}");
+        assert!(resets.resets().is_empty() && resets.drops().is_empty());
+    }
+}
+
+/// QSpec FR-322-AC-155 and QSL FR-230 "Presence is derived" (TC-685 step
+/// 34), checking: with `peer: Reference<Call>`, `present(self.peer.v)` of
+/// the object `self.peer` refers to is a data read of that object's place
+/// presence, never a clock read, so a time invariant whose `when` reads it
+/// checks (QSpec PR-01, an owner other than `self`). An owner that is no
+/// object, `present(self.late.v)` over the `Boolean` `late`, refuses
+/// `ill_typed`/`type-mismatch` (PR-05).
+#[trace("TC-685")]
+#[test]
+fn another_objects_presence_is_a_data_read() {
+    let mut document: Value = serde_json::from_slice(&option_clock_document()).expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(field("peer", &package("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}time invariant Peer when {{ present(self.peer.v) }} {{ self.x <= 5 ms }}\n"
+        ),
+    )
+    .expect("another object's presence checks");
+    let [invariant] = timed(&graph).invariants() else {
+        panic!("one invariant");
+    };
+    let [alternative] = invariant.alternatives() else {
+        panic!("one alternative");
+    };
+    assert!(alternative.presences().is_empty());
+    let (cause, _) = refused(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}time invariant Odd when {{ present(self.late.v) }} {{ self.x <= 5 ms }}\n"
+        ),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::IllTyped, "type-mismatch")
+    );
+}
+
+/// FR-230-AC-19 and AC-41 (TC-685), S3's part: `q: Sequence<Option<Clock>>[0,
+/// 2]` (a presence-optional `Clock` field of multiplicity `[0, 2]`) checks
+/// under a dense source to the place `q.[slot]`, guarded by the element's
+/// presence bit, whose `resolved_path` rows are those of QSpec's presence
+/// place `q`: `Sequence<Option<ix://quire/native/Clock>>` bounded `[0, 2]`
+/// and its slot `Option<ix://quire/native/Clock>`. An unbounded one, whose
+/// bits the timed system cannot enumerate, is still not checked.
+#[trace("TC-685")]
+#[test]
+fn a_sequence_of_option_clocks_is_a_place_with_a_bit() {
+    let with = |upper: Option<u64>| {
+        let mut document: Value =
+            serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+        let mut q = field("q", "ix://quire/native/Clock");
+        q["presence"] = json!("optional");
+        q["multiplicity"] = json!({"lower": 0, "ordered": true, "unique": false});
+        if let Some(upper) = upper {
+            q["multiplicity"]["upper"] = json!(upper);
+        }
+        document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("Call fields")
+            .push(q);
+        serde_json::to_vec(&document).expect("JSON")
+    };
+    let graph = check(&with(Some(2)), &format!("{UNITS}{DENSE}"))
+        .unwrap_or_else(|refusals| panic!("q checks: {refusals:?}"));
+    let model = timed(&graph);
+    let q = model
+        .clocks()
+        .iter()
+        .find(|clock| clock.name() == "q.[slot]")
+        .unwrap_or_else(|| panic!("q's place: {:?}", model.clocks()));
+    assert!(q.presence_bit());
+    let rows: Vec<(&str, &str, &str, &str, &str, &str)> = q
+        .resolved_path()
+        .iter()
+        .map(|row| {
+            (
+                row.declaring_type.as_str(),
+                row.member_identity.as_str(),
+                row.member_type.as_str(),
+                row.collection_kind.as_str(),
+                row.minimum.as_str(),
+                row.maximum.as_str(),
+            )
+        })
+        .collect();
+    let call = package("Call");
+    let q_identity = format!("{call}/q");
+    assert_eq!(
+        rows,
+        [
+            (
+                call.as_str(),
+                q_identity.as_str(),
+                "Sequence<Option<ix://quire/native/Clock>>",
+                "sequence",
+                "0",
+                "2"
+            ),
+            (
+                "Option<ix://quire/native/Clock>",
+                "Sequence<Option<ix://quire/native/Clock>>[slot]",
+                "Option<ix://quire/native/Clock>",
+                "none",
+                "",
+                ""
+            ),
+        ]
+    );
+    let refusals = check(&with(None), &format!("{UNITS}{DENSE}")).expect_err("not checked");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [qsl_semantics::check::CheckRefusal {
+                cause: qsl_semantics::check::CheckCause::TimedNotChecked { .. },
+                ..
+            }]
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// `document` with `Call`'s `peer: Reference<Call>` and `peers:
+/// Sequence<Reference<Call>>[0, 2]`.
+fn with_peers(document: &[u8]) -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(document).expect("JSON");
+    let mut peers = field("peers", &package("Call"));
+    peers["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields");
+    fields.push(field("peer", &package("Call")));
+    fields.push(peers);
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// FR-230-AC-51 (TC-685 step 34), SR-1754001 FND-002 and SR-1754002
+/// FND-001..003: another object's presence is a data predicate of a guard's
+/// convex part. `pre G { present(self.peer.v) }` is one part whose data
+/// reads it, beside the clock constraint in `present(self.peer.v) and
+/// self.x >= 1 ms`; `urgent U when { present(self.peer.v) }` checks alike, and so does the
+/// quantified `forall(c in self.peers: present(c.v))`. In a postcondition,
+/// which this slice does not read it in, it refuses
+/// `unsupported_construct`/`not-yet-implemented` at the read, never as a
+/// type mismatch.
+#[trace("TC-685")]
+#[test]
+fn another_objects_presence_is_a_guard_data_predicate() {
+    let document = with_peers(&option_clock_document());
+    for (guard, clocks) in [
+        ("present(self.peer.v)", 0),
+        ("present(self.peer.v) and self.x >= 1 ms", 1),
+        ("forall(c in self.peers : present(c.v))", 0),
+    ] {
+        let graph = check(
+            &document,
+            &format!("{UNITS}{DENSE}pre G using v on Config::Call::bump {{ {guard} }}\n"),
+        )
+        .unwrap_or_else(|refusals| panic!("{guard}: {refusals:?}"));
+        let model = timed(&graph);
+        let [guarded] = model.guards() else {
+            panic!("{guard}: one guard");
+        };
+        let [part] = guarded.parts() else {
+            panic!("{guard}: one part");
+        };
+        assert!(part.data().is_some(), "{guard}");
+        assert!(part.presences().is_empty(), "{guard}");
+        assert_eq!(part.clocks().len(), clocks, "{guard}");
+    }
+    check(
+        &document,
+        &format!("{UNITS}{DENSE}urgent U when {{ present(self.peer.v) }};\n"),
+    )
+    .unwrap_or_else(|refusals| panic!("urgency: {refusals:?}"));
+    let (cause, text) = refused(
+        &document,
+        &format!("{UNITS}{DENSE}post Q using v on Config::Call::bump {{ present(self.peer.v) }}\n"),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::UnsupportedConstruct,
+            "not-yet-implemented",
+            "present(self.peer.v)"
+        )
+    );
+}
+
+/// QSpec FR-415-AC-21 (TC-685): an Option<Clock> place required present
+/// without a write has no successor when its precondition establishes it
+/// absent; writing the clock makes it present. Requirements are not writes.
+#[trace("TC-685")]
+#[test]
+fn an_absent_option_clock_required_present_without_a_write_refuses() {
+    let document = option_clock_document();
+    let pre = "pre Off using v on Config::Call::bump { not present(self.v) }\n".to_owned();
+    let (cause, text) = refused(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ present(self.v) }}\n"
+        ),
+    );
+    assert_eq!(
+        (cause.code(), cause.tag(), text.as_str()),
+        (
+            Code::InvalidTimedModel,
+            "clock-presence-unwritten",
+            "present(self.v)"
+        )
+    );
+    check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}{pre}post On using v on Config::Call::bump {{ self.v = 5 ms and present(self.v) }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("the written option clock: {refusals:?}"));
+}
+
+/// QSpec FR-415-AC-20 and STD-526 PR-03 (TC-685 step 34), S3's part: over
+/// `q: Sequence<Option<Clock>>[0, 2]`, `forall(e in self.q : present(e))`
+/// and `exists(e in self.q : present(e))` are data predicates of the
+/// elements' presences, never clock reads: a time invariant's `when`, an
+/// `urgent when` and a guard (one convex part whose data reads it) check,
+/// and so does the quantifier over another object's `q`
+/// (`self.peer.q`). `present(self.q)` with no element is no presence of a
+/// place and refuses.
+#[trace("TC-685")]
+#[test]
+fn quantified_presence_over_an_option_sequence_is_a_data_predicate() {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mut q = field("q", "ix://quire/native/Clock");
+    q["presence"] = json!("optional");
+    q["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields");
+    fields.push(q);
+    fields.push(field("peer", &package("Call")));
+    let document = serde_json::to_vec(&document).expect("JSON");
+    for body in [
+        "time invariant All when { forall(e in self.q : present(e)) } { self.x <= 5 ms }\n",
+        "urgent U when { exists(e in self.q : present(e)) };\n",
+        "time invariant Peer when { forall(e in self.peer.q : present(e)) } { self.x <= 5 ms }\n",
+    ] {
+        check(&document, &format!("{UNITS}{DENSE}{body}"))
+            .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    }
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}pre G using v on Config::Call::bump {{ forall(e in self.q : present(e)) and self.x >= 1 ms }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("the guard: {refusals:?}"));
+    let model = timed(&graph);
+    let [part] = model.guards()[0].parts() else {
+        panic!("one part");
+    };
+    assert!(part.data().is_some());
+    assert_eq!(part.clocks().len(), 1);
+    assert!(check(
+        &document,
+        &format!("{UNITS}{DENSE}urgent U when {{ present(self.q) }};\n"),
+    )
+    .is_err());
+}
+
+/// SR-1763001 FND-003 (TC-685, STD-526 PR-03): over `q:
+/// Sequence<Option<Clock>>[0, 2]`, a quantifier whose body reads
+/// `present(e)` other than as the whole body (`not present(e)`, `present(e)
+/// and value(e) >= 1 ms`) reads no clock outside a constraint, and this
+/// slice does not read it yet: it refuses
+/// `unsupported_construct`/`not-yet-implemented` at the quantifier, in a
+/// guard, in a time invariant's `when` and in a postcondition alike, where
+/// it is a requirement and never a write (QSpec FR-415-AC-21).
+#[trace("TC-685")]
+#[test]
+fn another_quantified_presence_body_is_not_yet_implemented() {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+    let mut q = field("q", "ix://quire/native/Clock");
+    q["presence"] = json!("optional");
+    q["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(q);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    for (form, query) in [
+        (
+            "pre G using v on Config::Call::bump {{ {query} }}\n",
+            "exists(e in self.q : not present(e))",
+        ),
+        (
+            "pre G using v on Config::Call::bump {{ {query} }}\n",
+            "forall(e in self.q : present(e) and value(e) >= 1 ms)",
+        ),
+        (
+            "time invariant All when {{ {query} }} {{ self.x <= 5 ms }}\n",
+            "exists(e in self.q : not present(e))",
+        ),
+        (
+            "post P using v on Config::Call::bump {{ {query} }}\n",
+            "exists(e in self.q : not present(e))",
+        ),
+    ] {
+        let body = form
+            .replace("{{", "{")
+            .replace("}}", "}")
+            .replace("{query}", query);
+        let (cause, text) = refused(&document, &format!("{UNITS}{DENSE}{body}"));
+        assert_eq!(
+            (cause.code(), cause.tag(), text.as_str()),
+            (Code::UnsupportedConstruct, "not-yet-implemented", query),
+            "{body}"
+        );
+    }
+}
+
+/// SR-1743001 CR FND-002 (TC-685, QSpec FR-415-AC-21): a reset of a
+/// `Clock` parameter whose range holds the place writes it for the instance
+/// binding the parameter there. Over `bump(c: Clock)` with a frame naming
+/// `v: Option<Clock>` and `x`, `pre { not present(self.v) }` and `post { c
+/// = 0 ms and present(self.v) }` check: the instance binding `c` to `v`
+/// writes `v`, so no `clock-presence-unwritten` is decided statically.
+#[trace("TC-685")]
+#[test]
+fn a_clock_parameter_reset_ranging_over_the_place_writes_it() {
+    let clock = "ix://quire/native/Clock";
+    let mut document: Value =
+        serde_json::from_slice(&clock_parameter_document(clock, None, &["v", "x"])).expect("JSON");
+    let mut v = field("v", clock);
+    v["presence"] = json!("optional");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("Call fields")
+        .push(v);
+    let document = serde_json::to_vec(&document).expect("JSON");
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}\
+             pre Off using v on Config::Call::bump {{ not present(self.v) }}\n\
+             post On using v on Config::Call::bump {{ c = 0 ms and present(self.v) }}\n"
+        ),
+    )
+    .unwrap_or_else(|refusals| panic!("c ranges over v: {refusals:?}"));
+    let model = timed(&graph);
+    let [range] = model.clock_parameters() else {
+        panic!("one clock parameter: {:?}", model.clock_parameters());
+    };
+    let mut names: Vec<&str> = range
+        .range()
+        .iter()
+        .map(|clock| model.clock(*clock).expect("a clock").name())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["v", "x"]);
 }
