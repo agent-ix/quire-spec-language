@@ -572,6 +572,7 @@ fn c11_the_bound_is_part_of_the_collection_type() {
 }
 
 #[trace("QSpec-TC-189", "QSpec-FR-144-AC-2")]
+#[trace("TC-136", "FR-049-AC-3")]
 #[test]
 fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
     let set = integers(CollectionKind::Set, 3);
@@ -798,6 +799,7 @@ mod checked {
     // admitted enum values visits an unordered enum's members in
     // case-identifier byte order and an ordered enum's in declaration order.
     #[trace("TC-409", "FR-088-AC-11")]
+    #[trace("TC-136", "FR-049-AC-3")]
     #[test]
     fn c05_enum_keys_order_unordered_members_by_identifier_bytes() {
         let color = admit("Color", false, &["blue", "green", "red"]);

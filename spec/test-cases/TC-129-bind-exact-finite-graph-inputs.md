@@ -39,3 +39,8 @@ declared-complete domain, a digest-domain substitution, or a known identity/
 type/authority mutation refuses with a distinct typed cause. Missing membership
 or closure is incomplete and does not classify the offered subset as empty,
 closed or dangling. No string identifier or ambient lookup repairs a mutation.
+
+The executable trace includes
+`qsl-eval/tests/it/model_reference_queries.rs::explicit_object_references_use_identity_and_refuse_foreign_universes`
+and `a_surviving_object_compares_equal_across_pre_and_post`; both carry TC-129
+and the applicable FR-047/FR-049 criteria tags.
