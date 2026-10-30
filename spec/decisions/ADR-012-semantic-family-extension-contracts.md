@@ -1222,23 +1222,25 @@ operation anchor node they share.
   A frame's `modifies` entries are therefore (object type node, field name)
   pairs; `reaches` lowers to `quire.op.model.reaches_field` with the `field`
   member kind; an `operation_anchor` names its operation by a text literal.
-- **State field domain key.** A state field has no node either, so the
-  ADR-014 §4 domain a proof bound substitutes for one is keyed as its
-  member is: `DomainKey::Node{node, path}` with `node` the
-  `model`/`object_type` node of the object type that *declares* the field,
-  and `path` the field's ordinal among that type's own field declarations
-  in ascending field-name UTF-8 byte order, followed by the child-index
-  path into the field's type (empty for the field's own value). A
-  population is keyed by its own `DomainKey::Population` variant (§15.7),
-  so a field and a population never share a key. An inherited field is keyed under
-  its declaring type, never under the subtype it is named through. The
-  node is content-derived from the declaration, so the key is the same
-  whether or not a package's lowering keyed that node. Ascending name
-  order follows §15.7's population ordinal, an ascending declaration-key
-  sort, so reordering field declarations shifts no key; like that ordinal,
-  the key is stable within one domain package identity and version only.
-  `qsl_replay::call_site` computes it for a `FieldName` selection
-  (FR-121).
+- **Model member domain keys.** A field, an operation parameter and an
+  operation result have no node either, so the ADR-014 §4 domain a proof
+  bound substitutes for one is keyed as QSpec FR-331 "Model member domain
+  keys" defines: `DomainKey::Node{node, path}` with `node` the model
+  declaration node of the type that *declares* the member, and `path` a
+  member-kind tag, the member's position, then the child-index path into
+  the member's type (empty for the whole value). A field is `[0, f, ...]`,
+  `f` its ordinal among the declaring type's own fields in ascending
+  field-name UTF-8 byte order; a parameter is `[1, o, p, ...]`, `o` the
+  operation's ordinal among the declaring type's own operations in
+  ascending operation-name UTF-8 byte order and `p` the parameter's
+  zero-based declared position; a result is `[2, o, ...]`. A population is
+  keyed by its own `DomainKey::Population` variant (§15.7), so a member and
+  a population never share a key. An inherited member is keyed under its
+  declaring type, never under the subtype it is named through. The node is
+  content-derived from the declaration, so the key is the same whether or
+  not a package's lowering keyed that node, and reordering declarations
+  shifts no key. `qsl_replay::call_site` computes it for a `FieldName`
+  selection (FR-121).
 - **Operation anchor identity.** One anchor per (declaring object type,
   operation name). An operation inherited by a subtype and named as
   `M::Sub::op` anchors at its declaring type, so `M::Base::op` and
@@ -1324,8 +1326,7 @@ subject: `DomainKey::Population{member_type, ordinal}` (ADR-014 §4), with
 `ordinal` its ordinal among the package's population declarations in
 ascending `DeclarationKey` order (`package`, then `node`, as UTF-8 bytes).
 It is not a `DomainKey::Node`, so it never coincides with a state field's
-key under the same object type node (§15.4). The ordinal is stable within one domain package identity and
-version only; domain keys are not compared across versions. The context
+key under the same object type node (§15.4). The context
 population is the one population with no maximum whose member types include
 the context type. A clause whose context type belongs to two or more such
 populations cannot name exactly one, and refuses at S3 with
