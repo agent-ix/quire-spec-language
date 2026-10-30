@@ -16,13 +16,12 @@ use qsl_semantics::value::enumeration::{
 use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
-use quire_exact::{EffectiveId, Presence, ValueType};
+use quire_exact::{EffectiveId, OriginalDeclarationKey, Presence, ValueType};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     Admission, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
 };
-use sha2::{Digest, Sha256};
 
 /// A kernel limit set no evaluation in this crate runs out of.
 pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -257,7 +256,10 @@ pub fn completed_with_five(evaluation: &Evaluation) -> bool {
 /// cost shape: type `k` flattens to `k + 1` slots).
 pub fn object_chain(depth: usize) -> Vec<ObjectTypeDeclaration> {
     let key = |level: usize| {
-        EffectiveId::from_digest(Sha256::digest(format!("M::T{level}").as_bytes()).into())
+        EffectiveId::new(
+            None,
+            OriginalDeclarationKey::new("bench", format!("M::T{level}")),
+        )
     };
     (0..depth)
         .map(|level| {

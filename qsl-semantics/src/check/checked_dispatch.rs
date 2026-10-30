@@ -1298,12 +1298,18 @@ mod tests {
                 object_type("model.C", &[]),
             ],
         );
-        let shared = EffectiveId::from_digest([0x0B; 32]);
-        let a = EffectiveId::from_digest([0x0A; 32]);
+        let effective = |index: u8| {
+            EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new("test", format!("Node{index}")),
+            )
+        };
+        let shared = effective(0x0B);
+        let a = effective(0x0A);
         let identities: BTreeMap<DeclarationKey, EffectiveId> = [
-            (DeclarationKey::fixture("model.A"), a),
-            (DeclarationKey::fixture("model.B"), shared),
-            (DeclarationKey::fixture("model.C"), shared),
+            (DeclarationKey::fixture("model.A"), a.clone()),
+            (DeclarationKey::fixture("model.B"), shared.clone()),
+            (DeclarationKey::fixture("model.C"), shared.clone()),
         ]
         .into_iter()
         .collect();
@@ -1321,17 +1327,17 @@ mod tests {
         }
 
         let injective: BTreeMap<DeclarationKey, EffectiveId> = [
-            (DeclarationKey::fixture("model.A"), a),
-            (DeclarationKey::fixture("model.B"), shared),
+            (DeclarationKey::fixture("model.A"), a.clone()),
+            (DeclarationKey::fixture("model.B"), shared.clone()),
             (
                 DeclarationKey::fixture("model.C"),
-                EffectiveId::from_digest([0x0C; 32]),
+                effective(0x0C),
             ),
         ]
         .into_iter()
         .collect();
         let rekeyed = rekey_object_types(&package, &injective).unwrap();
-        assert_eq!(rekeyed.get(&shared), Some(&vec![a]));
+        assert_eq!(rekeyed.get(&shared), Some(&vec![a.clone()]));
         assert_eq!(rekeyed.len(), 3);
     }
     use crate::model::normalize::ModelRefusalCause;

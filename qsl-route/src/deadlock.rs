@@ -268,13 +268,15 @@ impl SubjectReading {
     /// The reading of a subject that two caller items read: the union of
     /// their rows and marks.
     fn merge(&mut self, other: &Self) {
-        self.roots.extend(other.roots.iter().copied());
+        self.roots.extend(other.roots.iter().cloned());
         self.opted_out |= other.opted_out;
         self.timed |= other.timed;
         match (&mut self.protocol, &other.protocol) {
             (None, Some(protocol)) => self.protocol = Some(protocol.clone()),
             (Some(seen), Some(protocol)) => {
-                seen.node = seen.node.or(protocol.node);
+                if seen.node.is_none() {
+                    seen.node.clone_from(&protocol.node);
+                }
                 seen.races |= protocol.races;
             }
             (_, None) => {}
@@ -308,12 +310,13 @@ impl SubjectReading {
         if let Some(protocol) = &self.protocol {
             return protocol
                 .node
+                .clone()
                 .map(OccurrenceKey::declaration)
                 .ok_or(NoAnchor::NoProtocolProfile);
         }
         let mut roots = self.roots.iter();
         match (roots.next(), roots.next()) {
-            (Some(root), None) => Ok(OccurrenceKey::generated(*root)),
+            (Some(root), None) => Ok(OccurrenceKey::generated(root.clone())),
             (None, _) => Err(NoAnchor::NoSelection),
             (Some(_), Some(_)) => Err(NoAnchor::SeveralSelections {
                 rows: self.roots.len(),

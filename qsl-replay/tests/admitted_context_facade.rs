@@ -66,7 +66,7 @@ fn admit(
     replay: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        unit_identity(),
+        unit_identity(), "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -107,7 +107,7 @@ fn spine_enums(text: &str) -> Vec<(NodeKey, Vec<(String, NodeKey)>)> {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -148,7 +148,7 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     let text = format!("{HEADER}{COLORS}");
     let admitted = admit_ok(&text);
     let plain = compile_package(
-        unit_identity(),
+        unit_identity(), "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -158,7 +158,7 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
     )
     .expect("compile_package compiles the unit");
     assert_eq!(admitted.package().bytes(), plain.bytes());
-    assert_eq!(admitted.context().package_id().record(), plain.package_id());
+    assert_eq!(admitted.context().package_name().as_str(), "fixture");
 
     let expected = spine_enums(&text);
     let [(declaration, cases)] = expected.as_slice() else {
@@ -216,7 +216,7 @@ fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
 /// the wire id of its one enum.
 fn alone(library: &SuppliedLibrary, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        library.source.clone(),
+        library.source.clone(), "fixture".to_owned(),
         &library.path,
         &library.bytes,
         [],
@@ -252,7 +252,7 @@ fn a_dependencys_enum_is_foreign() {
         context.enum_declaration(shade_id),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: shade_id,
-            package: alone_shades.context().package_id(),
+            package: alone_shades.context().package_name().clone(),
         })
     );
     let color = context.enums().next().expect("the unit's enum");
@@ -293,7 +293,7 @@ fn a_transitive_dependencys_enum_is_foreign() {
         admitted.context().enum_declaration(shade_id),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: shade_id,
-            package: alone_shades.context().package_id(),
+            package: alone_shades.context().package_name().clone(),
         })
     );
 }
@@ -321,7 +321,7 @@ fn compile_failures_are_package_or_resource_refusals() {
     let text = format!("{HEADER}{COLORS}");
     let owned = DependencyInput::new([owned]).unwrap();
     let Err(ReplayRefusal::DependencyInput(expected)) = compile_package(
-        unit_identity(),
+        unit_identity(), "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],

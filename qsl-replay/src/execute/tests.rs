@@ -345,7 +345,7 @@ fn tc_759_the_emitted_provision_replays_to_the_same_package() {
         .expect("the unit selects")
         .into_value();
     let checked = crate::spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &crate::spine::DependencyInput::default(),
         limits,

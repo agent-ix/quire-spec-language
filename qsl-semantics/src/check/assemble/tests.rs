@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::{IdentityLimits, SourceIdentity, Span};
+use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
     Presence, RoundingMode, ValueType,
@@ -187,7 +187,6 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         &selected,
         selected.span,
         &mut operations,
-        IdentityLimits::default(),
         &BTreeMap::new(),
     )
     .expect("state-machine meaning is supported by the object-type seam");
@@ -259,7 +258,6 @@ fn model_tuple_positions_are_assembled_as_a_tuple_type() {
         &selected,
         selected.span,
         &mut operations,
-        IdentityLimits::default(),
         &BTreeMap::new(),
     )
     .expect("the tuple declaration assembles");
@@ -304,7 +302,6 @@ fn a_model_scalar_is_named_with_its_integer_interval() {
         &selected,
         selected.span,
         &mut operations,
-        IdentityLimits::default(),
         &BTreeMap::new(),
     )
     .expect("a scalar-only model is supported");
@@ -367,7 +364,6 @@ fn unresolved_model_unit_type_names_the_operation_parameter_path() {
         &selected,
         selected.span,
         &mut operations,
-        IdentityLimits::default(),
         &BTreeMap::new(),
     ) {
         Ok(_) => panic!("the unresolved unit typeRef refuses during model assembly"),
@@ -1715,12 +1711,6 @@ fn unordered_and_not_unique_selects_bag() {
 // Enums and predicates (TC-481)
 // ----------------------------------------------------------------------
 
-/// FR-091's vector `id` (`N1`, `Q7`): its key, recomputed from the preimage
-/// content the spec states for it and never recorded.
-fn fr_091_vector(id: &str) -> String {
-    crate::check::fr091_vectors::key(id)
-}
-
 const STATUS: &str = "ordered enum Status { READY, DONE }\n";
 
 fn binding<'a>(package: &'a PackageDeclarations, name: &str) -> &'a crate::check::EnumBinding {
@@ -1744,11 +1734,10 @@ fn enums_are_admitted_with_nominal_keys_over_the_units_owner() {
     let names: Vec<&str> = package.enums.iter().map(|b| b.name.as_str()).collect();
     assert_eq!(names, ["Status", "Color"]);
     let status = binding(&package, "Status");
-    assert_eq!(status.declaration.key().to_string(), fr_091_vector("N1"));
     assert_eq!(cases(status), ["READY", "DONE"]);
-    assert_eq!(status.members[0].member().to_string(), fr_091_vector("N2"));
+    assert_ne!(status.members[0].member(), status.members[1].member());
     let color = binding(&package, "Color");
-    assert_eq!(color.declaration.key().to_string(), fr_091_vector("N3"));
+    assert_ne!(status.declaration.key(), color.declaration.key());
     assert_eq!(cases(color), ["BLUE", "RED"]);
     assert_eq!(
         package.declared_type_spans.get("Status"),
@@ -1764,16 +1753,16 @@ fn enums_are_admitted_with_nominal_keys_over_the_units_owner() {
     let (_, other) = assemble("enum Color { RED, BLUE }");
     let other = other.expect("the unit assembles");
     assert_eq!(
-        binding(&other, "Color").declaration.key().to_string(),
-        fr_091_vector("N3")
+        binding(&other, "Color").declaration.key(),
+        color.declaration.key()
     );
 
     // The owner enters the key.
     let moved =
         assemble_as("a", "w", &text_with(&[PROFILE_V], STATUS)).expect("the unit assembles");
-    assert_eq!(
-        binding(&moved, "Status").declaration.key().to_string(),
-        fr_091_vector("N4")
+    assert_ne!(
+        binding(&moved, "Status").declaration.key(),
+        status.declaration.key()
     );
 }
 
@@ -2018,22 +2007,23 @@ fn predicate_and_enum_nodes_lower_to_their_fr_092_forms() {
     assert_eq!(function.semantic_form(), "pure_function");
     assert_ne!(predicate.key(), function.key());
 
-    let graph = assemble(STATUS)
-        .1
-        .expect("the unit assembles")
+    let package = assemble(STATUS).1.expect("the unit assembles");
+    let status = binding(&package, "Status");
+    let (declaration_key, member_key) = (status.declaration.key(), status.members[0].member());
+    let graph = package
         .check(CheckingLimits::default())
         .expect("the package checks");
-    let by_key = |key: &str| {
+    let by_key = |key: &quire_exact::NodeKey| {
         graph
             .semantic_graph()
             .nodes()
-            .find(|node| node.key().to_string() == key)
+            .find(|node| node.key() == *key)
             .unwrap_or_else(|| panic!("the checked graph holds {key}"))
     };
-    let declaration = by_key(&fr_091_vector("N1"));
+    let declaration = by_key(&declaration_key);
     assert_eq!(declaration.node_tag(), NodeTag::ScalarType);
     assert_eq!(declaration.semantic_form(), "enum");
-    let member = by_key(&fr_091_vector("N2"));
+    let member = by_key(&member_key);
     assert_eq!(member.node_tag(), NodeTag::Value);
     assert_eq!(member.semantic_form(), "enum_value");
 }
@@ -2048,6 +2038,7 @@ fn the_preimage_constructors_apply_the_reader_checks() {
         NodeOwner::Source(OwnerSubject {
             authority: "a".to_owned(),
             identity: "u".to_owned(),
+            package_name: "p".to_owned(),
         })
     };
     let name = || vec!["E".to_owned()];
@@ -2075,12 +2066,6 @@ fn the_preimage_constructors_apply_the_reader_checks() {
 // Dimensions and units (TC-483)
 // ----------------------------------------------------------------------
 
-/// FR-091 vectors Q1 to Q10, from the spec's table (see [`fr_091_vector`]).
-static Q: std::sync::LazyLock<[&'static str; 10]> = std::sync::LazyLock::new(|| {
-    ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"]
-        .map(|id| &*Box::leak(fr_091_vector(id).into_boxed_str()))
-});
-
 const Q_SOURCES: &str = "dimension Length;\n\
     dimension Time;\n\
     dimension Speed = Length / Time;\n\
@@ -2092,12 +2077,13 @@ const Q_SOURCES: &str = "dimension Length;\n\
     unit K : Temperature = rational(1, 1);\n\
     unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);";
 
-fn key_of(hex: &str, graph: &quire_semantic_value::unit::UnitGraph) -> quire_exact::NodeKey {
-    graph
-        .units()
-        .map(|unit| unit.key())
-        .find(|key| key.to_string() == hex)
-        .unwrap_or_else(|| panic!("the graph holds unit {hex}"))
+/// The key of each dimension and unit `package` declares, by declared name.
+fn named_keys(package: &PackageDeclarations, text: &str) -> BTreeMap<String, quire_exact::NodeKey> {
+    package
+        .nominal_spans
+        .iter()
+        .map(|(key, span)| (text[span.start..span.end].to_owned(), key.clone()))
+        .collect()
 }
 
 /// `Q_SOURCES` with its lines reversed: every declaration comes before
@@ -2109,98 +2095,66 @@ fn reversed_sources() -> String {
 #[trace("FR-091-AC-32", "TC-483")]
 #[test]
 fn dependencies_are_keyed_before_their_dependents_whatever_the_source_order() {
-    let (_, assembled) = assemble(&reversed_sources());
+    let (text, assembled) = assemble(&reversed_sources());
     let package = assembled.expect("the reversed unit assembles");
     let graph = &package.units;
-    for hex in &Q[5..] {
-        key_of(hex, graph);
+    let keys = named_keys(&package, &text);
+    assert_eq!(keys.len(), 10);
+    for name in ["m", "km", "cm", "K", "C"] {
+        graph
+            .unit(keys[name].clone())
+            .unwrap_or_else(|| panic!("the graph holds unit {name}"));
     }
-    for hex in &Q[..5] {
-        assert!(package
-            .nominal_spans
-            .keys()
-            .any(|key| key.to_string() == *hex));
-    }
-    let km = graph.unit(key_of(Q[6], graph)).expect("km");
-    assert_eq!(km.root(), key_of(Q[5], graph));
+    let km = graph.unit(keys["km"].clone()).expect("km");
+    assert_eq!(km.root(), keys["m"]);
 }
 
 #[trace("FR-091-AC-32", "TC-483")]
 #[test]
-fn dimensions_and_units_are_admitted_with_the_vector_keys() {
+fn dimensions_and_units_are_admitted_under_their_declared_names() {
     let (text, assembled) = assemble(Q_SOURCES);
     let package = assembled.expect("the unit assembles");
     let graph = &package.units;
-    // Units Q6 to Q10 are admitted under their vector keys.
-    let km = graph.unit(key_of(Q[6], graph)).expect("km");
+    let keys = named_keys(&package, &text);
+    let names: Vec<&str> = keys.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        ["Accel", "C", "K", "Length", "Speed", "Temperature", "Time", "cm", "km", "m"]
+    );
+    let km = graph.unit(keys["km"].clone()).expect("km");
     assert_eq!(km.canonical().scale().to_string(), "1000/1");
-    let cm = graph.unit(key_of(Q[7], graph)).expect("cm");
+    let cm = graph.unit(keys["cm"].clone()).expect("cm");
     assert_eq!(cm.canonical().scale().to_string(), "1/100");
-    let celsius = graph.unit(key_of(Q[9], graph)).expect("C");
+    let celsius = graph.unit(keys["C"].clone()).expect("C");
     assert_eq!(celsius.canonical().offset().to_string(), "5463/20");
     assert!(celsius.is_affine());
     assert!(!km.is_affine());
-    let metre = graph.unit(key_of(Q[5], graph)).expect("m");
+    let metre = graph.unit(keys["m"].clone()).expect("m");
     assert_eq!(km.root(), metre.key());
-    key_of(Q[8], graph);
-    // Dimensions Q1 to Q5: each key is a dimension the units name, and the
-    // derived ones normalize to the base terms of the vectors.
-    let dimension = |hex: &str| {
-        let key = package
-            .nominal_spans
-            .keys()
-            .find(|key| key.to_string() == hex)
-            .cloned()
-            .unwrap_or_else(|| panic!("nominal_spans holds {hex}"));
-        graph
-            .dimension(key)
-            .unwrap_or_else(|| panic!("the graph holds dimension {hex}"))
-    };
-    let exponents = |hex: &str| -> Vec<(String, String)> {
-        dimension(hex)
+    graph.unit(keys["K"].clone()).expect("K");
+    // Each dimension is one the units name, and the derived ones normalize
+    // to base dimensions.
+    let by_key: BTreeMap<quire_exact::NodeKey, &str> = keys
+        .iter()
+        .map(|(name, key)| (key.clone(), name.as_str()))
+        .collect();
+    let exponents = |name: &str| -> Vec<(String, String)> {
+        let dimension = graph
+            .dimension(keys[name].clone())
+            .unwrap_or_else(|| panic!("the graph holds dimension {name}"));
+        let mut terms: Vec<(String, String)> = dimension
             .exponents()
-            .map(|(base, exponent)| (base.to_string(), exponent.to_string()))
-            .collect()
+            .map(|(base, exponent)| (by_key[&base.clone()].to_owned(), exponent.to_string()))
+            .collect();
+        terms.sort();
+        terms
     };
-    assert_eq!(exponents(Q[0]), [(Q[0].to_owned(), "1".to_owned())]);
-    assert_eq!(exponents(Q[1]), [(Q[1].to_owned(), "1".to_owned())]);
-    assert_eq!(
-        exponents(Q[2]),
-        [
-            (Q[1].to_owned(), "-1".to_owned()),
-            (Q[0].to_owned(), "1".to_owned())
-        ]
-    );
-    assert_eq!(
-        exponents(Q[3]),
-        [
-            (Q[1].to_owned(), "-2".to_owned()),
-            (Q[0].to_owned(), "1".to_owned())
-        ]
-    );
-    assert_eq!(exponents(Q[4]), [(Q[4].to_owned(), "1".to_owned())]);
-    // `nominal_spans` holds the span of each declared name by its key.
-    assert_eq!(package.nominal_spans.len(), 10);
-    for (hex, name) in Q.iter().zip([
-        "Length",
-        "Time",
-        "Speed",
-        "Accel",
-        "Temperature",
-        "m",
-        "km",
-        "cm",
-        "K",
-        "C",
-    ]) {
-        let span = package
-            .nominal_spans
-            .iter()
-            .find(|(key, _)| key.to_string() == *hex)
-            .map(|(_, span)| *span)
-            .unwrap_or_else(|| panic!("a span for {name}"));
-        assert_eq!(&text[span.start..span.end], name);
-    }
+    let term = |name: &str, exponent: &str| (name.to_owned(), exponent.to_owned());
+    assert_eq!(exponents("Length"), [term("Length", "1")]);
+    assert_eq!(exponents("Time"), [term("Time", "1")]);
+    assert_eq!(exponents("Speed"), [term("Length", "1"), term("Time", "-1")]);
+    assert_eq!(exponents("Accel"), [term("Length", "1"), term("Time", "-2")]);
+    assert_eq!(exponents("Temperature"), [term("Temperature", "1")]);
     // A unit with no dimension or unit form has the empty graph.
     let empty = assemble("type Digit = Int[0, 9];").1.expect("assembles");
     assert_eq!(empty.units.units().count(), 0);

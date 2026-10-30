@@ -61,7 +61,7 @@ fn wire(key: NodeKey) -> NodeKey {
 
 fn admit(text: &str, dependencies: &DependencyInput) -> AdmittedCompilation {
     compile_admitted(
-        unit_identity(),
+        unit_identity(), "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         [],
@@ -101,7 +101,7 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -333,7 +333,7 @@ fn unit_lookups_refuse_unknown_and_wrong_kind_ids() {
 fn a_dependencys_unit_is_foreign() {
     let mass = library("test/mass", "mass", LIBRARY);
     let alone = compile_admitted(
-        mass.source.clone(),
+        mass.source.clone(), "fixture".to_owned(),
         &mass.path,
         &mass.bytes,
         [],
@@ -352,7 +352,7 @@ fn a_dependencys_unit_is_foreign() {
             .expect("dimension")
             .node(),
     );
-    let package = alone.context().package_id();
+    let package = alone.context().package_name().clone();
     let mid = library(
         "test/mid",
         "mid",

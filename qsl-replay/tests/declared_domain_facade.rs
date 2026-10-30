@@ -28,7 +28,7 @@ const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn a_declared_domain_is_built_through_the_facade_alone() {
     let name = QualifiedName::new(vec![Identifier::new("p").unwrap()]).unwrap();
     let site = call_site(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
         "unit.native",
         UNIT.as_bytes(),
         [],

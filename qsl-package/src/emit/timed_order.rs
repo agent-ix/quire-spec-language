@@ -327,7 +327,8 @@ impl<'g> Graph<'g> {
             | CheckedTerm::Frame { .. }
             | CheckedTerm::AbstractionRelation { .. }
             | CheckedTerm::Refinement { .. }
-            | CheckedTerm::ExtensionForm { .. } => return Err(OrderFault::Malformed),
+            | CheckedTerm::ExtensionForm { .. }
+            | CheckedTerm::NominalBody(_) => return Err(OrderFault::Malformed),
         }
         Ok(())
     }

@@ -500,10 +500,6 @@ fn undefined_reason(reason: Undefined) -> &'static str {
     kernel_undefined_reason(reason)
 }
 
-fn (key: NodeKey).clone() -> NodeKey {
-    key.clone()
-}
-
 /// `a` restricted to `b`, or `None` when they share no value.
 fn intersect(a: &IntegerInterval, b: &IntegerInterval) -> Option<IntegerInterval> {
     let lower = if a.lower() >= b.lower() {

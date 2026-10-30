@@ -649,11 +649,11 @@ mod tests {
     fn a_second_declaration_for_a_node_is_refused() {
         let (n, d1, d2) = (node_key(1), declaration("d1"), declaration("d2"));
         let mut correspondence = ModelCorrespondence::default();
-        assert_eq!(correspondence.record(n, d1.clone()), Ok(()));
+        assert_eq!(correspondence.record(n.clone(), d1.clone()), Ok(()));
         assert_eq!(
-            correspondence.record(n, d2.clone()),
+            correspondence.record(n.clone(), d2.clone()),
             Err(Box::new(CorrespondenceConflict::NodeRebound {
-                node: n,
+                node: n.clone(),
                 recorded: d1.clone(),
                 offered: d2,
             }))
@@ -668,14 +668,14 @@ mod tests {
     fn a_second_node_for_a_declaration_is_refused() {
         let (n1, n2, d) = (node_key(1), node_key(2), declaration("d"));
         let mut correspondence = ModelCorrespondence::default();
-        assert_eq!(correspondence.record(n1, d.clone()), Ok(()));
-        let conflict = correspondence.record(n2, d.clone());
+        assert_eq!(correspondence.record(n1.clone(), d.clone()), Ok(()));
+        let conflict = correspondence.record(n2.clone(), d.clone());
         assert_eq!(
             conflict,
             Err(Box::new(CorrespondenceConflict::DeclarationRebound {
                 declaration: d.clone(),
-                recorded: n1,
-                offered: n2,
+                recorded: n1.clone(),
+                offered: n2.clone(),
             }))
         );
         // The S3 fault this conflict becomes, through the same mapping as
@@ -703,9 +703,9 @@ mod tests {
     fn recording_the_same_pair_twice_keeps_one_entry() {
         let (n, d) = (node_key(1), declaration("d"));
         let mut once = ModelCorrespondence::default();
-        assert_eq!(once.record(n, d.clone()), Ok(()));
+        assert_eq!(once.record(n.clone(), d.clone()), Ok(()));
         let mut twice = once.clone();
-        assert_eq!(twice.record(n, d.clone()), Ok(()));
+        assert_eq!(twice.record(n.clone(), d.clone()), Ok(()));
         assert_eq!(twice, once);
         assert_eq!(twice.resolve(n), Some(&d));
     }
@@ -867,8 +867,8 @@ mod tests {
     fn clause_occurrence_keys_disambiguate_structurally_identical_clauses() {
         let clause_node = node_key(9);
         let mut occurrences: OccurrenceMap<()> = OccurrenceMap::default();
-        let first = occurrences.record(clause_node, OccurrenceRole::Claim, ());
-        let second = occurrences.record(clause_node, OccurrenceRole::Claim, ());
+        let first = occurrences.record(clause_node.clone(), OccurrenceRole::Claim, ());
+        let second = occurrences.record(clause_node.clone(), OccurrenceRole::Claim, ());
 
         // Step 3: equal node ids (both occurrences of the one clause),
         // distinct occurrence keys.
@@ -878,8 +878,8 @@ mod tests {
         // Step 4: (node id, occurrence key) disambiguates what node id
         // alone cannot.
         let mut by_pair: BTreeMap<(NodeKey, Origin), &str> = BTreeMap::new();
-        by_pair.insert((clause_node, first.clone()), "occurrence A");
-        by_pair.insert((clause_node, second.clone()), "occurrence B");
+        by_pair.insert((clause_node.clone(), first.clone()), "occurrence A");
+        by_pair.insert((clause_node.clone(), second.clone()), "occurrence B");
         assert_eq!(
             by_pair.len(),
             2,
@@ -891,7 +891,7 @@ mod tests {
         // key) is what determines identity/membership, not the order the
         // pairs happened to be built or read in.
         let mut inserted_in_reverse = BTreeMap::new();
-        inserted_in_reverse.insert((clause_node, second), "occurrence B");
+        inserted_in_reverse.insert((clause_node.clone(), second), "occurrence B");
         inserted_in_reverse.insert((clause_node, first), "occurrence A");
         assert_eq!(by_pair, inserted_in_reverse);
     }
@@ -911,34 +911,20 @@ mod tests {
     // `#[trace("TC-258", ...)]` test), the O-11 type this ADR-013 note
     // itself names as canonical.
 
-    /// `mint_variant_id` is QSpec FR-141's enum-member node key:
-    /// `quire.checked-semantic-node/v1` over `{version: "quire.enum-member-
-    /// node/v1", declaration_node_id: {domain: "quire.checked-semantic-
-    /// node/v1", digest: sum}, case: "Active"}`. The preimage text is
-    /// written out by hand (sorted keys, no whitespace) and the expected
-    /// identity is its SHA-256, computed here with `sha2` independently of
-    /// the minter, so a reordered field or a renamed tag fails this test
-    /// while an equality-only comparison of two minted identities would
-    /// not. This is also TC-409 step 2's independently computed FR-141
-    /// member node key.
+    /// `mint_variant_id` carries the declaration's structural key and the
+    /// exact case name. Both fields are inspected independently, and either
+    /// field changing must change the resulting identity.
     #[trace("TC-252", "FR-088-AC-10")]
     #[trace("TC-409", "FR-088-AC-11")]
     #[test]
-    fn mint_variant_id_is_the_hash_of_its_hand_written_preimage() {
-        use sha2::{Digest, Sha256};
+    fn mint_variant_id_carries_declaration_and_case() {
         let sum = node_key(7);
-        let variant_id = mint_variant_id(sum, "Active");
-        let text = format!(
-            r#"{{"case":"Active","declaration_node_id":{{"digest":"{sum}","domain":"quire.checked-semantic-node/v1"}},"version":"quire.enum-member-node/v1"}}"#
-        );
-        let expected: String = Sha256::digest(text.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        assert_eq!(variant_id.to_string(), expected);
+        let variant_id = mint_variant_id(sum.clone(), "Active").unwrap();
+        assert_eq!(variant_id.owner(), &sum);
+        assert_eq!(variant_id.case(), "Active");
         // A different case or declaration is a different identity.
-        assert_ne!(variant_id, mint_variant_id(sum, "Closed"));
-        assert_ne!(variant_id, mint_variant_id(node_key(8), "Active"));
+        assert_ne!(variant_id, mint_variant_id(sum, "Closed").unwrap());
+        assert_ne!(variant_id, mint_variant_id(node_key(8), "Active").unwrap());
     }
 
     /// TC-252 (FR-088-AC-9): every non-sum checked type-node form converts
@@ -988,7 +974,7 @@ mod tests {
         let active = SumVariant::new(identifier("Active"));
         let closed = SumVariant::new(identifier("Closed"));
         let sum = CheckedTypeNode::Sum {
-            node: sum_node,
+            node: sum_node.clone(),
             variants: SumVariants::new(vec![active.clone(), closed.clone()], false).unwrap(),
         };
 
@@ -1000,17 +986,20 @@ mod tests {
         let ValueType::Enum(shape) = &converted else {
             panic!("sum form must convert to ValueType::Enum: {converted:?}");
         };
-        let active_id = mint_variant_id(sum_node, active.name());
-        let closed_id = mint_variant_id(sum_node, closed.name());
-        assert!(shape.contains(active_id));
-        assert!(shape.contains(closed_id));
+        let active_id = mint_variant_id(sum_node.clone(), active.name()).unwrap();
+        let closed_id = mint_variant_id(sum_node, closed.name()).unwrap();
+        assert!(shape.contains(&active_id));
+        assert!(shape.contains(&closed_id));
 
         // A sum value carries its (VariantId, rank) pair, at the rank the
         // (already case-sorted, unordered) shape assigns it -- never a bare
         // index of its own choosing.
-        assert_eq!(shape.rank(active_id), Some(0));
-        assert_eq!(shape.rank(closed_id), Some(1));
-        assert!(converted.admits(&Value::Enum(quire_exact::EnumMember::new(active_id, 0))));
+        assert_eq!(shape.rank(&active_id), Some(0));
+        assert_eq!(shape.rank(&closed_id), Some(1));
+        assert!(converted.admits(&Value::Enum(quire_exact::EnumMember::new(
+            active_id.clone(),
+            0
+        ))));
         assert!(!converted.admits(&Value::Enum(quire_exact::EnumMember::new(active_id, 1))));
     }
 
@@ -1032,11 +1021,11 @@ mod tests {
         let active = SumVariant::new(identifier("Active"));
         let closed = SumVariant::new(identifier("Closed"));
         let declared = CheckedTypeNode::Sum {
-            node: sum_node,
+            node: sum_node.clone(),
             variants: SumVariants::new(vec![active.clone(), closed.clone()], true).unwrap(),
         };
         let reversed = CheckedTypeNode::Sum {
-            node: sum_node,
+            node: sum_node.clone(),
             variants: SumVariants::new(vec![closed, active], true).unwrap(),
         };
 
@@ -1047,18 +1036,18 @@ mod tests {
             panic!("sum form must convert to ValueType::Enum");
         };
 
-        let active_id = mint_variant_id(sum_node, "Active");
-        let closed_id = mint_variant_id(sum_node, "Closed");
+        let active_id = mint_variant_id(sum_node.clone(), "Active").unwrap();
+        let closed_id = mint_variant_id(sum_node, "Closed").unwrap();
 
         // Identity never depends on declared order.
-        assert!(declared_shape.contains(active_id) && reversed_shape.contains(active_id));
-        assert!(declared_shape.contains(closed_id) && reversed_shape.contains(closed_id));
+        assert!(declared_shape.contains(&active_id) && reversed_shape.contains(&active_id));
+        assert!(declared_shape.contains(&closed_id) && reversed_shape.contains(&closed_id));
 
         // Rank does, for an ordered sum.
-        assert_eq!(declared_shape.rank(active_id), Some(0));
-        assert_eq!(declared_shape.rank(closed_id), Some(1));
-        assert_eq!(reversed_shape.rank(closed_id), Some(0));
-        assert_eq!(reversed_shape.rank(active_id), Some(1));
+        assert_eq!(declared_shape.rank(&active_id), Some(0));
+        assert_eq!(declared_shape.rank(&closed_id), Some(1));
+        assert_eq!(reversed_shape.rank(&closed_id), Some(0));
+        assert_eq!(reversed_shape.rank(&active_id), Some(1));
         assert_ne!(declared_shape, reversed_shape);
     }
 
@@ -1082,12 +1071,10 @@ mod tests {
 
     /// TC-409 step 6 (FR-088-AC-11): two declarations that differ only in
     /// identity (here, two distinct declaration `NodeKey`s standing in for
-    /// a rename -- a declaration's `NodeKey` is a digest over `{owner,
-    /// qualified_declaration, ordered, members}`, so any of those changing
-    /// produces exactly this) mint different `VariantId`s for the same case
+    /// a rename) mint different `VariantId`s for the same case
     /// name, at the same rank, under the same declared order. This tests
-    /// what FR-141's member preimage (`{version, declaration_node_id,
-    /// case}`) unambiguously guarantees -- unlike TC-409's own procedure
+    /// what FR-141's member identity `(declaration node, case)`
+    /// guarantees -- unlike TC-409's own procedure
     /// text, which frames step 6 as a package *version* bump; SR-511
     /// FND-007 found that framing unsupported by QSpec (a version bump only
     /// changes the key through `owner`, not directly), so this test uses a
@@ -1111,11 +1098,11 @@ mod tests {
             .unwrap()
         };
         let original = CheckedTypeNode::Sum {
-            node: original_node,
+            node: original_node.clone(),
             variants: variants(),
         };
         let renamed = CheckedTypeNode::Sum {
-            node: renamed_node,
+            node: renamed_node.clone(),
             variants: variants(),
         };
         let ValueType::Enum(ref original_shape) = to_kernel_value_type(&original) else {
@@ -1125,10 +1112,10 @@ mod tests {
             panic!("sum form must convert to ValueType::Enum");
         };
 
-        let original_active = mint_variant_id(original_node, "Active");
-        let renamed_active = mint_variant_id(renamed_node, "Active");
-        let original_closed = mint_variant_id(original_node, "Closed");
-        let renamed_closed = mint_variant_id(renamed_node, "Closed");
+        let original_active = mint_variant_id(original_node.clone(), "Active").unwrap();
+        let renamed_active = mint_variant_id(renamed_node.clone(), "Active").unwrap();
+        let original_closed = mint_variant_id(original_node, "Closed").unwrap();
+        let renamed_closed = mint_variant_id(renamed_node, "Closed").unwrap();
 
         // Every VariantId changes with the declaration's own identity.
         assert_ne!(original_active, renamed_active);
@@ -1136,10 +1123,10 @@ mod tests {
 
         // Ranks and canonical order do not: both shapes still rank "Active"
         // 0 and "Closed" 1, the same declared order in both.
-        assert_eq!(original_shape.rank(original_active), Some(0));
-        assert_eq!(original_shape.rank(original_closed), Some(1));
-        assert_eq!(renamed_shape.rank(renamed_active), Some(0));
-        assert_eq!(renamed_shape.rank(renamed_closed), Some(1));
+        assert_eq!(original_shape.rank(&original_active), Some(0));
+        assert_eq!(original_shape.rank(&original_closed), Some(1));
+        assert_eq!(renamed_shape.rank(&renamed_active), Some(0));
+        assert_eq!(renamed_shape.rank(&renamed_closed), Some(1));
     }
 
     /// PR #300 review finding 6: two variants sharing one declared name

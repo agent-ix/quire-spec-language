@@ -48,7 +48,7 @@ use super::ir::{
     coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
 };
 use super::lowering::SemanticGraph;
-use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm};
+use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm, NodeKeyRefusal};
 use super::references::{read_object, ModelReferences};
 use super::refusal::KeyFault;
 use super::{
@@ -1037,7 +1037,9 @@ pub(crate) fn key_claims(
         let mut path_condition = Vec::with_capacity(site.path_condition.len());
         for guard in &site.path_condition {
             let here = at.get(&guard.location).map_or(&[][..], Vec::as_slice);
-            let (node, origin) = outermost(here, graph).ok_or_else(unkeyable)?;
+            let (node, origin) = outermost(here, graph)
+                .map_err(|_| unkeyable())?
+                .ok_or_else(unkeyable)?;
             path_condition.push(PathGuard {
                 occurrence: OccurrenceKey::new(wire(node), origin),
                 holds: guard.holds,
@@ -1101,23 +1103,34 @@ pub(crate) fn key_claims(
 /// The one occurrence in `here` whose node no other node in `here` names:
 /// the node lowered from the checked node at that location, when a node
 /// lowered with it (a `deref` under its `record.project`) shares it.
-fn outermost(here: &[(NodeKey, Origin)], graph: &SemanticGraph) -> Option<(NodeKey, Origin)> {
+fn outermost(
+    here: &[(NodeKey, Origin)],
+    graph: &SemanticGraph,
+) -> Result<Option<(NodeKey, Origin)>, NodeKeyRefusal> {
     let names = |outer: NodeKey, inner: NodeKey| {
         let mut named = false;
         if let Some(node) = graph.node(outer) {
-            node.body().for_each_key(&mut |key| named |= key == inner);
+            node.body().for_each_key(&mut |key| named |= key == inner)?;
         }
-        named
+        Ok::<_, NodeKeyRefusal>(named)
     };
-    let mut outer = here.iter().filter(|(inner, _)| {
-        !here
-            .iter()
-            .any(|(other, _)| other != inner && names(other.clone(), inner.clone()))
-    });
-    match (outer.next(), outer.next()) {
-        (Some(found), None) => Some(found.clone()),
-        _ => None,
+    let mut outer = None;
+    for (inner, origin) in here {
+        let mut named = false;
+        for (other, _) in here {
+            if other != inner && names(other.clone(), inner.clone())? {
+                named = true;
+                break;
+            }
+        }
+        if !named {
+            if outer.is_some() {
+                return Ok(None);
+            }
+            outer = Some((inner.clone(), origin.clone()));
+        }
     }
+    Ok(outer)
 }
 
 #[cfg(test)]

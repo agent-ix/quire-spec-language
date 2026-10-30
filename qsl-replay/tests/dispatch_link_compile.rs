@@ -164,7 +164,7 @@ fn compile(
         .map_err(refusal)?
         .into_value();
     Ok(spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -210,7 +210,7 @@ fn compile_text_with_execution_points(
         .map_err(refusal)?
         .into_value();
     Ok(spine::check_with_execution_points(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         execution_points,
         &models,
         &DependencyInput::default(),
@@ -884,7 +884,7 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     );
     let emit = || {
         qsl_replay::compile_package(
-            SourceIdentity::new("a", "u", "git", "1"),
+            SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
             "unit.native",
             text.as_bytes(),
             [document.as_slice()],
@@ -897,7 +897,6 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     let (first, second) = (emit(), emit());
     assert!(!first.bytes().is_empty());
     assert_eq!(first.bytes(), second.bytes());
-    assert_eq!(first.package_id(), second.package_id());
 }
 
 /// `document` with the object type `name` declared abstract.
@@ -1323,7 +1322,7 @@ fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
 
 fn object_reference(effective: EffectiveId, key: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([7; 32]),
+        UniverseId::new(quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("7".to_owned())], 0).expect("a fixture node")),
         effective,
         ObjectId::new(key.to_owned()).expect("a key"),
     )
@@ -1473,7 +1472,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
         supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
     };
     let result = qsl_replay::run_with_requirements(
-        SourceIdentity::new("a", "u", "git", "1"),
+        SourceIdentity::new("a", "u", "git", "1"), "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         &packages,
@@ -1520,7 +1519,7 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
         .expect("selects")
         .into_value();
     let checked = spine::check(
-        &parsed,
+        &parsed, "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,

@@ -36,6 +36,7 @@ fn check(declarations: &str) -> Checked {
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "a".to_owned(),
         unit,
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -106,7 +107,7 @@ impl Checked {
             .filter(|(node, _)| {
                 operation.is_none_or(|operation| {
                     matches!(
-                        self.graph.semantic_graph().node(*node).map(|node| node.body()),
+                        self.graph.semantic_graph().node(node.clone()).map(|node| node.body()),
                         Some(BodyTerm::Application(ApplicationTerm { operation: applied, .. }))
                             if applied.identity() == operation
                     )
@@ -116,7 +117,7 @@ impl Checked {
         let [(node, origin)] = found.as_slice() else {
             panic!("one occurrence of {operation:?} at `{needle}` #{nth}: {found:?}");
         };
-        OccurrenceKey::new(wire(*node), origin.clone())
+        OccurrenceKey::new(wire(node.clone()), origin.clone())
     }
 
     fn function(&self, name: &str) -> &crate::check::SemanticNode {
@@ -134,9 +135,10 @@ impl Checked {
         self.function(function)
             .function_parameters()
             .expect("a function node")[index]
+            .clone()
     }
 
-    fn type_node(&self, at: TypeAt) -> WireNodeId {
+    fn type_node(&self, at: TypeAt) -> NodeKey {
         let key = match at {
             TypeAt::Result(function) => self.function(function).semantic_type(),
             TypeAt::Parameter(function, index) => self
@@ -542,7 +544,7 @@ impl Checked {
     /// `function NAME` declaration that starts at or before the site's
     /// region. Read from the unit text, not from the record.
     fn declaring_function(&self, key: &OccurrenceKey) -> String {
-        let node = NodeKey::from_digest(*key.node().as_bytes());
+        let node = key.node().clone();
         let location = self
             .graph
             .occurrences()
@@ -611,7 +613,7 @@ fn a_record_names_the_parameters_its_extent_reads() {
             found.next().is_none(),
             "one {function} record, guarded {guarded}"
         );
-        record.extent_roots().iter().copied().collect::<Vec<_>>()
+        record.extent_roots().iter().cloned().collect::<Vec<_>>()
     };
     let wire = |function: &str, index: usize| wire(checked.parameter(function, index));
     // `y` is read by neither the application nor its (empty) path condition.
@@ -657,11 +659,11 @@ fn expression_map(checked: &Checked, omit: Option<&OccurrenceKey>) -> Occurrence
         if origin.role() != &Role::new("expression") {
             continue;
         }
-        let occurrence = OccurrenceKey::new(wire(node), origin);
+        let occurrence = OccurrenceKey::new(wire(node.clone()), origin);
         if omit == Some(&occurrence) {
             continue;
         }
-        map.record(node, OccurrenceRole::Expression, location.clone());
+        map.record(node.clone(), OccurrenceRole::Expression, location.clone());
     }
     map
 }
@@ -680,8 +682,18 @@ fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
     }
 }
 
+/// A structural fixture key for a declaration handle.
+fn fixture_key(label: &str) -> NodeKey {
+    NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text(label.to_owned())],
+        0,
+    )
+    .expect("a fixture key is a valid structural identity")
+}
+
 fn node_key(fill: u8) -> NodeKey {
-    NodeKey::from_digest([fill; 32])
+    fixture_key(&format!("n{fill}"))
 }
 
 /// TC-160 step 12: absence of a direct narrow occurrence refuses keying.
@@ -696,7 +708,7 @@ fn tc_160_narrowed_claim_with_zero_direct_narrows_faults() {
     let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
     let location = checked
         .graph
-        .occurrence(NodeKey::from_digest(*add.node().as_bytes()), add.origin())
+        .occurrence(add.node().clone(), add.origin())
         .expect("the add occurrence has a location")
         .clone();
     let expressions = expression_map(&checked, Some(&narrow));
@@ -723,13 +735,13 @@ fn tc_160_narrowed_claim_with_two_direct_narrows_faults() {
     let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
     let add_location = checked
         .graph
-        .occurrence(NodeKey::from_digest(*add.node().as_bytes()), add.origin())
+        .occurrence(add.node().clone(), add.origin())
         .expect("the add occurrence has a location")
         .clone();
-    let narrow_node = NodeKey::from_digest(*narrow.node().as_bytes());
+    let narrow_node = narrow.node().clone();
     let narrow_location = checked
         .graph
-        .occurrence(narrow_node, narrow.origin())
+        .occurrence(narrow_node.clone(), narrow.origin())
         .expect("the narrow occurrence has a location")
         .clone();
     let mut expressions = expression_map(&checked, None);
@@ -756,9 +768,9 @@ fn tc_160_direct_context_excludes_outer_narrow() {
     );
     let add = checked.occurrence("x + 1", 0, Some(ADD));
     let direct = checked.occurrence("x + 1", 0, Some(NARROW));
-    let direct_node = NodeKey::from_digest(*direct.node().as_bytes());
+    let direct_node = direct.node().clone();
     let outer_node = node_key(12);
-    let add_node = NodeKey::from_digest(*add.node().as_bytes());
+    let add_node = add.node().clone();
     let location = checked
         .graph
         .occurrence(add_node, add.origin())
@@ -772,7 +784,7 @@ fn tc_160_direct_context_excludes_outer_narrow() {
     let graph = checked
         .graph
         .semantic_graph()
-        .with_test_narrow_over(outer_node, direct_node);
+        .with_test_narrow_over(outer_node.clone(), direct_node);
     let mut expressions = expression_map(&checked, None);
     expressions.record(outer_node, OccurrenceRole::Expression, location.clone());
     let records = key_claims(
@@ -845,22 +857,22 @@ fn tc_160_an_unpaired_site_or_application_faults_instead_of_dropping() {
     let checked = check("function two using v(): Integer pure { 1 + 1 }");
     let graph = checked.graph.semantic_graph();
     let key = checked.occurrence("1 + 1", 0, Some(ADD));
-    let add = NodeKey::from_digest(*key.node().as_bytes());
+    let add = key.node().clone();
     let site = checked
         .graph
-        .occurrence(add, key.origin())
+        .occurrence(add.clone(), key.origin())
         .expect("the application's occurrence")
         .clone();
     let binders = BTreeMap::new();
 
     let mut paired = OccurrenceMap::default();
-    paired.record(add, OccurrenceRole::Expression, site.clone());
+    paired.record(add.clone(), OccurrenceRole::Expression, site.clone());
     let records = key_claims(vec![claim_at(site.clone())], &paired, graph, &binders)
         .expect("the site pairs with its occurrence");
     assert_eq!(records.keys().collect::<Vec<_>>(), [&key]);
 
     let mut generated = OccurrenceMap::default();
-    generated.record(add, OccurrenceRole::Generated, site.clone());
+    generated.record(add.clone(), OccurrenceRole::Generated, site.clone());
     assert_eq!(
         key_claims(vec![claim_at(site.clone())], &generated, graph, &binders),
         Err(KeyFault::UnkeyableRequirements)
@@ -886,11 +898,11 @@ fn tc_160_an_unpaired_site_or_application_faults_instead_of_dropping() {
 fn tc_160_two_sites_of_one_node_pair_by_location_not_order() {
     let checked = check("function two using v(): Integer pure { 1 + 1 }");
     let graph = checked.graph.semantic_graph();
-    let add = NodeKey::from_digest(*checked.occurrence("1 + 1", 0, Some(ADD)).node().as_bytes());
+    let add = checked.occurrence("1 + 1", 0, Some(ADD)).node().clone();
     let (first, second) = (body(0, &[0]), body(0, &[1]));
     let mut occurrences = OccurrenceMap::default();
-    let first_origin = occurrences.record(add, OccurrenceRole::Expression, first.clone());
-    let second_origin = occurrences.record(add, OccurrenceRole::Expression, second.clone());
+    let first_origin = occurrences.record(add.clone(), OccurrenceRole::Expression, first.clone());
+    let second_origin = occurrences.record(add.clone(), OccurrenceRole::Expression, second.clone());
     let binders = BTreeMap::new();
     for claims in [
         vec![claim_at(first.clone()), claim_at(second.clone())],
@@ -901,8 +913,8 @@ fn tc_160_two_sites_of_one_node_pair_by_location_not_order() {
         assert_eq!(
             records.keys().cloned().collect::<Vec<_>>(),
             [
-                OccurrenceKey::new(wire(add), first_origin.clone()),
-                OccurrenceKey::new(wire(add), second_origin.clone()),
+                OccurrenceKey::new(wire(add.clone()), first_origin.clone()),
+                OccurrenceKey::new(wire(add.clone()), second_origin.clone()),
             ]
         );
     }
@@ -930,6 +942,7 @@ fn family_check(
     let unit = build_unit(&parsed).expect("S2 builds the unit");
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "a".to_owned(),
         unit,
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -1049,12 +1062,12 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
     let mut body = BodyBuilder::default();
     let record = body.push(node(
         NodeKind::Local(0),
-        ValueType::Composite(NodeKey::from_digest([9; 32])),
+        ValueType::Composite(fixture_key("nine")),
     ));
     let field = body.push(node(
         NodeKind::Field {
             operand: record,
-            field: crate::check::ir::RecordField::new(NodeKey::from_digest([9; 32]), "x"),
+            field: crate::check::ir::RecordField::new(fixture_key("nine"), "x"),
             optional: false,
         },
         ValueType::Integer,
@@ -1069,10 +1082,7 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
         NodeKind::Arithmetic(crate::check::Arithmetic::Add, field, one),
         ValueType::Integer,
     ));
-    let parameters = [(
-        "r".to_owned(),
-        ValueType::Composite(NodeKey::from_digest([9; 32])),
-    )];
+    let parameters = [("r".to_owned(), ValueType::Composite(fixture_key("nine")))];
     let Err(ClassifyFailure::Fault(fault)) = claims_of(
         add.root(),
         &parameters,
@@ -1201,12 +1211,12 @@ impl Checked {
     /// The node the `argument`th operand of the one `operation`
     /// application at the `nth` `needle` references: a binder's parameter
     /// node, for a binder read.
-    fn operand(&self, needle: &str, nth: usize, operation: &str, argument: usize) -> WireNodeId {
+    fn operand(&self, needle: &str, nth: usize, operation: &str, argument: usize) -> NodeKey {
         let key = self.occurrence(needle, nth, Some(operation));
         let node = self
             .graph
             .semantic_graph()
-            .node(NodeKey::from_digest(*key.node().as_bytes()))
+            .node(key.node().clone())
             .expect("the application is lowered");
         let BodyTerm::Application(ApplicationTerm { arguments, .. }) = node.body() else {
             panic!("an application at `{needle}`");
@@ -1214,19 +1224,19 @@ impl Checked {
         let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) = arguments.get(argument) else {
             panic!("operand {argument} at `{needle}` is a reference: {arguments:?}");
         };
-        wire(target.0)
+        wire(target.admitted().expect("an admitted reference").clone())
     }
 }
 
 /// `domains` as an extent.
-fn extent(domains: &[(WireNodeId, &[u32], DomainKind)]) -> ClaimExtent {
+fn extent(domains: &[(NodeKey, &[u32], DomainKind)]) -> ClaimExtent {
     ClaimExtent::from_domains(
         domains
             .iter()
             .map(|(node, path, kind)| {
                 (
                     DomainKey::Node {
-                        node: *node,
+                        node: node.clone(),
                         path: path.to_vec(),
                     },
                     *kind,
@@ -1330,7 +1340,7 @@ fn tc_160_rr_14_query_binder_roots() {
         let record = checked.record(needle, 0, operation);
         assert_eq!(
             record.requirements().extent(),
-            &extent(&[(v, &[], DomainKind::Integer)]),
+            &extent(&[(v.clone(), &[], DomainKind::Integer)]),
             "{needle}"
         );
         assert_eq!(record.result_bound().value_type(), &bound, "{needle}");

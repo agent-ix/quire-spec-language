@@ -216,7 +216,7 @@ pub enum Owner {
 
 /// A local draft handle; its value never reaches a checked package.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct PlaceholderId(pub(crate) usize);
+pub struct PlaceholderId(pub(crate) usize);
 
 /// A node reference during lowering. The pending form must be resolved to
 /// an admitted structural identity before the body crosses a wire boundary.
@@ -246,15 +246,6 @@ impl NodeRef {
     /// Require a resolved structural identity at an admission boundary.
     fn require_admitted(&self) -> Result<&NodeKey, NodeKeyRefusal> {
         self.admitted().ok_or(NodeKeyRefusal::UnresolvedPlaceholder)
-    }
-
-    /// Apply a graph key substitution only to an admitted reference. Pending
-    /// handles remain local until the group allocator resolves them.
-    fn map_admitted(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        match self {
-            Self::Admitted(node) => Self::Admitted(map(node.clone())),
-            Self::Pending(handle) => Self::Pending(*handle),
-        }
     }
 }
 
@@ -1049,23 +1040,6 @@ impl BodyTerm {
         });
     }
 
-    /// This body with every admitted node key it names replaced by `map`'s
-    /// image; pending handles are kept.
-    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        // An admitted reference maps to an admitted one, so no member image
-        // is pending.
-        let mut pending_member = false;
-        let mapped = self.map_refs_in(
-            &mut |reference| reference.map_admitted(&mut *map),
-            &mut pending_member,
-        );
-        debug_assert!(
-            !pending_member,
-            "map_keys maps admitted keys to admitted keys"
-        );
-        mapped
-    }
-
     /// This body with every node reference it holds replaced by `map`'s
     /// image. An operation member's declaration or population is a node
     /// key: it takes the image only when that is admitted.
@@ -1483,35 +1457,6 @@ pub enum LeafSegment {
     /// `recursion:<d>`: the path reenters the composite it entered after
     /// `d` segments.
     Recursion(usize),
-}
-
-/// Semantic content retained during lowering before a producer-assigned
-/// structural identity is attached.
-#[derive(Clone, Debug)]
-pub(crate) struct NodeInput<'a> {
-    /// The node's owner: for a structural node, a [`SourceOwner`] exactly
-    /// when `declaration` is present, a [`ModelOwner`] for a model-owned node
-    /// (whose `declaration` is absent), else none; an application node has
-    /// none.
-    pub(crate) owner: Option<&'a Owner>,
-    /// The node's v2 `node_tag`.
-    pub(crate) node_tag: NodeTag,
-    /// The node's v2 `semantic_form`, spelled as on the wire (schema
-    /// `Nonempty`; an empty form is refused).
-    pub(crate) semantic_form: &'a str,
-    /// The node's semantic type key, or `None` for a self-typed node
-    /// (structural preimage only).
-    pub(crate) semantic_type: Option<NodeKey>,
-    /// The node's `declaration.qualified_name`, when it carries one (schema
-    /// `minItems: 1`; an empty name is refused).
-    pub(crate) declaration: Option<&'a [Identifier]>,
-    /// The node's body.
-    pub(crate) body: &'a BodyTerm,
-    /// QSpec FR-464's `owner_model`: the exact model declaration node a
-    /// `protocol`/`protocol_clause` node is declared over, `Some` for that
-    /// node and `None` for every other; it enters the clause's
-    /// `quire.application-node/v1` preimage.
-    pub(crate) owner_model: Option<NodeKey>,
 }
 
 /// Why no key exists for a node.

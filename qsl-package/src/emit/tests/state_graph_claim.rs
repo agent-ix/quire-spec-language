@@ -329,10 +329,6 @@ fn the_i2_lookup_resolves_the_triple_and_each_lookup_takes_only_its_own_form() {
     let recompiled = admit(&compile(&text));
     assert_eq!(resolve_state_graph_root(&recompiled, &triple), Ok(Ok(root)));
 
-    let temporal = nodes(&compiled.wire)
-        .iter()
-        .find(|node| node["semantic_form"] == "temporal_clause")
-        .expect("the temporal clause node");
     let claim_at =
         |node, ordinal| OccurrenceKey::new(node, Origin::new(Role::new("claim"), ordinal));
     let ordinal = triple.origin().ordinal();

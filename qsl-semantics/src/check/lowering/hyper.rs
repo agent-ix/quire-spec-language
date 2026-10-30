@@ -663,6 +663,7 @@ pub(crate) fn finish_step_relation(
         super::SemanticNode {
             key,
             recursion: None,
+            nominal: None,
             content,
         },
         code_roots,

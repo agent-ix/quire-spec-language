@@ -1866,7 +1866,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{empty_scope, fixture_source, root_location};
+    use super::fixtures::{empty_scope, fill_key, fixture_source, root_location};
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::{BuiltinType, TypeForm};
@@ -1945,7 +1945,7 @@ mod tests {
         let types_with = |fill: u8, field_type: ValueType| {
             TypeEnvironment::new(
                 [CompositeDeclaration::new(
-                    NodeKey::from_digest([fill; 32]),
+                    fill_key(fill),
                     "Point",
                     CompositeShape::Record(vec![FieldDeclaration::new(
                         "x",
@@ -1999,6 +1999,19 @@ mod tests {
 /// production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
+    pub fn fill_key(fill: u8) -> quire_exact::NodeKey {
+        quire_exact::NodeKey::new(
+            "fixture".to_owned(),
+            vec![quire_exact::PathSegment::Text(format!("node-{fill}"))],
+            0,
+        )
+        .expect("a nonempty structural fixture key")
+    }
+
+    pub fn compound_unit(fill: u8) -> quire_exact::UnitId {
+        quire_exact::UnitId::compound(vec![(fill_key(fill), quire_exact::Integer::from(1_i64))])
+    }
+
     /// Every released kernel invariant cause, including distinct nested payloads.
     pub fn received_kernel_causes() -> Vec<quire_exact::CheckedInvariantCause> {
         use quire_exact::{CheckedInvariantCause as C, IllTypedCause};
@@ -2244,7 +2257,7 @@ pub(crate) mod checking_tests {
     //! code's shape or where it lives.
     use super::fixtures::{
         boolean_signature, boolean_type_form, declaration, declaration_signature, declarations_for,
-        empty_scope, limits, measure_resolved, root_location,
+        empty_scope, fill_key, limits, measure_resolved, root_location,
     };
     use super::*;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
@@ -3466,15 +3479,15 @@ pub(crate) mod checking_tests {
     #[test]
     fn occurrence_ordinals_are_per_identity_and_role() {
         let mut map = OccurrenceMap::default();
-        let a = NodeKey::from_digest([1; 32]);
-        let b = NodeKey::from_digest([2; 32]);
-        let first = map.record(a, OccurrenceRole::Expression, (0, 3));
-        let second = map.record(a, OccurrenceRole::Expression, (4, 7));
-        let other = map.record(b, OccurrenceRole::Expression, (8, 11));
+        let a = fill_key(1);
+        let b = fill_key(2);
+        let first = map.record(a.clone(), OccurrenceRole::Expression, (0, 3));
+        let second = map.record(a.clone(), OccurrenceRole::Expression, (4, 7));
+        let other = map.record(b.clone(), OccurrenceRole::Expression, (8, 11));
         assert_eq!(first.ordinal(), 0);
         assert_eq!(second.ordinal(), 1);
         assert_eq!(other.ordinal(), 0);
-        assert_eq!(map.resolve(a, &first), Some(&(0, 3)));
+        assert_eq!(map.resolve(a.clone(), &first), Some(&(0, 3)));
         assert_eq!(map.resolve(a, &second), Some(&(4, 7)));
         assert_eq!(map.resolve(b, &other), Some(&(8, 11)));
     }
@@ -3488,7 +3501,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn keyed_ordinals_match_counting_earlier_records() {
         let keys: Vec<NodeKey> = (1..=5)
-            .map(|byte| NodeKey::from_digest([byte; 32]))
+            .map(|byte| fill_key(byte))
             .collect();
         let roles = [
             OccurrenceRole::Declaration,
@@ -3504,29 +3517,29 @@ pub(crate) mod checking_tests {
             state = state
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1);
-            let key = keys[usize::try_from(state >> 33).unwrap() % keys.len()];
+            let key = keys[usize::try_from(state >> 33).unwrap() % keys.len()].clone();
             let role = roles[usize::try_from(state >> 17).unwrap() % roles.len()];
             let expected = recorded
                 .iter()
                 .filter(|(other, other_role, _)| *other == key && *other_role == role)
                 .count();
-            let origin = map.record(key, role, span);
+            let origin = map.record(key.clone(), role, span);
             assert_eq!(origin.ordinal(), u64::try_from(expected).unwrap());
             assert_eq!(OccurrenceRole::of(origin.role()), Some(role));
             recorded.push((key, role, origin));
         }
         for (span, (key, _, origin)) in (0_u64..).zip(&recorded) {
-            assert_eq!(map.resolve(*key, origin), Some(&span));
-            assert!(map.has(*key));
+            assert_eq!(map.resolve(key.clone(), origin), Some(&span));
+            assert!(map.has(key.clone()));
         }
-        let unrecorded = NodeKey::from_digest([9; 32]);
-        assert!(!map.has(unrecorded));
+        let unrecorded = fill_key(9);
+        assert!(!map.has(unrecorded.clone()));
         assert_eq!(
             map.resolve(unrecorded, &Origin::new(Role::new("expression"), 0)),
             None
         );
         let past_the_end = Origin::new(Role::new("expression"), u64::MAX);
-        assert_eq!(map.resolve(keys[0], &past_the_end), None);
+        assert_eq!(map.resolve(keys[0].clone(), &past_the_end), None);
     }
 
     /// A name's first signature and its first callable one are
@@ -3604,7 +3617,7 @@ pub(crate) mod checking_tests {
 #[cfg(test)]
 mod locus_tests {
     use super::fixtures::{
-        declaration, declaration_signature, declarations_for, empty_scope, limits,
+        compound_unit, declaration, declaration_signature, declarations_for, empty_scope, limits,
         measure_resolved, root_location,
     };
     use super::*;
@@ -4029,7 +4042,7 @@ mod locus_tests {
     }
 
     fn metre() -> quire_exact::UnitId {
-        quire_exact::UnitId::compound([5; 32])
+        compound_unit(5)
     }
 
     fn bounded(

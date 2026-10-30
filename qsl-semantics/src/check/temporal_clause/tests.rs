@@ -6,7 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure};
-use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -74,7 +74,7 @@ type Outcome = Result<CheckedTemporalClause, StageFailure<CheckRefusal>>;
 fn check(package: &PackageDeclarations) -> Outcome {
     let units = crate::check::time_units::TimeUnits::new(
         &package.units,
-        package.nominal_spans.keys().copied(),
+        package.nominal_spans.keys().cloned(),
         &package.models,
         &package.dimension_equivalences,
         &package.source,
@@ -152,8 +152,13 @@ fn first(text: &str, needle: &str) -> Span {
     }
 }
 
-fn node(byte: u8) -> WireNodeId {
-    WireNodeId::from_digest([byte; 32])
+fn node(byte: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text(format!("node-{byte}"))],
+        0,
+    )
+    .expect("a nonempty structural fixture key")
 }
 
 /// FR-326-AC-1: under infinite-trace `eventually` alone checks with no

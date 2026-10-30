@@ -121,7 +121,6 @@
 // `numeric` and `text` are deleted; their former items are imported from `quire_exact`
 // directly.
 
-pub(crate) mod counter;
 pub(crate) mod definition;
 mod diagnostics_catalog;
 pub mod enumeration;
@@ -129,6 +128,7 @@ pub mod environment_stage;
 pub(crate) mod layer;
 pub(crate) mod member;
 pub mod model_query;
+pub mod nominal_payload;
 pub(crate) mod semantic_node;
 pub(crate) mod unit;
 

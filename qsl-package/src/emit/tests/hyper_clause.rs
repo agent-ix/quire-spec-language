@@ -416,7 +416,7 @@ fn the_occurrence_round_trips_and_the_wrapper_is_no_clause_root() {
     let resolved = resolve_hyper_root(&admitted, clause.occurrence()).expect("resolves");
     assert_eq!(&resolved, &roots[0]);
 
-    let wrapper = roots[0].body().expect("a body wrapper");
+    let wrapper = roots[0].body().expect("a body wrapper").clone();
     let wrapper_triple = quire_exact::Origin::new(quire_exact::Role::new("claim"), 0);
     let wrapper_key = OccurrenceKey::new(wrapper.clone(), wrapper_triple.clone());
     assert_eq!(
