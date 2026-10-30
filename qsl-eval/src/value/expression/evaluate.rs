@@ -2269,7 +2269,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let library = self
                     .graph
                     .scope()
-                    .imported_graph(callee.package)
+                    .imported_graph(callee)
                     .ok_or_else(|| invariant("evaluation-imported-graph-unresolved"))?;
                 let callable = library
                     .function_state(*function)
