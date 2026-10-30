@@ -617,15 +617,19 @@ pub fn protocol_domains(
         .filter(|binder| binder.ranged)
         .filter_map(|binder| {
             // FR-464: the binder's level is the entry count of the control
-            // that introduces it, and the post-root readable count for
-            // `finish`.
-            let level = binder
-                .node
-                .and_then(|node| protocol.slots.entries.get(&node))
-                .map_or(
-                    protocol.slots.root_out.len(),
-                    std::collections::BTreeSet::len,
-                );
+            // that introduces it, and the post-root readable count for the
+            // `finish` node. A binder with no node, or a control with no
+            // recorded entry, has no level and no root.
+            let node = binder.node?;
+            let level = if protocol
+                .finish
+                .as_ref()
+                .is_some_and(|(finish, _)| *finish == node)
+            {
+                protocol.slots.root_out.len()
+            } else {
+                protocol.slots.entries.get(&node)?.len()
+            };
             let key = keys
                 .binders
                 .iter()
