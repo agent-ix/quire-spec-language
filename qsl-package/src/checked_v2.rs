@@ -403,7 +403,7 @@ const OCCURRENCE_ROLES: [CheckedOccurrenceRole; 6] = [
     CheckedOccurrenceRole::Generated,
 ];
 
-/// The occurrence role `spelling` names, the inverse of [`role_spelling`].
+/// The occurrence role `spelling` names, the inverse of `role_spelling`.
 pub fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
     OCCURRENCE_ROLES
         .into_iter()
