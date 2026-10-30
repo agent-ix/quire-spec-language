@@ -2995,7 +2995,14 @@ impl PackageDeclarations {
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
     ) -> Result<Self, AssemblyRefusal> {
-        Self::assemble_with_limits(source, package_name, unit, models, imports, AssemblyLimits::default())
+        Self::assemble_with_limits(
+            source,
+            package_name,
+            unit,
+            models,
+            imports,
+            AssemblyLimits::default(),
+        )
     }
 
     /// [`Self::assemble`] under explicit `limits` (ADR-011 §2.3).
@@ -3007,7 +3014,15 @@ impl PackageDeclarations {
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
     ) -> Result<Self, AssemblyRefusal> {
-        Self::assemble_with_cancel(source, package_name, unit, models, imports, limits, &Cancel::new())
+        Self::assemble_with_cancel(
+            source,
+            package_name,
+            unit,
+            models,
+            imports,
+            limits,
+            &Cancel::new(),
+        )
     }
 
     /// [`Self::assemble_with_limits`] under the caller's [`Cancel`] handle,

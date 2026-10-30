@@ -16,8 +16,7 @@ use quire_canonical::{Node, NodeRef};
 use quire_contract_model::CheckedNodeTag;
 
 use crate::value::semantic_node::is_qualified_name;
-use qsl_foundation::digest::WireNodeId;
-use quire_exact::NODE_KEY_DOMAIN;
+use quire_exact::{NodeKey, PathSegment};
 
 /// The identity preimage version constant.
 pub const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
@@ -118,24 +117,24 @@ pub enum PreimageDefect {
     DuplicateNode {
         /// The repeating node's index in `identity_projection`.
         index: usize,
-        /// The repeated wire node id.
-        node: WireNodeId,
+        /// The repeated node id, as its `Display` spelling.
+        node: String,
     },
     /// Two projection nodes carry equal `declaration.qualified_name` values
-    /// (`ambiguous-name`). `nodes` holds both wire node ids in ascending
-    /// digest order.
+    /// (`ambiguous-name`). `nodes` holds both node ids, as their `Display`
+    /// spellings, in ascending structural order.
     AmbiguousDeclaration {
         /// The repeated qualified name.
         name: String,
-        /// Both wire node ids, in ascending digest order.
-        nodes: [WireNodeId; 2],
+        /// Both node ids, in ascending structural order.
+        nodes: [String; 2],
     },
     /// A node's top-level `declaration.qualified_name` disagrees with its
     /// nominal `qualified_declaration`, or is absent while a nominal
     /// `qualified_declaration` is present (`declaration-nominal-mismatch`).
     DeclarationNominalMismatch {
-        /// The node's wire id.
-        node: WireNodeId,
+        /// The node's id, as its `Display` spelling.
+        node: String,
         /// The node's top-level `declaration.qualified_name`, or `None` when
         /// `declaration` is absent.
         declared: Option<String>,
@@ -153,8 +152,7 @@ pub enum NodeDefect {
     MissingMember(&'static str),
     /// A member the schema does not define is present.
     UnknownMember(String),
-    /// `node_id` is not `{domain: quire.checked-semantic-node/v1, digest}`
-    /// with a 64-lowercase-hex digest.
+    /// `node_id` is not a structural node id `{package, path, ordinal}`.
     NodeId,
     /// `schema_version` is not `quire.checked-semantic-graph/v2`.
     SchemaVersion,
@@ -173,7 +171,7 @@ pub enum NodeDefect {
 /// id is the importing package's own check stage (FR-087-AC-4; ADR-013
 /// R-06).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ProjectedDeclarations(BTreeMap<WireNodeId, String>);
+pub(crate) struct ProjectedDeclarations(BTreeMap<NodeKey, String>);
 
 impl ProjectedDeclarations {
     /// Every declared name, in ascending order: FR-307's "a package's local
@@ -209,16 +207,16 @@ impl ProjectedDeclarations {
         self.0.retain(|_, name| exported.contains(name.as_str()));
     }
 
-    /// Every declaration as a `(WireNodeId, name)` entry, in ascending
+    /// Every declaration as a `(NodeKey, name)` entry, in ascending
     /// node-id order.
     #[cfg(test)]
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (WireNodeId, &str)> + '_ {
-        self.0.iter().map(|(node, name)| (*node, name.as_str()))
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&NodeKey, &str)> + '_ {
+        self.0.iter().map(|(node, name)| (node, name.as_str()))
     }
 
     /// Consume `self` into its node-id-keyed entries, for
     /// [`super::ImportView`]'s own exported-declaration data (FR-087-AC-4).
-    pub(crate) fn into_entries(self) -> BTreeMap<WireNodeId, String> {
+    pub(crate) fn into_entries(self) -> BTreeMap<NodeKey, String> {
         self.0
     }
 }
@@ -282,13 +280,55 @@ enum MemberDefect {
     Unknown(String),
 }
 
-/// The wire node id `{domain: quire.checked-semantic-node/v1, digest}`
-/// object names, without becoming a `NodeKey` (R-10, O-04).
-fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
-    if object_members(value)?.len() != 2 || string_of(value.get("domain")?)? != NODE_KEY_DOMAIN {
+/// One node id being read: its package, the path read so far, the path
+/// elements still to read and its ordinal.
+struct IdFrame<'d> {
+    package: &'d str,
+    path: Vec<PathSegment>,
+    remaining: Box<dyn Iterator<Item = NodeRef<'d>> + 'd>,
+    ordinal: u64,
+}
+
+fn open_id(value: NodeRef<'_>) -> Option<IdFrame<'_>> {
+    if object_members(value)?.len() != 3 {
         return None;
     }
-    WireNodeId::from_hex(string_of(value.get("digest")?)?)
+    let package = string_of(value.get("package")?)?;
+    let Node::Number(number) = value.get("ordinal")?.node() else {
+        return None;
+    };
+    let ordinal = number.text().parse().ok()?;
+    let items = array_items(value.get("path")?)?;
+    let mut path = Vec::new();
+    path.try_reserve_exact(items.len()).ok()?;
+    Some(IdFrame {
+        package,
+        path,
+        remaining: Box::new(items),
+        ordinal,
+    })
+}
+
+/// The structural node id `{package, path, ordinal}` a value spells, read
+/// with an explicit stack (a path element is a name or a nested node id).
+fn wire_node_id(value: NodeRef<'_>) -> Option<NodeKey> {
+    let mut stack = vec![open_id(value)?];
+    loop {
+        let frame = stack.last_mut()?;
+        if let Some(element) = frame.remaining.next() {
+            match string_of(element) {
+                Some(name) => frame.path.push(PathSegment::Text(name.to_owned())),
+                None => stack.push(open_id(element)?),
+            }
+            continue;
+        }
+        let done = stack.pop()?;
+        let key = NodeKey::new(done.package, done.path, done.ordinal).ok()?;
+        match stack.last_mut() {
+            Some(parent) => parent.path.push(PathSegment::Node(key)),
+            None => return Some(key),
+        }
+    }
 }
 
 fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
@@ -338,7 +378,7 @@ fn declared_name(value: NodeRef<'_>) -> Result<String, NodeDefect> {
 /// cross-node checks that order them: whether `declared` and `nominal`
 /// agree, and whether `declared` repeats an earlier node's.
 struct NodeShape {
-    key: WireNodeId,
+    key: NodeKey,
     declared: Option<String>,
     nominal: Option<String>,
 }
@@ -395,13 +435,13 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
     match (&shape.declared, &shape.nominal) {
         (Some(declared), Some(nominal)) if declared != nominal => {
             Some(PreimageDefect::DeclarationNominalMismatch {
-                node: shape.key,
+                node: shape.key.to_string(),
                 declared: Some(declared.clone()),
                 nominal: nominal.clone(),
             })
         }
         (None, Some(nominal)) => Some(PreimageDefect::DeclarationNominalMismatch {
-            node: shape.key,
+            node: shape.key.to_string(),
             declared: None,
             nominal: nominal.clone(),
         }),
@@ -499,24 +539,28 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     // order is significant to `package_id` (FR-322-AC-14): it is not required
     // to be ascending by node id.
     let mut shapes = Vec::with_capacity(nodes.len());
-    let mut seen_nodes = BTreeSet::new();
     for (index, node) in nodes.enumerate() {
         let shape =
             projected_node(node).map_err(|defect| PreimageDefect::Node { index, defect })?;
-        if !seen_nodes.insert(shape.key) {
-            return Err(PreimageDefect::DuplicateNode {
-                index,
-                node: shape.key,
-            });
-        }
-        shapes.push(shape);
+        shapes.push((index, shape));
     }
 
     // Passes 2 and 3 visit nodes in ascending node-id digest order, the
     // refusal order native-diagnostics.md and FR-322-AC-21 define. That is a
     // visit order, independent of the projection's own order. Keys are
     // unique after pass 1, so the order is total.
-    shapes.sort_unstable_by_key(|shape| shape.key);
+    let mut seen_nodes = BTreeSet::new();
+    for (index, shape) in &shapes {
+        if !seen_nodes.insert(&shape.key) {
+            return Err(PreimageDefect::DuplicateNode {
+                index: *index,
+                node: shape.key.to_string(),
+            });
+        }
+    }
+    drop(seen_nodes);
+    let mut shapes: Vec<NodeShape> = shapes.into_iter().map(|(_, shape)| shape).collect();
+    shapes.sort_unstable_by(|a, b| a.key.cmp(&b.key));
 
     // Pass 2 (step 4): declaration-nominal-mismatch, in ascending node-id
     // order. This pass runs to completion across every node before pass 3
@@ -531,13 +575,13 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     // Pass 3 (step 5): ambiguous-name, in ascending node-id order. This is
     // the preimage's own well-formedness (one node per declared name), not
     // a lookup: `seen` lives only for this pass.
-    let mut seen: BTreeMap<&str, WireNodeId> = BTreeMap::new();
+    let mut seen: BTreeMap<&str, &NodeKey> = BTreeMap::new();
     for shape in &shapes {
         if let Some(declared) = &shape.declared {
-            if let Some(earlier) = seen.insert(declared, shape.key) {
+            if let Some(earlier) = seen.insert(declared, &shape.key) {
                 return Err(PreimageDefect::AmbiguousDeclaration {
                     name: declared.clone(),
-                    nodes: [earlier, shape.key],
+                    nodes: [earlier.to_string(), shape.key.to_string()],
                 });
             }
         }
@@ -553,21 +597,34 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
 /// `library`'s verified-binding tests.
 #[cfg(test)]
 pub(super) mod fixtures {
+    use quire_exact::{NodeKey, PathSegment};
     use serde_json::json;
-    use sha2::{Digest, Sha256};
 
-    pub(crate) fn hex(bytes: &[u8]) -> String {
-        Sha256::digest(bytes)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+    /// The structural node id spelled `{package, path, ordinal}` for `seed`.
+    pub(crate) fn node_json(seed: &[u8]) -> serde_json::Value {
+        json!({
+            "package": "lib",
+            "path": [String::from_utf8_lossy(seed)],
+            "ordinal": 0,
+        })
+    }
+
+    /// The `NodeKey` `node_json(seed)` spells.
+    pub(crate) fn node_key(seed: &[u8]) -> NodeKey {
+        NodeKey::new(
+            "lib",
+            vec![PathSegment::Text(
+                String::from_utf8_lossy(seed).into_owned(),
+            )],
+            0,
+        )
+        .unwrap()
     }
 
     /// A single-node identity preimage: one nominal declaration node,
-    /// digested from `node_seed`, declaring `qualified_name`.
+    /// identified by `node_seed`, declaring `qualified_name`.
     pub(crate) fn one_node_preimage(node_seed: &[u8], qualified_name: &[&str]) -> Vec<u8> {
-        let reference =
-            json!({"digest": hex(node_seed), "domain": "quire.checked-semantic-node/v1"});
+        let reference = node_json(node_seed);
         let node = json!({
             "body": {"members": [], "term": "aggregate"},
             "dependencies": [],
@@ -606,7 +663,7 @@ mod tests {
     use ix_trace_rs::trace;
     use serde_json::Value;
 
-    use super::fixtures::{hex, one_node_preimage};
+    use super::fixtures::{node_key, one_node_preimage};
     use super::*;
 
     /// The IR-owned closed vocabulary admits `extension` without a second
@@ -736,11 +793,11 @@ mod tests {
     #[test]
     fn project_declarations_derives_the_declaring_nodes_own_wire_id() {
         let bytes = one_node_preimage(b"Example::Length", &["Example", "Length"]);
-        let expected = WireNodeId::from_hex(&hex(b"Example::Length")).unwrap();
+        let expected = node_key(b"Example::Length");
         let declarations = project_declarations(&bytes).unwrap();
         assert_eq!(
             declarations.entries().collect::<Vec<_>>(),
-            vec![(expected, "Example::Length")]
+            vec![(&expected, "Example::Length")]
         );
     }
 
@@ -755,14 +812,20 @@ mod tests {
             project_declarations(&one_node_preimage(seed, &["L", "R"]))
                 .unwrap()
                 .entries()
-                .map(|(node, name)| (node, name.to_owned()))
+                .map(|(node, name)| (node.try_clone().unwrap(), name.to_owned()))
                 .collect::<Vec<_>>()
         };
-        let old_id = WireNodeId::from_hex(&hex(b"L::R (old)")).unwrap();
-        let new_id = WireNodeId::from_hex(&hex(b"L::R (new)")).unwrap();
+        let old_id = node_key(b"L::R (old)");
+        let new_id = node_key(b"L::R (new)");
         assert_ne!(old_id, new_id);
-        assert_eq!(entries(b"L::R (old)"), vec![(old_id, "L::R".to_owned())]);
-        assert_eq!(entries(b"L::R (new)"), vec![(new_id, "L::R".to_owned())]);
+        assert_eq!(
+            entries(b"L::R (old)"),
+            vec![(old_id.try_clone().unwrap(), "L::R".to_owned())]
+        );
+        assert_eq!(
+            entries(b"L::R (new)"),
+            vec![(new_id.try_clone().unwrap(), "L::R".to_owned())]
+        );
     }
 
     /// `undeclared` answers membership only: the first export, in list
