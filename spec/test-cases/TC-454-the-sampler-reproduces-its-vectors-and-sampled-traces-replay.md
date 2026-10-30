@@ -42,7 +42,7 @@ public entries; `sample` and `Sampler` are `pub(crate)` (FR-101).
    a transition identity. Replay a trace from step 6 that starts at a
    non-first initial state. Then replay the step 5 trace with its initial
    state key and one step's transition altered in turn. (The altered recorded
-   state key is retired with the `KeyMismatch` refusal of FR-101-AC-5.)
+   state key is retired with the `KeyMismatch` refusal of FR-101-AC-5; BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): qsl-eval replay key compare in simulation/trace.rs.)
 8. Call `sample_request` with an empty `domains` set and a `DefinitionRef`
    whose identity is `quire.simulation.sampler/v2`, on a system that records
    every method call.
