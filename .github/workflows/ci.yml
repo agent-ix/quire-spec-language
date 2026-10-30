@@ -21,10 +21,12 @@ jobs:
         run: tools/check-no-committed-binaries.sh
       - name: Install Rust toolchain from Cargo MSRV
         run: |
-          RUST_VERSION="$(sed -n 's/^[[:space:]]*rust-version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
+          RUST_VERSION="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d["workspace_root"]+"/Cargo.toml"; print(next(p["rust_version"] for p in d["packages"] if p["manifest_path"]==m))')"
           test -n "$RUST_VERSION"
           rustup toolchain install "$RUST_VERSION" --profile minimal -c rustfmt -c clippy -t thumbv7em-none-eabi
           rustup default "$RUST_VERSION"
+      # Unpinned on purpose. If a new cargo-deny release needs a rustc newer
+      # than the default toolchain, raise rust-version in Cargo.toml.
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
       - name: Formatting
@@ -44,4 +46,4 @@ jobs:
       - name: Parse example
         run: cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
       - name: Registry bans (cargo-deny)
-        run: cargo deny --workspace check bans --config deny.toml
+        run: cargo deny --workspace check bans

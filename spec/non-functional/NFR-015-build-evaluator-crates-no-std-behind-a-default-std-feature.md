@@ -88,8 +88,9 @@ its `std`-disabled runtime for (RT FR-275-AC-9) and the target the shared
 leaves `quire-exact`, `quire-semantic-value` and `quire-canonical` build for
 in their own gates. Its sysroot has no `std`, so a build that reaches `std`
 fails there instead of passing on the host. It has pointer-width atomics, so
-`alloc::sync::Arc` is available. The compiler is the default toolchain with this target installed, at or above the
-floor RT sets in FR-275-AC-20; this requirement adds no second toolchain.
+`alloc::sync::Arc` is available. The compiler is the default toolchain with
+this target installed, at or above the floor RT sets in FR-275-AC-20; this
+requirement adds no second toolchain.
 
 ### Tiers
 
