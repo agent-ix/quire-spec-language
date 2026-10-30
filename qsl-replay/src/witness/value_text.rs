@@ -75,7 +75,7 @@ enum Task<'v> {
 /// A declaration node as value text spells it: the node's compact JSON
 /// object, as a string member.
 fn node_text(node: &NodeKey) -> String {
-    super::parameter_name(node).unwrap_or_default()
+    crate::id_text::node_text(node).unwrap_or_default()
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -543,7 +543,10 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
                     ("scale", text_of(scale)),
                 ],
             };
-            members.push(("unit", Task::Owned(hex(unit))));
+            members.push((
+                "unit",
+                Task::Owned(crate::id_text::unit_text(unit).unwrap_or_default()),
+            ));
             object(members, vec![])
         }
         WitnessValue::Reference {
@@ -553,8 +556,8 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => object(
             vec![
                 tag("reference"),
-                ("universe", Task::Owned(hex(universe))),
-                ("object_type", Task::Owned(hex(object_type))),
+                ("universe", Task::Owned(crate::id_text::universe_text(universe).unwrap_or_default())),
+                ("object_type", Task::Owned(crate::id_text::effective_text(object_type).unwrap_or_default())),
                 ("identity", Task::Owned(hex(identity))),
             ],
             vec![],
@@ -780,24 +783,11 @@ fn integer_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<Integer
         .map_err(|_| EntryFault::Spelling)
 }
 
-fn digest_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<[u8; 32], EntryFault> {
-    let text = string_member(members, name)?;
-    if text.len() != 64 || !lower_hex(text, 64) {
-        return Err(EntryFault::Spelling);
-    }
-    let mut bytes = [0_u8; 32];
-    for (slot, pair) in bytes.iter_mut().zip(text.as_bytes().chunks(2)) {
-        let digits = std::str::from_utf8(pair).map_err(|_| EntryFault::Spelling)?;
-        *slot = u8::from_str_radix(digits, 16).map_err(|_| EntryFault::Spelling)?;
-    }
-    Ok(bytes)
-}
-
 fn declaration_member(
     members: &[(&str, NodeRef<'_>)],
     name: &str,
 ) -> Result<NodeKey, EntryFault> {
-    super::parameter_node(string_member(members, name)?).ok_or(EntryFault::Spelling)
+    crate::id_text::node_from_text(string_member(members, name)?).ok_or(EntryFault::Spelling)
 }
 
 /// Whether `text` is lowercase hex of exactly `digits` digits.
@@ -1251,7 +1241,8 @@ fn visit<'d>(
             values.push(if has_unit {
                 WitnessValue::Quantity {
                     magnitude,
-                    unit: digest_member(&members, "unit")?,
+                    unit: crate::id_text::unit_from_text(string_member(&members, "unit")?)
+                        .ok_or(EntryFault::Spelling)?,
                 }
             } else {
                 match magnitude {
@@ -1281,8 +1272,12 @@ fn visit<'d>(
         "reference" => {
             let members = exact_object(node, &["type", "universe", "object_type", "identity"])?;
             values.push(WitnessValue::Reference {
-                universe: digest_member(&members, "universe")?,
-                object_type: digest_member(&members, "object_type")?,
+                universe: crate::id_text::universe_from_text(string_member(&members, "universe")?)
+                    .ok_or(EntryFault::Spelling)?,
+                object_type: crate::id_text::effective_from_text(
+                    string_member(&members, "object_type")?,
+                )
+                .ok_or(EntryFault::Spelling)?,
                 identity: identity_bytes(string_member(&members, "identity")?)?,
             });
         }

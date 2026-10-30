@@ -57,6 +57,7 @@ pub mod contract_check;
 mod execute;
 mod hybrid;
 mod hybrid_replay;
+mod id_text;
 mod identity;
 mod limits;
 mod model_check;

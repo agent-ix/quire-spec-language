@@ -8,7 +8,7 @@
 //! an explicit heap stack, as the kernel's own values are.
 
 use std::fmt;
-use quire_exact::NodeKey;
+use quire_exact::{EffectiveId, NodeKey, UnitId, UniverseId};
 
 use quire_exact::Integer;
 
@@ -110,15 +110,15 @@ pub enum WitnessValue {
     Quantity {
         /// The magnitude.
         magnitude: QuantityMagnitude,
-        /// The unit's identity digest.
-        unit: [u8; 32],
+        /// The unit's identity.
+        unit: UnitId,
     },
     /// A reference to an object.
     Reference {
         /// The universe identity.
-        universe: [u8; 32],
+        universe: UniverseId,
         /// The effective object type identity.
-        object_type: [u8; 32],
+        object_type: EffectiveId,
         /// The object's identity bytes.
         identity: Vec<u8>,
     },
@@ -206,7 +206,7 @@ impl WitnessValue {
                 declaration,
                 member,
             } => Self::Enum {
-                declaration: *declaration,
+                declaration: declaration.clone(),
                 member: member.clone(),
             },
             Self::Text(text) => Self::Text(text.clone()),
@@ -228,15 +228,15 @@ impl WitnessValue {
             Self::Float64(bits) => Self::Float64(*bits),
             Self::Quantity { magnitude, unit } => Self::Quantity {
                 magnitude: magnitude.clone(),
-                unit: *unit,
+                unit: unit.clone(),
             },
             Self::Reference {
                 universe,
                 object_type,
                 identity,
             } => Self::Reference {
-                universe: *universe,
-                object_type: *object_type,
+                universe: universe.clone(),
+                object_type: object_type.clone(),
                 identity: identity.clone(),
             },
             Self::Option(inner) => {
@@ -246,7 +246,7 @@ impl WitnessValue {
                 declaration,
                 fields,
             } => Self::Record {
-                declaration: *declaration,
+                declaration: declaration.clone(),
                 fields: fields
                     .iter()
                     .map(|field| WitnessField {
@@ -262,7 +262,7 @@ impl WitnessValue {
                     .collect(),
             },
             Self::Tuple { declaration, .. } => Self::Tuple {
-                declaration: *declaration,
+                declaration: declaration.clone(),
                 components: children.collect(),
             },
             Self::Union {
@@ -270,7 +270,7 @@ impl WitnessValue {
                 member,
                 ..
             } => Self::Union {
-                declaration: *declaration,
+                declaration: declaration.clone(),
                 member: member.clone(),
                 components: children.collect(),
             },

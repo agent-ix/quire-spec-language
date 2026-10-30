@@ -448,14 +448,14 @@ pub enum ReplayRefusal {
     /// FR-098 step 2, FR-100: a reference argument's universe is not the
     /// universe of its declared `Reference<T>`'s object type
     /// (`foreign_reference`/`foreign-universe`).
-    #[error("foreign_reference/foreign-universe: the reference at position {position} is in universe {supplied}, not {required}", required = .required, supplied = .supplied)]
+    #[error("foreign_reference/foreign-universe: the reference at position {position} is in universe {supplied:?}, not {required:?}")]
     ForeignReference {
         /// The parameter's zero-based declared position.
         position: usize,
         /// The universe of the declared object type.
-        required: NodeKey,
+        required: quire_exact::UniverseId,
         /// The universe the reference names.
-        supplied: NodeKey,
+        supplied: quire_exact::UniverseId,
     },
     /// FR-098 steps 3 and 4: FR-106 admission of the environment document, or
     /// FR-364's `resolve` of a reference argument, refused.

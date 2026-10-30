@@ -287,7 +287,7 @@ pub fn select_contract(
         target,
         bound,
     };
-    match (role, node) {
+    match (role, node.as_ref()) {
         (CheckedOccurrenceRole::Claim, Some(node))
             if graph
                 .step_relations()
