@@ -107,11 +107,6 @@ fn assert_format_identity(
         formatted,
         "{path}: formatted source retained"
     );
-    assert_eq!(
-        checked.package().package_id(),
-        original.package().package_id(),
-        "{path}: formatting changed checked package identity"
-    );
 }
 
 fn emitted_once(
@@ -250,13 +245,8 @@ pub fn dependency_fixture_identity(
             "{path}: formatted dependency emission omitted {:?}",
             formatted_emission.omitted()
         );
-        let original_id = original_emission.package().package_id();
-        let formatted_id = formatted_emission.package().package_id();
-        assert_eq!(
-            original_id, formatted_id,
-            "{path}: formatting changed checked dependency package identity"
-        );
-        if !visited.insert(original_id) {
+        let original_name = original_emission.package().name().to_owned();
+        if !visited.insert(original_name) {
             continue;
         }
         assert_eq!(

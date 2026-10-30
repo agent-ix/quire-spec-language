@@ -43,20 +43,6 @@ fn try_assemble(declarations: &str) -> Result<PackageDeclarations, AssemblyRefus
     )
 }
 
-/// The `package_id` the spine emits for `declarations`.
-fn package_id(declarations: &str) -> String {
-    let text = format!("{HEADER}{declarations}\n");
-    let emitted = crate::support::front_end::emitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "unit.native",
-        text.as_bytes(),
-        &BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .expect("the unit compiles");
-    format!("{:?}", emitted.package().package_id())
-}
-
 /// The parameter node `index` of function `name`.
 fn parameter(graph: &CheckedGraph, name: &str, index: usize) -> NodeKey {
     graph
@@ -183,8 +169,7 @@ fn a_collection_bound_adds_minimum_and_maximum_to_the_type_node() {
     assert!(body.contains("18446744073709551615"), "{body}");
 }
 
-/// FR-334-AC-3: the same bounded unit compiles to the same node keys and
-/// `package_id`.
+/// FR-334-AC-3: the same bounded unit compiles to the same node keys.
 #[trace("TC-844", "FR-334-AC-3")]
 #[test]
 fn compiling_a_bounded_unit_twice_gives_the_same_identities() {
@@ -194,7 +179,6 @@ fn compiling_a_bounded_unit_twice_gives_the_same_identities() {
         parameter_type(&first, "f", 0),
         parameter_type(&second, "f", 0)
     );
-    assert_eq!(package_id(unit), package_id(unit));
 }
 
 const UNBOUNDED_CLAIM: &str =

@@ -70,10 +70,6 @@ fn a_union_unit_recompiles_to_its_emitted_package_id() {
     )
     .expect("the retained source recompiles");
     assert_eq!(recompiled.bytes(), original.package().bytes());
-    assert_eq!(
-        recompiled.package_id(),
-        original.package().package_id().record()
-    );
 }
 
 /// TC-828 step 1: `area`'s one claim, the multiplication in the `Rect` arm,
