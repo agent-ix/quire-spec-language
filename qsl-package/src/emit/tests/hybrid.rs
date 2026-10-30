@@ -99,7 +99,7 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     let form = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = PackageDeclarations::assemble(
         raw,
-        "pkg".to_owned(),
+        "example".to_owned(),
         form,
         qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -119,9 +119,22 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
 
 /// `emission` after QSL's full I2 read, which runs IR's FR-481 reader.
 fn admitted(emission: &Emission) {
-    let Read::Verified { .. } = read_back(emission) else {
-        panic!("the I2 read admits the package: {:?}", read_back(emission));
+    let read = || {
+        read_v2(
+            emission.package.bytes(),
+            library(),
+            V2ReadLimits::default(),
+            &read_evidence(emission),
+        )
     };
+    let Read::Verified { .. } = read() else {
+        panic!("the I2 read admits the package: {:?}", read());
+    };
+}
+
+/// The package the QSpec vectors are keyed under.
+fn library() -> LibraryName {
+    LibraryName::new("example").unwrap()
 }
 
 fn idtext(id: &Value) -> String {
