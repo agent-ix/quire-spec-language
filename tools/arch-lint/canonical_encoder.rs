@@ -41,7 +41,7 @@
 //! function. A hash site in any other function of an exempt file fails, and
 //! a listed function with no hash site left fails as stale.
 //!
-//! **How.** The same token scan FR-060's T12-B/C/D use
+//! **How.** The same token scan FR-060's T12-G uses
 //! ([`crate::api_surface`]): patterns match the file's `proc_macro2`
 //! tokens, so a comment or string literal never matches, and `#[cfg(test)]`
 //! items and out-of-line `#[cfg(test)] mod` files are excluded -- a test may

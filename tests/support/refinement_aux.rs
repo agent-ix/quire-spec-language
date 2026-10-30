@@ -540,6 +540,7 @@ impl Unit {
         .expect("the operation clauses parse");
         let declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_string(),
             built,
             models,
             Vec::new(),

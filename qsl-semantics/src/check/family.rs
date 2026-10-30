@@ -72,7 +72,6 @@ use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::AdmittedImport;
 use super::{DeclarationRegions, DispatchTable, Scope};
 use crate::family::ClassifyFailure;
-use crate::library::PackageNodeKey;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
 use quire_exact::RoundingMode;
@@ -256,7 +255,7 @@ fn encode_quantity_unit(out: &mut DeclarationMeter, unit: UnitId) {
         UnitDomain::Declared => "declared",
         UnitDomain::Compound => "compound",
     });
-    out.write_str(&unit.to_string());
+    out.write_str(&format!("{unit:?}"));
 }
 
 // PR #262 review, round 2: this function and `encode_expression` write
@@ -322,11 +321,11 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             }
             ValueType::Quantity(unit) => {
                 out.write_str("quantity");
-                encode_quantity_unit(out, *unit);
+                encode_quantity_unit(out, unit.clone());
             }
             ValueType::BoundedQuantity(bounded) => {
                 out.write_str("bounded-quantity");
-                encode_quantity_unit(out, bounded.unit());
+                encode_quantity_unit(out, bounded.unit().clone());
                 // Bound presence is part of the type (QExact FR-387).
                 for bound in [bounded.min(), bounded.max()] {
                     match bound {
@@ -349,7 +348,7 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                 out.write_str("enum");
                 out.write_bool(shape.is_ordered());
                 for variant in shape.variants() {
-                    out.write_str(&variant.to_string());
+                    out.write_str(&format!("{variant:?}"));
                 }
             }
             ValueType::Option(payload) => {
@@ -376,7 +375,7 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             }
             ValueType::Reference(key) => {
                 out.write_str("reference");
-                out.write_str(&key.to_string());
+                out.write_str(&format!("{key:?}"));
             }
             ValueType::Population(maximum) => {
                 out.write_str("population");
@@ -922,7 +921,7 @@ pub(crate) enum Application<'a> {
     /// the library's checked graph.
     Imported {
         /// The function, as the import view names it.
-        callee: PackageNodeKey,
+        callee: NodeKey,
         /// The function's index in the library's checked graph.
         function: usize,
         /// The function's checked signature in the library's graph; every
@@ -1030,12 +1029,12 @@ impl<'a> Application<'a> {
             }) => None,
             Err(refusal) => return Err(refusal),
         };
-        match declared {
+        match &declared {
             Some(ValueType::Composite(key)) => {
                 let Some(CompositeShape::Tuple(positions)) = typer
                     .scope()
                     .types()
-                    .composite(key)
+                    .composite(key.clone())
                     .map(|declaration| declaration.shape())
                 else {
                     return Err(CheckRefusal::ill_typed(
@@ -1050,7 +1049,7 @@ impl<'a> Application<'a> {
                     ));
                 }
                 Ok(Self::Tuple {
-                    declaration: key,
+                    declaration: key.clone(),
                     positions,
                 })
             }
@@ -1097,7 +1096,7 @@ impl<'a> Application<'a> {
         let ineligible = || CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible);
         let (function, signature) = import
             .graph
-            .imported_function(&callee.node)
+            .imported_function(&callee)
             .ok_or_else(ineligible)?;
         let independent = signature
             .parameters
@@ -1173,7 +1172,7 @@ impl<'a> Application<'a> {
             }),
             Self::Tuple { declaration, .. } => Ok(Node {
                 kind: super::ir::NodeKind::Tuple {
-                    declaration,
+                    declaration: declaration.clone(),
                     arguments,
                 },
                 value_type: ValueType::Composite(declaration),
@@ -1507,7 +1506,7 @@ impl<S> OccurrenceMap<S> {
         position: impl Fn(&S) -> K,
     ) {
         for node in nodes {
-            if let Some(spans) = self.spans.get_mut(&(*node, role)) {
+            if let Some(spans) = self.spans.get_mut(&(node.clone(), role)) {
                 spans.sort_by_key(&position);
             }
         }
@@ -1518,7 +1517,7 @@ impl<S> OccurrenceMap<S> {
         // `Anchor` sorts first, so the first key at or after it is
         // `identity`'s first recorded role, if it has one.
         self.spans
-            .range((identity, OccurrenceRole::Anchor)..)
+            .range((identity.clone(), OccurrenceRole::Anchor)..)
             .next()
             .is_some_and(|((node, _), _)| *node == identity)
     }
@@ -1528,7 +1527,11 @@ impl<S> OccurrenceMap<S> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
         self.spans.iter().flat_map(|((identity, role), spans)| {
             (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                (*identity, Origin::new(role.kernel_role(), ordinal), span)
+                (
+                    identity.clone(),
+                    Origin::new(role.kernel_role(), ordinal),
+                    span,
+                )
             })
         })
     }
@@ -1544,7 +1547,11 @@ impl<S> OccurrenceMap<S> {
             .filter(move |((_, recorded), _)| *recorded == role)
             .flat_map(|((identity, role), spans)| {
                 (0_u64..).zip(spans).map(move |(ordinal, span)| {
-                    (*identity, Origin::new(role.kernel_role(), ordinal), span)
+                    (
+                        identity.clone(),
+                        Origin::new(role.kernel_role(), ordinal),
+                        span,
+                    )
                 })
             })
     }
@@ -1859,7 +1866,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{empty_scope, fixture_source, root_location};
+    use super::fixtures::{empty_scope, fill_key, fixture_source, root_location};
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::{BuiltinType, TypeForm};
@@ -1884,6 +1891,7 @@ mod tests {
     ) -> NodeKey {
         let mut package = crate::check::PackageDeclarations::new(
             fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         );
         package.types = types.clone();
@@ -1937,7 +1945,7 @@ mod tests {
         let types_with = |fill: u8, field_type: ValueType| {
             TypeEnvironment::new(
                 [CompositeDeclaration::new(
-                    NodeKey::from_digest([fill; 32]),
+                    fill_key(fill),
                     "Point",
                     CompositeShape::Record(vec![FieldDeclaration::new(
                         "x",
@@ -1991,6 +1999,16 @@ mod tests {
 /// production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
+    #[cfg(test)]
+    pub fn fill_key(fill: u8) -> quire_exact::NodeKey {
+        quire_exact::NodeKey::new(
+            "fixture".to_owned(),
+            vec![quire_exact::PathSegment::Text(format!("node-{fill}"))],
+            0,
+        )
+        .expect("a nonempty structural fixture key")
+    }
+
     /// Every released kernel invariant cause, including distinct nested payloads.
     pub fn received_kernel_causes() -> Vec<quire_exact::CheckedInvariantCause> {
         use quire_exact::{CheckedInvariantCause as C, IllTypedCause};
@@ -2236,7 +2254,7 @@ pub(crate) mod checking_tests {
     //! code's shape or where it lives.
     use super::fixtures::{
         boolean_signature, boolean_type_form, declaration, declaration_signature, declarations_for,
-        empty_scope, limits, measure_resolved, root_location,
+        empty_scope, fill_key, limits, measure_resolved, root_location,
     };
     use super::*;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
@@ -3438,6 +3456,7 @@ pub(crate) mod checking_tests {
                 functions: vec![declaration(name, Expression::boolean(true))],
                 ..crate::check::PackageDeclarations::new(
                     super::fixtures::fixture_source(),
+                    "fixture",
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
@@ -3457,15 +3476,15 @@ pub(crate) mod checking_tests {
     #[test]
     fn occurrence_ordinals_are_per_identity_and_role() {
         let mut map = OccurrenceMap::default();
-        let a = NodeKey::from_digest([1; 32]);
-        let b = NodeKey::from_digest([2; 32]);
-        let first = map.record(a, OccurrenceRole::Expression, (0, 3));
-        let second = map.record(a, OccurrenceRole::Expression, (4, 7));
-        let other = map.record(b, OccurrenceRole::Expression, (8, 11));
+        let a = fill_key(1);
+        let b = fill_key(2);
+        let first = map.record(a.clone(), OccurrenceRole::Expression, (0, 3));
+        let second = map.record(a.clone(), OccurrenceRole::Expression, (4, 7));
+        let other = map.record(b.clone(), OccurrenceRole::Expression, (8, 11));
         assert_eq!(first.ordinal(), 0);
         assert_eq!(second.ordinal(), 1);
         assert_eq!(other.ordinal(), 0);
-        assert_eq!(map.resolve(a, &first), Some(&(0, 3)));
+        assert_eq!(map.resolve(a.clone(), &first), Some(&(0, 3)));
         assert_eq!(map.resolve(a, &second), Some(&(4, 7)));
         assert_eq!(map.resolve(b, &other), Some(&(8, 11)));
     }
@@ -3478,9 +3497,7 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn keyed_ordinals_match_counting_earlier_records() {
-        let keys: Vec<NodeKey> = (1..=5)
-            .map(|byte| NodeKey::from_digest([byte; 32]))
-            .collect();
+        let keys: Vec<NodeKey> = (1..=5).map(fill_key).collect();
         let roles = [
             OccurrenceRole::Declaration,
             OccurrenceRole::Expression,
@@ -3495,29 +3512,29 @@ pub(crate) mod checking_tests {
             state = state
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1);
-            let key = keys[usize::try_from(state >> 33).unwrap() % keys.len()];
+            let key = keys[usize::try_from(state >> 33).unwrap() % keys.len()].clone();
             let role = roles[usize::try_from(state >> 17).unwrap() % roles.len()];
             let expected = recorded
                 .iter()
                 .filter(|(other, other_role, _)| *other == key && *other_role == role)
                 .count();
-            let origin = map.record(key, role, span);
+            let origin = map.record(key.clone(), role, span);
             assert_eq!(origin.ordinal(), u64::try_from(expected).unwrap());
             assert_eq!(OccurrenceRole::of(origin.role()), Some(role));
             recorded.push((key, role, origin));
         }
         for (span, (key, _, origin)) in (0_u64..).zip(&recorded) {
-            assert_eq!(map.resolve(*key, origin), Some(&span));
-            assert!(map.has(*key));
+            assert_eq!(map.resolve(key.clone(), origin), Some(&span));
+            assert!(map.has(key.clone()));
         }
-        let unrecorded = NodeKey::from_digest([9; 32]);
-        assert!(!map.has(unrecorded));
+        let unrecorded = fill_key(9);
+        assert!(!map.has(unrecorded.clone()));
         assert_eq!(
             map.resolve(unrecorded, &Origin::new(Role::new("expression"), 0)),
             None
         );
         let past_the_end = Origin::new(Role::new("expression"), u64::MAX);
-        assert_eq!(map.resolve(keys[0], &past_the_end), None);
+        assert_eq!(map.resolve(keys[0].clone(), &past_the_end), None);
     }
 
     /// A name's first signature and its first callable one are
@@ -3557,6 +3574,7 @@ pub(crate) mod checking_tests {
                 .collect(),
             ..crate::check::PackageDeclarations::new(
                 super::fixtures::fixture_source(),
+                "fixture",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -3594,7 +3612,7 @@ pub(crate) mod checking_tests {
 #[cfg(test)]
 mod locus_tests {
     use super::fixtures::{
-        declaration, declaration_signature, declarations_for, empty_scope, limits,
+        declaration, declaration_signature, declarations_for, empty_scope, fill_key, limits,
         measure_resolved, root_location,
     };
     use super::*;
@@ -3626,6 +3644,7 @@ mod locus_tests {
         let forms = build_unit(&parsed).expect("S2 builds the unit");
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             forms,
             Vec::new(),
             Vec::new(),
@@ -3760,6 +3779,7 @@ mod locus_tests {
         let forms = build_unit(&parsed).expect("S2 builds the unit");
         let unit = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             forms,
             Vec::new(),
             Vec::new(),
@@ -4017,7 +4037,7 @@ mod locus_tests {
     }
 
     fn metre() -> quire_exact::UnitId {
-        quire_exact::UnitId::compound([5; 32])
+        quire_exact::UnitId::declared(fill_key(5))
     }
 
     fn bounded(

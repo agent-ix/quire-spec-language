@@ -125,6 +125,7 @@ pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<Check
     .expect("the operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -412,7 +413,7 @@ pub(crate) fn health() -> Domain {
     .collect();
     let document = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},

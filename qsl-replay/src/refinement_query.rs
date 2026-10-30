@@ -180,7 +180,7 @@ impl<'a> RefinementQueryRequest<'a> {
         let abstract_ = self.abstract_.model_subject(package);
         body(&RefinementCertificateRequest {
             package,
-            refinement: self.refinement,
+            refinement: self.refinement.clone(),
             concrete: &concrete,
             abstract_: &abstract_,
         })

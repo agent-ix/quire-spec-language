@@ -1168,11 +1168,10 @@ mod tests {
 
     fn record(value_path: Vec<&str>) -> SeparatingWitnessRecord {
         use qsl_eval::value::ObservationIdentity;
-        use qsl_foundation::digest::WireNodeId;
         use quire_exact::{Origin, Role};
         SeparatingWitnessRecord {
             quantifier: OccurrenceKey::new(
-                WireNodeId::from_digest([7; 32]),
+                crate::fixture_node(7),
                 Origin::new(Role::new("expression"), 0),
             ),
             deciding_element: Value::Integer(quire_exact::Integer::from(600_i64)),
@@ -1185,7 +1184,7 @@ mod tests {
                     revision: "1".to_owned(),
                 },
                 subject: ValuePathSubject::Built(OccurrenceKey::new(
-                    WireNodeId::from_digest([8; 32]),
+                    crate::fixture_node(8),
                     Origin::new(Role::new("expression"), 0),
                 )),
                 steps: value_path
@@ -1592,7 +1591,6 @@ mod tests {
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
         };
         use crate::witness::{origin, NoPayload, Witness, WitnessEnvelope, WitnessPacket};
-        use qsl_foundation::digest::WireNodeId;
         use qsl_foundation::source::provenance::OccurrenceKey;
         use quire_exact::Identifier;
 
@@ -1616,12 +1614,16 @@ mod tests {
                 let witness =
                     Witness::parse(format!("<<<assertion|harness|check|{values}>>>")).unwrap();
                 let packet = WitnessPacket::<NoPayload> {
-                    obligation_identity: Some([2; 32]),
+                    obligation_identity: Some(crate::ObligationIdentity::new(
+                        crate::fixture_node(2),
+                        None,
+                        0,
+                    )),
                     occurrence_key: Some(OccurrenceKey::new(
-                        WireNodeId::from_digest([3; 32]),
+                        crate::fixture_node(3),
                         origin("reference", 0),
                     )),
-                    clause_node: Some(WireNodeId::from_digest([4; 32])),
+                    clause_node: Some(crate::fixture_node(4)),
                     replay_target: crate::ReplayTargetMembers::function(
                         QualifiedName::new(vec![
                             Identifier::new("module").unwrap(),
@@ -1629,18 +1631,6 @@ mod tests {
                         ])
                         .unwrap(),
                     ),
-                    package_id: Some((
-                        Some(
-                            qsl_foundation::digest::DigestDomain::PackageSemanticV2
-                                .as_str()
-                                .to_owned(),
-                        ),
-                        qsl_foundation::digest::DigestRecord::mint(
-                            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
-                            [5; 32],
-                        )
-                        .hex(),
-                    )),
                     profile_selections: Some(vec![]),
                     run_limits: Some(charges()),
                     declared_domains: Some(vec![]),

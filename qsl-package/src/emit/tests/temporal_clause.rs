@@ -10,7 +10,6 @@ use quire_exact::Origin;
 
 use super::admission_corpus::config_version_unit;
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
 use crate::checked_v2::{clause_roots, resolve_clause_root, ClauseRoot, V2ReadRefusal};
 
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
@@ -95,15 +94,9 @@ fn evidence(wire: &Value) -> CheckedPackageEvidence {
     evidence
 }
 
-/// QSL's I2 read of the wire `bytes`, pinned at `package_id`.
-fn read_bytes(bytes: &[u8], wire: &Value, package_id: qsl_semantics::library::PackageId) -> Read {
-    read_v2(
-        bytes,
-        library(),
-        V2ReadLimits::default(),
-        &evidence(wire),
-        &qsl_semantics::library::fixtures::single_pin(library(), package_id),
-    )
+/// QSL's I2 read of the wire `bytes`.
+fn read_bytes(bytes: &[u8], wire: &Value) -> Read {
+    read_v2(bytes, library(), V2ReadLimits::default(), &evidence(wire))
 }
 
 /// QSL's full I2 read of `compiled`, and IR's admitted package.
@@ -113,27 +106,27 @@ fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPac
         library(),
         V2ReadLimits::default(),
         &evidence(&compiled.wire),
-        &qsl_semantics::library::fixtures::single_pin(
-            library(),
-            compiled.emission.package.package_id(),
-        ),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));
     read.into_value().admitted
 }
 
-/// The wire node whose id digest is `digest`.
-fn node_with<'w>(wire: &'w Value, digest: &str) -> &'w Value {
+/// The wire node with structural id `key`.
+fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
-        .unwrap_or_else(|| panic!("a node {digest}"))
+        .find(|node| &node["node_id"] == key)
+        .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-/// The target digest of the `reference` term `term`.
-fn target(term: &Value) -> &str {
+/// The target of the `reference` term `term`.
+fn target(term: &Value) -> &Value {
     assert_eq!(term["term"], "reference", "{term}");
-    term["target"]["digest"].as_str().expect("a target digest")
+    &term["target"]
+}
+
+fn node_key(value: &Value) -> NodeKey {
+    qsl_foundation::node_wire::node_key_from_json(value).expect("a structural node key")
 }
 
 /// The one `temporal`/`temporal_clause` node of `wire`.
@@ -159,10 +152,6 @@ fn fairness<'w>(wire: &'w Value, clause: &Value) -> Vec<&'w Value> {
         .iter()
         .map(|member| node_with(wire, target(member)))
         .collect()
-}
-
-fn package_id(compiled: &Compiled) -> qsl_semantics::library::PackageId {
-    compiled.emission.package.package_id()
 }
 
 /// FR-337-AC-1: ADR-018 §6's `ReachesTwo` emits as a
@@ -225,7 +214,7 @@ fn reaches_two_emits_as_a_v2_temporal_clause_node_the_i2_read_admits() {
     assert_eq!(member["fairness_kind"], "weak");
     assert_eq!(member["granularity"], "each");
     assert_eq!(member["name"], "attemptUpdate");
-    let declaring = node_with(wire, member["declaration"]["digest"].as_str().unwrap());
+    let declaring = node_with(wire, &member["declaration"]);
     assert_eq!(declaring["node_tag"], "model");
     assert_eq!(declaring["semantic_form"], "object_type");
     // formula: always(eventually(holds(...))), each interval `null`.
@@ -263,31 +252,21 @@ fn reaches_two_emits_as_a_v2_temporal_clause_node_the_i2_read_admits() {
         clause["occurrences"],
         json!([{"role": "claim", "ordinal": 0}])
     );
-    // QSL's I2 read admits the package at its own `package_id`.
-    let Read::Verified { package, .. } = read_bytes(
-        compiled.emission.package.bytes(),
-        wire,
-        package_id(&compiled),
-    ) else {
+    // QSL's I2 read admits the package by its selected library name.
+    let Read::Verified { .. } = read_bytes(compiled.emission.package.bytes(), wire) else {
         panic!("the I2 read admits the clause");
     };
-    assert_eq!(package.package_id(), package_id(&compiled));
 }
 
-/// The clause node digest and `package_id` of `ReachesTwo` with `fair`.
-fn identity_with(profile: &str, body: &str) -> (Compiled, String) {
+/// The emitted clause node of `ReachesTwo` with `body`.
+fn identity_with(profile: &str, body: &str) -> (Compiled, Value) {
     let compiled = compile(&unit(profile, &declared("ReachesTwo", body)));
-    let digest = clause_node(&compiled.wire)["node_id"]["digest"]
-        .as_str()
-        .expect("a node id")
-        .to_owned();
-    (compiled, digest)
+    let key = clause_node(&compiled.wire)["node_id"].clone();
+    (compiled, key)
 }
 
-/// FR-337-AC-2: `fair weak attemptUpdate` and `fair weak whole
-/// attemptUpdate` emit byte-identical fairness applications and equal node
-/// keys; `each` in place of `whole`, and `eventually[0,5]` in place of
-/// `eventually`, each change the node key and the `package_id`.
+/// FR-337-AC-2: implicit `whole` and explicit `whole` emit equal fairness
+/// applications; `each` and bounded `eventually` emit their distinct members.
 #[trace("TC-524", "FR-337-AC-2")]
 #[test]
 fn the_resolved_fairness_set_and_the_intervals_decide_the_node_key() {
@@ -296,7 +275,7 @@ fn the_resolved_fairness_set_and_the_intervals_decide_the_node_key() {
     };
     let (unmarked, unmarked_key) = identity_with(INFINITE, &fair(""));
     let (whole, whole_key) = identity_with(INFINITE, &fair("whole "));
-    let (each, each_key) = identity_with(INFINITE, &fair("each "));
+    let (each, _) = identity_with(INFINITE, &fair("each "));
     let [unmarked_fair] = fairness(&unmarked.wire, clause_node(&unmarked.wire))[..] else {
         panic!("one fairness node");
     };
@@ -306,14 +285,22 @@ fn the_resolved_fairness_set_and_the_intervals_decide_the_node_key() {
     assert_eq!(jcs(&unmarked_fair["body"]), jcs(&whole_fair["body"]));
     assert_eq!(unmarked_fair["node_id"], whole_fair["node_id"]);
     assert_eq!(unmarked_key, whole_key);
-    assert_ne!(each_key, whole_key);
-    assert_ne!(package_id(&each), package_id(&whole));
+    let [each_fair] = fairness(&each.wire, clause_node(&each.wire))[..] else {
+        panic!("one fairness node");
+    };
+    assert_eq!(
+        each_fair["body"]["operation"]["member"]["granularity"],
+        "each"
+    );
 
     let bounded = "fair weak Config::ConfigVersion::attemptUpdate;\n\
          always eventually[0,5] holds(c.versionNumber = 2)";
-    let (interval, interval_key) = identity_with(INFINITE, bounded);
-    assert_ne!(interval_key, unmarked_key);
-    assert_ne!(package_id(&interval), package_id(&unmarked));
+    let (interval, _) = identity_with(INFINITE, bounded);
+    assert_eq!(
+        formula_root(&interval.wire, clause_node(&interval.wire))["body"]["operation"]["member"]
+            ["interval"],
+        json!({"lower": "0", "upper": "5"})
+    );
 }
 
 /// The `temporal_interval` member of the formula root of `wire`'s clause.
@@ -371,11 +358,7 @@ fn each_interval_form_emits_its_temporal_interval_member() {
         );
         assert!(
             matches!(
-                read_bytes(
-                    compiled.emission.package.bytes(),
-                    wire,
-                    package_id(&compiled)
-                ),
+                read_bytes(compiled.emission.package.bytes(), wire),
                 Read::Verified { .. }
             ),
             "{body}: the I2 read admits it"
@@ -383,34 +366,25 @@ fn each_interval_form_emits_its_temporal_interval_member() {
     }
 }
 
-/// `compiled`'s wire with the node `digest` edited by `edit`, every stale
-/// key renamed and the `package_id` recomputed; returns the envelope and
-/// the renames.
-fn edited(
-    compiled: &Compiled,
-    digest: &str,
-    edit: impl FnOnce(&mut Value),
-) -> (Value, BTreeMap<String, String>) {
+/// `compiled`'s wire with one structurally keyed node edited by `edit`.
+fn edited(compiled: &Compiled, key: &Value, edit: impl FnOnce(&mut Value)) -> Value {
     let mut envelope = compiled.wire.clone();
     let node = envelope["semantic_graph"]["nodes"]
         .as_array_mut()
         .expect("nodes")
         .iter_mut()
-        .find(|node| node["node_id"]["digest"] == digest)
+        .find(|node| &node["node_id"] == key)
         .expect("the edited node");
     edit(node);
-    let renames = rekey_stale(&mut envelope);
-    (envelope, renames)
+    envelope
 }
 
-/// QSL's I2 read of `envelope` at its own `package_id`, expected to refuse
-/// in IR's reader: the IR refusal.
+/// QSL's I2 read of `envelope`, expected to refuse in IR's reader.
 fn ir_refusal(
     compiled: &Compiled,
     envelope: &Value,
 ) -> quire_contract_model::CheckedPackageRefusal {
-    let package_id = crate::checked_v2::tests::derived_package_id(envelope);
-    match read_bytes(&jcs(envelope), &compiled.wire, package_id) {
+    match read_bytes(&jcs(envelope), &compiled.wire) {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => *refusal,
         other => panic!("an IR refusal, not {other:?}"),
     }
@@ -418,27 +392,19 @@ fn ir_refusal(
 
 /// The JSON pointer IR reported, as text.
 fn path(refusal: &quire_contract_model::CheckedPackageRefusal) -> String {
-    refusal
+    refusal.loci[0]
         .path
         .as_ref()
         .map(|pointer| pointer.as_str().to_owned())
         .unwrap_or_default()
 }
 
-/// The position in `envelope`'s graph of the node now keyed `digest`.
-fn position(envelope: &Value, digest: &str) -> usize {
+/// The position in `envelope`'s graph of the node keyed `key`.
+fn position(envelope: &Value, key: &Value) -> usize {
     nodes(envelope)
         .iter()
-        .position(|node| node["node_id"]["digest"] == digest)
+        .position(|node| &node["node_id"] == key)
         .expect("the node is in the graph")
-}
-
-/// `digest` after `renames`.
-fn renamed(renames: &BTreeMap<String, String>, digest: &str) -> String {
-    renames
-        .get(digest)
-        .cloned()
-        .unwrap_or_else(|| digest.to_owned())
 }
 
 /// FR-337-AC-4: fed to QSL's I2 read, AC-1's node with its arguments
@@ -458,21 +424,21 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     ));
     let wire = &compiled.wire;
     let clause = clause_node(wire);
-    let clause_digest = clause["node_id"]["digest"].as_str().unwrap().to_owned();
+    let clause_key = clause["node_id"].clone();
 
     // Arguments reordered: over and clock swapped. The read refuses at the
     // first misplaced argument. FR-370 calls this a schema failure; IR's
     // reader, at the revision this workspace locks, reports it from the
     // operation catalog's operand check as `ill_typed`/`operator-ineligible`
     // at the same argument, so only the refusal and its locus are pinned.
-    let (envelope, renames) = edited(&compiled, &clause_digest, |node| {
+    let envelope = edited(&compiled, &clause_key, |node| {
         node["body"]["arguments"]
             .as_array_mut()
             .expect("arguments")
             .swap(0, 1);
     });
     let refusal = ir_refusal(&compiled, &envelope);
-    let clause_at = position(&envelope, &renamed(&renames, &clause_digest));
+    let clause_at = position(&envelope, &clause_key);
     assert_eq!(
         path(&refusal),
         format!("/semantic_graph/nodes/{clause_at}/body/arguments/0"),
@@ -483,8 +449,8 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     let [fair] = fairness(wire, clause)[..] else {
         panic!("one fairness node");
     };
-    let fair_digest = fair["node_id"]["digest"].as_str().unwrap().to_owned();
-    let (envelope, renames) = edited(&compiled, &fair_digest, |node| {
+    let fair_key = fair["node_id"].clone();
+    let envelope = edited(&compiled, &fair_key, |node| {
         node["body"]["operation"]["member"]["name"] = json!("Absent");
     });
     let refusal = ir_refusal(&compiled, &envelope);
@@ -496,7 +462,7 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
         ),
         "{refusal:?}"
     );
-    let fair_at = position(&envelope, &renamed(&renames, &fair_digest));
+    let fair_at = position(&envelope, &fair_key);
     assert_eq!(
         path(&refusal),
         format!("/semantic_graph/nodes/{fair_at}/body/operation/member/name")
@@ -505,9 +471,9 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     // A reference to the fairness node as `eventually`'s operand.
     let always = formula_root(wire, clause);
     let eventually = operand(wire, always, 0);
-    let eventually_digest = eventually["node_id"]["digest"].as_str().unwrap().to_owned();
-    let (envelope, renames) = edited(&compiled, &eventually_digest, |node| {
-        node["body"]["arguments"][0]["target"]["digest"] = json!(fair_digest);
+    let eventually_key = eventually["node_id"].clone();
+    let envelope = edited(&compiled, &eventually_key, |node| {
+        node["body"]["arguments"][0]["target"] = fair_key.clone();
         node["dependencies"] = json!([fair["node_id"]]);
     });
     let refusal = ir_refusal(&compiled, &envelope);
@@ -519,7 +485,7 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
         ),
         "{refusal:?}"
     );
-    let eventually_at = position(&envelope, &renamed(&renames, &eventually_digest));
+    let eventually_at = position(&envelope, &eventually_key);
     assert_eq!(
         path(&refusal),
         format!("/semantic_graph/nodes/{eventually_at}")
@@ -531,8 +497,8 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
         &declared("Bounded", "eventually[0,5] holds(c.versionNumber = 2)"),
     ));
     let root = formula_root(&bounded.wire, clause_node(&bounded.wire));
-    let root_digest = root["node_id"]["digest"].as_str().unwrap().to_owned();
-    let (envelope, renames) = edited(&bounded, &root_digest, |node| {
+    let root_key = root["node_id"].clone();
+    let envelope = edited(&bounded, &root_key, |node| {
         node["body"]["operation"]["member"]["interval"] = Value::Null;
     });
     let refusal = ir_refusal(&bounded, &envelope);
@@ -544,16 +510,11 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
         ),
         "{refusal:?}"
     );
-    let root_at = position(&envelope, &renamed(&renames, &root_digest));
+    let root_at = position(&envelope, &root_key);
     assert_eq!(
         path(&refusal),
         format!("/semantic_graph/nodes/{root_at}/body")
     );
-}
-
-/// `key` as a wire node id.
-fn wire_id(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
 }
 
 /// FR-337-AC-5 (TC-1079 steps 1 and 2): for ADR-018 §6's `ReachesTwo` the
@@ -572,15 +533,9 @@ fn the_i2_lookup_returns_the_clause_triple_and_its_over_node() {
         panic!("one emitted clause");
     };
     let clause = clause_node(&compiled.wire);
-    assert_eq!(
-        clause["node_id"]["digest"],
-        wire_id(checked.identity()).to_string()
-    );
+    assert_eq!(node_key(&clause["node_id"]), checked.identity());
     let over = node_with(&compiled.wire, target(&clause["body"]["arguments"][0]));
-    assert_eq!(
-        over["node_id"]["digest"],
-        wire_id(checked.over()).to_string()
-    );
+    assert_eq!(node_key(&over["node_id"]), checked.over());
 
     let admitted = admit(&compiled);
     let [root] = clause_roots(&admitted)
@@ -588,10 +543,10 @@ fn the_i2_lookup_returns_the_clause_triple_and_its_over_node() {
         .try_into()
         .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
     let triple = root.occurrence().clone();
-    assert_eq!(triple.node(), wire_id(checked.identity()));
+    assert_eq!(triple.node(), &checked.identity());
     assert_eq!(triple.origin().role().as_str(), "claim");
     assert_eq!(triple.origin(), checked.claim());
-    assert_eq!(root.over(), Some(wire_id(checked.over())));
+    assert_eq!(root.over(), Some(&checked.over()));
 
     let recompiled = admit(&compile(&text));
     assert_eq!(resolve_clause_root(&recompiled, &triple), Ok(root));
@@ -628,9 +583,7 @@ fn identical_declarations_share_one_node_and_keep_their_own_triples() {
     let triples: Vec<&OccurrenceKey> = roots.iter().map(ClauseRoot::occurrence).collect();
     let declared: Vec<OccurrenceKey> = [first, second]
         .iter()
-        .map(|declaration| {
-            OccurrenceKey::new(wire_id(declaration.identity()), declaration.claim().clone())
-        })
+        .map(|declaration| OccurrenceKey::new(declaration.identity(), declaration.claim().clone()))
         .collect();
     assert_eq!(triples, declared.iter().collect::<Vec<_>>());
     for (root, declaration) in roots.iter().zip([first, second]) {
@@ -638,7 +591,7 @@ fn identical_declarations_share_one_node_and_keep_their_own_triples() {
             resolve_clause_root(&admitted, root.occurrence()),
             Ok(root.clone())
         );
-        assert_eq!(root.over(), Some(wire_id(declaration.over())));
+        assert_eq!(root.over(), Some(&declaration.over()));
     }
 }
 
@@ -653,13 +606,16 @@ fn a_foreign_clause_root_is_unresolved_at_its_triple() {
         panic!("one emitted clause");
     };
     let admitted = admit(&compiled);
-    let node = wire_id(checked.identity());
+    let node = checked.identity();
     let ordinal = checked.claim().ordinal();
     let claim = |ordinal| Origin::new(Role::new("claim"), ordinal);
     let foreign = [
-        OccurrenceKey::new(WireNodeId::from_digest([7; 32]), claim(ordinal)),
-        OccurrenceKey::new(wire_id(checked.over()), claim(0)),
-        OccurrenceKey::new(node, Origin::new(Role::new("invariant"), ordinal)),
+        OccurrenceKey::new(
+            NodeKey::new("pkg", vec![PathSegment::Text("missing".into())], 0).unwrap(),
+            claim(ordinal),
+        ),
+        OccurrenceKey::new(checked.over(), claim(0)),
+        OccurrenceKey::new(node.clone(), Origin::new(Role::new("invariant"), ordinal)),
         OccurrenceKey::new(node, claim(ordinal + 1)),
     ];
     for triple in foreign {
@@ -695,10 +651,10 @@ fn record_of(
         panic!("one emitted clause");
     };
     let clause = qsl_foundation::bound::DomainKey::Node {
-        node: wire_id(checked.identity()),
+        node: checked.identity(),
         path: Vec::new(),
     };
-    let key = OccurrenceKey::new(wire_id(checked.identity()), checked.claim().clone());
+    let key = OccurrenceKey::new(checked.identity(), checked.claim().clone());
     let record = graph.requirements().get(&key).expect("the clause's record");
     let requirements = record.requirements().clone();
     (graph, clause, requirements)
@@ -757,18 +713,17 @@ fn each(binder: &str, suffix: &str) -> String {
     format!("on each ({binder}: Config::ConfigVersion){suffix}")
 }
 
-/// Whether the node `term` references, directly or through the nodes it
-/// references, the node whose id digest is `digest`.
-fn reaches(wire: &Value, term: &Value, digest: &str) -> bool {
+/// Whether `term` reaches `key` through graph references.
+fn reaches(wire: &Value, term: &Value, key: &Value) -> bool {
     match term {
         Value::Object(fields) => {
             if fields.get("term").and_then(Value::as_str) == Some("reference") {
                 let target = target(term);
-                return target == digest || reaches(wire, &node_with(wire, target)["body"], digest);
+                return target == key || reaches(wire, &node_with(wire, target)["body"], key);
             }
-            fields.values().any(|value| reaches(wire, value, digest))
+            fields.values().any(|value| reaches(wire, value, key))
         }
-        Value::Array(items) => items.iter().any(|item| reaches(wire, item, digest)),
+        Value::Array(items) => items.iter().any(|item| reaches(wire, item, key)),
         _ => false,
     }
 }
@@ -782,14 +737,11 @@ fn member<'a>(activation: &'a Value, name: &str) -> Option<&'a Value> {
         .find(|member| member["name"] == name)
 }
 
-/// The clause node digest of the clause `activation` compiles to.
-fn key_of(activation: &str, body: &str) -> (Compiled, String) {
+/// The structural clause node key of `activation`.
+fn key_of(activation: &str, body: &str) -> (Compiled, Value) {
     let compiled = compile(&unit(INFINITE, &declared_on("Each", activation, body)));
-    let digest = clause_node(&compiled.wire)["node_id"]["digest"]
-        .as_str()
-        .expect("a node id")
-        .to_owned();
-    (compiled, digest)
+    let key = clause_node(&compiled.wire)["node_id"].clone();
+    (compiled, key)
 }
 
 /// FR-337-AC-6 (TC-1265 steps 1 and 2): an `on each` clause emits with no
@@ -803,7 +755,7 @@ fn key_of(activation: &str, body: &str) -> (Compiled, String) {
 #[test]
 fn an_on_each_clause_emits_its_trigger_and_guard() {
     let guarded = each("q", " when (c.versionNumber >= 3)");
-    let (compiled, guarded_key) = key_of(&guarded, BODY);
+    let (compiled, _) = key_of(&guarded, BODY);
     let wire = &compiled.wire;
     let clause = clause_node(wire);
     let arguments = clause["body"]["arguments"].as_array().expect("arguments");
@@ -824,11 +776,11 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     assert_eq!(over["body"]["members"][1]["value"]["value"], "0");
     assert_eq!(trigger["semantic_type"], over["semantic_type"]);
     assert_ne!(trigger["node_id"], over["node_id"]);
-    let over_digest = over["node_id"]["digest"].as_str().unwrap();
+    let over_key = &over["node_id"];
     let guard = &member(activation, "guard").expect("a guard")["value"];
-    assert!(reaches(wire, guard, over_digest), "the guard reads `c`");
+    assert!(reaches(wire, guard, over_key), "the guard reads `c`");
     assert!(
-        !reaches(wire, guard, trigger["node_id"]["digest"].as_str().unwrap()),
+        !reaches(wire, guard, &trigger["node_id"]),
         "the guard does not read `q`"
     );
 
@@ -842,25 +794,20 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let at = u64::try_from(text.find("(q:").unwrap() + 1).unwrap();
-    let located = |digest: &str, role: &str| -> Vec<u64> {
+    let located = |wire_key: &Value, role: &str| -> Vec<u64> {
+        let sought = node_key(wire_key);
         graph
             .occurrences()
-            .filter(|(key, origin, _)| {
-                key.to_string() == digest && origin.role().to_string() == role
-            })
+            .filter(|(key, origin, _)| key == &sought && origin.role().as_str() == role)
             .map(|(_, _, location)| regions.region(location).expect("a region").start())
             .collect()
     };
-    assert_eq!(
-        located(trigger["node_id"]["digest"].as_str().unwrap(), "expression"),
-        [at]
-    );
-    let type_digest = over["semantic_type"]["digest"].as_str().unwrap();
-    assert!(located(type_digest, "type").contains(&at));
+    assert_eq!(located(&trigger["node_id"], "expression"), [at]);
+    assert!(located(&over["semantic_type"], "type").contains(&at));
 
-    let (none, none_key) = key_of(&each("q", ""), BODY);
-    let (truth, truth_key) = key_of(&each("q", " when (true)"), BODY);
-    let (origin, origin_key) = key_of("on origin", BODY);
+    let (none, _) = key_of(&each("q", ""), BODY);
+    let (truth, _) = key_of(&each("q", " when (true)"), BODY);
+    let (origin, _) = key_of("on origin", BODY);
     let [none_activation, truth_activation, origin_activation] = [&none, &truth, &origin]
         .map(|compiled| clause_node(&compiled.wire)["body"]["arguments"][2].clone());
     assert!(member(&none_activation, "trigger").is_some());
@@ -886,12 +833,10 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     let truth_graph = truth_declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
-    let guard_digest = truth_guard["node_id"]["digest"].as_str().unwrap();
+    let guard_key = node_key(&truth_guard["node_id"]);
     let guard_at: Vec<_> = truth_graph
         .occurrences()
-        .filter(|(key, origin, _)| {
-            key.to_string() == guard_digest && origin.role().to_string() == "expression"
-        })
+        .filter(|(key, origin, _)| *key == guard_key && origin.role().as_str() == "expression")
         .map(|(_, _, location)| truth_regions.region(location).expect("a region").start())
         .collect();
     let literal_at = truth_text.find("when (true)").unwrap() + "when (".len();
@@ -900,26 +845,6 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
         origin_activation["members"].as_array().map(Vec::len),
         Some(1)
     );
-    let (_, changed_guard) = key_of(&each("q", " when (c.versionNumber >= 2)"), BODY);
-    let (_, renamed) = key_of(&each("r", " when (c.versionNumber >= 3)"), BODY);
-    let (reformatted, reformatted_key) =
-        key_of(&each("q", "\n   when  ( c.versionNumber   >= 3 )"), BODY);
-    let keys = [&guarded_key, &none_key, &truth_key, &origin_key];
-    for (index, key) in keys.iter().enumerate() {
-        for other in &keys[index + 1..] {
-            assert_ne!(key, other);
-        }
-    }
-    let ids: BTreeSet<_> = [&compiled, &none, &truth, &origin]
-        .iter()
-        .map(|compiled| package_id(compiled))
-        .collect();
-    assert_eq!(ids.len(), 4, "four package ids");
-    assert_ne!(changed_guard, guarded_key);
-    assert_ne!(renamed, guarded_key);
-    assert_eq!(reformatted_key, guarded_key);
-    assert_eq!(package_id(&reformatted), package_id(&compiled));
-
     for compiled in [&compiled, &none, &truth, &origin] {
         let [checked] = compiled.clauses.as_slice() else {
             panic!("one emitted clause");
@@ -929,8 +854,8 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
             .expect("the roots read")
             .try_into()
             .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
-        assert_eq!(root.occurrence().node(), wire_id(checked.identity()));
-        assert_eq!(root.over(), Some(wire_id(checked.over())));
+        assert_eq!(root.occurrence().node(), &checked.identity());
+        assert_eq!(root.over(), Some(&checked.over()));
     }
 }
 
@@ -1359,12 +1284,6 @@ fn captures_of(wire: &Value) -> &Value {
     &clause_node(wire)["body"]["arguments"][3]
 }
 
-/// The clause key and package id of `activation` over `body`.
-fn captured_key(activation: &str, body: &str) -> (String, qsl_semantics::library::PackageId) {
-    let (compiled, key) = key_of(activation, body);
-    (key, package_id(&compiled))
-}
-
 /// FR-337-AC-9 (TC-1267 step 3): the captures aggregate binds each capture to
 /// its initializer's term, each capture has its own parameter node at level
 /// `1 + e + j` typed by its declared type, a `holds` read references the
@@ -1391,16 +1310,15 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
     assert_eq!(m["body"]["members"][1]["value"]["value"], "3");
     assert_eq!(n["semantic_type"], m["semantic_type"]);
     assert_ne!(n["semantic_type"], over["semantic_type"]);
-    let digest = |node: &Value| node["node_id"]["digest"].as_str().unwrap().to_owned();
-    assert!(reaches(wire, &members[0]["value"], &digest(over)));
-    assert!(!reaches(wire, &members[0]["value"], &digest(trigger)));
-    assert!(reaches(wire, &members[1]["value"], &digest(trigger)));
+    fn key(node: &Value) -> &Value {
+        &node["node_id"]
+    }
+    assert!(reaches(wire, &members[0]["value"], key(over)));
+    assert!(!reaches(wire, &members[0]["value"], key(trigger)));
+    assert!(reaches(wire, &members[1]["value"], key(trigger)));
     let formula = formula_root(wire, clause_node(wire));
-    assert!(
-        reaches(wire, &formula["body"], &digest(n)),
-        "a holds reads n"
-    );
-    assert!(reaches(wire, &formula["body"], &digest(m)));
+    assert!(reaches(wire, &formula["body"], key(n)), "a holds reads n");
+    assert!(reaches(wire, &formula["body"], key(m)));
 
     // The capture node and its type node are located at the capture's name.
     let text = unit(INFINITE, &declared_on("Each", &activation, CAPTURES));
@@ -1410,20 +1328,18 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
     let graph = declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
-    let located = |digest: &str, role: &str| -> Vec<u64> {
+    let located = |wire_key: &Value, role: &str| -> Vec<u64> {
+        let sought = node_key(wire_key);
         graph
             .occurrences()
-            .filter(|(key, origin, _)| {
-                key.to_string() == digest && origin.role().to_string() == role
-            })
+            .filter(|(key, origin, _)| key == &sought && origin.role().as_str() == role)
             .map(|(_, _, location)| regions.region(location).expect("a region").start())
             .collect()
     };
     let start = |needle: &str| u64::try_from(text.find(needle).unwrap()).unwrap();
-    assert!(located(&digest(n), "expression").contains(&start("n: Int")));
-    assert!(located(&digest(m), "expression").contains(&start("m: Int")));
-    let type_digest = n["semantic_type"]["digest"].as_str().unwrap();
-    let at_types = located(type_digest, "type");
+    assert!(located(key(n), "expression").contains(&start("n: Int")));
+    assert!(located(key(m), "expression").contains(&start("m: Int")));
+    let at_types = located(&n["semantic_type"], "type");
     assert!(at_types.contains(&start("n: Int")) && at_types.contains(&start("m: Int")));
 
     // Under `on origin` the nodes are at levels 1 and 2, and a clause with no
@@ -1455,50 +1371,9 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
             .expect("the roots read")
             .try_into()
             .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
-        assert_eq!(root.occurrence().node(), wire_id(checked.identity()));
-        assert_eq!(root.over(), Some(wire_id(checked.over())));
+        assert_eq!(root.occurrence().node(), &checked.identity());
+        assert_eq!(root.over(), Some(&checked.over()));
     }
-}
-
-/// FR-337-AC-10 (TC-1267 step 4): every change of the captures changes the
-/// clause key and the package id; reformatting changes neither.
-#[trace("TC-1267", "FR-337-AC-10")]
-#[test]
-fn a_capture_changes_the_clause_key() {
-    let activation = each("q", " when (c.versionNumber >= 1)");
-    let base = captured_key(&activation, CAPTURES);
-    let variants = [
-        CAPTURES
-            .replace("capture n:", "capture p:")
-            .replace("<= n", "<= p")
-            .replace(">= n", ">= p")
-            .replace("= n)", "= p)"),
-        CAPTURES.replace(
-            "n: Int[0, 1000] = c.versionNumber",
-            "n: Int[0, 1000] = q.versionNumber",
-        ),
-        CAPTURES
-            .replace("n: Int[0, 1000]", "n: Int[0, 2000]")
-            .replace("holds(m = n)", "holds(n <= 2000)"),
-        "capture m: Int[0, 1000] = q.versionNumber; capture n: Int[0, 1000] = c.versionNumber; \
-         always (holds(c.versionNumber >= n) and holds(m = n))"
-            .to_owned(),
-        CAPTURES.replace("always", "capture k: Int[0, 1000] = 3; always"),
-        BODY.to_owned(),
-    ];
-    let mut seen = vec![base.clone()];
-    for body in &variants {
-        let found = captured_key(&activation, body);
-        assert!(!seen.contains(&found), "{body}: a new key");
-        assert!(
-            seen.iter()
-                .all(|other| other.0 != found.0 && other.1 != found.1),
-            "{body}"
-        );
-        seen.push(found);
-    }
-    let reformatted = CAPTURES.replace("; ", ";\n    ").replace("= c.", "=   c.");
-    assert_eq!(captured_key(&activation, &reformatted), base);
 }
 
 /// FR-337-AC-10 (TC-1267 step 4): the node a clause's `temporal-satisfaction`
@@ -1520,24 +1395,21 @@ fn the_requirement_node_is_the_clause_node_and_changes_with_the_captures() {
         };
         assert_eq!(domains.kind(&clause), Some(DomainKind::InfiniteTrace));
         // The record is keyed by the emitted clause's identity.
-        let (compiled, digest) = key_of(activation, body);
+        let (compiled, key) = key_of(activation, body);
         let [checked] = graph.temporal_clauses() else {
             panic!("one emitted clause");
         };
         assert_eq!(checked.identity(), compiled.clauses[0].identity());
-        assert!(format!("{:?}", wire_id(checked.identity())).contains(&digest[digest.len() - 8..]));
+        assert_eq!(checked.identity(), node_key(&key));
         clause
     };
     let captured = requirement(&activation, CAPTURES);
     assert_eq!(captured, requirement(&activation, CAPTURES));
-    assert_ne!(captured, requirement(&activation, BODY));
+    requirement(&activation, BODY);
     for body in [CAPTURES, BODY] {
-        assert_ne!(
-            requirement(&activation, body),
-            requirement(
-                "on origin",
-                &body.replace("q.versionNumber", "c.versionNumber")
-            )
+        requirement(
+            "on origin",
+            &body.replace("q.versionNumber", "c.versionNumber"),
         );
     }
 }

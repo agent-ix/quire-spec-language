@@ -149,13 +149,13 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
         let [relation] = found.as_slice() else {
             panic!("one relation node for {owner}");
         };
-        relation["node_id"]["digest"].clone()
+        relation["node_id"].clone()
     };
     let result_form = |navigation: &Value| {
-        let wanted = &navigation["body"]["result_type"]["digest"];
+        let wanted = &navigation["body"]["result_type"];
         nodes(&wire)
             .iter()
-            .find(|node| &node["node_id"]["digest"] == wanted)
+            .find(|node| &node["node_id"] == wanted)
             .map(|node| node["semantic_form"].clone())
             .expect("the result type is a node of the package")
     };
@@ -180,7 +180,7 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
         assert_eq!(operation["mode"], Value::Null, "{role}");
         assert_eq!(operation["member"]["kind"], "relationship_end", "{role}");
         assert_eq!(
-            operation["member"]["declaration"]["digest"],
+            operation["member"]["declaration"],
             relation(owner),
             "{role}: the relationship's model node"
         );

@@ -41,7 +41,7 @@ pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"))

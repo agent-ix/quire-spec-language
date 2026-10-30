@@ -220,6 +220,7 @@ impl DeepInput {
         let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)?.into_value();
         let checked = check(
             &parsed,
+            String::from("qsl-bench"),
             &models,
             &DependencyInput::default(),
             limits,

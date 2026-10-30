@@ -12,10 +12,10 @@
 //! Neither selects a `Boolean` function or calls [`super::replay`], and no
 //! row settles `Refuted`.
 
+use quire_exact::NodeKey;
 use std::collections::BTreeMap;
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::digest::WireNodeId;
 use quire_exact::{plan_equality, planned_equality, Meter, Outcome, ScalarLimits, Value};
 use quire_exact::{Cancel, IntegerInterval};
 use quire_semantic_value::catalog::InternalFault;
@@ -40,7 +40,6 @@ use crate::composite::{
     NativeParityObservation, Refinement, VerifiedShadow, VerifiedShadowReport,
     VerifiedShadowResult,
 };
-use crate::identity::ObligationIdentity;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{OperandIdentity, OperandRefusal, ScalarAgreement, ScalarClaim, ScalarOutcome};
 use crate::target::ReplayEntry;
@@ -73,7 +72,7 @@ fn prepare(
     let site = locate(
         &compiled,
         function,
-        claim.node,
+        &claim.node,
         &claim.occurrence,
         claim.operator,
     )?;
@@ -95,11 +94,11 @@ fn prepare(
 
 /// The distinct parameter operands of the claimed node, ascending by node id,
 /// each with its declared type.
-fn distinct_parameters(site: &Site) -> Vec<(WireNodeId, &quire_exact::ValueType)> {
-    let mut parameters: BTreeMap<WireNodeId, &quire_exact::ValueType> = BTreeMap::new();
+fn distinct_parameters(site: &Site) -> Vec<(NodeKey, &quire_exact::ValueType)> {
+    let mut parameters: BTreeMap<NodeKey, &quire_exact::ValueType> = BTreeMap::new();
     for operand in &site.operands {
         if let Operand::Parameter { node, value_type } = operand {
-            parameters.insert(*node, value_type);
+            parameters.insert(node.clone(), value_type);
         }
     }
     parameters.into_iter().collect()
@@ -143,13 +142,12 @@ pub(super) fn parity_preimage(
     let mismatch = |cause: ScalarIdentityMismatch| ReplayRefusal::ScalarIdentity(Box::new(cause));
     let graph = compiled.checked.package().graph().semantic_graph();
     let node = graph
-        .resolve_wire(claim.node)
-        .and_then(|key| graph.node(key))
+        .node(claim.node.clone())
         .ok_or_else(|| fault("claimed-node-is-in-the-graph"))?;
-    let identities = operand_identities(node, claim.node).map_err(mismatch)?;
+    let identities = operand_identities(node, &claim.node).map_err(mismatch)?;
     let mut arguments = Vec::with_capacity(2);
     for (position, (operand, identity)) in site.operands.iter().zip(identities).enumerate() {
-        let domain = match (operand, identity) {
+        let domain = match (operand, identity.clone()) {
             (
                 Operand::Parameter {
                     node: parameter, ..
@@ -158,10 +156,10 @@ pub(super) fn parity_preimage(
             ) => {
                 if found != *parameter {
                     return Err(mismatch(ScalarIdentityMismatch::OperandChild {
-                        node: claim.node,
+                        node: claim.node.clone(),
                         position,
-                        claimed: *parameter,
-                        found: Some(found),
+                        claimed: Box::new(parameter.clone()),
+                        found: Some(Box::new(found)),
                     }));
                 }
                 let bounds = claim
@@ -185,16 +183,16 @@ pub(super) fn parity_preimage(
                 OperandIdentity::InlineLiteral,
             ) => {
                 return Err(mismatch(ScalarIdentityMismatch::OperandChild {
-                    node: claim.node,
+                    node: claim.node.clone(),
                     position,
-                    claimed: *parameter,
+                    claimed: Box::new(parameter.clone()),
                     found: None,
                 }))
             }
             (Operand::Literal { value, .. }, OperandIdentity::InlineLiteral) => {
                 let Value::Integer(value) = value else {
                     return Err(mismatch(ScalarIdentityMismatch::NotInlineLiteral {
-                        node: claim.node,
+                        node: claim.node.clone(),
                         position,
                     }));
                 };
@@ -210,7 +208,7 @@ pub(super) fn parity_preimage(
         arguments.push(ParityArgument { identity, domain });
     }
     Ok(ParityPreimage {
-        node: claim.node,
+        node: claim.node.clone(),
         occurrence: site.occurrence.origin().clone(),
         obligation_kind: claim.obligation_kind.clone(),
         arguments,
@@ -219,7 +217,7 @@ pub(super) fn parity_preimage(
 
 /// FR-358: replay a falsified composite `bounded_shadow` item.
 ///
-/// `wire` is the original proving context: its `package_id`, package
+/// `wire` is the original proving context: its package name, package
 /// reference, dependencies and byte provision, the enclosing function of the
 /// claimed node as the `function` replay target, the `obligation_identity` CG minted
 /// and the proving run's declared domains; its `source` is not read. `claim`
@@ -239,7 +237,7 @@ pub fn replay_composite_parity(
     falsified: FalsifiedParity,
     replay_limits: ReplayLimits,
 ) -> CompositeParityReport {
-    let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+    let obligation = wire.obligation_identity.clone();
     let identity = CompositeIdentity::new(
         obligation,
         &claim,
@@ -471,7 +469,7 @@ pub fn settle_verified_shadow(
     verified: VerifiedShadow,
     replay_limits: ReplayLimits,
 ) -> VerifiedShadowReport {
-    let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+    let obligation = wire.obligation_identity.clone();
     let identity =
         CompositeIdentity::new(obligation, &claim, CompositeEvidence::Verified(verified));
     let result = match prepare(wire, &claim, replay_limits) {

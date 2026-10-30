@@ -59,7 +59,7 @@ pub(super) fn invariant_observations(
 ) -> AdmittedObservations {
     AdmittedObservations {
         usage: AdmissionUsage::default(),
-        clause: clause.identity,
+        clause: clause.identity.clone(),
         current: Some(walk.observation.clone()),
         pre: None,
         post: None,
@@ -88,7 +88,7 @@ pub(super) fn invariants(walk: &Walk<'_, '_>) -> Result<Vec<ModelFinding>, Expan
             let reference = &walk.rows[*row].reference;
             if !system
                 .types
-                .conforms(reference.object_type(), clause.context)
+                .conforms(reference.object_type().clone(), clause.context.clone())
             {
                 continue;
             }

@@ -29,6 +29,7 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
     let name = QualifiedName::new(vec![Identifier::new("p").unwrap()]).unwrap();
     let site = call_site(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         UNIT.as_bytes(),
         [],
@@ -36,7 +37,7 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
         &name,
     )
     .expect("the unit compiles and declares p");
-    let [(_, parameter)] = site.site.parameters[..] else {
+    let [(_, parameter)] = &site.site.parameters[..] else {
         panic!("p declares one parameter: {site:?}");
     };
 
@@ -45,7 +46,7 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
     let declared = DeclaredDomain::new(
         ProofBound::new(
             DomainKey::Node {
-                node: parameter,
+                node: parameter.clone(),
                 path: Vec::new(),
             },
             Some(DomainKind::Integer),
@@ -56,7 +57,7 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
     assert_eq!(
         declared.domain(),
         &DomainKey::Node {
-            node: parameter,
+            node: parameter.clone(),
             path: Vec::new()
         }
     );

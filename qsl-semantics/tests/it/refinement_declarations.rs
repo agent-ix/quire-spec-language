@@ -191,7 +191,7 @@ fn document_with(
     .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": node(package, "spec"), "version": "1.0.0",
             "dialect": "spec-bundle",
@@ -547,8 +547,13 @@ pub(crate) fn assemble(
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![]);
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        selected,
+        vec![],
+    );
     (text, declarations)
 }
 

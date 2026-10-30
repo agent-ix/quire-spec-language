@@ -5,7 +5,17 @@
 //! `step(i)` and `reset()`), the same package again as a second model under
 //! alias `N`, and a unit that declares one hyper clause.
 
+use quire_exact::NodeKey;
 use std::collections::BTreeMap;
+
+fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("fixture node")
+}
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
@@ -223,7 +233,7 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
     let population = ident("vaults");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
@@ -280,6 +290,7 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
     .expect("the operation clauses parse");
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -601,7 +612,6 @@ mod tp4 {
     use qsl_eval::simulation::model::ModelSimState;
     use qsl_eval::simulation::model::ModelSystem;
     use qsl_eval::temporal::AtomReading;
-    use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
     use qsl_replay::ClauseIdentity;
     use qsl_replay::{
@@ -661,7 +671,6 @@ mod tp4 {
 
     pub struct Case {
         world: World,
-        package_id: qsl_semantics::library::PackageId,
     }
 
     impl Case {
@@ -670,11 +679,7 @@ mod tp4 {
                 "temporal Live using inf over (v: V::Vault) clock \"model-steps\" on origin {{ {BODY} }}"
             );
             let world = World::new(&["v"], false, &format!("{FORALL_EXISTS}\n{temporal}"));
-            let package_id = qsl_package::emit_checked(world.package())
-                .expect("the checked package emits")
-                .package()
-                .package_id();
-            Self { world, package_id }
+            Self { world }
         }
 
         pub fn clause(&self) -> &CheckedTemporalClause {
@@ -722,10 +727,7 @@ mod tp4 {
         /// partition remains to reject (`NotPartition`).
         pub fn certificate(&self) -> ClosureCertificate {
             let keys = self.expected_keys();
-            let mut certificate = ClosureCertificate {
-                package_id: self.package_id,
-                states: Vec::new(),
-            };
+            let mut certificate = ClosureCertificate { states: Vec::new() };
             // The checker names each absent product state (its model-state
             // digest is the model's identity, which this test does not
             // recompute); the automaton key of every one is checked against
@@ -786,7 +788,7 @@ mod tp4 {
                 panic!("the clause ranges over a reference");
             };
             let reference = system
-                .bound_reference(*object_type, &instance)
+                .bound_reference(object_type.clone(), &instance)
                 .expect("the instance has a reference");
             StateContext::clause(
                 self.clause(),
@@ -836,7 +838,7 @@ mod tp4 {
 
         pub fn foreign_keys(&self) -> BuchiStates {
             let identity = OccurrenceKey::new(
-                WireNodeId::from_digest([0x53; 32]),
+                super::fixture_node(0x53),
                 Origin::new(Role::new("temporal"), 1),
             );
             let context = StateContext::clause(self.clause(), identity, Vec::new());

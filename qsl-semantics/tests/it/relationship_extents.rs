@@ -19,13 +19,23 @@ use qsl_semantics::model::observation::{
     ResolveBundle,
 };
 use quire_checked::key::DeclarationKey;
-use quire_exact::{EffectiveId, NodeKey, ObjectId, ObjectReference, UniverseId};
+use quire_exact::{EffectiveId, ObjectId, ObjectReference, OriginalDeclarationKey, UniverseId};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::object_closure::ObjectClosure;
 use quire_semantic_value::relationship_extent::{
     ExtentState, ManifestState, NavigationRelationship, PopulationEntry, PopulationEnumerator,
     RelationshipEnd, RelationshipExtent, Resolution, StopReason,
 };
+
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
 
 fn key(node: &str) -> DeclarationKey {
     DeclarationKey::fixture(format!("ix://test/orders/{node}"))
@@ -73,7 +83,7 @@ impl Orders {
 
     fn reference(&self, universe: u8, type_name: &str, object: &str) -> ObjectReference {
         ObjectReference::new(
-            UniverseId::from_digest([universe; 32]),
+            UniverseId::new(fixture_key(universe)),
             self.id(type_name),
             ObjectId::new(object.to_owned()).expect("a nonempty object id"),
         )
@@ -802,13 +812,9 @@ fn a_type_no_row_covers_is_undecidable_never_vacuously_dangling() {
         Resolution::Dangling
     );
     // Row 11: a reference whose type is no object type of the model.
-    #[allow(
-        clippy::disallowed_methods,
-        reason = "fixture mints an identity the model does not declare"
-    )]
-    let unknown = EffectiveId::from_digest([0xee; 32]);
+    let unknown = EffectiveId::new(None, OriginalDeclarationKey::new("fixture", "unknown"));
     let stranger = ObjectReference::new(
-        UniverseId::from_digest([9; 32]),
+        UniverseId::new(fixture_key(9)),
         unknown,
         ObjectId::new("v1".to_owned()).expect("an id"),
     );
@@ -931,7 +937,7 @@ fn the_key_order_decides_between_dangling_and_undecidable_targets() {
         let undecidable_type = orders.id(incomplete_member);
         assert_eq!(
             resolution,
-            if first.object_type() == undecidable_type {
+            if first.object_type() == &undecidable_type {
                 Resolution::Undecidable
             } else {
                 Resolution::Dangling
@@ -971,13 +977,9 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
     let refusal = refused(wrong(orders.at("Tank", "t1")).expect_err("a wrong type, held"));
     assert_eq!(refusal.cause, "wrong-value-kind");
     // A reference whose type is no object type of the model.
-    #[allow(
-        clippy::disallowed_methods,
-        reason = "fixture mints an identity the model does not declare"
-    )]
-    let unknown = EffectiveId::from_digest([0xee; 32]);
+    let unknown = EffectiveId::new(None, OriginalDeclarationKey::new("fixture", "unknown"));
     let stranger = ObjectReference::new(
-        UniverseId::from_digest([9; 32]),
+        UniverseId::new(fixture_key(9)),
         unknown,
         ObjectId::new("x".to_owned()).expect("an id"),
     );
@@ -988,7 +990,7 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
 fn bundle_key(label: &str) -> BundleKey {
     BundleKey {
         source: source("s"),
-        clause: NodeKey::from_digest([3; 32]),
+        clause: fixture_key(3),
         documents: vec![],
         role: ObservationRole::Pre,
         origin: ObservationOrigin::Label(label.to_owned()),
@@ -1048,7 +1050,7 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
 
     // Another selected clause.
     let other_clause = BundleKey {
-        clause: NodeKey::from_digest([4; 32]),
+        clause: fixture_key(4),
         ..selected.clone()
     };
     let refusal = build(&selected, &other_clause, &selected).expect_err("closure differs");

@@ -163,7 +163,7 @@ pub(crate) fn health() -> Domain {
     let population = ident("systems");
     let document = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": package, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
@@ -266,6 +266,7 @@ impl World {
             .expect("the operation clauses parse");
             PackageDeclarations::assemble(
                 parsed.source().reference().clone(),
+                "package".to_owned(),
                 built,
                 models,
                 Vec::new(),

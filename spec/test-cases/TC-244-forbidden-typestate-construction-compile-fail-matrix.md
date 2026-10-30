@@ -71,14 +71,14 @@ compile error):
 2. `CheckedGraph` → `CheckedPackage` by attempting to construct
    `CheckedPackage` directly, as a struct literal, from outside `package` —
    expected code `E0451`.
-3. `VerifiedPackage` → `CheckedPackage` by attempting
-   `CheckedPackage::from(verified_package_value)` or
-   `verified_package_value.into()` — expected code `E0277` (trait bound
-   `CheckedPackage: From<VerifiedPackage>` not satisfied). A direct
+3. `ImportView` → `CheckedPackage` by attempting
+   `CheckedPackage::from(import_view_value)` or
+   `import_view_value.into()` — expected code `E0277` (trait bound
+   `CheckedPackage: From<ImportView>` not satisfied). A direct
    type-mismatch attempt (passing the value where `CheckedPackage` is
    required, without going through `From`/`Into`) is not used for this row:
    it fails with `E0308` regardless of whether a forbidden `impl
-   From<VerifiedPackage> for CheckedPackage` exists elsewhere in the crate,
+   From<ImportView> for CheckedPackage` exists elsewhere in the crate,
    so it would stay green even if that exact R-10 violation were added.
    Only a `From`/`Into` attempt exercises the conversion path this row
    names.

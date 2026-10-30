@@ -152,7 +152,7 @@ impl super::ReferenceEvaluation for ProtocolClauseFamily {
                 let invocation: &AdmittedInvocation<'_> = invocation;
                 let frame = env
                     .graph
-                    .operation_frame_by_identity(*checked)
+                    .operation_frame_by_identity(checked.clone())
                     .ok_or_else(|| {
                         InternalFault::new("S6a", "checked-identity-not-resolved-by-package")
                     })?;
@@ -174,7 +174,7 @@ impl super::ReferenceEvaluation for ProtocolClauseFamily {
         };
         let clause = env
             .graph
-            .state_clause_by_identity(*checked)
+            .state_clause_by_identity(checked.clone())
             .ok_or_else(|| InternalFault::new("S6a", "checked-identity-not-resolved-by-package"))?;
         let Some(bindings) = bindings else {
             return Err(InternalFault::new(

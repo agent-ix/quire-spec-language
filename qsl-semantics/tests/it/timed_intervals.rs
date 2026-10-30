@@ -27,6 +27,16 @@ use crate::model_operations::{
     config_unit_with_profiles, config_version_document,
 };
 
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
+
 const TIMED: &str = "quire.temporal.timed/v1";
 const OVER: &str = "Config::ConfigVersion";
 const UNITS: &str = "dimension Time;\n\
@@ -51,14 +61,14 @@ fn dense_ms() -> ModelTimeSource {
     ModelTimeSource {
         model: "Config".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 1 },
-        model_node: quire_exact::NodeKey::from_digest([0; 32]),
+        model_node: fixture_key(0),
         tick_operation_key: None,
         tick_operation_span: None,
         tick_operation_anchor: None,
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
-        unit_node: quire_exact::NodeKey::from_digest([0; 32]),
-        time_dimension: quire_exact::NodeKey::from_digest([0; 32]),
+        unit_node: fixture_key(0),
+        time_dimension: fixture_key(0),
         nominal_nodes: Vec::new(),
     }
 }
@@ -299,10 +309,10 @@ fn a_punctual_interval_is_unsupported_outside_a_bounded_window() {
         .expect("one claim");
     let requirements = claim
         .requirements(
-            qsl_foundation::digest::WireNodeId::from_digest([1; 32]),
-            &[qsl_foundation::digest::WireNodeId::from_digest([2; 32])],
+            fixture_key(1),
+            &[fixture_key(2)],
             &[qsl_foundation::bound::DomainKey::Population {
-                member_type: qsl_foundation::digest::WireNodeId::from_digest([3; 32]),
+                member_type: fixture_key(3),
                 ordinal: 0,
             }],
             &[],

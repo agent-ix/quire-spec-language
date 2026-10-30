@@ -4,7 +4,7 @@
 //! `{Q, p1}`, `created []`, `deleted []`; housing `p1`-`t1`, `p2`-`t1` in the
 //! pre snapshot and `p1`-`t2`, `p2`-`t1` in the post snapshot.
 
-use super::frame_replay::{package_digest, packet, request, unit_for, wire, Unit};
+use super::frame_replay::{packet, request, unit_for, wire, Unit};
 use super::*;
 use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FrameCounterexample, FrameOperation,
@@ -103,7 +103,7 @@ fn orders_document(modifies: &[String]) -> Vec<u8> {
     });
     serde_json::to_vec(&json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity("spec"), "version": "1.0.0",
             "dialect": "spec-bundle",
@@ -252,29 +252,26 @@ fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResul
         .operation_frame(&selection)
         .expect("RehomePost names the operation");
     let (anchor, frame_node) = (wire(frame.anchor()), wire(frame.frame()));
-    let occurrence = OccurrenceKey::new(frame_node, frame.frame_origin().clone());
+    let occurrence = OccurrenceKey::new(frame_node.clone(), frame.frame_origin().clone());
     let target = crate::ReplayTarget::FrameOperation(FrameOperation {
         object: crate::QualifiedName::new(vec![identifier("Orders"), identifier("Pump")]).unwrap(),
         operation: identifier("rehome"),
     });
     let payload = FrameCounterexample {
         anchor,
-        frame: frame_node,
+        frame: frame_node.clone(),
         occurrence: occurrence.clone(),
         invocation,
         change,
     };
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let wire_request = request(
         &unit.bytes,
         &unit.domain_document,
-        package_id,
         &documents,
         target.clone(),
     );
     let packet = packet(
         &unit.bytes,
-        package_id,
         super::frame_replay::witness_source(),
         frame_node,
         occurrence,

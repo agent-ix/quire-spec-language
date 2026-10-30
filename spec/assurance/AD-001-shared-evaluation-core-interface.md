@@ -344,8 +344,7 @@ item moves once.
   supplies (FR-401).
 - `quire-checked` joins FB-05's shared-leaf class, so a backend may depend on
   it. Only the `construct` feature exposes its constructors; in QSL, T12-G
-  limits their callers to `check`, plus `library` for `PackageId` and
-  `value::definition` for `AdmittedIntegerDivision`, and across repositories FR-059 refuses a
+  limits their callers to `check`, plus `value::definition` for `AdmittedIntegerDivision`, and across repositories FR-059 refuses a
   backend that enables the feature. Within one workspace, feature
   unification makes the constructors visible to any crate that builds with
   `qsl-semantics`; the caller rule, not the type system, closes that gap.

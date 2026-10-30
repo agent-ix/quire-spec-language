@@ -366,7 +366,6 @@ pub(crate) fn settle_en1(
     settle_model_check(
         outcome,
         &ModelCheckLimits::default(),
-        &crate::lasso_replay::package_id(fixture),
         &CertificateRequest {
             subject: subject(
                 &fixture.package,

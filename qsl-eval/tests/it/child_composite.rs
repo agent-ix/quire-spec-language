@@ -20,8 +20,7 @@ use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
-    FieldValue, Integer, Meter, NodeKey, ObjectId, ObjectReference, Outcome, ScalarLimits,
-    UniverseId, Value,
+    FieldValue, Integer, Meter, NodeKey, ObjectId, ObjectReference, Outcome, ScalarLimits, Value,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -95,6 +94,7 @@ fn declarations_over(
     .expect("I1 admits the fixture package");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -120,10 +120,10 @@ fn an_indexed_reference_chain_evaluates_in_its_selected_component() {
         .find(|declaration| declaration.name() == "M::ConfigVersion")
         .expect("ConfigVersion's object declaration")
         .key();
-    let universe = UniverseId::from_digest([0x31; 32]);
+    let universe = crate::support::ids::universe_id([0x31]);
     let first = ObjectReference::new(
-        universe,
-        ledger_type,
+        universe.clone(),
+        ledger_type.clone(),
         ObjectId::new("n1").expect("object key"),
     );
     let second = ObjectReference::new(
@@ -239,6 +239,7 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
     .expect("the model selection admits");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -363,7 +364,7 @@ fn same_value(left: &Value, right: &Value) -> bool {
 
 fn declaration_of(value: &Value) -> NodeKey {
     match value {
-        Value::Composite(composite) => composite.declaration(),
+        Value::Composite(composite) => composite.declaration().clone(),
         other => panic!("a composite, not {other:?}"),
     }
 }
@@ -375,7 +376,7 @@ fn field_of(package: &CheckedPackage, value: &Value, name: &str) -> Value {
     };
     let types = package.graph().scope().types();
     let declaration = types
-        .composite(composite.declaration())
+        .composite(composite.declaration().clone())
         .expect("the record is declared");
     let quire_semantic_value::declaration::CompositeShape::Record(fields) = declaration.shape()
     else {
@@ -843,10 +844,10 @@ fn collections_of_the_parent_hold_children_and_order_by_declaration_key() {
         declaration(&package, "Money"),
         declaration(&package, "TaxedMoney"),
     );
-    let ascending = if money_key.as_bytes() < child_key.as_bytes() {
-        [money_key, child_key]
+    let ascending = if money_key < child_key {
+        [money_key, child_key.clone()]
     } else {
-        [child_key, money_key]
+        [child_key.clone(), money_key]
     };
     for (first, second) in [
         (money.clone(), child.clone()),
@@ -934,8 +935,10 @@ fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
             let Value::Composite(lines) = &built else {
                 panic!("a record");
             };
-            let quire_semantic_value::declaration::CompositeShape::Record(fields) =
-                types.composite(lines.declaration()).unwrap().shape()
+            let quire_semantic_value::declaration::CompositeShape::Record(fields) = types
+                .composite(lines.declaration().clone())
+                .unwrap()
+                .shape()
             else {
                 panic!("a record shape");
             };
@@ -1114,7 +1117,7 @@ fn admit_invocation(
         kind: checked.kind(),
         context: checked.context(),
         operation: checked.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
+            declaring: operation.declaring.clone(),
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),

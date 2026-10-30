@@ -117,7 +117,7 @@ fn variant_type(name: &str, cases: Vec<Value>) -> Value {
 fn document(constructs: Vec<Value>, types: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": id("spec"), "version": "1.0.0",
             "dialect": "spec-bundle"
@@ -956,10 +956,10 @@ fn a_variant_type_and_its_cases_have_effective_identities() {
     }
     assert_eq!(identities.len(), 2, "only the variant types are types");
 
-    let tier = identities[&key("Tier")];
-    let level = identities[&key("Level")];
+    let tier = identities[&key("Tier")].clone();
+    let level = identities[&key("Level")].clone();
     for (owner, node) in [
-        (tier, "variant/Tier-Gold"),
+        (tier.clone(), "variant/Tier-Gold"),
         (tier, "variant/Tier-Standard"),
         (level, "variant/Level-Gold"),
     ] {
@@ -998,13 +998,17 @@ fn reordering_the_cases_changes_no_effective_identity() {
 #[test]
 fn cases_differing_in_letter_case_have_distinct_effective_identities() {
     let view = view_of(&tiers(&["Gold", "gold"]));
-    let upper = entry_of(&view, &key("variant/Tier-Gold")).effective_id;
-    let lower = entry_of(&view, &key("variant/Tier-gold")).effective_id;
+    let upper = entry_of(&view, &key("variant/Tier-Gold"))
+        .effective_id
+        .clone();
+    let lower = entry_of(&view, &key("variant/Tier-gold"))
+        .effective_id
+        .clone();
     assert_ne!(upper, lower);
     let ids: std::collections::BTreeSet<EffectiveId> = view
         .declarations()
         .iter()
-        .map(|entry| entry.effective_id)
+        .map(|entry| entry.effective_id.clone())
         .collect();
     assert_eq!(ids.len(), view.declarations().len());
 }

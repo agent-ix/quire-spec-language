@@ -59,6 +59,7 @@ pub(crate) fn fixture(profile: &str, over: &str, activation: &str, body: &str) -
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         SelectedModels::default(),
         Vec::new(),
@@ -108,6 +109,7 @@ fn modelled_with(operations: Vec<serde_json::Value>, body: &str) -> Fixture {
     .expect("the model selection admits");
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),

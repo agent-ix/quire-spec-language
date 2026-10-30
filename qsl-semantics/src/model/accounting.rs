@@ -22,8 +22,6 @@ pub struct ModelNormalizationLimits {
     pub effective_declarations: u64,
     /// High-water count of dispatch candidates.
     pub dispatch_candidates: u64,
-    /// Cumulative hashed preimage bytes.
-    pub hashed_bytes: u64,
     /// Cumulative work units.
     pub work_units: u64,
     /// Ceiling on the `supertypes` edges one walk follows, charged before
@@ -63,7 +61,6 @@ impl Default for ModelNormalizationLimits {
             derivation_facts: 1_600_000,
             effective_declarations: 1_600_000,
             dispatch_candidates: 1_600_000,
-            hashed_bytes: 268_435_456,
             work_units: 16_777_216,
             ancestor_steps: quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS,
             family_steps: 16_777_216,
@@ -81,7 +78,6 @@ impl ModelNormalizationLimits {
         derivation_facts: u64::MAX,
         effective_declarations: u64::MAX,
         dispatch_candidates: u64::MAX,
-        hashed_bytes: u64::MAX,
         work_units: u64::MAX,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
@@ -122,13 +118,6 @@ impl ModelNormalizationLimits {
         self
     }
 
-    /// These limits with `hashed_bytes` set (`model.hashed_bytes`).
-    #[must_use]
-    pub const fn with_hashed_bytes(mut self, bound: u64) -> Self {
-        self.hashed_bytes = bound;
-        self
-    }
-
     /// These limits with `work_units` set (`model.work_units`).
     #[must_use]
     pub const fn with_work_units(mut self, bound: u64) -> Self {
@@ -160,7 +149,6 @@ impl LimitKind {
             Self::DerivationFacts => Setting::ModelDerivationFacts,
             Self::EffectiveDeclarations => Setting::ModelEffectiveDeclarations,
             Self::DispatchCandidates => Setting::ModelDispatchCandidates,
-            Self::HashedBytes => Setting::ModelHashedBytes,
             Self::WorkUnits => Setting::ModelWorkUnits,
             Self::AncestorSteps => Setting::ModelAncestorSteps,
         }
@@ -179,7 +167,6 @@ impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
                 self.effective_declarations,
             ),
             (Setting::ModelDispatchCandidates, self.dispatch_candidates),
-            (Setting::ModelHashedBytes, self.hashed_bytes),
             (Setting::ModelWorkUnits, self.work_units),
             (Setting::ModelAncestorSteps, self.ancestor_steps),
             (Setting::ModelFamilySteps, self.family_steps),
@@ -194,7 +181,6 @@ impl qsl_foundation::SettingLimits for ModelNormalizationLimits {
             Setting::ModelDerivationFacts => self.derivation_facts = bound,
             Setting::ModelEffectiveDeclarations => self.effective_declarations = bound,
             Setting::ModelDispatchCandidates => self.dispatch_candidates = bound,
-            Setting::ModelHashedBytes => self.hashed_bytes = bound,
             Setting::ModelWorkUnits => self.work_units = bound,
             Setting::ModelAncestorSteps => self.ancestor_steps = bound,
             Setting::ModelFamilySteps => self.family_steps = bound,
@@ -216,8 +202,6 @@ pub enum LimitKind {
     EffectiveDeclarations,
     /// `dispatch_candidates`.
     DispatchCandidates,
-    /// `hashed_bytes`.
-    HashedBytes,
     /// `work_units`.
     WorkUnits,
     /// Per-walk `ancestor_steps`; this is not a retained meter counter.
@@ -226,12 +210,11 @@ pub enum LimitKind {
 
 impl LimitKind {
     /// Every counter, in `ModelNormalizationLimitsV1` field order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::DeclarationRecords,
         Self::DerivationFacts,
         Self::EffectiveDeclarations,
         Self::DispatchCandidates,
-        Self::HashedBytes,
         Self::WorkUnits,
     ];
 
@@ -242,7 +225,6 @@ impl LimitKind {
             Self::DerivationFacts => "derivation_facts",
             Self::EffectiveDeclarations => "effective_declarations",
             Self::DispatchCandidates => "dispatch_candidates",
-            Self::HashedBytes => "hashed_bytes",
             Self::WorkUnits => "work_units",
             Self::AncestorSteps => "ancestor_steps",
         }
@@ -250,7 +232,7 @@ impl LimitKind {
 
     /// Whether this counter is cumulative rather than a high-water size.
     pub fn is_cumulative(self) -> bool {
-        matches!(self, Self::HashedBytes | Self::WorkUnits)
+        matches!(self, Self::WorkUnits)
     }
 
     fn index(self) -> Option<usize> {
@@ -259,8 +241,7 @@ impl LimitKind {
             Self::DerivationFacts => Some(1),
             Self::EffectiveDeclarations => Some(2),
             Self::DispatchCandidates => Some(3),
-            Self::HashedBytes => Some(4),
-            Self::WorkUnits => Some(5),
+            Self::WorkUnits => Some(4),
             Self::AncestorSteps => None,
         }
     }
@@ -271,7 +252,6 @@ impl LimitKind {
             Self::DerivationFacts => limits.derivation_facts,
             Self::EffectiveDeclarations => limits.effective_declarations,
             Self::DispatchCandidates => limits.dispatch_candidates,
-            Self::HashedBytes => limits.hashed_bytes,
             Self::WorkUnits => limits.work_units,
             Self::AncestorSteps => limits.ancestor_steps,
         }
@@ -311,8 +291,6 @@ pub enum ChargePoint {
     NormalizeConflictCheck,
     /// `normalize.declaration`.
     NormalizeDeclaration,
-    /// `normalize.hash`.
-    NormalizeHash,
     /// `conformance.axis`.
     ConformanceAxis,
     /// Availability of the next edge in one ancestor walk.
@@ -339,14 +317,13 @@ pub enum ChargePoint {
 
 impl ChargePoint {
     /// Every named point this rung charges, in first-use order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 17] = [
         Self::NormalizeRecord,
         Self::NormalizeFact,
         Self::NormalizeCycleCheck,
         Self::NormalizeRedefinitionCheck,
         Self::NormalizeConflictCheck,
         Self::NormalizeDeclaration,
-        Self::NormalizeHash,
         Self::ConformanceAxis,
         Self::ModelAncestorEdge,
         Self::DispatchSubtype,
@@ -369,7 +346,6 @@ impl ChargePoint {
             Self::NormalizeRedefinitionCheck => "normalize.redefinition-check",
             Self::NormalizeConflictCheck => "normalize.conflict-check",
             Self::NormalizeDeclaration => "normalize.declaration",
-            Self::NormalizeHash => "normalize.hash",
             Self::ConformanceAxis => "conformance.axis",
             Self::ModelAncestorEdge => "model.ancestor-edge",
             Self::DispatchSubtype => "dispatch.subtype",
@@ -483,7 +459,7 @@ pub struct Meter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Counters {
     limits: ModelNormalizationLimits,
-    consumed: [u64; 6],
+    consumed: [u64; 5],
     admissions: u64,
 }
 
@@ -498,7 +474,7 @@ impl Meter {
         Self {
             counters: Counters {
                 limits,
-                consumed: [0; 6],
+                consumed: [0; 5],
                 admissions: 0,
             },
             cancel: None,
@@ -586,7 +562,7 @@ impl Meter {
                 self.counters.consumed[index] = value;
             }
         }
-        self.counters.consumed[5] = work_total;
+        self.counters.consumed[4] = work_total;
         self.counters.admissions = self.counters.admissions.saturating_add(1);
         #[cfg(feature = "test-support")]
         self.admitted.push(point);
@@ -635,26 +611,32 @@ mod tests {
     #[test]
     fn a_denied_charge_changes_nothing() {
         let mut meter = Meter::new(ModelNormalizationLimits {
-            hashed_bytes: 10,
+            effective_declarations: 10,
             ..ModelNormalizationLimits::UNLIMITED
         });
         meter
-            .charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, 6))
-            .expect("6 of 10 bytes is admitted");
+            .charge(
+                Charge::new(ChargePoint::NormalizeDeclaration)
+                    .size(LimitKind::EffectiveDeclarations, 6),
+            )
+            .expect("6 of 10 declarations is admitted");
         let denied = meter
-            .charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, 5))
-            .expect_err("11 of 10 bytes is denied");
+            .charge(
+                Charge::new(ChargePoint::NormalizeDeclaration)
+                    .size(LimitKind::EffectiveDeclarations, 11),
+            )
+            .expect_err("11 of 10 declarations is denied");
         assert_eq!(
             denied,
             Incomplete {
-                limit_kind: LimitKind::HashedBytes,
+                limit_kind: LimitKind::EffectiveDeclarations,
                 limit: 10,
                 consumed: 6,
-                next_charge: 5,
-                charge_point: ChargePoint::NormalizeHash,
+                next_charge: 11,
+                charge_point: ChargePoint::NormalizeDeclaration,
             }
         );
-        assert_eq!(meter.consumed(LimitKind::HashedBytes), 6);
+        assert_eq!(meter.consumed(LimitKind::EffectiveDeclarations), 6);
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
         assert_eq!(meter.admission_count(), 1);
     }

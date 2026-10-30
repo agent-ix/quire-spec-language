@@ -13,9 +13,9 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
-    compile_package, run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput,
-    Integer, ObjectEnvironment, OccurrenceKey, ReplayLimits, RunRefusal, RunWithRequirements,
-    SourceIdentity, SpineLimits, StageLimits, Value,
+    run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput, Integer,
+    ObjectEnvironment, OccurrenceKey, RunRefusal, RunWithRequirements, SourceIdentity, SpineLimits,
+    Value,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
@@ -67,6 +67,7 @@ fn with_requirements(
 ) -> Result<RunWithRequirements, Box<RunRefusal>> {
     run_with_requirements(
         identity(),
+        "fixture".to_owned(),
         "unit.native",
         source.as_bytes(),
         &BTreeMap::new(),
@@ -109,6 +110,7 @@ fn record_keys(source: &str) -> Vec<OccurrenceKey> {
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -215,21 +217,11 @@ fn an_incomplete_call_returns_the_same_members() {
     );
 }
 
-/// FR-395-AC-6: package id and outcome equal `run`'s and `compile_package`'s.
+/// FR-395-AC-6: package name and outcome equal `run`'s.
 #[trace("TC-1089", "FR-395-AC-6")]
 #[test]
-fn package_id_and_outcome_equal_run_and_compile_package() {
+fn package_name_and_outcome_equal_run() {
     let source = k();
-    let compiled = compile_package(
-        identity(),
-        "unit.native",
-        source.as_bytes(),
-        [],
-        &DependencyInput::default(),
-        StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("compiles");
     for call in [
         call("inc", vec![argument("x", integer(3))], 1_000_000),
         call("sq", vec![argument("x", integer(3))], 1_000_000),
@@ -239,6 +231,7 @@ fn package_id_and_outcome_equal_run_and_compile_package() {
     ] {
         let direct = spine::run(
             identity(),
+            "fixture".to_owned(),
             "unit.native",
             source.as_bytes(),
             &BTreeMap::new(),
@@ -250,10 +243,8 @@ fn package_id_and_outcome_equal_run_and_compile_package() {
         )
         .expect("run runs");
         let result = with_requirements(&source, &call, &Cancel::new()).expect("the call runs");
-        assert_eq!(result.package_id(), direct.0);
-        assert_eq!(result.requirements().package_id(), direct.0);
-        assert_eq!(result.package_id().record(), compiled.package_id());
-        assert_eq!(format!("{:?}", result.outcome()), format!("{:?}", direct.1));
+        assert_eq!(result.package_name().as_str(), "fixture");
+        assert_eq!(format!("{:?}", result.outcome()), format!("{direct:?}"));
     }
 }
 

@@ -113,11 +113,6 @@ pub(crate) mod imports;
 mod ir;
 mod layer;
 mod lowering;
-// FR-091's dimension, unit and enum key vectors, recomputed from the spec's
-// stated preimage content.
-#[cfg(any(test, feature = "test-support"))]
-#[path = "lowering/fr091_vectors.rs"]
-pub mod fr091_vectors;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 mod hybrid;
@@ -219,73 +214,112 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, ModelRootKeyError,
-    NominalNode, SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, SemanticGraph,
+    SemanticNode,
 };
-pub use node_key::AbstractionTerm;
+pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
     InvalidSourceOwner, LawRole, LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner,
     NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode,
-    Operator, Owner, PackageRef, SourceOwner, TupleMember, TupleTerm, WireNodeRef,
+    Operator, Owner, SourceOwner, TupleMember, TupleTerm,
 };
+
+/// Carry a declared node identity from an admitted package name and its
+/// explicit, ordered path segments. An opaque IR declaration string is one
+/// segment; callers must not split it into inferred scopes.
+pub(crate) fn declared_node_key(
+    package: String,
+    declared_path: Vec<String>,
+    ordinal: u64,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    let requested = declared_path
+        .len()
+        .saturating_mul(std::mem::size_of::<quire_exact::PathSegment>());
+    let mut path = Vec::new();
+    path.try_reserve_exact(declared_path.len())
+        .map_err(|_| quire_exact::InvalidNodeKey::Allocation { requested })?;
+    path.extend(
+        declared_path
+            .into_iter()
+            .map(quire_exact::PathSegment::Text),
+    );
+    quire_exact::NodeKey::new(package, path, ordinal)
+}
+
+/// Mint a producer-selected structural identity under QSpec FR-322's
+/// `{package, path, ordinal}` rule. This includes the special clock-binding
+/// path and recursion-group members, whose paths are producer-selected.
+pub fn structural_node_key(
+    package_name: &str,
+    path: Vec<quire_exact::PathSegment>,
+    ordinal: u64,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    quire_exact::NodeKey::new(package_name.to_owned(), path, ordinal)
+}
+
+/// Mint a derived node under QSpec FR-322's non-group path rule:
+/// `[node_tag, semantic_form, ...operands]` in the containing package.
+/// Recursion-group members use their producer-chosen path instead.
+pub fn derived_node_key(
+    package_name: &str,
+    node_tag: NodeTag,
+    semantic_form: &str,
+    operands: Vec<quire_exact::PathSegment>,
+    ordinal: u64,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    let requested = operands
+        .len()
+        .checked_add(2)
+        .and_then(|len| len.checked_mul(std::mem::size_of::<quire_exact::PathSegment>()))
+        .unwrap_or(usize::MAX);
+    let mut path = Vec::new();
+    path.try_reserve_exact(operands.len().saturating_add(2))
+        .map_err(|_| quire_exact::InvalidNodeKey::Allocation { requested })?;
+    path.push(quire_exact::PathSegment::Text(node_tag.as_str().to_owned()));
+    path.push(quire_exact::PathSegment::Text(semantic_form.to_owned()));
+    path.extend(operands);
+    structural_node_key(package_name, path, ordinal)
+}
 
 /// The structural key of QSpec's built-in Rational scalar type (FR-092).
 /// Timed tick sources use this primitive literal type even when the checked
 /// unit contains no other rational expression from which S4 could discover it.
-pub fn builtin_rational_type_key() -> quire_exact::NodeKey {
-    let body = BodyTerm::aggregate(Vec::new());
-    let input = node_key::NodeInput {
-        owner: None,
-        node_tag: NodeTag::ScalarType,
-        semantic_form: "rational",
-        semantic_type: None,
-        declaration: None,
-        body: &body,
-        owner_model: None,
-    };
-    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
-        .expect("the built-in Rational scalar has a valid structural key")
-        .key
+pub fn builtin_rational_type_key(
+    package_name: &str,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    declared_node_key(
+        package_name.to_owned(),
+        vec!["scalar_type".to_owned(), "rational".to_owned()],
+        0,
+    )
 }
 
 /// The structural key of QSpec's built-in Integer scalar type (FR-092): the
 /// symbolic element selector of a `clock_place` slot step (QSpec FR-322
 /// "Timed-model nodes") references it.
-pub fn builtin_integer_type_key() -> quire_exact::NodeKey {
-    let body = BodyTerm::aggregate(Vec::new());
-    let input = node_key::NodeInput {
-        owner: None,
-        node_tag: NodeTag::ScalarType,
-        semantic_form: "integer",
-        semantic_type: None,
-        declaration: None,
-        body: &body,
-        owner_model: None,
-    };
-    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
-        .expect("the built-in Integer scalar has a valid structural key")
-        .key
+pub fn builtin_integer_type_key(
+    package_name: &str,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    declared_node_key(
+        package_name.to_owned(),
+        vec!["scalar_type".to_owned(), "integer".to_owned()],
+        0,
+    )
 }
 
 /// The structural key of QSpec's built-in Text scalar type (FR-092).
 /// Timed source metadata uses this primitive even when no source expression
 /// already caused its scalar node to enter the checked graph.
-pub fn builtin_text_type_key() -> quire_exact::NodeKey {
-    let body = BodyTerm::aggregate(Vec::new());
-    let input = node_key::NodeInput {
-        owner: None,
-        node_tag: NodeTag::ScalarType,
-        semantic_form: "text",
-        semantic_type: None,
-        declaration: None,
-        body: &body,
-        owner_model: None,
-    };
-    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
-        .expect("the built-in Text scalar has a valid structural key")
-        .key
+pub fn builtin_text_type_key(
+    package_name: &str,
+) -> Result<quire_exact::NodeKey, quire_exact::InvalidNodeKey> {
+    declared_node_key(
+        package_name.to_owned(),
+        vec!["scalar_type".to_owned(), "text".to_owned()],
+        0,
+    )
 }
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -314,7 +348,7 @@ pub use ir::{
 };
 
 pub use assemble::{
-    AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
+    AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
     TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
@@ -468,7 +502,9 @@ impl CheckedFunctions {
     fn new(functions: Vec<(Signature, CheckedFunction)>) -> Self {
         let mut by_identity = BTreeMap::new();
         for (position, (_, function)) in functions.iter().enumerate() {
-            by_identity.entry(function.identity).or_insert(position);
+            by_identity
+                .entry(function.identity.clone())
+                .or_insert(position);
         }
         let (signatures, bodies): (Vec<_>, Vec<_>) = functions.into_iter().unzip();
         Self {
@@ -545,6 +581,9 @@ pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
     source: qsl_foundation::source::provenance::RawSourceRef,
+    /// The package manifest's top-level name, the `package` of every
+    /// structural node id the graph's nodes carry.
+    package_name: String,
     scope: Scope,
     functions: CheckedFunctions,
     dispatch_tables: Vec<DispatchTable>,
@@ -692,9 +731,6 @@ pub struct CheckedGraph {
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
-    /// The byte limit every node identity of this package encodes under,
-    /// kept for the nodes built from it after `check` (FR-306).
-    identity: qsl_foundation::IdentityLimits,
 }
 
 /// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
@@ -726,7 +762,7 @@ impl TemporalClauseNode {
 
     /// The clause's `temporal`/`temporal_clause` node.
     pub fn identity(&self) -> quire_exact::NodeKey {
-        self.identity
+        self.identity.clone()
     }
 
     /// The `claim` occurrence of this declaration of the clause node.
@@ -736,7 +772,7 @@ impl TemporalClauseNode {
 
     /// The `value`/`parameter` node of the clause's `over` parameter.
     pub fn over(&self) -> quire_exact::NodeKey {
-        self.over
+        self.over.clone()
     }
 
     /// The checked Boolean condition of the `holds` atom `atom` and its
@@ -960,8 +996,8 @@ fn operation_frames<'a>(
         if !seen {
             frames.push(CheckedOperationFrame {
                 operation: operation.clone(),
-                anchor: binding.anchor,
-                frame: binding.frame,
+                anchor: binding.anchor.clone(),
+                frame: binding.frame.clone(),
                 frame_origin: binding.frame_origin.clone(),
             });
         }
@@ -1125,10 +1161,11 @@ impl PackageDeclarations {
             let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
-                self.nominal_spans.keys().copied(),
+                self.nominal_spans.keys().cloned(),
                 &self.models,
                 &self.dimension_equivalences,
-                self.identity,
+                &self.source,
+                &self.package_name,
             );
             // The model a `time invariant` or `urgent` declaration belongs
             // to (FR-230 "Timed facet gate"): the one model the unit's
@@ -1176,7 +1213,7 @@ impl PackageDeclarations {
                                 .iter()
                                 .find(|model| model.alias() == Some(source.model.name.as_str()))
                             {
-                                let model_nodes = model.object_type_model_node_keys(self.identity);
+                                let model_nodes = model.object_type_model_node_keys();
                                 let [model_node] = model_nodes.as_slice() else {
                                     let cause = if model_nodes.is_empty() {
                                         TemporalCause::MissingTimedModel {
@@ -1331,7 +1368,7 @@ impl PackageDeclarations {
                                 self.time_sources.push(ModelTimeSource {
                                     model: source.model.name.clone(),
                                     span: source.span,
-                                    model_node: *model_node,
+                                    model_node: model_node.clone(),
                                     tick_operation_key,
                                     tick_operation_span,
                                     tick_operation_anchor: None,
@@ -1407,10 +1444,11 @@ impl PackageDeclarations {
         let timed_drafts = {
             let units = time_units::TimeUnits::new(
                 &self.units,
-                self.nominal_spans.keys().copied(),
+                self.nominal_spans.keys().cloned(),
                 &self.models,
                 &self.dimension_equivalences,
-                self.identity,
+                &self.source,
+                &self.package_name,
             );
             timed_model::prepare(
                 &timed_model::Inputs {
@@ -1456,10 +1494,11 @@ impl PackageDeclarations {
             if admitted {
                 let units = time_units::TimeUnits::new(
                     &self.units,
-                    self.nominal_spans.keys().copied(),
+                    self.nominal_spans.keys().cloned(),
                     &self.models,
                     &self.dimension_equivalences,
-                    self.identity,
+                    &self.source,
+                    &self.package_name,
                 );
                 let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
                 for finding in checked.findings {
@@ -1817,11 +1856,12 @@ impl PackageDeclarations {
         let signatures = Signatures::new(signatures);
         let mut seen_operations = std::collections::BTreeSet::new();
         for operation in &scope.dispatch_operations {
-            if !seen_operations.insert((operation.receiver_type, operation.member.clone())) {
+            if !seen_operations.insert((operation.receiver_type.clone(), operation.member.clone()))
+            {
                 refusals.push(invalid_dispatch(
                     root(Origin::Expression),
                     InvalidDispatchDeclaration::DuplicateOperation {
-                        receiver_type: operation.receiver_type,
+                        receiver_type: operation.receiver_type.clone(),
                         member: operation.member.clone(),
                     },
                 ));
@@ -1879,7 +1919,11 @@ impl PackageDeclarations {
             return Err(refusals);
         }
         let source = self.source;
+        let package_name = self.package_name;
         let mut type_spans = self.declared_type_spans;
+        for (index, equivalence) in self.dimension_equivalences.iter().enumerate() {
+            type_spans.insert(lowering::equivalence_origin(index), equivalence.span);
+        }
         for refinement in &self.refinements {
             type_spans.insert(
                 refinement_origin(&refinement.form.name.name),
@@ -1930,7 +1974,7 @@ impl PackageDeclarations {
             .filter_map(|declaration| {
                 models
                     .iter()
-                    .find_map(|model| model.model_node_key(declaration, self.identity))
+                    .find_map(|model| model.model_node_key(declaration))
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
@@ -1957,12 +2001,14 @@ impl PackageDeclarations {
         // identity limits, shared by the refinement headers and the emitter.
         let mut model_roots = Vec::with_capacity(model_selections.len());
         for selection in &model_selections {
-            match model_root_key(selection, self.identity) {
+            match model_root_key(selection) {
                 Ok(key) => model_roots.push(key),
                 Err(fault) => {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
-                        cause: CheckCause::InternalFault(Box::new(KeyFault::ModelRootKey(fault))),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::ModelRootKey(
+                            fault.to_string(),
+                        ))),
                     }]);
                 }
             }
@@ -2060,7 +2106,10 @@ impl PackageDeclarations {
                  unordered declaration whose members are not sorted by case, before \
                  this declaration ever reaches `check`",
             );
-            type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
+            type_nodes.insert(
+                node.clone(),
+                identity::CheckedTypeNode::Sum { node, variants },
+            );
         }
         // `node_count` reads the same `CheckingLimits.nodes()` the `Typer`
         // below honors: it is the ceiling claim classification walks under,
@@ -2104,7 +2153,7 @@ impl PackageDeclarations {
                 0,
                 &mut sealing_occurrences,
                 &mut sealing_meter,
-                self.identity,
+                &package_name,
             );
             let mut sealed_refusals = Vec::new();
             for declaration in scope.types().composites() {
@@ -2636,7 +2685,6 @@ impl PackageDeclarations {
                     &declarations,
                     &mut contract_cx,
                     &env,
-                    self.identity,
                 );
                 nodes_used = used;
                 // A limit or a cancellation stops the unit at a refusal, as
@@ -3238,7 +3286,7 @@ impl PackageDeclarations {
             model_selections
                 .iter()
                 .position(|held| held.identity == selection.identity)
-                .and_then(|index| model_roots.get(index).copied())
+                .and_then(|index| model_roots.get(index).cloned())
         };
         for checked in &mut refinements {
             let abstract_model = models
@@ -3263,15 +3311,17 @@ impl PackageDeclarations {
         // the package (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
             &self.units,
-            self.nominal_spans.keys().copied(),
+            self.nominal_spans.keys().cloned(),
             &models,
             &self.dimension_equivalences,
-            self.identity,
+            &source,
+            &package_name,
         );
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
             source: &source,
+            package_name: &package_name,
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
             models: &models,
@@ -3588,6 +3638,7 @@ impl PackageDeclarations {
                 scope: &scope,
                 selections: &self.temporal_selections,
                 source: &source,
+                package_name: &package_name,
                 embedding: embedding.as_deref(),
                 position_limit: limits.nodes(),
                 models: &models,
@@ -3735,7 +3786,7 @@ impl PackageDeclarations {
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
-            self.identity,
+            &package_name,
         )
         .with_node_limit(limits.nodes(), nodes_used);
         // Relationship declarations are model graph roots. No existing
@@ -3872,7 +3923,7 @@ impl PackageDeclarations {
                     conditions,
                 }) {
                     Ok(lowered) => {
-                        lowering.record_temporal_key(*index, lowered.key);
+                        lowering.record_temporal_key(*index, lowered.key.clone());
                         if let Some(slot) = lowered_temporal.get_mut(dense) {
                             *slot = Some(lowered);
                         }
@@ -4008,7 +4059,7 @@ impl PackageDeclarations {
                                 .iter()
                                 .find_map(|model| model.effective_id(&key.declaring))?;
                             let operation = scope
-                                .operation_declaration(declaring, key.operation.as_str())?
+                                .operation_declaration(declaring.clone(), key.operation.as_str())?
                                 .clone();
                             Some((
                                 clause_index,
@@ -4046,7 +4097,7 @@ impl PackageDeclarations {
                             .find(|model| model.alias() == Some(alias.as_str()))?;
                         let declaring = model.effective_id(&operation.declaring)?;
                         let declaration = scope
-                            .operation_declaration(declaring, operation.operation.as_str())?
+                            .operation_declaration(declaring.clone(), operation.operation.as_str())?
                             .clone();
                         Some((
                             declaring,
@@ -4072,7 +4123,7 @@ impl PackageDeclarations {
                         (
                             form.spans.declaration.start,
                             lowering::AnchorInput {
-                                declaring: operation.declaring,
+                                declaring: operation.declaring.clone(),
                                 operation: &operation.declaration,
                                 location,
                                 reference,
@@ -4096,7 +4147,7 @@ impl PackageDeclarations {
                 source_ordered_anchors.push((
                     source_order,
                     lowering::AnchorInput {
-                        declaring: bound.operation.declaring,
+                        declaring: bound.operation.declaring.clone(),
                         operation: &bound.operation.declaration,
                         location,
                         reference,
@@ -4108,7 +4159,7 @@ impl PackageDeclarations {
             source_ordered_anchors.push((
                 *source_order,
                 lowering::AnchorInput {
-                    declaring: *declaring,
+                    declaring: declaring.clone(),
                     operation,
                     location,
                     reference: location,
@@ -4120,7 +4171,7 @@ impl PackageDeclarations {
                 source_ordered_anchors.push((
                     checked_relations[relation_index].span().start,
                     lowering::AnchorInput {
-                        declaring: *declaring,
+                        declaring: declaring.clone(),
                         operation,
                         location,
                         reference: location,
@@ -4136,7 +4187,7 @@ impl PackageDeclarations {
         for (checked, locations) in checked_protocols.iter().zip(&template_locations) {
             for (template, location) in checked.obligations.compensations.iter().zip(locations) {
                 anchors.push(lowering::AnchorInput {
-                    declaring: template.operation.declaring,
+                    declaring: template.operation.declaring.clone(),
                     operation: &template.operation.declaration,
                     location,
                     reference: location,
@@ -4166,7 +4217,9 @@ impl PackageDeclarations {
                     .iter()
                     .find(|model| model.alias() == Some(source.model.as_str()))?;
                 let (declaring, name) = model.operation_anchor_declaration(key)?;
-                let operation = scope.operation_declaration(declaring, &name)?.clone();
+                let operation = scope
+                    .operation_declaration(declaring.clone(), &name)?
+                    .clone();
                 Some((
                     index,
                     declaring,
@@ -4182,7 +4235,7 @@ impl PackageDeclarations {
             .collect();
         for (_, declaring, operation, location, reference) in &timed_operations {
             anchors.push(lowering::AnchorInput {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
                 location,
                 reference,
@@ -4193,7 +4246,7 @@ impl PackageDeclarations {
         }
         for (index, declaring, operation, location, reference) in &timed_operations {
             let anchor = lowering::AnchorInput {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
                 location,
                 reference,
@@ -4219,7 +4272,7 @@ impl PackageDeclarations {
             let declaration = root(Origin::TypeDeclaration {
                 name: time_source_origin(index),
             });
-            match lowering.clock_places(model.clocks(), source.model_node, &declaration) {
+            match lowering.clock_places(model.clocks(), source.model_node.clone(), &declaration) {
                 Ok(places) => model.set_place_nodes(places),
                 Err(refusal) => refusals.push(refusal),
             }
@@ -4228,7 +4281,7 @@ impl PackageDeclarations {
         let mut hyper_align: Vec<Vec<quire_exact::NodeKey>> = vec![Vec::new(); checked_hyper.len()];
         for (clause_index, _, declaring, operation, location) in &hyper_skipped {
             let anchor = lowering::AnchorInput {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
                 location,
                 reference: location,
@@ -4338,12 +4391,12 @@ impl PackageDeclarations {
                         kind: form.kind,
                         location,
                         name_location,
-                        context: form.context,
+                        context: form.context.clone(),
                         anchor: form
                             .operation
                             .as_ref()
                             .map(|operation| lowering::AnchorInput {
-                                declaring: operation.declaring,
+                                declaring: operation.declaring.clone(),
                                 operation: &operation.declaration,
                                 location,
                                 reference: location,
@@ -4377,12 +4430,12 @@ impl PackageDeclarations {
                     let input = lowering::AttemptInput {
                         location,
                         anchor: lowering::AnchorInput {
-                            declaring: bound.operation.declaring,
+                            declaring: bound.operation.declaring.clone(),
                             operation: &bound.operation.declaration,
                             location,
                             reference: location,
                         },
-                        frame_population: bound.frame_population,
+                        frame_population: bound.frame_population.clone(),
                     };
                     match lowering.protocol_attempt(&input) {
                         Ok(lowered) => *slot = Some(lowered),
@@ -4406,12 +4459,12 @@ impl PackageDeclarations {
                     let input = lowering::AttemptInput {
                         location,
                         anchor: lowering::AnchorInput {
-                            declaring: template.operation.declaring,
+                            declaring: template.operation.declaring.clone(),
                             operation: &template.operation.declaration,
                             location,
                             reference: location,
                         },
-                        frame_population: template.frame_population,
+                        frame_population: template.frame_population.clone(),
                     };
                     match lowering.protocol_attempt(&input) {
                         Ok(lowered) => *slot = Some(lowered),
@@ -4430,7 +4483,7 @@ impl PackageDeclarations {
             let anchors: Vec<lowering::AnchorInput<'_>> = operations
                 .iter()
                 .map(|(declaring, operation, location)| lowering::AnchorInput {
-                    declaring: *declaring,
+                    declaring: declaring.clone(),
                     operation,
                     location,
                     reference: location,
@@ -4460,7 +4513,7 @@ impl PackageDeclarations {
                     });
                     continue;
                 };
-                match model_root_key(model.selection(), self.identity) {
+                match model_root_key(model.selection()) {
                     Ok(key) => subjects.push((alias.clone(), key)),
                     Err(_) => refusals.push(CheckRefusal {
                         location: hyper_clause::lowering::hyper_location(
@@ -4503,8 +4556,8 @@ impl PackageDeclarations {
                         name: form.name.as_str(),
                         source_order: form.spans.declaration.start,
                         location,
-                        context: form.context,
-                        declaring: operation.declaring,
+                        context: form.context.clone(),
+                        declaring: operation.declaring.clone(),
                         operation: &operation.declaration,
                         has_execution_point: form.execution_point.is_some(),
                         lowered: lowered.as_ref()?,
@@ -4534,12 +4587,12 @@ impl PackageDeclarations {
                                     lowered_clauses
                                         .get(index)
                                         .and_then(Option::as_ref)
-                                        .map(|clause| clause.key)
+                                        .map(|clause| clause.key.clone())
                                 })
                                 .collect::<Option<Vec<_>>>()?;
                             Some(lowering::AttemptNodes {
                                 declaration: bound.declaration,
-                                anchor: lowered.as_ref()?.binding.anchor,
+                                anchor: lowered.as_ref()?.binding.anchor.clone(),
                                 contracts,
                             })
                         })
@@ -4558,7 +4611,7 @@ impl PackageDeclarations {
                         .filter_map(|(declaration, _)| {
                             Some(lowering::CompensationNodes {
                                 declaration,
-                                anchor: lowered.get(declaration)?.as_ref()?.binding.anchor,
+                                anchor: lowered.get(declaration)?.as_ref()?.binding.anchor.clone(),
                             })
                         })
                         .collect()
@@ -4720,7 +4773,7 @@ impl PackageDeclarations {
                     .iter()
                     .map(|(site, _)| timed_model::site_location(site))
                     .collect();
-                match lowering.timed_state(model.clocks(), *context, alternatives, &sites) {
+                match lowering.timed_state(model.clocks(), context.clone(), alternatives, &sites) {
                     Ok(key) => lowered.push((index, key)),
                     Err(refusal) => refusals.push(refusal),
                 }
@@ -4770,7 +4823,7 @@ impl PackageDeclarations {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
                     type_nodes.insert(
-                        node,
+                        node.clone(),
                         identity::CheckedTypeNode::Composite {
                             node,
                             declaration: composite.key(),
@@ -4787,6 +4840,11 @@ impl PackageDeclarations {
             if let Err(refusal) = lowering.enum_nodes(enum_binding) {
                 refusals.push(refusal);
             }
+        }
+        // FR-094 "Dimension equivalence": one node per admitted equivalence,
+        // whether or not a quantity type names either dimension.
+        if let Err(refusal) = lowering.dimension_equivalence_nodes(&self.dimension_equivalences) {
+            refusals.push(refusal);
         }
         // FR-375: each class catalog, lowered once its protocol clauses'
         // nodes exist; a node no other declaration located takes its one
@@ -4869,8 +4927,10 @@ impl PackageDeclarations {
             .ok_or_else(unlowered)?;
         // Each contract entry's own checked identity (FR-114 "Outputs"),
         // captured before `lowered_clauses` is consumed below.
-        let lowered_clause_keys: Vec<quire_exact::NodeKey> =
-            lowered_clauses.iter().map(|lowered| lowered.key).collect();
+        let lowered_clause_keys: Vec<quire_exact::NodeKey> = lowered_clauses
+            .iter()
+            .map(|lowered| lowered.key.clone())
+            .collect();
         // FR-115: each operation a `pre`/`post` clause or an attempt names,
         // with the frame node lowering bound it to (FR-105, FR-114).
         let clause_frames =
@@ -4906,7 +4966,7 @@ impl PackageDeclarations {
                 }]);
             };
             for pending in std::mem::take(&mut checked.pending_predicate_joins) {
-                let identity = identities.get(pending.function).copied().flatten();
+                let identity = identities.get(pending.function).cloned().flatten();
                 let Some(identity) = identity else {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
@@ -4968,18 +5028,19 @@ impl PackageDeclarations {
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
-                let ranged = claims
+                let ranged: Vec<_> = claims
                     .iter()
                     .filter(|claim| claim.subject == state_clause::ClaimSubject::Clause)
-                    .flat_map(|claim| claim.populations.iter().copied());
+                    .flat_map(|claim| claim.populations.iter().cloned())
+                    .collect();
                 if let Some(operation) = &form.operation {
                     contract_populations
                         .entry(state_clause::operation_reference(operation))
                         .or_default()
-                        .extend(ranged.clone());
+                        .extend(ranged.iter().cloned());
                 }
                 clause_populations
-                    .entry(lowered.key)
+                    .entry(lowered.key.clone())
                     .or_default()
                     .extend(ranged);
                 let keyed = state_clause::clause_records(
@@ -4999,7 +5060,8 @@ impl PackageDeclarations {
                     record,
                 } in keyed
                 {
-                    match requirements.entry(OccurrenceKey::new(claims::wire(node), origin)) {
+                    match requirements.entry(OccurrenceKey::new(claims::wire(node.clone()), origin))
+                    {
                         std::collections::btree_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }
@@ -5045,7 +5107,7 @@ impl PackageDeclarations {
                     continue;
                 };
                 let classified = protocol_memory::classify(protocol, checked, bound, |binding| {
-                    let declaring = binding.operation.declaring;
+                    let declaring = binding.operation.declaring.clone();
                     let arguments: Vec<(String, quire_exact::EffectiveId)> = binding
                         .operation
                         .declaration
@@ -5061,7 +5123,7 @@ impl PackageDeclarations {
                         &state_clauses,
                         &model,
                         footprint::Operation {
-                            receiver_type: binding.receiver,
+                            receiver_type: binding.receiver.clone(),
                             declaring,
                             operation: &binding.operation.declaration,
                             arguments: &arguments,
@@ -5172,7 +5234,8 @@ impl PackageDeclarations {
                     }]
                 })?;
             if let Some(checked) = terminals.iter_mut().find(|checked| checked.model == *model) {
-                checked.occurrence = Some(OccurrenceKey::new(claims::wire(*key), claim.clone()));
+                checked.occurrence =
+                    Some(OccurrenceKey::new(claims::wire(key.clone()), claim.clone()));
             }
         }
         let hyper_nodes = checked_hyper
@@ -5196,7 +5259,8 @@ impl PackageDeclarations {
                             )),
                         }]
                     })?;
-                Ok(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)))
+                Ok(checked
+                    .assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)))
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
         // FR-410 "Outputs": each state-graph claim carries its `claim`
@@ -5229,19 +5293,25 @@ impl PackageDeclarations {
                 .flat_map(references::body_objects)
                 .collect();
             let record = claims::RequirementRecord::unguarded(
-                checked.claim().requirements(claims::wire(lowered.key)),
+                checked
+                    .claim()
+                    .requirements(claims::wire(lowered.key.clone())),
                 ValueType::Boolean,
-                claims::wire(lowered.boolean),
+                claims::wire(lowered.boolean.clone()),
                 references::ModelReferences::new(objects, [], None),
             );
-            match requirements.entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone())) {
+            match requirements.entry(OccurrenceKey::new(
+                claims::wire(lowered.key.clone()),
+                claim.clone(),
+            )) {
                 std::collections::btree_map::Entry::Vacant(slot) => {
                     slot.insert(record);
                 }
                 std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
-            state_graph_nodes
-                .push(checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key), claim)));
+            state_graph_nodes.push(
+                checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)),
+            );
         }
         let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal
@@ -5289,15 +5359,17 @@ impl PackageDeclarations {
                     let extent = claimed
                         .populations()
                         .iter()
-                        .map(|domain| population_domain_key(&object_types, &object_nodes, *domain))
+                        .map(|domain| {
+                            population_domain_key(&object_types, &object_nodes, domain.clone())
+                        })
                         .collect::<Result<Vec<_>, _>>()
                         .and_then(|populations| {
                             claimed.requirements(
-                                claims::wire(lowered.key),
+                                claims::wire(lowered.key.clone()),
                                 &lowered
                                     .parameters
                                     .iter()
-                                    .copied()
+                                    .cloned()
                                     .map(claims::wire)
                                     .collect::<Vec<_>>(),
                                 &populations,
@@ -5321,12 +5393,13 @@ impl PackageDeclarations {
                             extent
                         },
                         ValueType::Boolean,
-                        claims::wire(lowered.boolean),
+                        claims::wire(lowered.boolean.clone()),
                         references::ModelReferences::new(objects.clone(), [], None),
                     );
-                    match requirements
-                        .entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone()))
-                    {
+                    match requirements.entry(OccurrenceKey::new(
+                        claims::wire(lowered.key.clone()),
+                        claim.clone(),
+                    )) {
                         std::collections::btree_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }
@@ -5385,7 +5458,7 @@ impl PackageDeclarations {
             if !bounded {
                 domains.insert(
                     qsl_foundation::bound::DomainKey::Node {
-                        node: claims::wire(lowered.key),
+                        node: claims::wire(lowered.key.clone()),
                         path: Vec::new(),
                     },
                     qsl_foundation::bound::DomainKind::InfiniteTrace,
@@ -5431,13 +5504,13 @@ impl PackageDeclarations {
                 }]
             };
             let emission = checked.v2_emission().map_err(|_| unkeyable())?;
-            let node = claims::wire(emission.identity);
+            let node = claims::wire(emission.identity.clone());
             let boolean = refinement_booleans
                 .get(checked.name())
-                .copied()
+                .cloned()
                 .ok_or_else(unkeyable)?;
             let occurrence = OccurrenceKey::new(
-                node,
+                node.clone(),
                 quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
             );
             // FR-430: a refinement whose concrete model is `time dense` is
@@ -5451,7 +5524,7 @@ impl PackageDeclarations {
             let record = claims::RequirementRecord::unguarded(
                 if dense { wanted.over_timed() } else { wanted },
                 ValueType::Boolean,
-                claims::wire(boolean),
+                claims::wire(boolean.clone()),
                 references::ModelReferences::new(Default::default(), [], None),
             );
             // Two refinements of one meaning share one node and so one
@@ -5532,20 +5605,24 @@ impl PackageDeclarations {
                 let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
                     bound
                         .frame_population
-                        .zip(lowered_attempt.population_object)
+                        .clone()
+                        .zip(lowered_attempt.population_object.clone())
                         .into_iter()
                         .collect();
                 let record = state_clause::frame_record(
                     &bound.operation,
-                    frame,
+                    frame.clone(),
                     &populations,
-                    lowered_attempt.boolean,
+                    lowered_attempt.boolean.clone(),
                     scope.types(),
                     limits.nodes(),
                     location,
                 )
                 .map_err(|refusal| vec![refusal])?;
-                match requirements.entry(OccurrenceKey::new(claims::wire(frame), frame_origin)) {
+                match requirements.entry(OccurrenceKey::new(
+                    claims::wire(frame.clone()),
+                    frame_origin,
+                )) {
                     std::collections::btree_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
@@ -5556,13 +5633,13 @@ impl PackageDeclarations {
                 let contracts = bound
                     .contracts
                     .iter()
-                    .map(|&index| lowered_clause_keys.get(index).copied())
+                    .map(|&index| lowered_clause_keys.get(index).cloned())
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(unkeyable)?;
                 attempts.push(protocol_clause::CheckedAttempt {
                     declaration: bound.declaration,
                     operation: bound.operation.clone(),
-                    receiver: bound.receiver,
+                    receiver: bound.receiver.clone(),
                     anchor,
                     frame,
                     contracts,
@@ -5595,20 +5672,24 @@ impl PackageDeclarations {
                 let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
                     template
                         .frame_population
-                        .zip(lowered_template.population_object)
+                        .clone()
+                        .zip(lowered_template.population_object.clone())
                         .into_iter()
                         .collect();
                 let record = state_clause::frame_record(
                     &template.operation,
-                    frame,
+                    frame.clone(),
                     &populations,
-                    lowered_template.boolean,
+                    lowered_template.boolean.clone(),
                     scope.types(),
                     limits.nodes(),
                     location,
                 )
                 .map_err(|refusal| vec![refusal])?;
-                match requirements.entry(OccurrenceKey::new(claims::wire(frame), frame_origin)) {
+                match requirements.entry(OccurrenceKey::new(
+                    claims::wire(frame.clone()),
+                    frame_origin,
+                )) {
                     std::collections::btree_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
@@ -5683,6 +5764,7 @@ impl PackageDeclarations {
         }
         let mut graph = CheckedGraph {
             source,
+            package_name,
             scope,
             functions,
             dispatch_tables,
@@ -5750,7 +5832,6 @@ impl PackageDeclarations {
             declaration_keys,
             attempt_spans: regions.attempt_spans,
             abstraction: None,
-            identity: self.identity,
         };
         // FR-304: the unit's `abstraction` declarations check to the one
         // relation the package carries.
@@ -5831,13 +5912,13 @@ fn finish_step_relations(
         } else {
             None
         };
-        let boolean = lowered.boolean;
+        let boolean = lowered.boolean.clone();
         let (node, code_roots) = lowering::finish_step_relation(
             lowered,
             &relation,
             abstraction,
             abstraction_node,
-            graph.identity,
+            graph.package_name(),
         )
         .map_err(|refusal| vec![refusal])?;
         let key = node.key();
@@ -5847,24 +5928,27 @@ fn finish_step_relations(
                 cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
             }]
         })?;
-        graph
-            .occurrences
-            .record(key, family::OccurrenceRole::Declaration, location.clone());
+        graph.occurrences.record(
+            key.clone(),
+            family::OccurrenceRole::Declaration,
+            location.clone(),
+        );
         let claim_origin =
             graph
                 .occurrences
-                .record(key, family::OccurrenceRole::Claim, location.clone());
-        let occurrence = OccurrenceKey::new(claims::wire(key), claim_origin);
+                .record(key.clone(), family::OccurrenceRole::Claim, location.clone());
+        let occurrence = OccurrenceKey::new(claims::wire(key.clone()), claim_origin);
         let requirements = relation
             .model_claim()
-            .requirements(claims::wire(key), &[], &[], &[])
+            .requirements(claims::wire(key.clone()), &[], &[], &[])
             .map_err(|_| {
                 vec![CheckRefusal {
                     location: root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             })?;
-        let record = claims::RequirementRecord::model_claim(requirements, claims::wire(boolean));
+        let record =
+            claims::RequirementRecord::model_claim(requirements, claims::wire(boolean.clone()));
         if graph
             .requirements
             .insert(occurrence.clone(), record)
@@ -5878,18 +5962,19 @@ fn finish_step_relations(
         if let Some(code_claim) =
             abstraction.and_then(|abstraction| relation.code_claim(abstraction))
         {
-            let roots: Vec<_> = code_roots.iter().copied().map(claims::wire).collect();
+            let roots: Vec<_> = code_roots.iter().cloned().map(claims::wire).collect();
             let code_requirements = code_claim.requirements(&roots).map_err(|_| {
                 vec![CheckRefusal {
                     location: root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                 }]
             })?;
-            let code_origin =
-                graph
-                    .occurrences
-                    .record(key, family::OccurrenceRole::Claim, location.clone());
-            let code_occurrence = OccurrenceKey::new(claims::wire(key), code_origin);
+            let code_origin = graph.occurrences.record(
+                key.clone(),
+                family::OccurrenceRole::Claim,
+                location.clone(),
+            );
+            let code_occurrence = OccurrenceKey::new(claims::wire(key.clone()), code_origin);
             let code_record = claims::RequirementRecord::unguarded(
                 code_requirements,
                 ValueType::Boolean,
@@ -6187,9 +6272,9 @@ fn object_node_of(
 ) -> Option<quire_exact::NodeKey> {
     object_types
         .iter()
-        .find_map(|(declaration, id)| (*id == object).then_some(declaration))
+        .find_map(|(declaration, id)| (id == &object).then_some(declaration))
         .and_then(|declaration| object_nodes.get(declaration))
-        .copied()
+        .cloned()
 }
 
 /// ADR-012 §15.7: the domain key of `domain` from the admitted models'
@@ -6201,12 +6286,13 @@ fn population_domain_key(
     object_nodes: &BTreeMap<quire_checked::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
 ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
-    let node = object_node_of(object_types, object_nodes, domain.object).ok_or_else(|| {
-        quire_semantic_value::catalog::InternalFault::new(
-            "check.population-domain",
-            "member-type-has-a-model-node",
-        )
-    })?;
+    let node =
+        object_node_of(object_types, object_nodes, domain.object.clone()).ok_or_else(|| {
+            quire_semantic_value::catalog::InternalFault::new(
+                "check.population-domain",
+                "member-type-has-a-model-node",
+            )
+        })?;
     state_clause::population_key(&domain, node)
 }
 
@@ -6255,7 +6341,7 @@ impl CheckedGraph {
     pub fn model_roots(&self) -> impl Iterator<Item = (&DomainPackageRef, quire_exact::NodeKey)> {
         self.model_selections
             .iter()
-            .zip(self.model_roots.iter().copied())
+            .zip(self.model_roots.iter().cloned())
     }
 
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -6269,6 +6355,12 @@ impl CheckedGraph {
     /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
         &self.source
+    }
+
+    /// The package manifest's top-level name this package was checked under:
+    /// the `package` of every structural node id of the graph.
+    pub fn package_name(&self) -> &str {
+        &self.package_name
     }
 
     /// The lowered nodes, for a test that re-keys one after the nodes bound
@@ -6622,7 +6714,7 @@ impl CheckedGraph {
             return Ok(None);
         };
         let types = self.scope.types();
-        let Some(attribute) = types.attribute(*context, field.as_str()) else {
+        let Some(attribute) = types.attribute(context.clone(), field.as_str()) else {
             return Ok(None);
         };
         let fault = |invariant| {
@@ -6632,7 +6724,7 @@ impl CheckedGraph {
         let node = self
             .object_types
             .iter()
-            .find_map(|(declaration, id)| (*id == declaring).then_some(declaration))
+            .find_map(|(declaration, id)| (id == &declaring).then_some(declaration))
             .and_then(|declaration| self.object_nodes.get(declaration))
             .ok_or_else(|| fault("declaring-type-has-a-model-node"))?;
         let mut names: Vec<&str> = types
@@ -6649,7 +6741,7 @@ impl CheckedGraph {
             .map_err(|_| fault("field-is-declared-by-its-owner"))?;
         let ordinal = u32::try_from(position).map_err(|_| fault("field-ordinal-past-u32"))?;
         Ok(Some(qsl_foundation::bound::DomainKey::Node {
-            node: claims::wire(*node),
+            node: claims::wire(node.clone()),
             path: vec![ordinal],
         }))
     }
@@ -6676,7 +6768,7 @@ impl CheckedGraph {
         else {
             return Ok(None);
         };
-        self.population_key(*domain).map(Some)
+        self.population_key(domain.clone()).map(Some)
     }
 
     /// The declaration of the object type `id`, when the package admits one.
@@ -6686,7 +6778,7 @@ impl CheckedGraph {
     ) -> Option<&quire_checked::key::DeclarationKey> {
         self.object_types
             .iter()
-            .find_map(|(key, known)| (*known == id).then_some(key))
+            .find_map(|(key, known)| (known == &id).then_some(key))
     }
 
     /// ADR-012 §15.7: the domain key of `domain`, a population a checked
@@ -6719,13 +6811,13 @@ impl CheckedGraph {
         &self,
         selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
-        let context = *self.owner_types.get(&selection.object)?;
+        let context = self.owner_types.get(&selection.object)?.clone();
         let crate::model::operation::OperationLookup::Declared {
             declaring,
             operation,
         } = self.scope.operations().resolve(
             self.scope.types(),
-            context,
+            context.clone(),
             selection.operation.as_str(),
         )
         else {
@@ -6751,7 +6843,7 @@ impl CheckedGraph {
         matches!(
             self.scope.operations().resolve(
                 self.scope.types(),
-                *context,
+                context.clone(),
                 selection.operation.as_str(),
             ),
             crate::model::operation::OperationLookup::Ambiguous(_)
@@ -6796,7 +6888,7 @@ impl CheckedGraph {
             .find(|frame| {
                 frame.operation.declaring == declaring && frame.operation.declaration.name() == name
             })
-            .map(|frame| frame.anchor)
+            .map(|frame| frame.anchor.clone())
     }
 
     /// FR-107: the checked state clause whose minted node identity is
@@ -6843,7 +6935,8 @@ impl CheckedGraph {
     /// unchanged by anything else in the package. `None` for an undeclared
     /// name.
     pub fn function_identity(&self, name: &str) -> Option<quire_exact::NodeKey> {
-        self.function(name).map(|(_, function)| function.identity)
+        self.function(name)
+            .map(|(_, function)| function.identity.clone())
     }
 
     /// FR-062-AC-2/FR-065-AC-3: the source location recorded for one
@@ -6897,22 +6990,16 @@ impl CheckedGraph {
         self.functions.with_identity(identity).map(function_state)
     }
 
-    /// ADR-015 D-5: the signature of the function callable by name whose
-    /// checked identity has the bytes of `node`, found among the identities
-    /// this graph holds and never by minting a `NodeKey` (ADR-013 O-04,
-    /// R-10), with its function index in this graph, which the imported
+    /// ADR-015 D-5: the signature of the function callable by name with
+    /// structural identity `node`, found among the identities this graph
+    /// holds, with its function index in this graph, which the imported
     /// call records so evaluation reads it by [`Self::function_state`].
     /// `None` when no such function is declared.
     pub(crate) fn imported_function(
         &self,
-        node: &qsl_foundation::digest::WireNodeId,
+        node: &quire_exact::NodeKey,
     ) -> Option<(usize, &Signature)> {
-        let position = self
-            .functions
-            .by_identity
-            .iter()
-            .find(|(identity, _)| identity.as_bytes() == node.as_bytes())
-            .map(|(_, position)| *position)?;
+        let position = *self.functions.by_identity.get(node)?;
         self.functions
             .get(position)
             .map(|(signature, _)| (position, signature))
@@ -6929,7 +7016,7 @@ impl CheckedGraph {
         self.function(name)
             .filter(|(signature, _)| signature.callable_by_name)
             .map(|(signature, function)| CallableFunction {
-                identity: function.identity,
+                identity: function.identity.clone(),
                 parameters: &signature.parameters,
                 result: &signature.result,
             })
@@ -6948,7 +7035,7 @@ impl CheckedGraph {
             .with_identity(identity)
             .filter(|(signature, _)| signature.callable_by_name)
             .map(|(signature, function)| CallableFunction {
-                identity: function.identity,
+                identity: function.identity.clone(),
                 parameters: &signature.parameters,
                 result: &signature.result,
             })
@@ -7227,6 +7314,7 @@ mod tests {
             functions,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7250,14 +7338,20 @@ mod tests {
         };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = NodeKey::from_digest([0x11; 32]);
+        let key = NodeKey::new(
+            "test-package".to_owned(),
+            vec![quire_exact::PathSegment::Text("Flagged-handle".to_owned())],
+            0,
+        )
+        .unwrap();
         let composite =
-            CompositeDeclaration::new(key, "Flagged", CompositeShape::Record(vec![field]));
+            CompositeDeclaration::new(key.clone(), "Flagged", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7270,14 +7364,14 @@ mod tests {
         assert_ne!(node, key, "the caller's handle is not a node id");
         let declared = graph
             .semantic_graph()
-            .node(node)
+            .node(node.clone())
             .expect("the checked type node's id is a graph node's key");
         assert_eq!(
             declared.declaration().map(|name| name[0].as_str()),
             Some("Flagged")
         );
         assert_eq!(graph.checked_type_node(node), Some(nodes[0]));
-        assert!(graph.checked_type_node(key).is_none());
+        assert!(graph.checked_type_node(key.clone()).is_none());
         assert_eq!(
             to_kernel_value_type(nodes[0]),
             quire_exact::ValueType::Composite(key)
@@ -7303,13 +7397,20 @@ mod tests {
         };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = NodeKey::from_digest([0x22; 32]);
-        let composite = CompositeDeclaration::new(key, "P::R", CompositeShape::Record(vec![field]));
+        let key = NodeKey::new(
+            "test-package".to_owned(),
+            vec![quire_exact::PathSegment::Text("P::R-handle".to_owned())],
+            0,
+        )
+        .unwrap();
+        let composite =
+            CompositeDeclaration::new(key.clone(), "P::R", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7352,60 +7453,52 @@ mod tests {
         use crate::value::enumeration::{
             AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
         };
-        use crate::value::semantic_node::{
-            NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
-        };
-        use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
+        use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
+        use quire_exact::{NodeKey, PathSegment};
         use serde_json::json;
 
-        let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-            authority: "agent-ix".to_owned(),
-            identity: "example-model".to_owned(),
-        })]);
+        let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject::new(
+            "agent-ix",
+            "example-model",
+            "example-model",
+        ))]);
         let declaration_json = json!({
             "version": "quire.enum-declaration-node/v1",
-            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
+            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model", "package_name": "example-model"},
             "qualified_declaration": ["Example", "Status"],
             "ordered": false,
             "members": ["Active", "Closed"],
         });
         let declaration_preimage = EnumDeclarationPreimage::from_json(declaration_json).unwrap();
-        let declaration_key = NodeKey::from_digest(
-            declaration_preimage
-                .digest(qsl_foundation::IdentityLimits::default())
-                .unwrap(),
-        );
-        let declaration = AdmittedEnumDeclaration::admit(
-            declaration_preimage,
-            declaration_key,
-            &owners,
-            qsl_foundation::IdentityLimits::default(),
+        let declaration_key = NodeKey::new(
+            "example-model".to_owned(),
+            vec![
+                PathSegment::Text("Example".to_owned()),
+                PathSegment::Text("Status".to_owned()),
+            ],
+            0,
         )
         .unwrap();
+        let declaration =
+            AdmittedEnumDeclaration::admit(declaration_preimage, declaration_key.clone(), &owners)
+                .unwrap();
 
         let members = ["Active", "Closed"]
             .into_iter()
             .map(|case| {
-                let member_json = json!({
-                    "version": "quire.enum-member-node/v1",
-                    "declaration_node_id": {
-                        "domain": NODE_KEY_DOMAIN,
-                        "digest": declaration.key().to_string(),
-                    },
-                    "case": case,
-                });
-                let member_preimage = EnumMemberPreimage::from_json(member_json).unwrap();
-                let member_key = NodeKey::from_digest(
-                    member_preimage
-                        .digest(qsl_foundation::IdentityLimits::default())
-                        .unwrap(),
-                );
+                let member_preimage = EnumMemberPreimage::new(declaration.key(), case).unwrap();
+                let member_key = NodeKey::new(
+                    "example-model".to_owned(),
+                    vec![
+                        PathSegment::Text("Example".to_owned()),
+                        PathSegment::Text("Status".to_owned()),
+                        PathSegment::Text(case.to_owned()),
+                    ],
+                    0,
+                )
+                .unwrap();
                 declaration
-                    .admit_member(
-                        &member_preimage,
-                        member_key,
-                        qsl_foundation::IdentityLimits::default(),
-                    )
+                    .admit_member(&member_preimage, member_key)
                     .unwrap()
             })
             .collect();
@@ -7419,6 +7512,7 @@ mod tests {
             enums,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -7432,16 +7526,18 @@ mod tests {
             declaration_key,
             "the checked type node's id must be the declaration's own existing key"
         );
-        assert_eq!(graph.checked_type_node(declaration_key), Some(nodes[0]));
+        assert_eq!(
+            graph.checked_type_node(declaration_key.clone()),
+            Some(nodes[0])
+        );
 
         let quire_exact::ValueType::Enum(ref shape) = to_kernel_value_type(nodes[0]) else {
             panic!("the sum form must convert to ValueType::Enum");
         };
         for case in ["Active", "Closed"] {
-            assert!(shape.contains(crate::value::enumeration::mint_variant_id(
-                declaration_key,
-                case
-            )));
+            assert!(shape.contains(
+                &crate::value::enumeration::mint_variant_id(declaration_key.clone(), case).unwrap()
+            ));
         }
     }
 
@@ -7506,11 +7602,11 @@ mod tests {
         let first = Origin::new(Role::new("expression"), 0);
         let second = Origin::new(Role::new("expression"), 1);
         let first_location = graph
-            .occurrence(call_identity, &first)
+            .occurrence(call_identity.clone(), &first)
             .expect("the first call site was recorded")
             .clone();
         let second_location = graph
-            .occurrence(call_identity, &second)
+            .occurrence(call_identity.clone(), &second)
             .expect("the second call site was recorded")
             .clone();
 
@@ -7522,7 +7618,7 @@ mod tests {
             "two distinct source occurrences must not collapse to one location"
         );
         let third = Origin::new(Role::new("expression"), 2);
-        assert_eq!(graph.occurrence(call_identity, &third), None);
+        assert_eq!(graph.occurrence(call_identity.clone(), &third), None);
 
         // Step 5 (adverse, R-05): renaming both callers changes their
         // *diagnostic* location text (each `Location` names its own
@@ -7539,11 +7635,11 @@ mod tests {
         .check(CheckingLimits::default())
         .expect("renaming the callers changes no checking outcome");
         assert!(
-            renamed.occurrence(call_identity, &first).is_some(),
+            renamed.occurrence(call_identity.clone(), &first).is_some(),
             "the same call identity and first occurrence key still resolve after renaming"
         );
         assert!(
-            renamed.occurrence(call_identity, &second).is_some(),
+            renamed.occurrence(call_identity.clone(), &second).is_some(),
             "the same call identity and second occurrence key still resolve after renaming"
         );
         assert_ne!(
@@ -7611,6 +7707,7 @@ mod tests {
             resolved_signatures,
             ..PackageDeclarations::new(
                 family::fixtures::fixture_source(),
+                "test-package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }

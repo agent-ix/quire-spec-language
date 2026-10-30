@@ -19,7 +19,6 @@ use qsl_analyze::zone_check::manifest as en6;
 use qsl_analyze::zone_check::{ZoneCheckItem, ZoneCheckLimits, ZoneCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{PopulationUniverse, TimedSystem, DEFAULT_MAX_CLOCKS};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::node_occurrence;
@@ -40,7 +39,7 @@ use qsl_route::request::{
 };
 use qsl_semantics::check::Capability;
 use qsl_semantics::family::{ClaimExtent, Requirements};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::CatalogCode;
 use std::collections::BTreeSet;
@@ -73,7 +72,7 @@ pub(crate) fn derived_items<S: Clone + Eq>(
     }
     for item in refinements {
         let abstract_subject = AbstractSubject {
-            package_id: PackageId::of_preimage(b"abstract"),
+            library: LibraryName::new("abstract").expect("a library name"),
             initial_states: item.abstract_initial.to_vec(),
         };
         request
@@ -169,7 +168,7 @@ fn root_claim(package: &CheckedPackage, identity: &str) -> OccurrenceKey {
         .model_roots()
         .find(|(selection, _)| selection.identity == identity)
         .unwrap_or_else(|| panic!("a model_root for {identity}"));
-    OccurrenceKey::generated(WireNodeId::from_digest(*key.as_bytes()))
+    OccurrenceKey::generated(key.clone())
 }
 
 /// The request over `subject` holding the item of its package's first
@@ -291,7 +290,6 @@ fn zone_run<'w>(
             item: certified,
         },
         certificate_limits: CertificateCheckLimits::default(),
-        package_id: PackageId::of_preimage(b"derived-timed").record(),
         replay: Box::new(|_| panic!("a proof has no counterexample to replay")),
     };
     derived_zone_item(derived, timed_item)

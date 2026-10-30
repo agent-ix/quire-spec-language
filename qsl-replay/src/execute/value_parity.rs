@@ -23,8 +23,8 @@ use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedRun, Supplied
 use super::argument::{self, Stopped};
 use super::{
     arguments, call_failure_to_replay_refusal, consumed, declaration_occurrence, function_target,
-    recompile, request_limits, select, value_parity_obligation, value_parity_preimage, wire_id,
-    Claim, ReplayRefusal, ScalarIdentityMismatch, Selected,
+    recompile, request_limits, select, value_parity_obligation, value_parity_preimage, Claim,
+    ReplayRefusal, ScalarIdentityMismatch, Selected,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::QualifiedName;
@@ -190,14 +190,14 @@ fn check_identity(
             "function-request-carries-an-occurrence-key",
         ))
     })?;
-    if *key != declaration_occurrence(wire_id(call.identity)) {
+    if *key != declaration_occurrence(call.identity.clone()) {
         return Err(ReplayRefusal::ClaimOccurrence {
             key: key.clone(),
             function: function.clone(),
         });
     }
     let mismatch = |cause| ReplayRefusal::ScalarIdentity(Box::new(cause));
-    let preimage = value_parity_preimage(package, call.identity, &call.parameters)
+    let preimage = value_parity_preimage(package, call.identity.clone(), &call.parameters)
         .map_err(ReplayRefusal::Fault)?;
     let recomputed = value_parity_obligation(&preimage)
         .map_err(|error| mismatch(ScalarIdentityMismatch::Encoding(error)))?;
@@ -221,7 +221,7 @@ fn settle(
     let request = ReplayRequest::decode(wire, replay_limits)?;
     let function = function_target(&request, ReplayEntry::ReplayValueParity)?;
     // FR-484: a value-parity claim has no proving run, so it carries no
-    // profile selection; lock rows bind through `package_id`, never read here.
+    // profile selection; lock rows are never read here.
     if !request.profile_selections().is_empty() {
         return Err(ReplayRefusal::UnusedProfileSelections {
             selections: request.profile_selections().to_vec(),
@@ -236,13 +236,7 @@ fn settle(
     let package = compiled.checked.package();
     let call = select(&compiled, function, Claim::ValueParity)?;
     check_identity(&request, package, &call, function)?;
-    let joined = arguments(
-        package,
-        &call,
-        request.source(),
-        request.obligation_identity(),
-        None,
-    )?;
+    let joined = arguments(&call, request.source(), request.obligation_identity(), None)?;
     let limits = request.accounting_limits();
     let mut run = SuppliedRun::new(request.supplied_limits(), Cancel::new())
         .map_err(ReplayRefusal::Supplied)?;

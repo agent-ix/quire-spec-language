@@ -57,6 +57,7 @@ pub mod contract_check;
 mod execute;
 mod hybrid;
 mod hybrid_replay;
+mod id_text;
 mod identity;
 mod limits;
 mod model_check;
@@ -140,7 +141,9 @@ pub use clause_evaluation::{
     evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
     ClauseObservation, ClauseRefusal,
 };
-pub use compile::{compile_package, compile_package_with_execution_points, CompiledPackage};
+pub use compile::{
+    compile_package, compile_package_with_execution_points, CompileUnit, CompiledPackage,
+};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,
@@ -170,13 +173,12 @@ pub use hybrid_replay::{
     TraceBefore, TraceFault, TraceJump, TraceRefusal, TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
-    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
-    RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ModelIdentity, ObligationIdentity, ProfileSelection,
+    QualifiedName, RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
-    ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
+    undefined_finding, ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
     ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep, Race,
     TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
@@ -248,7 +250,7 @@ pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, OtherBackendResult, StepBackendOutcome,
     StepSimulationSettlement, STEP_INDUCTION_DEPTH,
 };
-pub use model_check::subject_identity::{SubjectIdentity, SubjectIdentityRefusal};
+pub use model_check::subject_identity::SubjectIdentity;
 pub use monitor_plan::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
     MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
@@ -314,24 +316,24 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // The kernel identity and digest types a `ReplayRequestWire`'s or a frame
 // counterexample's members are built from -- `quire_exact`'s identifier,
 // occurrence origin and role, and value-accounting limits, and
-// `qsl_foundation`'s node id and digest-record vocabulary -- re-exported so
+// `qsl_foundation`'s digest-record vocabulary -- re-exported so
 // CG, which reaches QSL only through this crate (ADR-011 FB-05), builds one
 // without its own direct dependency on `quire-exact` or `qsl-foundation`.
 // These re-exports add constructors CG can call directly:
-// `DigestRecord::mint`, `WireNodeId::from_digest`/`from_hex`,
+// `DigestRecord::mint`, `NodeKey::new`,
 // `SourceIdentity::new`, `Identifier::new` and `Origin::new`/`Role::new`
 // among them, and with `Origin` the occurrence key's own
-// `OccurrenceKey::new(WireNodeId, Origin)` becomes callable. None is a
+// `OccurrenceKey::new(NodeKey, Origin)` becomes callable. None is a
 // T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
-pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not
 // export, so a consumer calls `run_with_requirements` and reads its result
 // without naming `qsl_replay::spine` or `qsl_semantics`.
-pub use qsl_semantics::library::PackageId;
+pub use qsl_semantics::library::LibraryName;
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
@@ -401,7 +403,7 @@ pub use witness::{
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
 // name and build them through this crate (ADR-011 FB-05). The node and
-// occurrence identities are built from the `WireNodeId`, `Origin` and
+// occurrence identities are built from the `NodeKey`, `Origin` and
 // `Identifier` re-exported above.
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
@@ -421,12 +423,52 @@ pub use qsl_semantics::model::observation::{
 };
 pub use witness::StateClauseCounterexample;
 
+/// A structural node identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_node(fill: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(fill.to_string())],
+        0,
+    )
+    .expect("a fixture node is admissible")
+}
+
+/// A parameter node's transcript name.
+#[cfg(test)]
+pub(crate) fn pn(node: &NodeKey) -> String {
+    crate::witness::parameter_name(node).expect("a node spells")
+}
+
+/// The admitted node identity of a checked node reference.
+#[cfg(test)]
+pub(crate) fn adm(reference: &qsl_semantics::check::NodeRef) -> NodeKey {
+    reference
+        .admitted()
+        .expect("a checked reference is admitted")
+        .clone()
+}
+
+/// A universe identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_universe(fill: u8) -> quire_exact::UniverseId {
+    quire_exact::UniverseId::new(fixture_node(fill))
+}
+
+/// An effective declaration identity for a test fixture, distinct per `fill`.
+#[cfg(test)]
+pub(crate) fn fixture_effective(fill: u8) -> quire_exact::EffectiveId {
+    quire_exact::EffectiveId::new(
+        None,
+        quire_exact::OriginalDeclarationKey::new("fixture", format!("node{fill}")),
+    )
+}
+
 #[cfg(test)]
 mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
@@ -457,10 +499,7 @@ mod redaction_tests {
         // It returns the full content through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
-            ),
+            package_name: "fixture".to_owned(),
             sources: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
@@ -473,10 +512,10 @@ mod redaction_tests {
                 crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
-                parameter: WireNodeId::from_digest([9; 32]),
+                parameter: crate::fixture_node(9),
                 value: WitnessValue::Integer(1),
             }]),
-            obligation_identity: [2; 32],
+            obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
             backend: "kani-backend-1".to_owned(),
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),

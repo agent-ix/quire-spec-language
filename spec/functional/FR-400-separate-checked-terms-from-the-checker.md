@@ -89,7 +89,7 @@ each.
   `IntegerDivisionOperator`, `OrderedKind`, `CollectionLoss`,
   `CollectionProperty`, `DispatchCandidate` and `check::ir::DispatchTable`,
   with the types a `NodeKind` names: `check::navigation::EndSide`,
-  `check::lowering::AuthoredBound`, `library::PackageNodeKey`, and `value::definition::AdmittedIntegerDivision`.
+  `check::lowering::AuthoredBound`, and `value::definition::AdmittedIntegerDivision`.
 - **Roots**: `CheckedExpression`, `CheckedGraph` (its evaluation-visible
   content, below), `FunctionState`, `CallableFunction`, the
   evaluation-visible part of `Signatures`, and a scope view.
@@ -318,7 +318,7 @@ SHALL construct a checked term:
    These are TC-244 row 1's `CheckedGraph` struct literal (`check/mod.rs`)
    and `Node` checks (`check/ir.rs`), the `OperationSelection` checks
    (`check/state_clause.rs` and `check/mod.rs`'s `resolve_operation`), and
-   the `PackageNodeKey` checks in `library`.
+   and the `ImportView` checks in `library`.
 
 No item SHALL be re-exported from its old `qsl_semantics::` path. Each
 change that moves an item repoints every caller at once (ADR-011 §7.2). The
@@ -331,9 +331,9 @@ move MAY land in steps, in this order: expression terms; clause records;
 | --- | --- | --- |
 | FR-400-AC-1 | `quire-checked`'s manifest names only `quire-semantic-value`, `quire-exact`, `quire-walk`, `quire-canonical`, `serde` and `thiserror` as normal dependencies, each with default features off, and names no QSL crate in any table. In QSL, TC-390's table check asserts that `qsl-semantics` is the only crate that enables `quire-checked`'s `construct` feature; a fixture manifest in which `qsl-eval` enables it fails the check, naming the crate and the table. | Test |
 | FR-400-AC-2 | The import-direction check reports, in the shipped (non-`#[cfg(test)]`) modules of `qsl-eval`, no `qsl_forms` item and no `qsl_semantics::check` item other than `ValueFunctionFamily` and `ProtocolClauseFamily`; `qsl-eval` names `WrongSnapshotCause` at `quire_semantic_value::call`. A fixture shipped `qsl-eval` module that imports `qsl_semantics::check::PackageDeclarations` is reported with its file and line. | Test |
-| FR-400-AC-3 | Run on the QSL tree, rule T12-G reports `passing`. A fixture call to a `quire_checked::construct` function from `qsl-eval`, `qsl-package` or `qsl-semantics`' `model` reports `failing` with the call site's file, line and module. FR-059's check reports an RT graph whose `quire-checked` dependency enables `construct` as one FB-05 violation, and the same graph without the feature as clean. | Test |
+| FR-400-AC-3 | Run on the QSL tree, rule T12-G reports `passing`. A fixture call to a `quire_checked::construct` function from `qsl-eval`, `qsl-package` or `qsl-semantics`' `model` reports `failing` with the call site's file, line and module, and so does an `AdmittedIntegerDivision` constructor call from `model`. FR-059's check reports an RT graph whose `quire-checked` dependency enables `construct` as one FB-05 violation, and the same graph without the feature as clean. | Test |
 | FR-400-AC-4 | In QSL, outside `quire-checked`, a struct literal of `CheckedGraph`, `CheckedBody`, `Node` or `OperationSelection` and a write to a `Node` field each fail to compile, and each paired `no_run` block naming the same type compiles. In `agent-ix/quire-eval`'s own gate, a doctest of `quire-checked` built with default features, where `construct` is off, shows that a call to a `construct` function fails to compile; QSL cannot run that clause, because feature unification turns `construct` on for its workspace. | Test |
-| FR-400-AC-5 | No `qsl_semantics::` path to a moved item resolves: `qsl_semantics::check::CheckedBody`, `qsl_semantics::check::CheckedGraph`, `qsl_semantics::model::key::DeclarationKey` each fail to compile from another crate, and no F or layer-2 path names a value that moved to SV. | Test |
+| FR-400-AC-5 | No `qsl_semantics::` path to a moved item resolves: `qsl_semantics::check::CheckedBody`, `qsl_semantics::check::CheckedGraph`, and `qsl_semantics::model::key::DeclarationKey` each fail to compile from another crate, and no F or layer-2 path names a value that moved to SV. | Test |
 | FR-400-AC-6 | **RETIRED (kernel identities are structural keys, not minted by hashing; there is no minting constructor to forbid).** | Test, retired |
 | FR-400-AC-7 | After the move, `qsl-eval`'s suite, the FR-262 tests and QSL's checked-package conformance invocation `QSPEC_DIR=<QSpec repository> cargo test -p qsl-package --lib checked_v2` pass without edits to their expected values. | Test |
 | FR-400-AC-8 | Before the first move step, a test over a fixture unit with a function, a dispatch table, a `model` selection, a state clause and a protocol compares, for equality between `origin/main` and the working tree: every node's `Location`, every `NodeKey` and `DeclarationKey`, every model-correspondence entry, the `SourceRegion` each `Location` resolves to, and the code, cause and locus of the FR-096 refusal record of a refusing evaluation of that unit. After each move step, the same test passes. | Test |

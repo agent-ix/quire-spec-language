@@ -160,7 +160,7 @@ fn document_with(
     let population = ident("calls");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
@@ -300,6 +300,7 @@ pub(crate) fn world_built(
     .expect("the kept operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -467,6 +468,7 @@ pub(crate) fn refining_from(
     .expect("the kept operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),

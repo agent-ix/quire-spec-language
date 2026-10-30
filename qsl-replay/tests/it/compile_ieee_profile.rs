@@ -21,9 +21,12 @@ const TO_R: &str = include_str!("../fixtures/ieee_float/to_rational.native");
 
 fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "ieee", "git", "1"),
-        "ieee.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "ieee", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "ieee.native",
+            bytes: text.as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),
@@ -154,10 +157,6 @@ fn strict_ir_reader_admits_the_genuine_float_source_packages() {
         assert_eq!(
             package.graph().nodes.len(),
             wire["semantic_graph"]["nodes"].as_array().unwrap().len()
-        );
-        assert_eq!(
-            package.package_id().digest.as_ref(),
-            compiled.package().package_id().hex()
         );
     }
 }
@@ -396,6 +395,7 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 .into_value();
             let checked = spine::check(
                 &parsed,
+                "fixture".to_owned(),
                 &models,
                 &DependencyInput::default(),
                 limits,

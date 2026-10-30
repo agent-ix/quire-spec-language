@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSpec FR-451: the body of a `correspondence`/`abstraction_relation` node,
-//! and the key it hashes to.
-//!
-//! The node's `node_id` is the SHA-256 of the canonical bytes of
-//! `{version: "quire.abstraction-relation-node/v1", body}`, a preimage of its
-//! own beside FR-322's application preimage and FR-092's structural one, so
-//! every binding of the body is part of the key. [`abstraction_node_key`] is
-//! the only function that mints it; [`node_key`](super::node_key) refuses an
-//! abstraction body.
+//! QSpec FR-451: the body of a `correspondence`/`abstraction_relation` node.
 //!
 //! The body's arrays are in FR-451's canonical order whatever order they were
 //! built in: [`AbstractionTerm::new`] sorts them. Each Rust path is the array
@@ -15,20 +7,13 @@
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::{ByteDigest, IdentityLimits};
-use quire_canonical::FixedShape;
 use quire_exact::NodeKey;
-use serde::Serialize;
 
-use super::{canonical_bytes, KeyedPreimage, NodeKeyRefusal, NodeRef};
-
-/// FR-451's preimage version.
-pub(crate) const ABSTRACTION_NODE_VERSION: &str = "quire.abstraction-relation-node/v1";
+use super::{NodeKeyRefusal, NodeRef};
 
 /// An abstraction relation node's body, `{term: "abstraction_relation",
 /// objects, populations, frames}` (QSpec FR-451).
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
-#[serde(tag = "term", rename = "abstraction_relation")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct AbstractionTerm {
     objects: Vec<ObjectEntry>,
     populations: Vec<PopulationEntry>,
@@ -36,23 +21,22 @@ pub struct AbstractionTerm {
 }
 
 /// One object binding: `{type, rust_type, fields}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ObjectEntry {
-    #[serde(rename = "type")]
     ty: NodeRef,
     rust_type: Vec<String>,
     fields: Vec<FieldEntry>,
 }
 
 /// One field binding: `{name, rust_field}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct FieldEntry {
     name: String,
     rust_field: String,
 }
 
 /// One population binding: `{population, collection}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PopulationEntry {
     population: NodeRef,
     collection: Vec<String>,
@@ -60,7 +44,7 @@ pub struct PopulationEntry {
 
 /// One operation binding: `{context, operation, function, receiver,
 /// parameters}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FrameEntry {
     context: NodeRef,
     operation: String,
@@ -70,13 +54,30 @@ pub struct FrameEntry {
 }
 
 /// One parameter binding: `{name, rust_parameter}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, FixedShape)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct ParameterEntry {
     name: String,
     rust_parameter: String,
 }
 
 impl ObjectEntry {
+    /// The object type node.
+    pub fn ty(&self) -> &NodeRef {
+        &self.ty
+    }
+
+    /// The Rust path of the type, one element per segment.
+    pub fn rust_type(&self) -> &[String] {
+        &self.rust_type
+    }
+
+    /// Each `(field, rust_field)` pair, in field-name order.
+    pub fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.fields
+            .iter()
+            .map(|field| (field.name.as_str(), field.rust_field.as_str()))
+    }
+
     /// The binding of the object type `ty`, with each `(field, rust_field)`
     /// pair; the pairs are sorted by field name as UTF-8 bytes.
     pub(crate) fn new(
@@ -86,7 +87,7 @@ impl ObjectEntry {
     ) -> Self {
         fields.sort();
         Self {
-            ty: NodeRef(ty),
+            ty: NodeRef::Admitted(ty),
             rust_type,
             fields: fields
                 .into_iter()
@@ -97,16 +98,53 @@ impl ObjectEntry {
 }
 
 impl PopulationEntry {
+    /// The population node.
+    pub fn population(&self) -> &NodeRef {
+        &self.population
+    }
+
+    /// The Rust path of the collection, one element per segment.
+    pub fn collection(&self) -> &[String] {
+        &self.collection
+    }
+
     /// The binding of the population `population` to `collection`.
     pub(crate) fn new(population: NodeKey, collection: Vec<String>) -> Self {
         Self {
-            population: NodeRef(population),
+            population: NodeRef::Admitted(population),
             collection,
         }
     }
 }
 
 impl FrameEntry {
+    /// The object type node the operation belongs to.
+    pub fn context(&self) -> &NodeRef {
+        &self.context
+    }
+
+    /// The operation name.
+    pub fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    /// The Rust path of the implementing function, one element per segment.
+    pub fn function(&self) -> &[String] {
+        &self.function
+    }
+
+    /// The Rust receiver name.
+    pub fn receiver(&self) -> &str {
+        &self.receiver
+    }
+
+    /// Each `(parameter, rust_parameter)` pair, in parameter-name order.
+    pub fn parameters(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter.rust_parameter.as_str()))
+    }
+
     /// The binding of `operation` of the object type `context`, with each
     /// `(parameter, rust_parameter)` pair; the pairs are sorted by parameter
     /// name as UTF-8 bytes.
@@ -119,7 +157,7 @@ impl FrameEntry {
     ) -> Self {
         parameters.sort();
         Self {
-            context: NodeRef(context),
+            context: NodeRef::Admitted(context),
             operation,
             function,
             receiver,
@@ -137,17 +175,17 @@ impl FrameEntry {
 impl AbstractionTerm {
     /// The body holding these entries, each array in FR-451's canonical
     /// order: `objects` by `type`, `populations` by `population`, and
-    /// `frames` by `context` and then `operation` as UTF-8 bytes, each digest
-    /// compared as unsigned bytes.
+    /// `frames` by `context` and then `operation` as UTF-8 bytes, each
+    /// structural node identity compared by its component order.
     pub(crate) fn new(
         mut objects: Vec<ObjectEntry>,
         mut populations: Vec<PopulationEntry>,
         mut frames: Vec<FrameEntry>,
     ) -> Self {
-        objects.sort_by_key(|entry| entry.ty);
-        populations.sort_by_key(|entry| entry.population);
+        objects.sort_by(|left, right| left.ty.cmp(&right.ty));
+        populations.sort_by(|left, right| left.population.cmp(&right.population));
         frames.sort_by(|left, right| {
-            (left.context, &left.operation).cmp(&(right.context, &right.operation))
+            (&left.context, &left.operation).cmp(&(&right.context, &right.operation))
         });
         Self {
             objects,
@@ -156,24 +194,58 @@ impl AbstractionTerm {
         }
     }
 
-    /// Every `type`, `population` and `context` target: the unique,
-    /// digest-ascending set a node's `dependencies` must equal.
-    pub fn targets(&self) -> BTreeSet<NodeKey> {
-        let objects = self.objects.iter().map(|entry| entry.ty.0);
-        let populations = self.populations.iter().map(|entry| entry.population.0);
-        let contexts = self.frames.iter().map(|entry| entry.context.0);
-        objects.chain(populations).chain(contexts).collect()
+    /// The object bindings, in canonical order.
+    pub fn objects(&self) -> &[ObjectEntry] {
+        &self.objects
     }
 
-    /// This body with every node key it names replaced by `map`'s image, the
-    /// arrays put back in canonical order.
-    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        let mut remap = |reference: NodeRef| NodeRef(map(reference.0));
+    /// The population bindings, in canonical order.
+    pub fn populations(&self) -> &[PopulationEntry] {
+        &self.populations
+    }
+
+    /// The operation bindings, in canonical order.
+    pub fn frames(&self) -> &[FrameEntry] {
+        &self.frames
+    }
+
+    /// Every admitted `type`, `population` and `context` target in structural
+    /// order. A pending target is a lowering fault and cannot be emitted.
+    pub fn targets(&self) -> Result<BTreeSet<NodeKey>, NodeKeyRefusal> {
+        self.objects
+            .iter()
+            .map(|entry| &entry.ty)
+            .chain(self.populations.iter().map(|entry| &entry.population))
+            .chain(self.frames.iter().map(|entry| &entry.context))
+            .map(|reference| {
+                reference
+                    .admitted()
+                    .cloned()
+                    .ok_or(NodeKeyRefusal::UnresolvedPlaceholder)
+            })
+            .collect()
+    }
+
+    /// Call `visit` with every node reference this term holds.
+    pub(crate) fn for_each_ref(&self, visit: &mut impl FnMut(&NodeRef)) {
+        for entry in &self.objects {
+            visit(&entry.ty);
+        }
+        for entry in &self.populations {
+            visit(&entry.population);
+        }
+        for entry in &self.frames {
+            visit(&entry.context);
+        }
+    }
+
+    /// Remap every node reference.
+    pub(crate) fn map_refs(&self, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> Self {
         let objects = self
             .objects
             .iter()
             .map(|entry| ObjectEntry {
-                ty: remap(entry.ty),
+                ty: map(&entry.ty),
                 ..entry.clone()
             })
             .collect();
@@ -181,7 +253,7 @@ impl AbstractionTerm {
             .populations
             .iter()
             .map(|entry| PopulationEntry {
-                population: remap(entry.population),
+                population: map(&entry.population),
                 ..entry.clone()
             })
             .collect();
@@ -189,48 +261,10 @@ impl AbstractionTerm {
             .frames
             .iter()
             .map(|entry| FrameEntry {
-                context: remap(entry.context),
+                context: map(&entry.context),
                 ..entry.clone()
             })
             .collect();
         Self::new(objects, populations, frames)
     }
 }
-
-// Test-only, matching `FrameTerm`'s pattern: QSpec's operation vectors carry
-// no abstraction body, so the conformance decoder never needs one.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for AbstractionTerm {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "abstraction bodies are not decoded from vectors",
-        ))
-    }
-}
-
-/// QSpec FR-451's preimage `{version, body}`.
-#[derive(Serialize, FixedShape)]
-struct AbstractionPreimage<'a> {
-    version: &'static str,
-    body: &'a AbstractionTerm,
-}
-
-/// The key of the abstraction relation node holding `body` (QSpec FR-451
-/// "node_id"): the SHA-256 of the canonical bytes of `{version, body}`.
-pub(crate) fn abstraction_node_key(
-    body: &AbstractionTerm,
-    identity: IdentityLimits,
-) -> Result<KeyedPreimage, NodeKeyRefusal> {
-    let preimage = canonical_bytes(
-        &AbstractionPreimage {
-            version: ABSTRACTION_NODE_VERSION,
-            body,
-        },
-        identity,
-    )?;
-    let key = NodeKey::from_digest(ByteDigest::of(&preimage).as_bytes());
-    Ok(KeyedPreimage { preimage, key })
-}
-
-#[cfg(test)]
-mod tests;

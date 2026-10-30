@@ -349,6 +349,7 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
     .expect("the operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_string(),
         built,
         models,
         Vec::new(),

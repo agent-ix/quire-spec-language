@@ -264,7 +264,7 @@ impl Subject {
         .collect();
         let document = json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
                 "dialect": "spec-bundle"},
             "package": {"identity": package, "version": "1.0.0",
@@ -462,7 +462,6 @@ impl World {
         replay_unit(
             &ReplayUnit {
                 identity: "units",
-                path: "units.native",
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

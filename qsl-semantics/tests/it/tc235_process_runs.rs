@@ -520,14 +520,15 @@ fn tc235_m20_run1_a_subtype_run_is_a_member_of_the_supertype_population() {
     let universe = view
         .object_universe_of(&key("Fulfilment"))
         .expect("Fulfilment has an object universe")
-        .identity();
+        .identity()
+        .expect("universe identity");
     assert_eq!(
         view.object_universe_of(&key("ExpressFulfilment"))
-            .map(|universe| universe.identity()),
-        Some(universe),
+            .map(|universe| universe.identity().expect("universe identity")),
+        Some(universe.clone()),
         "the subtype shares the supertype's universe"
     );
-    let express = view.type_identities()[&key("ExpressFulfilment")];
+    let express = view.type_identities()[&key("ExpressFulfilment")].clone();
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
@@ -570,8 +571,8 @@ fn tc235_m20_run1_a_subtype_run_is_a_member_of_the_supertype_population() {
     assert_eq!(
         selected.members().iter().collect::<Vec<_>>(),
         [&ReferenceKey {
-            universe,
-            type_identity: express,
+            universe: universe.clone(),
+            type_identity: express.clone(),
             object: "r3".to_owned(),
         }]
     );

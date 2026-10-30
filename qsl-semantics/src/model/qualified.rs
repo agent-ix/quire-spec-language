@@ -155,7 +155,7 @@ pub fn resolve_systems(
                 && entry.preimage.original == resolved.key
                 && entry.preimage.owner_effective_type == owner
         })
-        .map(|entry| entry.effective_id)
+        .map(|entry| entry.effective_id.clone())
         .ok_or_else(|| unresolved(name, 1, "the view holds no effective declaration for it"))?;
     Ok(ResolvedSystemsElement {
         kind: resolved.kind,
@@ -281,7 +281,7 @@ fn effective_owner(
     };
     view.type_identities()
         .get(source)
-        .copied()
+        .cloned()
         .map(Some)
         .ok_or_else(missing)
 }

@@ -79,7 +79,7 @@ pub(crate) fn the_refinement(world: &Refining) -> &CheckedRefinement {
 pub(crate) fn obligation(world: &Refining) -> ItemObligation<&'static str> {
     let unrecorded = || {
         qsl_foundation::source::provenance::OccurrenceKey::new(
-            qsl_foundation::digest::WireNodeId::from_digest([0; 32]),
+            crate::fixture_ids::node_key([0]),
             quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
         )
     };

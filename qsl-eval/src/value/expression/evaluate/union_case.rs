@@ -20,7 +20,7 @@ use quire_semantic_value::checking::CheckingLimits;
 /// The model object type `T` that `Holder` references; the kernel
 /// constructor is called here, in a test, not in the fixture.
 fn object_type() -> quire_exact::EffectiveId {
-    quire_exact::EffectiveId::from_digest([9; 32])
+    crate::test_ids::effective_id([9])
 }
 
 struct World {
@@ -31,6 +31,7 @@ struct World {
 fn world() -> World {
     let graph = PackageDeclarations::new(
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     )
     .check(CheckingLimits::default())
@@ -212,7 +213,7 @@ fn describe(value: &Value) -> (String, Vec<Integer>) {
         panic!("a union value, not {value:?}");
     };
     (
-        union.member().identifier().as_str().to_owned(),
+        union.member().identifier().to_owned(),
         union.payload().iter().map(integer).collect(),
     )
 }

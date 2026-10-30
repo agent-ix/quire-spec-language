@@ -643,7 +643,6 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
     assert_eq!(output.stdout, library.package().bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(wire["lock"].get("model_selections").is_none());
-    assert!(wire["identity_preimage"].get("model_selections").is_none());
 }
 
 /// FR-027-AC-9, FR-056-AC-9 (TC-442 step 4): the model fixture refuses at

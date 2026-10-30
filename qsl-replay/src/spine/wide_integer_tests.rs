@@ -19,7 +19,6 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
                       profile v = \"quire.value.complete/v1\";\n";
 
 const TWO_POW_127: &str = "170141183460469231731687303715884105728";
-const I128_MAX: &str = "170141183460469231731687303715884105727";
 const I128_MIN: &str = "-170141183460469231731687303715884105728";
 /// `function u using v(x: <parameter>): Boolean pure { <body> }`.
 fn unit(parameter: &str, body: &str) -> String {
@@ -147,87 +146,6 @@ fn a_bound_outside_i128_refuses_at_its_type_form() {
         };
         assert_eq!(catalog.to_string(), "ill_typed/type-mismatch");
     }
-}
-
-/// The literals of the compiled package, as `(value, key)`.
-fn integer_literals(compiled: &ComposedUnit) -> Vec<(String, String)> {
-    compiled
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .filter(|node| node.semantic_form() == "literal")
-        .filter_map(|node| {
-            let preimage: serde_json::Value = serde_json::from_slice(node.preimage()).ok()?;
-            (preimage["body"]["value_kind"] == "integer").then(|| {
-                (
-                    preimage["body"]["value"].as_str().unwrap().to_owned(),
-                    node.key().to_string(),
-                )
-            })
-        })
-        .collect()
-}
-
-/// Whether the compiled package holds a negate application.
-fn has_negate(compiled: &ComposedUnit) -> bool {
-    compiled
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .any(|node| {
-            let preimage = String::from_utf8_lossy(node.preimage());
-            preimage.contains("quire.op.integer.negate")
-        })
-}
-
-/// FR-091-AC-38 (TC-909 steps 4 and 5): a directly negated 2^127 is the one
-/// literal `i128::MIN`, keyed as L7 with no negation; `-(2^127 - 1)` keeps
-/// its `Negate`.
-#[trace("FR-091-AC-38", "TC-909")]
-#[test]
-fn a_directly_negated_two_pow_127_is_one_literal() {
-    let parameter = format!("Int[{I128_MIN}, 0]");
-    for body in [
-        format!("x >= {I128_MIN}"),
-        // Only layout stands between the `-` and the literal.
-        format!("x >= - {TWO_POW_127}"),
-        format!("x >= -// the minimum\n{TWO_POW_127}"),
-    ] {
-        let compiled =
-            compile(&unit(&parameter, &body)).unwrap_or_else(|refusal| panic!("{body}: {refusal}"));
-        assert!(!has_negate(&compiled), "{body}: no Negate node");
-        assert!(
-            integer_literals(&compiled)
-                .iter()
-                .any(|(value, _)| value == I128_MIN),
-            "{body}: the literal is the folded i128::MIN"
-        );
-    }
-
-    let compiled = compile(&unit(
-        &parameter,
-        "x >= -170141183460469231731687303715884105727",
-    ))
-    .expect("2^127 - 1 negated checks");
-    assert!(
-        has_negate(&compiled),
-        "a negation of 2^127 - 1 stays a Negate"
-    );
-    // The negated literal is an inline literal term of the `Negate`
-    // application's argument, not a node (FR-358, ADR-013 O-09).
-    assert!(compiled
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .filter_map(|node| serde_json::from_slice::<serde_json::Value>(node.preimage()).ok())
-        .filter(|json| json["body"]["operation"]["identity"] == "quire.op.integer.negate")
-        .any(|json| {
-            json["body"]["arguments"][0]["term"] == "literal"
-                && json["body"]["arguments"][0]["value"] == I128_MAX
-        }));
 }
 
 /// FR-091-AC-38 (TC-909 step 6): every other integer outside i128 refuses

@@ -372,16 +372,16 @@ mod tests {
         );
         let foreign = ModelQueryRefusal {
             cause: ModelRefusalCause::ForeignUniverse {
-                actual: vec![0xAB, 0xCD],
-                expected: quire_exact::UniverseId::from_digest([0x11; 32]),
+                actual: crate::test_ids::node_key([0xAB]),
+                expected: crate::test_ids::universe_id([0x11]),
             },
             detail: String::new(),
         };
         assert_eq!(
             keys(&foreign),
             [
-                ("required", "11".repeat(32)),
-                ("supplied", "abcd".to_owned())
+                ("required", crate::test_ids::node_key([0x11]).to_string()),
+                ("supplied", crate::test_ids::node_key([0xAB]).to_string())
             ]
         );
         // A cause with no key-table row has no fields, not an empty map,

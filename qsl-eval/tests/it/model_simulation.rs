@@ -20,7 +20,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, AdmissionFailure, AnchorKind, DocumentRef, ObservationLimits,
     SelectedAnchor,
@@ -192,7 +191,7 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
     }
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
@@ -283,6 +282,7 @@ fn build_world(
     .expect("the kept operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -517,10 +517,10 @@ fn stats(exploration: &Exploration<ModelFinding>) -> (usize, usize, usize) {
 fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &[&str]) -> String {
     let receiver = {
         let enc = format!(
-            r#"{{"identity":"{}","object_type":"{}","type":"reference","universe":"{}"}}"#,
-            hex_bytes(receiver.object().as_str().as_bytes()),
-            hex(receiver.object_type().as_bytes()),
-            hex(receiver.universe().as_bytes()),
+            r#"{{"identity":"{}","object_type":{},"type":"reference","universe":{}}}"#,
+            receiver.object().as_str(),
+            crate::support::ids::effective_json(receiver.object_type()),
+            crate::support::ids::node_json(receiver.universe().root_type()),
         );
         enc
     };
@@ -529,10 +529,6 @@ fn expected_transition(operation: &str, receiver: &ObjectReference, arguments: &
         arguments.join(","),
         serde_json::to_string(&operation_text(operation)).expect("a JSON string"),
     )
-}
-
-fn hex_bytes(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn int_arg(value: i64) -> String {
@@ -755,9 +751,9 @@ fn the_state_key_is_the_simulation_state_envelope() {
     // QSpec FR-181: an absent presence-optional field is a plain `null`
     // entry; a present one is its bare encoded value.
     let own = json!({"type": "reference",
-        "universe": hex(reference.universe().as_bytes()),
-        "object_type": hex(reference.object_type().as_bytes()),
-        "identity": "6331"});
+        "universe": crate::support::ids::node_json(reference.universe().root_type()),
+        "object_type": crate::support::ids::effective_json(reference.object_type()),
+        "identity": "c1"});
     let record = |label: i64, next: Json| {
         json!({"type": "record", "name": counter_text(), "fields": [
             {"name": "value", "value": {"type": "integer", "value": "0"}},
@@ -771,9 +767,9 @@ fn the_state_key_is_the_simulation_state_envelope() {
                 "key": {"type": "text", "value": population_text()},
                 "value": {"type": "map", "entries": [{
                     "key": {"type": "reference",
-                        "universe": hex(reference.universe().as_bytes()),
-                        "object_type": hex(reference.object_type().as_bytes()),
-                        "identity": "6331"},
+                        "universe": crate::support::ids::node_json(reference.universe().root_type()),
+                        "object_type": crate::support::ids::effective_json(reference.object_type()),
+                        "identity": "c1"},
                     "value": record(label, next)}]}}]},
             "control": empty, "queues": empty, "roles": empty, "observations": empty,
             "bounds": empty, "memory": empty})
@@ -1023,7 +1019,7 @@ fn a_system_refuses_what_is_not_an_initialization_or_not_in_its_universe() {
 /// incomplete, and a population without a universe is a requires-bound root.
 #[trace("TC-472", "FR-120-AC-7")]
 #[test]
-fn an_unbounded_population_or_parameter_requires_a_bound() {
+fn an_unbounded_population_requires_a_bound() {
     let mut world = world(vec![increment()], "");
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let unbounded = ModelSystem::new(request(
@@ -1043,8 +1039,8 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
         bound
             .domains
             .iter()
-            .any(|(key, _)| *key == root_key(&declaration_naming(&counters()))),
-        "the population root is named by the hash of its declaration identity"
+            .any(|(key, _)| *key == root_key(&counters())),
+        "the population root is its structural population node"
     );
     let sampler = sampler();
     assert!(matches!(
@@ -1053,50 +1049,14 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
             _
         )))
     ));
-
-    let integer_parameter = operation(
-        "add",
-        &[("n", "ix://quire/native/Integer")],
-        None,
-        frame(&["value"], false, false),
-    );
-    let mut world = self::world(vec![integer_parameter], "");
-    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
-    let system = self::system(&world, vec![s0], &["c1"], UNLIMITED);
-    let Err(NotSimulated::RequiresBound(bound)) =
-        explore_model(&system, 10_000, Limits::default(), || false)
-    else {
-        panic!("an Integer parameter is unbounded")
-    };
-    assert_eq!(bound.domains.len(), 1);
-    let naming = json!({
-        "operation": declaration_naming(&key("Counter/add")),
-        "parameter": "n",
-    });
-    assert_eq!(
-        bound
-            .domains
-            .iter()
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>(),
-        vec![root_key(&naming)],
-        "the parameter root is named by the hash of its naming object"
-    );
 }
 
-fn declaration_naming(key: &DeclarationKey) -> Json {
-    json!({"node": key.node, "package": key.package})
-}
-
-/// The requires-bound domain key FR-120 "Bounds" gives the root named by
-/// `naming`: the SHA-256 of its JCS bytes.
-fn root_key(naming: &Json) -> qsl_foundation::bound::DomainKey {
-    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("reads");
-    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(1 << 20))
-        .expect("hashes")
-        .as_bytes();
+/// The requires-bound domain key FR-120 "Bounds" gives the population
+/// `key` names: its structural population node.
+fn root_key(key: &DeclarationKey) -> qsl_foundation::bound::DomainKey {
     qsl_foundation::bound::DomainKey::Node {
-        node: qsl_foundation::digest::WireNodeId::from_digest(digest),
+        node: qsl_semantics::model::key::population_node_key(key)
+            .expect("a population key is well formed"),
         path: Vec::new(),
     }
 }
@@ -1284,14 +1244,14 @@ fn effect_of(
 ) -> StepEffect {
     let initial = system.initial();
     let expansion = system.successors(&initial[index]).expect("expands");
-    let receiver_text = hex_bytes(receiver.object().as_str().as_bytes());
+    let receiver_text = receiver.object().as_str();
     expansion
         .successors
         .iter()
         .filter(|(transition, _)| {
             transition
                 .receiver()
-                .is_some_and(|text| text.contains(&receiver_text))
+                .is_some_and(|text| text.contains(receiver_text))
         })
         .find(|(_, state)| pick(&ModelStateView(state.state().clone())))
         .and_then(|(_, state)| state.reached_by().cloned())

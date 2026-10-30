@@ -40,12 +40,7 @@ fn some_emits_an_identity_bound_option_value_and_reads_back() {
     assert!(nodes(&wire)
         .iter()
         .all(|node| { node["body"]["operation"]["identity"] != "quire.op.option.some" }));
-    let Read::Verified { package, .. } = read_back(&emission) else {
+    let Read::Verified { .. } = read_back(&emission) else {
         panic!("FR-264 admits the emitted package");
     };
-    assert_eq!(
-        package.package_id(),
-        emission.package.package_id(),
-        "the reader-derived package identity equals the emitted identity"
-    );
 }

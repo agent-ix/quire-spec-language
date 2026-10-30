@@ -31,16 +31,11 @@ use std::{
 use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm, TypeFormHead};
 use qsl_foundation::{source::provenance::SourceRegion, Span};
 use qsl_package::{read_import_view, AdmittedPackages, CheckedPackage, V2ReadLimits};
-use qsl_semantics::{
-    check::PackageDeclarations,
-    library::{LibraryName, PackageId},
-};
+use qsl_semantics::{check::PackageDeclarations, library::LibraryName};
 use quire_contract_model::{
-    derive_application_node_id, derive_structural_candidates, encode_checked_package_v2,
-    ApplicationNodeDraft, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedPackageV2ReadResult,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    encode_checked_package_v2, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
+    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageSourceCorrespondenceRef,
+    CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticGraphV2, CheckedSemanticNodeV2,
     CheckedTerm,
 };
 use quire_semantic_value::checking::CheckingLimits;
@@ -70,7 +65,7 @@ pub enum Variant {
     ChangedMax,
     /// Contract IR TC-453 step 5: [`Self::SameTypeAndOtherType`] with the `Gadget[0]`
     /// parameter's `semantic_type` retargeted to the `Gadget[5]` population
-    /// node, identities and `package_id` rederived, source rows kept.
+    /// node, source rows kept.
     RetargetedParameter,
 }
 
@@ -187,15 +182,6 @@ pub enum RetargetRefusal {
         /// How many parameters name it.
         found: usize,
     },
-    /// IR refused to derive a node identity.
-    #[error("IR's identity derivation refused: {0}")]
-    Derivation(String),
-    /// Re-keying renamed nodes without settling.
-    #[error("re-keying did not settle within {renames} renames")]
-    Unsettled {
-        /// The rename budget that ran out.
-        renames: usize,
-    },
     /// The canonical encoder refused.
     #[error("canonical encoding refused: {0}")]
     Encode(String),
@@ -267,25 +253,23 @@ fn assemble(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .map_err(|refusal| stage("I1")(format!("{refusal:?}")))?;
-    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    PackageDeclarations::assemble(raw, "spine-model".into(), unit, models, Vec::new())
         .map_err(|refusal| stage("assemble")(format!("{refusal:?}")))
 }
 
-/// One case: the v2 bytes the emitter wrote for a bound list and the
-/// `package_id` IR's reader admitted them at.
+/// One case: the v2 bytes the emitter wrote for a bound list and the node
+/// kinds IR's reader decoded from them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fixture {
     /// The `quire.checked-package/v2` bytes.
     pub bytes: Vec<u8>,
-    /// The `package_id` the checked-package v2 reader admitted `bytes` at.
-    pub package_id: PackageId,
     /// Each graph node's family and form as IR's reader decoded it.
     pub node_kinds: Vec<CheckedNodeKind>,
 }
 
 /// `bounds`' package through the v2 emitter, with nothing omitted, and read
 /// back through QSL's I2 read, which runs IR's checked-package v2 reader and
-/// refuses unless it admits the bytes at the emitted `package_id`.
+/// refuses unless it admits the bytes.
 pub fn fixture(bounds: &[u64]) -> Result<Fixture, Error> {
     let bindings: Vec<Binding> = bounds
         .iter()
@@ -348,18 +332,17 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
         .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let mut admitted = AdmittedPackages::default();
-    let view = read_import_view(
+    read_import_view(
         package,
         &emission,
-        library,
+        library.clone(),
         &domain_packages,
         &mut admitted,
         V2ReadLimits::default(),
     )
     .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
-    let package_id = view.package();
     let admitted = admitted
-        .package(&package_id)
+        .package(&library)
         .ok_or_else(|| Error::Admission("the read recorded no admitted package".to_owned()))?
         .clone();
     let mut evidence = emission.evidence().clone();
@@ -371,7 +354,6 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     Ok(EmittedRead {
         fixture: Fixture {
             bytes: emission.package().bytes().to_vec(),
-            package_id,
             node_kinds: admitted.node_kinds().to_vec(),
         },
         admitted,
@@ -400,13 +382,9 @@ fn population_max(node: &CheckedSemanticNodeV2) -> Option<u64> {
     value.as_str()?.parse().ok()
 }
 
-/// The ceiling on canonical bytes and visits of the identity derivations.
-const DERIVATION_BYTES: u64 = u64::MAX;
-const DERIVATION_WORK: u64 = u64::MAX;
-
 /// `base` with the `semantic_type` of the parameter typed by the population
 /// of the first same-type binding pointed at the population of the second,
-/// every identity that change moves rederived, and the result read back by
+/// and the result read back by
 /// IR's reader under `evidence`.
 fn retarget(
     base: &CheckedPackageV2,
@@ -444,44 +422,17 @@ fn retarget(
     };
     parameter.semantic_type = to;
 
-    let mut source_map = base.source_map().to_vec();
-    rekey(&mut nodes, &mut source_map).map_err(refuse)?;
-    nodes.sort_by(|left, right| left.node_id.digest.cmp(&right.node_id.digest));
-    source_map.sort_by(|left, right| left.node_id.digest.cmp(&right.node_id.digest));
-
     let limits = quire_canonical::Limits::new(u64::MAX);
     let graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
     };
-    let base_preimage = base.identity_preimage();
-    let preimage = CheckedPackageIdentityPreimageRefV2 {
-        version: base_preimage.version.as_ref(),
-        edition: &base_preimage.edition,
-        profile_selections: &base_preimage.profile_selections,
-        definition_selections: &base_preimage.definition_selections,
-        required_features: &base_preimage.required_features,
-        dependency_selections: &base_preimage.dependency_selections,
-        identity_projection: &graph.nodes,
-    };
-    let digest = quire_canonical::sha256(&preimage, limits)
-        .map_err(|error| refuse(RetargetRefusal::Encode(error.to_string())))?;
-    let package_id = CheckedSemanticId {
-        digest: digest
-            .as_bytes()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-            .into(),
-        ..base.package_id().clone()
-    };
     let bytes = encode_checked_package_v2(
-        &preimage,
-        &package_id,
+        base.name(),
         base.lock(),
         &graph,
         CheckedPackageSourceCorrespondenceRef {
-            source_map: &source_map,
+            source_map: base.source_map(),
             refinement_step_rows: base.refinement_step_rows(),
         },
         base.capability_report(),
@@ -495,90 +446,6 @@ fn retarget(
             package: *package,
         }),
         other => Err(Error::Admission(format!("{other:?}"))),
-    }
-}
-
-/// Renames every node whose retained key is not the one IR derives for it to
-/// the derived key, wherever the old key is named, until none is left.
-fn rekey(
-    nodes: &mut [CheckedSemanticNodeV2],
-    source_map: &mut [CheckedSourceMapEntry],
-) -> Result<(), RetargetRefusal> {
-    let budget = nodes.len().saturating_mul(nodes.len()).saturating_add(1);
-    for _ in 0..budget {
-        let derived = derived_keys(nodes)?;
-        let stale = nodes
-            .iter()
-            .zip(derived)
-            .find(|(node, derived)| *derived != *node.node_id.digest);
-        let Some((node, new)) = stale else {
-            return Ok(());
-        };
-        let old = node.node_id.clone();
-        rename(nodes, source_map, &old, &new);
-    }
-    Err(RetargetRefusal::Unsettled { renames: budget })
-}
-
-/// The key IR derives for each of `nodes`, in order: structural candidates
-/// for the structural families, the application derivation for the rest.
-fn derived_keys(nodes: &[CheckedSemanticNodeV2]) -> Result<Vec<String>, RetargetRefusal> {
-    let derivation =
-        |error: &dyn std::fmt::Debug| RetargetRefusal::Derivation(format!("{error:?}"));
-    let structural = derive_structural_candidates(nodes, DERIVATION_BYTES, DERIVATION_WORK)
-        .map_err(|error| derivation(&error))?;
-    let mut derived: Vec<Option<String>> = vec![None; nodes.len()];
-    for candidate in structural.nodes() {
-        let slot = usize::try_from(candidate.position())
-            .ok()
-            .and_then(|position| derived.get_mut(position));
-        if let Some(slot) = slot {
-            *slot = Some(candidate.candidate_node_id().digest.to_string());
-        }
-    }
-    nodes
-        .iter()
-        .zip(derived)
-        .map(|(node, structural)| match structural {
-            Some(digest) => Ok(digest),
-            None => {
-                derive_application_node_id(ApplicationNodeDraft::new(node), None, DERIVATION_BYTES)
-                    .map(|candidate| candidate.candidate_node_id().digest.to_string())
-                    .map_err(|error| derivation(&error))
-            }
-        })
-        .collect()
-}
-
-/// Names `new` for `old` in every node's identity, type, dependencies and
-/// body, and in the source map; dependencies are kept in digest order.
-fn rename(
-    nodes: &mut [CheckedSemanticNodeV2],
-    source_map: &mut [CheckedSourceMapEntry],
-    old: &CheckedNodeId,
-    new: &str,
-) {
-    let renamed = |id: &mut CheckedNodeId| {
-        if *id == *old {
-            id.digest = new.into();
-        }
-    };
-    for node in nodes {
-        renamed(&mut node.node_id);
-        renamed(&mut node.semantic_type);
-        node.dependencies.iter_mut().for_each(renamed);
-        node.dependencies
-            .sort_by(|left, right| left.digest.cmp(&right.digest));
-        node.body.replace_node_id(
-            old,
-            &CheckedNodeId {
-                domain: old.domain.clone(),
-                digest: new.into(),
-            },
-        );
-    }
-    for row in source_map {
-        renamed(&mut row.node_id);
     }
 }
 
@@ -824,7 +691,7 @@ mod tests {
     }
 
     /// Contract IR TC-453 step 3: the regenerated package differs only in one source
-    /// maximum, and the node and extent that maximum names change with it.
+    /// maximum, and the extent that maximum names changes with it.
     #[trace("FR-093-AC-19", "TC-416")]
     #[test]
     fn a_changed_maximum_regenerates_an_admitted_package() {
@@ -832,7 +699,6 @@ mod tests {
         let changed = variant_fixture(Variant::ChangedMax).unwrap();
         assert_eq!(maxima(&changed.package), [0, 3, 6]);
         assert_ne!(base.bytes, changed.bytes);
-        assert_ne!(base.package.package_id(), changed.package.package_id());
         // The zero and the other-type bindings keep their nodes.
         for max in [0, 3] {
             assert_eq!(
@@ -841,17 +707,16 @@ mod tests {
             );
         }
         let moved = population_with_max(&changed.package, 6);
-        assert_ne!(moved.node_id, population_with_max(&base.package, 5).node_id);
         assert!(has_type_row(&changed.package, &moved.node_id));
     }
 
     /// Contract IR TC-453 step 5: one parameter's `semantic_type` is retargeted from the
-    /// first population node to the second; identities are rederived, the
+    /// first population node to the second; the
     /// original population nodes and source rows are kept, and IR's reader
     /// admits the package.
     #[trace("FR-093-AC-19", "TC-416")]
     #[test]
-    fn a_retargeted_parameter_is_rederived_and_admitted() {
+    fn a_retargeted_parameter_is_admitted() {
         let base = variant_fixture(Variant::SameTypeAndOtherType).unwrap();
         let retargeted = variant_fixture(Variant::RetargetedParameter).unwrap();
         let (base, retargeted) = (&base.package, &retargeted.package);
@@ -881,7 +746,6 @@ mod tests {
             ),
             (0, 2)
         );
-        assert_ne!(base.package_id(), retargeted.package_id());
         assert_eq!(base.graph().nodes.len(), retargeted.graph().nodes.len());
     }
 

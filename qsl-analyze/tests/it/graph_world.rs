@@ -16,16 +16,14 @@ use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
-use qsl_foundation::digest::DigestDomain;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     GraphEvidence, GraphEvidenceEnvelope, GraphReplayResult, ModelCheckLimits, ModelPath,
-    ModelTraceSubject, ObligationIdentity, ReplayLimits, ReplayRequestWire, ReplayResult,
-    ReplaySource, RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
+    ModelTraceSubject, ReplayLimits, ReplayRequestWire, ReplayResult, ReplaySource,
+    RequestTargetWire, StateEnvironment, WitnessPath, WitnessSource,
 };
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::observation::{
@@ -188,7 +186,7 @@ impl Model {
         let population = self.ident(self.population);
         json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
                 "dialect": "spec-bundle"},
             "package": {"identity": self.package, "version": "1.0.0",
@@ -268,6 +266,7 @@ impl World {
         .expect("the operation clauses parse");
         let mut declarations = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -363,14 +362,6 @@ impl World {
         }
     }
 
-    /// The `package_id` of the world's checked package, as FR-322 emits it.
-    pub(crate) fn package_id(&self) -> PackageId {
-        qsl_package::emit_checked(&self.package)
-            .expect("the package emits")
-            .package()
-            .package_id()
-    }
-
     /// Recompile and replay one state-graph witness through FR-170.
     pub(crate) fn replay_witness(
         &self,
@@ -386,7 +377,6 @@ impl World {
             "git".to_owned(),
             "1".to_owned(),
         );
-        let package_id = self.package_id().record();
         let byte_provision = vec![(
             "agent-ix".to_owned(),
             "graph".to_owned(),
@@ -394,15 +384,14 @@ impl World {
         )];
         let mut documents = vec![self.document.clone()];
         documents.extend(self.snapshots.values().cloned());
-        let obligation = [3; 32];
+        let obligation = crate::fixture_ids::obligation_identity();
         let occurrence = claim
             .occurrence()
             .expect("a checked claim has an occurrence");
         let envelope = GraphEvidenceEnvelope::new(
-            ObligationIdentity::from_digest(obligation),
+            obligation.clone(),
             occurrence.clone(),
-            occurrence.node(),
-            package_id,
+            occurrence.node().clone(),
             Vec::new(),
             UNLIMITED,
             Vec::new(),
@@ -413,11 +402,8 @@ impl World {
             },
         );
         let wire = ReplayRequestWire {
+            package_name: "package".to_owned(),
             profile_selections: Vec::new(),
-            package_id: (
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                package_id.hex(),
-            ),
             sources: vec![source_wire],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::default(),

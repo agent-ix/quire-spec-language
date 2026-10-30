@@ -696,6 +696,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
             qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
             b"",
         ),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
         qsl_foundation::IdentityLimits::default(),
     )
@@ -771,6 +772,7 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
                 qsl_foundation::SourceIdentity::new("agent-ix", "qsl-semantics", "git", "1"),
                 b"",
             ),
+            crate::TEST_PACKAGE_NAME.to_owned(),
             &mut Meter::new(ModelNormalizationLimits {
                 family_steps,
                 ..ModelNormalizationLimits::UNLIMITED

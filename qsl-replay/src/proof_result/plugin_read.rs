@@ -10,6 +10,7 @@
 //! payload members each spelling defines, and the spellings refused for a
 //! plugin. Those are the [`BASIS`] and [`CAUSE`] tables below.
 
+use quire_exact::NodeKey;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
@@ -23,9 +24,8 @@ use super::{
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::outcome::ItemLabel;
 use crate::witness::{CanonicalAssignment, WitnessValue};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::ReductionKind;
-use quire_exact::{Integer, Rational, NODE_KEY_DOMAIN};
+use quire_exact::{Integer, Rational};
 use quire_semantic_value::fairness::PropertyForm;
 
 mod trace;
@@ -764,24 +764,12 @@ fn read_instance_limit(
     }
 }
 
-/// A checked-package `NodeId`: exactly `domain`, the node-key domain, and
-/// `digest`, 64 lowercase hex digits.
-fn read_node(value: &Value, pointer: String) -> Result<WireNodeId, PluginResultRefusal> {
-    let Value::Object(members) = value else {
+/// A structural node identity: exactly `package`, `path` and `ordinal`.
+fn read_node(value: &Value, pointer: String) -> Result<NodeKey, PluginResultRefusal> {
+    let Value::Object(_) = value else {
         return Err(wrong_kind(pointer));
     };
-    let domain = member(members, "domain", &pointer)?;
-    let digest = member(members, "digest", &pointer)?;
-    if let Some(name) = first_undefined(members, &["digest", "domain"]) {
-        return Err(unknown_member(child(&pointer, name)));
-    }
-    if domain.as_str() != Some(NODE_KEY_DOMAIN) {
-        return Err(malformed(domain.is_string(), child(&pointer, "domain")));
-    }
-    match digest.as_str().and_then(WireNodeId::from_hex) {
-        Some(node) => Ok(node),
-        None => Err(malformed(digest.is_string(), child(&pointer, "digest"))),
-    }
+    qsl_foundation::node_wire::node_key_from_json(value).map_err(|_| malformed(true, pointer))
 }
 
 /// An FR-331 `ResultValue`.
@@ -803,7 +791,13 @@ fn read_result(value: &Value, pointer: String) -> Result<ItemLabel, PluginResult
 
 /// An FR-331 `StateKey`: 64 lowercase hex digits.
 fn check_state_key(value: &Value, pointer: String) -> Result<(), PluginResultRefusal> {
-    match value.as_str().and_then(WireNodeId::from_hex) {
+    let digits = value.as_str().filter(|text| {
+        text.len() == 64
+            && text
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    });
+    match digits {
         Some(_) => Ok(()),
         None => Err(malformed(value.is_string(), pointer)),
     }
@@ -968,10 +962,8 @@ fn read_assignment(
     }
     let parameter_pointer = child(pointer, "parameter");
     let text = member(members, "parameter", pointer)?;
-    let parameter = text
-        .as_str()
-        .and_then(WireNodeId::from_hex)
-        .ok_or_else(|| malformed(text.is_string(), parameter_pointer))?;
+    let parameter = qsl_foundation::node_wire::node_key_from_json(text)
+        .map_err(|_| malformed(text.is_object(), parameter_pointer))?;
     let value = WitnessValue::from_wire_json(member(members, "value", pointer)?)
         .map_err(|_| invalid(child(pointer, "value")))?;
     Ok(CanonicalAssignment { parameter, value })

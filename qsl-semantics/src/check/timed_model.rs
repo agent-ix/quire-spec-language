@@ -105,7 +105,7 @@ impl ClockField {
 
     /// The object type that declares the place's field.
     pub fn owner(&self) -> EffectiveId {
-        self.owner
+        self.owner.clone()
     }
 
     /// The declaration key of the object's field the place is under, the
@@ -783,19 +783,19 @@ fn presence_places(clocks: &[ClockField]) -> Vec<PresencePlace> {
         .filter(|clock| clock.guarded)
         .filter_map(|clock| match clock.path.as_slice() {
             [PlaceStep::Field(field)] => Some(PresencePlace {
-                owner: clock.owner,
+                owner: clock.owner.clone(),
                 field: field.clone(),
                 case: None,
                 slot: false,
             }),
             [PlaceStep::Field(field), PlaceStep::Union(case)] => Some(PresencePlace {
-                owner: clock.owner,
+                owner: clock.owner.clone(),
                 field: field.clone(),
                 case: Some(case.clone()),
                 slot: false,
             }),
             [PlaceStep::Field(field), PlaceStep::Slot(_)] if clock.bit => Some(PresencePlace {
-                owner: clock.owner,
+                owner: clock.owner.clone(),
                 field: field.clone(),
                 case: None,
                 slot: true,
@@ -836,7 +836,7 @@ impl TimeInvariant {
 
     /// The object type `self` ranges over.
     pub fn context(&self) -> EffectiveId {
-        self.context
+        self.context.clone()
     }
 
     /// The `when` predicate's alternatives: one with no presences for a
@@ -1127,10 +1127,10 @@ impl TimedModel {
     /// The places counted are those of `owner` and of every type it
     /// conforms to. `None` when `owner` is no object type of the model or
     /// the sum overflows.
-    pub fn dimension(&self, owner: EffectiveId) -> Option<u64> {
+    pub fn dimension(&self, owner: &EffectiveId) -> Option<u64> {
         self.dimensions
             .iter()
-            .find(|(object, _)| *object == owner)
+            .find(|(object, _)| object == owner)
             .and_then(|(_, dimension)| *dimension)
     }
 
@@ -1308,7 +1308,7 @@ impl TimedModel {
         self.urgency_predicates
             .get(index)
             .and_then(Option::as_ref)
-            .and_then(|predicate| predicate.node)
+            .and_then(|predicate| predicate.node.clone())
     }
 
     /// Each `urgent when` predicate S3 writes, with its index among
@@ -1545,7 +1545,7 @@ struct Clocks<'a> {
 impl Clocks<'_> {
     /// The clock place the path `self.f.g…` reads at `id` of `form`, for a
     /// clause about `context`.
-    fn read(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
+    fn read(&self, form: &ExpressionForm, id: ExprId, context: &EffectiveId) -> Option<ClockId> {
         // `value(self.v)` reads an `Option<Clock>`'s clock; `self.v` alone
         // is its option, no clock.
         let (path, bit) = match form.expression.get(id)?.node() {
@@ -1557,7 +1557,7 @@ impl Clocks<'_> {
             .position(|clock| {
                 same_place(&clock.path, &path)
                     && clock.guarded == bit
-                    && self.model.conforms(context, clock.owner)
+                    && self.model.conforms(context.clone(), clock.owner.clone())
             })
             .map(ClockId)
     }
@@ -1565,14 +1565,14 @@ impl Clocks<'_> {
     /// The `Option<Clock>` place the path `self.v` names at `id` of `form`,
     /// for a clause about `context`: the option, read by `present`, written
     /// by a reset or `absent` (FR-230 "Presence bit").
-    fn option(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> Option<ClockId> {
+    fn option(&self, form: &ExpressionForm, id: ExprId, context: &EffectiveId) -> Option<ClockId> {
         let path = self_path(form, id)?;
         self.fields
             .iter()
             .position(|clock| {
                 clock.guarded
                     && same_place(&clock.path, &path)
-                    && self.model.conforms(context, clock.owner)
+                    && self.model.conforms(context.clone(), clock.owner.clone())
             })
             .map(ClockId)
     }
@@ -1661,26 +1661,27 @@ impl Clocks<'_> {
 
     /// Whether the path `self.f…` at `id` of `form` is a value holding clock
     /// places below it: a clock-bearing record or union value.
-    fn bears(&self, form: &ExpressionForm, id: ExprId, context: EffectiveId) -> bool {
+    fn bears(&self, form: &ExpressionForm, id: ExprId, context: &EffectiveId) -> bool {
         self_path(form, id).is_some_and(|path| self.bears_path(&path, context))
     }
 
     /// Whether `path` (its slots open) is a clock place of an object of type
     /// `context`, or a clock-bearing value: a clock place lies at or below
     /// it.
-    fn reaches(&self, path: &[PlaceStep], context: EffectiveId) -> bool {
+    fn reaches(&self, path: &[PlaceStep], context: &EffectiveId) -> bool {
         self.fields.iter().any(|clock| {
             clock.path.len() >= path.len()
                 && same_place(&clock.path[..path.len()], path)
-                && self.model.conforms(context, clock.owner)
+                && self.model.conforms(context.clone(), clock.owner.clone())
         })
     }
 
     /// Whether the value an object of type `context` holds at `path` is
     /// clock-bearing: a clock place lies strictly below it.
-    fn bears_path(&self, path: &[PlaceStep], context: EffectiveId) -> bool {
+    fn bears_path(&self, path: &[PlaceStep], context: &EffectiveId) -> bool {
         self.fields.iter().any(|clock| {
-            strictly_below(&clock.path, path) && self.model.conforms(context, clock.owner)
+            strictly_below(&clock.path, path)
+                && self.model.conforms(context.clone(), clock.owner.clone())
         })
     }
 
@@ -1692,7 +1693,7 @@ impl Clocks<'_> {
         &self,
         form: &ExpressionForm,
         id: ExprId,
-        context: EffectiveId,
+        context: &EffectiveId,
         parents: &[Option<ExprId>],
     ) -> bool {
         let Some(ExprNode::Field { operand, field }) = form.expression.get(id).map(|n| n.node())
@@ -1717,11 +1718,11 @@ impl Clocks<'_> {
         &self,
         form: &ExpressionForm,
         id: ExprId,
-        context: EffectiveId,
+        context: &EffectiveId,
         parents: &[Option<ExprId>],
     ) -> Option<EffectiveId> {
         let name = match form.expression.get(id)?.node() {
-            ExprNode::SelfRef => return Some(context),
+            ExprNode::SelfRef => return Some(context.clone()),
             ExprNode::Name(name) if name.segments.len() == 1 => name.name.as_str(),
             _ => return None,
         };
@@ -1808,7 +1809,7 @@ fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
     AdmittedModel::clock_places(model)
         .iter()
         .map(|place| ClockField {
-            owner: place.owner,
+            owner: place.owner.clone(),
             field: place.field.clone(),
             name: place.name(),
             path: place.path.clone(),
@@ -1832,7 +1833,7 @@ pub(crate) fn first_clock_read(
     model: &AdmittedModel,
     models: &[AdmittedModel],
     clock_reading: &[super::assemble::ClockReadingDeclaration],
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> Option<Span> {
     let units = TimeUnits::default();
     let declarations = reading::Declarations::new(clock_reading, models);
@@ -1992,7 +1993,7 @@ struct Located<'f> {
 impl<'f> Located<'f> {
     /// `form`'s clock reads, for a clause about `context`; `None` when its
     /// spans do not fit it.
-    fn of(form: &'f ExpressionForm, clocks: &Clocks<'_>, context: EffectiveId) -> Option<Self> {
+    fn of(form: &'f ExpressionForm, clocks: &Clocks<'_>, context: &EffectiveId) -> Option<Self> {
         Self::with_parameters(form, clocks, context, Vec::new())
     }
 
@@ -2001,7 +2002,7 @@ impl<'f> Located<'f> {
     fn with_parameters(
         form: &'f ExpressionForm,
         clocks: &Clocks<'_>,
-        context: EffectiveId,
+        context: &EffectiveId,
         parameters: Vec<ClockParameter>,
     ) -> Option<Self> {
         let spans = form.spans.of_nodes(&form.expression)?;
@@ -2448,7 +2449,7 @@ fn clock_atom(
     located: &Located<'_>,
     id: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<Option<(Dnf, Dnf)>, CheckCause> {
     // `present(self.v)`, `self.v != absent` and `self.v = absent`: a data
@@ -2473,7 +2474,7 @@ fn clock_atom(
         located,
         clocks,
         declarations: clocks.declarations,
-        context,
+        context: context.clone(),
     };
     if let Some(read) = expansion.predicate(id, budget)? {
         return Ok(Some(read));
@@ -2512,7 +2513,7 @@ fn clock_atom(
 fn guard(
     located: &Located<'_>,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     budget: &mut PartBudget,
 ) -> Result<(Dnf, BTreeMap<ExprId, bool>), CheckCause> {
     let len = located.form.expression.len();
@@ -2929,7 +2930,8 @@ fn resets(
             cut.require_spans.push(located.span(conjunct));
             continue;
         }
-        if let Some(reset) = quantified::reset(located, conjunct, clocks, clause.context, &written)?
+        if let Some(reset) =
+            quantified::reset(located, conjunct, clocks, &clause.context, &written)?
         {
             cut.leaves.insert(conjunct, ExprNode::Boolean(true));
             cut.resets.push(reset);
@@ -2942,23 +2944,25 @@ fn resets(
             right,
         }) = located.node(conjunct)
         else {
-            return Err(nested_write(located, conjunct, clocks, clause.context));
+            return Err(nested_write(located, conjunct, clocks, &clause.context));
         };
         if let Some((field, element)) =
-            collection_write::collection_field(located, *left, clocks, clause.context)
+            collection_write::collection_field(located, *left, clocks, &clause.context)
         {
             let key = clocks
                 .fields
                 .iter()
                 .find(|clock| {
                     clock.path.first() == element.first()
-                        && clocks.model.conforms(clause.context, clock.owner)
+                        && clocks
+                            .model
+                            .conforms(clause.context.clone(), clock.owner.clone())
                 })
                 .map(|clock| &clock.field);
             let writing = collection_write::Writing {
                 record: RecordWrite {
                     located,
-                    context: clause.context,
+                    context: clause.context.clone(),
                     clocks,
                     written: &written,
                     span,
@@ -2976,7 +2980,7 @@ fn resets(
             cut.writes.push(write);
             continue;
         }
-        if let Some(write) = union_write(located, *left, *right, clocks, clause.context) {
+        if let Some(write) = union_write(located, *left, *right, clocks, &clause.context) {
             let write = write?;
             if !written.contains(write.field) {
                 return Err(TemporalCause::ClockWrite { span });
@@ -3003,7 +3007,7 @@ fn resets(
             cut.drops.extend(write.drops);
             continue;
         }
-        if clocks.bears(located.form, *left, clause.context) {
+        if clocks.bears(located.form, *left, &clause.context) {
             let Some(ExprNode::Record { .. }) = located.node(*right) else {
                 return Err(located.outside(*right));
             };
@@ -3012,7 +3016,7 @@ fn resets(
             };
             RecordWrite {
                 located,
-                context: clause.context,
+                context: clause.context.clone(),
                 clocks,
                 written: &written,
                 span,
@@ -3049,7 +3053,7 @@ fn resets(
             let value = match located.constant(*right, clocks) {
                 Ok(value) => value,
                 Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                    return Err(TemporalCause::ClockWrite { span })
+                    return Err(TemporalCause::ClockWrite { span });
                 }
                 Err(cause) => return Err(cause),
             };
@@ -3071,7 +3075,7 @@ fn resets(
             let value = match located.constant(*right, clocks) {
                 Ok(value) => value,
                 Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                    return Err(TemporalCause::ClockWrite { span })
+                    return Err(TemporalCause::ClockWrite { span });
                 }
                 Err(cause) => return Err(cause),
             };
@@ -3092,7 +3096,7 @@ fn resets(
             if !located.reads_clock(*left) && located.reads_clock(*right) {
                 return Err(located.outside(*right));
             }
-            return Err(nested_write(located, conjunct, clocks, clause.context));
+            return Err(nested_write(located, conjunct, clocks, &clause.context));
         };
         if located.reads_clock(*right) {
             return Err(TemporalCause::ClockWrite { span });
@@ -3100,7 +3104,7 @@ fn resets(
         let value = match located.constant(*right, clocks) {
             Ok(value) => value,
             Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                return Err(TemporalCause::ClockWrite { span })
+                return Err(TemporalCause::ClockWrite { span });
             }
             Err(cause) => return Err(cause),
         };
@@ -3137,7 +3141,7 @@ fn union_write<'c>(
     left: ExprId,
     right: ExprId,
     clocks: &'c Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> Option<Result<UnionWrite<'c>, TemporalCause>> {
     let path = self_path(located.form, left)?;
     let cases: Vec<(ClockId, &ClockField)> = clocks
@@ -3148,7 +3152,7 @@ fn union_write<'c>(
             clock.path.len() == path.len() + 1
                 && same_place(&clock.path[..path.len()], &path)
                 && matches!(clock.path.last(), Some(PlaceStep::Union(_)))
-                && clocks.model.conforms(context, clock.owner)
+                && clocks.model.conforms(context.clone(), clock.owner.clone())
         })
         .map(|(index, clock)| (ClockId(index), clock))
         .collect();
@@ -3183,7 +3187,7 @@ fn union_write<'c>(
         let value = match located.constant(*argument, clocks) {
             Ok(value) => value,
             Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                return Some(Err(TemporalCause::ClockWrite { span }))
+                return Some(Err(TemporalCause::ClockWrite { span }));
             }
             Err(cause) => return Some(Err(cause)),
         };
@@ -3216,7 +3220,10 @@ impl RecordWrite<'_, '_, '_> {
             .enumerate()
             .filter(move |(_, clock)| {
                 strictly_below(&clock.path, path)
-                    && self.clocks.model.conforms(self.context, clock.owner)
+                    && self
+                        .clocks
+                        .model
+                        .conforms(self.context.clone(), clock.owner.clone())
             })
     }
 
@@ -3293,7 +3300,7 @@ impl RecordWrite<'_, '_, '_> {
                 let constant = match located.constant(*value, self.clocks) {
                     Ok(constant) => constant,
                     Err(TemporalCause::ClockBoundNotConstant { .. }) => {
-                        return Err(TemporalCause::ClockWrite { span: value_span })
+                        return Err(TemporalCause::ClockWrite { span: value_span });
                     }
                     Err(cause) => return Err(cause),
                 };
@@ -3322,7 +3329,7 @@ fn nested_write(
     located: &Located<'_>,
     conjunct: ExprId,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
 ) -> TemporalCause {
     let mut pending = vec![conjunct];
     while let Some(id) = pending.pop() {
@@ -3466,7 +3473,7 @@ fn read_clause(
         expression: clause.body.clone(),
         spans: clause.spans.body.clone(),
     };
-    let Some(located) = Located::with_parameters(&form, clocks, clause.context, parameters) else {
+    let Some(located) = Located::with_parameters(&form, clocks, &clause.context, parameters) else {
         return Ok(ClauseClocks::None);
     };
     let root = located.root();
@@ -3483,7 +3490,7 @@ fn read_clause(
             // postcondition (FR-230 "Collection-valued writes").
             let written = located.form.expression.iter().find(|node| {
                 matches!(node.node(), ExprNode::Binary { operator: BinaryOperator::Equal, left, .. }
-                    if collection_write::collection_field(&located, *left, clocks, clause.context).is_some())
+                    if collection_write::collection_field(&located, *left, clocks, &clause.context).is_some())
             });
             if let Some(node) = written {
                 return Err(timed(TemporalCause::ClockWrite {
@@ -3496,7 +3503,7 @@ fn read_clause(
             if let Some(span) = stray_literal(&located, clocks, &BTreeSet::new()) {
                 return Err(timed(TemporalCause::ClockWrite { span }));
             }
-            let (dnf, polarity) = guard(&located, clocks, clause.context, budget)?;
+            let (dnf, polarity) = guard(&located, clocks, &clause.context, budget)?;
             let parts = dnf
                 .into_iter()
                 .map(|(literals, clocks)| draft_part(&located, literals, clocks))
@@ -3505,7 +3512,7 @@ fn read_clause(
                 .into_iter()
                 .map(|(id, positive)| (id, ExprNode::Boolean(positive)))
                 .collect();
-            let quantifier = quantified::first(&located, clocks, clause.context);
+            let quantifier = quantified::first(&located, clocks, &clause.context);
             (leaves, ClauseClocks::Guard(parts, quantifier))
         }
         StateClauseKind::Postcondition => {
@@ -3566,19 +3573,20 @@ fn state_object(
             span,
         });
     };
-    let population =
-        population_of(models, *context, types).map_err(|_| TemporalCause::TimedStateObject {
+    let population = population_of(models, context.clone(), types).map_err(|_| {
+        TemporalCause::TimedStateObject {
             ambiguous: true,
             span,
-        })?;
-    Ok((*context, population))
+        }
+    })?;
+    Ok((context.clone(), population))
 }
 
 /// A predicate over the state object that reads no clock.
 fn state_predicate(
     predicate: &ExpressionForm,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     population: Option<PopulationDomain>,
 ) -> Result<PredicateDraft, TemporalCause> {
     if let Some(located) = Located::of(predicate, clocks, context) {
@@ -3587,7 +3595,7 @@ fn state_predicate(
         }
     }
     Ok(PredicateDraft {
-        context,
+        context: context.clone(),
         population,
         predicate: predicate.clone(),
     })
@@ -3596,7 +3604,7 @@ fn state_predicate(
 fn time_invariant(
     form: &TimeInvariantForm,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     population: Option<PopulationDomain>,
     budget: &mut PartBudget,
 ) -> Result<InvariantDraft, CheckCause> {
@@ -3670,7 +3678,7 @@ fn time_invariant(
 fn state_alternatives(
     predicate: &ExpressionForm,
     clocks: &Clocks<'_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     population: Option<PopulationDomain>,
     budget: &mut PartBudget,
 ) -> Result<Vec<AlternativeDraft>, CheckCause> {
@@ -3719,8 +3727,8 @@ fn state_alternatives(
         alternatives.push(AlternativeDraft {
             presences,
             predicate: PredicateDraft {
-                context,
-                population,
+                context: context.clone(),
+                population: population.clone(),
                 predicate: data,
             },
         });
@@ -3767,7 +3775,7 @@ fn clock_bounds(
                 .map(|_| SlotRef::Family)
                 .collect();
             by_owner
-                .entry(field.owner)
+                .entry(field.owner.clone())
                 .or_default()
                 .push(ClockConstraint {
                     parameter: None,
@@ -3780,12 +3788,13 @@ fn clock_bounds(
                 });
         }
         for (owner, bounds) in by_owner {
-            let population = population_of(inputs.models, owner, inputs.types).map_err(|_| {
-                timed(TemporalCause::TimedStateObject {
-                    ambiguous: true,
-                    span,
-                })
-            })?;
+            let population =
+                population_of(inputs.models, owner.clone(), inputs.types).map_err(|_| {
+                    timed(TemporalCause::TimedStateObject {
+                        ambiguous: true,
+                        span,
+                    })
+                })?;
             let expression = qsl_forms::Expression::boolean(true);
             let spans = qsl_forms::ExpressionSpans::at_point(&expression, span.start)
                 .map_err(|_| timed(TemporalCause::TimeInvariantShape { span }))?;
@@ -3823,7 +3832,7 @@ fn urgency(
             Ok(UrgencyDraft::When {
                 name: form.name.name.clone(),
                 span: form.span,
-                alternatives: state_alternatives(predicate, clocks, context, population, budget)?,
+                alternatives: state_alternatives(predicate, clocks, &context, population, budget)?,
             })
         }
         UrgentTarget::Operation(operation) => {
@@ -3968,7 +3977,7 @@ fn prepare_models(
                         expression: clause.body.clone(),
                         spans: clause.spans.body.clone(),
                     };
-                    Located::of(&form, &clocks, clause.context)
+                    Located::of(&form, &clocks, &clause.context)
                         .and_then(|located| located.first(located.root()))
                 })
                 .or_else(|| {
@@ -3997,12 +4006,12 @@ fn prepare_models(
             ([], TimedDeclaration::TimeInvariant(form)) => {
                 return Err(timed(TemporalCause::TimeInvariantWithoutTimeSource {
                     span: form.span,
-                }))
+                }));
             }
             ([], TimedDeclaration::Urgent(form)) => {
                 return Err(timed(TemporalCause::UrgencyWithoutTimeSource {
                     span: form.span,
-                }))
+                }));
             }
             ([_], _) | ([], _) => {}
             (_, form) => {
@@ -4044,7 +4053,7 @@ fn prepare_models(
         // `urgent O`.
         let mut guarded = BTreeMap::new();
         for (index, clause) in state_clauses.iter_mut().enumerate() {
-            if model.type_key(clause.context).is_none() {
+            if model.type_key(clause.context.clone()).is_none() {
                 continue;
             }
             let parameters = clock_parameters(clause, &clocks, &operation_resets);
@@ -4095,7 +4104,7 @@ fn prepare_models(
                             span: clause.spans.declaration,
                             point: clause.execution_point.is_some(),
                             operation: operation.clone(),
-                            context: clause.context,
+                            context: clause.context.clone(),
                             resets: cut.resets,
                             writes: cut.writes,
                             drops: cut.drops,
@@ -4124,7 +4133,7 @@ fn prepare_models(
                     invariants.push(time_invariant(
                         form,
                         &clocks,
-                        context,
+                        &context,
                         population,
                         &mut budget,
                     )?);
@@ -4149,7 +4158,7 @@ fn prepare_models(
                 let dimension = clocks
                     .fields
                     .iter()
-                    .filter(|clock| model.conforms(object, clock.owner))
+                    .filter(|clock| model.conforms(object.clone(), clock.owner.clone()))
                     .filter_map(ClockField::bound)
                     .try_fold(0_u64, u64::checked_add);
                 (object, dimension)
@@ -4183,7 +4192,7 @@ pub(crate) struct Checking<'d, 'a> {
 /// clause checker types it.
 fn element_type(
     checking: &Checking<'_, '_>,
-    context: EffectiveId,
+    context: &EffectiveId,
     path: &[String],
     span: Span,
 ) -> Result<ValueType, CheckRefusal> {
@@ -4196,7 +4205,7 @@ fn element_type(
     let types = checking.declarations.scope.types();
     let (first, below) = path.split_first().ok_or_else(not_checked)?;
     let mut value_type = types
-        .attribute(context, first)
+        .attribute(context.clone(), first)
         .map(|attribute| attribute.field().value_type().clone())
         .ok_or_else(not_checked)?;
     // Each record field on the way to the collection.
@@ -4204,8 +4213,9 @@ fn element_type(
         let ValueType::Composite(key) = &value_type else {
             return Err(not_checked());
         };
-        let Some(CompositeShape::Record(fields)) =
-            types.composite(*key).map(|declaration| declaration.shape())
+        let Some(CompositeShape::Record(fields)) = types
+            .composite(key.clone())
+            .map(|declaration| declaration.shape())
         else {
             return Err(not_checked());
         };
@@ -4307,10 +4317,10 @@ fn state_view<'v>(
     ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value,
-        context: Some(draft.context),
-        receiver: Some(("self", ValueType::Reference(draft.context))),
+        context: Some(draft.context.clone()),
+        receiver: Some(("self", ValueType::Reference(draft.context.clone()))),
         operation: None,
-        context_population: draft.population,
+        context_population: draft.population.clone(),
         frame_population: None,
         binders: &[],
         presence_places,
@@ -4344,7 +4354,7 @@ fn check_part(
         .elements
         .iter()
         .map(|(binding, span)| {
-            let element = element_type(checking, clause.context, &binding.path, *span)?;
+            let element = element_type(checking, &clause.context, &binding.path, *span)?;
             Ok((binding.name.clone(), element))
         })
         .collect::<Result<Vec<_>, CheckRefusal>>()?;
@@ -4354,11 +4364,11 @@ fn check_part(
             let view = ClauseView {
                 kind: StateClauseKind::Precondition,
                 complete_value: super::state_clause::is_complete_value(&clause.selection),
-                context: Some(clause.context),
-                receiver: Some(("self", ValueType::Reference(clause.context))),
+                context: Some(clause.context.clone()),
+                receiver: Some(("self", ValueType::Reference(clause.context.clone()))),
                 operation: Some(operation),
-                context_population: clause.context_population,
-                frame_population: clause.frame_population,
+                context_population: clause.context_population.clone(),
+                frame_population: clause.frame_population.clone(),
                 binders: &binders,
                 presence_places: checking.presence_places,
                 body: &form.expression,
@@ -4452,7 +4462,7 @@ pub(crate) fn check(
                 operation: operation.clone(),
                 parts: checked,
                 index,
-                context: clause.context,
+                context: clause.context.clone(),
                 span: clause.spans.declaration,
                 quantifier,
                 point: clause.execution_point.is_some(),
@@ -4463,7 +4473,7 @@ pub(crate) fn check(
             let context = invariant
                 .alternatives
                 .first()
-                .map(|alternative| alternative.predicate.context);
+                .map(|alternative| alternative.predicate.context.clone());
             // Each alternative's data predicate is typed at its own site so
             // that S3 lowers it located; a bound of a `max` constraint has
             // the predicate `true` and no source of its own.
@@ -4519,7 +4529,7 @@ pub(crate) fn check(
                 } => {
                     let Some(context) = alternatives
                         .first()
-                        .map(|alternative| alternative.predicate.context)
+                        .map(|alternative| alternative.predicate.context.clone())
                     else {
                         continue;
                     };
@@ -4617,13 +4627,16 @@ pub(crate) fn check(
                             None => None,
                             Some(form) => {
                                 let element =
-                                    element_type(checking, written.context, &path, reset.span)?;
+                                    element_type(checking, &written.context, &path, reset.span)?;
                                 let binders = [(name.clone(), element)];
                                 let view = ClauseView {
                                     kind: StateClauseKind::Precondition,
                                     complete_value: checking.complete_value,
-                                    context: Some(written.context),
-                                    receiver: Some(("self", ValueType::Reference(written.context))),
+                                    context: Some(written.context.clone()),
+                                    receiver: Some((
+                                        "self",
+                                        ValueType::Reference(written.context.clone()),
+                                    )),
                                     operation: None,
                                     context_population: None,
                                     frame_population: None,

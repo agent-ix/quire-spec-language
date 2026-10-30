@@ -4,7 +4,6 @@
 //! refuse by kind, by domain and at the request's limits.
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::NominalNode;
 use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::supplied_stop::{
@@ -88,7 +87,7 @@ fn model_fixture(body: &str) -> Fixture {
 }
 
 impl Fixture {
-    fn parameter(&self, function: &str) -> WireNodeId {
+    fn parameter(&self, function: &str) -> NodeKey {
         parameter(&self.compiled, function, 0)
     }
 
@@ -99,34 +98,38 @@ impl Fixture {
         callable.parameters[0].1.clone()
     }
 
-    fn record_id(&self, name: &str) -> WireNodeId {
+    fn record_id(&self, name: &str) -> NodeKey {
         let types = self.compiled.package.graph().scope().types();
         let record = types
             .composites()
             .find(|declaration| declaration.name() == name)
             .expect("a declared record");
-        WireNodeId::from_digest(*record.key().as_bytes())
+        record.key().clone()
     }
 
-    fn enum_id(&self, name: &str) -> WireNodeId {
+    fn enum_id(&self, name: &str) -> NodeKey {
         let graph = self.compiled.package.graph().semantic_graph();
         let node = graph
             .nodes()
             .find(|node| {
                 matches!(
-                    node.nominal(),
-                    Some(NominalNode::EnumDeclaration(preimage))
-                        if preimage.qualified_declaration().last().map(String::as_str) == Some(name)
-                )
+                    node.nominal_payload(),
+                    Some(qsl_semantics::value::nominal_payload::NominalPayload::Enum(
+                        _
+                    ))
+                ) && node
+                    .declaration()
+                    .and_then(<[_]>::last)
+                    .is_some_and(|last| last.as_str() == name)
             })
             .expect("a declared enum");
-        WireNodeId::from_digest(*node.key().as_bytes())
+        node.key().clone()
     }
 
     fn request(&self, function: &str, source: ReplaySource) -> ReplayRequestWire {
         let mut wire = request(
             self.source.as_bytes(),
-            self.compiled.emitted.package_id(),
+            &self.compiled,
             name(&[function]),
             source,
         );
@@ -141,7 +144,10 @@ impl Fixture {
     fn witness(&self, function: &str, value: &WitnessValue) -> ReplayRequestWire {
         let parameter = self.parameter(function);
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|{function}|c|{parameter}={text}>>>");
+        let transcript = format!(
+            "<<<assertion|{function}|c|{}={text}>>>",
+            crate::pn(&parameter)
+        );
         self.request(
             function,
             ReplaySource::Witness(Witness::parse(transcript).unwrap()),
@@ -256,7 +262,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
     let (inner, outer_id) = (fixture.record_id("Inner"), fixture.record_id("Outer"));
     let good = |a: WitnessValue| vec![present("a", a), present("b", WitnessValue::Boolean(true))];
     let with_inner = |inner_value: WitnessValue| WitnessValue::Record {
-        declaration: outer_id,
+        declaration: outer_id.clone(),
         fields: vec![
             present("i", inner_value),
             present("o", WitnessValue::Option(None)),
@@ -264,14 +270,14 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
         ],
     };
     let inner_record = |fields: Vec<WitnessField>| WitnessValue::Record {
-        declaration: inner,
+        declaration: inner.clone(),
         fields,
     };
     let cases: Vec<(&str, WitnessValue)> = vec![
         (
             "a sequence given for the option",
             WitnessValue::Record {
-                declaration: outer_id,
+                declaration: outer_id.clone(),
                 fields: vec![
                     present("i", inner_record(good(int(7)))),
                     present("o", WitnessValue::Sequence(vec![])),
@@ -282,7 +288,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
         (
             "an Inner named for Outer's declaration",
             with_inner(WitnessValue::Record {
-                declaration: outer_id,
+                declaration: outer_id.clone(),
                 fields: good(int(7)),
             }),
         ),
@@ -519,7 +525,7 @@ const LEAVES: &str = "enum Color { BLUE, GREEN, RED }\n\
 #[test]
 fn tc_906_leaf_families_replay_and_refuse_by_kind_and_domain() {
     let fixture = fixture(LEAVES);
-    let color = |declaration: WireNodeId, member: &str| WitnessValue::Enum {
+    let color = |declaration: NodeKey, member: &str| WitnessValue::Enum {
         declaration,
         member: member.to_owned(),
     };
@@ -538,7 +544,7 @@ fn tc_906_leaf_families_replay_and_refuse_by_kind_and_domain() {
     };
     let color_id = fixture.enum_id("Color");
     let shade_id = fixture.enum_id("Shade");
-    assert_reproduced(witness("ec", color(color_id, "RED")));
+    assert_reproduced(witness("ec", color(color_id.clone(), "RED")));
     assert_reproduced(witness("tx", text("a;b>c")));
     assert_reproduced(witness("ra", rational(3, 2)));
     assert_reproduced(witness("dc", decimal(1050, 2)));
@@ -595,16 +601,17 @@ fn convert_one(
 #[trace("TC-906", "FR-098-AC-10")]
 #[test]
 fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
-    let declared_unit = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([7; 32]));
-    let declared = ValueType::Quantity(declared_unit);
-    let quantity = |unit: [u8; 32]| WitnessValue::Quantity {
+    let declared_unit = quire_exact::UnitId::declared(crate::fixture_node(7));
+    let declared = ValueType::Quantity(declared_unit.clone());
+    let quantity = |unit: quire_exact::UnitId| WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(15_i64),
             scale: Integer::from(1_i64),
         },
         unit,
     };
-    let converted = convert_one(&declared, &quantity([7; 32]), &UNLIMITED).expect("converts");
+    let converted =
+        convert_one(&declared, &quantity(declared_unit.clone()), &UNLIMITED).expect("converts");
     let quire_exact::Value::Quantity(converted) = converted else {
         panic!("a quantity");
     };
@@ -613,8 +620,12 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
         &quire_exact::Rational::new(Integer::from(3_i64), Integer::from(2_i64)).unwrap(),
         "1.5 converts exactly"
     );
-    assert_eq!(converted.unit(), declared_unit);
-    let refused = convert_one(&declared, &quantity([8; 32]), &UNLIMITED);
+    assert_eq!(converted.unit(), &declared_unit);
+    let refused = convert_one(
+        &declared,
+        &quantity(quire_exact::UnitId::declared(crate::fixture_node(8))),
+        &UNLIMITED,
+    );
     assert_eq!(
         refused.as_ref().err().and_then(refused_parameter),
         Some(0),
@@ -629,13 +640,13 @@ fn tc_906_a_quantity_converts_in_its_declared_unit_only() {
 #[test]
 fn tc_906_a_decimal_magnitude_scale_stops_at_the_request_limit() {
     let fixture = fixture("function t using v(b: Boolean): Boolean pure { b }\n");
-    let declared_unit = quire_exact::UnitId::declared(quire_exact::NodeKey::from_digest([7; 32]));
+    let declared_unit = quire_exact::UnitId::declared(crate::fixture_node(7));
     let value = WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(1_i64),
             scale: Integer::from(1_000_000_000_i64),
         },
-        unit: *declared_unit.as_bytes(),
+        unit: declared_unit.clone(),
     };
     let limits = ScalarLimits {
         scale_expansion: 64,
@@ -675,14 +686,14 @@ fn on_small_stack(body: impl FnOnce() + Send + 'static) {
 }
 
 /// `record List { head: Int[0, 9]; tail: List?; }` nested `depth` deep.
-fn list(declaration: WireNodeId, depth: usize) -> WitnessValue {
+fn list(declaration: NodeKey, depth: usize) -> WitnessValue {
     let mut value = WitnessValue::Record {
-        declaration,
+        declaration: declaration.clone(),
         fields: vec![present("head", int(1)), field("tail", WitnessSlot::Absent)],
     };
     for _ in 1..depth {
         value = WitnessValue::Record {
-            declaration,
+            declaration: declaration.clone(),
             fields: vec![present("head", int(1)), present("tail", value)],
         };
     }
@@ -694,8 +705,7 @@ fn list(declaration: WireNodeId, depth: usize) -> WitnessValue {
 /// recursive list parameter, whose assignment (and witness entry) carries a
 /// 100,000-long recursive list, whose `stage_limits` carries raised `s1.*`
 /// and `s3.*` settings, and whose `replay.input_bytes` is raised to fit,
-/// replays to the proving run's verdict, with its recompiled `package_id`
-/// equal to the request's. Under the default limits it refuses by the first
+/// replays to the proving run's verdict,  Under the default limits it refuses by the first
 /// limit it reaches.
 #[trace("TC-736", "FR-263-AC-1")]
 #[test]
@@ -794,14 +804,15 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
          function rd using v(w: Reference<M::Widget>): Boolean pure { deref(w).code > 0 }\n",
     );
     let type_of = |function: &str| {
-        let ValueType::Reference(object_type) = fixture.declared(function) else {
+        let declared = fixture.declared(function);
+        let ValueType::Reference(object_type) = &declared else {
             panic!("{function} takes a reference");
         };
-        *object_type.as_bytes()
+        object_type.clone()
     };
     // The universe of the declared `Reference<M::Widget>`; a reference is
     // foreign when its universe is not that one (FR-098).
-    let universe = *qsl_semantics::model::observation::population_universe_for(
+    let universe = qsl_semantics::model::observation::population_universe_for(
         fixture.compiled.package.graph().model_selections(),
         &package_input([std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -812,21 +823,21 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
         .unwrap(),
         SpineLimits::default().model,
         match fixture.declared("rw") {
-            ValueType::Reference(object_type) => object_type,
+            ValueType::Reference(ref object_type) => object_type.clone(),
             other => panic!("rw takes a reference, not {other:?}"),
         },
     )
-    .expect("the declared object type has a universe")
-    .as_bytes();
-    let reference = |object_type: [u8; 32], identity: &[u8]| WitnessValue::Reference {
-        universe,
-        object_type,
-        identity: identity.to_vec(),
-    };
-    for result in fixture.both("rw", reference(type_of("rw"), b"w-1")) {
+    .expect("the declared object type has a universe");
+    let reference =
+        |object_type: quire_exact::EffectiveId, identity: &[u8]| WitnessValue::Reference {
+            universe: universe.clone(),
+            object_type,
+            identity: identity.to_vec(),
+        };
+    for result in fixture.both("rw", reference(type_of("rw").clone(), b"w-1")) {
         assert_reproduced(result);
     }
-    for result in fixture.both("rd", reference(type_of("rw"), b"w-1")) {
+    for result in fixture.both("rd", reference(type_of("rw").clone(), b"w-1")) {
         let result = result.expect("the replay runs");
         assert_eq!(result.category(), Category::Inconclusive);
         assert!(matches!(
@@ -836,21 +847,21 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
     }
     assert_wrong_kind(
         replay(
-            fixture.witness("rw", &reference(type_of("rr"), b"w-1")),
+            fixture.witness("rw", &reference(type_of("rr").clone(), b"w-1")),
             ReplayLimits::default(),
         ),
         "a reference to another object type",
     );
     assert_wrong_kind(
         replay(
-            fixture.witness("rw", &reference(type_of("rw"), &[0xff, 0xfe])),
+            fixture.witness("rw", &reference(type_of("rw").clone(), &[0xff, 0xfe])),
             ReplayLimits::default(),
         ),
         "an identity that is not UTF-8",
     );
     assert_wrong_kind(
         replay(
-            fixture.witness("rw", &reference(type_of("rw"), b"")),
+            fixture.witness("rw", &reference(type_of("rw").clone(), b"")),
             ReplayLimits::default(),
         ),
         "an empty identity",
@@ -879,13 +890,14 @@ fn convert_via_witness(
     declared: &ValueType,
     value: &WitnessValue,
 ) -> Result<quire_exact::Value, argument::Stopped> {
-    let parameter = WireNodeId::from_digest([1; 32]);
+    let parameter = crate::fixture_node(1);
     let binding = WitnessBinding {
-        parameter,
+        parameter: parameter.clone(),
         value_type: witness_type(0, declared).expect("a UUID or Timestamp has a witness form"),
     };
     let transcript = format!(
-        "<<<assertion|h|c|{parameter}={}>>>",
+        "<<<assertion|h|c|{}={}>>>",
+        crate::pn(&parameter),
         value.to_value_text().unwrap()
     );
     let decoded = Witness::parse(transcript)
@@ -1077,9 +1089,12 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
          function p using v(x: Holder): Boolean pure { x.flag }\n",
     );
     let admitted = crate::compile_admitted(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-        IDENTITY,
-        fixture.source.as_bytes(),
+        crate::CompileUnit {
+            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: fixture.source.as_bytes(),
+        },
         [],
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
@@ -1097,9 +1112,9 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
             .expect("an admitted composite")
     };
     let (pair, holder) = (find("Pair"), find("Holder"));
-    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
-    assert_eq!(id(holder.key()), fixture.record_id("Holder"));
-    let value = |pair: WireNodeId, holder: WireNodeId| WitnessValue::Record {
+    let id = |key: quire_exact::NodeKey| key.clone();
+    assert_eq!(id(holder.key().clone()), fixture.record_id("Holder"));
+    let value = |pair: NodeKey, holder: NodeKey| WitnessValue::Record {
         declaration: holder,
         fields: vec![
             present("flag", WitnessValue::Boolean(false)),
@@ -1112,10 +1127,13 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
             ),
         ],
     };
-    for result in fixture.both("p", value(id(pair.key()), id(holder.key()))) {
+    for result in fixture.both("p", value(id(pair.key().clone()), id(holder.key().clone()))) {
         assert_reproduced(result);
     }
-    for result in fixture.both("p", value(id(pair.node()), id(holder.node()))) {
+    for result in fixture.both(
+        "p",
+        value(id(pair.node().clone()), id(holder.node().clone())),
+    ) {
         assert!(
             result.is_err(),
             "node ids are not the kernel keys: {result:?}"
@@ -1135,9 +1153,12 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
          { case x { Empty: false; Circle(r): r > 3; } }\n",
     );
     let admitted = crate::compile_admitted(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-        IDENTITY,
-        fixture.source.as_bytes(),
+        crate::CompileUnit {
+            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: fixture.source.as_bytes(),
+        },
         [],
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
@@ -1154,18 +1175,17 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
         .expect("the admitted union");
     let member = shape.union_members().expect("members")[1]
         .identifier()
-        .as_str()
         .to_owned();
-    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
-    let value = |declaration: WireNodeId| WitnessValue::Union {
+    let id = |key: quire_exact::NodeKey| key.clone();
+    let value = |declaration: NodeKey| WitnessValue::Union {
         declaration,
         member: member.clone(),
         components: vec![int(2)],
     };
-    for result in fixture.both("p", value(id(shape.node()))) {
+    for result in fixture.both("p", value(id(shape.node().clone()))) {
         assert_reproduced(result);
     }
-    for result in fixture.both("p", value(id(shape.key()))) {
+    for result in fixture.both("p", value(id(shape.key().clone()))) {
         assert!(
             result.is_err(),
             "the kernel key is not the settled union id: {result:?}"
@@ -1187,9 +1207,12 @@ fn admitted_unit_ids_are_the_units_replay_converts_against() {
          function p using v(x: Quantity<m>): Boolean pure { false }\n",
     );
     let admitted = crate::compile_admitted(
-        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
-        IDENTITY,
-        fixture.source.as_bytes(),
+        crate::CompileUnit {
+            source: SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: fixture.source.as_bytes(),
+        },
         [],
         &crate::spine::DependencyInput::default(),
         crate::request::StageLimits::default(),
@@ -1197,15 +1220,15 @@ fn admitted_unit_ids_are_the_units_replay_converts_against() {
     )
     .expect("the unit compiles");
     let unit_id = |name: &str| {
-        *admitted
+        admitted
             .context()
             .units()
             .find(|unit| unit.qualified_name().last().map(Identifier::as_str) == Some(name))
             .expect("an admitted unit")
             .id()
-            .as_bytes()
+            .clone()
     };
-    let quantity = |unit: [u8; 32]| WitnessValue::Quantity {
+    let quantity = |unit: quire_exact::UnitId| WitnessValue::Quantity {
         magnitude: QuantityMagnitude::Decimal {
             coefficient: Integer::from(15_i64),
             scale: Integer::from(1_i64),

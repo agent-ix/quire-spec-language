@@ -18,6 +18,7 @@ Emit the `quire.checked-package/v2` bytes from the repository root:
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
+  --package-name switch \
   --model examples/switch-transition/switch.semantic-ir.json \
   examples/switch-transition/switch.native
 ```

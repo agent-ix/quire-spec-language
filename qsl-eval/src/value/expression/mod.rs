@@ -499,7 +499,7 @@ pub fn admit_arguments(
             (value_type, argument)
         {
             let resolved = objects
-                .resolve_population(*population_id)
+                .resolve_population(population_id.clone())
                 .is_some_and(|binding| binding.declared_maximum() == *maximum);
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter }.into());
@@ -1083,10 +1083,13 @@ fn resolve_quantifier<'g>(
     qsl_semantics::check::CheckedNode<'g>,
 )> {
     use qsl_semantics::check::{NodeKind, Visit};
-    let key = graph.semantic_graph().resolve_wire(quantifier.node())?;
-    let location = graph.occurrence(key, quantifier.origin())?;
+    let key = quantifier.node();
+    let location = graph.occurrence(key.clone(), quantifier.origin())?;
     let applies_quantify = matches!(
-        graph.semantic_graph().node(key).map(|node| node.body()),
+        graph
+            .semantic_graph()
+            .node(key.clone())
+            .map(|node| node.body()),
         Some(qsl_semantics::check::BodyTerm::Application(
             qsl_semantics::check::ApplicationTerm {
                 operator: qsl_semantics::check::Operator::Quantify,
@@ -1222,6 +1225,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .map(|(index, source)| {
                 source
                     .node
+                    .clone()
                     .map(|node| (index, source, node))
                     .ok_or_else(|| {
                         CallFailure::Fault(InternalFault::new(
@@ -1237,9 +1241,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 selected
                     .frame
                     .iter()
-                    .find(|source| source.node == Some(*key))
+                    .find(|source| source.node == Some(key.clone()))
                     .map_or(usize::MAX, |source| source.level),
-                *key,
+                key.clone(),
             )
         });
         for (position, (key, _)) in supplied.iter().enumerate() {
@@ -1247,7 +1251,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 return Err(protocol_slot::resolve::refused(
                     "invalid_runtime_input",
                     "duplicate-member",
-                    CallAdmissionLocus::Binder(*key),
+                    CallAdmissionLocus::Binder(key.clone()),
                 ));
             }
         }
@@ -1256,7 +1260,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 return Err(protocol_slot::resolve::refused(
                     "invalid_runtime_input",
                     "unknown-member",
-                    CallAdmissionLocus::Binder(*key),
+                    CallAdmissionLocus::Binder(key.clone()),
                 ));
             }
         }
@@ -1265,7 +1269,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 return Err(protocol_slot::resolve::refused(
                     "invalid_runtime_input",
                     "missing-member",
-                    CallAdmissionLocus::Binder(*key),
+                    CallAdmissionLocus::Binder(key.clone()),
                 ));
             }
         }
@@ -1703,7 +1707,7 @@ mod tests {
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
     use quire_eval::{EvalOutcome, FamilyOutcome};
-    use quire_exact::{Integer, NodeKey};
+    use quire_exact::Integer;
     use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::EnvironmentFailure;
@@ -1826,6 +1830,7 @@ mod tests {
             functions: vec![identity_function()],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -1872,7 +1877,7 @@ mod tests {
 
         // Step 5: a fresh environment, called with a NodeKey naming no
         // function in this package.
-        let unknown_identity = NodeKey::from_digest([0xAB; 32]);
+        let unknown_identity = crate::test_ids::node_key([0xAB]);
         let mut fresh_env = family::EvaluationEnv::new(&package, &objects, Vec::new());
         let mut fresh_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let unknown_fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
@@ -1931,6 +1936,7 @@ mod tests {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -2041,13 +2047,14 @@ mod tests {
         let empty = qsl_package::CheckedPackage::link(
             PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
             .check(CheckingLimits::default())
             .expect("an empty package checks cleanly"),
         );
         let objects = ObjectEnvironment::default();
-        let undeclared = NodeKey::from_digest([0xAB; 32]);
+        let undeclared = crate::test_ids::node_key([0xAB]);
         for kind in S6aFamilyKind::ALL {
             let name = s6a_family_name(kind);
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
@@ -2099,6 +2106,7 @@ mod tests {
             functions: vec![identity_function()],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
         }
