@@ -1055,6 +1055,7 @@ fn leaf_checked_term(
     leaf: &crate::check::node_key::LeafTerm,
 ) -> Result<quire_contract_model::CheckedTerm, RefinementV2EncodingError> {
     use crate::check::node_key::{LeafTerm, LiteralValue, NodeRef};
+    use quire_contract_model::CheckedTerm;
     use serde::de::Error as _;
     use serde_json::{json, Value};
     let admitted = |node: &NodeRef| {
@@ -1090,21 +1091,32 @@ fn leaf_checked_term(
                 LiteralValue::None => ("none", Value::Null),
                 LiteralValue::Enum(case) => ("enum", json!(case)),
             };
-            let type_id =
-                serde_json::to_value(admitted(ty)?).map_err(RefinementV2EncodingError::Body)?;
-            json!({"term": "literal", "type": type_id, "value_kind": kind, "value": value})
+            let type_id = admitted(ty)?;
+            let value_kind = quire_contract_model::LiteralKind::from_wire(kind).ok_or_else(|| {
+                RefinementV2EncodingError::Body(serde_json::Error::custom(
+                    "a refinement row literal names no wire kind",
+                ))
+            })?;
+            CheckedTerm::Literal {
+                type_id,
+                value_kind,
+                value,
+            }
         }
-        LeafTerm::Reference { target } => {
-            let target =
-                serde_json::to_value(admitted(target)?).map_err(RefinementV2EncodingError::Body)?;
-            json!({"term": "reference", "target": target})
-        }
+        LeafTerm::Reference { target } => CheckedTerm::Reference {
+            target: admitted(target)?,
+        },
         LeafTerm::DependencyReference { node } => {
             let node = admitted(node)?;
-            json!({"term": "dependency_reference", "package": node.package, "node": node})
+            CheckedTerm::DependencyReference {
+                package: node.package.clone(),
+                node,
+            }
         }
     };
-    serde_json::from_value(term).map_err(RefinementV2EncodingError::Body)
+    // The terms are built directly: `CheckedNodeId` reads its raw JSON text,
+    // which the derived `CheckedTerm` reader cannot buffer.
+    Ok(term)
 }
 
 /// `key` as a V2 graph node id: the same package, path and ordinal. A
