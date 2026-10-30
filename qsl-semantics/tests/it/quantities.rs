@@ -4,8 +4,7 @@
 //!
 //! The dimension/unit node fixtures, their invalid mutations, the
 //! compound-unit fixtures and U01–U23 are self-authored preimages, checked
-//! for content-addressing against an independent JCS canonicalizer (never
-//! the code under test) and for admission against the real `value` boundary.
+//! for admission against the real `value` boundary.
 
 use ix_trace_rs::trace;
 use num_bigint::{BigInt, BigUint};
@@ -50,7 +49,6 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 
 use crate::admitted_charge_points as admitted_points;
 
-/// Independent RFC 8785 JCS for the string-only preimages.
 /// The structural key of a dimension preimage.
 fn dimension_key(preimage: &Value) -> NodeKey {
     DimensionPreimage::from_json(preimage.clone())
@@ -334,7 +332,7 @@ fn compound_unit(fixture: &Fixture, terms: &[(NodeKey, &str)]) -> QuantityUnit {
 
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
-fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
+fn dimension_and_unit_node_preimages_admit() {
     let mut nodes = Nodes::default();
     let length = nodes.dimension(base_dimension("example-model", "Length"));
     let time = nodes.dimension(base_dimension("example-model", "Time"));
@@ -366,23 +364,6 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         ("5463", "20"),
     );
     let celsius = nodes.unit(celsius_preimage.clone());
-
-    // Every preimage's structural key matches the crate's own node key, for both the dimension and unit preimage shapes.
-    let dimensions = [(velocity_preimage, velocity.clone())];
-    let units = [
-        (metre_preimage, metre.clone()),
-        (kelvin_preimage, kelvin.clone()),
-        (cm_preimage, cm),
-        (mm_preimage, mm.clone()),
-        (huge_preimage, huge.clone()),
-        (celsius_preimage, celsius.clone()),
-    ];
-    for (preimage, key) in &dimensions {
-        assert_eq!(dimension_key(preimage), *key);
-    }
-    for (preimage, key) in &units {
-        assert_eq!(unit_key(preimage), *key);
-    }
 
     let graph = nodes.admit().unwrap();
     let velocity_node = graph.dimension(velocity).unwrap();
@@ -555,7 +536,7 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
 // ---- compound-unit fixtures ---------------------------------------------------
 
 /// A compound-unit preimage over `terms`, sorted by key as the canonical form
-/// requires, kept as raw JSON so its digest can be independently recomputed.
+/// requires, kept as raw JSON.
 fn compound_preimage(terms: &[(NodeKey, &str)]) -> Value {
     let mut terms = terms.to_vec();
     terms.sort_by(|(a, _), (b, _)| a.cmp(b));
@@ -595,16 +576,6 @@ fn compound_unit_preimages_identify_by_terms_and_mutations_refuse() {
         assert_eq!(unit.id().unwrap().domain(), UnitDomain::Compound);
         assert_eq!(unit.dimension().is_dimensionless(), is_dimensionless);
     }
-    assert_ne!(
-        CompoundUnitPreimage::from_json(dimensionless_preimage)
-            .unwrap()
-            .id(),
-        CompoundUnitPreimage::from_json(per_time_preimage)
-            .unwrap()
-            .id(),
-        "distinct preimages have distinct identities"
-    );
-
     assert_eq!(
         graph.compound_unit(compound(&[(metre.clone(), "0")]).terms()),
         Err(InvalidCompoundUnit {

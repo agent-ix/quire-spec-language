@@ -3612,7 +3612,7 @@ pub(crate) mod checking_tests {
 #[cfg(test)]
 mod locus_tests {
     use super::fixtures::{
-        declaration, declaration_signature, declarations_for, empty_scope, limits,
+        declaration, declaration_signature, declarations_for, empty_scope, fill_key, limits,
         measure_resolved, root_location,
     };
     use super::*;
@@ -4037,7 +4037,7 @@ mod locus_tests {
     }
 
     fn metre() -> quire_exact::UnitId {
-        compound_unit(5)
+        quire_exact::UnitId::declared(fill_key(5))
     }
 
     fn bounded(

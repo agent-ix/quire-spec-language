@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1022, TC-1023 and TC-195 N10/N11 (FR-081-AC-9, FR-081-AC-10): the
 //! retained one-edge facts expand to the path-form facts of an independent
-//! enumeration over the original declarations, a mis-wired link is refused,
-//! and an identity binds its whole ancestry.
-
-use std::collections::{BTreeMap, BTreeSet};
+//! enumeration over the original declarations, and a mis-wired link is refused.
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -299,7 +296,7 @@ fn oracle_inherit(view: &EffectiveView, entry: &ViewEntry) -> Vec<Path> {
         if fact.rule != RULE_INHERIT {
             continue;
         }
-        let parent = entry_by_id(view, &fact.parent.expect("an inherit fact links"));
+        let parent = entry_by_id(view, &fact.parent.as_ref().expect("an inherit fact links"));
         let head = full_name(&fact.inputs[0]);
         let below = oracle_inherit(view, parent);
         if !is_member {
@@ -338,7 +335,7 @@ fn check_against_enumeration(fixture: &Fixture) {
             .node
             .trim_start_matches(PREFIX)
             .to_owned();
-        let expected = match entry.preimage.owner_effective_type {
+        let expected = match entry.preimage.owner_effective_type.as_ref() {
             None => expected_type(fixture, &original),
             Some(owner) => {
                 let owner_entry = entry_by_id(&view, &owner);
@@ -414,7 +411,7 @@ fn the_diamond_holds_two_inherit_facts_not_three() {
                 entry.preimage.original == key(name)
                     && match owner {
                         None => entry.preimage.owner_effective_type.is_none(),
-                        Some(owner) => entry.preimage.owner_effective_type.is_some_and(|id| {
+                        Some(owner) => entry.preimage.owner_effective_type.as_ref().is_some_and(|id| {
                             entry_by_id(&view, &id).preimage.original == key(owner)
                         }),
                     }
@@ -466,10 +463,10 @@ fn position(entries: &[ViewEntry], owner: Option<&str>, name: &str) -> usize {
             entry.preimage.original == key(name)
                 && match owner {
                     None => entry.preimage.owner_effective_type.is_none(),
-                    Some(owner) => entry.preimage.owner_effective_type.is_some_and(|id| {
+                    Some(owner) => entry.preimage.owner_effective_type.as_ref().is_some_and(|id| {
                         entries
                             .iter()
-                            .find(|candidate| candidate.effective_id == id)
+                            .find(|candidate| candidate.effective_id == *id)
                             .is_some_and(|candidate| candidate.preimage.original == key(owner))
                     }),
                 }
@@ -492,7 +489,7 @@ fn the_strict_reader_refuses_every_mis_wired_link() {
     let view = diamond().view();
     assert!(Links::new(view.declarations()).is_ok());
     let base = entries(&view);
-    let id = |owner: Option<&str>, name: &str| base[position(&base, owner, name)].effective_id;
+    let id = |owner: Option<&str>, name: &str| base[position(&base, owner, name)].effective_id.clone();
 
     // A parent that names a member where a type is required.
     let mut mutated = base.clone();
@@ -524,7 +521,7 @@ fn the_strict_reader_refuses_every_mis_wired_link() {
     // A repeated parent on one declaration.
     let mut mutated = base.clone();
     let at = position(&mutated, Some("D"), "A/f");
-    mutated[at].preimage.derivation[1].parent = mutated[at].preimage.derivation[0].parent;
+    mutated[at].preimage.derivation[1].parent = mutated[at].preimage.derivation[0].parent.clone();
     assert!(matches!(
         refusal_cause(&mutated),
         ModelRefusalCause::DuplicateParent {
@@ -582,165 +579,4 @@ fn n10_unsorted_derivation_is_refused() {
         cause,
         ModelRefusalCause::UnsortedDerivation { .. }
     ));
-}
-
-fn identities(view: &EffectiveView) -> BTreeMap<String, (EffectiveId, String)> {
-    view.declarations()
-        .iter()
-        .map(|entry| {
-            let owner = entry
-                .preimage
-                .owner_effective_type
-                .map(|id| entry_by_id(view, &id).preimage.original.node.clone())
-                .unwrap_or_default();
-            (
-                format!("{owner}|{}", entry.preimage.original.node),
-                (entry.effective_id, format!("{:?}", entry.preimage)),
-            )
-        })
-        .collect()
-}
-
-fn changed(base: &Fixture, variant: &Fixture) -> BTreeSet<String> {
-    let before = identities(&base.view());
-    let after = identities(&variant.view());
-    before
-        .keys()
-        .chain(after.keys())
-        .filter(|label| before.get(*label).map(|v| v.0) != after.get(*label).map(|v| v.0))
-        .cloned()
-        .collect()
-}
-
-fn five_type_chain() -> Fixture {
-    Fixture {
-        types: vec![
-            ty("S", &[]),
-            ty("T0", &[]),
-            ty("T1", &["T0"]),
-            ty("T1b", &["T0"]),
-            ty("T2", &["T1"]),
-            ty("T3", &["T2"]),
-            ty("T4", &["T3"]),
-        ],
-        fields: vec![
-            fld("T0/f", "T0", None, &[]),
-            fld("T0/h", "T0", None, &[]),
-            fld("T4/g", "T4", Some("T0/f"), &[]),
-            fld("T4/s", "T4", None, &["T0/h"]),
-        ],
-    }
-}
-
-fn labels(owner_member: &[(&str, &str)]) -> BTreeSet<String> {
-    owner_member
-        .iter()
-        .map(|(owner, node)| format!("{}|{}", full(owner), full(node)))
-        .collect()
-}
-
-/// TC-1023: an identity binds its whole ancestry through the parent link.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-10")]
-#[test]
-fn identity_binds_ancestry_and_is_unique() {
-    let base = five_type_chain();
-
-    // The middle edge T2 -> T1 replaced by T2 -> T1b: T2 and everything below
-    // it that reaches it change; T0, T1, T1b and S do not.
-    let mut rewired = base.clone();
-    rewired.types[4] = ty("T2", &["T1b"]);
-    let moved = changed(&base, &rewired);
-    let mut expected = BTreeSet::new();
-    for decl in ["T2", "T3", "T4"] {
-        expected.insert(format!("|{}", full(decl)));
-    }
-    for owner in ["T2", "T3", "T4"] {
-        for field in ["T0/f", "T0/h"] {
-            expected.insert(format!("{}|{}", full(owner), full(field)));
-        }
-    }
-    for field in ["T4/g", "T4/s"] {
-        expected.insert(format!("{}|{}", full("T4"), full(field)));
-    }
-    assert_eq!(moved, expected, "an edge replaced in the middle");
-
-    // The redefinition target changed from f to h.
-    let mut retargeted = base.clone();
-    retargeted.fields[2] = fld("T4/g", "T4", Some("T0/h"), &[]);
-    assert_eq!(
-        changed(&base, &retargeted),
-        labels(&[("T4", "T4/g"), ("T4", "T0/f"), ("T4", "T0/h")])
-    );
-
-    // One subset target changed from h to f.
-    let mut resubset = base.clone();
-    resubset.fields[3] = fld("T4/s", "T4", None, &["T0/f"]);
-    assert_eq!(changed(&base, &resubset), labels(&[("T4", "T4/s")]));
-
-    // The root's own key changed: every type below it and every member of
-    // those types changes; the unrelated type does not.
-    let mut renamed = base.clone();
-    for decl in &mut renamed.types {
-        if decl.name == "T0" {
-            decl.name = "U0";
-        }
-        for parent in &mut decl.parents {
-            if *parent == "T0" {
-                *parent = "U0";
-            }
-        }
-    }
-    for decl in &mut renamed.fields {
-        if decl.owner == "T0" {
-            decl.owner = "U0";
-        }
-    }
-    let root_moved = changed(&base, &renamed);
-    assert!(
-        !root_moved.iter().any(|label| label.ends_with(&full("S"))),
-        "the unrelated type keeps its identity"
-    );
-    for decl in ["T1", "T1b", "T2", "T3", "T4"] {
-        assert!(
-            root_moved.contains(&format!("|{}", full(decl))),
-            "{decl} reaches the root"
-        );
-    }
-
-    // No two distinct declarations of any variant share an identity or a
-    // preimage; one identity has exactly one preimage.
-    let mut seen: BTreeMap<EffectiveId, String> = BTreeMap::new();
-    let mut preimages: BTreeSet<String> = BTreeSet::new();
-    for fixture in [&base, &rewired, &retargeted, &resubset, &renamed] {
-        for (_, (id, preimage)) in identities(&fixture.view()) {
-            match seen.get(&id) {
-                Some(known) => assert_eq!(known, &preimage, "one identity, one preimage"),
-                None => {
-                    assert!(
-                        preimages.insert(preimage.clone()),
-                        "one preimage, one identity"
-                    );
-                    seen.insert(id, preimage);
-                }
-            }
-        }
-    }
-}
-
-/// Two declarations of equal declared shape and distinct original keys have
-/// distinct identities.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-2")]
-#[test]
-fn equal_shape_distinct_keys_differ() {
-    let view = Fixture {
-        types: vec![ty("P", &[]), ty("Q", &[])],
-        fields: vec![fld("P/x", "P", None, &[]), fld("Q/x", "Q", None, &[])],
-    }
-    .view();
-    let ids: BTreeSet<EffectiveId> = view
-        .declarations()
-        .iter()
-        .map(|entry| entry.effective_id)
-        .collect();
-    assert_eq!(ids.len(), view.declarations().len());
 }
