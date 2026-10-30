@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1173 (FR-404): the context names an item by the pairing key the run's
-//! `package_id` and a member's request index, which is also the index of the
+//! TC-1173 (FR-404): the context names an item by a member's request index, which
+//! is also the index of the
 //! item `items_from_requirements` writes for that member (FR-075). These
 //! need `qsl-route`, which only the root crate's tests hold.
 
@@ -43,6 +43,7 @@ fn a_members_item_bounds_build_a_request_that_replays() {
     };
     let result = run_with_replay_context(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         SOURCE.as_bytes(),
         &BTreeMap::new(),
@@ -69,7 +70,7 @@ fn a_members_item_bounds_build_a_request_that_replays() {
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the model is admitted");
-    let graph = PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the unit checks");
@@ -84,16 +85,15 @@ fn a_members_item_bounds_build_a_request_that_replays() {
         .semantic_graph()
         .node(callable.identity)
         .and_then(|node| node.function_parameters())
-        .expect("a function node")[0];
-    let node = qsl_foundation::digest::WireNodeId::from_digest(*parameter.as_bytes());
+        .expect("a function node")[0]
+        .clone();
     let assignments = vec![CanonicalAssignment {
-        parameter: node,
+        parameter,
         value: WitnessValue::Integer(9),
     }];
     let wire = result
         .context()
         .request(
-            result.package_id(),
             member.request_index(),
             item.proof_bounds(),
             &plugin,

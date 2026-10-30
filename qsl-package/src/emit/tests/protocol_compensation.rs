@@ -79,7 +79,6 @@ fn emitted_unit(
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     );
     Ok((emission, wire, read))
 }

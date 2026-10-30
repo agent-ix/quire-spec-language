@@ -91,7 +91,7 @@ pub(crate) fn clause(owner: &str, name: &str, text: &str) -> Value {
 pub(crate) fn domain_document(types: Vec<Value>, constructs: Vec<Value>) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": id("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1",
                     "mappingVersions": [], "profileVersions": []},

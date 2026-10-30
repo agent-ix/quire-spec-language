@@ -20,9 +20,8 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedTerm, TemporalForm,
 };
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::{Origin, Role};
+use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::InternalFault;
 
 /// One declaration of an admitted temporal clause: its identity triple and
@@ -30,7 +29,7 @@ use quire_semantic_value::catalog::InternalFault;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClauseRoot {
     occurrence: OccurrenceKey,
-    over: Option<WireNodeId>,
+    over: Option<NodeKey>,
 }
 
 impl ClauseRoot {
@@ -42,8 +41,8 @@ impl ClauseRoot {
     /// The `value`/`parameter` node of the clause's `over` parameter, or
     /// `None` for a clause with no `over` parameter (a valid result, not a
     /// refusal).
-    pub fn over(&self) -> Option<WireNodeId> {
-        self.over
+    pub fn over(&self) -> Option<&NodeKey> {
+        self.over.as_ref()
     }
 }
 
@@ -76,18 +75,20 @@ fn is_clause(node: &CheckedSemanticNodeV2) -> bool {
 /// application's first argument, which IR's reader admitted as a reference
 /// to a `value`/`parameter` node (QSpec FR-370 reader order). `None` when
 /// that argument names no target.
-fn over_of(node: &CheckedSemanticNodeV2) -> Option<WireNodeId> {
+fn over_of(node: &CheckedSemanticNodeV2) -> Result<Option<NodeKey>, InternalFault> {
     let CheckedTerm::Application { arguments, .. } = &node.body else {
-        return None;
+        return Ok(None);
     };
-    let CheckedTerm::Reference { target } = arguments.first()? else {
-        return None;
+    let Some(CheckedTerm::Reference { target }) = arguments.first() else {
+        return Ok(None);
     };
-    WireNodeId::from_hex(&target.digest)
+    crate::emit::admitted_key(target)
+        .map(Some)
+        .map_err(|_| NODE_ID_FAULT)
 }
 
 /// The clause root of `node`'s `claim` occurrence `occurrence`.
-fn root(node: WireNodeId, occurrence: &CheckedOccurrence, over: Option<WireNodeId>) -> ClauseRoot {
+fn root(node: NodeKey, occurrence: &CheckedOccurrence, over: Option<NodeKey>) -> ClauseRoot {
     ClauseRoot {
         occurrence: OccurrenceKey::new(
             node,
@@ -112,15 +113,15 @@ pub fn clause_roots(package: &CheckedPackageV2) -> Result<Vec<ClauseRoot>, Inter
         .graph()
         .nodes
         .iter()
-        .filter(|node| is_clause(node) && !wrappers.contains(&*node.node_id.digest))
+        .filter(|node| is_clause(node) && !wrappers.contains(&node.node_id))
     {
-        let id = WireNodeId::from_hex(&node.node_id.digest).ok_or(NODE_ID_FAULT)?;
-        let over = over_of(node);
+        let id = crate::emit::admitted_key(&node.node_id).map_err(|_| NODE_ID_FAULT)?;
+        let over = over_of(node)?;
         roots.extend(
             node.occurrences
                 .iter()
                 .filter(|occurrence| occurrence.role == CheckedOccurrenceRole::Claim)
-                .map(|occurrence| root(id, occurrence, over)),
+                .map(|occurrence| root(id.clone(), occurrence, over.clone())),
         );
     }
     Ok(roots)
@@ -135,15 +136,15 @@ pub fn resolve_clause_root(
     let unresolved = || ClauseRootUnresolved {
         root: triple.clone(),
     };
-    let digest = triple.node().to_string();
+    let id = crate::emit::node_id(triple.node());
     let node = package
         .graph()
         .nodes
         .iter()
-        .find(|node| *node.node_id.digest == *digest)
+        .find(|node| node.node_id == id)
         .filter(|node| is_clause(node))
         .ok_or_else(unresolved)?;
-    if super::hyper_root::wrappers(package).contains(&*node.node_id.digest) {
+    if super::hyper_root::wrappers(package).contains(&node.node_id) {
         return Err(unresolved());
     }
     if super::occurrence_role(triple.origin().role().as_str()) != Some(CheckedOccurrenceRole::Claim)
@@ -158,5 +159,9 @@ pub fn resolve_clause_root(
                 && occurrence.ordinal == triple.origin().ordinal()
         })
         .ok_or_else(unresolved)?;
-    Ok(root(triple.node(), occurrence, over_of(node)))
+    Ok(root(
+        triple.node().clone(),
+        occurrence,
+        over_of(node).map_err(|_| unresolved())?,
+    ))
 }

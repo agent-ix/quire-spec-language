@@ -28,7 +28,8 @@ pub(crate) fn record_orders(
     declared
         .iter()
         .filter_map(|(declaration, names)| {
-            let CompositeShape::Record(fields) = types.composite(*declaration)?.shape() else {
+            let CompositeShape::Record(fields) = types.composite(declaration.clone())?.shape()
+            else {
                 return None;
             };
             let mut order: Vec<usize> = names
@@ -39,7 +40,7 @@ pub(crate) fn record_orders(
                 .filter(|slot| !order.contains(slot))
                 .collect();
             order.extend(rest);
-            Some((*declaration, order))
+            Some((declaration.clone(), order))
         })
         .collect()
 }
@@ -109,7 +110,7 @@ impl Space {
                     .map(|(rank, variant)| {
                         u32::try_from(rank)
                             .ok()
-                            .map(|rank| Value::Enum(EnumMember::new(variant, rank)))
+                            .map(|rank| Value::Enum(EnumMember::new(variant.clone(), rank)))
                     })
                     .collect::<Option<Vec<Value>>>()?,
             )),
@@ -118,7 +119,7 @@ impl Space {
                     return None;
                 }
                 let members: Vec<(bool, &ValueType)> = match types
-                    .composite(*declaration)
+                    .composite(declaration.clone())
                     .map(CompositeDeclaration::shape)?
                 {
                     CompositeShape::Record(fields) => fields
@@ -129,15 +130,14 @@ impl Space {
                         positions.iter().map(|position| (false, position)).collect()
                     }
                     CompositeShape::Union(declared) => {
-                        visiting.push(*declaration);
+                        visiting.push(declaration.clone());
                         // FR-120: cases in ascending UTF-8 bytes of their
                         // names.
                         let mut declared: Vec<_> = declared.iter().collect();
                         declared.sort_by(|left, right| {
                             left.identifier()
-                                .as_str()
                                 .as_bytes()
-                                .cmp(right.identifier().as_str().as_bytes())
+                                .cmp(right.identifier().as_bytes())
                         });
                         let spaces = declared
                             .into_iter()
@@ -157,7 +157,7 @@ impl Space {
                         return spaces.map(Self::Union);
                     }
                 };
-                visiting.push(*declaration);
+                visiting.push(declaration.clone());
                 let fields = members
                     .into_iter()
                     .map(|(optional, member)| {
@@ -172,7 +172,7 @@ impl Space {
                     .cloned()
                     .unwrap_or_else(|| (0..fields.len()).collect());
                 Some(Self::Composite {
-                    declaration: *declaration,
+                    declaration: declaration.clone(),
                     fields,
                     order,
                 })
@@ -249,7 +249,10 @@ impl Space {
                     });
                 }
                 let slots = slots.into_iter().collect::<Option<Vec<_>>>()?;
-                Some(from_admitted_slots(*declaration, slots.into_boxed_slice()))
+                Some(from_admitted_slots(
+                    declaration.clone(),
+                    slots.into_boxed_slice(),
+                ))
             }
         }
     }
@@ -295,7 +298,7 @@ pub(crate) fn unenumerable_paths(value_type: &ValueType, types: &TypeEnvironment
                 if visiting.contains(declaration) {
                     return;
                 }
-                let Some(declared) = types.composite(*declaration) else {
+                let Some(declared) = types.composite(declaration.clone()) else {
                     found.push(path.clone());
                     return;
                 };
@@ -309,7 +312,7 @@ pub(crate) fn unenumerable_paths(value_type: &ValueType, types: &TypeEnvironment
                         .flat_map(UnionMemberDeclaration::positions)
                         .collect(),
                 };
-                visiting.push(*declaration);
+                visiting.push(declaration.clone());
                 for (index, member) in members.into_iter().enumerate() {
                     let Ok(index) = u32::try_from(index) else {
                         break;
@@ -437,7 +440,7 @@ impl Domain {
             ValueType::Reference(target) => Some(Self::Reference(
                 objects
                     .iter()
-                    .filter(|object| types.conforms(object.object_type(), *target))
+                    .filter(|object| types.conforms(object.object_type().clone(), target.clone()))
                     .cloned()
                     .collect(),
             )),
@@ -795,11 +798,11 @@ mod tests {
     /// `Outer { inner: Inner, flag: Boolean }`.
     fn nested() -> (TypeEnvironment, NodeKey, NodeKey) {
         use quire_semantic_value::declaration::FieldDeclaration;
-        let inner = NodeKey::from_digest([2; 32]);
-        let outer = NodeKey::from_digest([3; 32]);
+        let inner = crate::test_ids::node_key([2]);
+        let outer = crate::test_ids::node_key([3]);
         let declarations = [
             CompositeDeclaration::new(
-                inner,
+                inner.clone(),
                 "Inner",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("e", ValueType::Boolean, Presence::Required),
@@ -807,10 +810,14 @@ mod tests {
                 ]),
             ),
             CompositeDeclaration::new(
-                outer,
+                outer.clone(),
                 "Outer",
                 CompositeShape::Record(vec![
-                    FieldDeclaration::new("inner", ValueType::Composite(inner), Presence::Required),
+                    FieldDeclaration::new(
+                        "inner",
+                        ValueType::Composite(inner.clone()),
+                        Presence::Required,
+                    ),
                     FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required),
                 ]),
             ),
@@ -844,7 +851,7 @@ mod tests {
             .expect("a finite domain")
         };
         assert_eq!(values(inner, &mut charged).len(), 6);
-        assert_eq!(values(outer, &mut charged).len(), 12);
+        assert_eq!(values(outer.clone(), &mut charged).len(), 12);
         assert_eq!(charged, 18);
         let all = values(outer, &mut charged);
         let distinct: std::collections::BTreeSet<String> = all
@@ -864,21 +871,17 @@ mod tests {
     /// written as FR-120's union form.
     #[test]
     fn a_union_attempt_type_enumerates_every_member() {
-        use quire_exact::{Identifier, UnionMember};
+        use quire_exact::UnionMember;
         use quire_semantic_value::declaration::UnionMemberDeclaration;
-        let union = NodeKey::from_digest([5; 32]);
-        let member = |name: &str, key: u8, positions: Vec<ValueType>| {
+        let union = crate::test_ids::node_key([5]);
+        let member = |name: &str, _key: u8, positions: Vec<ValueType>| {
             UnionMemberDeclaration::from_verified(
-                UnionMember::from_admitted(
-                    union,
-                    NodeKey::from_digest([key; 32]),
-                    Identifier::new(name).expect("an identifier"),
-                ),
+                UnionMember::from_admitted(union.clone(), name).expect("a member name"),
                 positions,
             )
         };
         let declaration = CompositeDeclaration::new(
-            union,
+            union.clone(),
             "Choice",
             CompositeShape::Union(vec![
                 member("Flag", 6, vec![ValueType::Boolean]),
@@ -887,7 +890,7 @@ mod tests {
             ]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
-        assert!(enumerable_in(&ValueType::Composite(union), &types));
+        assert!(enumerable_in(&ValueType::Composite(union.clone()), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(union),
             &[],
@@ -906,8 +909,9 @@ mod tests {
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
             format!(
-                r#"{{"components":[{{"type":"boolean","value":true}}],"member":"Flag","name":"{}","type":"union"}}"#,
-                "05".repeat(32)
+                r#"{{"components":[{{"type":"boolean","value":true}}],"member":"Flag","name":{},"type":"union"}}"#,
+                qsl_foundation::node_wire::node_key_to_json(&crate::test_ids::node_key([5]))
+                    .expect("a node key encodes")
             )
         );
     }
@@ -918,19 +922,15 @@ mod tests {
     #[trace("TC-1270")]
     #[test]
     fn a_variant_union_orders_its_cases_by_name() {
-        use quire_exact::{Identifier, UnionMember};
+        use quire_exact::UnionMember;
         use quire_semantic_value::declaration::UnionMemberDeclaration;
-        let union = NodeKey::from_digest([12; 32]);
-        let case = |byte: u8, name: &str| {
-            UnionMember::from_admitted(
-                union,
-                NodeKey::from_digest([byte; 32]),
-                Identifier::new(name).expect("an identifier"),
-            )
+        let union = crate::test_ids::node_key([12]);
+        let case = |_byte: u8, name: &str| {
+            UnionMember::from_admitted(union.clone(), name).expect("a member name")
         };
         let (zed, alpha) = (case(13, "Zed"), case(14, "Alpha"));
         let declaration = CompositeDeclaration::new(
-            union,
+            union.clone(),
             "Ordered",
             CompositeShape::Union(vec![
                 UnionMemberDeclaration::from_verified(zed.clone(), vec![]),
@@ -947,7 +947,7 @@ mod tests {
         .expect("a finite domain");
         let names: Vec<String> = (0..domain.len())
             .map(|index| match domain.nth(index) {
-                Some(Value::Union(value)) => value.member().identifier().as_str().to_owned(),
+                Some(Value::Union(value)) => value.member().identifier().to_owned(),
                 other => panic!("a union value: {other:?}"),
             })
             .collect();
@@ -959,21 +959,13 @@ mod tests {
     #[trace("TC-1270", "FR-120-AC-25")]
     #[test]
     fn a_variant_union_adds_nullary_and_payload_case_domains() {
-        use quire_exact::{Identifier, UnionMember};
+        use quire_exact::UnionMember;
         use quire_semantic_value::declaration::UnionMemberDeclaration;
-        let union = NodeKey::from_digest([9; 32]);
-        let empty = UnionMember::from_admitted(
-            union,
-            NodeKey::from_digest([10; 32]),
-            Identifier::new("Empty").expect("an identifier"),
-        );
-        let enabled = UnionMember::from_admitted(
-            union,
-            NodeKey::from_digest([11; 32]),
-            Identifier::new("Enabled").expect("an identifier"),
-        );
+        let union = crate::test_ids::node_key([9]);
+        let empty = UnionMember::from_admitted(union.clone(), "Empty").expect("a member name");
+        let enabled = UnionMember::from_admitted(union.clone(), "Enabled").expect("a member name");
         let declaration = CompositeDeclaration::new(
-            union,
+            union.clone(),
             "Choice",
             CompositeShape::Union(vec![
                 UnionMemberDeclaration::from_verified(empty.clone(), vec![]),
@@ -981,7 +973,7 @@ mod tests {
             ]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
-        assert!(enumerable_in(&ValueType::Composite(union), &types));
+        assert!(enumerable_in(&ValueType::Composite(union.clone()), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(union),
             &[],
@@ -1014,14 +1006,14 @@ mod tests {
     #[trace("TC-1270", "FR-120-AC-22")]
     #[test]
     fn a_tuple_value_domain_is_the_ordered_product_of_its_positions() {
-        let tuple = NodeKey::from_digest([12; 32]);
+        let tuple = crate::test_ids::node_key([12]);
         let declaration = CompositeDeclaration::new(
-            tuple,
+            tuple.clone(),
             "Pair",
             CompositeShape::Tuple(vec![ValueType::Boolean, int(0, 1)]),
         );
         let types = TypeEnvironment::new([declaration], []).expect("the declaration admits");
-        assert!(enumerable_in(&ValueType::Composite(tuple), &types));
+        assert!(enumerable_in(&ValueType::Composite(tuple.clone()), &types));
         let values = composite_values::<()>(
             &ValueType::Composite(tuple),
             &[],
@@ -1063,7 +1055,7 @@ mod tests {
     fn a_record_value_is_written_in_fr_120_s_record_form() {
         let (types, inner, _) = nested();
         let first = composite_values::<()>(
-            &ValueType::Composite(inner),
+            &ValueType::Composite(inner.clone()),
             &[],
             &types,
             &RecordOrders::new(),
@@ -1077,11 +1069,13 @@ mod tests {
             quire_canonical::Limits::new(u64::MAX),
         )
         .expect("encodes");
-        let name = "02".repeat(32);
+        let name = qsl_foundation::node_wire::node_key_to_json(&inner)
+            .expect("a node key encodes")
+            .to_string();
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
             format!(
-                r#"{{"fields":[{{"name":"e","value":{{"type":"boolean","value":false}}}},{{"name":"o","value":null}}],"name":"{name}","type":"record"}}"#
+                r#"{{"fields":[{{"name":"e","value":{{"type":"boolean","value":false}}}},{{"name":"o","value":null}}],"name":{name},"type":"record"}}"#
             )
         );
     }

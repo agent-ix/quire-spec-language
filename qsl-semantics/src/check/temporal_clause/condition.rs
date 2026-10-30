@@ -337,8 +337,8 @@ fn same_dimension(
 ) -> bool {
     match (left, right) {
         (ValueType::Quantity(left), ValueType::Quantity(right)) => units
-            .get(*left)
-            .zip(units.get(*right))
+            .get(left.clone())
+            .zip(units.get(right.clone()))
             .is_some_and(|(left, right)| left.dimension() == right.dimension()),
         (ValueType::Quantity(_), _) | (_, ValueType::Quantity(_)) => false,
         _ => is_exact_numeric(left) && is_exact_numeric(right),

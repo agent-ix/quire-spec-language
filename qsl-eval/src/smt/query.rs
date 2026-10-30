@@ -321,7 +321,7 @@ pub fn encode_smt_query(
     let mut node = None;
     if let Some(clause) = clause {
         let over = match &clause.over().1 {
-            quire_exact::ValueType::Reference(over) => *over,
+            quire_exact::ValueType::Reference(over) => over.clone(),
             _ => return Err(fault("an `over` that is no reference")),
         };
         let found = system
@@ -340,7 +340,7 @@ pub fn encode_smt_query(
                 .filter(|position| {
                     symbolic
                         .types
-                        .conforms(symbolic.objects[*position].type_id, over)
+                        .conforms(symbolic.objects[*position].type_id.clone(), over.clone())
                 })
                 .ok_or_else(|| Refusal::InstanceType {
                     key: instance.key.clone(),
@@ -759,11 +759,15 @@ impl Query<'_, '_> {
                     else {
                         return Err(fault("a terminal predicate with no state object"));
                     };
-                    let context = *context;
+                    let context = context.clone();
                     let mut holds = Vec::new();
                     let mut defined = Vec::new();
                     for (index, object) in self.subject.objects.iter().enumerate() {
-                        if !self.subject.types.conforms(object.type_id, context) {
+                        if !self
+                            .subject
+                            .types
+                            .conforms(object.type_id.clone(), context.clone())
+                        {
                             continue;
                         }
                         let (value, definition) = Reader::new(

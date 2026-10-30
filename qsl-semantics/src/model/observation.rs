@@ -1414,7 +1414,7 @@ impl ModelView {
         let by_effective_id = view
             .type_identities()
             .iter()
-            .map(|(key, effective)| (*effective, key.clone()))
+            .map(|(key, effective)| (effective.clone(), key.clone()))
             .collect();
         Self {
             view,
@@ -1490,7 +1490,7 @@ pub(crate) fn model_views(
 pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
     views
         .iter()
-        .find(|view| view.declaration_key(effective).is_some())
+        .find(|view| view.declaration_key(effective.clone()).is_some())
 }
 
 // ---------------------------------------------------------------------------
@@ -1828,11 +1828,11 @@ pub fn declared_type_universe_for(
     let views = model_views(model_selections, packages, model_limits)?;
     let Some(effective) = views
         .iter()
-        .find_map(|view| view.view.type_identities().get(declaration).copied())
+        .find_map(|view| view.view.type_identities().get(declaration).cloned())
     else {
         return Ok(None);
     };
-    let universe = population_universe(&views, effective)?;
+    let universe = population_universe(&views, effective.clone())?;
     Ok(Some((effective, universe)))
 }
 
@@ -1896,9 +1896,9 @@ pub fn admit_observations(
 
     let views = model_views(model_selections, packages, model_limits)?;
     let context_view =
-        view_of(&views, clause.context).ok_or_else(|| fault("unresolved-context-type"))?;
+        view_of(&views, clause.context.clone()).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
-        .type_name(clause.context)
+        .type_name(clause.context.clone())
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
     let state_machine = is_state_machine_context(context_view, &context_name);
@@ -1932,9 +1932,9 @@ pub fn admit_observations(
                 types,
                 context_view,
                 context_name: &context_name,
-                clause_context: clause.context,
+                clause_context: clause.context.clone(),
                 state_machine,
-                clause: clause.identity,
+                clause: clause.identity.clone(),
                 operation: $operation,
                 as_context: $as_context,
                 ancestor_steps: model_limits.ancestor_steps,
@@ -1960,7 +1960,7 @@ pub fn admit_observations(
             types,
             context_view,
             &context_name,
-            clause.identity,
+            clause.identity.clone(),
             provisions,
             snapshot,
             anchor,
@@ -2012,8 +2012,8 @@ pub fn admit_observations(
                 types,
                 context_view,
                 &context_name,
-                clause.identity,
-                clause.context,
+                clause.identity.clone(),
+                clause.context.clone(),
                 OperationSource::Clause(
                     clause
                         .operation
@@ -2044,8 +2044,8 @@ pub fn admit_observations(
                 types,
                 context_view,
                 &context_name,
-                clause.identity,
-                clause.context,
+                clause.identity.clone(),
+                clause.context.clone(),
                 OperationSource::Any(&clause.operations),
                 true,
                 &named,
@@ -2436,7 +2436,7 @@ fn admit_invocation_documents(
             views,
             types,
             context_name,
-            context: clause_context,
+            context: clause_context.clone(),
             state_machine,
         },
         source,
@@ -2465,13 +2465,13 @@ fn admit_invocation_documents(
     } else {
         PostStateRange::Refuse
     };
-    let read_machine = state_machine.then_some(clause_context);
+    let read_machine = state_machine.then_some(clause_context.clone());
     let mut pre_values = document::admit_population_values(
         views,
         types,
         pre_snapshot,
         &documents.pre.identity,
-        read_machine,
+        read_machine.clone(),
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
@@ -2528,16 +2528,11 @@ fn admit_invocation_documents(
             if self_object.is_some() {
                 return Err(wrong_self_kind());
             }
-            let receiver_pre = pre_values.attach_read_context(
-                context_name,
-                ObservationRole::Pre,
-                &documents.pre.identity,
-                selected,
-            )?;
+            let receiver_pre =
+                pre_values.attach_read_context(context_name, &documents.pre.identity, selected)?;
             let receiver_post = if post_self {
                 Some(post_values.attach_read_context(
                     context_name,
-                    ObservationRole::Post,
                     &documents.post.identity,
                     selected,
                 )?)
@@ -2649,7 +2644,7 @@ fn check_argument_bounds(
                         .view
                         .type_identities()
                         .get(&member.owner)
-                        .is_some_and(|owner| types.conforms(context, *owner));
+                        .is_some_and(|owner| types.conforms(context.clone(), owner.clone()));
             if !declared {
                 continue;
             }
@@ -2726,8 +2721,12 @@ fn check_operation(
         return Ok(operation.declaration.clone());
     }
     let invoked = document::find_declaration(receiver.views, &call.context)
-        .and_then(|(view, key)| view.view.type_identities().get(&key).copied())
-        .filter(|invoked| receiver.types.conforms(*invoked, receiver.context))
+        .and_then(|(view, key)| view.view.type_identities().get(&key).cloned())
+        .filter(|invoked| {
+            receiver
+                .types
+                .conforms(invoked.clone(), receiver.context.clone())
+        })
         .ok_or_else(wrong_invocation)?;
     match source {
         OperationSource::Clause(operation) if call.operation == operation.declaration.name() => {
@@ -2842,7 +2841,7 @@ fn admit_pre_call(
                 views: context.views,
                 types: context.types,
                 context_name: context.context_name,
-                context: context.clause_context,
+                context: context.clause_context.clone(),
                 state_machine: context.state_machine,
             },
             source,
@@ -2866,7 +2865,7 @@ fn admit_pre_call(
         context.types,
         snapshot,
         &input.pre.identity,
-        state_machine.then_some(context.clause_context),
+        state_machine.then_some(context.clause_context.clone()),
         PostStateRange::Refuse,
         context.ancestor_steps,
     )?;
@@ -2901,7 +2900,6 @@ fn admit_pre_call(
         }
         let reference = values.attach_read_context(
             context.context_name,
-            ObservationRole::Current,
             &input.pre.identity,
             &receiver_identity,
         )?;
@@ -2946,7 +2944,7 @@ fn admit_pre_call(
     };
     Ok(AdmittedObservations {
         usage,
-        clause: context.clause,
+        clause: context.clause.clone(),
         current,
         pre,
         post: None,
@@ -2986,7 +2984,7 @@ fn admit_operation(
         types,
         context_view,
         context_name,
-        clause_context,
+        clause_context.clone(),
         source,
         true,
         named,
@@ -3262,7 +3260,7 @@ impl AdmittedInvocation<'_> {
                 InternalFault::new("observation-admission", "admitted-invocation-unreadable")
             }
         };
-        let context_view = view_of(&self.views, self.context).ok_or_else(|| {
+        let context_view = view_of(&self.views, self.context.clone()).ok_or_else(|| {
             InternalFault::new("observation-admission", "unresolved-context-type")
         })?;
         let invocation = self.documents.invocation().map_err(as_fault)?;
@@ -3309,9 +3307,9 @@ pub fn admit_frame_invocation<'t>(
 ) -> Result<AdmittedInvocation<'t>, AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let context_view =
-        view_of(&views, frame.context).ok_or_else(|| fault("unresolved-context-type"))?;
+        view_of(&views, frame.context.clone()).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
-        .type_name(frame.context)
+        .type_name(frame.context.clone())
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
     let admitted = admit_invocation_documents(
@@ -3319,7 +3317,7 @@ pub fn admit_frame_invocation<'t>(
         types,
         context_view,
         &context_name,
-        frame.context,
+        frame.context.clone(),
         OperationSource::Clause(&frame.operation),
         false,
         &NamedReads::default(),
@@ -3330,13 +3328,13 @@ pub fn admit_frame_invocation<'t>(
     )?;
     Ok(AdmittedInvocation {
         usage: admitted.usage(),
-        frame: frame.frame,
+        frame: frame.frame.clone(),
         invocation: admitted.documents.invocation.identity.clone(),
         pre: admitted.documents.pre.identity.clone(),
         post: admitted.documents.post.identity.clone(),
         views,
         types,
-        context: frame.context,
+        context: frame.context.clone(),
         model_limits,
         documents: admitted.documents,
     })
@@ -3358,13 +3356,14 @@ fn population_universe(
     views: &[ModelView],
     type_identity: EffectiveId,
 ) -> Result<UniverseId, AdmissionFailure> {
-    let view = view_of(views, type_identity).ok_or_else(|| fault("object-type-unresolved"))?;
+    let view =
+        view_of(views, type_identity.clone()).ok_or_else(|| fault("object-type-unresolved"))?;
     let key = view
         .declaration_key(type_identity)
         .ok_or_else(|| fault("object-type-unresolved"))?;
     view.view
         .object_universe_of(key)
-        .map(|universe| universe.identity())
+        .and_then(|universe| universe.identity().ok())
         .ok_or_else(|| fault("object-universe-unresolved"))
 }
 
@@ -3385,7 +3384,7 @@ mod helpers {
                 admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "key"),
             )
         })?;
-        let universe = population_universe(views, type_identity)?;
+        let universe = population_universe(views, type_identity.clone())?;
         Ok(ObjectReference::new(universe, type_identity, object))
     }
 

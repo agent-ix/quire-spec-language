@@ -27,7 +27,6 @@
 //! nodes against `work_units` and occurrences against `value_occurrences`.
 
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::NominalNode;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::observation::population_universe_for;
@@ -46,7 +45,7 @@ use quire_semantic_value::supplied_stop::{
     AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
     SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::ReplayRefusal;
 use crate::witness::{QuantityMagnitude, WitnessSlot, WitnessValue};
@@ -121,25 +120,22 @@ impl EnumDeclaration {
 /// keyed by its checked node (FR-360 item 11), and its cases are in the
 /// ascending UTF-8 byte order of their names.
 pub(super) fn enum_declarations(package: &CheckedPackage) -> Vec<EnumDeclaration> {
-    let declared =
-        package
-            .graph()
-            .semantic_graph()
-            .nodes()
-            .filter_map(|node| match node.nominal() {
-                Some(NominalNode::EnumDeclaration(preimage)) => Some(EnumDeclaration {
-                    key: node.key(),
-                    members: preimage.members().to_vec(),
-                }),
-                _ => None,
-            });
+    let declared = package
+        .graph()
+        .scope()
+        .enums()
+        .iter()
+        .map(|binding| EnumDeclaration {
+            key: binding.declaration.key(),
+            members: binding.declaration.declaration().members().to_vec(),
+        });
     let variant_types = package
         .graph()
         .scope()
         .variant_types()
         .iter()
         .map(|variant_type| EnumDeclaration {
-            key: variant_type.node(),
+            key: variant_type.node().clone(),
             members: variant_type
                 .cases()
                 .iter()
@@ -155,8 +151,8 @@ fn declares_shape(candidate: &EnumDeclaration, shape: &quire_exact::EnumShape) -
         && candidate
             .members
             .iter()
-            .map(|case| mint_variant_id(candidate.key, case))
-            .eq(shape.variants())
+            .map(|case| mint_variant_id(candidate.key.clone(), case).ok())
+            .eq(shape.variants().map(|variant| Some(variant.clone())))
 }
 
 /// The declaration whose members are exactly `shape`'s variants.
@@ -227,7 +223,7 @@ struct Converter<'a, 'r> {
     argument_nodes: u64,
     /// The checked composites by key bytes, built once: a record's wire
     /// declaration digest is resolved against it, never minted into a key.
-    composites: HashMap<[u8; 32], &'a CompositeDeclaration>,
+    composites: BTreeMap<NodeKey, &'a CompositeDeclaration>,
     enums: Vec<EnumDeclaration>,
     limits: &'a ScalarLimits,
     /// Where a reference's universe is read from.
@@ -318,7 +314,7 @@ pub(super) fn convert_arguments_in(
         argument_nodes: 0,
         composites: types
             .composites()
-            .map(|composite| (*composite.key().as_bytes(), composite))
+            .map(|composite| (composite.key().clone(), composite))
             .collect(),
         enums,
         limits,
@@ -741,11 +737,11 @@ impl<'a> Converter<'a, '_> {
                     unit: wire,
                 },
             ) => {
-                if wire != unit.as_bytes() {
+                if wire != unit {
                     return Err(self.wrong(parameter));
                 }
                 let magnitude = self.magnitude(parameter, magnitude)?;
-                values.push(Value::Quantity(Quantity::new(magnitude, *unit)));
+                values.push(Value::Quantity(Quantity::new(magnitude, unit.clone())));
             }
             // FR-056: the kernel's canonical constructor decides the payload
             // text; its typed refusal is the cause beneath
@@ -781,14 +777,12 @@ impl<'a> Converter<'a, '_> {
                     member,
                 },
             ) => {
-                let declaration_key = declaration.as_bytes();
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 let index = self
                     .enums
                     .iter()
                     .position(|candidate| {
-                        declares_shape(candidate, shape)
-                            && candidate.key.as_bytes() == declaration_key
+                        declares_shape(candidate, shape) && candidate.key == *declaration
                     })
                     .ok_or_else(|| self.wrong(parameter))?;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
@@ -796,8 +790,9 @@ impl<'a> Converter<'a, '_> {
                 if !owner.members.contains(member) {
                     return Err(self.wrong(parameter));
                 }
-                let variant = mint_variant_id(owner.key, member);
-                let rank = shape.rank(variant).ok_or_else(|| self.wrong(parameter))?;
+                let variant = mint_variant_id(owner.key.clone(), member)
+                    .map_err(|_| self.wrong(parameter))?;
+                let rank = shape.rank(&variant).ok_or_else(|| self.wrong(parameter))?;
                 values.push(Value::Enum(EnumMember::new(variant, rank)));
             }
             (
@@ -810,12 +805,12 @@ impl<'a> Converter<'a, '_> {
             ) => {
                 // FR-098: value shape (matched above), then universe
                 // correspondence, then conformance, as FR-100 orders them.
-                let required = self.model.universe(*object_type)?;
-                if required.as_bytes() != universe {
+                let required = self.model.universe(object_type.clone())?;
+                if &required != universe {
                     return Err(ReplayRefusal::ForeignReference {
                         position: parameter,
-                        required: *required.as_bytes(),
-                        supplied: *universe,
+                        required,
+                        supplied: universe.clone(),
                     }
                     .into());
                 }
@@ -825,18 +820,20 @@ impl<'a> Converter<'a, '_> {
                     .types
                     .object_types()
                     .map(|declaration| declaration.key())
-                    .find(|key| key.as_bytes() == wire_type);
+                    .find(|key| key == wire_type);
                 let Some(supplied_type) = supplied_type else {
                     return Err(self.wrong(parameter));
                 };
-                if !self.types.conforms(supplied_type, *object_type) {
+                if !self
+                    .types
+                    .conforms(supplied_type.clone(), object_type.clone())
+                {
                     return Err(self.wrong(parameter));
                 }
                 let identity =
                     String::from_utf8(identity.clone()).map_err(|_| self.wrong(parameter))?;
                 let object = ObjectId::new(identity).map_err(|_| self.wrong(parameter))?;
-                let reference =
-                    ObjectReference::new(UniverseId::from_digest(*universe), supplied_type, object);
+                let reference = ObjectReference::new(universe.clone(), supplied_type, object);
                 self.references.push((parameter, reference.clone()));
                 values.push(Value::Reference(reference));
             }
@@ -870,10 +867,10 @@ impl<'a> Converter<'a, '_> {
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 let record = *self
                     .composites
-                    .get(declaration.as_bytes())
+                    .get(declaration)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let key = record.key();
-                if !types.composite_conforms(key, *slot_key) {
+                if !types.composite_conforms(key.clone(), slot_key.clone()) {
                     return Err(self.wrong(parameter));
                 }
                 let CompositeShape::Record(declared_fields) = record.shape() else {
@@ -906,7 +903,7 @@ impl<'a> Converter<'a, '_> {
                     }
                 }
                 pending.push(Step::Composite {
-                    key,
+                    key: key.clone(),
                     slots,
                     position: self.position,
                 });
@@ -921,18 +918,20 @@ impl<'a> Converter<'a, '_> {
             ) => {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
-                let tuple = types.composite(*key).ok_or_else(|| self.wrong(parameter))?;
+                let tuple = types
+                    .composite(key.clone())
+                    .ok_or_else(|| self.wrong(parameter))?;
                 let CompositeShape::Tuple(positions) = tuple.shape() else {
                     return Err(self.wrong(parameter));
                 };
-                if declaration.as_bytes() != key.as_bytes() || components.len() != positions.len() {
+                if declaration != key || components.len() != positions.len() {
                     return Err(self.wrong(parameter));
                 }
                 for _ in positions {
                     self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 }
                 pending.push(Step::Composite {
-                    key: *key,
+                    key: key.clone(),
                     slots: vec![Slot::Present; components.len()],
                     position: self.position,
                 });
@@ -960,13 +959,13 @@ impl<'a> Converter<'a, '_> {
                 let types: &'a TypeEnvironment = self.types;
                 self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 let settled = types
-                    .union_key(*slot_key)
+                    .union_key(slot_key.clone())
                     .ok_or_else(|| self.wrong(parameter))?;
-                if declaration.as_bytes() != settled.as_bytes() {
+                if declaration != &settled {
                     return Err(self.wrong(parameter));
                 }
                 let (_, declared) = types
-                    .union_member_named(*slot_key, member)
+                    .union_member_named(slot_key.clone(), member)
                     .ok_or_else(|| self.wrong(parameter))?;
                 let binding = declared.member().ok_or_else(|| self.wrong(parameter))?;
                 let positions = declared.positions();

@@ -244,7 +244,7 @@ fn populations(model: &StateModel) -> Result<Vec<PopulationTypes>, FootprintRefu
 /// followed, so a delete-blocking read of such a field is not derived.
 fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
     match value_type {
-        ValueType::Reference(target) => found.push(*target),
+        ValueType::Reference(target) => found.push(target.clone()),
         ValueType::Option(payload) => referenced_types(payload, found),
         ValueType::Collection(collection) => referenced_types(collection.element(), found),
         ValueType::Map(map) => referenced_types(map.values(), found),
@@ -269,7 +269,7 @@ fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
 /// The object type a reference or optional-reference parameter binds.
 pub(crate) fn parameter_target(value_type: &ValueType) -> Option<EffectiveId> {
     match value_type {
-        ValueType::Reference(target) => Some(*target),
+        ValueType::Reference(target) => Some(target.clone()),
         ValueType::Option(payload) => parameter_target(payload),
         _ => None,
     }
@@ -450,7 +450,7 @@ pub fn derive_constraint_reads(
         if population
             .members
             .iter()
-            .any(|member| reader.conforms(*member, clause.context()))
+            .any(|member| reader.conforms(member.clone(), clause.context()))
         {
             reads.insert(SymbolicLocation::AnyMembership {
                 population: population.key.clone(),
@@ -516,10 +516,10 @@ impl<'a> Reader<'a> {
         self.populations
             .iter()
             .filter(move |population| {
-                population
-                    .members
-                    .iter()
-                    .any(|member| self.conforms(target, *member) || self.conforms(*member, target))
+                population.members.iter().any(|member| {
+                    self.conforms(target.clone(), member.clone())
+                        || self.conforms(member.clone(), target.clone())
+                })
             })
             .map(|population| &population.key)
     }
@@ -572,7 +572,7 @@ impl<'a> Reader<'a> {
             NodeKind::Attribute {
                 reference, field, ..
             } => {
-                let field = self.field_key(field.owner, &field.name)?;
+                let field = self.field_key(field.owner.clone(), &field.name)?;
                 let location = match self.holder(scope, node.at(*reference)) {
                     Holder::Receiver => SymbolicLocation::Field {
                         object: FootprintObject::Receiver,
@@ -589,7 +589,7 @@ impl<'a> Reader<'a> {
             NodeKind::Reaches { edge, .. } => {
                 reads.push((
                     SymbolicLocation::AnyField {
-                        field: self.field_key(edge.owner, &edge.name)?,
+                        field: self.field_key(edge.owner.clone(), &edge.name)?,
                     },
                     observation,
                 ));
@@ -695,7 +695,7 @@ impl Derivation<'_> {
                 population
                     .members
                     .iter()
-                    .any(|member| self.reader.conforms(object, *member))
+                    .any(|member| self.reader.conforms(object.clone(), member.clone()))
             })
             .map(|population| &population.key)
     }
@@ -712,7 +712,7 @@ impl Derivation<'_> {
                 population
                     .members
                     .iter()
-                    .any(|member| self.reader.conforms(*member, supertype))
+                    .any(|member| self.reader.conforms(member.clone(), supertype.clone()))
             })
             .map(|population| &population.key)
     }
@@ -722,7 +722,7 @@ impl Derivation<'_> {
         self.arguments
             .iter()
             .find(|(parameter, _)| parameter == name)
-            .map(|(_, object_type)| *object_type)
+            .map(|(_, object_type)| object_type.clone())
     }
 
     fn run(&self) -> Result<SymbolicFootprint, FootprintRefusal> {
@@ -743,8 +743,8 @@ impl Derivation<'_> {
         }
         let mut deleted_types: Vec<EffectiveId> = Vec::new();
         if effect.deletes_receiver {
-            deleted_types.push(self.receiver_type);
-            for population in self.populations_holding(self.receiver_type) {
+            deleted_types.push(self.receiver_type.clone());
+            for population in self.populations_holding(self.receiver_type.clone()) {
                 writes.insert(SymbolicLocation::Membership {
                     population: population.clone(),
                     object: FootprintObject::Receiver,
@@ -755,7 +755,7 @@ impl Derivation<'_> {
             let Some(target) = self.argument_type(name) else {
                 continue;
             };
-            deleted_types.push(target);
+            deleted_types.push(target.clone());
             for population in self.populations_holding(target) {
                 writes.insert(SymbolicLocation::Membership {
                     population: population.clone(),
@@ -765,7 +765,7 @@ impl Derivation<'_> {
         }
         for deleted in &effect.deletes {
             let deleted = self.type_of(deleted)?;
-            deleted_types.push(deleted);
+            deleted_types.push(deleted.clone());
             for population in self.populations_of_subtypes(deleted) {
                 writes.insert(SymbolicLocation::AnyMembership {
                     population: population.clone(),
@@ -775,7 +775,7 @@ impl Derivation<'_> {
         let mut created_types: Vec<EffectiveId> = Vec::new();
         for created in &effect.creates {
             let created = self.type_of(created)?;
-            created_types.push(created);
+            created_types.push(created.clone());
             for population in self.populations_of_subtypes(created) {
                 writes.insert(SymbolicLocation::AnyMembership {
                     population: population.clone(),
@@ -784,7 +784,7 @@ impl Derivation<'_> {
         }
 
         // The receiver's and each reference argument's membership.
-        for population in self.populations_holding(self.receiver_type) {
+        for population in self.populations_holding(self.receiver_type.clone()) {
             reads.insert(SymbolicLocation::Membership {
                 population: population.clone(),
                 object: FootprintObject::Receiver,
@@ -806,7 +806,7 @@ impl Derivation<'_> {
             if targets.iter().any(|target| {
                 deleted_types
                     .iter()
-                    .any(|deleted| self.reader.conforms(*deleted, *target))
+                    .any(|deleted| self.reader.conforms(deleted.clone(), target.clone()))
             }) {
                 reads.insert(SymbolicLocation::AnyField { field });
             }
@@ -816,12 +816,12 @@ impl Derivation<'_> {
         // of the populations its reference fields name; so does a write to a
         // reference-valued field.
         for created in &created_types {
-            for population in self.populations_of_subtypes(*created) {
+            for population in self.populations_of_subtypes(created.clone()) {
                 reads.insert(SymbolicLocation::AnyMembership {
                     population: population.clone(),
                 });
             }
-            for (_, targets) in self.reference_fields(Some(*created))? {
+            for (_, targets) in self.reference_fields(Some(created.clone()))? {
                 self.read_target_memberships(&targets, &mut reads);
             }
         }
@@ -843,7 +843,7 @@ impl Derivation<'_> {
             };
             if owner.declaring != self.declaring
                 || owner.declaration.name() != self.operation.name()
-                || !(self.select)(clause.identity)
+                || !(self.select)(clause.identity.clone())
             {
                 continue;
             }
@@ -874,7 +874,7 @@ impl Derivation<'_> {
         reads: &mut BTreeSet<SymbolicLocation>,
     ) {
         for target in targets {
-            for population in self.reader.populations_relating(*target) {
+            for population in self.reader.populations_relating(target.clone()) {
                 reads.insert(SymbolicLocation::AnyMembership {
                     population: population.clone(),
                 });
@@ -899,7 +899,10 @@ impl Derivation<'_> {
         let mut found = Vec::new();
         for declaration in self.reader.types.object_types() {
             let identity = declaration.key();
-            if holder.is_some_and(|holder| !self.reader.conforms(identity, holder)) {
+            if holder
+                .clone()
+                .is_some_and(|holder| !self.reader.conforms(identity.clone(), holder))
+            {
                 continue;
             }
             let Some(type_key) = self.reader.model.type_key(identity) else {

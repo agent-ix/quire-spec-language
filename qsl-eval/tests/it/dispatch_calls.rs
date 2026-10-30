@@ -12,7 +12,6 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use sha2::{Digest, Sha256};
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{
@@ -88,7 +87,7 @@ fn assert_state_model_ill_typed(refusal: &CheckRefusal, expected: IllTypedCause,
 /// An object type's effective-declaration identity (ADR-013 O-05) for a
 /// hand-built fixture with no domain package behind it.
 fn object_type(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    crate::support::ids::effective_id(label.as_bytes())
 }
 
 /// `label`'s effective identity in `view`: the identity the bridge resolves a
@@ -103,7 +102,7 @@ fn view_type(view: &EffectiveView, label: &str) -> EffectiveId {
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
         })
-        .map(|entry| entry.effective_id)
+        .map(|entry| entry.effective_id.clone())
         .unwrap_or_else(|| panic!("{label} has a type-level effective declaration"))
 }
 
@@ -174,7 +173,7 @@ fn types(receiver_type: EffectiveId) -> TypeEnvironment {
 }
 
 fn universe() -> UniverseId {
-    UniverseId::from_digest(Sha256::digest(b"dispatch-calls-universe").into())
+    crate::support::ids::universe_id(b"dispatch-calls-universe")
 }
 
 fn receiver_reference(receiver_type: EffectiveId, identity: &str) -> ObjectReference {
@@ -182,7 +181,7 @@ fn receiver_reference(receiver_type: EffectiveId, identity: &str) -> ObjectRefer
 }
 
 fn objects(receiver_type: EffectiveId, identity: &str) -> ObjectEnvironment {
-    let types = types(receiver_type);
+    let types = types(receiver_type.clone());
     ObjectEnvironment::new(
         ObjectClosure::new(
             &types,
@@ -273,7 +272,7 @@ fn one_candidate_package(
     }
     let table = DispatchTable::new(
         vec![(
-            receiver_type,
+            receiver_type.clone(),
             DispatchCandidate {
                 body: 0,
                 precondition: precondition_index,
@@ -283,7 +282,7 @@ fn one_candidate_package(
         1,
     );
     PackageDeclarations {
-        types: types(receiver_type),
+        types: types(receiver_type.clone()),
         functions,
         dispatch_operations: vec![DispatchOperation {
             receiver_type,
@@ -297,6 +296,7 @@ fn one_candidate_package(
         model_clauses,
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -311,7 +311,7 @@ fn one_candidate_package(
 #[test]
 fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
-    let package = one_candidate_package(receiver_type, None, ValueType::Integer)
+    let package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer)
         .check(CheckingLimits::default())
         .unwrap();
     let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
@@ -402,7 +402,7 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
     let narrow =
         ValueType::Int(IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64)).unwrap());
-    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    let mut package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer);
     package.functions[0].parameters.push((
         "n".to_owned(),
         crate::support::type_form::type_form(&narrow),
@@ -441,18 +441,19 @@ fn dispatch_argument_admits_a_reference_upcast() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
     let super_type = object_type("model.dispatch-calls.Super");
     let sub_type = object_type("model.dispatch-calls.Sub");
-    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    let mut package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer);
     package.functions[0].parameters.push((
         "arg".to_owned(),
         crate::support::type_form::named_type_form("Super"),
     ));
-    package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type)];
+    package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type.clone())];
     package.types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(receiver_type, "Receiver", vec![]),
-            ObjectTypeDeclaration::new(super_type, "Super", vec![]),
-            ObjectTypeDeclaration::new(sub_type, "Sub", vec![]).with_supertypes(vec![super_type]),
+            ObjectTypeDeclaration::new(receiver_type.clone(), "Receiver", vec![]),
+            ObjectTypeDeclaration::new(super_type.clone(), "Super", vec![]),
+            ObjectTypeDeclaration::new(sub_type.clone(), "Sub", vec![])
+                .with_supertypes(vec![super_type]),
         ],
     )
     .unwrap();
@@ -501,7 +502,7 @@ fn record_dispatch_package_guarded(
         CompositeDeclaration, CompositeShape, FieldDeclaration,
     };
     let receiver_type = object_type("model.dispatch-calls.Receiver");
-    let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| crate::support::ids::node_key([byte]));
     let record = |key, name: &str, supertypes: Vec<NodeKey>| {
         CompositeDeclaration::new(
             key,
@@ -514,7 +515,8 @@ fn record_dispatch_package_guarded(
         )
         .with_supertypes(supertypes)
     };
-    let mut package = one_candidate_package(receiver_type, precondition, ValueType::Integer);
+    let mut package =
+        one_candidate_package(receiver_type.clone(), precondition, ValueType::Integer);
     for function in &mut package.functions {
         function.parameters.push((
             "arg".to_owned(),
@@ -531,12 +533,12 @@ fn record_dispatch_package_guarded(
         Expression::field(Expression::name("arg".to_owned()), "amount"),
         DeclaredClauseKind::Body,
     );
-    package.dispatch_operations[0].parameters = vec![ValueType::Composite(money)];
+    package.dispatch_operations[0].parameters = vec![ValueType::Composite(money.clone())];
     package.types = TypeEnvironment::new(
         [
-            record(money, "Money", vec![]),
-            record(taxed, "TaxedMoney", vec![money]),
-            record(fee, "Fee", vec![]),
+            record(money.clone(), "Money", vec![]),
+            record(taxed.clone(), "TaxedMoney", vec![money.clone()]),
+            record(fee.clone(), "Fee", vec![]),
         ],
         [ObjectTypeDeclaration::new(
             receiver_type,
@@ -567,7 +569,10 @@ fn dispatch_argument_admits_a_conforming_record_and_refuses_the_rest() {
     let check = |argument: quire_exact::NodeKey| {
         checked_package.check_clause_expression(
             vec![
-                ("self".to_owned(), ValueType::Reference(receiver_type)),
+                (
+                    "self".to_owned(),
+                    ValueType::Reference(receiver_type.clone()),
+                ),
                 ("arg".to_owned(), ValueType::Composite(argument)),
             ],
             &call,
@@ -577,7 +582,7 @@ fn dispatch_argument_admits_a_conforming_record_and_refuses_the_rest() {
             CheckingLimits::default(),
         )
     };
-    for admitted in [taxed, money] {
+    for admitted in [taxed, money.clone()] {
         let checked = check(admitted).expect("a record conforming to Money is admitted");
         assert_eq!(*checked.value_type(), ValueType::Integer);
     }
@@ -635,8 +640,11 @@ fn a_dispatched_call_with_a_child_argument_runs_through_guard_and_body() {
         let checked = checked_package
             .check_clause_expression(
                 vec![
-                    ("self".to_owned(), ValueType::Reference(receiver_type)),
-                    ("arg".to_owned(), ValueType::Composite(taxed)),
+                    (
+                        "self".to_owned(),
+                        ValueType::Reference(receiver_type.clone()),
+                    ),
+                    ("arg".to_owned(), ValueType::Composite(taxed.clone())),
                 ],
                 &call,
                 None,
@@ -659,10 +667,10 @@ fn a_dispatched_call_with_a_child_argument_runs_through_guard_and_body() {
             .evaluate(
                 &checked,
                 vec![
-                    Value::Reference(receiver_reference(receiver_type, "r1")),
+                    Value::Reference(receiver_reference(receiver_type.clone(), "r1")),
                     argument,
                 ],
-                &objects(receiver_type, "r1"),
+                &objects(receiver_type.clone(), "r1"),
                 &mut Meter::new(SCALAR_UNLIMITED),
             )
             .unwrap();
@@ -692,18 +700,19 @@ fn dispatch_argument_refuses_a_reference_downcast() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
     let super_type = object_type("model.dispatch-calls.Super");
     let sub_type = object_type("model.dispatch-calls.Sub");
-    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    let mut package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer);
     package.functions[0].parameters.push((
         "arg".to_owned(),
         crate::support::type_form::named_type_form("Sub"),
     ));
-    package.dispatch_operations[0].parameters = vec![ValueType::Reference(sub_type)];
+    package.dispatch_operations[0].parameters = vec![ValueType::Reference(sub_type.clone())];
     package.types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(receiver_type, "Receiver", vec![]),
-            ObjectTypeDeclaration::new(super_type, "Super", vec![]),
-            ObjectTypeDeclaration::new(sub_type, "Sub", vec![]).with_supertypes(vec![super_type]),
+            ObjectTypeDeclaration::new(receiver_type.clone(), "Receiver", vec![]),
+            ObjectTypeDeclaration::new(super_type.clone(), "Super", vec![]),
+            ObjectTypeDeclaration::new(sub_type, "Sub", vec![])
+                .with_supertypes(vec![super_type.clone()]),
         ],
     )
     .unwrap();
@@ -739,18 +748,18 @@ fn dispatch_argument_refuses_an_unrelated_reference_type() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
     let super_type = object_type("model.dispatch-calls.Super");
     let unrelated_type = object_type("model.dispatch-calls.Unrelated");
-    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    let mut package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer);
     package.functions[0].parameters.push((
         "arg".to_owned(),
         crate::support::type_form::named_type_form("Super"),
     ));
-    package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type)];
+    package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type.clone())];
     package.types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(receiver_type, "Receiver", vec![]),
+            ObjectTypeDeclaration::new(receiver_type.clone(), "Receiver", vec![]),
             ObjectTypeDeclaration::new(super_type, "Super", vec![]),
-            ObjectTypeDeclaration::new(unrelated_type, "Unrelated", vec![]),
+            ObjectTypeDeclaration::new(unrelated_type.clone(), "Unrelated", vec![]),
         ],
     )
     .unwrap();
@@ -850,6 +859,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
         )],
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -889,7 +899,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 #[test]
 fn check_postcondition_expression_still_admits_a_real_postcondition() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
-    let package = one_candidate_package(receiver_type, None, ValueType::Integer)
+    let package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer)
         .check(CheckingLimits::default())
         .unwrap();
     let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
@@ -914,7 +924,7 @@ fn check_postcondition_expression_still_admits_a_real_postcondition() {
 #[test]
 fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatch() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
-    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    let mut package = one_candidate_package(receiver_type.clone(), None, ValueType::Integer);
     package.dispatch_tables[0] = DispatchTable::new(
         vec![(
             receiver_type,
@@ -1115,7 +1125,10 @@ fn ab_bridge_clauses(
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
-            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+            vec![(
+                "self".to_owned(),
+                ValueType::Reference(receiver_type.clone()),
+            )],
         );
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses.own_body.insert(
@@ -1149,7 +1162,7 @@ fn ab_bridge_declarations(
     let view = bridge_view(&domain_package);
     let a_type = view_type(&view, "model.A");
     let b_type = view_type(&view, "model.B");
-    let clauses = ab_bridge_clauses(a_type, pa, pb);
+    let clauses = ab_bridge_clauses(a_type.clone(), pa, pb);
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root_key = if receiver_type == b_type {
@@ -1166,6 +1179,7 @@ fn ab_bridge_declarations(
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -1210,10 +1224,10 @@ fn ab_bridge_package(
 #[test]
 fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific() {
     let b_type = ab_type("model.B");
-    let package = ab_bridge_package(b_type, Some(Expression::boolean(false)), None);
+    let package = ab_bridge_package(b_type.clone(), Some(Expression::boolean(false)), None);
 
-    let objects = objects(b_type, "b1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
+    let objects = objects(b_type.clone(), "b1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type.clone()))];
     let checked = package
         .graph()
         .check_clause_expression(
@@ -1265,10 +1279,10 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
 #[test]
 fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() {
     let a_type = ab_type("model.A");
-    let package = ab_bridge_package(a_type, Some(Expression::boolean(false)), None);
+    let package = ab_bridge_package(a_type.clone(), Some(Expression::boolean(false)), None);
 
-    let objects = objects(a_type, "a1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
+    let objects = objects(a_type.clone(), "a1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type.clone()))];
     let checked = package
         .graph()
         .check_clause_expression(
@@ -1330,10 +1344,10 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {
     let a_type = ab_type("model.A");
-    let package = ab_bridge_package(a_type, Some(Expression::boolean(false)), None);
+    let package = ab_bridge_package(a_type.clone(), Some(Expression::boolean(false)), None);
 
-    let objects = objects(a_type, "a1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
+    let objects = objects(a_type.clone(), "a1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type.clone()))];
     let nested = Expression::binary(
         BinaryOperator::Add,
         Expression::integer(0_i64),
@@ -1403,7 +1417,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
     ];
     let table = DispatchTable::new(
         vec![(
-            receiver_type,
+            receiver_type.clone(),
             DispatchCandidate {
                 body: 0,
                 precondition: Some(1),
@@ -1413,18 +1427,18 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
         1,
     );
     let package = PackageDeclarations {
-        types: types(receiver_type),
+        types: types(receiver_type.clone()),
         functions,
         dispatch_operations: vec![
             DispatchOperation {
-                receiver_type,
+                receiver_type: receiver_type.clone(),
                 member: "size".to_owned(),
                 parameters: Vec::new(),
                 result: ValueType::Integer,
                 table: 0,
             },
             DispatchOperation {
-                receiver_type,
+                receiver_type: receiver_type.clone(),
                 member: "weight".to_owned(),
                 parameters: Vec::new(),
                 result: ValueType::Integer,
@@ -1439,14 +1453,18 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
         ]),
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
     .check(CheckingLimits::default())
     .unwrap();
 
-    let objects = objects(receiver_type, "r1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
+    let objects = objects(receiver_type.clone(), "r1");
+    let parameters = vec![(
+        "self".to_owned(),
+        ValueType::Reference(receiver_type.clone()),
+    )];
     let weight_call = Expression::dispatch(
         Expression::name("self".to_owned()),
         "weight".to_owned(),
@@ -1538,13 +1556,13 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
 fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
     let b_type = ab_type("model.B");
     let package = ab_bridge_package(
-        b_type,
+        b_type.clone(),
         Some(Expression::boolean(false)),
         Some(Expression::boolean(false)),
     );
 
-    let objects = objects(b_type, "b1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
+    let objects = objects(b_type.clone(), "b1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type.clone()))];
     let checked = package
         .graph()
         .check_clause_expression(
@@ -1593,13 +1611,13 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
 fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
     let b_type = ab_type("model.B");
     let package = ab_bridge_package(
-        b_type,
+        b_type.clone(),
         Some(Expression::boolean(true)),
         Some(Expression::boolean(false)),
     );
 
-    let objects = objects(b_type, "b1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
+    let objects = objects(b_type.clone(), "b1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type.clone()))];
     let checked = package
         .graph()
         .check_clause_expression(
@@ -1728,11 +1746,11 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
     clauses.member.insert(b.clone(), "size".to_owned());
     clauses.parameters.insert(
         a.clone(),
-        vec![("a".to_owned(), ValueType::Reference(a_type))],
+        vec![("a".to_owned(), ValueType::Reference(a_type.clone()))],
     );
     clauses.parameters.insert(
         b.clone(),
-        vec![("b".to_owned(), ValueType::Reference(b_type))],
+        vec![("b".to_owned(), ValueType::Reference(b_type.clone()))],
     );
     clauses.result.insert(a.clone(), ValueType::Integer);
     clauses.result.insert(b.clone(), ValueType::Integer);
@@ -1775,6 +1793,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -1785,7 +1804,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         [],
         [
             ObjectTypeDeclaration::new(a_type, "A", vec![]),
-            ObjectTypeDeclaration::new(b_type, "B", vec![]),
+            ObjectTypeDeclaration::new(b_type.clone(), "B", vec![]),
         ],
     )
     .unwrap();
@@ -1796,8 +1815,8 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
             panic!("expected the capture-avoiding rename to check cleanly, got {refusals:?}")
         });
 
-    let objects = objects(b_type, "b1");
-    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
+    let objects = objects(b_type.clone(), "b1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type.clone()))];
     let checked = package
         .check_clause_expression(
             parameters,
@@ -1914,7 +1933,10 @@ fn bridge_keys_object_types_by_their_effective_identity() {
     let view = bridge_view(&domain_package);
     let (a, b) = (view_type(&view, "model.A"), view_type(&view, "model.B"));
     let supertypes = object_type_supertypes(&view).unwrap();
-    assert_eq!(supertypes, BTreeMap::from([(a, vec![]), (b, vec![a])]));
+    assert_eq!(
+        supertypes,
+        BTreeMap::from([(a.clone(), vec![]), (b.clone(), vec![a.clone()])])
+    );
 
     let types = TypeEnvironment::new(
         [],
@@ -1924,7 +1946,7 @@ fn bridge_keys_object_types_by_their_effective_identity() {
         }),
     )
     .unwrap();
-    assert!(types.conforms(b, a));
+    assert!(types.conforms(b.clone(), a.clone()));
     assert!(!types.conforms(a, b));
 }
 
@@ -1981,7 +2003,10 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
-            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+            vec![(
+                "self".to_owned(),
+                ValueType::Reference(receiver_type.clone()),
+            )],
         );
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses.own_body.insert(
@@ -2013,7 +2038,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let view = bridge_view(&domain_package);
     let a_type = view_type(&view, "model.A");
     let b_type = view_type(&view, "model.B");
-    let clauses = bridge_clauses(a_type);
+    let clauses = bridge_clauses(a_type.clone());
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
@@ -2026,6 +2051,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2038,8 +2064,8 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(a_type, "A", vec![]),
-            ObjectTypeDeclaration::new(b_type, "B", vec![]),
+            ObjectTypeDeclaration::new(a_type.clone(), "A", vec![]),
+            ObjectTypeDeclaration::new(b_type.clone(), "B", vec![]),
         ],
     )
     .unwrap();
@@ -2050,7 +2076,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         ObjectClosure::new(
             &types,
             [
-                (receiver_reference(a_type, "a1"), vec![]),
+                (receiver_reference(a_type.clone(), "a1"), vec![]),
                 (receiver_reference(b_type, "b1"), vec![]),
             ],
             &[],
@@ -2058,7 +2084,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         .unwrap(),
     );
 
-    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type.clone()))];
     let checked = package
         .check_clause_expression(
             parameters,
@@ -2158,7 +2184,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         view_type(&view, "model.C"),
         view_type(&view, "model.D"),
     );
-    let mut clauses = bridge_clauses(a_type);
+    let mut clauses = bridge_clauses(a_type.clone());
     clauses
         .member
         .insert(DeclarationKey::fixture("model.B.size"), "size".to_owned());
@@ -2172,6 +2198,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         },
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut normalization_meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2179,20 +2206,25 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let supertypes = object_type_supertypes(&view).unwrap();
     let types = TypeEnvironment::new(
         [],
-        [(a_type, "A"), (b_type, "B"), (c_type, "C"), (d_type, "D")]
-            .into_iter()
-            .map(|(key, name)| {
-                ObjectTypeDeclaration::new(key, name, vec![]).with_supertypes(
-                    supertypes
-                        .get(&key)
-                        .expect("every D01 type has a supertype entry")
-                        .clone(),
-                )
-            }),
+        [
+            (a_type.clone(), "A"),
+            (b_type, "B"),
+            (c_type.clone(), "C"),
+            (d_type.clone(), "D"),
+        ]
+        .into_iter()
+        .map(|(key, name)| {
+            ObjectTypeDeclaration::new(key.clone(), name, vec![]).with_supertypes(
+                supertypes
+                    .get(&key)
+                    .expect("every D01 type has a supertype entry")
+                    .clone(),
+            )
+        }),
     )
     .unwrap();
-    assert!(types.conforms(d_type, a_type));
-    assert!(types.conforms(c_type, a_type));
+    assert!(types.conforms(d_type.clone(), a_type.clone()));
+    assert!(types.conforms(c_type.clone(), a_type.clone()));
     declarations_a.types = types.clone();
 
     let invariant = Expression::binary(
@@ -2224,7 +2256,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
             span: Span { start: 0, end: 0 },
             identity_span: Span { start: 0, end: 0 },
         },
-        context: a_type,
+        context: a_type.clone(),
         operation: None,
         operation_key: None,
         execution_point: None,
@@ -2244,9 +2276,9 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         ObjectClosure::new(
             &types,
             [
-                (receiver_reference(a_type, "a1"), vec![]),
-                (receiver_reference(d_type, "d1"), vec![]),
-                (receiver_reference(c_type, "c1"), vec![]),
+                (receiver_reference(a_type.clone(), "a1"), vec![]),
+                (receiver_reference(d_type.clone(), "d1"), vec![]),
+                (receiver_reference(c_type.clone(), "c1"), vec![]),
             ],
             &[],
         )
@@ -2304,22 +2336,24 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         (evaluation.evaluation, meter)
     };
 
-    let (selected_d, _) = evaluate_clause("D01SelectD", d_type, "d1", SCALAR_UNLIMITED);
+    let (selected_d, _) = evaluate_clause("D01SelectD", d_type.clone(), "d1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_d),
         Outcome::Completed(Value::Boolean(true))
     ));
-    let (d_candidate_on_c, _) = evaluate_clause("D01SelectD", c_type, "c1", SCALAR_UNLIMITED);
+    let (d_candidate_on_c, _) =
+        evaluate_clause("D01SelectD", c_type.clone(), "c1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(d_candidate_on_c),
         Outcome::Completed(Value::Boolean(false))
     ));
-    let (selected_c, _) = evaluate_clause("D01SelectA", c_type, "c1", SCALAR_UNLIMITED);
+    let (selected_c, _) = evaluate_clause("D01SelectA", c_type.clone(), "c1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(selected_c),
         Outcome::Completed(Value::Boolean(true))
     ));
-    let (a_candidate_on_d, _) = evaluate_clause("D01SelectA", d_type, "d1", SCALAR_UNLIMITED);
+    let (a_candidate_on_d, _) =
+        evaluate_clause("D01SelectA", d_type.clone(), "d1", SCALAR_UNLIMITED);
     assert!(matches!(
         evaluated(a_candidate_on_d),
         Outcome::Completed(Value::Boolean(false))
@@ -2333,7 +2367,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
 
     let (evaluation_d, meter_d) = evaluate_clause(
         "D01Invariant",
-        d_type,
+        d_type.clone(),
         "d1",
         ScalarLimits {
             work_units: 6,
@@ -2375,7 +2409,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
 
     let (evaluation_five, meter_five) = evaluate_clause(
         "D01Invariant",
-        d_type,
+        d_type.clone(),
         "d1",
         ScalarLimits {
             work_units: 5,
@@ -2473,7 +2507,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
     let view = bridge_view(&domain_package);
     let a_type = view_type(&view, "model.A");
     let c_type = view_type(&view, "model.C");
-    let clauses = inherited_only_clauses(a_type);
+    let clauses = inherited_only_clauses(a_type.clone());
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
@@ -2486,6 +2520,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2496,10 +2531,10 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
     let mut receiver_types: Vec<EffectiveId> = declarations
         .dispatch_operations
         .iter()
-        .map(|operation| operation.receiver_type)
+        .map(|operation| operation.receiver_type.clone())
         .collect();
     receiver_types.sort();
-    let mut expected = vec![a_type, c_type];
+    let mut expected = vec![a_type.clone(), c_type.clone()];
     expected.sort();
     assert_eq!(
         receiver_types, expected,
@@ -2518,7 +2553,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         [],
         [
             ObjectTypeDeclaration::new(a_type, "A", vec![]),
-            ObjectTypeDeclaration::new(c_type, "C", vec![]),
+            ObjectTypeDeclaration::new(c_type.clone(), "C", vec![]),
         ],
     )
     .unwrap();
@@ -2583,6 +2618,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2784,6 +2820,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2810,19 +2847,19 @@ fn money_family() -> (
     [quire_exact::NodeKey; 3],
     [quire_semantic_value::declaration::CompositeDeclaration; 3],
 ) {
-    use quire_exact::{NodeKey, Presence};
+    use quire_exact::Presence;
     use quire_semantic_value::declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration,
     };
-    let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| crate::support::ids::node_key([byte]));
     let field = |name: &str| FieldDeclaration::new(name, ValueType::Integer, Presence::Required);
     let record = |key, name: &str, fields: Vec<FieldDeclaration>| {
         CompositeDeclaration::new(key, name, CompositeShape::Record(fields))
     };
     (
-        [money, taxed, fee],
+        [money.clone(), taxed.clone(), fee.clone()],
         [
-            record(money, "Money", vec![field("amount")]),
+            record(money.clone(), "Money", vec![field("amount")]),
             record(taxed, "TaxedMoney", vec![field("tax"), field("amount")])
                 .with_supertypes(vec![money]),
             record(fee, "Fee", vec![field("amount")]),
@@ -2867,8 +2904,8 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
         clauses.parameters.insert(
             operation.clone(),
             vec![
-                ("self".to_owned(), ValueType::Reference(a_type)),
-                ("m".to_owned(), ValueType::Composite(keys[0])),
+                ("self".to_owned(), ValueType::Reference(a_type.clone())),
+                ("m".to_owned(), ValueType::Composite(keys[0].clone())),
             ],
         );
         clauses.result.insert(operation.clone(), ValueType::Integer);
@@ -2899,6 +2936,7 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
         &root,
         &clauses,
         qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
         &mut meter,
         qsl_foundation::IdentityLimits::default(),
     )
@@ -2906,8 +2944,9 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
     let types = TypeEnvironment::new(
         composites,
         [
-            ObjectTypeDeclaration::new(a_type, "A", vec![]),
-            ObjectTypeDeclaration::new(b_type, "B", vec![]).with_supertypes(vec![a_type]),
+            ObjectTypeDeclaration::new(a_type.clone(), "A", vec![]),
+            ObjectTypeDeclaration::new(b_type.clone(), "B", vec![])
+                .with_supertypes(vec![a_type.clone()]),
         ],
     )
     .unwrap();
@@ -2933,9 +2972,9 @@ fn run_money_call(
 ) -> Result<Evaluation, CheckRefusal> {
     let bridge = money_bridge(root_at_b);
     let site_type = if root_at_b {
-        bridge.b_type
+        bridge.b_type.clone()
     } else {
-        bridge.a_type
+        bridge.a_type.clone()
     };
     let runtime_type = if receiver_is_b {
         bridge.b_type
@@ -2951,7 +2990,7 @@ fn run_money_call(
     let checked = bridge.package.graph().check_clause_expression(
         vec![
             ("self".to_owned(), ValueType::Reference(site_type)),
-            ("m".to_owned(), ValueType::Composite(declaration)),
+            ("m".to_owned(), ValueType::Composite(declaration.clone())),
         ],
         &call,
         None,
@@ -3000,7 +3039,7 @@ fn completed_integer(evaluation: Evaluation) -> Integer {
 fn taxed_money(
     amount: i64,
 ) -> impl Fn(&[quire_exact::NodeKey; 3]) -> (quire_exact::NodeKey, Vec<(&'static str, i64)>) {
-    move |keys| (keys[1], vec![("tax", 2), ("amount", amount)])
+    move |keys| (keys[1].clone(), vec![("tax", 2), ("amount", amount)])
 }
 
 /// FR-359-AC-8 (TC-1001 step 2), run level, B-rooted: `B` redeclares `size`
@@ -3023,9 +3062,9 @@ fn a_redeclared_subtype_body_runs_with_a_child_argument() {
     let record = undefined_record(run_money_call(true, true, taxed_money(4)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
     assert_eq!(record.fields["selected"], "model.B.size");
-    let parent = run_money_call(true, true, |keys| (keys[0], vec![("amount", 7)])).unwrap();
+    let parent = run_money_call(true, true, |keys| (keys[0].clone(), vec![("amount", 7)])).unwrap();
     assert_eq!(completed_integer(parent), Integer::from(107_i64));
-    let refusal = run_money_call(true, true, |keys| (keys[2], vec![("amount", 7)]))
+    let refusal = run_money_call(true, true, |keys| (keys[2].clone(), vec![("amount", 7)]))
         .expect_err("a Fee at a Money parameter is refused");
     assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
 }
@@ -3053,7 +3092,7 @@ fn dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argu
     let record = undefined_record(run_money_call(false, true, taxed_money(4)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
     assert_eq!(record.fields["selected"], "model.B.size");
-    let refusal = run_money_call(false, true, |keys| (keys[2], vec![("amount", 9)]))
+    let refusal = run_money_call(false, true, |keys| (keys[2].clone(), vec![("amount", 9)]))
         .expect_err("a Fee at a Money parameter is refused");
     assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
 }
@@ -3070,7 +3109,7 @@ fn dispatch_selects_the_ancestor_body_for_an_ancestor_receiver_over_a_child_argu
     );
     assert_eq!(
         completed_integer(
-            run_money_call(false, false, |keys| (keys[0], vec![("amount", 3)])).unwrap()
+            run_money_call(false, false, |keys| (keys[0].clone(), vec![("amount", 3)])).unwrap()
         ),
         Integer::from(3_i64)
     );

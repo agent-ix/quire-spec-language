@@ -2,8 +2,8 @@
 //! FR-128 (ADR-018 CX-3, DL-5, UE-5, UE-6): [`replay_model_trace`], the
 //! replay facade's entry for a finite-prefix model counterexample.
 //!
-//! It recompiles the request's package by FR-098's rules, refuses a stale
-//! `package_id`, re-admits the subject from the byte provision and the
+//! It recompiles the request's package by FR-098's rules,
+//! re-admits the subject from the byte provision and the
 //! request's universes, re-executes each step of the prefix through FR-120's
 //! `ModelSystem` (a step's post-state digest selects its successor among the
 //! post-states of its transition identity), and then checks what the
@@ -22,10 +22,8 @@
 //!   at its locus, with its cause.
 //!
 //! The envelope's `clause_node` and `occurrence_key` resolve the item
-//! before any admission. The deadlock-freedom item's identity is
-//! [`deadlock_freedom_clause`] of the recompiled `package_id`; a payload
-//! only that item has, under any other identity, or an authored payload
-//! under that identity, refuses `stale_dependency`/`content-mismatch`. Any
+//! before any admission. A payload only a package-level freedom item has
+//! refuses `unsupported_construct`/`not-yet-implemented`. Any
 //! other identity names an authored clause: the recompiled package's
 //! temporal clause node of that `clause_node`, whose `claim` occurrence the
 //! envelope's `occurrence_key` must equal, and whose fairness set the
@@ -33,6 +31,7 @@
 //! `stale_dependency`/`content-mismatch`. Replay needs no model checker and
 //! no solver, and reads no path, environment variable or clock.
 
+use quire_exact::NodeKey;
 use std::collections::BTreeMap;
 
 use qsl_eval::fairness::{
@@ -60,11 +59,11 @@ use qsl_eval::temporal::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Meter, Rational, ScalarLimits};
 use quire_semantic_value::catalog::{Category, InternalFault};
@@ -78,9 +77,8 @@ pub(super) use self::timed::timed_prefix;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    deadlock_freedom_clause, race_freedom_clause, time_lock_freedom_clause, undefined_finding,
-    CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    undefined_finding, CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
 use crate::model_check::limits::ReachedLimit;
@@ -178,7 +176,7 @@ pub enum ModelTraceRefusal {
     #[error("stale_dependency/content-mismatch: the recompiled package holds no temporal clause node {clause_node}")]
     UnknownTemporalClause {
         /// The envelope's clause node.
-        clause_node: WireNodeId,
+        clause_node: NodeKey,
     },
     /// A step carries a `delay`, or the counterexample a `final_delay`, over
     /// a subject this replay reads untimed: the delays are not checked here
@@ -268,11 +266,11 @@ pub enum ModelTraceRefusal {
     #[error("stale_dependency/content-mismatch: the envelope names clause {clause_node} at {occurrence_key}; the payload's item is {expected_node} at {expected_key}")]
     ItemIdentity {
         /// The envelope's clause node.
-        clause_node: WireNodeId,
+        clause_node: NodeKey,
         /// The envelope's occurrence key.
         occurrence_key: Box<OccurrenceKey>,
         /// The clause node the payload's item has.
-        expected_node: WireNodeId,
+        expected_node: NodeKey,
         /// The occurrence key the payload's item has.
         expected_key: Box<OccurrenceKey>,
     },
@@ -652,8 +650,7 @@ impl StrongFairnessHint {
 }
 
 /// The result of [`replay_model_trace`]: the settlement, the strong-fairness
-/// hints of a reproduced liveness lasso (FR-133) and the recompiled
-/// `package_id` it was settled against.
+/// hints of a reproduced liveness lasso (FR-133).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelTraceReplayResult {
     /// The settlement.
@@ -661,8 +658,6 @@ pub struct ModelTraceReplayResult {
     /// The hints, in the model's canonical operation order; empty unless the
     /// settlement reproduced a lasso.
     pub hints: Vec<StrongFairnessHint>,
-    /// The recompiled `package_id`.
-    pub package_id: PackageId,
 }
 
 /// The disagreement of a replay that reads `replayed` where a model
@@ -698,7 +693,7 @@ fn no_value() -> ModelTraceSettlement {
 /// counterexample read them.
 ///
 /// Refuses, with no partial result, when the request does not decode, by
-/// FR-098's recompile rules, on a stale `package_id`, for a counterexample
+/// FR-098's recompile rules, for a counterexample
 /// of a clause the recompiled package does not hold or whose occurrence or
 /// fairness set differ, when the subject does not admit (FR-106's record),
 /// on an `initial_state` outside the subject, on a step that is not
@@ -717,38 +712,33 @@ pub fn replay_model_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    replay_on(
-        wire,
-        envelope,
-        replay_limits,
-        |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, &package.1, |clause| {
-                let payload = envelope.family_payload();
-                if payload.fairness == clause.fairness() {
-                    return Ok(());
-                }
-                Err(refused(ModelTraceRefusal::FairnessSet {
-                    payload: payload.fairness.clone(),
-                    recompiled: clause.fairness().to_vec(),
-                }))
-            })?;
-            let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
-            let formula = clause.map(|clause| FormulaReplay {
-                clause,
-                letters,
-                meter,
-            });
-            match &subject.timed {
-                Some(reading) => timed::settle(
-                    &timed::timed_subject(&system, &reading.model, reading.max_clocks)?,
-                    envelope.family_payload(),
-                    formula,
-                    &reading.exploration,
-                ),
-                None => settle(&system, envelope.family_payload(), formula),
+    replay_on(wire, replay_limits, |package, simulation, meter| {
+        let clause = resolve_item(envelope, package.0, DerivedAnchors::Model, |clause| {
+            let payload = envelope.family_payload();
+            if payload.fairness == clause.fairness() {
+                return Ok(());
             }
-        },
-    )
+            Err(refused(ModelTraceRefusal::FairnessSet {
+                payload: payload.fairness.clone(),
+                recompiled: clause.fairness().to_vec(),
+            }))
+        })?;
+        let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
+        let formula = clause.map(|clause| FormulaReplay {
+            clause,
+            letters,
+            meter,
+        });
+        match &subject.timed {
+            Some(reading) => timed::settle(
+                &timed::timed_subject(&system, &reading.model, reading.max_clocks)?,
+                envelope.family_payload(),
+                formula,
+                &reading.exploration,
+            ),
+            None => settle(&system, envelope.family_payload(), formula),
+        }
+    })
 }
 
 /// FR-237: the replay of a counterexample over the timed subject `timed`,
@@ -763,7 +753,7 @@ pub fn replay_model_trace(
 /// hints.
 ///
 /// It skips FR-128's recompile, identity, fairness-set and admission
-/// checks and binds no `package_id`, so it is test support only: the
+/// checks so it is test support only: the
 /// production path is [`replay_model_trace`].
 ///
 /// # Errors
@@ -817,72 +807,72 @@ pub fn replay_protocol_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    replay_on(
-        wire,
-        envelope,
-        replay_limits,
-        |package, simulation, meter| {
-            // The fairness set depends on the protocol system, so it is
-            // compared in `ProtocolReplay::settle`.
-            let clause = resolve_item(envelope, package.0, &package.1, |_| Ok(()))?;
-            let payload = envelope.family_payload();
-            let simulation = simulation(&subject.model);
-            let protocol = package
-                .0
-                .graph()
-                .protocol(&subject.protocol)
-                .ok_or_else(|| {
-                    refused(ModelTraceRefusal::Protocol(
-                        ProtocolRefusal::UnknownProtocol {
-                            protocol: subject.protocol.clone(),
-                        },
-                    ))
-                })?;
-            let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
-            check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
-                .map_err(|refusal| refused(ModelTraceRefusal::NotSimulated(Box::new(refusal))))?;
-            let protocol_subject = ProtocolSubject {
-                model: ModelSubject {
-                    simulation,
-                    proof_bounds: Vec::new(),
-                },
-                protocol: subject.protocol.clone(),
-                over: subject.over.clone(),
-                roles: subject.roles.clone(),
-                memory: subject.memory.clone(),
-            };
-            let built = |refusal| refused(ModelTraceRefusal::Protocol(refusal));
-            let replayed = ProtocolReplay {
-                payload,
-                clause,
-                letters,
-                meter,
-            };
-            let live_instances = live_instance_bound(subject.max_live_instances);
-            let settlement = match SubjectMemory::of(
-                &subject.memory,
-                subject.max_store_buffer,
-                subject.max_messages,
-            ) {
-                SubjectMemory::Sc => replayed.settle(
-                    &ProtocolSystem::new(model, &protocol_subject, Sc)
-                        .map_err(built)?
-                        .with_max_live_instances(live_instances),
-                )?,
-                SubjectMemory::Tso(tso) => replayed.settle(
-                    &ProtocolSystem::new(model, &protocol_subject, tso)
-                        .map_err(built)?
-                        .with_max_live_instances(live_instances),
-                )?,
-                SubjectMemory::Ra(ra) => replayed.settle(
-                    &ProtocolSystem::new(model, &protocol_subject, ra)
-                        .map_err(built)?
-                        .with_max_live_instances(live_instances),
-                )?,
-            };
-            Ok((settlement, Vec::new()))
-        },
-    )
+    replay_on(wire, replay_limits, |package, simulation, meter| {
+        // The fairness set depends on the protocol system, so it is
+        // compared in `ProtocolReplay::settle`.
+        let clause = resolve_item(
+            envelope,
+            package.0,
+            DerivedAnchors::Protocol(&subject.protocol),
+            |_| Ok(()),
+        )?;
+        let payload = envelope.family_payload();
+        let simulation = simulation(&subject.model);
+        let protocol = package
+            .0
+            .graph()
+            .protocol(&subject.protocol)
+            .ok_or_else(|| {
+                refused(ModelTraceRefusal::Protocol(
+                    ProtocolRefusal::UnknownProtocol {
+                        protocol: subject.protocol.clone(),
+                    },
+                ))
+            })?;
+        let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
+        check_protocol_bounds(&model, protocol, package.0.graph(), BOUND_POSITIONS)
+            .map_err(|refusal| refused(ModelTraceRefusal::NotSimulated(Box::new(refusal))))?;
+        let protocol_subject = ProtocolSubject {
+            model: ModelSubject {
+                simulation,
+                proof_bounds: Vec::new(),
+            },
+            protocol: subject.protocol.clone(),
+            over: subject.over.clone(),
+            roles: subject.roles.clone(),
+            memory: subject.memory.clone(),
+        };
+        let built = |refusal| refused(ModelTraceRefusal::Protocol(refusal));
+        let replayed = ProtocolReplay {
+            payload,
+            clause,
+            letters,
+            meter,
+        };
+        let live_instances = live_instance_bound(subject.max_live_instances);
+        let settlement = match SubjectMemory::of(
+            &subject.memory,
+            subject.max_store_buffer,
+            subject.max_messages,
+        ) {
+            SubjectMemory::Sc => replayed.settle(
+                &ProtocolSystem::new(model, &protocol_subject, Sc)
+                    .map_err(built)?
+                    .with_max_live_instances(live_instances),
+            )?,
+            SubjectMemory::Tso(tso) => replayed.settle(
+                &ProtocolSystem::new(model, &protocol_subject, tso)
+                    .map_err(built)?
+                    .with_max_live_instances(live_instances),
+            )?,
+            SubjectMemory::Ra(ra) => replayed.settle(
+                &ProtocolSystem::new(model, &protocol_subject, ra)
+                    .map_err(built)?
+                    .with_max_live_instances(live_instances),
+            )?,
+        };
+        Ok((settlement, Vec::new()))
+    })
 }
 
 /// What a protocol replay settles over its rebuilt system.
@@ -996,15 +986,14 @@ impl ProtocolReplay<'_> {
     }
 }
 
-/// The recompiled package and its `package_id` record.
-type ReplayPackage<'p> = (&'p CheckedPackage, DigestRecord);
+/// The recompiled package and its library name.
+type ReplayPackage<'p> = (&'p CheckedPackage, LibraryName);
 
-/// FR-128's recompile, `package_id` check and subject re-admission, then
+/// FR-128's recompile and subject re-admission, then
 /// `replay` over the recompiled package, the subject's simulation request
 /// and the request's evaluation meter.
-fn replay_on<P: crate::witness::FamilyPayload>(
+fn replay_on(
     wire: ReplayRequestWire,
-    envelope: &WitnessEnvelope<P>,
     replay_limits: ReplayLimits,
     replay: impl for<'p> FnOnce(
         ReplayPackage<'p>,
@@ -1022,13 +1011,6 @@ fn replay_on<P: crate::witness::FamilyPayload>(
         replay_limits,
     )?;
     let compiled = recompile(&request, &limits)?;
-    let package_id = compiled.emitted.package().package_id();
-    if !package_id.matches(&envelope.package_id()) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested: envelope.package_id(),
-            recompiled: package_id,
-        });
-    }
     let documents = request.byte_provision().snapshots();
     let meter = request.accounting_limits();
     let package = compiled.checked.package();
@@ -1043,12 +1025,8 @@ fn replay_on<P: crate::witness::FamilyPayload>(
         expansion: subject.expansion,
         meter,
     };
-    let (settlement, hints) = replay((package, package_id.record()), &simulation, meter)?;
-    Ok(ModelTraceReplayResult {
-        settlement,
-        hints,
-        package_id,
-    })
+    let (settlement, hints) = replay((package, compiled.package.clone()), &simulation, meter)?;
+    Ok(ModelTraceReplayResult { settlement, hints })
 }
 
 pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
@@ -1056,71 +1034,98 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 }
 
 /// FR-128: resolve the envelope's item by its `clause_node` and
-/// `occurrence_key` against the recompiled package `package_id`. The
-/// derived deadlock-freedom item's identity is [`deadlock_freedom_clause`]
-/// and the derived race-freedom item's [`race_freedom_clause`]; the payload
-/// must be one only that item has, and a payload of that shape under any
-/// other identity, or an authored payload under a derived identity, refuses
-/// [`ModelTraceRefusal::ItemIdentity`]. Any other identity names an authored
-/// clause: the package's temporal clause node of that `clause_node`, whose
+/// `occurrence_key` against the recompiled package `package`. A payload only
+/// a package-level freedom item has (deadlock, time-lock or race freedom) is
+/// keyed by its anchor node (QSpec FR-368, FR-331, AC-277): the `model_root`
+/// node with the `generated` occurrence 0 for a model subject, the
+/// `protocol_clause` node with the `declaration` occurrence 0 for a protocol
+/// subject. An anchor the package does not hold refuses
+/// [`ModelTraceRefusal::UnknownTemporalClause`] and another occurrence
+/// [`ModelTraceRefusal::ItemIdentity`]; the item resolves to no clause. Any
+/// other identity names an authored clause: the package's temporal clause node of that `clause_node`, whose
 /// `claim` occurrence the envelope must carry; the caller's
 /// `check_fairness` compares the payload's fairness set with the subject's
 /// before the clause's own refusals. A package with no such node refuses
 /// [`ModelTraceRefusal::UnknownTemporalClause`].
+/// Which subject a package-level freedom item is anchored under.
+#[derive(Clone, Copy)]
+enum DerivedAnchors<'a> {
+    /// A model subject: the selected model's `model_root` node.
+    Model,
+    /// A protocol subject: the named protocol's `protocol_clause` node.
+    Protocol(&'a str),
+}
+
 fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
-    package_id: &DigestRecord,
+    anchors: DerivedAnchors<'_>,
     check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
-    let (deadlock_node, deadlock_key) = deadlock_freedom_clause(package_id);
-    let (race_node, race_key) = race_freedom_clause(package_id);
-    let (lock_node, lock_key) = time_lock_freedom_clause(package_id);
-    let names = |node: WireNodeId, key: &OccurrenceKey| {
-        envelope.clause_node() == node && envelope.occurrence_key() == key
-    };
-    let on_deadlock = names(deadlock_node, &deadlock_key);
-    let on_race = names(race_node, &race_key);
-    let on_lock = names(lock_node, &lock_key);
     let (for_deadlock, for_race) = derived_items(envelope.family_payload());
     let for_lock = matches!(envelope.family_payload().kind, CounterexampleKind::TimeLock);
-    if (on_deadlock && for_deadlock) || (on_race && for_race) || (on_lock && for_lock) {
+    if for_deadlock || for_race || for_lock {
+        let (candidates, role) = match anchors {
+            DerivedAnchors::Model => (
+                package
+                    .graph()
+                    .model_selections()
+                    .iter()
+                    .filter_map(|selection| qsl_semantics::check::model_root_key(selection).ok())
+                    .collect::<Vec<_>>(),
+                "generated",
+            ),
+            DerivedAnchors::Protocol(name) => (
+                package
+                    .graph()
+                    .protocol_node_keys(name)
+                    .and_then(|keys| keys.clause.clone())
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                "declaration",
+            ),
+        };
+        let clause_node = envelope.clause_node();
+        if !candidates.contains(clause_node) {
+            return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
+                clause_node: clause_node.clone(),
+            }));
+        }
+        let expected = OccurrenceKey::new(
+            clause_node.clone(),
+            quire_exact::Origin::new(quire_exact::Role::new(role), 0),
+        );
+        if expected != *envelope.occurrence_key() {
+            return Err(refused(ModelTraceRefusal::ItemIdentity {
+                clause_node: clause_node.clone(),
+                occurrence_key: Box::new(envelope.occurrence_key().clone()),
+                expected_node: clause_node.clone(),
+                expected_key: Box::new(expected),
+            }));
+        }
         return Ok(None);
     }
     let identity_mismatch = |expected_node, expected_key| {
         refused(ModelTraceRefusal::ItemIdentity {
-            clause_node: envelope.clause_node(),
+            clause_node: envelope.clause_node().clone(),
             occurrence_key: Box::new(envelope.occurrence_key().clone()),
             expected_node,
             expected_key: Box::new(expected_key),
         })
     };
-    if for_deadlock {
-        return Err(identity_mismatch(deadlock_node, deadlock_key));
-    }
-    if for_race {
-        return Err(identity_mismatch(race_node, race_key));
-    }
-    if for_lock {
-        return Err(identity_mismatch(lock_node, lock_key));
-    }
-    if on_deadlock || on_race || on_lock {
-        return Err(identity_mismatch(
-            envelope.clause_node(),
-            envelope.occurrence_key().clone(),
-        ));
-    }
-    let found = package.graph().temporal_clauses().iter().find(|candidate| {
-        WireNodeId::from_digest(*candidate.identity().as_bytes()) == envelope.clause_node()
-    });
+    let found = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|candidate| candidate.identity() == *envelope.clause_node());
     let Some(found) = found else {
         return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
-            clause_node: envelope.clause_node(),
+            clause_node: envelope.clause_node().clone(),
         }));
     };
-    let expected = OccurrenceKey::new(envelope.clause_node(), found.claim().clone());
+    let expected = OccurrenceKey::new(envelope.clause_node().clone(), found.claim().clone());
     if expected != *envelope.occurrence_key() {
-        return Err(identity_mismatch(envelope.clause_node(), expected));
+        return Err(identity_mismatch(envelope.clause_node().clone(), expected));
     }
     let clause = found.clause();
     check_fairness(clause)?;

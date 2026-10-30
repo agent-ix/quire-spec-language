@@ -29,7 +29,7 @@ use qsl_semantics::model::observation::{
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
-    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Presence, UniverseId, Value,
+    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Presence, Value,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -121,9 +121,14 @@ fn orders_package() -> CheckedPackage {
     )
     .expect("S1 admits the unit");
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![])
-            .expect("the model assembles");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        selected,
+        vec![],
+    )
+    .expect("the model assembles");
     CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
@@ -159,7 +164,7 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
     };
     let at = |name: &str, object: &str| {
         ObjectReference::new(
-            UniverseId::from_digest([9; 32]),
+            crate::support::ids::universe_id([9]),
             id(name),
             ObjectId::new(object.to_owned()).unwrap(),
         )

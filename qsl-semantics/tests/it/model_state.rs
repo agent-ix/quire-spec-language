@@ -325,7 +325,7 @@ fn slots(
 ) -> Vec<(String, Option<Value>)> {
     let types = fixture.graph.scope().types();
     types
-        .attributes(reference.object_type())
+        .attributes(reference.object_type().clone())
         .expect("object type attributes")
         .iter()
         .map(|attribute| {
@@ -386,11 +386,11 @@ fn a_states_observation_matches_the_environment_fr106_admits_from_the_same_docum
         let ours = observation
             .environment
             .objects()
-            .find(universe, key)
+            .find(universe.clone(), key)
             .expect("observation holds the object");
         let theirs = admitted
             .objects()
-            .find(universe, key)
+            .find(universe.clone(), key)
             .expect("FR-106 holds the object");
         assert_eq!(ours, theirs, "same universe, effective type and key");
         let ours = slots(&fixture, &observation.environment, ours);
@@ -404,7 +404,7 @@ fn a_states_observation_matches_the_environment_fr106_admits_from_the_same_docum
     let a = observation
         .environment
         .objects()
-        .find(universe, "a")
+        .find(universe.clone(), "a")
         .expect("a");
     let a = slots(&fixture, &observation.environment, a);
     assert_eq!(a[0].0, "versionNumber");
@@ -438,7 +438,7 @@ fn a_changed_state_observes_its_changed_field() {
     let a = observation
         .environment
         .objects()
-        .find(universe, "a")
+        .find(universe.clone(), "a")
         .expect("a");
     let a = slots(&fixture, &observation.environment, a);
     assert_eq!(a[0].0, "versionNumber");
@@ -676,7 +676,7 @@ fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
                 key: &str| {
         environment
             .objects()
-            .find(universe, key)
+            .find(universe.clone(), key)
             .expect("object")
             .clone()
     };

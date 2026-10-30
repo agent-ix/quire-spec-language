@@ -83,13 +83,13 @@ impl<'s, 'a> CheckedHyperLetters<'s, 'a> {
                 .ok_or(LettersRefusal::ComponentsMismatch)?;
             system
                 .model
-                .type_key(object)
+                .type_key(object.clone())
                 .ok_or(LettersRefusal::OverTypeUndeclared)?;
             overlapping.push(
                 system
                     .populations
                     .iter()
-                    .filter(|population| system.overlaps(population, object))
+                    .filter(|population| system.overlaps(population, object.clone()))
                     .map(|population| population.key.clone())
                     .collect(),
             );
@@ -164,7 +164,9 @@ impl<'s, 'a> CheckedHyperLetters<'s, 'a> {
             .find(|row| {
                 row.key == instance.key
                     && overlapping.contains(&row.population)
-                    && system.types.conforms(row.reference.object_type(), object)
+                    && system
+                        .types
+                        .conforms(row.reference.object_type().clone(), object.clone())
             })
             .map(|row| row.reference.clone());
         match bound {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-484-AC-11 (TC-1252 VP-11): a unit whose lock selects a temporal and a
 //! protocol profile still replays a function-value parity claim with
-//! `profile_selections` `[]`: lock rows bind through `package_id` and are
+//! `profile_selections` `[]`: lock rows are
 //! never read or mapped into the request.
 
 use std::collections::BTreeMap;
@@ -62,7 +62,7 @@ fn integer(value: i64) -> ScalarOutcome {
 
 /// FR-484-AC-11: the lock holds the two rows, the packet and the request
 /// carry `[]`, the request decodes and replays, and each claim holds `UC`'s
-/// `package_id`.
+/// package name.
 #[trace("TC-1252", "FR-484-AC-11")]
 #[test]
 fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
@@ -70,6 +70,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
     let source = uc();
     let located = call_site(
         source_identity(),
+        "fixture".to_owned(),
         "uc.native",
         source.as_bytes(),
         [document],
@@ -101,20 +102,16 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         "r1".to_owned(),
     );
     let bindings = vec![CanonicalAssignment {
-        parameter: site.parameters[0].1,
+        parameter: site.parameters[0].1.clone(),
         value: WitnessValue::Integer(3),
     }];
 
     // The packet's profile_selections is the empty list, whatever the lock.
     let packet = WitnessPacket {
-        obligation_identity: Some(*parity.obligation_identity.as_bytes()),
+        obligation_identity: Some(parity.obligation_identity.clone()),
         occurrence_key: Some(site.declaration.clone()),
-        clause_node: Some(site.function),
+        clause_node: Some(site.function.clone()),
         replay_target: ReplayTargetMembers::function(inc()),
-        package_id: Some((
-            Some(located.package_id.domain().as_str().to_owned()),
-            located.package_id.hex(),
-        )),
         profile_selections: Some(Vec::<ProfileSelection>::new()),
         run_limits: Some(UNLIMITED),
         declared_domains: Some(Vec::new()),
@@ -128,15 +125,12 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let wire = ReplayRequestWire {
         profile_selections: envelope.profile_selections().to_vec(),
-        package_id: (
-            Some(envelope.package_id().domain().as_str().to_owned()),
-            envelope.package_id().hex(),
-        ),
+        package_name: "fixture".to_owned(),
         sources: vec![source_wire],
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),
-        obligation_identity: *envelope.obligation_identity().as_bytes(),
+        obligation_identity: envelope.obligation_identity(),
         backend: envelope.backend().as_str().to_owned(),
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: envelope.run_limits(),
@@ -169,7 +163,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             | (ValueParityResult::Diverged { .. }, false) => {}
             (other, _) => panic!("generated {generated}: {other:?}"),
         }
-        assert_eq!(report.claim().package_id, wire.package_id);
-        assert_eq!(report.claim().package_id.1, located.package_id.hex());
+        assert_eq!(report.claim().package_name, wire.package_name);
     }
 }

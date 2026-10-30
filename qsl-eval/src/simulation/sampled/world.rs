@@ -176,7 +176,7 @@ impl Model {
         let population = self.ident(self.population);
         json!({
             "contractVersion": "2.0.0",
-            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+            "canonicalization": {"algorithm": "rfc8785-v1"},
             "source": {"identity": self.ident("spec"), "version": "1.0.0",
                 "dialect": "spec-bundle"},
             "package": {"identity": self.package, "version": "1.0.0",
@@ -250,6 +250,7 @@ impl World {
         .expect("the kept operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "fixture".to_owned(),
             built,
             models,
             Vec::new(),

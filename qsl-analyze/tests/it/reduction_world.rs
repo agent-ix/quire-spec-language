@@ -25,11 +25,10 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
-    CertificateRequest, DependencyInput, DigestDomain, DigestRecord, EnvelopeSource,
-    ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject,
-    QualifiedName, ReplayLimits, ReplayRequestWire, ReplaySource, StateEnvironment,
-    TemporalCounterexample, WireNodeId, Witness, WitnessEnvelope, WitnessPacket,
+    replay_model_trace, settle_model_check, CertificateRequest, EnvelopeSource, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject, QualifiedName,
+    ReplayLimits, ReplayRequestWire, ReplaySource, StateEnvironment, TemporalCounterexample,
+    Witness, WitnessEnvelope, WitnessPacket,
 };
 use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
@@ -37,7 +36,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value};
+use quire_exact::{Cancel, Identifier, Meter, NodeKey, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -149,7 +148,7 @@ pub(crate) fn document(shape: Shape) -> Vec<u8> {
     let spare = ident("Spare");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
@@ -269,6 +268,7 @@ impl World {
         .expect("the operation clauses parse");
         let graph = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
+            "package".to_owned(),
             built,
             models,
             Vec::new(),
@@ -428,6 +428,9 @@ impl World {
 
 const AUTHORITY: &str = "agent-ix";
 
+/// The fixture package manifest's top-level name.
+const PACKAGE_NAME: &str = "package";
+
 type SourceWire = (String, String, String, String);
 
 fn source_wire(identity: &str) -> SourceWire {
@@ -455,11 +458,10 @@ fn selected() -> QualifiedName {
     QualifiedName::new(vec![Identifier::new("Noop").expect("an identifier")]).expect("a name")
 }
 
-/// A compiled unit as FR-128 recompiles it: its source identity and path,
+/// A compiled unit as FR-128 recompiles it: its source identity,
 /// its text, its one domain package and the snapshots it provisions.
 pub(crate) struct ReplayUnit<'u> {
     pub(crate) identity: &'u str,
-    pub(crate) path: &'u str,
     pub(crate) text: &'u [u8],
     pub(crate) document: &'u [u8],
     pub(crate) snapshots: &'u qsl_semantics::model::observation::DocumentProvision,
@@ -467,13 +469,10 @@ pub(crate) struct ReplayUnit<'u> {
 
 /// The node and occurrence of `package`'s temporal clause `index`, as an
 /// envelope carries them.
-pub(crate) fn clause_identity(
-    package: &CheckedPackage,
-    index: usize,
-) -> (WireNodeId, OccurrenceKey) {
+pub(crate) fn clause_identity(package: &CheckedPackage, index: usize) -> (NodeKey, OccurrenceKey) {
     let node = &package.graph().temporal_clauses()[index];
-    let id = WireNodeId::from_digest(*node.identity().as_bytes());
-    (id, OccurrenceKey::new(id, node.claim().clone()))
+    let id = node.identity().clone();
+    (id.clone(), OccurrenceKey::new(id, node.claim().clone()))
 }
 
 /// FR-128: replay `payload` through `replay_model_trace`: `unit` is
@@ -484,7 +483,7 @@ pub(crate) fn replay_unit(
     unit: &ReplayUnit<'_>,
     subject: &ModelTraceSubject,
     payload: TemporalCounterexample,
-    clause: Option<(WireNodeId, OccurrenceKey)>,
+    clause: Option<(NodeKey, OccurrenceKey)>,
     letters: &dyn ModelLetters,
 ) -> ModelTraceSettlement {
     replay_unit_result(unit, subject, payload, clause, letters)
@@ -492,30 +491,14 @@ pub(crate) fn replay_unit(
         .settlement
 }
 
-/// The package id `unit` compiles to.
-pub(crate) fn unit_package_id(unit: &ReplayUnit<'_>) -> DigestRecord {
-    compile_package(
-        SourceIdentity::new(AUTHORITY, unit.identity, "git", "1"),
-        unit.path,
-        unit.text,
-        [unit.document],
-        &DependencyInput::default(),
-        qsl_replay::StageLimits::default(),
-        ReplayLimits::default(),
-    )
-    .expect("the unit compiles")
-    .package_id()
-}
-
 /// [`replay_unit`]'s whole result, as the replay `settle_model_check` takes.
 pub(crate) fn replay_unit_result(
     unit: &ReplayUnit<'_>,
     subject: &ModelTraceSubject,
     payload: TemporalCounterexample,
-    clause: Option<(WireNodeId, OccurrenceKey)>,
+    clause: Option<(NodeKey, OccurrenceKey)>,
     letters: &dyn ModelLetters,
 ) -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal> {
-    let package_id = unit_package_id(unit);
     let byte_provision = vec![(
         AUTHORITY.to_owned(),
         unit.identity.to_owned(),
@@ -526,22 +509,19 @@ pub(crate) fn replay_unit_result(
         documents.push(bytes.clone());
     }
     let wire = ReplayRequestWire {
+        package_name: PACKAGE_NAME.to_owned(),
         profile_selections: Vec::new(),
-        package_id: (
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_id.hex(),
-        ),
         sources: vec![source_wire(unit.identity)],
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
             qsl_replay::OccurrenceKey::new(
-                qsl_replay::WireNodeId::from_digest([7; 32]),
+                crate::fixture_ids::node_key([7]),
                 qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
             ),
         ),
         source: witness_source(),
-        obligation_identity: [3; 32],
+        obligation_identity: crate::fixture_ids::obligation_identity(),
         backend: "qsl-en-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: UNLIMITED,
@@ -552,17 +532,13 @@ pub(crate) fn replay_unit_result(
         byte_provision,
         documents,
     };
-    let (node, occurrence) = clause.unwrap_or_else(|| deadlock_freedom_clause(&package_id));
+    let (node, occurrence) = clause.unwrap_or_else(|| crate::model_settle::model_anchor(PACKAGE));
     let envelope = WitnessEnvelope::reconstruct(
         WitnessPacket {
-            obligation_identity: Some([3; 32]),
+            obligation_identity: Some(crate::fixture_ids::obligation_identity()),
             occurrence_key: Some(occurrence),
             clause_node: Some(node),
             replay_target: qsl_replay::ReplayTargetMembers::function(selected()),
-            package_id: Some((
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                package_id.hex(),
-            )),
             profile_selections: Some(Vec::new()),
             run_limits: Some(UNLIMITED),
             declared_domains: Some(Vec::new()),
@@ -581,7 +557,6 @@ impl World {
     fn replay_unit(&self) -> ReplayUnit<'_> {
         ReplayUnit {
             identity: "reduction",
-            path: "reduction.native",
             text: self.text.as_bytes(),
             document: &self.document,
             snapshots: &self.snapshots,
@@ -628,11 +603,9 @@ impl World {
     ) -> qsl_replay::ModelCheckRecord {
         let letters = Letters::new(self, clause, atoms);
         let unit = self.replay_unit();
-        let package_id = unit_package_id(&unit);
         settle_model_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package_id,
             &CertificateRequest {
                 subject: self.subject(),
                 item: ModelCheckItem::Clause {

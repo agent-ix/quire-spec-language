@@ -72,6 +72,7 @@ fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str)
     .expect("the model selection admits");
     let mut package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),

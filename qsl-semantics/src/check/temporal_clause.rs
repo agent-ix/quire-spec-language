@@ -60,11 +60,11 @@ use qsl_foundation::bound::{
     TimedIntervalKey,
 };
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
-use qsl_foundation::digest::{ByteDigest, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{Setting, Span};
+use quire_exact::NodeKey;
 use quire_exact::{Integer, Rational, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{
@@ -119,6 +119,9 @@ pub struct TemporalDeclarations<'a> {
     pub(crate) scope: &'a Scope,
     pub(crate) selections: &'a [TemporalSelection],
     pub(crate) source: &'a RawSourceRef,
+    /// The checked package's name, the `package` of every node key a
+    /// clause mints (FR-322).
+    pub(crate) package_name: &'a str,
     pub(crate) embedding: Option<&'a SourceMap>,
     /// The type positions a requirement's extent walk may visit.
     pub(crate) position_limit: u64,
@@ -394,8 +397,8 @@ impl TemporalClaim {
     /// of the record.
     pub fn requirements(
         &self,
-        clause: WireNodeId,
-        parameters: &[WireNodeId],
+        clause: NodeKey,
+        parameters: &[NodeKey],
         populations: &[DomainKey],
         named: &[DomainKey],
     ) -> Result<Requirements, InternalFault> {
@@ -406,7 +409,7 @@ impl TemporalClaim {
                 .ok_or_else(|| InternalFault::new(STAGE, "parameter-node-keyed"))?;
             domains.insert(
                 DomainKey::Node {
-                    node: *node,
+                    node: node.clone(),
                     path: path.clone(),
                 },
                 *kind,
@@ -456,7 +459,7 @@ pub struct CheckedTemporalClause {
     over: (String, ValueType),
     /// The clock role, as written.
     clock: String,
-    clock_binding: WireNodeId,
+    clock_binding: NodeKey,
     operators: Vec<CheckedOperator>,
     horizon: Option<u64>,
     claim: TemporalClaim,
@@ -641,7 +644,7 @@ impl CheckedTemporalClause {
     pub fn interval_key(&self, node: TemporalNodeId) -> Option<IntervalKey> {
         match self.interval_of(node)? {
             CheckedInterval::Steps(interval) => {
-                interval.key(self.profile_ref.clone(), self.clock_binding)
+                interval.key(self.profile_ref.clone(), self.clock_binding.clone())
             }
             CheckedInterval::Timed(_) => None,
         }
@@ -653,7 +656,7 @@ impl CheckedTemporalClause {
     pub fn timed_interval_key(&self, node: TemporalNodeId) -> Option<TimedIntervalKey> {
         match self.interval_of(node)? {
             CheckedInterval::Timed(interval) => {
-                Some(interval.key(self.profile_ref.clone(), self.clock_binding))
+                Some(interval.key(self.profile_ref.clone(), self.clock_binding.clone()))
             }
             CheckedInterval::Steps(_) => None,
         }
@@ -750,17 +753,24 @@ const fn is_temporal(operator: TemporalOperator) -> bool {
     }
 }
 
-/// The clock binding's node id. Recorded exception to keying on the string
-/// itself: `IntervalKey::clock_binding` is a `WireNodeId` (QSpec FR-255's
-/// structural clock-binding node, fixed by ADR-014 and `qsl_foundation::bound`),
-/// a 32-byte id that cannot hold the `clock` string, so the id is the digest of
-/// the string's length-prefixed bytes. Equal strings bind equally. FR-233's
-/// `model-steps`/`model-time` binding node replaces it.
-fn clock_binding(text: &str) -> WireNodeId {
-    let mut preimage = Vec::with_capacity(text.len() + 8);
-    preimage.extend_from_slice(&u64::try_from(text.len()).unwrap_or(u64::MAX).to_be_bytes());
-    preimage.extend_from_slice(text.as_bytes());
-    WireNodeId::from_digest(ByteDigest::of(&preimage).as_bytes())
+/// The clock binding's node id (QSpec FR-255's structural clock-binding
+/// node): package `package`, path `["clock-binding", form, clock]` with the
+/// clock name as written, and ordinal 0. `form` is `model-time` under a
+/// timed profile's model clock and `model-steps` otherwise (FR-233).
+fn clock_binding(
+    package: &str,
+    clock: &str,
+    form: &str,
+) -> Result<NodeKey, quire_exact::InvalidNodeKey> {
+    NodeKey::new(
+        package,
+        vec![
+            quire_exact::PathSegment::Text("clock-binding".to_owned()),
+            quire_exact::PathSegment::Text(form.to_owned()),
+            quire_exact::PathSegment::Text(clock.to_owned()),
+        ],
+        0,
+    )
 }
 
 /// A temporal operator's interval built from its form: the validated
@@ -1218,12 +1228,14 @@ fn check_clause(
         .collect();
     let formula = build_formula(&form.formula, &intervals)?;
     let populations: Vec<PopulationDomain> = match types.first() {
-        Some(ValueType::Reference(object)) => {
-            populations_overlapping(declarations.models, *object, declarations.scope.types())
-                .into_iter()
-                .filter(|domain| domain.maximum.is_none())
-                .collect()
-        }
+        Some(ValueType::Reference(object)) => populations_overlapping(
+            declarations.models,
+            object.clone(),
+            declarations.scope.types(),
+        )
+        .into_iter()
+        .filter(|domain| domain.maximum.is_none())
+        .collect(),
         _ => Vec::new(),
     };
     let property_form = property_form(profile, model_subject, &formula);
@@ -1244,6 +1256,11 @@ fn check_clause(
         .next()
         .ok_or_else(|| fault("over-type-resolved"))?;
 
+    let time_binding_form = if time_binding.is_some() {
+        "model-time"
+    } else {
+        "model-steps"
+    };
     Ok(CheckedTemporalClause {
         name: form.name.name.clone(),
         span: declaration.span,
@@ -1251,7 +1268,8 @@ fn check_clause(
         profile_ref,
         over: (form.over.name.name.clone(), over_type),
         clock: clock.text.clone(),
-        clock_binding: clock_binding(&clock.text),
+        clock_binding: clock_binding(declarations.package_name, &clock.text, time_binding_form)
+            .map_err(|_| fault("clock-binding-keyed"))?,
         operators,
         horizon,
         claim: TemporalClaim {
@@ -1456,7 +1474,7 @@ fn resolve_fairness_operation(
         Some((object, operation)) => (scope.object_type_named(object), operation),
         None => (
             match over {
-                Some(ValueType::Reference(object)) => Some(*object),
+                Some(ValueType::Reference(object)) => Some(object.clone()),
                 _ => None,
             },
             name.name.as_str(),
@@ -1878,15 +1896,17 @@ pub fn check_clauses(
     );
     let units = super::time_units::TimeUnits::new(
         &package.units,
-        package.nominal_spans.keys().copied(),
+        package.nominal_spans.keys().cloned(),
         &package.models,
         &package.dimension_equivalences,
-        package.identity,
+        &package.source,
+        &package.package_name,
     );
     let declarations = TemporalDeclarations {
         scope: &scope,
         selections: &package.temporal_selections,
         source: &package.source,
+        package_name: &package.package_name,
         embedding: None,
         position_limit: 10_000,
         models: &package.models,

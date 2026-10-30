@@ -152,7 +152,7 @@ pub fn document(archive: bool) -> Vec<u8> {
     .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
         "package": {"identity": PACKAGE, "version": "1.0.0",
             "mappingVersions": [], "profileVersions": []},
@@ -213,8 +213,13 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         ModelNormalizationLimits::default(),
     )
     .expect("the model selection admits");
-    let assembled =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, models, vec![]);
+    let assembled = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        vec![],
+    );
     let declarations = match assembled {
         Ok(declarations) => declarations,
         Err(refusal) => {

@@ -1,7 +1,6 @@
 {
   "canonicalization": {
-    "algorithm": "rfc8785-v1",
-    "digest": "sha256-jcs"
+    "algorithm": "rfc8785-v1"
   },
   "constructs": [
     {

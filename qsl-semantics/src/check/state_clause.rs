@@ -125,12 +125,12 @@ impl CheckedOperationFrame {
 
     /// The operation's `state`/`operation_anchor` node identity.
     pub fn anchor(&self) -> NodeKey {
-        self.anchor
+        self.anchor.clone()
     }
 
     /// The operation's `state`/`frame` node identity.
     pub fn frame(&self) -> NodeKey {
-        self.frame
+        self.frame.clone()
     }
 
     /// The `Origin` of the frame node's own `generated` occurrence
@@ -222,11 +222,11 @@ impl StateClauseDeclaration {
         ClauseView {
             kind: self.kind,
             complete_value: is_complete_value(&self.selection),
-            context: Some(self.context),
-            receiver: Some(("self", ValueType::Reference(self.context))),
+            context: Some(self.context.clone()),
+            receiver: Some(("self", ValueType::Reference(self.context.clone()))),
             operation: self.operation.as_ref(),
-            context_population: self.context_population,
-            frame_population: self.frame_population,
+            context_population: self.context_population.clone(),
+            frame_population: self.frame_population.clone(),
             binders: &[],
             presence_places: &self.presence_places,
             body: &self.body,
@@ -322,15 +322,15 @@ enum FunctionGraph<'a> {
     },
     Imported {
         graph: &'a super::CheckedGraph,
-        package: crate::library::PackageId,
+        package: &'a str,
     },
 }
 
 impl<'a> FunctionGraph<'a> {
-    fn imported(self, package: crate::library::PackageId) -> Option<&'a super::CheckedGraph> {
+    fn imported(self, callee: &NodeKey) -> Option<&'a super::CheckedGraph> {
         match self {
-            Self::Local { scope, .. } => scope.imported_graph(package),
-            Self::Imported { graph, .. } => graph.scope.imported_graph(package),
+            Self::Local { scope, .. } => scope.imported_graph(callee),
+            Self::Imported { graph, .. } => graph.scope.imported_graph(callee),
         }
     }
 }
@@ -343,7 +343,7 @@ enum FunctionTarget<'a> {
     },
     Imported {
         graph: &'a super::CheckedGraph,
-        package: crate::library::PackageId,
+        package: &'a str,
         index: usize,
     },
 }
@@ -374,16 +374,16 @@ fn enqueue_calls<'a>(
             NodeKind::ImportedCall {
                 callee, function, ..
             } => {
-                if let Some(imported) = graph.imported(callee.package) {
+                if let Some(imported) = graph.imported(callee) {
                     let imported_graph = FunctionGraph::Imported {
                         graph: imported,
-                        package: callee.package,
+                        package: callee.package(),
                     };
                     pending.push((
                         imported_graph,
                         FunctionTarget::Imported {
                             graph: imported,
-                            package: callee.package,
+                            package: callee.package(),
                             index: *function,
                         },
                     ));
@@ -553,7 +553,7 @@ impl<'a> ClauseDeclarations<'a> {
 /// context, which may be one of its proper subtypes, SR-736 FND-010) and
 /// its ordinal among its package's population declarations in ascending
 /// `DeclarationKey` order.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PopulationDomain {
     pub(crate) object: EffectiveId,
     pub(crate) ordinal: usize,
@@ -567,8 +567,8 @@ impl PopulationDomain {
     /// The population's own declared member object type: the type of an
     /// object parameter bound to it, whose instances a model check lists
     /// from the subject's universe (FR-125 Instancing).
-    pub const fn object(&self) -> EffectiveId {
-        self.object
+    pub fn object(&self) -> EffectiveId {
+        self.object.clone()
     }
 }
 
@@ -645,7 +645,7 @@ pub(crate) fn population_of(
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
     let found: Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> = models
         .iter()
-        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .flat_map(|model| model.populations_of(object.clone(), |sub, sup| types.conforms(sub, sup)))
         .collect();
     match found.as_slice() {
         [] => Ok(None),
@@ -653,7 +653,7 @@ pub(crate) fn population_of(
         // `object` (SR-736 FND-010): `Sub` and `ConfigVersion` clauses over
         // `config_history` key the same `PopulationDomain`.
         [(ordinal, _, member, bound)] => Ok(Some(PopulationDomain {
-            object: *member,
+            object: member.clone(),
             ordinal: *ordinal,
             maximum: bound.map(|bound| bound.maximum),
         })),
@@ -678,7 +678,7 @@ pub(crate) fn populations_overlapping(
     let mut found: Vec<(&DeclarationKey, PopulationDomain)> = models
         .iter()
         .flat_map(|model| {
-            model.populations_overlapping(object, |sub, sup| types.conforms(sub, sup))
+            model.populations_overlapping(object.clone(), |sub, sup| types.conforms(sub, sup))
         })
         .map(|(ordinal, key, member, bound)| {
             (
@@ -701,7 +701,7 @@ pub(crate) fn populations_overlapping(
 fn walked_object(node: CheckedNode<'_>, scope: &Scope) -> Option<EffectiveId> {
     match node.kind() {
         NodeKind::Reaches { source, .. } => match node.at(*source).value_type() {
-            ValueType::Reference(object) => Some(*object),
+            ValueType::Reference(object) => Some(object.clone()),
             _ => None,
         },
         NodeKind::ReachesEnd {
@@ -740,7 +740,7 @@ pub(crate) fn named_domains(
         .filter_map(|node| match node.kind() {
             NodeKind::NamedPopulation { population, .. } => named
                 .keyed(population)
-                .map(|population| (population.domain, population.bound.clone())),
+                .map(|population| (population.domain.clone(), population.bound.clone())),
             _ => None,
         })
         .collect()
@@ -755,7 +755,7 @@ fn walked_bound(
 ) -> Option<AuthoredBound> {
     models
         .iter()
-        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .flat_map(|model| model.populations_of(object.clone(), |sub, sup| types.conforms(sub, sup)))
         .find_map(|(_, _, _, bound)| bound.cloned())
 }
 
@@ -898,12 +898,12 @@ fn check_clause_in(
         form.kind,
         form.operation.as_ref(),
         input.staged,
-        form.context,
+        form.context.clone(),
     ) {
         let mut staged = staged.borrow_mut();
         for model in input.models {
             let projected = model
-                .parent_projections(context, operation, &mut staged, u64::MAX)
+                .parent_projections(context.clone(), operation, &mut staged, u64::MAX)
                 .map_err(|failure| parent_slot_refusal(failure, location))?;
             parent_projections.extend(projected);
         }
@@ -941,16 +941,17 @@ fn check_clause_in(
     // `reaches` walks -- unknown until the body is typed, so resolved here
     // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
-    clause_populations.extend(form.context_population);
+    clause_populations.extend(form.context_population.clone());
     // Each relationship-end reachability that walks a population with an
     // authored bound (FR-380), to be linked to that bound below.
     let mut linked = Vec::new();
     for node in body.root().descendants() {
         if let Some(object) = walked_object(node, input.scope) {
             let end_form = matches!(node.kind(), NodeKind::ReachesEnd { .. });
-            let walked =
-                population_of(input.models, object, input.scope.types()).map_err(|keys| {
-                    let refusal = ambiguous_population(input.scope, object, &keys, node.location());
+            let walked = population_of(input.models, object.clone(), input.scope.types()).map_err(
+                |keys| {
+                    let refusal =
+                        ambiguous_population(input.scope, object.clone(), &keys, node.location());
                     // FR-365: a reachability over an end refuses as a
                     // `StateModel` form; the field form's refusal is unchanged.
                     if end_form {
@@ -958,8 +959,13 @@ fn check_clause_in(
                     } else {
                         refusal
                     }
-                })?;
-            if end_form && walked.is_some_and(|domain| domain.maximum.is_some()) {
+                },
+            )?;
+            if end_form
+                && walked
+                    .clone()
+                    .is_some_and(|domain| domain.maximum.is_some())
+            {
                 let bound = walked_bound(input.models, object, input.scope.types());
                 linked.extend(bound.map(|bound| (node.id(), bound)));
             }
@@ -972,7 +978,7 @@ fn check_clause_in(
     let mut named_only = BTreeSet::new();
     if let Some(named) = &named {
         for (domain, bound) in named_domains(body.root(), named) {
-            if clause_populations.insert(domain) {
+            if clause_populations.insert(domain.clone()) {
                 named_only.insert(domain);
             }
             named_bounds.extend(bound);
@@ -989,21 +995,21 @@ fn check_clause_in(
     if form.operation.is_some() {
         claims.push(ClauseClaim {
             subject: ClaimSubject::Frame,
-            populations: form.frame_population.into_iter().collect(),
+            populations: form.frame_population.clone().into_iter().collect(),
         });
     }
     let mut bounds: Vec<AuthoredBound> = claims
         .iter()
         .flat_map(|claim| &claim.populations)
         .filter(|domain| domain.maximum.is_some() && !named_only.contains(*domain))
-        .filter_map(|domain| walked_bound(input.models, domain.object, input.scope.types()))
+        .filter_map(|domain| walked_bound(input.models, domain.object.clone(), input.scope.types()))
         .chain(named_bounds)
         .collect();
     bounds.sort_by(|left, right| left.label.cmp(&right.label));
     bounds.dedup();
     let population_types = claims
         .iter()
-        .flat_map(|claim| claim.populations.iter().map(|domain| domain.object))
+        .flat_map(|claim| claim.populations.iter().map(|domain| domain.object.clone()))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -1075,7 +1081,7 @@ impl CheckedStateClause {
 
     /// The context object type `M::T`, by its effective identity.
     pub fn context(&self) -> EffectiveId {
-        self.context
+        self.context.clone()
     }
 
     /// The operation a `pre` or `post` clause names.
@@ -1117,7 +1123,7 @@ impl CheckedStateClause {
     /// The clause's node identity: its `state_clause` node's key. Two
     /// clauses of equal kind, anchor and body share it (FR-104-AC-6).
     pub fn identity(&self) -> NodeKey {
-        self.identity
+        self.identity.clone()
     }
 
     /// The clause's `claim` occurrence of its node (ADR-013 O-07).
@@ -1174,9 +1180,9 @@ pub(crate) fn record(
         // what `classify_extent` keys by, so it is reused rather than
         // reimplemented.
         None => {
-            let wired: Vec<(qsl_foundation::digest::WireNodeId, &ValueType)> = roots
+            let wired: Vec<(quire_exact::NodeKey, &ValueType)> = roots
                 .iter()
-                .map(|(node, value_type)| (wire(*node), *value_type))
+                .map(|(node, value_type)| (wire(node.clone()), *value_type))
                 .collect();
             if let ClaimExtent::Unbounded(unbounded) =
                 classify_extent(&wired, types, position_limit)?
@@ -1201,7 +1207,7 @@ pub(crate) fn record(
                 prefixed.extend(path);
                 domains.insert(
                     DomainKey::Node {
-                        node: wire(frame),
+                        node: wire(frame.clone()),
                         path: prefixed,
                     },
                     kind,
@@ -1216,7 +1222,7 @@ pub(crate) fn record(
             continue;
         }
         domains.insert(
-            population_key(domain, *object).map_err(ClassifyFailure::Fault)?,
+            population_key(domain, object.clone()).map_err(ClassifyFailure::Fault)?,
             DomainKind::Population,
         );
     }
@@ -1234,7 +1240,10 @@ pub(crate) fn record(
 /// The declaring object type and name of `operation`, as a record
 /// references it (ADR-017 AR-4).
 pub(crate) fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
-    (operation.declaring, operation.declaration.name().to_owned())
+    (
+        operation.declaring.clone(),
+        operation.declaration.name().to_owned(),
+    )
 }
 
 /// `domain`'s ADR-012 §15.7 key, `object` being its member type's
@@ -1291,19 +1300,24 @@ pub(crate) fn frame_record(
     position_limit: u64,
     location: &Location,
 ) -> Result<RequirementRecord, CheckRefusal> {
-    let receiver = ValueType::Reference(operation.declaring);
-    let mut roots: Vec<(NodeKey, &ValueType)> = vec![(frame, &receiver)];
-    roots.extend(operation.declaration.result().map(|result| (frame, result)));
+    let receiver = ValueType::Reference(operation.declaring.clone());
+    let mut roots: Vec<(NodeKey, &ValueType)> = vec![(frame.clone(), &receiver)];
+    roots.extend(
+        operation
+            .declaration
+            .result()
+            .map(|result| (frame.clone(), result)),
+    );
     roots.extend(
         operation
             .declaration
             .parameters()
             .iter()
-            .map(|(_, value_type)| (frame, value_type)),
+            .map(|(_, value_type)| (frame.clone(), value_type)),
     );
     let references = ModelReferences::new(
         BTreeSet::new(),
-        populations.iter().map(|(domain, _)| *domain),
+        populations.iter().map(|(domain, _)| domain.clone()),
         Some(operation_reference(operation)),
     );
     record(
@@ -1349,7 +1363,7 @@ pub(crate) fn clause_records(
             .population_types
             .iter()
             .position(|named| *named == object)
-            .and_then(|at| lowered.population_objects.get(at).copied())
+            .and_then(|at| lowered.population_objects.get(at).cloned())
     };
     let unkeyable = || CheckRefusal {
         location: location.clone(),
@@ -1361,7 +1375,7 @@ pub(crate) fn clause_records(
         let populations: Vec<(PopulationDomain, NodeKey)> = entry
             .populations
             .iter()
-            .map(|domain| object_of(domain.object).map(|object| (*domain, object)))
+            .map(|domain| object_of(domain.object.clone()).map(|object| (domain.clone(), object)))
             .collect::<Option<_>>()
             .ok_or_else(unkeyable)?;
         match entry.subject {
@@ -1369,26 +1383,26 @@ pub(crate) fn clause_records(
                 let roots: Vec<(NodeKey, &ValueType)> = lowered
                     .parameters
                     .iter()
-                    .copied()
+                    .cloned()
                     .zip(clause.parameters.iter().map(|(_, value_type)| value_type))
                     .collect();
                 let references = ModelReferences::new(
                     body_objects(clause.body.root()),
-                    populations.iter().map(|(domain, _)| *domain),
+                    populations.iter().map(|(domain, _)| domain.clone()),
                     form.operation.as_ref().map(operation_reference),
                 );
                 let record = record(
                     &roots,
                     None,
                     &populations,
-                    lowered.boolean,
+                    lowered.boolean.clone(),
                     types,
                     position_limit,
                     references,
                 )
                 .map_err(classify)?;
                 keyed.push(KeyedClaim {
-                    node: lowered.key,
+                    node: lowered.key.clone(),
                     origin: claim.clone(),
                     record,
                 });
@@ -1400,15 +1414,15 @@ pub(crate) fn clause_records(
                 };
                 let record = frame_record(
                     operation,
-                    binding.frame,
+                    binding.frame.clone(),
                     &populations,
-                    lowered.boolean,
+                    lowered.boolean.clone(),
                     types,
                     position_limit,
                     location,
                 )?;
                 keyed.push(KeyedClaim {
-                    node: binding.frame,
+                    node: binding.frame.clone(),
                     origin: binding.frame_origin.clone(),
                     record,
                 });
@@ -1428,9 +1442,12 @@ mod tests {
     use crate::model::domain_package::OperationEffect;
 
     fn node_key(fill: u8) -> NodeKey {
-        let mut bytes = [0_u8; 32];
-        bytes[31] = fill;
-        NodeKey::from_digest(bytes)
+        quire_exact::NodeKey::new(
+            "fixture".to_owned(),
+            vec![quire_exact::PathSegment::Text(format!("n{fill}"))],
+            0,
+        )
+        .expect("a fixture key")
     }
 
     fn declaration_key(node: &str) -> DeclarationKey {
@@ -1472,7 +1489,10 @@ mod tests {
             ..Default::default()
         };
         let operation = ClauseOperation {
-            declaring: EffectiveId::from_digest([9_u8; 32]),
+            declaring: quire_exact::EffectiveId::new(
+                None,
+                quire_exact::OriginalDeclarationKey::new("fixture", "o9"),
+            ),
             declaration: OperationDeclaration::new("ship", Vec::new(), None, effect),
         };
         let frame = CheckedOperationFrame {

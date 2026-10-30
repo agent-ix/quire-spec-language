@@ -164,10 +164,9 @@ pub enum CertificateLocus {
 }
 
 /// The certificate members QSpec FR-331's certificate-member locus names,
-/// each variant with its FR-331 spelling, in the row's order: the thirteen
-/// members of the FR-412 and Büchi parts, the eleven FR-418 adds, and the
-/// twenty-six members of the entries these hold (FR-331-AC-46). One table
-/// is the enum, its spellings and [`CertificateMember::ALL`].
+/// each variant with its FR-331 spelling, in the schema enum's order
+/// (FR-331-AC-46). One table is the enum, its spellings and
+/// [`CertificateMember::ALL`].
 macro_rules! certificate_members {
     ($($variant:ident => $name:literal,)*) => {
         /// A certificate member QSpec FR-331's certificate-member locus
@@ -197,6 +196,9 @@ macro_rules! certificate_members {
 
 certificate_members! {
     Identity => "identity",
+    NodeId => "node_id",
+    Model => "model",
+    Ordinal => "ordinal",
     Objective => "objective",
     Kind => "kind",
     Values => "values",
@@ -221,7 +223,6 @@ certificate_members! {
     Start => "start",
     Nested => "nested",
     AbstractStates => "abstract_states",
-    Algorithm => "algorithm",
     Automaton => "automaton",
     Bias => "bias",
     Bound => "bound",
@@ -229,8 +230,6 @@ certificate_members! {
     Clock => "clock",
     Concrete => "concrete",
     Constraint => "constraint",
-    Digest => "digest",
-    Domain => "domain",
     Gain => "gain",
     History => "history",
     Lower => "lower",

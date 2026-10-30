@@ -19,10 +19,10 @@
 //! check-time [`FrameWitness`] (FR-115) as the change a payload claims.
 
 use quire_exact::Identifier;
+use quire_exact::NodeKey;
 
 use super::FamilyPayload;
 use crate::identity::QualifiedName;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::{
     DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
@@ -162,9 +162,9 @@ impl ClaimedChange {
 pub struct FrameCounterexample {
     /// The wire identity of the operation's `state`/`operation_anchor` node
     /// (FR-105).
-    pub anchor: WireNodeId,
+    pub anchor: NodeKey,
     /// The wire identity of the operation's `state`/`frame` node (FR-105).
-    pub frame: WireNodeId,
+    pub frame: NodeKey,
     /// The frame node's `generated` occurrence key (FR-104-AC-5).
     pub occurrence: OccurrenceKey,
     /// The `quire.state.invocation/v1` document (FR-106); it and its pre

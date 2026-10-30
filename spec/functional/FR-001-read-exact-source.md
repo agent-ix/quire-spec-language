@@ -71,15 +71,13 @@ region.
 
 ### Edit and binding refusals are not source-identity refusals
 
-Three complete-V1 host refusals concern a source already admitted, not the
-labels it was admitted under: an incremental edit that changes the authority or identity
-(`EditPredecessor`) and a CST node rendered against a parsed source it does not
-belong to (`ForeignNode`). They SHALL refuse with
+An incremental edit that changes the authority or identity of a source
+already admitted (`EditPredecessor`) SHALL refuse with
 `invalid_source_map`, the retained host code for an invalid correspondence,
-source binding or queried range, whose causes the catalog does not
-close, keeping their host cause. They SHALL name no region: byte 0 cannot
-stand in for a location (the catalog's common structured context). They
-never use `invalid_source_identity`, whose causes are the two above.
+source binding or queried range, and keep its host cause. It SHALL name no
+region: byte 0 cannot stand in for a location (the catalog's common
+structured context). It never uses `invalid_source_identity`, whose causes
+are the two above.
 (QSL team-lead ruling, 2026-09-26, on the review of PR #487.)
 
 ### Where an S0 refusal is located
@@ -188,7 +186,7 @@ caller names it with the same two labels
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire` and bytes `b` carries a `RawSourceRef` whose authority and identity read exactly those labels, and no other member. Admitting bytes `b'` under the same labels gives an equal `RawSourceRef`. | Test (TC-424) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority or identity is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority` or `identity` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
 | FR-001-AC-11 | With both the identity and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With both labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
-| FR-001-AC-12 | An incremental edit that changes the authority or identity and rendering a CST node against a parsed source it does not belong to each refuse with `invalid_source_map`, keeping the host cause `EditPredecessor` or `ForeignNode`, and name no region; neither refuses with `invalid_source_identity`. (The edit and the request name the one `Source` instance they act on.) | Test (TC-424) |
+| FR-001-AC-12 | An incremental edit whose expected source identity differs, and a complete-editor request bound to another source revision, each refuse with `invalid_source_map`, keeping host causes `EditPredecessor` and `RequestRevision` respectively, and naming no region; neither refuses with `invalid_source_identity`. The edit and the request name the one `Source` instance they act on. | Test (TC-424) |
 | FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, and again under the reference of bytes `b'` admitted as `a`, `u`, give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, a third key. | Test (TC-424) |
 | FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`) refuse with the region `[1, 1)` under the `RawSourceRef` (`a`, `u`), and bytes `ab\0c` with the region `[2, 3)` under it. | Test (TC-424) |
 | FR-001-AC-10 | Admission with an empty identity, and admission of five bytes under a four-byte ceiling each refuse with no region, not a region at byte 0. | Test (TC-424) |
@@ -202,8 +200,8 @@ and the native `Diagnostic`; the other outputs cannot reach it: `parse` and
 `format` and the run request open the file before any source is admitted (an
 empty file operand is a file error), a native-state-input artifact has no
 path, and the replay path is the reference's identity, which a non-blank
-label set makes non-empty. `EditPredecessor` and `ForeignNode`
-refuse with `invalid_source_map` and no region
+label set makes non-empty. `EditPredecessor`
+refuses with `invalid_source_map` and no region
 (`qsl-cst/src/diagnostic.rs` `HostCause::code`, `error_without_region`).
 
 ## Dependencies

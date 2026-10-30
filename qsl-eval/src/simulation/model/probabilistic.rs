@@ -364,7 +364,7 @@ fn zero_of(value_type: &ValueType) -> Option<Value> {
         ValueType::Integer | ValueType::Int(_) => Some(Value::Integer(Integer::zero())),
         ValueType::Quantity(unit) => Some(Value::Quantity(Quantity::new(
             Rational::from_integer(Integer::zero()),
-            *unit,
+            unit.clone(),
         ))),
         _ => None,
     }
@@ -402,7 +402,7 @@ impl ModelSystem<'_> {
             .values()
             .flatten()
             .find(|application| application.text == text)
-            .map(|application| (application.declaring, application.name.as_str()))
+            .map(|application| (application.declaring.clone(), application.name.as_str()))
     }
 
     /// The random parameters of the operation whose identity text is `text`,
@@ -605,7 +605,9 @@ impl ModelSystem<'_> {
             expansion.successors.into_iter().map(Some).collect();
         let mut groups: Vec<(Vec<u8>, Action)> = Vec::new();
         for vector in enabled {
-            let supports = self.probabilistic.random_of(vector.declaring, &vector.name);
+            let supports = self
+                .probabilistic
+                .random_of(vector.declaring.clone(), &vector.name);
             let mut random = Vec::with_capacity(supports.len());
             let mut probability = Rational::from_integer(Integer::one());
             for support in supports {

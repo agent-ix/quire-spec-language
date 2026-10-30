@@ -15,8 +15,7 @@ use std::collections::BTreeSet;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
-use qsl_package::{CheckedPackage, EmitRefusal};
-use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal};
+use qsl_replay::{node_occurrence, SubjectIdentity};
 use qsl_route::deadlock::{ModelRefinementItem, ModelTemporalItem};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::AbstractSubject;
@@ -40,14 +39,11 @@ pub enum RequestRefusal {
         /// The refinement's declared name.
         name: String,
     },
-    /// The subject's checked package has no canonical identity.
-    #[error(transparent)]
-    Package(#[from] EmitRefusal),
 }
 
 /// A model subject with its identity computed once, from which the items of
 /// any number of clauses are written. Building it emits the subject's checked
-/// package for its `package_id`; writing a clause's item does not.
+/// package for its identity; writing a clause's item does not.
 pub struct SubjectContext<'s, 'a> {
     subject: &'s ModelSubject<'a>,
     identity: SubjectIdentity,
@@ -61,14 +57,11 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
     ///
     /// # Errors
     ///
-    /// [`RequestRefusal::Package`] when the subject's checked package has no
-    /// canonical identity.
+    /// Never today: a subject's identity is read from the subject itself.
     pub fn new(subject: &'s ModelSubject<'a>) -> Result<Self, RequestRefusal> {
         Ok(Self {
             subject,
-            identity: SubjectIdentity::of(subject).map_err(|refusal| match refusal {
-                SubjectIdentityRefusal::Package(refusal) => RequestRefusal::Package(refusal),
-            })?,
+            identity: SubjectIdentity::of(subject),
             selections: subject
                 .simulation
                 .universes
@@ -118,13 +111,13 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
     }
 
     /// Write the item of the checked `refinement` (FR-144), with this subject
-    /// as its concrete subject and `abstract_package` with
+    /// as its concrete subject and the abstract library `abstract_library` with
     /// `abstract_initial` as the abstract subject, into `request` and return
     /// its index.
     ///
     /// The item's record is the refinement's own, read from the subject's
     /// checked package. It carries the abstract subject as the abstract
-    /// package's id and the initial snapshots (QSpec FR-368-AC-19). Its
+    /// package's library name, as the caller's request names it, and the initial snapshots (QSpec FR-368-AC-19). Its
     /// obligation is the subject's identity, the refinement's occurrence and
     /// the abstract initial snapshots, so the same refinement against other
     /// abstract initial states is another item.
@@ -132,13 +125,12 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
     /// # Errors
     ///
     /// [`RequestRefusal::NoRefinementRecord`] when the package has no record
-    /// for the refinement, and [`RequestRefusal::Package`] when the abstract
-    /// package has no canonical identity.
+    /// for the refinement.
     pub fn author_refinement(
         &self,
         request: &mut ModelRequest<SubjectIdentity>,
         refinement: &CheckedRefinement,
-        abstract_package: &CheckedPackage,
+        abstract_library: qsl_semantics::library::LibraryName,
         abstract_initial: &[DocumentRef],
     ) -> Result<RequestIndex, RequestRefusal> {
         let package = self.subject.simulation.package.graph();
@@ -156,9 +148,7 @@ impl<'s, 'a> SubjectContext<'s, 'a> {
             package,
         };
         let abstract_subject = AbstractSubject {
-            package_id: qsl_package::emit_checked(abstract_package)?
-                .package()
-                .package_id(),
+            library: abstract_library,
             initial_states: abstract_initial.to_vec(),
         };
         request

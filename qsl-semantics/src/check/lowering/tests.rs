@@ -18,7 +18,7 @@ use serde_json::{json, Value as Json};
 use super::*;
 use crate::check::depth_forms::{binary, boolean, function, int_form, integer_expr, name_expr};
 use crate::check::family::fixtures::{admitted_source, empty_scope, fixture_source, scope_with};
-use crate::check::{CheckedGraph, CheckedTypeNode, PackageDeclarations};
+use crate::check::{CheckedGraph, PackageDeclarations};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
@@ -27,18 +27,27 @@ use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, 
 mod binder_scope;
 mod deep_bodies;
 mod depth;
-mod differential;
+mod dimension_equivalence;
 mod expression_depth;
-mod identity_depth;
 mod leaves;
 mod rows;
+pub(crate) mod view;
 mod wide_integers;
 
-const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+use view::preimage;
 
-fn preimage(node: &SemanticNode) -> Json {
-    serde_json::from_slice(node.preimage()).expect("a preimage is JSON")
+/// A structural fixture key for a declaration handle: package `fixture`, one
+/// text segment, ordinal 0.
+pub(crate) fn fixture_key(label: &str) -> NodeKey {
+    NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text(label.to_owned())],
+        0,
+    )
+    .expect("a fixture key is a valid structural identity")
 }
+
+const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
 // ---------------------------------------------------------------------
 // Type nodes, built directly.
@@ -86,7 +95,7 @@ fn type_nodes(
         0,
         &mut occurrences,
         &mut meter,
-        qsl_foundation::IdentityLimits::default(),
+        "fixture",
     );
     let keys = value_types
         .iter()
@@ -122,6 +131,7 @@ fn deep_option_keys(stack: usize) -> BTreeSet<NodeKey> {
                 )],
                 ..PackageDeclarations::new(
                     fixture_source(),
+                    "fixture",
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
@@ -182,10 +192,10 @@ fn recursive(name: &str, callee: &str) -> FunctionDeclaration {
 
 /// `record List { next: List?; }`, with no text field.
 fn list_types() -> TypeEnvironment {
-    let list = NodeKey::from_digest([5; 32]);
+    let list = fixture_key("list");
     TypeEnvironment::new(
         [CompositeDeclaration::new(
-            list,
+            list.clone(),
             "List",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "next",
@@ -225,7 +235,11 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
     let checked = PackageDeclarations {
         types: list_types(),
         functions: vec![eq, has],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("equality and contains over List check");
@@ -339,7 +353,11 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     let checked = |budget: u64| {
         PackageDeclarations {
             functions: ring(k),
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default().with_work_budget(budget))
     };
@@ -450,7 +468,7 @@ fn check_under(
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(source, "fixture", qsl_foundation::IdentityLimits::default())
     }
     .check(CheckingLimits::default())
 }
@@ -573,7 +591,11 @@ fn a_text_equality_carries_the_text_profile_law() {
     let definition = DefinitionRole::TextProfile.reference();
     let graph = PackageDeclarations {
         functions: vec![te],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the text equality checks");
@@ -934,58 +956,6 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
     }
 }
 
-/// TC-424 step 3 (FR-001-AC-7): a record's node key depends on its unit's
-/// authority and identity, taken from the unit's `RawSourceRef`, and not on
-/// the revision or the bytes.
-#[trace("TC-424", "FR-001-AC-7")]
-#[test]
-fn a_declaration_key_follows_the_authority_and_identity_not_the_revision() {
-    let point_key = |source: RawSourceRef| {
-        let point = NodeKey::from_digest([4; 32]);
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::new(
-                [CompositeDeclaration::new(
-                    point,
-                    "Point",
-                    CompositeShape::Record(vec![FieldDeclaration::new(
-                        "x",
-                        int(0, 9),
-                        Presence::Required,
-                    )]),
-                )],
-                [],
-            )
-            .unwrap(),
-            ..PackageDeclarations::new(source.clone(), qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("Point checks: {refusals:?}"));
-        assert_eq!(graph.source(), &source);
-        let keys: Vec<_> = graph
-            .checked_type_nodes()
-            .filter_map(|node| match node {
-                CheckedTypeNode::Composite { node, .. } => Some(*node),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(keys.len(), 1, "one composite");
-        keys[0]
-    };
-    let under = |authority, identity, revision, bytes: &[u8]| {
-        point_key(admitted_source(
-            SourceIdentity::new(authority, identity, "git", revision),
-            bytes,
-        ))
-    };
-    let first = under("a", "u", "1", b"b");
-    assert_eq!(first, under("a", "u", "2", b"b'"));
-    let other_authority = under("c", "u", "1", b"b");
-    let other_identity = under("a", "v", "1", b"b");
-    assert_ne!(first, other_authority);
-    assert_ne!(first, other_identity);
-    assert_ne!(other_authority, other_identity);
-}
-
 /// TC-441 (ADR-014 N-3): an unbounded `Sequence<Int[0, 9]>` keys to its
 /// `composite_type`/`sequence` node alone, with no `collection_bounds`
 /// domain, and is a different node from the widest bounded type
@@ -1129,7 +1099,7 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
         0,
         &mut occurrences,
         &mut meter,
-        qsl_foundation::IdentityLimits::default(),
+        "fixture",
     );
     body(&mut lowering)
 }
@@ -1145,7 +1115,7 @@ fn bounded_metre() -> ValueType {
 }
 
 fn metre() -> quire_exact::UnitId {
-    quire_exact::UnitId::compound([5; 32])
+    quire_exact::UnitId::compound(vec![(fixture_key("metre"), Integer::from(1_i64))])
 }
 
 /// No checked type node carries a map or a bounded quantity yet (quire-exact
@@ -1256,7 +1226,11 @@ fn parameter_type(form: TypeForm, aliases: Vec<(String, ValueType)>) -> NodeKey 
             None,
             Expression::boolean(true),
         )],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("g checks");
@@ -1279,7 +1253,11 @@ fn an_alias_introduces_no_type_node() {
             None,
             Expression::boolean(true),
         )],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("g checks");
@@ -1298,11 +1276,11 @@ fn an_alias_introduces_no_type_node() {
 #[trace("FR-092-AC-2", "TC-413")]
 #[test]
 fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
-    let point = NodeKey::from_digest([4; 32]);
+    let point = fixture_key("point");
     let scope = scope_with(
         TypeEnvironment::new(
             [CompositeDeclaration::new(
-                point,
+                point.clone(),
                 "Point",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("x", int(0, 9), Presence::Required),
@@ -1322,14 +1300,16 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
     let (under_w, w_keys) = type_nodes(&scope, &SourceOwner::from(&w), &types);
 
     assert_eq!(u_keys[0], again_keys[0], "one owner, one key");
-    assert_ne!(u_keys[0], w_keys[0], "the owner is part of a declared key");
     assert_eq!(u_keys[1], w_keys[1], "an anonymous type has no owner");
-    assert_eq!(under_u.node(u_keys[0]), again.node(again_keys[0]));
-    let d1 = preimage(under_u.node(u_keys[0]).unwrap());
+    assert_eq!(
+        under_u.node(u_keys[0].clone()),
+        again.node(again_keys[0].clone())
+    );
+    let d1 = preimage(under_u.node(u_keys[0].clone()).unwrap());
     assert!(d1.get("owner").is_some() && !d1["declaration"].is_null());
-    let d2 = preimage(under_w.node(w_keys[0]).unwrap());
+    let d2 = preimage(under_w.node(w_keys[0].clone()).unwrap());
     assert_eq!(d2["owner"]["identity"], "w");
-    let t4 = preimage(under_u.node(u_keys[1]).unwrap());
+    let t4 = preimage(under_u.node(u_keys[1].clone()).unwrap());
     assert!(t4.get("owner").is_none() && t4["declaration"].is_null());
 
     let g1 = function(
@@ -1345,103 +1325,7 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         parameter_keys.push(parameter_named(graph.semantic_graph(), "x").semantic_type());
     }
     assert_eq!(parameter_keys[0], parameter_keys[1]);
-    assert_eq!(parameter_keys[0], Some(u_keys[1]));
-}
-
-/// TC-413 step 9 (FR-092-AC-7): two recursion groups that differ only in
-/// their names key alike and refuse as a collision.
-#[trace("FR-092-AC-7", "TC-413")]
-#[test]
-fn groups_that_differ_only_in_names_collide_and_refuse() {
-    let mut group_keys = Vec::new();
-    for name in ["f", "g"] {
-        let checked = check(vec![recursive(name, name)]).expect("one group checks");
-        group_keys.push(
-            checked
-                .semantic_graph()
-                .nodes()
-                .filter(|node| node.recursion().is_some())
-                .map(SemanticNode::key)
-                .collect::<BTreeSet<_>>(),
-        );
-    }
-    let shared: BTreeSet<_> = group_keys[0].intersection(&group_keys[1]).collect();
-    assert!(
-        !shared.is_empty(),
-        "a group member's key does not depend on the function's name"
-    );
-    let refusals =
-        check(vec![recursive("f", "f"), recursive("g", "g")]).expect_err("the groups collide");
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    let CheckCause::UnsupportedFeature { loci } = &refusals[0].cause else {
-        panic!("{refusals:?}");
-    };
-    let functions: Vec<&str> = loci
-        .iter()
-        .filter_map(|location| match &location.origin {
-            Origin::Body { function, .. } => Some(function.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(functions, ["f", "g"]);
-    assert_eq!(
-        refusals[0].cause.code().as_str(),
-        "unknown_required_feature"
-    );
-    assert_eq!(refusals[0].cause.cause(), Some("unsupported-feature"));
-}
-
-/// TC-413 step 10 (FR-092-AC-12): `Point`, declared through a
-/// `CompositeDeclaration` keyed `0x11...` and again through one keyed
-/// `0x22...`, keys alike both times, and that key is its checked type
-/// node's id; no node or type node holds either supplied key.
-#[trace("FR-092-AC-12", "TC-413")]
-#[test]
-fn a_declared_records_node_id_is_its_key_not_its_handle() {
-    let mut ids = Vec::new();
-    for fill in [0x11, 0x22] {
-        let handle = NodeKey::from_digest([fill; 32]);
-        let types = TypeEnvironment::new(
-            [CompositeDeclaration::new(
-                handle,
-                "Point",
-                CompositeShape::Record(vec![
-                    FieldDeclaration::new("x", int(0, 9), Presence::Required),
-                    FieldDeclaration::new("y", int(0, 9), Presence::Required),
-                ]),
-            )],
-            [],
-        )
-        .expect("Point admits");
-        let checked = PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("Point checks");
-        let graph = checked.semantic_graph();
-        let type_nodes: Vec<NodeKey> = checked
-            .checked_type_nodes()
-            .map(CheckedTypeNode::node)
-            .collect();
-        assert_eq!(type_nodes.len(), 1);
-        let id = type_nodes[0];
-        assert!(graph.node(id).is_some(), "the id names a graph node");
-        ids.push(id);
-        let supplied = handle.to_string();
-        assert!(checked.checked_type_node(handle).is_none());
-        for node in graph.nodes() {
-            assert_ne!(node.key(), handle);
-            assert!(
-                !std::str::from_utf8(node.preimage())
-                    .expect("UTF-8")
-                    .contains(&supplied),
-                "{} holds the supplied key",
-                node.key()
-            );
-        }
-    }
-    assert_eq!(ids[0], ids[1], "the supplied key does not reach the id");
+    assert_eq!(parameter_keys[0], Some(u_keys[1].clone()));
 }
 
 /// TC-414 step 2 (FR-092-AC-5): a function lists every parameter in order,
@@ -1607,7 +1491,7 @@ fn equal_literals_are_one_node_with_one_occurrence_each() {
         .map(|ordinal| {
             graph
                 .occurrence(
-                    literal,
+                    literal.clone(),
                     &quire_exact::Origin::new(quire_exact::Role::new("expression"), ordinal),
                 )
                 .expect("an expression occurrence")
@@ -1671,7 +1555,7 @@ fn only_node_of_form(graph: &SemanticGraph, form: &str) -> NodeKey {
         .map(SemanticNode::key)
         .collect();
     assert_eq!(found.len(), 1, "one `{form}` node");
-    found[0]
+    found[0].clone()
 }
 
 /// TC-415 step 4 (FR-093-AC-4): a contained integer builds no convert node;
@@ -1770,7 +1654,7 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
 #[trace("FR-093-AC-3", "TC-415")]
 #[test]
 fn record_projection_and_record_values_name_their_record_node() {
-    let point = NodeKey::from_digest([4; 32]);
+    let point = fixture_key("point");
     let types = TypeEnvironment::new(
         [CompositeDeclaration::new(
             point,
@@ -1803,7 +1687,11 @@ fn record_projection_and_record_values_name_their_record_node() {
     let graph = PackageDeclarations {
         types,
         functions: vec![project, build],
-        ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
     }
     .check(CheckingLimits::default())
     .expect("the record fixtures check");
@@ -1968,13 +1856,8 @@ fn integer_literals_are_inline_operands_of_integer_equality() {
     only_node_of_form(graph.semantic_graph(), "literal");
 }
 
-fn lower_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 /// Assert every node of `graph` in a recursion group carries its place in
-/// its preimage: a structural node `{group, ordinal, size}` with the group
-/// digest, an application node `{ordinal, size}`.
+/// its content: `{ordinal, size}`.
 fn assert_group_members_carry_their_recursion(graph: &SemanticGraph) {
     for node in graph.nodes() {
         let preimage = preimage(node);
@@ -1982,10 +1865,7 @@ fn assert_group_members_carry_their_recursion(graph: &SemanticGraph) {
             assert!(preimage["recursion"].is_null());
             continue;
         };
-        let mut expected = json!({"ordinal": recursion.ordinal(), "size": recursion.size()});
-        if preimage["version"] == "quire.structural-node/v1" {
-            expected["group"] = json!(lower_hex(recursion.group()));
-        }
+        let expected = json!({"ordinal": recursion.ordinal(), "size": recursion.size()});
         assert_eq!(preimage["recursion"], expected, "{}", node.key());
     }
 }
@@ -2027,71 +1907,4 @@ fn a_mutually_recursive_pair_keys_alike_in_either_order() {
     let ping_first = keys(vec![recursive("ping", "pong"), recursive("pong", "ping")]);
     let pong_first = keys(vec![recursive("pong", "ping"), recursive("ping", "pong")]);
     assert_eq!(ping_first, pong_first);
-}
-
-/// TC-413 step 9 (FR-092-AC-11): `List` and `Tree` are recursion groups
-/// whose members carry their place, and `Tree`'s record refers to its own
-/// ordinal as a `group_reference`.
-#[trace("FR-092-AC-11", "TC-413")]
-#[test]
-fn recursive_records_are_groups_whose_members_refer_to_their_ordinal() {
-    let list = NodeKey::from_digest([5; 32]);
-    let tree = NodeKey::from_digest([6; 32]);
-    let units = [
-        CompositeDeclaration::new(
-            list,
-            "List",
-            CompositeShape::Record(vec![FieldDeclaration::new(
-                "next",
-                ValueType::Composite(list),
-                Presence::Optional,
-            )]),
-        ),
-        CompositeDeclaration::new(
-            tree,
-            "Tree",
-            CompositeShape::Record(vec![FieldDeclaration::new(
-                "kids",
-                sequence(ValueType::Composite(tree), Some((0, 3))),
-                Presence::Required,
-            )]),
-        ),
-    ];
-    for record in units {
-        let name = record.name().to_owned();
-        let types = TypeEnvironment::new([record], []).expect("FR-143 admits the record");
-        let checked = PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(fixture_source(), qsl_foundation::IdentityLimits::default())
-        }
-        .check(CheckingLimits::default())
-        .expect("the record checks");
-        let graph = checked.semantic_graph();
-        assert_group_members_carry_their_recursion(graph);
-        let type_nodes: Vec<NodeKey> = checked
-            .checked_type_nodes()
-            .map(CheckedTypeNode::node)
-            .collect();
-        assert_eq!(type_nodes.len(), 1, "{name}");
-        let record_node = graph.node(type_nodes[0]).expect("the record's node");
-        assert_eq!(record_node.semantic_form(), "record");
-        assert!(
-            record_node.recursion().is_some(),
-            "{name} is a group member"
-        );
-        let self_references = graph
-            .nodes()
-            .filter(|node| {
-                preimage(node)["semantic_type"] == json!({"term": "group_reference", "ordinal": 0})
-                    || preimage(node)["semantic_type"]
-                        == json!({"term": "group_reference", "ordinal": 1})
-            })
-            .count();
-        if name == "Tree" {
-            assert!(
-                self_references >= 1,
-                "Tree's group types a member by ordinal"
-            );
-        }
-    }
 }

@@ -158,30 +158,30 @@ impl Lowering<'_> {
         let over_at = at(TemporalSite::Over);
         let (over_name, over_type) = clause.over();
         let over_type = self.binder_type(over_type, None, &over_at)?;
-        let over = self.parameter(over_name, 0, over_type, &over_at)?;
-        self.record(over_type, OccurrenceRole::Type, over_at);
+        let over = self.parameter(over_name, 0, over_type.clone(), &over_at)?;
+        self.record(over_type.clone(), OccurrenceRole::Type, over_at);
         let scope = [Binder {
             slot: 0,
-            parameter: over,
-            semantic_type: over_type,
+            parameter: over.clone().into(),
+            semantic_type: over_type.clone().into(),
         }];
 
         // FR-337 "`on each` activation at S4" and "Captures at S4": the
         // trigger binder is the level-1 parameter node typed as `over` is,
         // and each capture the next level, typed by its declared type.
-        let mut parameters = vec![over];
+        let mut parameters = vec![over.clone()];
         let mut scope = scope.to_vec();
         let trigger = match clause.trigger() {
             None => None,
             Some((trigger_name, _)) => {
                 let trigger_at = at(TemporalSite::Trigger);
-                let trigger = self.parameter(trigger_name, 1, over_type, &trigger_at)?;
-                self.record(over_type, OccurrenceRole::Type, trigger_at);
-                parameters.push(trigger);
+                let trigger = self.parameter(trigger_name, 1, over_type.clone(), &trigger_at)?;
+                self.record(over_type.clone(), OccurrenceRole::Type, trigger_at);
+                parameters.push(trigger.clone());
                 scope.push(Binder {
                     slot: 1,
-                    parameter: trigger,
-                    semantic_type: over_type,
+                    parameter: trigger.clone().into(),
+                    semantic_type: over_type.into(),
                 });
                 Some(trigger)
             }
@@ -200,14 +200,14 @@ impl Lowering<'_> {
             let term = self.expression(initializer.body.root(), &mut binders)?;
             let declared = self.binder_type(declared, None, &at_name)?;
             let level = first_capture + index;
-            let capture = self.parameter(name, level, declared, &at_name)?;
-            self.record(declared, OccurrenceRole::Type, at_name);
+            let capture = self.parameter(name, level, declared.clone(), &at_name)?;
+            self.record(declared.clone(), OccurrenceRole::Type, at_name);
             capture_terms.push(GroupMember::Binding(Binding::new(name, term)));
-            parameters.push(capture);
+            parameters.push(capture.clone());
             scope.push(Binder {
                 slot: level,
-                parameter: capture,
-                semantic_type: declared,
+                parameter: capture.into(),
+                semantic_type: declared.into(),
             });
         }
 
@@ -232,7 +232,7 @@ impl Lowering<'_> {
                 conditions: &conditions,
                 root_site: &claim,
             },
-            boolean,
+            boolean.clone(),
             &scope,
         )?;
 
@@ -250,7 +250,7 @@ impl Lowering<'_> {
                 &location,
                 NodeTag::Temporal,
                 "fairness",
-                Some(boolean),
+                Some(boolean.clone()),
                 None,
                 BodyTerm::application(
                     Operator::TemporalFairness,
@@ -263,11 +263,11 @@ impl Lowering<'_> {
                         }),
                         ..Operation::plain("quire.op.temporal.fair")
                     },
-                    boolean,
+                    boolean.clone(),
                     Vec::new(),
                 ),
             )?;
-            self.record(key, OccurrenceRole::Expression, location);
+            self.record(key.clone(), OccurrenceRole::Expression, location);
             fairness.push(key);
         }
 
@@ -303,7 +303,7 @@ impl Lowering<'_> {
             &claim,
             NodeTag::Temporal,
             "temporal_clause",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::Temporal,
@@ -311,9 +311,9 @@ impl Lowering<'_> {
                     laws: vec![law],
                     ..Operation::plain("quire.op.temporal.clause")
                 },
-                boolean,
+                boolean.clone(),
                 vec![
-                    MemberTerm::reference(over),
+                    MemberTerm::reference(over.clone()),
                     MemberTerm::Leaf(clock),
                     MemberTerm::Group(GroupTerm::new(activation)),
                     MemberTerm::Group(GroupTerm::new(capture_terms)),
@@ -322,7 +322,7 @@ impl Lowering<'_> {
                 ],
             ),
         )?;
-        self.record(key, OccurrenceRole::Claim, claim);
+        self.record(key.clone(), OccurrenceRole::Claim, claim);
         Ok(LoweredTemporalClause {
             key,
             over,
@@ -346,7 +346,7 @@ impl Lowering<'_> {
             let location = (input.node_site)(index);
             let operand = |id: FormulaNodeId| -> Result<MemberTerm, CheckRefusal> {
                 keys.get(id.index())
-                    .copied()
+                    .cloned()
                     .flatten()
                     .map(MemberTerm::reference)
                     .ok_or_else(|| stage_fault(&location, "operand-keyed-first"))
@@ -410,7 +410,7 @@ impl Lowering<'_> {
                 &location,
                 NodeTag::Temporal,
                 "formula",
-                Some(boolean),
+                Some(boolean.clone()),
                 None,
                 BodyTerm::application(
                     Operator::TemporalFormula,
@@ -418,17 +418,17 @@ impl Lowering<'_> {
                         member,
                         ..Operation::plain(identity)
                     },
-                    boolean,
+                    boolean.clone(),
                     arguments,
                 ),
             )?;
-            self.record(key, OccurrenceRole::Expression, location);
+            self.record(key.clone(), OccurrenceRole::Expression, location);
             if let Some(slot) = keys.get_mut(index) {
                 *slot = Some(key);
             }
         }
         keys.get(formula.root().index())
-            .copied()
+            .cloned()
             .flatten()
             .ok_or_else(|| stage_fault(input.root_site, "formula-root-keyed"))
     }

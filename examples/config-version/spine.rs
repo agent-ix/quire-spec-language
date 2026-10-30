@@ -354,15 +354,10 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
     let written = written(directory, case)?;
     Ok(ClauseRunRequest {
         // Every case reads byte-identical `unit_text()`, so the unit's own
-        // `SourceIdentity` must be the same fixed value across cases too --
-        // it is a genuine input to node-key/`PackageId` derivation
-        // (`qsl-package`'s `identity_projection`), not just a display label.
-        // A case-suffixed identity here would mint a different `PackageId`
-        // per case even though the compiled unit and domain package are
-        // identical (TC-469 step 6's "every case shares the same unit and
-        // package"). This is the same fixed identity
-        // `tests/it/config_version_spine.rs`'s own independent
-        // direct front-end composition uses for its comparison.
+        // `SourceIdentity` and package name are the same fixed values across
+        // cases (TC-469 step 6's "every case shares the same unit and
+        // package").
+        package_name: String::from("config-version-spine"),
         source: ClauseRunSource::Program {
             identity: unit_identity(),
             path: "spine-unit.native".to_owned(),
@@ -373,8 +368,6 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         snapshots: written.snapshots,
         invocations: written.invocations,
         selection: written.selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         // `exhausted-work`'s own `work_units: 0` (FR-108's Corpus table);

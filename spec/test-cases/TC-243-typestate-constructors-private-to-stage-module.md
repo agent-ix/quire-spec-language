@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify that `CheckedGraph`, `CheckedPackage`, `EmittedPackage`,
-`VerifiedPackage` and `ImportView` each have exactly one defining location,
+`ImportView` has exactly one defining location,
 and that every field and every constructor of each type carries no
 visibility qualifier reachable from outside its owning stage module. This
 is TC-171's own established claim (FR-068-AC-2), extended from three types
@@ -37,7 +37,7 @@ FR-087-AC-1.
 ## Test Procedure
 
 1. For each of `CheckedGraph`, `CheckedPackage`, `EmittedPackage`,
-   `VerifiedPackage`, `ImportView`: search the whole compiled crate for
+   `ImportView`: search the whole compiled crate for
    every location defining the type, and record each location found.
 2. For each type found in step 1 (there should be exactly one location
    each), read its field and constructor visibility: `pub`, `pub(crate)`,
@@ -47,7 +47,7 @@ FR-087-AC-1.
 4. For each type, read its owning module's accessor surface and confirm any
    consumer outside the module — specifically including `value::expression`
    reading `CheckedPackage`'s state, `package` reading `CheckedGraph`'s
-   state, and `check` reading `VerifiedPackage`/`ImportView`'s state, the
+   state, and `check` reading `ImportView`'s state, the
    three concrete in-crate-sibling cases a doctest's external vantage
    cannot rule out — reaches the type's state only through a named accessor
    method, never a re-exported field or a module-path trick.

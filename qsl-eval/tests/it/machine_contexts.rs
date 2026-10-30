@@ -457,7 +457,7 @@ impl Orders {
                 let slot = observation.environment.objects().attribute(
                     types,
                     &admitted.self_object,
-                    &FieldRef::new(owner, *name),
+                    &FieldRef::new(owner.clone(), *name),
                 );
                 match slot {
                     Some(FieldValue::Present(Datum::Boolean(held))) => *held,
@@ -1131,7 +1131,7 @@ fn the_post_state_range_witness_reaches_a_context() {
         .find(|declared| declared.name() == "M::ExpressLifecycle")
         .expect("ExpressLifecycle")
         .key();
-    assert_eq!(breach.object.object_type(), express);
+    assert_eq!(breach.object.object_type(), &express);
     assert!(!orders.verdict("Bounded", &admitted));
 
     let record = refused(select(

@@ -397,6 +397,7 @@ fn case_requests(
     let build = |revision: &Revision| {
         read_clause_run_request(ClauseRequestParts {
             source: revision.source(),
+            package_name: super::layering::package_name_of(&revision.identity),
             packages: packages.clone(),
             dependencies: dependencies.clone(),
             observations: observations.clone(),
@@ -404,7 +405,6 @@ fn case_requests(
                 .selection
                 .into_parts()
                 .map_err(|error| at(&error.member, error.reason))?,
-            expected_package_id_claim: None,
             limits: limits.spine,
             observation_limits: limits.observation,
             accounting: limits.accounting(),

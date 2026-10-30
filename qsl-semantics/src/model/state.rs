@@ -160,7 +160,7 @@ fn violation_at(
         Value::Composite(composite) => {
             let (name, rest) = rest.split_first()?;
             let quire_semantic_value::declaration::CompositeShape::Record(fields) =
-                types.composite(composite.declaration())?.shape()
+                types.composite(composite.declaration().clone())?.shape()
             else {
                 return None;
             };
@@ -396,9 +396,6 @@ impl StateModel {
     /// components in an enumerated value domain (FR-120, FR-215). The
     /// record's slots stay name-sorted.
     pub fn record_orders(&self) -> BTreeMap<quire_exact::NodeKey, Vec<String>> {
-        let unbounded = qsl_foundation::IdentityLimits {
-            input_bytes: u64::MAX,
-        };
         let mut orders = BTreeMap::new();
         for view in &self.views {
             let records = &view.view.domain_package().records;
@@ -406,7 +403,7 @@ impl StateModel {
                 let DomainPackageRecord::RecordValueType(declared) = record else {
                     continue;
                 };
-                let Ok(Some(node)) = crate::check::record_node_key(record, unbounded) else {
+                let Ok(Some(node)) = crate::check::record_node_key(record) else {
                     continue;
                 };
                 let mut fields: Vec<(usize, &str)> = records
@@ -489,7 +486,7 @@ impl StateModel {
     pub fn type_identity(&self, key: &DeclarationKey) -> Option<EffectiveId> {
         self.views
             .iter()
-            .find_map(|view| view.view.type_identities().get(key).copied())
+            .find_map(|view| view.view.type_identities().get(key).cloned())
     }
 
     /// The declaration key of the type whose effective identity is
@@ -497,7 +494,7 @@ impl StateModel {
     pub fn type_key(&self, identity: EffectiveId) -> Option<&DeclarationKey> {
         self.views
             .iter()
-            .find_map(|view| view.declaration_key(identity))
+            .find_map(|view| view.declaration_key(identity.clone()))
     }
 
     /// Whether the object type `key` is declared abstract.

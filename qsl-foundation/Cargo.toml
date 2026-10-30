@@ -9,7 +9,7 @@ description = "ADR-011 §6.1 layer F: absence/json-number/serde-object utilities
 
 [features]
 default = ["std"]
-std = ["serde/std", "sha2/std", "thiserror/std"]
+std = ["serde/std", "serde_json/std", "sha2/std", "thiserror/std"]
 
 [dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
@@ -20,6 +20,7 @@ quire-exact = { workspace = true }
 # `InternalFault`, ...) F's diagnostics name (FR-401, ADR-011 X-14).
 quire-semantic-value = { workspace = true }
 serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0.151", default-features = false, features = ["alloc"] }
 sha2 = { version = "0.10.9", default-features = false }
 thiserror = { version = "2.0.20", default-features = false }
 

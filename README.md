@@ -279,6 +279,7 @@ ceiling is an explicit refusal naming the file (exit 20), never truncated.
 
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
+  --package-name switch \
   --model examples/switch-transition/switch.semantic-ir.json \
   examples/switch-transition/switch.native > package.json
 ```

@@ -80,21 +80,6 @@ fn complete_definitions() -> Vec<Definition> {
         .collect()
 }
 
-fn reinterpret_definition(
-    definition: &Definition,
-    role: DefinitionRole,
-    dependencies: BTreeSet<DefinitionRef>,
-    capabilities: BTreeSet<CapabilityId>,
-) -> Definition {
-    self::definition(
-        definition.exact().identity(),
-        role,
-        dependencies,
-        capabilities,
-        definition.exact_bytes(),
-    )
-}
-
 fn roots(definitions: &[Definition]) -> Vec<DefinitionRef> {
     definitions
         .iter()
@@ -372,7 +357,7 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     )
     .exact()
     .clone();
-    // A definition's reference digests its bytes only, so the two can name
+    // A definition's reference does not depend on its bytes, so the two can name
     // each other.
     let a = definition(
         "acme.cycle.a",
@@ -420,6 +405,8 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
     assert_eq!(linked.bundle().capabilities().len(), 176);
     assert_eq!(CapabilityId::complete_inventory().len(), 176);
 
+    // A broader or a narrower known-backend set only decides
+    // `validate_known_capabilities`.
     assert_eq!(
         linked.bundle().validate_known_capabilities(&inventory()),
         Ok(())
@@ -466,6 +453,20 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
     assert_catalogued(&refusal);
 }
 
+fn reinterpret_definition(
+    definition: &Definition,
+    role: DefinitionRole,
+    dependencies: BTreeSet<DefinitionRef>,
+    capabilities: BTreeSet<CapabilityId>,
+) -> Definition {
+    self::definition(
+        definition.exact().identity(),
+        role,
+        dependencies,
+        capabilities,
+        definition.exact_bytes(),
+    )
+}
 /// The FR-131 half of the former compiled-model test: a definition root that
 /// names a compiled model's identity is a root the catalog lacks, so it
 /// refuses `unsupported-selection`; model selections resolve only through I1

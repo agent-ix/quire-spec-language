@@ -117,7 +117,7 @@ impl PendingLinks {
 /// operation for.
 fn unresolved_call(refusal: &CheckRefusal) -> Option<(&str, EffectiveId)> {
     match &refusal.cause {
-        CheckCause::StateModel(model) => match (&model.cause, model.receiver) {
+        CheckCause::StateModel(model) => match (&model.cause, model.receiver.clone()) {
             (CheckCause::MissingName(name), Some(receiver)) => Some((name, receiver)),
             (CheckCause::MissingQualifiedName(name), Some(receiver)) => {
                 Some((name.name.as_str(), receiver))
@@ -172,6 +172,7 @@ impl PackageDeclarations {
                         &root,
                         clauses,
                         self.source.clone(),
+                        self.package_name.clone(),
                         &mut meter,
                         self.identity,
                     )
@@ -275,7 +276,7 @@ impl PackageDeclarations {
                 continue;
             };
             let key = &operation.key;
-            let Some(owner) = view.type_identities().get(&operation.owner).copied() else {
+            let Some(owner) = view.type_identities().get(&operation.owner).cloned() else {
                 continue;
             };
             let Some(name) = member_identity_name(&operation.owner.node, &key.node) else {
@@ -283,7 +284,7 @@ impl PackageDeclarations {
             };
             let Some(declaration) = self
                 .operations
-                .declared_by(owner)
+                .declared_by(owner.clone())
                 .iter()
                 .find(|declaration| declaration.name() == name)
             else {
@@ -410,12 +411,12 @@ impl PackageDeclarations {
             .dispatch_operations
             .iter()
             .filter(|operation| operation.table == table_base)
-            .map(|operation| operation.receiver_type)
+            .map(|operation| operation.receiver_type.clone())
             .collect();
         if let (Some(call), Some(view)) = (&call, self.selected_views.get(alias)) {
-            let receivers = self.receiver_types(view, call.owner);
+            let receivers = self.receiver_types(view, call.owner.clone());
             for receiver_type in receivers {
-                if exposed.insert(receiver_type) {
+                if exposed.insert(receiver_type.clone()) {
                     self.dispatch_operations.push(DispatchOperation {
                         receiver_type,
                         member: call.member.clone(),
@@ -432,7 +433,7 @@ impl PackageDeclarations {
                 .iter()
                 .map(|(subtype, candidate)| {
                     (
-                        *subtype,
+                        subtype.clone(),
                         DispatchCandidate {
                             body: candidate.body + function_base,
                             precondition: candidate.precondition.map(|index| index + function_base),
@@ -457,11 +458,11 @@ impl PackageDeclarations {
     fn receiver_types(&self, view: &EffectiveView, owner: EffectiveId) -> Vec<EffectiveId> {
         view.type_identities()
             .values()
-            .copied()
-            .filter(|candidate| {
-                self.types.object_type(*candidate).is_some()
-                    && self.types.conforms(*candidate, owner)
+            .filter(|&candidate| {
+                self.types.object_type(candidate.clone()).is_some()
+                    && self.types.conforms(candidate.clone(), owner.clone())
             })
+            .cloned()
             .collect()
     }
 
@@ -530,7 +531,7 @@ impl CallSite {
             return None;
         };
         Some(Self {
-            owner: *owner,
+            owner: owner.clone(),
             member: clauses.member.get(root)?.clone(),
             parameters: signature
                 .iter()

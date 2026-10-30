@@ -17,7 +17,6 @@ use super::protocol_graph::{checked, flow_over, PROFILES};
 use super::protocol_reference::{node_by_id, node_of, not_emitted};
 use super::reachability::{lower_with, model_node, Lowered};
 use super::*;
-use crate::checked_v2::tests::{refresh_frame_identity, rekey_stale};
 
 /// A clause over `over` with a static role on each of the two object types, so
 /// both model declaration nodes are in the graph.
@@ -89,7 +88,10 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
         CheckedPackageDispatchResult::Refused(refusal) => format!(
             "{:?} at {} ({:?})",
             refusal.code,
-            refusal.path.as_ref().map_or("-", |path| path.as_str()),
+            refusal.loci[0]
+                .path
+                .as_ref()
+                .map_or("-", |path| path.as_str()),
             refusal.cause
         ),
         other => panic!("not a V2 verdict: {other:?}"),
@@ -97,13 +99,13 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
 }
 
 /// Replaces the clause's exact `dependencies` with the body's reference
-/// targets plus `owner`, once each in ascending digest order (QSpec FR-464
+/// targets plus `owner`, once each in ascending structural-key order (QSpec FR-464
 /// "dependencies").
 pub(super) fn depend_on(envelope: &mut Value, position: usize, owner: &Value) {
     let node = &mut envelope["semantic_graph"]["nodes"][position];
     let mut found = vec![owner.clone()];
     targets(&node["body"], &mut found);
-    found.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    found.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
     found.dedup();
     node["dependencies"] = Value::Array(found);
 }
@@ -112,7 +114,7 @@ pub(super) fn depend_on(envelope: &mut Value, position: usize, owner: &Value) {
 /// references. The edge is a local node reference, a dependency of the clause
 /// (once, in ascending order, with the body's targets), the only `owner_model`
 /// of the graph, read back unchanged by IR's typed reader, and part of the
-/// clause's key preimage as the test rebuilds it from the wire alone.
+/// clause's structural owner edge.
 #[trace("FR-383-AC-1", "FR-383-AC-26", "TC-1061")]
 #[test]
 fn a_clause_names_the_object_type_its_over_input_references() {
@@ -125,7 +127,9 @@ fn a_clause_names_the_object_type_its_over_input_references() {
 
     let mut expected = vec![owner["node_id"].clone()];
     targets(&clause["body"], &mut expected);
-    expected.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    expected.sort_by_key(|id| {
+        qsl_foundation::node_wire::node_key_from_json(id).expect("a structural dependency")
+    });
     expected.dedup();
     assert_eq!(clause["dependencies"], Value::Array(expected));
 
@@ -134,15 +138,6 @@ fn a_clause_names_the_object_type_its_over_input_references() {
         .filter(|node| node.get("owner_model").is_some())
         .collect();
     assert_eq!(carriers, [clause], "only the clause carries the edge");
-
-    // The key IR re-derives is the key over the preimage with the edge: the
-    // test's own rebuild reads it from the wire node.
-    let preimage = crate::emit::tests::rebuilt_preimage(clause, &[], true);
-    assert_eq!(preimage["owner_model"], owner["node_id"]);
-    assert_eq!(
-        crate::emit::tests::rebuilt_key(clause, &[]),
-        clause["node_id"]["digest"].as_str().unwrap()
-    );
 
     let admitted = lowered.ir.unwrap();
     let typed = admitted
@@ -167,10 +162,10 @@ fn a_clause_names_the_object_type_its_over_input_references() {
 /// FR-383-AC-26: two clauses over different object types have distinct owner
 /// edges, and the edge is not reconstructed from the role models: `Flow` over
 /// `Order` and over `Person` have the same roles and differ in the edge, in
-/// the clause key and in the `package_id`.
+/// the clause's semantic body.
 #[trace("FR-383-AC-14", "FR-383-AC-26", "TC-1062")]
 #[test]
-fn clauses_over_different_object_types_have_distinct_edges_keys_and_package_ids() {
+fn clauses_over_different_object_types_have_distinct_owner_edges() {
     let order = emitted(&flow("M::Order"));
     let person = emitted(&flow("M::Person"));
     let clause = |lowered: &Lowered| node_of(&lowered.wire, "protocol", "protocol_clause").clone();
@@ -182,43 +177,6 @@ fn clauses_over_different_object_types_have_distinct_edges_keys_and_package_ids(
         clause(&order)["owner_model"],
         clause(&person)["owner_model"]
     );
-    assert_ne!(clause(&order)["node_id"], clause(&person)["node_id"]);
-    assert_ne!(order.wire["package_id"], person.wire["package_id"]);
-}
-
-/// FR-383-AC-14, FR-464-AC-3: retargeting only the edge to the other model
-/// (dependencies and keys rebuilt) is admitted as a different clause, with a
-/// different key and `package_id`; without the rebuild the reader refuses the
-/// stale key at the clause, so the edge is part of the key.
-#[trace("FR-383-AC-14", "TC-1062")]
-#[test]
-fn retargeting_only_the_edge_changes_the_clause_key_and_the_package_id() {
-    let lowered = emitted(&flow("M::Order"));
-    let position = clause_position(&lowered.wire);
-    let other = model_node(&lowered.wire, "Person")["node_id"].clone();
-
-    let mut retargeted = lowered.wire.clone();
-    retargeted["semantic_graph"]["nodes"][position]["owner_model"] = other.clone();
-    depend_on(&mut retargeted, position, &other);
-    refresh_frame_identity(&mut retargeted);
-    let stale = verdict(&lowered, &retargeted);
-    assert!(
-        stale.starts_with("InvalidPackage at") && stale.contains("StaleNodeKey"),
-        "{stale}"
-    );
-
-    let renames = rekey_stale(&mut retargeted);
-    let rekeyed = &retargeted["semantic_graph"]["nodes"][position];
-    let old = lowered.wire["semantic_graph"]["nodes"][position]["node_id"]["digest"]
-        .as_str()
-        .unwrap();
-    assert_eq!(rekeyed["node_id"]["digest"], renames[old].as_str());
-    assert_ne!(
-        rekeyed["node_id"],
-        lowered.wire["semantic_graph"]["nodes"][position]["node_id"]
-    );
-    assert_ne!(retargeted["package_id"], lowered.wire["package_id"]);
-    assert_eq!(verdict(&lowered, &retargeted), "admitted");
 }
 
 /// FR-383-AC-26, FR-464-AC-16 (TC-1063): each defect of the edge, over the
@@ -242,14 +200,14 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
         .find(|node| node["node_tag"] == "scalar_type" && node["semantic_form"] == "boolean")
         .expect("the Boolean type")["node_id"]
         .clone();
-    let absent = json!({"domain": "quire.checked-semantic-node/v1", "digest": "ab".repeat(32)});
-    let external = json!({
-        "package": {"domain": "quire.checked-package/v2", "digest": "cd".repeat(32)},
-        "node": owner,
-    });
+    let absent = qsl_foundation::node_wire::node_key_to_json(
+        &NodeKey::new("pkg", vec![PathSegment::Text("missing".into())], 0).unwrap(),
+    )
+    .unwrap();
+    let external = json!({"package": "other", "node": owner});
 
     type Edit = Box<dyn Fn(&mut Value)>;
-    let cases: Vec<(&str, Edit, bool, String)> = vec![
+    let cases: Vec<(&str, Edit, String)> = vec![
         (
             "the edge is missing",
             Box::new(move |envelope| {
@@ -258,7 +216,6 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     .unwrap()
                     .remove("owner_model");
             }),
-            false,
             format!("MalformedWire at {clause_path} (None)"),
         ),
         (
@@ -269,7 +226,6 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     envelope["semantic_graph"]["nodes"][role]["owner_model"] = owner.clone();
                 }
             }),
-            false,
             format!("MalformedWire at /semantic_graph/nodes/{role}/owner_model (None)"),
         ),
         (
@@ -280,7 +236,6 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     envelope["semantic_graph"]["nodes"][position]["owner_model"] = external.clone();
                 }
             }),
-            false,
             format!("MalformedWire at {clause_path}/owner_model (None)"),
         ),
         (
@@ -295,7 +250,6 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     dependencies.retain(|dependency| *dependency != owner);
                 }
             }),
-            false,
             format!("InvalidSemanticGraph at {clause_path}/dependencies (None)"),
         ),
         (
@@ -307,7 +261,6 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     depend_on(envelope, position, &boolean);
                 }
             }),
-            true,
             format!(
                 "InvalidModelBinding at {clause_path}/owner_model (Some(MalformedDeclaration))"
             ),
@@ -321,21 +274,12 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     depend_on(envelope, position, &absent);
                 }
             }),
-            true,
             format!("MissingDeclaration at {clause_path}/owner_model (Some(MissingName))"),
         ),
     ];
-    for (name, edit, rekey, expected) in cases {
+    for (name, edit, expected) in cases {
         let mut envelope = wire.clone();
         edit(&mut envelope);
-        // The package identity is recomputed after every edit, so the reader
-        // reaches the defect and not the identity mismatch; keys are renamed
-        // only where the edit changes a preimage.
-        if rekey {
-            rekey_stale(&mut envelope);
-        } else {
-            refresh_frame_identity(&mut envelope);
-        }
         let found = verdict(&lowered, &envelope);
         assert_ne!(found, "admitted", "{name}");
         assert_eq!(found, expected, "{name}");

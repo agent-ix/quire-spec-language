@@ -470,7 +470,7 @@ impl CheckedGraph {
         node: quire_exact::NodeKey,
         origin: &quire_exact::Origin,
     ) -> Option<SourceRegion> {
-        if let Some(span) = self.parameter_span(node, origin) {
+        if let Some(span) = self.parameter_span(node.clone(), origin) {
             return region(&self.source, self.embedding.as_deref(), span);
         }
         self.region(self.occurrence(node, origin)?)
@@ -634,7 +634,7 @@ mod tests {
         let source = admitted_source(SourceIdentity::new("a", "u", "git", "1"), UNIT.as_bytes());
         PackageDeclarations {
             functions: vec![function_f()],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source, "fixture", qsl_foundation::IdentityLimits::default())
         }
     }
 
@@ -1210,7 +1210,7 @@ mod tests {
         );
         let declarations = PackageDeclarations {
             functions: vec![not_not_a("g1", 0), not_not_a("g2", g2_from)],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source, "fixture", qsl_foundation::IdentityLimits::default())
         };
         let regions = declarations.regions();
         // One past g1's own count: g1 fully types (3 <= 4); g2 is under 4 in

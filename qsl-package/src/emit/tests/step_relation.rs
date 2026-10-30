@@ -89,7 +89,6 @@ fn a_step_relation_emits_and_reads_back_its_execution_body() {
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("I2 admits the step relation: {failure:?}"))
     .into_value()

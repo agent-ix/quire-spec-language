@@ -20,7 +20,11 @@ fn an_absent_enum_type_name_is_a_typed_missing_name() {
     );
     let declarations = PackageDeclarations {
         functions: vec![function],
-        ..PackageDeclarations::new(fixture_source(), IdentityLimits::default())
+        ..PackageDeclarations::new(
+            fixture_source(),
+            crate::TEST_PACKAGE_NAME,
+            IdentityLimits::default(),
+        )
     };
 
     let refusals = declarations

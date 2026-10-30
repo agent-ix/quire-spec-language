@@ -154,18 +154,20 @@ impl OperationTable {
         let names: std::collections::BTreeSet<&str> = self
             .0
             .iter()
-            .filter(|(declaring, _)| types.conforms(object_type, **declaring))
+            .filter(|(declaring, _)| types.conforms(object_type.clone(), (*declaring).clone()))
             .flat_map(|(_, operations)| operations.iter().map(OperationDeclaration::name))
             .collect();
         names
             .into_iter()
-            .filter_map(|name| match self.resolve(types, object_type, name) {
-                OperationLookup::Declared {
-                    declaring,
-                    operation,
-                } => Some((declaring, operation)),
-                OperationLookup::Missing | OperationLookup::Ambiguous(_) => None,
-            })
+            .filter_map(
+                |name| match self.resolve(types, object_type.clone(), name) {
+                    OperationLookup::Declared {
+                        declaring,
+                        operation,
+                    } => Some((declaring, operation)),
+                    OperationLookup::Missing | OperationLookup::Ambiguous(_) => None,
+                },
+            )
             .collect()
     }
 
@@ -186,33 +188,36 @@ impl OperationTable {
             .0
             .iter()
             .filter(|(declaring, _)| {
-                types.object_type(**declaring).is_some() && types.conforms(object_type, **declaring)
+                types.object_type((*declaring).clone()).is_some()
+                    && types.conforms(object_type.clone(), (*declaring).clone())
             })
             .flat_map(|(declaring, operations)| {
                 operations
                     .iter()
                     .filter(|operation| operation.name() == name)
-                    .map(move |operation| (*declaring, operation))
+                    .map(move |operation| (declaring.clone(), operation))
             })
             .collect();
         let nearest: Vec<(EffectiveId, &OperationDeclaration)> = candidates
             .iter()
             .filter(|(declaring, _)| {
-                !candidates
-                    .iter()
-                    .any(|(other, _)| other != declaring && types.conforms(*other, *declaring))
+                !candidates.iter().any(|(other, _)| {
+                    other != declaring && types.conforms(other.clone(), declaring.clone())
+                })
             })
-            .copied()
+            .cloned()
             .collect();
         match nearest.as_slice() {
             [] => OperationLookup::Missing,
             [(declaring, operation)] => OperationLookup::Declared {
-                declaring: *declaring,
+                declaring: declaring.clone(),
                 operation,
             },
-            many => {
-                OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect())
-            }
+            many => OperationLookup::Ambiguous(
+                many.iter()
+                    .map(|(declaring, _)| declaring.clone())
+                    .collect(),
+            ),
         }
     }
 }
@@ -231,12 +236,13 @@ mod tests {
     /// though `conforms` is reflexive.
     #[test]
     fn an_operation_of_an_unadmitted_type_resolves_missing() {
-        let unadmitted = EffectiveId::from_digest([7; 32]);
+        let unadmitted =
+            EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("test", "n7"));
         let mut table = OperationTable::default();
-        table.declare(unadmitted, vec![ship()]);
+        table.declare(unadmitted.clone(), vec![ship()]);
         let types = TypeEnvironment::new([], []).expect("an empty environment admits");
         assert_eq!(
-            table.resolve(&types, unadmitted, "ship"),
+            table.resolve(&types, unadmitted.clone(), "ship"),
             OperationLookup::Missing
         );
     }
@@ -245,14 +251,17 @@ mod tests {
     /// it, declared by that type.
     #[test]
     fn an_operation_of_an_admitted_type_resolves_declared() {
-        let admitted = EffectiveId::from_digest([8; 32]);
+        let admitted =
+            EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("test", "n8"));
         let mut table = OperationTable::default();
-        table.declare(admitted, vec![ship()]);
-        let types =
-            TypeEnvironment::new([], [ObjectTypeDeclaration::new(admitted, "M::A", vec![])])
-                .expect("one object type admits");
+        table.declare(admitted.clone(), vec![ship()]);
+        let types = TypeEnvironment::new(
+            [],
+            [ObjectTypeDeclaration::new(admitted.clone(), "M::A", vec![])],
+        )
+        .expect("one object type admits");
         assert_eq!(
-            table.resolve(&types, admitted, "ship"),
+            table.resolve(&types, admitted.clone(), "ship"),
             OperationLookup::Declared {
                 declaring: admitted,
                 operation: &ship(),

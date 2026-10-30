@@ -134,7 +134,7 @@ fn provenance(identity: &str) -> Value {
 fn envelope(constructs: Value, types: Value, populations: Value) -> Value {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": identity("spec"), "version": "1.0.0",
             "dialect": "spec-bundle",
@@ -445,10 +445,16 @@ fn checked(variant: &Variant) -> Admission {
     .source()
     .reference()
     .clone();
-    let graph = PackageDeclarations::assemble(raw, built, models, Vec::new())
-        .expect("the model assembles")
-        .check(CheckingLimits::default())
-        .expect("the unit checks");
+    let graph = PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the model assembles")
+    .check(CheckingLimits::default())
+    .expect("the unit checks");
     Admission { graph, packages }
 }
 
@@ -576,7 +582,7 @@ impl Reader {
             .expect("a current observation")
             .environment
             .objects()
-            .find(self.universes[&initial], object)
+            .find(self.universes[&initial].clone(), object)
             .unwrap_or_else(|| panic!("{object} is held"))
             .clone()
     }
@@ -1232,7 +1238,7 @@ impl Admission {
             kind: checked_clause.kind(),
             context: checked_clause.context(),
             operation: Some(qsl_semantics::model::observation::OperationFacts {
-                declaring: operation.declaring,
+                declaring: operation.declaring.clone(),
                 // The test supplies the frame the operation is checked
                 // with, to vary it without a package per row.
                 declaration: OperationDeclaration::new("rehome", Vec::new(), None, effect.clone()),
@@ -1300,7 +1306,7 @@ impl Admission {
             context,
             frame: frame.frame(),
             operation: OperationFacts {
-                declaring: frame.operation().declaring,
+                declaring: frame.operation().declaring.clone(),
                 declaration: frame.operation().declaration.clone(),
             },
         };
@@ -1776,7 +1782,7 @@ fn a_frame_a_package_declares_with_modifies_of_a_relationship_grants_its_links()
     let relation = admission
         .graph
         .semantic_graph()
-        .node(declaration.0)
+        .node(declaration.admitted().expect("admitted node").clone())
         .expect("the entry names a node of the package");
     assert_eq!(relation.node_tag(), NodeTag::Relation);
     assert_eq!(relation.semantic_form(), "relationship");

@@ -4,8 +4,8 @@
 //! a small native stack.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::WireNodeId;
 use quire_exact::Integer;
+use quire_exact::NodeKey;
 
 use super::super::envelope_tests::full_packet;
 use super::super::{
@@ -16,8 +16,8 @@ use super::super::{
 use super::EntryFault;
 use crate::bounds::BoundExceeded;
 
-fn id(fill: u8) -> WireNodeId {
-    WireNodeId::from_digest([fill; 32])
+fn id(fill: u8) -> NodeKey {
+    crate::fixture_node(fill)
 }
 
 fn int(value: i64) -> WitnessValue {
@@ -35,14 +35,14 @@ fn present(name: &str, value: WitnessValue) -> WitnessField {
     field(name, WitnessSlot::Present(value))
 }
 
-fn canonical(parameter: WireNodeId) -> WitnessBinding {
+fn canonical(parameter: NodeKey) -> WitnessBinding {
     WitnessBinding {
         parameter,
         value_type: WitnessValueType::Canonical,
     }
 }
 
-fn scalar(parameter: WireNodeId) -> WitnessBinding {
+fn scalar(parameter: NodeKey) -> WitnessBinding {
     WitnessBinding {
         parameter,
         value_type: WitnessValueType::I128,
@@ -51,10 +51,10 @@ fn scalar(parameter: WireNodeId) -> WitnessBinding {
 
 /// A witness over `entries` (`parameter node id`, `entry text`), in the
 /// order given.
-fn witness(entries: &[(WireNodeId, &str)]) -> Witness {
+fn witness(entries: &[(NodeKey, &str)]) -> Witness {
     let values: Vec<String> = entries
         .iter()
-        .map(|(parameter, text)| format!("{parameter}={text}"))
+        .map(|(parameter, text)| format!("{}={text}", crate::pn(parameter)))
         .collect();
     Witness::parse(format!("<<<assertion|h|c|{}>>>", values.join(";"))).unwrap()
 }
@@ -245,7 +245,7 @@ fn tc_905_a_refused_entry_leaves_no_partial_result() {
     assert!(
         matches!(
             refused,
-            Err(DecodeRefusal::Malformed { parameter, .. }) if parameter == id(2)
+            Err(DecodeRefusal::Malformed { ref parameter, .. }) if *parameter == id(2)
         ),
         "{refused:?}"
     );
@@ -285,12 +285,12 @@ fn tc_905_each_leaf_family_decodes_exactly() {
             coefficient: Integer::from(15_i64),
             scale: Integer::from(1_i64),
         },
-        unit: [0x44; 32],
+        unit: quire_exact::UnitId::declared(crate::fixture_node(0x44)),
     };
     assert_eq!(round_trip(&quantity), quantity);
     let reference = WitnessValue::Reference {
-        universe: [0x01; 32],
-        object_type: [0x02; 32],
+        universe: crate::fixture_universe(0x01),
+        object_type: crate::fixture_effective(0x02),
         identity: b"order-17".to_vec(),
     };
     assert_eq!(round_trip(&reference), reference);
@@ -346,19 +346,21 @@ fn tc_905_an_input_value_counts_at_its_escaped_text_length() {
 #[test]
 fn tc_905_entries_must_ascend_by_parameter_node_id() {
     let (a, b) = (id(0x0a), id(0x0b));
-    let ascending = witness(&[(a, "1"), (b, "2")]);
+    let ascending = witness(&[(a.clone(), "1"), (b.clone(), "2")]);
     assert_eq!(
-        ascending.decode(&[scalar(a), scalar(b)]).unwrap(),
+        ascending
+            .decode(&[scalar(a.clone()), scalar(b.clone())])
+            .unwrap(),
         vec![WitnessValue::Integer(1), WitnessValue::Integer(2)]
     );
-    let descending = witness(&[(b, "2"), (a, "1")]);
+    let descending = witness(&[(b.clone(), "2"), (a.clone(), "1")]);
     assert_eq!(
-        descending.decode(&[scalar(a), scalar(b)]),
+        descending.decode(&[scalar(a.clone()), scalar(b.clone())]),
         Err(DecodeRefusal::EntryOrder(a.to_string()))
     );
-    let repeated = witness(&[(a, "1"), (a, "2")]);
+    let repeated = witness(&[(a.clone(), "1"), (a.clone(), "2")]);
     assert_eq!(
-        repeated.decode(&[scalar(a), scalar(b)]),
+        repeated.decode(&[scalar(a.clone()), scalar(b)]),
         Err(DecodeRefusal::Duplicate(a))
     );
 }
@@ -368,7 +370,7 @@ fn tc_905_entries_must_ascend_by_parameter_node_id() {
 fn list(depth: usize, head_name: &str, tail_name: &str) -> WitnessValue {
     let declaration = id(0x77);
     let mut value = WitnessValue::Record {
-        declaration,
+        declaration: declaration.clone(),
         fields: vec![
             present(head_name, int(1)),
             field(tail_name, WitnessSlot::Absent),
@@ -376,7 +378,7 @@ fn list(depth: usize, head_name: &str, tail_name: &str) -> WitnessValue {
     };
     for _ in 1..depth {
         value = WitnessValue::Record {
-            declaration,
+            declaration: declaration.clone(),
             fields: vec![present(head_name, int(1)), present(tail_name, value)],
         };
     }
@@ -406,7 +408,7 @@ fn tc_736_a_100000_long_list_decodes_and_walks_on_a_small_stack() {
     on_small_stack(|| {
         let value = list(100_000, "head", "tail");
         let text = value.to_value_text().unwrap();
-        let transcript = format!("<<<assertion|h|c|{}={text}>>>", id(1));
+        let transcript = format!("<<<assertion|h|c|{}={text}>>>", crate::pn(&id(1)));
         let witness = Witness::parse(transcript).unwrap();
 
         let mut packet = full_packet(0);

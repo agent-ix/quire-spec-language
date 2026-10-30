@@ -225,7 +225,7 @@ fn document_with(
     }
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident(package, "spec"), "version": "1.0.0",
             "dialect": "spec-bundle"},
         "package": {"identity": package, "version": "1.0.0",
@@ -490,6 +490,7 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
     .expect("the operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_string(),
         built,
         models,
         Vec::new(),

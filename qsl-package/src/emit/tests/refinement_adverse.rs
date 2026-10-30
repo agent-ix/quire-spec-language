@@ -6,8 +6,7 @@
 //! Covered elsewhere, with code, cause and locus: the memory-row refusals
 //! (`refinement/protocol/tests.rs`, FR-432-AC-3/22), the catalog's
 //! trigger-binder internal fault (`refinement/internal_list.rs`), the
-//! FR-375-AC-21 reader joins (`admission_corpus.rs`) and, on `main`,
-//! `EmitRefusal::SameMeaningRefinements` (#1728).
+//! FR-375-AC-21 reader joins (`admission_corpus.rs`).
 
 use qsl_foundation::Code;
 use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolConstruct};

@@ -13,6 +13,7 @@
 //!   point a family (starting with #186's state `forall`) attaches its own
 //!   typed payload through.
 
+use quire_exact::NodeKey;
 use std::fmt;
 
 #[cfg(test)]
@@ -24,9 +25,7 @@ use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, Trac
 use crate::model_check::state_graph::GraphEvidenceEnvelope;
 use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};
-use qsl_foundation::digest::{
-    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
-};
+use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 
@@ -185,55 +184,118 @@ impl Witness {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .map_err(|entry| DecodeRefusal::MalformedEntry(entry.to_owned()))?;
-        let names: Vec<String> = bindings
+        let named = entries
             .iter()
-            .map(|binding| binding.parameter.to_string())
-            .collect();
-        if let Some((name, _)) = entries
+            .map(|(name, text)| {
+                parameter_node(name)
+                    .map(|node| (node, *name, *text))
+                    .ok_or_else(|| DecodeRefusal::Unbound((*name).to_owned()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some((_, name, _)) = named
             .iter()
-            .find(|(name, _)| !names.iter().any(|bound| bound == name))
+            .find(|(node, _, _)| !bindings.iter().any(|bound| bound.parameter == *node))
         {
             return Err(DecodeRefusal::Unbound((*name).to_owned()));
         }
-        for (binding, name) in bindings.iter().zip(&names) {
-            if entries.iter().filter(|(entry, _)| entry == name).count() > 1 {
-                return Err(DecodeRefusal::Duplicate(binding.parameter));
+        for binding in bindings {
+            if named
+                .iter()
+                .filter(|(node, _, _)| *node == binding.parameter)
+                .count()
+                > 1
+            {
+                return Err(DecodeRefusal::Duplicate(binding.parameter.clone()));
             }
         }
-        for pair in entries.windows(2) {
-            if let [(before, _), (after, _)] = pair {
+        for pair in named.windows(2) {
+            if let [(before, _, _), (after, name, _)] = pair {
                 if after <= before {
-                    return Err(DecodeRefusal::EntryOrder((*after).to_owned()));
+                    return Err(DecodeRefusal::EntryOrder((*name).to_owned()));
                 }
             }
         }
         bindings
             .iter()
-            .zip(&names)
-            .map(|(binding, name)| {
-                let mut matching = entries.iter().filter(|(entry, _)| entry == name);
-                let Some((_, text)) = matching.next() else {
+            .map(|binding| {
+                let Some((_, _, text)) =
+                    named.iter().find(|(node, _, _)| *node == binding.parameter)
+                else {
                     return if optional(binding) {
                         Ok(None)
                     } else {
-                        Err(DecodeRefusal::Missing(binding.parameter))
+                        Err(DecodeRefusal::Missing(binding.parameter.clone()))
                     };
                 };
-                if matching.next().is_some() {
-                    return Err(DecodeRefusal::Duplicate(binding.parameter));
-                }
                 binding
                     .value_type
                     .read(text)
                     .map(Some)
                     .map_err(|fault| DecodeRefusal::Malformed {
-                        parameter: binding.parameter,
+                        parameter: binding.parameter.clone(),
                         value_type: binding.value_type,
                         fault,
                     })
             })
             .collect()
     }
+}
+
+/// The parameter node a transcript entry's name spells: the percent-decoded
+/// name is the node's compact JSON object.
+pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
+    let json = percent_decode(name)?;
+    let value: serde_json::Value = serde_json::from_str(&json).ok()?;
+    let node = qsl_foundation::node_wire::node_key_from_json(&value);
+    qsl_foundation::node_wire::discard_node_json(value);
+    node.ok()
+}
+
+/// A parameter node's transcript name: its compact JSON object with every
+/// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
+/// is not printable ASCII-safe percent-escaped, so distinct nodes never
+/// share a name and the entry separators never occur inside one.
+pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
+    let value = qsl_foundation::node_wire::node_key_to_json(node).ok()?;
+    let text = serde_json::to_string(&value).ok();
+    qsl_foundation::node_wire::discard_node_json(value);
+    text.map(|json| percent_encode(&json))
+}
+
+fn percent_encode(text: &str) -> String {
+    let mut bytes = Vec::with_capacity(text.len());
+    for byte in text.bytes() {
+        if matches!(byte, b'%' | b'=' | b';' | b'|' | b'<' | b'>') || byte < 0x20 || byte == 0x7f {
+            bytes.extend_from_slice(format!("%{byte:02X}").as_bytes());
+        } else {
+            bytes.push(byte);
+        }
+    }
+    // Escapes are ASCII and every other byte is the input's own UTF-8.
+    String::from_utf8(bytes).unwrap_or_default()
+}
+
+fn percent_decode(text: &str) -> Option<String> {
+    let raw = text.as_bytes();
+    let mut bytes = Vec::with_capacity(raw.len());
+    let mut index = 0;
+    while let Some(&byte) = raw.get(index) {
+        if byte == b'%' {
+            let pair = text.get(index + 1..index + 3)?;
+            if !pair
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase())
+            {
+                return None;
+            }
+            bytes.push(u8::from_str_radix(pair, 16).ok()?);
+            index += 3;
+        } else {
+            bytes.push(byte);
+            index += 1;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// The declared type of one harness argument (ADR-013 O-25): how its
@@ -272,10 +334,10 @@ impl WitnessValueType {
 
 /// One declared harness argument [`Witness::decode`] reads: the parameter
 /// node id the transcript entry names, and the argument's declared type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WitnessBinding {
     /// The parameter this argument binds.
-    pub parameter: WireNodeId,
+    pub parameter: NodeKey,
     /// The argument's declared primitive type.
     pub value_type: WitnessValueType,
 }
@@ -286,10 +348,10 @@ pub struct WitnessBinding {
 pub enum DecodeRefusal {
     /// No transcript entry names this parameter.
     #[error("no witness entry for parameter {0}")]
-    Missing(WireNodeId),
+    Missing(NodeKey),
     /// More than one transcript entry names this parameter.
     #[error("more than one witness entry for parameter {0}")]
-    Duplicate(WireNodeId),
+    Duplicate(NodeKey),
     /// A transcript entry names no binding's parameter.
     #[error("witness entry {0:?} names no bound parameter")]
     Unbound(String),
@@ -302,7 +364,7 @@ pub enum DecodeRefusal {
     #[error("witness entry for parameter {parameter} is not a {value_type:?} value: {fault:?}")]
     Malformed {
         /// The parameter the entry names.
-        parameter: WireNodeId,
+        parameter: NodeKey,
         /// The binding's declared type.
         value_type: WitnessValueType,
         /// What is wrong with the entry.
@@ -392,7 +454,7 @@ fn parse_block(block: &str) -> Option<BlockFields<'_>> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalAssignment {
     /// The parameter this assignment binds.
-    pub parameter: WireNodeId,
+    pub parameter: NodeKey,
     /// The parameter's concrete value.
     pub value: WitnessValue,
 }
@@ -471,7 +533,11 @@ fn fmt_input_source(
 ) -> fmt::Result {
     let mut buf = Vec::with_capacity(assignments.len() * 40);
     for assignment in assignments {
-        buf.extend_from_slice(assignment.parameter.as_bytes());
+        buf.extend_from_slice(
+            parameter_name(&assignment.parameter)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         match &assignment.value {
             WitnessValue::Boolean(value) => buf.extend_from_slice(&[0, u8::from(*value)]),
             WitnessValue::Integer(value) => {
@@ -588,9 +654,8 @@ pub(crate) use derivation::Derived;
 pub struct WitnessEnvelope<P: FamilyPayload> {
     obligation_identity: ObligationIdentity,
     occurrence_key: OccurrenceKey,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     replay_target: ReplayTarget,
-    package_id: DigestRecord,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
@@ -603,24 +668,20 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
 impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// The CG-computed obligation identity this counterexample belongs to.
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
     /// The occurrence key this counterexample was produced at.
     pub fn occurrence_key(&self) -> &OccurrenceKey {
         &self.occurrence_key
     }
     /// The clause node this counterexample witnesses against.
-    pub fn clause_node(&self) -> WireNodeId {
-        self.clause_node
+    pub fn clause_node(&self) -> &NodeKey {
+        &self.clause_node
     }
     /// The replay target (QSpec FR-323): the one function, frame operation
     /// or state clause this counterexample selects, always typed names.
     pub fn replay_target(&self) -> &ReplayTarget {
         &self.replay_target
-    }
-    /// The package this counterexample was produced from.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
     }
     /// The semantic profile selections in effect for the proving run.
     pub fn profile_selections(&self) -> &[ProfileSelection] {
@@ -657,6 +718,35 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
 
 #[cfg(test)]
 mod witness_tests {
+    /// A parameter name is an injective, reversible spelling: keys whose
+    /// text holds the transcript's separators and the escape character
+    /// round-trip and stay distinct, and no separator occurs in a name.
+    #[test]
+    fn parameter_names_are_injective_and_separator_free() {
+        let key = |text: &str| {
+            NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text(text.to_owned())],
+                0,
+            )
+            .expect("a node")
+        };
+        let texts = [
+            "a=b", "a;b", "a|b", "a%3Db", "a%", "%25", "a<<<b>>>", "a=b;c|d%",
+        ];
+        let names: Vec<String> = texts.iter().map(|text| pn_(&key(text))).collect();
+        for (text, name) in texts.iter().zip(&names) {
+            assert!(!name.contains(['=', ';', '|', '<', '>']), "{name}");
+            assert_eq!(super::parameter_node(name), Some(key(text)), "{text}");
+        }
+        let distinct: std::collections::BTreeSet<_> = names.iter().collect();
+        assert_eq!(distinct.len(), names.len());
+    }
+
+    fn pn_(node: &NodeKey) -> String {
+        super::parameter_name(node).expect("a node spells")
+    }
+
     use super::*;
     use ix_trace_rs::trace;
 
@@ -664,14 +754,14 @@ mod witness_tests {
         format!("<<<assertion|{harness}|{check}|{values}>>>")
     }
 
-    fn integer(parameter: WireNodeId) -> WitnessBinding {
+    fn integer(parameter: NodeKey) -> WitnessBinding {
         WitnessBinding {
             parameter,
             value_type: WitnessValueType::I128,
         }
     }
 
-    fn boolean(parameter: WireNodeId) -> WitnessBinding {
+    fn boolean(parameter: NodeKey) -> WitnessBinding {
         WitnessBinding {
             parameter,
             value_type: WitnessValueType::Boolean,
@@ -701,10 +791,14 @@ mod witness_tests {
     #[trace("TC-180", "FR-070-AC-1")]
     #[test]
     fn tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript() {
-        let x = WireNodeId::from_digest([1; 32]);
-        let y = WireNodeId::from_digest([2; 32]);
-        let bindings = [integer(x), integer(y)];
-        let text = assertion("harness_a", "x == 1", &format!("{x}=1;{y}=2"));
+        let x = crate::fixture_node(1);
+        let y = crate::fixture_node(2);
+        let bindings = [integer(x.clone()), integer(y.clone())];
+        let text = assertion(
+            "harness_a",
+            "x == 1",
+            &format!("{x}=1;{y}=2", x = pn_(&x), y = pn_(&y)),
+        );
         let witness = Witness::parse(text.clone()).unwrap();
         // Step 1: exhaustive destructure naming only `transcript`.
         let Witness { transcript } = witness;
@@ -728,7 +822,11 @@ mod witness_tests {
         assert_eq!(witness.harness_symbol(), second.harness_symbol());
 
         // Step 4: a differing transcript produces a differing derived value.
-        let third_text = assertion("harness_a", "x == 1", &format!("{x}=99;{y}=2"));
+        let third_text = assertion(
+            "harness_a",
+            "x == 1",
+            &format!("{x}=99;{y}=2", x = pn_(&x), y = pn_(&y)),
+        );
         let third = Witness::parse(third_text).unwrap();
         assert_ne!(witness.concrete_values(), third.concrete_values());
         assert_eq!(
@@ -774,20 +872,28 @@ mod witness_tests {
     #[trace("TC-444", "FR-098-AC-2")]
     #[test]
     fn tc_444_decode_reads_typed_values_by_parameter_node_id() {
-        let flag = WireNodeId::from_digest([1; 32]);
-        let low = WireNodeId::from_digest([2; 32]);
-        let high = WireNodeId::from_digest([3; 32]);
-        let values = format!("{flag}=1;{low}={};{high}={}", i128::MIN, i128::MAX);
+        let flag = crate::fixture_node(1);
+        let low = crate::fixture_node(2);
+        let high = crate::fixture_node(3);
+        let values = format!(
+            "{}=1;{}={};{}={}",
+            pn_(&flag),
+            pn_(&low),
+            i128::MIN,
+            pn_(&high),
+            i128::MAX
+        );
         let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
         assert_eq!(
-            witness.decode(&[boolean(flag), integer(low), integer(high)]),
+            witness.decode(&[boolean(flag.clone()), integer(low), integer(high)]),
             Ok(vec![
                 WitnessValue::Boolean(true),
                 WitnessValue::Integer(i128::MIN),
                 WitnessValue::Integer(i128::MAX),
             ])
         );
-        let off = Witness::parse(assertion("h", "c", &format!("{flag}=0"))).unwrap();
+        let off =
+            Witness::parse(assertion("h", "c", &format!("{flag}=0", flag = pn_(&flag)))).unwrap();
         assert_eq!(
             off.decode(&[boolean(flag)]),
             Ok(vec![WitnessValue::Boolean(false)])
@@ -803,8 +909,8 @@ mod witness_tests {
     #[trace("TC-444", "FR-098-AC-4")]
     #[test]
     fn tc_444_decode_refuses_each_join_failure_with_its_own_variant() {
-        let x = WireNodeId::from_digest([1; 32]);
-        let b = WireNodeId::from_digest([2; 32]);
+        let x = crate::fixture_node(1);
+        let b = crate::fixture_node(2);
         let decode = |values: String, bindings: &[WitnessBinding]| {
             Witness::parse(assertion("h", "c", &values))
                 .unwrap()
@@ -812,23 +918,29 @@ mod witness_tests {
         };
 
         assert_eq!(
-            decode(format!("{x}=1"), &[integer(x), boolean(b)]),
-            Err(DecodeRefusal::Missing(b))
+            decode(
+                format!("{x}=1", x = pn_(&x)),
+                &[integer(x.clone()), boolean(b.clone())]
+            ),
+            Err(DecodeRefusal::Missing(b.clone()))
         );
         assert_eq!(
-            decode(format!("{x}=1;{x}=2"), &[integer(x)]),
-            Err(DecodeRefusal::Duplicate(x))
+            decode(format!("{x}=1;{x}=2", x = pn_(&x)), &[integer(x.clone())]),
+            Err(DecodeRefusal::Duplicate(x.clone()))
         );
         assert_eq!(
-            decode(format!("{x}=1;{b}=0"), &[integer(x)]),
+            decode(
+                format!("{x}=1;{b}=0", x = pn_(&x), b = pn_(&b)),
+                &[integer(x.clone())]
+            ),
             Err(DecodeRefusal::Unbound(b.to_string()))
         );
         assert_eq!(
-            decode(format!("{x}=1;junk"), &[integer(x)]),
+            decode(format!("{x}=1;junk", x = pn_(&x)), &[integer(x.clone())]),
             Err(DecodeRefusal::MalformedEntry("junk".to_owned()))
         );
         assert_eq!(
-            decode(format!("{b}=2"), &[boolean(b)]),
+            decode(format!("{b}=2", b = pn_(&b)), &[boolean(b.clone())]),
             Err(DecodeRefusal::Malformed {
                 parameter: b,
                 value_type: WitnessValueType::Boolean,
@@ -838,9 +950,9 @@ mod witness_tests {
         let past_max = format!("{}0", i128::MAX);
         for text in ["not-a-number", past_max.as_str()] {
             assert_eq!(
-                decode(format!("{x}={text}"), &[integer(x)]),
+                decode(format!("{x}={text}", x = pn_(&x)), &[integer(x.clone())]),
                 Err(DecodeRefusal::Malformed {
-                    parameter: x,
+                    parameter: x.clone(),
                     value_type: WitnessValueType::I128,
                     fault: EntryFault::Scalar,
                 })
@@ -889,17 +1001,15 @@ mod witness_tests {
 /// `None`, refuses) from "this family has none" (`Some(None)`, admitted).
 #[derive(Clone, Debug)]
 pub struct WitnessPacket<P: FamilyPayload> {
-    /// The CG-computed obligation identity, as raw digest bytes.
-    pub obligation_identity: Option<[u8; 32]>,
+    /// The CG-computed obligation identity.
+    pub obligation_identity: Option<ObligationIdentity>,
     /// The occurrence key this counterexample was produced at.
     pub occurrence_key: Option<OccurrenceKey>,
     /// The clause node this counterexample witnesses against.
-    pub clause_node: Option<WireNodeId>,
+    pub clause_node: Option<NodeKey>,
     /// The replay target members (QSpec FR-323): exactly one must be
     /// present.
     pub replay_target: ReplayTargetMembers,
-    /// `(digest domain, digest hex)` naming the package.
-    pub package_id: Option<(Option<String>, String)>,
     /// The semantic profile selections in effect for the proving run.
     pub profile_selections: Option<Vec<ProfileSelection>>,
     /// The proving run's `quire.value.accounting/v1` limits (ADR-014 B-2).
@@ -926,7 +1036,6 @@ impl<P: FamilyPayload> Default for WitnessPacket<P> {
             occurrence_key: None,
             clause_node: None,
             replay_target: ReplayTargetMembers::default(),
-            package_id: None,
             profile_selections: None,
             run_limits: None,
             declared_domains: None,
@@ -946,7 +1055,6 @@ impl<P: FamilyPayload> Default for WitnessPacket<P> {
 fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize {
     let mut total = 0usize;
     total += packet.replay_target.measured_bytes();
-    total += packet.package_id.as_ref().map_or(0, |(_, hex)| hex.len());
     total += packet.profile_selections.as_ref().map_or(0, |selections| {
         selections
             .iter()
@@ -1012,29 +1120,9 @@ pub enum WitnessRefusal {
     /// The `backend` member is empty (`invalid_identifier`, ADR-013 O-19).
     #[error("invalid_identifier: the backend identity is empty")]
     EmptyBackendIdentity,
-    /// A digest names a domain outside the closed FR-201 set, or supplies no
-    /// domain at all.
-    #[error("stale_dependency/digest-domain-mismatch: {0:?}: {1}")]
-    DigestDomainMismatch(&'static str, InvalidDigestRecord),
-    /// A digest names a domain FR-201 admits, but its own hex encoding is
-    /// malformed (wrong length, or not lowercase hex) -- not a domain
-    /// problem, so it is never spelled `digest-domain-mismatch`.
-    #[error("invalid_digest/malformed-encoding: {0:?}: {1}")]
-    MalformedDigest(&'static str, InvalidDigestRecord),
     /// The encoded packet exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
-}
-
-/// Route `err` to [`WitnessRefusal::DigestDomainMismatch`] or
-/// [`WitnessRefusal::MalformedDigest`] by its real cause, so a wrong hex
-/// length is never reported as a domain problem.
-fn classify_digest_error(member: &'static str, err: InvalidDigestRecord) -> WitnessRefusal {
-    if err.is_domain_mismatch() {
-        WitnessRefusal::DigestDomainMismatch(member, err)
-    } else {
-        WitnessRefusal::MalformedDigest(member, err)
-    }
 }
 
 impl<P: FamilyPayload> WitnessEnvelope<P> {
@@ -1069,7 +1157,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
 
         let obligation_identity = packet
             .obligation_identity
-            .map(ObligationIdentity::from_digest)
             .ok_or(WitnessRefusal::MissingMember("obligation_identity"))?;
         let occurrence_key = packet
             .occurrence_key
@@ -1086,11 +1173,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
                     WitnessRefusal::ConflictingTarget { members }
                 }
             })?;
-        let (package_domain, package_hex) = packet
-            .package_id
-            .ok_or(WitnessRefusal::MissingMember("package_id"))?;
-        let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
-            .map_err(|e| classify_digest_error("package_id", e))?;
         let profile_selections = packet
             .profile_selections
             .ok_or(WitnessRefusal::MissingMember("profile_selections"))?;
@@ -1122,7 +1204,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             occurrence_key,
             clause_node,
             replay_target,
-            package_id,
             profile_selections,
             run_limits,
             declared_domains,
@@ -1140,14 +1221,10 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// writer exists yet on `origin/main`).
     pub fn to_packet(&self) -> WitnessPacket<P> {
         WitnessPacket {
-            obligation_identity: Some(*self.obligation_identity.as_bytes()),
+            obligation_identity: Some(self.obligation_identity.clone()),
             occurrence_key: Some(self.occurrence_key.clone()),
-            clause_node: Some(self.clause_node),
+            clause_node: Some(self.clause_node.clone()),
             replay_target: self.replay_target.clone().into(),
-            package_id: Some((
-                Some(self.package_id.domain().as_str().to_owned()),
-                self.package_id.hex(),
-            )),
             profile_selections: Some(self.profile_selections.clone()),
             run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
@@ -1179,10 +1256,6 @@ mod envelope_tests {
     use qsl_foundation::bound::{DomainKind, ProofBound};
     use quire_exact::Identifier;
 
-    fn digest(byte: u8) -> [u8; 32] {
-        [byte; 32]
-    }
-
     fn scalar_limits(seed: u64) -> ScalarLimits {
         ScalarLimits {
             integer_bits: seed,
@@ -1200,19 +1273,15 @@ mod envelope_tests {
 
     pub(in crate::witness) fn full_packet(occurrence_ordinal: u64) -> WitnessPacket<NoPayload> {
         WitnessPacket {
-            obligation_identity: Some(digest(1)),
+            obligation_identity: Some(ObligationIdentity::new(crate::fixture_node(1), None, 0)),
             occurrence_key: Some(OccurrenceKey::new(
-                WireNodeId::from_digest(digest(2)),
+                crate::fixture_node(2),
                 origin("reference", occurrence_ordinal),
             )),
-            clause_node: Some(WireNodeId::from_digest(digest(3))),
+            clause_node: Some(crate::fixture_node(3)),
             replay_target: ReplayTargetMembers::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             ),
-            package_id: Some((
-                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::PackageSemanticV2, digest(4)).hex(),
-            )),
             profile_selections: Some(vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
@@ -1221,7 +1290,7 @@ mod envelope_tests {
             declared_domains: Some(vec![DeclaredDomain::new(
                 ProofBound::new(
                     DomainKey::Node {
-                        node: WireNodeId::from_digest(digest(6)),
+                        node: crate::fixture_node(6),
                         path: Vec::new(),
                     },
                     Some(DomainKind::Integer),
@@ -1281,7 +1350,7 @@ mod envelope_tests {
         // `Input`-arm envelope round trip too.
         let mut input_packet = full_packet(0);
         input_packet.source = Some(EnvelopeSource::Input(vec![CanonicalAssignment {
-            parameter: WireNodeId::from_digest(digest(9)),
+            parameter: crate::fixture_node(9),
             value: WitnessValue::Integer(42),
         }]));
         let input_envelope =
@@ -1304,13 +1373,13 @@ mod envelope_tests {
         let mut packet = full_packet(0);
         // Two bounds on one parameter, at the parameter's own position and
         // at its element: distinct by their domain keys.
-        let parameter = WireNodeId::from_digest(digest(6));
+        let parameter = crate::fixture_node(6);
         let whole = DomainKey::Node {
-            node: parameter,
+            node: parameter.clone(),
             path: Vec::new(),
         };
         let element = DomainKey::Node {
-            node: parameter,
+            node: parameter.clone(),
             path: vec![0],
         };
         packet.declared_domains = Some(vec![
@@ -1533,7 +1602,7 @@ mod envelope_tests {
             DeclaredDomain::new(
                 ProofBound::new(
                     DomainKey::Node {
-                        node: WireNodeId::from_digest(digest(6)),
+                        node: crate::fixture_node(6),
                         path,
                     },
                     Some(DomainKind::Collection),
@@ -1566,7 +1635,6 @@ mod envelope_tests {
                 occurrence_key: self.occurrence_key,
                 clause_node: self.clause_node,
                 replay_target: self.replay_target,
-                package_id: self.package_id,
                 profile_selections: self.profile_selections,
                 run_limits: self.run_limits,
                 declared_domains: self.declared_domains,

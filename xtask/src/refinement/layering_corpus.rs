@@ -194,7 +194,7 @@ fn timed_document() -> Vec<u8> {
     let population = ident("timers");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": TIMED_VERSION, "dialect": "spec-bundle"},
         "package": {"identity": TIMED_PACKAGE, "version": TIMED_VERSION,
             "mappingVersions": [], "profileVersions": []},

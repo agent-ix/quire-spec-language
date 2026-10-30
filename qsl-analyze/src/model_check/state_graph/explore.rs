@@ -74,7 +74,6 @@ pub(super) struct Explored {
 /// Phase 1 of one run.
 pub(super) struct Exploration<'r, 'a, 'v> {
     pub(super) system: &'r ModelSystem<'a>,
-    pub(super) package: &'a qsl_package::CheckedPackage,
     pub(super) limits: &'r ModelCheckLimits,
     pub(super) horizon: Option<usize>,
     pub(super) cancel: &'r Cancel,
@@ -487,7 +486,6 @@ impl Exploration<'_, '_, '_> {
                 RunEnd::Completed => ModelCheckOutcome::Holds {
                     certificate: qsl_replay::ProofCertificate::Closure(deadlock_certificate(
                         graph,
-                        self.package,
                     )?),
                     stats,
                 },
@@ -500,7 +498,6 @@ impl Exploration<'_, '_, '_> {
 /// model state under the item's carried root, sorted.
 fn deadlock_certificate(
     graph: &ExploredStateGraph,
-    package: &qsl_package::CheckedPackage,
 ) -> Result<ClosureCertificate, ModelCheckRefusal> {
     let key = SafetyTranslation::deadlock_freedom()
         .map_err(|_| ModelCheckRefusal::Item(ItemRefusal::DeadlockContext))?
@@ -515,20 +512,7 @@ fn deadlock_certificate(
         .collect();
     states.sort();
     states.dedup();
-    let package_id = package
-        .emitted_package_id()
-        .or_else(|| {
-            qsl_package::emit_checked(package)
-                .ok()
-                .map(|emission| emission.package().package_id())
-        })
-        .ok_or_else(|| {
-            ModelCheckRefusal::Fault(quire_semantic_value::catalog::InternalFault::new(
-                "state-graph",
-                "a-deadlock-certificate-has-an-emitted-package-id",
-            ))
-        })?;
-    Ok(ClosureCertificate { package_id, states })
+    Ok(ClosureCertificate { states })
 }
 
 impl ExploredStateGraph {

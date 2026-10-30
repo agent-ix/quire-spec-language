@@ -253,10 +253,10 @@ fn limit_of(
             refusal: ImportRefusal::View { refusal, .. },
             ..
         } => match &**refusal {
-            ImportViewRefusal::Read {
-                refusal: StageFailure::Limit(limit),
-                ..
-            } => Some(limit.clone()),
+            ImportViewRefusal::Read { refusal, .. } => match refusal.as_ref() {
+                StageFailure::Limit(limit) => Some(limit.clone()),
+                _ => None,
+            },
             _ => None,
         },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
@@ -520,6 +520,7 @@ pub fn select(
 /// dependency input and `limits`.
 pub fn check(
     parsed: &ParsedSource,
+    package_name: String,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -527,6 +528,7 @@ pub fn check(
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
     check_with_execution_points(
         parsed,
+        package_name,
         &BTreeMap::new(),
         models,
         dependencies,
@@ -540,6 +542,7 @@ pub fn check(
 /// independently compiled libraries.
 pub fn check_with_execution_points(
     parsed: &ParsedSource,
+    package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
@@ -573,8 +576,12 @@ pub fn check_with_execution_points(
             admitted: AdmittedPackages::default(),
             work: StageWork::default(),
         };
-        let package =
-            resolution.check_unit(parsed, models.models.clone(), execution_points.clone())?;
+        let package = resolution.check_unit(
+            parsed,
+            package_name.clone(),
+            models.models.clone(),
+            execution_points.clone(),
+        )?;
         *work = resolution.work;
         let (library_names, libraries) = resolution
             .compiled
@@ -811,13 +818,20 @@ pub(crate) fn compose(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)
-        .map_err(refusal)?
-        .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    record_declarations(&checked.package, &emitted.package().package_id().hex());
+    record_declarations(&checked.package);
     Ok(ComposedUnit {
         emitted: emitted.package().clone(),
         source: checked.source,
@@ -828,59 +842,40 @@ pub(crate) fn compose(
 #[cfg(test)]
 thread_local! {
     /// The `declaration` occurrence of each function of each composed
-    /// package, by `package_id` hex and function name: the key a `function`
-    /// replay request carries for the predicate claim (FR-098).
-    static DECLARATIONS: std::cell::RefCell<BTreeMap<(String, String), qsl_foundation::source::provenance::OccurrenceKey>> =
+    /// package, by the callable's own node key: the key a `function` replay
+    /// request carries for the predicate claim (FR-098).
+    static DECLARATIONS: std::cell::RefCell<BTreeMap<quire_exact::NodeKey, qsl_foundation::source::provenance::OccurrenceKey>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 /// Remember the `declaration` occurrence of each function of `package`.
 #[cfg(test)]
-fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
-    use qsl_foundation::digest::WireNodeId;
+fn record_declarations(package: &pkg::CheckedPackage) {
     use qsl_foundation::source::provenance::OccurrenceKey;
     use quire_exact::{Origin, Role};
     let graph = package.graph();
     for state in (0..).map_while(|index| graph.function_state(index)) {
         if let Some(callable) = graph.callable(state.name) {
             let key = OccurrenceKey::new(
-                WireNodeId::from_digest(*callable.identity.as_bytes()),
+                callable.identity.clone(),
                 Origin::new(Role::new("declaration"), 0),
             );
             DECLARATIONS.with(|declarations| {
                 declarations
                     .borrow_mut()
-                    .insert((package_id.to_owned(), state.name.to_owned()), key);
+                    .insert(callable.identity.clone(), key);
             });
         }
     }
 }
 
-/// Whether a package with this `package_id` hex was [`compose`]d on this
-/// thread.
-#[cfg(test)]
-pub(crate) fn composed_here(package_id: &str) -> bool {
-    DECLARATIONS.with(|declarations| {
-        declarations
-            .borrow()
-            .keys()
-            .any(|(composed, _)| composed == package_id)
-    })
-}
-
-/// The `declaration` occurrence of `function` in a package [`compose`]d on
-/// this thread, by its `package_id` hex.
+/// The `declaration` occurrence of the callable `callable` in a package
+/// [`compose`]d on this thread.
 #[cfg(test)]
 pub(crate) fn composed_declaration(
-    package_id: &str,
-    function: &str,
+    callable: &quire_exact::NodeKey,
 ) -> Option<qsl_foundation::source::provenance::OccurrenceKey> {
-    DECLARATIONS.with(|declarations| {
-        declarations
-            .borrow()
-            .get(&(package_id.to_owned(), function.to_owned()))
-            .cloned()
-    })
+    DECLARATIONS.with(|declarations| declarations.borrow().get(callable).cloned())
 }
 
 #[cfg(test)]
@@ -926,6 +921,8 @@ struct Resolution<'a> {
 /// One unit whose imports the resolution is walking: the unit itself, or a
 /// library whose compile is in progress.
 struct Frame {
+    /// The manifest's top-level package name for this unit.
+    package_name: String,
     raw: RawSourceRef,
     unit: ParsedUnit,
     models: SelectedModels,
@@ -941,11 +938,13 @@ struct Frame {
 impl Frame {
     fn new(
         parsed: &ParsedSource,
+        package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
+            package_name,
             raw: parsed.source().reference().clone(),
             unit: parsed.unit.clone(),
             models,
@@ -1031,9 +1030,14 @@ impl<'a> Resolution<'a> {
         // A library is compiled independently of whoever imports it, so its
         // recomputed `package_id` cannot depend on the importer.
         Ok(Library {
-            identity,
+            identity: identity.clone(),
             source: parsed.source().clone(),
-            frame: Frame::new(&parsed, models, super::StateClauseExecutionPoints::new()),
+            frame: Frame::new(
+                &parsed,
+                identity.as_str().to_owned(),
+                models,
+                super::StateClauseExecutionPoints::new(),
+            ),
         })
     }
 
@@ -1045,6 +1049,7 @@ impl<'a> Resolution<'a> {
         let limits = self.limits;
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
+        let package_name = frame.package_name.clone();
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
@@ -1061,12 +1066,15 @@ impl<'a> Resolution<'a> {
         let mut declarations = charged(cancel, &mut self.work.s3, || {
             PackageDeclarations::assemble_with_execution_points_and_cancel(
                 raw.clone(),
+                package_name,
                 unit,
                 models,
                 admitted,
                 limits.assembly,
-                cancel,
-                execution_points,
+                qsl_semantics::check::AssemblyRun {
+                    cancel,
+                    execution_points,
+                },
             )
         })
         .map_err(|refusal| {
@@ -1136,10 +1144,11 @@ impl<'a> Resolution<'a> {
     fn check_unit(
         &mut self,
         parsed: &ParsedSource,
+        package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(parsed, models, execution_points);
+        let mut root = Frame::new(parsed, package_name, models, execution_points);
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

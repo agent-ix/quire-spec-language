@@ -156,12 +156,12 @@ fn positions(world: &World, counterexample: &TemporalCounterexample) -> Vec<Mode
 }
 
 /// Which object a step's receiver is: the receiver text carries the object
-/// id as hex (`a` is 61, `b` is 62).
+/// key.
 pub(crate) fn receiver(step: &qsl_replay::ModelStep) -> char {
     let text = step.transition.receiver().expect("a receiver");
-    if text.contains("\"identity\":\"61\"") {
+    if text.contains("\"identity\":\"a\"") {
         'a'
-    } else if text.contains("\"identity\":\"62\"") {
+    } else if text.contains("\"identity\":\"b\"") {
         'b'
     } else {
         panic!("an unknown receiver: {text}")
