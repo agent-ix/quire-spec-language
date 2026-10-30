@@ -219,8 +219,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, ModelRootKeyError,
-    NominalNode, SemanticGraph, SemanticNode,
+    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, SemanticGraph,
+    SemanticNode,
 };
 pub use node_key::AbstractionTerm;
 pub use node_key::{
@@ -1220,7 +1220,7 @@ impl PackageDeclarations {
                                 .iter()
                                 .find(|model| model.alias() == Some(source.model.name.as_str()))
                             {
-                                let model_nodes = model.object_type_model_node_keys(self.identity);
+                                let model_nodes = model.object_type_model_node_keys();
                                 let [model_node] = model_nodes.as_slice() else {
                                     let cause = if model_nodes.is_empty() {
                                         TemporalCause::MissingTimedModel {
@@ -1975,7 +1975,7 @@ impl PackageDeclarations {
             .filter_map(|declaration| {
                 models
                     .iter()
-                    .find_map(|model| model.model_node_key(declaration, self.identity))
+                    .find_map(|model| model.model_node_key(declaration))
                     .map(|node| (declaration.clone(), node))
             })
             .collect();
@@ -2002,12 +2002,14 @@ impl PackageDeclarations {
         // identity limits, shared by the refinement headers and the emitter.
         let mut model_roots = Vec::with_capacity(model_selections.len());
         for selection in &model_selections {
-            match model_root_key(selection, self.identity) {
+            match model_root_key(selection) {
                 Ok(key) => model_roots.push(key),
                 Err(fault) => {
                     return Err(vec![CheckRefusal {
                         location: root(Origin::Expression),
-                        cause: CheckCause::InternalFault(Box::new(KeyFault::ModelRootKey(fault))),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::ModelRootKey(
+                            fault.to_string(),
+                        ))),
                     }]);
                 }
             }
@@ -4507,7 +4509,7 @@ impl PackageDeclarations {
                     });
                     continue;
                 };
-                match model_root_key(model.selection(), self.identity) {
+                match model_root_key(model.selection()) {
                     Ok(key) => subjects.push((alias.clone(), key)),
                     Err(_) => refusals.push(CheckRefusal {
                         location: hyper_clause::lowering::hyper_location(
