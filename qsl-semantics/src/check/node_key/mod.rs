@@ -932,7 +932,11 @@ impl BodyTerm {
             match leaf {
                 LeafTerm::Literal { ty, .. } => visit(ty.require_admitted()?.clone()),
                 LeafTerm::Reference { target } => visit(target.require_admitted()?.clone()),
-                LeafTerm::DependencyReference { .. } => {}
+                // A dependency target is outside this graph, so it is not
+                // visited, but a local pending handle cannot cross admission.
+                LeafTerm::DependencyReference { node } => {
+                    node.require_admitted()?;
+                }
             }
         }
         Ok(())
