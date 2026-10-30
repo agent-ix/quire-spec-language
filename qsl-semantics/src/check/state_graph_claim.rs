@@ -29,11 +29,10 @@ use qsl_forms::{
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{StageFailure, Staged};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::{EffectiveId, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::ir::{CheckedBody, CheckedNode};
@@ -217,7 +216,7 @@ impl StateGraphClaim {
     /// the claim's checked node. A finite prefix of paths never decides
     /// whether some path exists past it, so the extent is the same unbounded
     /// kind an infinite-trace formula has.
-    pub fn requirements(&self, claim: WireNodeId) -> Requirements {
+    pub fn requirements(&self, claim: NodeKey) -> Requirements {
         let domains = BTreeMap::from([(
             DomainKey::Node {
                 node: claim,

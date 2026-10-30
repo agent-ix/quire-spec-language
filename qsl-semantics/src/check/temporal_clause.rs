@@ -60,7 +60,7 @@ use qsl_foundation::bound::{
     TimedIntervalKey,
 };
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
-use qsl_foundation::digest::{ByteDigest, WireNodeId};
+use quire_exact::NodeKey;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
@@ -394,8 +394,8 @@ impl TemporalClaim {
     /// of the record.
     pub fn requirements(
         &self,
-        clause: WireNodeId,
-        parameters: &[WireNodeId],
+        clause: NodeKey,
+        parameters: &[NodeKey],
         populations: &[DomainKey],
         named: &[DomainKey],
     ) -> Result<Requirements, InternalFault> {
@@ -406,7 +406,7 @@ impl TemporalClaim {
                 .ok_or_else(|| InternalFault::new(STAGE, "parameter-node-keyed"))?;
             domains.insert(
                 DomainKey::Node {
-                    node: *node,
+                    node: node.clone(),
                     path: path.clone(),
                 },
                 *kind,
@@ -456,7 +456,7 @@ pub struct CheckedTemporalClause {
     over: (String, ValueType),
     /// The clock role, as written.
     clock: String,
-    clock_binding: WireNodeId,
+    clock_binding: NodeKey,
     operators: Vec<CheckedOperator>,
     horizon: Option<u64>,
     claim: TemporalClaim,
@@ -641,7 +641,7 @@ impl CheckedTemporalClause {
     pub fn interval_key(&self, node: TemporalNodeId) -> Option<IntervalKey> {
         match self.interval_of(node)? {
             CheckedInterval::Steps(interval) => {
-                interval.key(self.profile_ref.clone(), self.clock_binding)
+                interval.key(self.profile_ref.clone(), self.clock_binding.clone())
             }
             CheckedInterval::Timed(_) => None,
         }
@@ -653,7 +653,7 @@ impl CheckedTemporalClause {
     pub fn timed_interval_key(&self, node: TemporalNodeId) -> Option<TimedIntervalKey> {
         match self.interval_of(node)? {
             CheckedInterval::Timed(interval) => {
-                Some(interval.key(self.profile_ref.clone(), self.clock_binding))
+                Some(interval.key(self.profile_ref.clone(), self.clock_binding.clone()))
             }
             CheckedInterval::Steps(_) => None,
         }
@@ -751,16 +751,16 @@ const fn is_temporal(operator: TemporalOperator) -> bool {
 }
 
 /// The clock binding's node id. Recorded exception to keying on the string
-/// itself: `IntervalKey::clock_binding` is a `WireNodeId` (QSpec FR-255's
+/// itself: `IntervalKey::clock_binding` is a `NodeKey` (QSpec FR-255's
 /// structural clock-binding node, fixed by ADR-014 and `qsl_foundation::bound`),
 /// a 32-byte id that cannot hold the `clock` string, so the id is the digest of
 /// the string's length-prefixed bytes. Equal strings bind equally. FR-233's
 /// `model-steps`/`model-time` binding node replaces it.
-fn clock_binding(text: &str) -> WireNodeId {
+fn clock_binding(text: &str) -> NodeKey {
     let mut preimage = Vec::with_capacity(text.len() + 8);
     preimage.extend_from_slice(&u64::try_from(text.len()).unwrap_or(u64::MAX).to_be_bytes());
     preimage.extend_from_slice(text.as_bytes());
-    WireNodeId::from_digest(ByteDigest::of(&preimage).as_bytes())
+    NodeKey::from_digest(ByteDigest::of(&preimage).as_bytes())
 }
 
 /// A temporal operator's interval built from its form: the validated

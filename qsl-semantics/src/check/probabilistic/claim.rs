@@ -37,11 +37,10 @@ use qsl_forms::{
     TemporalNodeId, TemporalOperator, TemporalOperatorForm, WeightingForm,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Span;
 use quire_exact::{
-    Identifier, IllTypedCause, Integer, IntegerInterval, Meter, Quantity, Rational, RationalDomain,
+    Identifier, NodeKey, IllTypedCause, Integer, IntegerInterval, Meter, Quantity, Rational, RationalDomain,
     UnitId, Value, ValueType,
 };
 use quire_semantic_value::fairness::{
@@ -389,7 +388,7 @@ impl CheckedProbabilisticClaim {
     /// claim's, with the evidence kind S3 records: `exact` when
     /// [`Self::exact_only`], `statistical` otherwise. The evidence kind
     /// enters neither the normal form nor the obligation identity.
-    pub fn requirements(&self, claim: WireNodeId) -> Requirements {
+    pub fn requirements(&self, claim: NodeKey) -> Requirements {
         let domains = BTreeMap::from([(
             DomainKey::Node {
                 node: claim,
@@ -1558,7 +1557,7 @@ impl Pass<'_, '_> {
         let units = self.input.scope.types().units();
         unit.and_then(|unit| match units.get(unit)? {
             quire_semantic_value::quantity::QuantityUnit::Declared(declared) => {
-                let node = units.nominal_node(declared.dimension_node().as_bytes())?;
+                let node = units.nominal_node(&declared.dimension_node())?;
                 node.declaration.qualified_declaration.last().cloned()
             }
             quire_semantic_value::quantity::QuantityUnit::Compound(_) => None,

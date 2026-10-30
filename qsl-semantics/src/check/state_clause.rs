@@ -1174,7 +1174,7 @@ pub(crate) fn record(
         // what `classify_extent` keys by, so it is reused rather than
         // reimplemented.
         None => {
-            let wired: Vec<(qsl_foundation::digest::WireNodeId, &ValueType)> = roots
+            let wired: Vec<(quire_exact::NodeKey, &ValueType)> = roots
                 .iter()
                 .map(|(node, value_type)| (wire(node.clone()), *value_type))
                 .collect();

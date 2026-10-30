@@ -75,21 +75,21 @@ impl TimeUnits {
         let mut units = BTreeMap::new();
         let mut nominal_nodes = BTreeMap::new();
         for key in keys {
-            let Some(node) = table.nominal_node(key.as_bytes()) else {
+            let Some(node) = table.nominal_node(&key) else {
                 continue;
             };
             let dependencies = match &node.form {
-                NominalUnitForm::Dimension { terms } => terms.iter().map(|(key, _)| *key).collect(),
+                NominalUnitForm::Dimension { terms } => terms.iter().map(|(key, _)| key.clone()).collect(),
                 NominalUnitForm::Unit {
                     dimension, target, ..
-                } => std::iter::once(*dimension)
+                } => std::iter::once(dimension.clone())
                     .chain(target.iter().cloned())
                     .collect(),
             };
             nominal_nodes.insert(
-                key,
+                key.clone(),
                 TimeNominalNode {
-                    key,
+                    key: key.clone(),
                     form: match &node.form {
                         NominalUnitForm::Dimension { .. } => "dimension",
                         NominalUnitForm::Unit { .. } => "unit",
@@ -105,15 +105,15 @@ impl TimeUnits {
             match &node.form {
                 NominalUnitForm::Dimension { terms } => {
                     if terms.is_empty() && name == TIME_DIMENSION {
-                        time = Some(key);
+                        time = Some(key.clone());
                     }
                 }
                 NominalUnitForm::Unit { .. } => {
-                    if let Some(unit) = graph.unit(key) {
+                    if let Some(unit) = graph.unit(key.clone()) {
                         units.insert(
                             name.clone(),
                             DeclaredUnit {
-                                node: Some(key),
+                                node: Some(key.clone()),
                                 dimension: Some(unit.dimension_node()),
                                 scale: unit.canonical().scale().clone(),
                                 offset: unit.canonical().offset().clone(),
@@ -139,10 +139,10 @@ impl TimeUnits {
                 let key = nominal_key(&preimage, identity).ok()?;
                 Some((key, preimage.preimage_bytes(identity).ok()?))
             });
-            let time_key = time_node.as_ref().map(|(key, _)| *key);
+            let time_key = time_node.as_ref().map(|(key, _)| key.clone());
             if let Some((time_key, preimage)) = time_node {
                 nominal_nodes.insert(
-                    time_key,
+                    time_key.clone(),
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
@@ -152,7 +152,7 @@ impl TimeUnits {
                 );
             }
             let prefix = model.alias().unwrap_or(&package.identity);
-            if let Some(time_key) = time_key {
+            if let Some(time_key) = time_key.clone() {
                 time_dimensions.insert(prefix.to_owned(), time_key);
             }
             for unit in &model.units {
@@ -160,21 +160,21 @@ impl TimeUnits {
                     continue;
                 };
                 let package_nodes = dimension.and_then(|dimension| {
-                    let time_key = time_key?;
+                    let time_key = time_key.clone()?;
                     (unit.dimension == dimension.key).then(|| {
                         package_unit_nominal_nodes(unit, &model.units, time_key, identity)
                     })?
                 });
                 if let Some(package_nodes) = &package_nodes {
                     for node in package_nodes {
-                        nominal_nodes.insert(node.key, node.clone());
+                        nominal_nodes.insert(node.key.clone(), node.clone());
                     }
                 }
                 let node = package_nodes
                     .as_ref()
-                    .and_then(|nodes| nodes.last().map(|node| node.key));
+                    .and_then(|nodes| nodes.last().map(|node| node.key.clone()));
                 let dimension_key = dimension
-                    .zip(time_key)
+                    .zip(time_key.clone())
                     .filter(|(dimension, _)| unit.dimension == dimension.key)
                     .map(|(_, key)| key);
                 units.insert(

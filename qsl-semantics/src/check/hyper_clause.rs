@@ -27,10 +27,9 @@ use qsl_forms::{
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{EffectiveId, Identifier, ValueType};
+use quire_exact::{EffectiveId, Identifier, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
 use quire_semantic_value::location::{Location, Origin};
@@ -657,7 +656,7 @@ pub enum MatchPart {
 /// ordinal zero. No package holds a node with the zero id.
 fn unassembled() -> OccurrenceKey {
     OccurrenceKey::new(
-        WireNodeId::from_digest([0; 32]),
+        NodeKey::from_digest([0; 32]),
         quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
     )
 }
@@ -708,7 +707,7 @@ impl OperationContractClaim {
     ///
     /// An internal fault when `roots` has fewer nodes than the claim has
     /// roots.
-    pub fn requirements(&self, roots: &[WireNodeId]) -> Result<Requirements, InternalFault> {
+    pub fn requirements(&self, roots: &[NodeKey]) -> Result<Requirements, InternalFault> {
         let mut domains = BTreeMap::new();
         for ((index, path), kind) in &self.domains {
             let node = roots
@@ -716,7 +715,7 @@ impl OperationContractClaim {
                 .ok_or_else(|| InternalFault::new(STAGE, "root-node-keyed"))?;
             domains.insert(
                 DomainKey::Node {
-                    node: *node,
+                    node: node.clone(),
                     path: path.clone(),
                 },
                 *kind,

@@ -40,7 +40,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -239,7 +238,7 @@ impl ValueClaim {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResultBound {
     value_type: ValueType,
-    node: WireNodeId,
+    node: NodeKey,
 }
 
 impl ResultBound {
@@ -249,8 +248,8 @@ impl ResultBound {
     }
 
     /// The result bound's type node.
-    pub fn node(&self) -> WireNodeId {
-        self.node
+    pub fn node(&self) -> NodeKey {
+        self.node.clone()
     }
 }
 
@@ -289,7 +288,7 @@ pub struct RequirementRecord {
     owner: Option<String>,
     /// FR-062 "Extent": the parameter and binder nodes the claim's extent
     /// is rooted at, including roots whose type adds no unbounded domain.
-    extent_roots: BTreeSet<WireNodeId>,
+    extent_roots: BTreeSet<NodeKey>,
 }
 
 impl RequirementRecord {
@@ -316,7 +315,7 @@ impl RequirementRecord {
     pub(crate) fn unguarded(
         requirements: Requirements,
         value_type: ValueType,
-        node: WireNodeId,
+        node: NodeKey,
         references: ModelReferences,
     ) -> Self {
         Self {
@@ -336,7 +335,7 @@ impl RequirementRecord {
     /// [`CheckedProbabilisticClaim::requirements`](super::CheckedProbabilisticClaim::requirements)),
     /// the `Boolean` result bound at the type node `boolean`, no direct
     /// conversion context, an empty path condition and no owner.
-    pub fn model_claim(requirements: Requirements, boolean: WireNodeId) -> Self {
+    pub fn model_claim(requirements: Requirements, boolean: NodeKey) -> Self {
         Self::unguarded(
             requirements,
             ValueType::Boolean,
@@ -353,7 +352,7 @@ impl RequirementRecord {
     /// FR-062 "Extent": the nodes of the claim's extent roots. A function
     /// parameter outside this set is read nowhere by the application or by
     /// the guards of its path condition (FR-098 "unread parameters").
-    pub fn extent_roots(&self) -> &BTreeSet<WireNodeId> {
+    pub fn extent_roots(&self) -> &BTreeSet<NodeKey> {
         &self.extent_roots
     }
 
@@ -930,11 +929,10 @@ impl Classify<'_> {
     }
 }
 
-/// The wire id of lowered node `key`.
-pub(crate) fn wire(key: NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+/// The source-map id of lowered node `key`: the structural id itself.
+pub(crate) fn wire(key: NodeKey) -> NodeKey {
+    key
 }
-
 /// Select the sole candidate narrow that directly references `scalar`.
 /// The predicate examines the candidate's lowered operation and operand;
 /// enclosing narrows are excluded because they reference another narrow.
