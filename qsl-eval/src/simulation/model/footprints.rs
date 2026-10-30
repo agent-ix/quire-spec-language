@@ -505,7 +505,7 @@ impl<'a> ModelSystem<'a> {
             .ok_or_else(unknown)?;
         let application = self
             .applications
-            .get(&receiver.object_type())
+            .get(receiver.object_type())
             .and_then(|applications| {
                 applications
                     .iter()

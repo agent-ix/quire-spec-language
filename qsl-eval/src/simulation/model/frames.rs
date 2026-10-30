@@ -908,8 +908,8 @@ impl Run<'_, '_, '_> {
                 .filter_map(|(name, value)| match value {
                     Value::Reference(bound)
                         if before.get(bound.object().as_str()).is_some_and(|object| {
-                            system.model.type_identity(&object.type_identity)
-                                == Some(bound.object_type().clone())
+                            system.model.type_identity(&object.type_identity).as_ref()
+                                == Some(bound.object_type())
                         }) =>
                     {
                         Some((name.clone(), bound.object().as_str().to_owned()))

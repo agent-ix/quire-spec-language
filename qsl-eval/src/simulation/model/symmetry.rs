@@ -41,7 +41,7 @@ impl Renaming<'_> {
     /// its key.
     fn reference(&self, reference: &ObjectReference) -> Option<ObjectReference> {
         self.moved.iter().find_map(|(universes, _, map)| {
-            if !universes.contains(&reference.universe()) {
+            if !universes.contains(reference.universe()) {
                 return None;
             }
             let image = map.get(reference.object().as_str())?;
@@ -183,7 +183,7 @@ impl ModelSystem<'_> {
         for member in &declared.member_types {
             // A reference's universe is its type's; any key names it.
             if let Ok(reference) = self.model.object_reference(member, "k") {
-                if !universes.contains(&reference.universe()) {
+                if !universes.contains(reference.universe()) {
                     universes.push(reference.universe().clone());
                 }
             }
@@ -370,7 +370,7 @@ impl ModelSystem<'_> {
                 placeholders
                     .iter()
                     .find(|(universes, _, keys, _)| {
-                        universes.contains(&reference.universe())
+                        universes.contains(reference.universe())
                             && keys.iter().any(|key| key == reference.object().as_str())
                     })
                     .map(|(_, _, _, enc)| enc.clone())

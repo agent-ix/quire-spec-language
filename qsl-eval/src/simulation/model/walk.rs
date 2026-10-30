@@ -157,7 +157,7 @@ impl Walk<'_, '_> {
                 clause
                     .operation
                     .as_ref()
-                    .is_some_and(|(owner, operation)| *owner == declaring && operation == name)
+                    .is_some_and(|(owner, operation)| owner == &declaring && operation == name)
                     && self
                         .system
                         .types
