@@ -18,8 +18,8 @@ use crate::witness::{QuantityMagnitude, WitnessBinding, WitnessField, WitnessSlo
 struct Fixture {
     source: String,
     compiled: ComposedUnit,
-    /// Byte provision entries beyond the source: the model package.
-    provision: Vec<(Option<String>, String, Vec<u8>)>,
+    /// Documents beyond the source: the model package.
+    provision: Vec<Vec<u8>>,
 }
 
 fn fixture(body: &str) -> Fixture {
@@ -74,25 +74,16 @@ fn model_fixture(body: &str) -> Fixture {
         "/../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .unwrap();
-    let digest = PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
-        .unwrap()
-        .jcs_digest();
-    let hex = qsl_semantics::model::key::hex(&digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{MODEL_PROFILE}\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n{body}"
+         model M = \"acme/orders\";\n{body}"
     );
-    let packages = package_input([document.as_slice()]);
+    let packages = package_input([document.as_slice()]).unwrap();
     let compiled = spine(&source, &packages);
-    let record = DigestRecord::mint(DigestDomain::Sha256Jcs, digest);
     Fixture {
         source,
         compiled,
-        provision: vec![(
-            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-            record.hex(),
-            document,
-        )],
+        provision: vec![document],
     }
 }
 
@@ -139,7 +130,7 @@ impl Fixture {
             name(&[function]),
             source,
         );
-        wire.byte_provision.extend(self.provision.iter().cloned());
+        wire.documents.extend(self.provision.iter().cloned());
         wire
     }
 
@@ -817,7 +808,8 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
             "/../tests/fixtures/spine-model.semantic-ir.json"
         ))
         .unwrap()
-        .as_slice()]),
+        .as_slice()])
+        .unwrap(),
         SpineLimits::default().model,
         match fixture.declared("rw") {
             ValueType::Reference(object_type) => object_type,

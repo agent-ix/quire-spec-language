@@ -210,6 +210,10 @@ pub struct StateClauseDeclaration {
     pub body: Expression,
     /// The form's spans: the declaration's, and one per body node.
     pub spans: DeclarationSpans,
+    /// The guarded clock places whose presence the body reads: a
+    /// postcondition's `present(self.v)` that FR-230 keeps in its body
+    /// (QSpec FR-322 `CW-05`); empty otherwise.
+    pub presence_places: Vec<super::timed_model::PresencePlace>,
 }
 
 impl StateClauseDeclaration {
@@ -224,7 +228,7 @@ impl StateClauseDeclaration {
             context_population: self.context_population,
             frame_population: self.frame_population,
             binders: &[],
-            presence_places: &[],
+            presence_places: &self.presence_places,
             body: &self.body,
         }
     }
@@ -235,8 +239,7 @@ pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
     let Some(layer) = crate::value::layer::HeaderLayer::from_identity(&selection.identity) else {
         return false;
     };
-    crate::value::definition::DefinitionLock::pinned()
-        .closure(&[layer])
+    crate::value::layer::HeaderLayer::closure(&[layer])
         .contains(&crate::value::layer::HeaderLayer::ValueComplete)
 }
 

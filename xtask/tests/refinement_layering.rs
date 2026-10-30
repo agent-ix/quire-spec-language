@@ -11,11 +11,10 @@ use std::path::{Path, PathBuf};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::BackendId;
 use qsl_replay::spine::RefinementClass;
 use qsl_route::routing::Disposition;
-use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin};
 use qsl_semantics::check::{Capability, CheckedStateClause};
 use qsl_semantics::value::{HeaderLayer, WitnessKind, WitnessRequest};
 use xtask::refinement::compare::CaseResult;
@@ -45,7 +44,6 @@ fn backend(name: &str, capabilities: &[Capability]) -> BackendDescriptor {
     BackendDescriptor::new(
         Candidate::new(BackendId::new(name)),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest(ByteDigest::of(name.as_bytes()).as_bytes()),
         capabilities
             .iter()
             .map(|capability| (*capability, Mode::Bounded)),
@@ -499,18 +497,10 @@ fn config_model_statements(corpus: &Path) -> (BTreeSet<String>, usize) {
     (statements, entries)
 }
 
-/// The `sha256-jcs` digest of `bytes`, as a `model` statement writes it.
-fn digest_of(bytes: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([bytes]);
-    qsl_semantics::model::key::hex(packages.keys().next().expect("one package"))
-}
-
 /// FR-345-AC-14: from a root holding only the config-version model file the
 /// generator writes the whole corpus (24 entries), every unit over that
-/// model naming its version and the digest computed from its bytes; after
-/// the model's package version is edited, generating again gives the
-/// edited version and the new digest and no other. A root without the
-/// model file generates nothing.
+/// model naming it by its identity alone. A root without the model file
+/// generates nothing.
 #[trace("TC-868", "FR-345-AC-14")]
 #[test]
 fn the_corpus_is_generated_from_the_model_file_alone() {
@@ -525,24 +515,12 @@ fn the_corpus_is_generated_from_the_model_file_alone() {
         config_model_statements(out.path())
     };
 
-    let digest = digest_of(&original);
-    let statement = |version: &str, digest: &str| {
-        format!("model M = \"example/config-version\" version \"{version}\" digest \"sha256-jcs:{digest}\";")
-    };
     assert_eq!(
         generated("the original model"),
-        (BTreeSet::from([statement("1.0.0", &digest)]), 24)
-    );
-
-    let mut edited: serde_json::Value = serde_json::from_slice(&original).unwrap();
-    edited["package"]["version"] = serde_json::json!("1.0.1");
-    let edited = serde_json::to_vec(&edited).unwrap();
-    fs::write(root.path().join(model), &edited).unwrap();
-    let edited_digest = digest_of(&edited);
-    assert_ne!(edited_digest, digest);
-    assert_eq!(
-        generated("the edited model"),
-        (BTreeSet::from([statement("1.0.1", &edited_digest)]), 24)
+        (
+            BTreeSet::from(["model M = \"example/config-version\";".to_owned()]),
+            24
+        )
     );
 
     assert!(generate(

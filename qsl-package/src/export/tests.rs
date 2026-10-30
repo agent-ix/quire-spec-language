@@ -37,16 +37,12 @@ invariant ThroughSub using v on M::Sub at current { self.f >= 0 }\n";
 /// The unit with `clauses` against the fixture package, checked and linked.
 fn package(clauses: &str) -> CheckedPackage {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model M = {:?} version \"1\" digest \"sha256-jcs:{}\";\n{clauses}",
+         model M = {:?};\n{clauses}",
         fixture::PACKAGE,
-        qsl_semantics::model::key::hex(digest),
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:abstraction", "fixture", "fixture:1"),

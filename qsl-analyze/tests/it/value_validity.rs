@@ -32,7 +32,7 @@ use qsl_replay::{
 };
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, NodeTag, PackageDeclarations};
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin as LocationOrigin};
@@ -316,12 +316,9 @@ fn package_of(declarations: &str) -> CheckedPackage {
         Vec::new(),
     )
     .expect("the assembler builds the package declarations");
-    let lock = DefinitionLock::pinned();
     declarations.integer_division = Some(
-        lock.admit_integer_division(
-            &[lock
-                .entry(CatalogRole::IntegerDivisionEuclidean)
-                .reference()],
+        admit_integer_division(
+            &[DefinitionRole::IntegerDivisionEuclidean.reference()],
             None,
         )
         .expect("Euclidean division is admitted"),
@@ -1238,8 +1235,8 @@ fn the_production_registry_holds_the_arm_and_an_absent_provider_is_refused() {
 #[test]
 fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
     use qsl_route::{
-        descriptor_from_manifest_with_max_cases, Candidate, ManifestDigest, ManifestMembers,
-        MaxCasesMember, ProviderOrigin,
+        descriptor_from_manifest_with_max_cases, Candidate, ManifestMembers, MaxCasesMember,
+        ProviderOrigin,
     };
     let member = |bounds: &Json| match bounds {
         Json::Null => MaxCasesMember::Absent,
@@ -1258,7 +1255,6 @@ fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
             let admitted = descriptor_from_manifest_with_max_cases(
                 Candidate::new(qsl_foundation::BackendId::new("arm")),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([1; 32]),
                 [(Some(kind), Some("bounded"))],
                 ManifestMembers {
                     domains: Some(&["integer"]),
@@ -1284,7 +1280,6 @@ fn a_check_arm_descriptor_needs_a_positive_max_cases_default() {
     assert!(descriptor_from_manifest_with_max_cases(
         Candidate::new(qsl_foundation::BackendId::new("other")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([2; 32]),
         [(Some("refinement"), Some("bounded"))],
         ManifestMembers {
             domains: Some(&["integer"]),

@@ -101,7 +101,6 @@ fn spine_enums(text: &str) -> Vec<(NodeKey, Vec<(String, NodeKey)>)> {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &spine::LockEvidence::default(),
         limits,
         &cancel,
     )

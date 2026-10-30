@@ -240,7 +240,7 @@ impl Unit {
                 max_messages: None,
                 max_live_instances: None,
             },
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(id, payload, clause_node, occurrence),
             self.letters,
             ReplayLimits::default(),
         )
@@ -857,7 +857,7 @@ fn refusal_of(fairness: &str) -> qsl_semantics::check::CheckRefusal {
     let body = contracts() + &protocol("SB", &spin_run()) + &claim;
     let document = document();
     let text = unit_text(&body);
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "litmus", "git", "1"),
         "litmus.native",

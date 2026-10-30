@@ -73,13 +73,7 @@ fn settled(
                 universes: world.unlimited().simulation.universes,
                 expansion: world.unlimited().simulation.expansion,
             },
-            &envelope_at(
-                &world.unit,
-                id,
-                counterexample.clone(),
-                clause_node,
-                occurrence.clone(),
-            ),
+            &envelope_at(id, counterexample.clone(), clause_node, occurrence.clone()),
             &letters,
             ReplayLimits::default(),
         )

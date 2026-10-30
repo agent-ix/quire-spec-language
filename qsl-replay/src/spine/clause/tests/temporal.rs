@@ -108,7 +108,7 @@ fn request(
         .enumerate()
         .map(|(position, value)| {
             document_ref_and_bytes(&format!("counter-{position}"), |label| {
-                snapshot(OPERATIONS, label, "current", &[counter("c1", *value)])
+                snapshot(label, "current", &[counter("c1", *value)])
             })
         })
         .collect();
@@ -120,7 +120,7 @@ fn request(
         selection(&labels),
     );
     for (label, bytes) in documents {
-        request.snapshots.insert(label.digest, bytes);
+        request.snapshots.insert(label.clone(), bytes);
     }
     request
 }
@@ -696,7 +696,7 @@ fn observed_replay_request(
         .enumerate()
         .map(|(index, value)| {
             document_ref_and_bytes(&format!("replay-counter-{index}"), |label| {
-                snapshot(OPERATIONS, label, "current", &[counter("c1", *value)])
+                snapshot(label, "current", &[counter("c1", *value)])
             })
         })
         .collect();
@@ -770,7 +770,6 @@ fn observed_replay_request(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_record.hex(),
         )),
-        source_digests: Some(wire.source_digests.clone()),
         profile_selections: Some(Vec::new()),
         run_limits: Some(wire.accounting_limits),
         declared_domains: Some(Vec::new()),

@@ -226,7 +226,7 @@ impl World {
                 max_messages: None,
                 max_live_instances,
             },
-            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            &envelope_at(id, payload, clause_node, occurrence),
             letters,
             ReplayLimits::default(),
         )

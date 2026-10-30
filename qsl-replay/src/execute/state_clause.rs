@@ -13,10 +13,8 @@
 //! evaluation `run_clause`'s `Clause` selection runs (FR-109) -- and
 //! settles an FR-072 result on the envelope's arm.
 
-use std::collections::BTreeMap;
-
 use qsl_forms::StateClauseKind;
-use qsl_foundation::digest::{DigestDomain, WireNodeId};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedStateClause;
 use qsl_semantics::library::PackageId;
@@ -222,16 +220,11 @@ pub fn replay_state_clause(
     }
 
     // `recompile` already required exactly one source, provided.
-    let source = one_source(request.source_digests())?;
-    let packages = domain_packages(&request);
+    let source = one_source(request.sources())?;
+    let packages = domain_packages(&request)?;
     // FR-106 reads every document only from the byte provision, by its
-    // `sha256-jcs` digest.
-    let documents: BTreeMap<[u8; 32], Vec<u8>> = request
-        .byte_provision()
-        .entries()
-        .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-        .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
-        .collect();
+    // identity labels.
+    let documents = request.byte_provision().snapshots();
     let mut sources = Vec::with_capacity(1 + compiled.checked.libraries().len());
     sources.push(compiled.checked.source().clone());
     sources.extend(compiled.checked.libraries().iter().cloned());

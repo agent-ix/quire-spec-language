@@ -17,7 +17,6 @@
 //! version-1 package retains none, so the two are never mistaken for each other.
 
 use crate::protocol_artifact::wire as w;
-use qsl_foundation::ByteDigest;
 
 use super::profile::Profile;
 use super::result::Subject;
@@ -107,11 +106,11 @@ pub struct Retained {
 /// The authenticated definition selection a strict version-2 classification
 /// was made against.
 ///
-/// This is retained evidence, not an assertion. It names the admitted package,
-/// the declaration, and the registered definition the package's temporal binding
-/// selects for it. It carries no clock parameters: classification takes no
-/// trace, so it authenticates no parameter map. A later bridge reads the admitted
-/// clock configuration from the package this digest names.
+/// This is retained evidence, not an assertion. It names the declaration and
+/// registered definition selected by its admitted temporal binding. It carries
+/// no clock parameters: classification takes no trace, so it authenticates no
+/// parameter map. A later bridge reads the admitted clock configuration from
+/// the package.
 ///
 /// Only the compiler constructs one; private fields prevent a caller from
 /// fabricating the evidence:
@@ -119,43 +118,26 @@ pub struct Retained {
 /// ```compile_fail,E0451
 /// use quire_spec_language::protocol_artifact::wire::Revision;
 /// use quire_spec_language::temporal::AuthenticatedSelection;
-/// use qsl_foundation::ByteDigest;
 /// let forged = AuthenticatedSelection {
-///     package_digest: ByteDigest::of(b"forged"),
 ///     declaration: 0,
 ///     definition_identity: String::new(),
 ///     definition_revision: Revision { namespace: String::new(), value: String::new() },
-///     definition_artifact: ByteDigest::of(b"forged"),
 /// };
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticatedSelection {
-    package_digest: ByteDigest,
     declaration: usize,
     definition_identity: String,
     definition_revision: w::Revision,
-    definition_artifact: ByteDigest,
 }
 
 impl AuthenticatedSelection {
-    pub(super) fn new(
-        package_digest: ByteDigest,
-        declaration: usize,
-        definition: &w::Definition,
-        definition_artifact: ByteDigest,
-    ) -> Self {
+    pub(super) fn new(declaration: usize, definition: &w::Definition) -> Self {
         Self {
-            package_digest,
             declaration,
             definition_identity: definition.identity.clone(),
             definition_revision: definition.revision.clone(),
-            definition_artifact,
         }
-    }
-
-    /// Raw-byte digest of the admitted version-2 package.
-    pub fn package_digest(&self) -> ByteDigest {
-        self.package_digest
     }
 
     /// Declaration index in that package.
@@ -172,11 +154,6 @@ impl AuthenticatedSelection {
     pub fn definition_revision(&self) -> &w::Revision {
         &self.definition_revision
     }
-
-    /// Raw-byte digest of the exact definition artifact the package selects.
-    pub fn definition_artifact(&self) -> ByteDigest {
-        self.definition_artifact
-    }
 }
 
 /// One classification request: its disposition, and everything the request
@@ -184,9 +161,9 @@ impl AuthenticatedSelection {
 ///
 /// `support` and `retained` stay public fields for the existing version-1
 /// callers, so they are plain data a caller may copy or change. Only the
-/// authenticated selection is sealed. It vouches for itself — the package,
-/// declaration and definition it names — and a consumer that needs the
-/// disposition bound to that evidence re-classifies from the package the
+/// authenticated selection has private fields. It vouches for the declaration
+/// and definition it names, and a consumer that needs the disposition bound to
+/// that evidence re-classifies from the package the
 /// selection names rather than trusting a copied value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Classification {

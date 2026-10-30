@@ -1011,17 +1011,11 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         m.push_value(Value::Float(quire_exact::IeeeValue::binary32(0)), false);
         m.apply(convert.root())
     });
-    let lock = qsl_semantics::value::DefinitionLock::pinned();
-    let entry = lock.entry(qsl_semantics::value::CatalogRole::IeeeProfile);
-    let profile = lock
-        .admit_ieee_profile(
-            &[qsl_semantics::value::DefinitionReference {
-                authority: entry.authority.to_owned(),
-                identity: entry.identity.to_owned(),
-            }],
-            &[],
-        )
-        .unwrap();
+    let profile = qsl_semantics::value::admit_ieee_profile(
+        &[qsl_semantics::value::DefinitionRole::IeeeProfile.reference()],
+        &[],
+    )
+    .unwrap();
     let graph = qsl_semantics::check::PackageDeclarations {
         ieee_profile: Some(profile),
         ..qsl_semantics::check::PackageDeclarations::new(

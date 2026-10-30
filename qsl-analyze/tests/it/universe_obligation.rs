@@ -184,7 +184,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     // A provision carrying a package the model does not select is the same
     // subject.
     let mut provision = fixture.documents.packages.clone();
-    provision.insert([7; 32], b"unselected".to_vec());
+    provision.insert("unselected/package".to_owned(), b"unselected".to_vec());
     let mut padded = over(&fixture, &["a", "b"]);
     padded.simulation.packages = &provision;
     assert_eq!(identity(&padded), plain);

@@ -366,7 +366,7 @@ fn clause_names(site: &OperationSite) -> Vec<&str> {
 /// The `semantic_form` of the node `site.anchor` is the operation anchor of
 /// (its `context`), in the graph compiled from `unit`.
 fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::WireNodeId) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let compiled = compile_config_version_unit(unit, &packages);
     let graph = compiled.package.graph();
     let node = graph
@@ -387,7 +387,7 @@ fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::WireNodeId) -
 /// The frame `site` names is the compiled graph's frame of the operation
 /// that `owner` declares, at its `generated` occurrence.
 fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, owner: &str) {
-    let packages = qsl_semantics::model::intake::package_input([document]);
+    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let compiled = compile_config_version_unit(unit, &packages);
     let graph = compiled.package.graph();
     let frame = graph
@@ -502,7 +502,7 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
          post TouchB using v on Config::B::touch { true }",
     );
     let package = {
-        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
         compile_config_version_unit(&unit, &packages)
             .emitted
             .package_id()
@@ -575,7 +575,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
 
     let document = owners_document(false);
     let unit = owners_unit(&document, &format!("{FLOW_CLAUSES}\n{LIFECYCLE_CLAUSES}"));
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let compiled = compile_config_version_unit(&unit, &packages);
     let graph = compiled.package.graph();
     let package_id = compiled.emitted.package_id();

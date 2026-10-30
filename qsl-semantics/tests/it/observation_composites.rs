@@ -37,7 +37,6 @@ fn label(name: &str) -> DocumentRef {
         identity: name.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "fixture:1".to_owned(),
-        digest: [0; 32],
     }
 }
 
@@ -49,19 +48,13 @@ fn identity(reference: &DocumentRef) -> serde_json::Value {
 }
 
 fn document_ref(reference: &DocumentRef) -> serde_json::Value {
-    json!({"identity": identity(reference),
-        "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&reference.digest))})
+    json!({"identity": identity(reference)})
 }
 
 fn provision(reference: &DocumentRef, value: serde_json::Value) -> (DocumentRef, Vec<u8>) {
     let bytes = value.to_string().into_bytes();
-    let document = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     (
         DocumentRef {
-            digest,
             ..reference.clone()
         },
         bytes,
@@ -115,8 +108,7 @@ impl Case {
             model_operation["returns"] = json!({"typeRef": "ix://quire/native/Integer", "multiplicity": multiplicity, "nullable": false});
         }
         let document = config_version_document(model_operation, vec![], vec![], json!([]));
-        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-        let model_digest = *packages.keys().next().expect("one model");
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
         let body = if self.pre_call {
             "pre Holds using v on Config::ConfigVersion::probe { true }"
         } else {
@@ -151,8 +143,7 @@ impl Case {
             operations: Default::default(),
             named_populations: checked.named_reads(),
         };
-        let model = json!({"identity": "example/config-version", "version": "1.0.0",
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&model_digest))});
+        let model = json!({"identity": "example/config-version", "version": "1.0.0"});
         let object = |key: &str| {
             json!({"key": key, "type": "ix://example/config-version/ConfigVersion",
             "fields": {"versionNumber": {"integer": "1"}, "parent": self.parent}})
@@ -181,7 +172,7 @@ impl Case {
             population: POPULATION.to_owned(),
             key: "self".to_owned(),
         };
-        let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
+        let snapshots = BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]);
         let invocation = label("call");
         let (invocation, invocation_bytes) = provision(
             &invocation,
@@ -194,7 +185,7 @@ impl Case {
                 "deleted": [{"population": POPULATION, "key": "before"}],
             }),
         );
-        let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+        let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
         let input = if self.pre_call {
             ClauseSelectionInput::PreCall {
                 snapshot: pre,

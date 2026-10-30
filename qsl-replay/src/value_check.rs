@@ -344,6 +344,7 @@ impl<'p> ValueTarget<'p> {
     ///
     /// An [`InternalFault`] when the evaluator breaks one of its invariants
     /// or `assignment` does not fit the target's parameters.
+    #[deny(clippy::wildcard_enum_match_arm)]
     pub fn evaluate(
         &self,
         assignment: &[Value],

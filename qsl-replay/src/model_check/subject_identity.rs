@@ -12,15 +12,15 @@ use quire_checked::key::DeclarationKey;
 use quire_exact::Integer;
 
 /// An initial state's document, as the identity reads it: the four source
-/// labels and the digest.
-type InitialState = (String, String, String, String, [u8; 32]);
+/// labels.
+type InitialState = (String, String, String, String);
 
 /// The identity projection of a [`ModelSubject`] (ADR-013 O-09, FR-336): what
 /// a verdict over the subject holds for.
 ///
 /// It is the subject's checked package (its canonical `package_id`, which
 /// covers every contract the successor relation reads, not only the clause's
-/// own nodes), the initial states, each population's universe, the digests of
+/// own nodes), the initial states, each population's universe, the identities of
 /// the domain packages the package's model selections name, and the proof
 /// bounds. The order of the initial states, of a universe's keys and of the
 /// proof bounds is immaterial. The expansion limits, the evaluation meter,
@@ -32,7 +32,7 @@ pub struct SubjectIdentity {
     package: PackageId,
     initial: BTreeSet<InitialState>,
     universes: BTreeMap<DeclarationKey, BTreeSet<String>>,
-    packages: BTreeSet<[u8; 32]>,
+    packages: BTreeSet<String>,
     proof_bounds: BTreeSet<BoundKey>,
 }
 
@@ -98,7 +98,6 @@ impl SubjectIdentity {
                         document.identity.clone(),
                         document.revision_namespace.clone(),
                         document.revision.clone(),
-                        document.digest,
                     )
                 })
                 .collect(),
@@ -108,7 +107,7 @@ impl SubjectIdentity {
                 .graph()
                 .model_selections()
                 .iter()
-                .map(|selection| selection.digest)
+                .map(|selection| selection.identity.clone())
                 .collect(),
             proof_bounds: subject.proof_bounds.iter().map(bound_key).collect(),
         })

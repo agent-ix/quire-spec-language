@@ -205,7 +205,7 @@ enum Compiled {
 
 const UNIT_BODY: &str = "function same using v(a: Boolean): Boolean pure { a }";
 
-type Packages = BTreeMap<[u8; 32], Vec<u8>>;
+type Packages = qsl_semantics::model::intake::PackageInput;
 
 /// Compile `document` in a `1-draft` unit holding only a function.
 fn compile(document: &Value) -> Compiled {
@@ -217,10 +217,8 @@ fn compile(document: &Value) -> Compiled {
 /// invariants as the spine driver does, then assemble and check.
 fn compile_unit(document: &Value, body: &str) -> (Compiled, Packages) {
     let (_, packages) = crate::tc235_business_meaning_runtime::read_k2(document);
-    let digest = packages.keys().next().expect("one package");
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{body}\n",
-        qsl_semantics::model::key::hex(digest),
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"test/orders\";\n{body}\n",
     );
     let compiled = compile_parsed(&unit, &packages);
     (compiled, packages)
@@ -510,7 +508,6 @@ fn order_json(
 }
 
 fn snapshot_doc(
-    model: &[u8; 32],
     label: &str,
     observation: &str,
     population: &str,
@@ -521,14 +518,14 @@ fn snapshot_doc(
         "format": "quire.state.snapshot/v1",
         "identity": lifecycle_identity(&identity),
         "observation": observation,
-        "model": model_json(model),
+        "model": model_json(),
         "populations": [{"population": population, "complete": true, "objects": objects}],
     });
     if observation == "current" {
         document["anchor"] = json!({"kind": "handler", "name": "validate"});
     }
     let bytes = serde_json::to_vec(&document).expect("snapshot serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
 fn unsigned_ref(label: &str) -> DocumentRef {
@@ -537,21 +534,17 @@ fn unsigned_ref(label: &str) -> DocumentRef {
         identity: label.to_owned(),
         revision_namespace: "tc235".to_owned(),
         revision: "1".to_owned(),
-        digest: [0; 32],
     }
 }
 
-fn model_json(model: &[u8; 32]) -> Value {
+fn model_json() -> Value {
     json!({
         "identity": PACKAGE,
-        "version": "1",
-        "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(model)),
     })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn invocation_doc(
-    model: &[u8; 32],
     label: &str,
     context: &str,
     operation: &str,
@@ -563,13 +556,12 @@ fn invocation_doc(
     let reference = |reference: &DocumentRef| {
         json!({
             "identity": lifecycle_identity(reference),
-            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&reference.digest)),
         })
     };
     let bytes = serde_json::to_vec(&json!({
         "format": "quire.state.invocation/v1",
         "identity": lifecycle_identity(&unsigned_ref(label)),
-        "model": model_json(model),
+        "model": model_json(),
         "context": id(context),
         "operation": operation,
         "self": {"population": self_population, "key": self_key},
@@ -581,7 +573,7 @@ fn invocation_doc(
         "deleted": [],
     }))
     .expect("invocation serializes");
-    (lifecycle_document_ref(label, &bytes), bytes)
+    (lifecycle_document_ref(label), bytes)
 }
 
 fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
@@ -607,17 +599,13 @@ fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
 struct Documents {
     package: CheckedPackage,
     packages: Packages,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
+    invocations: qsl_semantics::model::observation::DocumentProvision,
 }
 
 impl Documents {
-    fn model(&self) -> [u8; 32] {
-        *self.packages.keys().next().expect("one package")
-    }
-
     fn add_snapshot(&mut self, snapshot: (DocumentRef, Vec<u8>)) -> DocumentRef {
-        self.snapshots.insert(snapshot.0.digest, snapshot.1);
+        self.snapshots.insert(snapshot.0.clone(), snapshot.1);
         snapshot.0
     }
 
@@ -669,13 +657,11 @@ fn invoked(
     operation: &str,
     parameters: Value,
 ) -> AdmittedObservations {
-    let model = documents.model();
     let population = id("orders");
-    let s1 = documents.add_snapshot(snapshot_doc(&model, "s1", "current", &population, objects));
-    let s2 = documents.add_snapshot(snapshot_doc(&model, "s2", "pre", &population, objects));
-    let s3 = documents.add_snapshot(snapshot_doc(&model, "s3", "post", &population, objects));
+    let s1 = documents.add_snapshot(snapshot_doc("s1", "current", &population, objects));
+    let s2 = documents.add_snapshot(snapshot_doc("s2", "pre", &population, objects));
+    let s3 = documents.add_snapshot(snapshot_doc("s3", "post", &population, objects));
     let (invocation, bytes) = invocation_doc(
-        &model,
         label,
         "Order",
         operation,
@@ -684,7 +670,7 @@ fn invoked(
         (&s2, &s3),
         parameters,
     );
-    documents.invocations.insert(invocation.digest, bytes);
+    documents.invocations.insert(invocation.clone(), bytes);
     let current = documents.admit(
         "Any",
         ClauseSelectionInput::Current {
@@ -1332,10 +1318,8 @@ fn a_process_invariant_has_one_result_for_each_run() {
             "attempts": {"integer": attempts.to_string()},
         }})
     };
-    let model = documents.model();
     let population = id("runs");
     let s1 = documents.add_snapshot(snapshot_doc(
-        &model,
         "s1",
         "current",
         &population,
@@ -1392,8 +1376,8 @@ fn a_process_invariant_has_one_result_for_each_run() {
 
 type LifecycleDocuments = (
     Documents,
-    BTreeMap<[u8; 32], Vec<u8>>,
-    BTreeMap<[u8; 32], Vec<u8>>,
+    qsl_semantics::model::observation::DocumentProvision,
+    qsl_semantics::model::observation::DocumentProvision,
     DocumentRef,
 );
 
@@ -1421,19 +1405,17 @@ fn lifecycle_documents(unit: &str) -> LifecycleDocuments {
             json!([parameter("OrderLifecycle", "place", "flags", &flags_type)]);
     });
     let documents = documents_with(&document, unit);
-    let model = documents.model();
-    let (p1, p1_bytes) = lifecycle_observation(&model, "p1", "pre", &[(false, false)]);
-    let (q1, q1_bytes) = lifecycle_observation(&model, "q1", "post", &[(true, true)]);
+    let (p1, p1_bytes) = lifecycle_observation("p1", "pre", &[(false, false)]);
+    let (q1, q1_bytes) = lifecycle_observation("q1", "post", &[(true, true)]);
     let (i1, i1_bytes) = lifecycle_invocation_with(
-        &model,
         &p1,
         &q1,
         json!({"flags": {"record": {"type": flags_type, "fields": {"placed": {"boolean": true}}}}}),
     );
     (
         documents,
-        BTreeMap::from([(p1.digest, p1_bytes), (q1.digest, q1_bytes)]),
-        BTreeMap::from([(i1.digest, i1_bytes)]),
+        BTreeMap::from([(p1.clone(), p1_bytes), (q1.clone(), q1_bytes)]),
+        BTreeMap::from([(i1.clone(), i1_bytes)]),
         i1,
     )
 }

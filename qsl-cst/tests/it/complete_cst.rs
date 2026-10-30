@@ -15,7 +15,7 @@ const SOURCE: &str = concat!(
     "// exact trivia remains authored\r\n",
     "profile Complete = \"quire.value.complete/v1\";\r\n",
     "import \"acme/base\" as Base;\r\n",
-    "model M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\r\n",
+    "model M = \"acme/model\";\r\n",
     "dimension Length = M::Length;\r\n",
     "unit meter: M::Length = rational(1, 1) * M::meter;\r\n",
     "ordered enum Color { Red = \"red\", Blue, }\r\n",

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The `Value` family's definition catalog, per-package selection admission,
+//! The `Value` family's closed definition roles, per-package selection admission,
 //! integer-division profile admission and IEEE profile admission.
 //!
 //! [`divide`] and [`modulo`] evaluate integer division under an admitted law.
@@ -30,17 +30,10 @@
 //! `selection_refusal_codes`; definition-closure refusals use the I04
 //! `invalid_package` code with its closed `cause_tag` vocabulary.
 //!
-//! [`DefinitionLock::pinned`] is the catalog ADR-011 §2.4 names: each
-//! [`CatalogRole`] names the definition the QSL build implements for it, by
-//! authority and identity ([`CatalogRole::identity`]), and each role's
-//! package-selection rule is QSpec FR-001's. A definition is named by its
-//! authority and identity alone, so the catalog holds no revision, no digest
-//! and no QSpec document. Admission recognizes a caller-supplied [`DefinitionReference`]
-//! by authority and identity. The v2 emitter writes each row as the package
-//! lock's edition and definition selections ([`CatalogEntry::reference`]).
-//! `make conformance` compares the catalog and its selection rules with
-//! QSpec's `complete-value-lock.json`, `complete-model-lock.json` and
-//! `complete-temporal-lock.json`, read at run time.
+//! Closed role enums provide the local definition identities and package
+//! selection rules used by admission. The identities are resolved by enum
+//! matches, not copied into a second catalog. Admission recognizes a
+//! caller-supplied [`DefinitionReference`] by authority and identity.
 
 use std::collections::BTreeSet;
 
@@ -49,7 +42,7 @@ use serde::{Deserialize, Serialize};
 
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, SelectionRefusalCode};
 
-use super::layer::{HeaderLayer, LayerForm, LayerRow, LAYER_ROWS};
+use super::layer::HeaderLayer;
 use quire_exact::{
     ieee_intrinsic_identities, DivisionMember, DivisionProfile, Integer, IntegerDomain, Meter,
     Outcome,
@@ -87,10 +80,10 @@ impl Trigger {
     }
 }
 
-/// A qualification-catalog role; each variant is the QSpec lock role of the
-/// same name.
+/// A closed semantic role whose identity is used for qualification
+/// applicability and package selections.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CatalogRole {
+pub enum DefinitionRole {
     /// The language edition definition.
     Edition,
     /// The root value-system definition, the one row a header profile selects.
@@ -134,12 +127,9 @@ pub enum CatalogRole {
     RuleFr149,
 }
 
-/// A role of QSpec's `complete-model-lock.json` `qualification_catalog`; each
-/// variant is the lock role of the same name (FR-361 item 3). The lock
-/// requires the complete-value lock, so these rows come beside
-/// [`CatalogRole`]'s. The model lock's `root` is the `quire.model.complete/v1`
-/// layer and its `state_graph` is the `quire.state.graph/v1` layer; neither
-/// is the complete-value lock's `root` ([`CatalogRole::Root`]).
+/// A closed semantic role for model-level selections (FR-361 item 3). The
+/// model root is `quire.model.complete/v1`; its state graph role is
+/// `quire.state.graph/v1`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModelRole {
     /// QSpec's `root` role.
@@ -181,7 +171,7 @@ pub enum ModelRole {
 }
 
 impl ModelRole {
-    /// Every role in QSpec's complete-model lock catalog order.
+    /// Every complete-model semantic role in enum order.
     pub const ALL: [Self; 18] = [
         Self::Root,
         Self::StateGraph,
@@ -253,28 +243,17 @@ impl ModelRole {
     }
 }
 
-/// One complete-model lock catalog entry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ModelEntry {
-    /// Catalog role.
-    pub role: ModelRole,
-    /// Publishing authority.
-    pub authority: &'static str,
-    /// Definition identity.
-    pub identity: &'static str,
-}
-
-impl ModelEntry {
-    /// This entry as the `DefinitionRef` a package lock selects.
-    pub fn reference(&self) -> DefinitionReference {
+impl ModelRole {
+    /// The identity supplied for this closed role.
+    pub fn reference(self) -> DefinitionReference {
         DefinitionReference {
-            authority: self.authority.to_owned(),
-            identity: self.identity.to_owned(),
+            authority: "agent-ix".to_owned(),
+            identity: self.identity().to_owned(),
         }
     }
 }
 
-/// A role in QSpec's complete-temporal lock, in catalog order.
+/// A closed semantic role in QSpec's complete-temporal profile.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TemporalRole {
     /// The temporal layer's root definition.
@@ -286,10 +265,10 @@ pub enum TemporalRole {
 }
 
 impl TemporalRole {
-    /// Every role in the complete-temporal lock's catalog order.
+    /// Every complete-temporal semantic role in enum order.
     pub const ALL: [Self; 3] = [Self::Root, Self::RuleFr415, Self::RuleFr205];
 
-    /// The lock's normative role spelling.
+    /// The role's normative identity spelling.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Root => "root",
@@ -308,23 +287,12 @@ impl TemporalRole {
     }
 }
 
-/// One complete-temporal lock catalog row.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TemporalEntry {
-    /// Catalog role.
-    pub role: TemporalRole,
-    /// Publishing authority.
-    pub authority: &'static str,
-    /// Definition identity.
-    pub identity: &'static str,
-}
-
-impl TemporalEntry {
-    /// This entry as a package-lock definition reference.
-    pub fn reference(&self) -> DefinitionReference {
+impl TemporalRole {
+    /// The identity supplied for this closed role.
+    pub fn reference(self) -> DefinitionReference {
         DefinitionReference {
-            authority: self.authority.to_owned(),
-            identity: self.identity.to_owned(),
+            authority: "agent-ix".to_owned(),
+            identity: self.identity().to_owned(),
         }
     }
 }
@@ -341,15 +309,13 @@ enum SelectionRule {
     OneOf(Trigger),
 }
 
-/// The lock's `package_selection.without_layer` rows: the roles a package
+/// The closed `package_selection.without_layer` roles a package
 /// selects when its layers do not hold `package_selection.layer`.
-const WITHOUT_LAYER: [CatalogRole; 1] = [CatalogRole::Edition];
+const WITHOUT_LAYER: [DefinitionRole; 1] = [DefinitionRole::Edition];
 
-/// The publishing authority of every catalog definition.
-const AUTHORITY: &str = "agent-ix";
-
-impl CatalogRole {
-    /// Every role in QSpec's lock catalog order.
+/// The publishing authority of every closed semantic role.
+impl DefinitionRole {
+    /// Every role in enum order.
     pub const ALL: [Self; 20] = [
         Self::Edition,
         Self::Root,
@@ -498,304 +464,169 @@ pub struct DefinitionReference {
     pub identity: String,
 }
 
-/// One qualification-catalog entry: a closed role and the authority and
-/// identity a caller-supplied [`DefinitionReference`] for that role is
-/// checked against.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CatalogEntry {
-    /// Catalog role.
-    pub role: CatalogRole,
-    /// Publishing authority.
-    pub authority: &'static str,
-    /// Definition identity.
-    pub identity: &'static str,
-}
-
-impl CatalogEntry {
-    /// This entry as the `DefinitionRef` a package lock selects.
-    pub fn reference(&self) -> DefinitionReference {
+/// The `DefinitionRef` associated with this closed semantic role.
+impl DefinitionRole {
+    /// The identity supplied for this role.
+    pub fn reference(self) -> DefinitionReference {
         DefinitionReference {
-            authority: self.authority.to_owned(),
-            identity: self.identity.to_owned(),
+            authority: "agent-ix".to_owned(),
+            identity: self.identity().to_owned(),
         }
     }
 }
 
-/// The `Value` family's catalog: one entry per [`CatalogRole`] and QSpec
-/// FR-001's package-selection rules over them.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DefinitionLock {
-    catalog: [CatalogEntry; CatalogRole::ALL.len()],
-    always: Vec<CatalogRole>,
-    conditional: Vec<(Trigger, CatalogRole)>,
-    exactly_one: Vec<(Trigger, Vec<CatalogRole>)>,
-    layers: [LayerRow; HeaderLayer::ALL.len()],
-    model_catalog: [ModelEntry; ModelRole::ALL.len()],
-    temporal_catalog: [TemporalEntry; TemporalRole::ALL.len()],
+/// Roles every QSL package selects under FR-001.
+pub fn always_roles() -> Vec<DefinitionRole> {
+    DefinitionRole::ALL
+        .into_iter()
+        .filter(|role| matches!(role.selection_rule(), SelectionRule::Always))
+        .collect()
 }
 
-impl DefinitionLock {
-    /// The catalog of the definitions the QSL build implements: each role's
-    /// entry and its selection rule, in catalog order.
-    pub fn pinned() -> Self {
-        let catalog = CatalogRole::ALL.map(|role| CatalogEntry {
-            role,
-            authority: AUTHORITY,
-            identity: role.identity(),
-        });
-        let mut always = Vec::new();
-        let mut conditional = Vec::new();
-        let mut exactly_one: Vec<(Trigger, Vec<CatalogRole>)> = Vec::new();
-        for role in CatalogRole::ALL {
-            match role.selection_rule() {
-                SelectionRule::Always => always.push(role),
-                SelectionRule::When(trigger) => conditional.push((trigger, role)),
-                SelectionRule::OneOf(trigger) => {
-                    match exactly_one.iter_mut().find(|(group, _)| *group == trigger) {
-                        Some((_, roles)) => roles.push(role),
-                        None => exactly_one.push((trigger, vec![role])),
-                    }
-                }
-            }
-        }
-        Self {
-            catalog,
-            always,
-            conditional,
-            exactly_one,
-            layers: LAYER_ROWS,
-            model_catalog: ModelRole::ALL.map(|role| ModelEntry {
-                role,
-                authority: AUTHORITY,
-                identity: role.identity(),
-            }),
-            temporal_catalog: TemporalRole::ALL.map(|role| TemporalEntry {
-                role,
-                authority: AUTHORITY,
-                identity: role.identity(),
-            }),
-        }
+/// The qualification roles selected for the union of header layers.
+pub fn qualification_roles(union: &[HeaderLayer]) -> Vec<DefinitionRole> {
+    if union.contains(&HeaderLayer::ValueComplete) {
+        always_roles()
+    } else {
+        WITHOUT_LAYER.to_vec()
     }
+}
 
-    /// The `header_selectable_layers` rows, in the lock's order.
-    pub fn layers(&self) -> &[LayerRow] {
-        &self.layers
+/// Admit a package's selected roles under FR-001.
+///
+/// Checks run in the normative order and report the first failure: every
+/// trigger spelling is resolved before a repeated trigger refuses.
+#[ix_trace_rs::string_edge]
+pub fn admit_selection(
+    triggers: &[&str],
+    roles: &[&str],
+) -> Result<AdmittedSelection, SelectionRefusalCode> {
+    let triggers = trigger_set(triggers)?;
+    let parsed = roles
+        .iter()
+        .map(|code| DefinitionRole::from_code(code))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(SelectionRefusalCode::SelectionUnknownRole)?;
+    let selected: BTreeSet<_> = parsed.iter().copied().collect();
+    if selected.len() != parsed.len() {
+        return Err(SelectionRefusalCode::SelectionDuplicateRole);
     }
-
-    /// The row of `layer`. The table has one row per layer, in the
-    /// declaration order of [`HeaderLayer::ALL`], so the lookup is total.
-    pub fn layer_row(&self, layer: HeaderLayer) -> &LayerRow {
-        &self.layers[layer as usize]
+    let all = DefinitionRole::ALL;
+    let always: Vec<_> = all
+        .iter()
+        .copied()
+        .filter(|role| matches!(role.selection_rule(), SelectionRule::Always))
+        .collect();
+    if !always.iter().all(|role| selected.contains(role)) {
+        return Err(SelectionRefusalCode::SelectionRequiredMissing);
     }
-
-    /// The `DefinitionRef` a package lock selects for `layer`.
-    pub fn layer_reference(&self, layer: HeaderLayer) -> DefinitionReference {
-        DefinitionReference {
-            authority: AUTHORITY.to_owned(),
-            identity: layer.identity().to_owned(),
-        }
-    }
-
-    /// The `requires` closure of `selected`: the selected layers and every
-    /// layer they require, transitively, in the lock's row order. A layer
-    /// that requires a selected layer is not in it.
-    pub fn closure(&self, selected: &[HeaderLayer]) -> Vec<HeaderLayer> {
-        let mut reached: BTreeSet<HeaderLayer> = BTreeSet::new();
-        let mut pending: Vec<HeaderLayer> = selected.to_vec();
-        while let Some(layer) = pending.pop() {
-            if reached.insert(layer) {
-                pending.extend_from_slice(self.layer_row(layer).requires);
-            }
-        }
-        reached.into_iter().collect()
-    }
-
-    /// The admitted-form set of `selected`: the forms of every layer in its
-    /// `requires` closure, and no form of a wider layer.
-    pub fn admitted_forms(&self, selected: HeaderLayer) -> BTreeSet<LayerForm> {
-        self.closure(&[selected])
-            .into_iter()
-            .flat_map(|layer| self.layer_row(layer).forms.iter().copied())
-            .collect()
-    }
-
-    /// Whether `selected`'s admitted-form set holds `form`.
-    pub fn admits(&self, selected: HeaderLayer, form: LayerForm) -> bool {
-        self.admitted_forms(selected).contains(&form)
-    }
-
-    /// The qualification-catalog roles QSpec FR-001 selects for a union of
-    /// layers: the `always` rules when the union holds `quire.value.complete/v1`
-    /// (the lock's `package_selection.layer`), and the `without_layer` rows
-    /// otherwise.
-    pub fn qualification_roles(&self, union: &[HeaderLayer]) -> &[CatalogRole] {
-        if union.contains(&HeaderLayer::ValueComplete) {
-            &self.always
-        } else {
-            &WITHOUT_LAYER
-        }
-    }
-
-    /// The complete-model lock's catalog, in its order. Its
-    /// `package_selection.always` rows are every row: the lock has no
-    /// conditional or exactly-one rule.
-    pub fn model_catalog(&self) -> &[ModelEntry] {
-        &self.model_catalog
-    }
-
-    /// The complete-temporal lock's catalog in its package-selection order.
-    pub fn temporal_catalog(&self) -> &[TemporalEntry] {
-        &self.temporal_catalog
-    }
-
-    /// The closed qualification catalog, in catalog order.
-    pub fn catalog(&self) -> &[CatalogEntry] {
-        &self.catalog
-    }
-
-    /// The catalog entry for `role`. The catalog has one entry per role, in
-    /// the declaration order of [`CatalogRole::ALL`], so the lookup is total.
-    pub fn entry(&self, role: CatalogRole) -> &CatalogEntry {
-        &self.catalog[role as usize]
-    }
-
-    /// Roles every package selects.
-    pub fn always_roles(&self) -> &[CatalogRole] {
-        &self.always
-    }
-
-    /// Roles offered only when their trigger is present.
-    pub fn conditional_roles(&self) -> &[(Trigger, CatalogRole)] {
-        &self.conditional
-    }
-
-    /// Triggers that require exactly one of several roles.
-    pub fn exactly_one_roles(&self) -> &[(Trigger, Vec<CatalogRole>)] {
-        &self.exactly_one
-    }
-
-    /// Admit one package's selection given its trigger and role spellings.
-    ///
-    /// Checks run in the normative order and report the first failure: every
-    /// trigger spelling is resolved before a repeated trigger refuses.
-    pub fn admit_selection(
-        &self,
-        triggers: &[&str],
-        roles: &[&str],
-    ) -> Result<AdmittedSelection, SelectionRefusalCode> {
-        let triggers = Self::trigger_set(triggers)?;
-        let parsed = roles
-            .iter()
-            .map(|code| CatalogRole::from_code(code))
-            .collect::<Option<Vec<_>>>()
-            .ok_or(SelectionRefusalCode::SelectionUnknownRole)?;
-        let selected: BTreeSet<_> = parsed.iter().copied().collect();
-        if selected.len() != parsed.len() {
-            return Err(SelectionRefusalCode::SelectionDuplicateRole);
-        }
-        if !self.always.iter().all(|role| selected.contains(role)) {
-            return Err(SelectionRefusalCode::SelectionRequiredMissing);
-        }
-        if self
-            .exactly_one
-            .iter()
-            .any(|(_, roles)| roles.iter().filter(|role| selected.contains(role)).count() > 1)
-        {
-            return Err(SelectionRefusalCode::SelectionAlternativeConflict);
-        }
-        let unsatisfied = self
-            .conditional
-            .iter()
-            .any(|(trigger, role)| triggers.contains(trigger) && !selected.contains(role))
-            || self.exactly_one.iter().any(|(trigger, roles)| {
-                triggers.contains(trigger) && !roles.iter().any(|role| selected.contains(role))
-            });
-        if unsatisfied {
-            return Err(SelectionRefusalCode::SelectionTriggerUnsatisfied);
-        }
-        let untriggered = self
-            .conditional
-            .iter()
-            .any(|(trigger, role)| !triggers.contains(trigger) && selected.contains(role))
-            || self.exactly_one.iter().any(|(trigger, roles)| {
-                !triggers.contains(trigger) && roles.iter().any(|role| selected.contains(role))
-            });
-        if untriggered {
-            return Err(SelectionRefusalCode::SelectionUntriggeredProfile);
-        }
-        let division = selected.iter().find_map(|role| role.division_profile());
-        Ok(AdmittedSelection {
-            triggers,
-            roles: selected,
-            division,
-        })
-    }
-
-    /// Admit a checked package's integer-division definition closure.
-    ///
-    /// `div_rem` lists every DefinitionRef the package retains for `div`/`rem`;
-    /// `modulo` is the definition an explicit `mod` binding claims, if any.
-    pub fn admit_integer_division(
-        &self,
-        div_rem: &[DefinitionReference],
-        modulo: Option<&DefinitionReference>,
-    ) -> Result<quire_checked::integer_division::AdmittedIntegerDivision, PackageRefusal> {
-        let mut profiles = Vec::new();
-        for reference in div_rem {
-            profiles.push(self.resolve_division(reference)?);
-        }
-        let profile = match profiles.as_slice() {
-            [] => return Err(PackageRefusal::invalid_package(PackageCause::MissingMember)),
-            [profile] => *profile,
-            [_, _, ..] => {
-                return Err(PackageRefusal::invalid_package(
-                    PackageCause::ConflictingDefinition,
-                ))
-            }
-        };
-        if let Some(reference) = modulo {
-            if self.resolve_division(reference)? != DivisionProfile::Euclidean {
-                return Err(PackageRefusal::invalid_package(
-                    PackageCause::IncompatibleDefinition,
-                ));
-            }
-        }
-        Ok(quire_checked::construct::admitted_integer_division(profile))
-    }
-
-    /// Resolve `reference` to a division law by authority and identity.
-    #[ix_trace_rs::string_edge]
-    fn resolve_division(
-        &self,
-        reference: &DefinitionReference,
-    ) -> Result<DivisionProfile, PackageRefusal> {
-        DivisionProfile::ALL
-            .into_iter()
-            .find(|profile| {
-                self.catalog().iter().any(|entry| {
-                    entry.role.division_profile() == Some(*profile)
-                        && entry.authority == reference.authority
-                        && entry.identity == reference.identity
-                })
+    let rules: Vec<_> = all
+        .iter()
+        .map(|role| (*role, role.selection_rule()))
+        .collect();
+    if rules.iter().any(|(role, rule)| {
+        matches!(rule, SelectionRule::OneOf(_))
+            && selected.contains(role)
+            && rules.iter().any(|(other, other_rule)| {
+                other != role
+                    && matches!(other_rule, SelectionRule::OneOf(trigger) if matches!(rule, SelectionRule::OneOf(other_trigger) if other_trigger == trigger))
+                    && selected.contains(other)
             })
-            .ok_or(PackageRefusal::invalid_package(
-                PackageCause::IncompatibleDefinition,
-            ))
+    }) {
+        return Err(SelectionRefusalCode::SelectionAlternativeConflict);
     }
-
-    /// Resolve each trigger spelling to its [`Trigger`].
-    fn trigger_set(codes: &[&str]) -> Result<BTreeSet<Trigger>, SelectionRefusalCode> {
-        let parsed = codes
-            .iter()
-            .map(|code| Trigger::from_code(code))
-            .collect::<Option<Vec<_>>>()
-            .ok_or(SelectionRefusalCode::SelectionUnknownTrigger)?;
-        let triggers: BTreeSet<_> = parsed.iter().copied().collect();
-        if triggers.len() == parsed.len() {
-            Ok(triggers)
-        } else {
-            Err(SelectionRefusalCode::SelectionDuplicateTrigger)
+    let unsatisfied = rules.iter().any(|(role, rule)| match rule {
+        SelectionRule::When(trigger) => triggers.contains(trigger) && !selected.contains(role),
+        SelectionRule::OneOf(trigger) => {
+            triggers.contains(trigger)
+                && !rules.iter().any(|(candidate, candidate_rule)| {
+                    selected.contains(candidate)
+                        && matches!(candidate_rule, SelectionRule::OneOf(other) if other == trigger)
+                })
         }
+        SelectionRule::Always => false,
+    });
+    if unsatisfied {
+        return Err(SelectionRefusalCode::SelectionTriggerUnsatisfied);
+    }
+    let untriggered = rules.iter().any(|(role, rule)| match rule {
+        SelectionRule::When(trigger) => !triggers.contains(trigger) && selected.contains(role),
+        SelectionRule::OneOf(trigger) => {
+            !triggers.contains(trigger)
+                && rules.iter().any(|(candidate, candidate_rule)| {
+                    selected.contains(candidate)
+                        && matches!(candidate_rule, SelectionRule::OneOf(other) if other == trigger)
+                })
+        }
+        SelectionRule::Always => false,
+    });
+    if untriggered {
+        return Err(SelectionRefusalCode::SelectionUntriggeredProfile);
+    }
+    let division = selected.iter().find_map(|role| role.division_profile());
+    Ok(AdmittedSelection {
+        triggers,
+        roles: selected,
+        division,
+    })
+}
+
+/// Admit a checked package's integer-division definition closure.
+///
+/// `div_rem` lists every DefinitionRef the package retains for `div`/`rem`;
+/// `modulo` is the definition an explicit `mod` binding claims, if any.
+#[ix_trace_rs::string_edge]
+pub fn admit_integer_division(
+    div_rem: &[DefinitionReference],
+    modulo: Option<&DefinitionReference>,
+) -> Result<quire_checked::integer_division::AdmittedIntegerDivision, PackageRefusal> {
+    let mut profiles = Vec::new();
+    for reference in div_rem {
+        profiles.push(resolve_division(reference)?);
+    }
+    let profile = match profiles.as_slice() {
+        [] => return Err(PackageRefusal::invalid_package(PackageCause::MissingMember)),
+        [profile] => *profile,
+        [_, _, ..] => {
+            return Err(PackageRefusal::invalid_package(
+                PackageCause::ConflictingDefinition,
+            ))
+        }
+    };
+    if let Some(reference) = modulo {
+        if resolve_division(reference)? != DivisionProfile::Euclidean {
+            return Err(PackageRefusal::invalid_package(
+                PackageCause::IncompatibleDefinition,
+            ));
+        }
+    }
+    Ok(quire_checked::construct::admitted_integer_division(profile))
+}
+
+#[ix_trace_rs::string_edge]
+fn resolve_division(reference: &DefinitionReference) -> Result<DivisionProfile, PackageRefusal> {
+    DefinitionRole::ALL
+        .into_iter()
+        .find_map(|role| {
+            let profile = role.division_profile()?;
+            (role.reference() == *reference).then_some(profile)
+        })
+        .ok_or(PackageRefusal::invalid_package(
+            PackageCause::IncompatibleDefinition,
+        ))
+}
+
+fn trigger_set(codes: &[&str]) -> Result<BTreeSet<Trigger>, SelectionRefusalCode> {
+    let parsed = codes
+        .iter()
+        .map(|code| Trigger::from_code(code))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(SelectionRefusalCode::SelectionUnknownTrigger)?;
+    let triggers: BTreeSet<_> = parsed.iter().copied().collect();
+    if triggers.len() == parsed.len() {
+        Ok(triggers)
+    } else {
+        Err(SelectionRefusalCode::SelectionDuplicateTrigger)
     }
 }
 
@@ -803,7 +634,7 @@ impl DefinitionLock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedSelection {
     triggers: BTreeSet<Trigger>,
-    roles: BTreeSet<CatalogRole>,
+    roles: BTreeSet<DefinitionRole>,
     division: Option<DivisionProfile>,
 }
 
@@ -812,12 +643,10 @@ impl AdmittedSelection {
     pub fn triggers(&self) -> &BTreeSet<Trigger> {
         &self.triggers
     }
-
     /// Selected roles.
-    pub fn roles(&self) -> &BTreeSet<CatalogRole> {
+    pub fn roles(&self) -> &BTreeSet<DefinitionRole> {
         &self.roles
     }
-
     /// The selected `div`/`rem` law, when `integer_div_rem` is present.
     pub fn division_profile(&self) -> Option<DivisionProfile> {
         self.division
@@ -845,8 +674,7 @@ pub fn divide(
     )
 }
 
-/// An IEEE package whose profile definition closure was admitted. Only
-/// [`DefinitionLock::admit_ieee_profile`] constructs it.
+/// An IEEE package whose profile definition closure was admitted.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct AdmittedIeeeProfile {
     definition: DefinitionReference,
@@ -859,46 +687,39 @@ impl AdmittedIeeeProfile {
     }
 }
 
-impl DefinitionLock {
-    /// Admit a checked package's IEEE profile closure.
-    ///
-    /// `retained` lists every DefinitionRef the package retains as IEEE policy;
-    /// `declarations` lists the qualified identities of user declarations. A
-    /// missing, repeated or mismatched profile, or a user declaration bound to a
-    /// reserved intrinsic identity, is `refused { code: invalid_package }`.
-    #[ix_trace_rs::string_edge]
-    pub fn admit_ieee_profile(
-        &self,
-        retained: &[DefinitionReference],
-        declarations: &[&str],
-    ) -> Result<AdmittedIeeeProfile, PackageRefusal> {
-        let expected = self.entry(CatalogRole::IeeeProfile);
-        if retained.iter().any(|reference| {
-            reference.identity != expected.identity || reference.authority != expected.authority
-        }) {
-            return Err(PackageRefusal::invalid_package(
-                PackageCause::IncompatibleDefinition,
-            ));
-        }
-        let definition = match retained {
-            [] => return Err(PackageRefusal::invalid_package(PackageCause::MissingMember)),
-            [definition] => definition.clone(),
-            [_, _, ..] => {
-                return Err(PackageRefusal::invalid_package(
-                    PackageCause::ConflictingDefinition,
-                ))
-            }
-        };
-        // FR-148: a user declaration bound to a reserved intrinsic identity is
-        // `invalid_package` with cause `conflicting-definition`.
-        if declarations
-            .iter()
-            .any(|declared| ieee_intrinsic_identities().any(|reserved| reserved == *declared))
-        {
+/// Admit a checked package's IEEE profile closure.
+///
+/// `retained` lists every DefinitionRef the package retains as IEEE policy;
+/// `declarations` lists the qualified identities of user declarations. A
+/// missing, repeated or mismatched profile, or a user declaration bound to a
+/// reserved intrinsic identity, is `refused { code: invalid_package }`.
+#[ix_trace_rs::string_edge]
+pub fn admit_ieee_profile(
+    retained: &[DefinitionReference],
+    declarations: &[&str],
+) -> Result<AdmittedIeeeProfile, PackageRefusal> {
+    let expected = DefinitionRole::IeeeProfile.reference();
+    if retained.iter().any(|reference| reference != &expected) {
+        return Err(PackageRefusal::invalid_package(
+            PackageCause::IncompatibleDefinition,
+        ));
+    }
+    let definition = match retained {
+        [] => return Err(PackageRefusal::invalid_package(PackageCause::MissingMember)),
+        [definition] => definition.clone(),
+        [_, _, ..] => {
             return Err(PackageRefusal::invalid_package(
                 PackageCause::ConflictingDefinition,
-            ));
+            ))
         }
-        Ok(AdmittedIeeeProfile { definition })
+    };
+    if declarations
+        .iter()
+        .any(|declared| ieee_intrinsic_identities().any(|reserved| reserved == *declared))
+    {
+        return Err(PackageRefusal::invalid_package(
+            PackageCause::ConflictingDefinition,
+        ));
     }
+    Ok(AdmittedIeeeProfile { definition })
 }

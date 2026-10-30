@@ -5,7 +5,6 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use qsl_foundation::ByteDigest;
 use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{
     proofs, CauseKind as TypeCause, TypeDisposition, TypeLimits,
@@ -708,7 +707,6 @@ fn native_compensation_keeps_registration_activation_retry_and_authored_recovery
         let emitted = native::emit(&admitted, Limits::default()).into_result().unwrap();
         let read = inputs.read(proofs, &emitted).into_result().expect("independent reader uses original model/source/definition selections");
         assert_eq!(read.package(), package);
-        assert_eq!(read.digest(), emitted.digest());
     });
 }
 
@@ -1091,9 +1089,9 @@ fn identity_only_compensation_effects_keep_exact_operation_obligation_and_attemp
                 offered.declarations[owner].bindings[full.effect_instance as usize] = binding;
                 // A malformed offer derived from actual emission, not a substitute
                 // positive producer. Original source/model/dependency selectors stay
-                // independent; the offered seal lets this reach binding validation.
+                // independent; the altered offer reaches binding validation.
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Binding)),
@@ -1111,7 +1109,7 @@ fn identity_only_compensation_effects_keep_exact_operation_obligation_and_attemp
                 };
             let bytes = serde_json::to_vec(&offered).unwrap();
             failure(
-                &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
+                &inputs.read_bytes(proofs, &bytes),
                 Error::Invalid(Invalid::Owner),
             );
             let w::ControlOperation::Event {
@@ -1158,7 +1156,7 @@ fn identity_only_compensation_effects_keep_exact_operation_obligation_and_attemp
                     .requires
                     .retain(|required| *required != prerequisite);
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Binding)),
@@ -1172,7 +1170,7 @@ fn identity_only_compensation_effects_keep_exact_operation_obligation_and_attemp
                 .0 = None;
             let bytes = serde_json::to_vec(&offered).unwrap();
             failure(
-                &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
+                &inputs.read_bytes(proofs, &bytes),
                 Error::Invalid(Invalid::Binding),
             );
         },
@@ -1438,7 +1436,6 @@ fn compensation_await_and_associated_event_keep_original_activation_prerequisite
                 "independently selected reader accepts the original compensation references",
             );
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
         },
     );
 }
@@ -1503,7 +1500,7 @@ fn adding_a_payload_type_cannot_bypass_compensation_effect_authority() {
                 // This negative offer adds only a type. Its unchanged operation,
                 // subject and identity chain cannot establish payload correspondence.
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Unsupported(Unsupported::Export)),
@@ -1522,7 +1519,7 @@ fn adding_a_payload_type_cannot_bypass_compensation_effect_authority() {
             // Operation. Adding a payload must not bypass that identity check.
             let bytes = serde_json::to_vec(&offered).unwrap();
             failure(
-                &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
+                &inputs.read_bytes(proofs, &bytes),
                 Error::Invalid(Invalid::Binding),
             );
         },
@@ -1619,7 +1616,7 @@ fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_ed
                 compensations[0].clock = full_clock;
                 compensations[1].clock = partial_clock;
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Binding)),
@@ -1652,7 +1649,7 @@ fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_ed
                 slots[positions[0]] = foreign;
                 slots.sort_unstable();
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Binding)),
@@ -1727,7 +1724,7 @@ fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_ed
                 assert_eq!(slots.iter().filter(|at| **at == member).count(), 1);
                 slots.retain(|at| *at != member);
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Binding)),
@@ -1746,7 +1743,7 @@ fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_ed
             slots.sort_unstable();
             assert!(slots.windows(2).all(|pair| pair[0] < pair[1]));
             let bytes = serde_json::to_vec(&offered).unwrap();
-            let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+            let report = inputs.read_bytes(proofs, &bytes);
             assert_eq!(
                 report.result().err(),
                 Some(&Error::Invalid(Invalid::Binding)),
@@ -1775,7 +1772,7 @@ fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_ed
                     .requires
                     .retain(|at| *at != prerequisite);
                 let bytes = serde_json::to_vec(&offered).unwrap();
-                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                let report = inputs.read_bytes(proofs, &bytes);
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Binding)),
@@ -1879,7 +1876,6 @@ fn compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond(
                 .into_result()
                 .expect("independent reader preserves the exact maximum");
             assert_eq!(read.package(), package);
-            assert_eq!(read.digest(), emitted.digest());
 
             // Change exactly this numeric field in the actually emitted bytes. All
             // original source/model/dependency selectors remain independently fixed.
@@ -1889,11 +1885,7 @@ fn compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond(
             assert_eq!(text.matches(from).count(), 1);
             let offered = text.replacen(from, to, 1);
             failure(
-                &inputs.read_bytes(
-                    proofs,
-                    offered.as_bytes(),
-                    ByteDigest::of(offered.as_bytes()),
-                ),
+                &inputs.read_bytes(proofs, offered.as_bytes()),
                 Error::Numeric(artifact::NumberError::ComponentOutOfRange {
                     component: artifact::NumberComponent::Decimal,
                 }),

@@ -212,6 +212,7 @@ fn shifted_selections(selections: &SourceSelections, at: usize, added: usize) ->
     }
     for model in &mut selections.models {
         model.span = shifted(model.span, at, added);
+        model.identity_span = shifted(model.identity_span, at, added);
     }
     selections
 }

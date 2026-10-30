@@ -11,8 +11,8 @@ relationships:
 ## Description
 
 Verify that the FR-345 production snapshot is built from the linked engine
-collection, advertises only capabilities of its real providers, and reports
-the currently absent refinement-witness providers as absent.
+collection, advertises only capabilities of its real providers, and gives
+each refinement-witness capability its real provider.
 
 ## Test Procedure
 
@@ -31,8 +31,7 @@ the currently absent refinement-witness providers as absent.
    returns the typed refusal and no partial snapshot.
 4. Pass each injected-factory error through the CLI error mapper. Assert that
    each produces FR-344 verdict `tool failure`, exit 30, and neither exit 21
-   nor a partial production report. Then run the real production snapshot's
-   no-provider witness case through the FR-345 report path.
+   nor a partial production report.
 
 Tag the tests `#[trace("TC-1272", "FR-489-AC-n")]` for the criteria each
 assertion verifies.
@@ -40,17 +39,16 @@ assertion verifies.
 ## Expected Results
 
 - The two snapshots are equal. The registration accessor yields exactly the
-  EN-1 and EN-6 `temporal-satisfaction` descriptors and the EN-4
-  `probabilistic-satisfaction` descriptor owned by `Engines::qsl()`. For each
+  EN-1 and EN-6 `temporal-satisfaction` descriptors, the EN-4
+  `probabilistic-satisfaction` descriptor, the `value-checker` descriptor and
+  the `contract-checker` descriptor owned by `Engines::qsl()`. For each
   descriptor, the snapshot retains its exact `BackendId`, origin and
   capability set. Candidate queries yield EN-1 and EN-6 only for
   `temporal-satisfaction` and EN-4 only for `probabilistic-satisfaction` when
   supplied the evidence kind in EN-4's descriptor;
   neither descriptor is replaced or supplemented with an ad hoc candidate.
-- The `ValueValidity` and `OperationContract` candidate outcomes are empty
-  while their provider tickets are incomplete. The no-provider witness result
-  remains the FR-345 empty-candidate regression, never `unresolved
-  (unsupported)`.
+- The `ValueValidity` candidate outcome is exactly `value-checker` and the
+  `OperationContract` candidate outcome is exactly `contract-checker`.
 - The injected descriptor-source error and registration refusal are each
   returned as their typed production registry error. The CLI emits FR-344
   tool failure, exit 30, for each and does not return an expected unsupported

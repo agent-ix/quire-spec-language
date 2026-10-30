@@ -12,7 +12,6 @@ use serde::Serialize;
 use serde_json::ser::{CompactFormatter, Formatter};
 
 use super::{report, wire, work::Work, Candidate, Dimension, Error, Invalid, Limits, Report};
-use qsl_foundation::ByteDigest;
 
 struct Meter<'a> {
     work: &'a mut Work,
@@ -134,8 +133,7 @@ pub(super) fn candidate(package: &impl Serialize, work: &mut Work) -> Result<Can
     census::reserve(package, work)?;
     let bytes = bytes(package, work)?;
     work.bytes(bytes.len())?;
-    let digest = ByteDigest::of(&bytes);
-    Ok(Candidate { bytes, digest })
+    Ok(Candidate { bytes })
 }
 
 /// Encode an untrusted transport candidate using the contract's exact spelling.

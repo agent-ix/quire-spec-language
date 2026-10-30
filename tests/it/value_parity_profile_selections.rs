@@ -37,23 +37,19 @@ fn source_identity() -> SourceIdentity {
 }
 
 /// TC-1252's unit `UC`.
-fn uc(document: &[u8]) -> String {
-    let packages = qsl_semantics::model::intake::package_input([document]);
-    let digest = qsl_semantics::model::key::hex(packages.keys().next().expect("one package"));
-    format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
+fn uc() -> String {
+    String::from("language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
          profile p = \"quire.protocol.finite-global/v1\";\n\
-         model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
-         temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {{ always eventually holds(c.versionNumber = 2) }}\n\
-         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+         model Config = \"example/config-version\";\n\
+         temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin { always eventually holds(c.versionNumber = 2) }\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {\n\
          role R on Config::ConfigVersion;\n\
-         run sequence Main {{ }}\n\
-         finish End as (outcome: Boolean) {{ true }};\n\
-         }}\n\
-         function inc using v(x: Int[0, 9]): Integer pure {{ x + 1 }}\n"
-    )
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n\
+         function inc using v(x: Int[0, 9]): Integer pure { x + 1 }\n")
 }
 
 fn inc() -> QualifiedName {
@@ -71,7 +67,7 @@ fn integer(value: i64) -> ScalarOutcome {
 #[test]
 fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
-    let source = uc(document);
+    let source = uc();
     let located = call_site(
         source_identity(),
         "uc.native",
@@ -98,21 +94,11 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let site = &located.site;
     let parity = site.value_parity.as_ref().expect("inc is a value function");
-    let source_digest = DigestRecord::mint(
-        DigestDomain::SourceBytesV1,
-        qsl_foundation::digest::ByteDigest::of(source.as_bytes()).as_bytes(),
-    );
-    let document_digest = *qsl_semantics::model::intake::package_input([document])
-        .keys()
-        .next()
-        .unwrap();
     let source_wire = (
         "agent-ix".to_owned(),
         "test:value-parity-uc".to_owned(),
         "git".to_owned(),
         "r1".to_owned(),
-        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-        source_digest.hex(),
     );
     let bindings = vec![CanonicalAssignment {
         parameter: site.parameters[0].1,
@@ -129,7 +115,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             Some(located.package_id.domain().as_str().to_owned()),
             located.package_id.hex(),
         )),
-        source_digests: Some(vec![source_wire.clone()]),
         profile_selections: Some(Vec::<ProfileSelection>::new()),
         run_limits: Some(UNLIMITED),
         declared_domains: Some(Vec::new()),
@@ -147,11 +132,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             Some(envelope.package_id().domain().as_str().to_owned()),
             envelope.package_id().hex(),
         ),
-        source_digests: envelope
-            .source_digests()
-            .iter()
-            .map(qsl_replay::RawSourceRef::to_wire)
-            .collect(),
+        sources: vec![source_wire],
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),
@@ -163,18 +144,12 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         supplied_limits: None,
         object_environment: None,
         declared_domains: Vec::new(),
-        byte_provision: vec![
-            (
-                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
-                source_digest.hex(),
-                source.as_bytes().to_vec(),
-            ),
-            (
-                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
-                DigestRecord::mint(DigestDomain::Sha256Jcs, document_digest).hex(),
-                document.to_vec(),
-            ),
-        ],
+        byte_provision: vec![(
+            "agent-ix".to_owned(),
+            "test:value-parity-uc".to_owned(),
+            source.as_bytes().to_vec(),
+        )],
+        documents: vec![document.to_vec()],
     };
     assert!(
         ReplayRequest::decode(wire.clone(), ReplayLimits::default()).is_ok(),

@@ -14,8 +14,8 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 use qsl_route::request::{items_with_evidence, EvidenceSelection, RequirementItem};
 use qsl_route::{
-    descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ManifestDigest,
-    ManifestMembers, Mode, ProviderOrigin, Registry,
+    descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ManifestMembers, Mode,
+    ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, RequirementRecord};
 use qsl_semantics::family::{ClaimEvidence, ClaimExtent, Requirements};
@@ -97,7 +97,6 @@ fn exact_backend() -> qsl_route::BackendDescriptor {
     descriptor_from_manifest(
         Candidate::new(BackendId::new("en-5")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([5; 32]),
         [(
             Some(Capability::ProbabilisticSatisfaction.to_wire()),
             Some(Mode::Bounded.to_wire()),
@@ -117,8 +116,7 @@ fn registry() -> Registry {
     let mut registry = Registry::new();
     registry
         .register(
-            manifest::descriptor(ProviderOrigin::Linked, ManifestDigest::from_digest([4; 32]))
-                .expect("EN-4's manifest is admitted"),
+            manifest::descriptor(ProviderOrigin::Linked).expect("EN-4's manifest is admitted"),
         )
         .expect("EN-4 registers");
     registry.register(exact_backend()).expect("EN-5 registers");

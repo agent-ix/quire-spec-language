@@ -41,15 +41,11 @@ fn declarations_of(
     declarations: &str,
 ) -> (PackageDeclarations, Vec<DomainPackage>) {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model {alias} = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model {alias} = {package:?};\n\
          function keep using v(): Boolean pure {{ true }}\n\
          {declarations}\n",
         package = fixture::PACKAGE,
@@ -243,15 +239,11 @@ fn a_variant_case_with_a_resolving_payload_is_admitted() {
 /// The refusals I1 reports for `document`, selected as model `Config`.
 fn intake_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::ModelRefusal> {
     let bytes = serde_json::to_vec(document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model Config = {package:?};\n\
          function keep using v(): Boolean pure {{ true }}\n",
         package = fixture::PACKAGE,
     );
@@ -677,15 +669,12 @@ fn an_unknown_variant_type_name_in_a_type_position_refuses_at_the_assembler() {
     let source_error = |declarations: &str| {
         let document = fixture::document();
         let bytes = serde_json::to_vec(&document).unwrap();
-        let packages = package_input([bytes.as_slice()]);
-        let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-            panic!("one model package");
-        };
-        let digest = qsl_semantics::model::key::hex(digest);
+        let packages = package_input([bytes.as_slice()]).unwrap();
+        assert_eq!(packages.len(), 1, "one model package");
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.model.complete/v1\";\n\
-             model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+             model Config = {package:?};\n\
              {declarations}\n",
             package = fixture::PACKAGE,
         );
@@ -732,17 +721,12 @@ use quire_semantic_value::declaration::FieldRef;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
-    let document = quire_canonical::read(bytes, u64::MAX).expect("the document is JSON");
-    let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-        .expect("the document is canonical")
-        .as_bytes();
+fn document_ref(label: &str) -> DocumentRef {
     DocumentRef {
         authority: "test".to_owned(),
         identity: label.to_owned(),
         revision_namespace: "fixture".to_owned(),
         revision: "1".to_owned(),
-        digest,
     }
 }
 
@@ -751,7 +735,7 @@ fn document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
 struct Replay {
     declarations: PackageDeclarations,
     graph: CheckedGraph,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
     model: serde_json::Value,
 }
 
@@ -761,13 +745,9 @@ fn replay() -> Replay {
 
 fn replay_over(document: serde_json::Value) -> Replay {
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
+    let packages = package_input([bytes.as_slice()]).unwrap();
     let model = json!({
         "identity": fixture::PACKAGE, "version": "1",
-        "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
     });
     let declarations = declarations_of(&document, "Config", "").0;
     let graph = declarations_of(&document, "Config", "")
@@ -818,8 +798,8 @@ impl Replay {
             }],
         }))
         .expect("the snapshot serializes");
-        let reference = document_ref("current", &bytes);
-        let provision = BTreeMap::from([(reference.digest, bytes)]);
+        let reference = document_ref("current");
+        let provision = BTreeMap::from([(reference.clone(), bytes)]);
         admit_current_snapshot(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -1269,7 +1249,6 @@ impl Replay {
             identity: label.to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         };
         let bytes = serde_json::to_vec(&json!({
             "format": "quire.state.snapshot/v1",
@@ -1287,7 +1266,7 @@ impl Replay {
             }],
         }))
         .expect("the snapshot serializes");
-        (document_ref(label, &bytes), bytes)
+        (document_ref(label), bytes)
     }
 
     /// `promote` admitted over an invocation whose parameter `t` and result
@@ -1304,15 +1283,10 @@ impl Replay {
             identity: "call".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "1".to_owned(),
-            digest: [0; 32],
         };
         let reference = |document: &DocumentRef| {
             json!({
                 "identity": identity_json(document),
-                "digest": format!(
-                    "sha256-jcs:{}",
-                    qsl_semantics::model::key::hex(&document.digest)
-                ),
             })
         };
         let invocation_bytes = serde_json::to_vec(&json!({
@@ -1330,9 +1304,9 @@ impl Replay {
             "deleted": [],
         }))
         .expect("the invocation serializes");
-        let invocation = document_ref("call", &invocation_bytes);
-        let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
-        let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+        let invocation = document_ref("call");
+        let snapshots = BTreeMap::from([(pre.clone(), pre_bytes), (post.clone(), post_bytes)]);
+        let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes)]);
         admit_observations(
             self.graph.model_selections(),
             self.graph.scope().types(),
@@ -1403,16 +1377,10 @@ fn a_malformed_variant_form_as_a_parameter_or_result_refuses() {
 /// A unit selecting the FR-360 package as `Config` whose function `f` has the
 /// body `body`, parsed by S1.
 fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
-    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let packages = package_input([bytes.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one model package");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
-         model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model Config = {package:?};\n\
          function f using v(t: Config::Tier): Boolean pure {{ {body} }}\n",
         package = fixture::PACKAGE,
     );
@@ -1602,10 +1570,6 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     .into_bytes();
     let encoded_bytes = serde_json::to_vec(&written_history).unwrap();
     assert_ne!(input_order, encoded_bytes, "the spellings differ");
-    assert_eq!(
-        document_ref("a", &input_order).digest,
-        document_ref("a", &encoded_bytes).digest
-    );
 
     // A record holding a variant encodes as its form, fields by name.
     let settings_type = replay

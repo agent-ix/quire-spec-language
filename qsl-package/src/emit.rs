@@ -13,7 +13,7 @@
 //!
 //! # Lock
 //!
-//! - `edition` and `definition_selections` come from the `DefinitionLock`
+//! - `edition` and `definition_selections` come from closed typed role mappings
 //!   catalog: the `edition` role, every other always-selected role, and each
 //!   law `DefinitionRef` a node body names. Each is a QSpec `DefinitionRef`,
 //!   exactly `{authority, identity}`.
@@ -25,9 +25,8 @@
 //! - `profile_selections` holds one row per clause-profile law a node body
 //!   names (`protocol_profile`, FR-092); it is empty for a package of
 //!   `Value`-family nodes only.
-//! - `model_selections` is `CheckedGraph::model_selections`: each domain
-//!   package the package was checked against, by identity and
-//!   `sha256-jcs` digest (ADR-011 §2.4).
+//! - Each domain package the package was checked against appears as a
+//!   `model_root` node named by its identity (ADR-011 §2.4).
 //! - `dependency_selections` is [`CheckedPackage::dependency_selections`]:
 //!   the resolved library closure, one `{identity, package_id}`
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
@@ -88,14 +87,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use quire_contract_model::{
     derive_structural_candidates, encode_checked_package_v2, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind,
-    CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
-    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    CheckedPackageIdentityPreimageRefV2, CheckedPackageLockV2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, ExecutionPoint, NominalIdentityPreimage, NominalOwner,
-    ProtocolForm, StateForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    ProtocolForm, StateForm, ValueForm, PACKAGE_DOMAIN_V2,
 };
 use serde::Deserialize;
 
@@ -110,10 +109,9 @@ use qsl_semantics::check::{
     LeafTerm, NodeTag, NominalNode, OperationLaw, Owner, SemanticNode, TemporalProfile,
 };
 use qsl_semantics::library::PackageId;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
-    native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
+    native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
+    ModelRole, NodeOwner, TemporalRole,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, Role, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -751,7 +749,6 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
         },
         Owner::ModelRoot(subject) => CheckedNodeOwner::ModelRoot {
             identity: subject.identity().into(),
-            digest: subject.digest().into(),
         },
     }
 }
@@ -1034,22 +1031,12 @@ fn artifact(reference: &DefinitionReference) -> CheckedArtifactRef {
     }
 }
 
-/// `source` as the wire's `RawSourceRef`: authority, identity and the
-/// digest of its bytes.
+/// `source` as the wire's `RawSourceRef`: authority and identity.
 fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
-    let digest = source.digest();
     CheckedSourceRef {
         authority: source.authority().into(),
         identity: source.identity().into(),
-        digest_domain: digest.domain().to_string().into(),
-        digest: digest.hex().into(),
     }
-}
-
-/// The catalog's row for `role`. The closed catalog has a row for every
-/// role (`the_catalog_covers_every_role_exactly_once`).
-fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
-    lock.entry(role)
 }
 
 /// The lock's `edition` and `definition_selections` (FR-110 "Lock rows"):
@@ -1064,7 +1051,6 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
 /// lock's `without_layer` rows are for a unit that selects layers none of
 /// which is `quire.value.complete/v1`.
 fn catalog_selections(
-    lock: &DefinitionLock,
     layers: &[HeaderLayer],
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
@@ -1072,36 +1058,36 @@ fn catalog_selections(
     // name the law.
     let edition = CheckedSelection {
         role: CheckedSelectionRole::Edition,
-        definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
+        definition: artifact(&DefinitionRole::Edition.reference()),
     };
-    let closure = lock.closure(layers);
+    let closure = HeaderLayer::closure(layers);
     let qualification = if layers.is_empty() {
-        lock.always_roles()
+        qsl_semantics::value::always_roles()
     } else {
-        lock.qualification_roles(&closure)
+        qsl_semantics::value::qualification_roles(&closure)
     };
     let selected = closure
         .iter()
-        .map(|layer| lock.layer_reference(*layer))
+        .map(|layer| layer.reference())
         .chain(
             qualification
                 .iter()
-                .filter(|role| **role != CatalogRole::Edition)
-                .map(|role| catalog_entry(lock, *role).reference()),
+                .filter(|role| **role != DefinitionRole::Edition)
+                .map(|role| role.reference()),
         )
         // FR-361 item 3: the complete-model lock's `package_selection.always`
         // rows, for a unit whose layers hold the model layer.
         .chain(
             closure
                 .contains(&HeaderLayer::ModelComplete)
-                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .then(|| ModelRole::ALL.into_iter().map(ModelRole::reference))
                 .into_iter()
                 .flatten(),
         )
         .chain(
             closure
                 .contains(&HeaderLayer::TemporalComplete)
-                .then(|| lock.temporal_catalog().iter().map(TemporalEntry::reference))
+                .then(|| TemporalRole::ALL.into_iter().map(TemporalRole::reference))
                 .into_iter()
                 .flatten(),
         )
@@ -1700,8 +1686,8 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
 }
 
 /// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
-/// domain package, in `model_selections` order, one self-typed `model` node
-/// keyed by the selection's identity and digest alone, appended after every
+/// domain package, in `CheckedGraph::model_selections` order, one self-typed `model` node
+/// keyed by the selection's identity alone, appended after every
 /// other node, with one `generated` source-map entry appended after every
 /// other entry. The selection records no selecting occurrence, so the entry's
 /// region is the first byte of the checked unit (QSpec: the entry is a
@@ -1759,7 +1745,6 @@ fn model_root_node(
         declaration: None,
         owner: Some(CheckedNodeOwner::ModelRoot {
             identity: selection.identity.as_str().into(),
-            digest: hex(&selection.digest).into(),
         }),
         body: CheckedTerm::Aggregate {
             members: Vec::new(),
@@ -1875,7 +1860,6 @@ pub fn emit_timed_models(
         edition: &identity.edition,
         profile_selections: &identity.profile_selections,
         definition_selections: &identity.definition_selections,
-        model_selections: &identity.model_selections,
         required_features: &identity.required_features,
         dependency_selections: &identity.dependency_selections,
         identity_projection: &semantic_graph.nodes,
@@ -2579,25 +2563,13 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let catalog = DefinitionLock::pinned();
-    let (edition, definition_selections) =
-        catalog_selections(&catalog, graph.header_layers(), &laws);
-    let model_selections: Vec<CheckedDomainPackageRef> = graph
-        .model_selections()
-        .iter()
-        .map(|selection| CheckedDomainPackageRef {
-            identity: selection.identity.as_str().into(),
-            digest_domain: DOMAIN_PACKAGE_DIGEST.into(),
-            digest: hex(&selection.digest).into(),
-        })
-        .collect();
-    let root = catalog_entry(&catalog, CatalogRole::Root).identity;
+    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
+    let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
         profile_selections: profile_selections.clone(),
         definition_selections: definition_selections.clone(),
-        model_selections: model_selections.clone(),
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
@@ -2611,7 +2583,6 @@ fn emit_package_inner(
         edition: &edition,
         profile_selections: &profile_selections,
         definition_selections: &definition_selections,
-        model_selections: &model_selections,
         required_features: &lock.required_features,
         dependency_selections: &lock.dependency_selections,
         identity_projection: &semantic_graph.nodes,

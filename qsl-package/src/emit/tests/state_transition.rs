@@ -115,13 +115,9 @@ struct Compiled {
 
 /// The unit selecting the Switch model and the protocol profile (unless
 /// `protocol` is false), followed by `clauses`.
-fn unit(clauses: &str, protocol: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>, String) {
+fn unit(clauses: &str, protocol: bool) -> (String, qsl_semantics::model::intake::PackageInput) {
     let document = serde_json::to_vec(&document()).expect("the fixture serializes");
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let profile = if protocol {
         "profile p = \"quire.protocol.finite-global/v1\";\n"
     } else {
@@ -131,20 +127,23 @@ fn unit(clauses: &str, protocol: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>, 
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          {profile}\
-         model M = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {package:?};\n\
          {clauses}\n",
         package = base::PACKAGE,
     );
-    (unit, packages, digest)
+    (unit, packages)
 }
 
-fn check(clauses: &str, protocol: bool) -> (CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>, String) {
-    let (unit, packages, digest) = unit(clauses, protocol);
+fn check(
+    clauses: &str,
+    protocol: bool,
+) -> (CheckedPackage, qsl_semantics::model::intake::PackageInput) {
+    let (unit, packages) = unit(clauses, protocol);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{unit}"));
-    (CheckedPackage::link(graph), packages, digest)
+    (CheckedPackage::link(graph), packages)
 }
 
 fn compile(clauses: &str) -> Compiled {
@@ -152,7 +151,7 @@ fn compile(clauses: &str) -> Compiled {
 }
 
 fn compile_with(clauses: &str, protocol: bool) -> Compiled {
-    let (package, _, digest) = check(clauses, protocol);
+    let (package, _) = check(clauses, protocol);
     let emission = emit_checked(&package).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
@@ -162,7 +161,7 @@ fn compile_with(clauses: &str, protocol: bool) -> Compiled {
     }
     evidence
         .insert_domain_package_document(
-            digest.as_str(),
+            base::PACKAGE,
             serde_json::to_vec(&document()).unwrap().as_slice(),
         )
         .expect("a fresh evidence key");
@@ -639,7 +638,7 @@ fn a_fault_on_the_transition_or_a_derived_node_refuses_the_compile() {
         .find(|clause| clause["occurrences"].as_array().unwrap().len() == 2)
         .expect("the derived postcondition")["node_id"]
         .clone();
-    let (package, _, _) = check(&source, true);
+    let (package, _) = check(&source, true);
     for (label, id) in [("transition", transition), ("derived", derived)] {
         let reason = format!("fault injection (test): {label}");
         let id: CheckedNodeId = serde_json::from_value(id).unwrap();
@@ -784,7 +783,7 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
             },
         ),
     ] {
-        let (unit, packages, _) = unit(&clauses, true);
+        let (unit, packages) = unit(&clauses, true);
         let parsed = qsl_cst::parse(
             qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-1271", "fixture", "fixture:1"),
             "program.native",

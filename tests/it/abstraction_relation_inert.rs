@@ -6,14 +6,13 @@
 //! declaration, so no span of an earlier declaration moves.
 
 use ix_trace_rs::trace;
-use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::spine::{run_clause, ClauseRunStage};
 use qsl_route::request::items_from_requirements;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    descriptor_from_manifest, Candidate, CandidateOutcome, ManifestDigest, ManifestMembers,
-    ProviderOrigin, Registry,
+    descriptor_from_manifest, Candidate, CandidateOutcome, ManifestMembers, ProviderOrigin,
+    Registry,
 };
 use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -33,7 +32,8 @@ fn with_relation(unit: &str) -> String {
 }
 
 fn graph_of(text: &str) -> CheckedGraph {
-    let packages = spine::domain_packages();
+    let packages =
+        qsl_semantics::model::intake::package_input([spine::DOMAIN_PACKAGE.as_bytes()]).unwrap();
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "test:abstraction-inert", "fixture", "fixture:1"),
         "program.native",
@@ -66,11 +66,10 @@ fn registry(graph: &CheckedGraph) -> Registry {
         .collect();
     kinds.sort_unstable();
     kinds.dedup();
-    for (index, kind) in kinds.into_iter().enumerate() {
+    for kind in kinds {
         let descriptor = descriptor_from_manifest(
             Candidate::new(BackendId::new(format!("backend-{kind}"))),
             ProviderOrigin::Process,
-            ManifestDigest::from_digest(ByteDigest::of(&[index as u8]).as_bytes()),
             [(Some(kind), Some("unbounded"))],
             ManifestMembers {
                 domains: None,

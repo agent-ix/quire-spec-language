@@ -11,7 +11,7 @@ use serde_json::json;
 fn each_model_operation_and_observation_binding_is_exact() {
     let models = [native_rule_model::parts().model()];
     let checked = checked_kind(&models, "true", ClauseKind::Postcondition);
-    for variant in 0..9 {
+    for variant in 0..8 {
         let (mut offered, selected) = recorded(
             &models[0],
             draft(&models[0]),
@@ -24,18 +24,17 @@ fn each_model_operation_and_observation_binding_is_exact() {
                 1 => invocation.context.name = symbol("NodeRef"),
                 2 => invocation.operation = symbol("different"),
                 3 => invocation.anchor = ir::AnchorName::new("different").unwrap(),
-                4 => invocation.models[0].digest = ByteDigest::of(b"stale model bytes"),
-                5 => {
+                4 => {
                     invocation.models[0].model =
                         ir::RequirementRef::parse("example/foreign", "Foreign", 1).unwrap()
                 }
-                6 => invocation.models.push(invocation.models[0].clone()),
-                7 => invocation.pre = invocation.post.clone(),
-                8 => {}
+                5 => invocation.models.push(invocation.models[0].clone()),
+                6 => invocation.pre = invocation.post.clone(),
+                7 => {}
                 _ => unreachable!(),
             },
         );
-        if variant == 8 {
+        if variant == 7 {
             // Snapshot and invocation labels share one namespace, even with different bytes/kinds.
             offered.snapshots.push(
                 Snapshot::new(
@@ -47,10 +46,9 @@ fn each_model_operation_and_observation_binding_is_exact() {
             );
         }
         let expected = match variant {
-            0..=3 | 7 => Code::WrongSnapshot,
-            4 => Code::StaleDependency,
-            5 => Code::InvalidModelBinding,
-            6 | 8 => Code::InvalidRuntimeInput,
+            0..=3 | 6 => Code::WrongSnapshot,
+            4 => Code::InvalidModelBinding,
+            5 | 7 => Code::InvalidRuntimeInput,
             _ => unreachable!(),
         };
         let report = validate(

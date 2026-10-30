@@ -2,7 +2,7 @@
 //! FR-485-AC-15: owner-authored QSV failures cross the public application boundary.
 
 use ix_trace_rs::trace;
-use qsl_replay::spine::{self, LockEvidence, ParseRequest, SpineLimits};
+use qsl_replay::spine::{self, ParseRequest, SpineLimits};
 use qsl_replay::{
     acquire_checked_closure, ApplicationEnvironment, CallableSelection, CheckedClosureCompilation,
     CheckedClosureHandle, DependencyInput, NominalDeclaration, NominalDeclarationForm,
@@ -201,7 +201,6 @@ fn fixture() -> Fixture {
         &parsed,
         &models,
         &DependencyInput::default(),
-        &LockEvidence::default(),
         limits,
         &cancel,
     )

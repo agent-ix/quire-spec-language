@@ -33,7 +33,7 @@ use qsl_replay::{
 };
 use qsl_route::reductions::Reductions;
 use qsl_route::request::items_from_requirements;
-use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, HyperForm, HyperUnsupported, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use quire_exact::{Cancel, Origin, Role, Undefined};
@@ -687,7 +687,6 @@ fn routed_hp4_hyper_item_settles_unsupported_requested_capability() {
             BackendDescriptor::new(
                 Candidate::new(BackendId::new("en1")),
                 ProviderOrigin::Linked,
-                ManifestDigest::from_digest([19; 32]),
                 [(Capability::TemporalSatisfaction, Mode::Unbounded)],
                 None,
                 None,

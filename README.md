@@ -211,8 +211,7 @@ so unchecked input cannot reach an evaluator or backend.
 
 ## Usage
 
-Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) selects the toolchain,
-and `rustup` installs it automatically. No other tools or services are needed.
+Install Rust at or above the `rust-version` in `Cargo.toml`. No other tools or services are needed.
 
 ```sh
 git clone https://github.com/agent-ix/quire-spec-language
@@ -281,7 +280,7 @@ ceiling is an explicit refusal naming the file (exit 20), never truncated.
 ```sh
 cargo run --locked --example emit_checked_v2 -- \
   --model examples/switch-transition/switch.semantic-ir.json \
-  examples/switch-transition/switch.native.in > package.json
+  examples/switch-transition/switch.native > package.json
 ```
 
 The package is read back with the same domain documents as evidence

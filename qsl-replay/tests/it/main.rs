@@ -22,6 +22,7 @@ mod refinement_history;
 mod refinement_mapping;
 #[path = "../../../tests/support/refinement_smt_proofs.rs"]
 mod refinement_proofs;
+mod refinement_query_facade;
 mod refinement_ring;
 mod refinement_smt;
 mod refinement_step;
@@ -29,6 +30,4 @@ mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod script_search;
-#[path = "../../../tests/support/spine_model.rs"]
-mod spine_model;
 mod vault_world;

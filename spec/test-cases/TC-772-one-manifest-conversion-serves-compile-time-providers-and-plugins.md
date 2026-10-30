@@ -35,4 +35,4 @@ Layer R owns steps 5 and 6 (FR-288-AC-5, FR-288-AC-6), tested in `qsl-route`. St
 - Step 3: the conversion refuses with the FR-331 reader's cause; the registry holds only the valid manifest.
 - Step 4: the three `BackendId` values are equal.
 - Step 5: each descriptor holds the origin it was built with, with the same `BackendId`.
-- Step 6: the differing origins conflict in both orders: both are withdrawn and the conflict is recorded; the repeat is idempotent.
+- Step 6: the differing origins conflict in both orders: both are withdrawn and one `duplicate-backend` refusal keyed by the `BackendId` is recorded; the repeat is idempotent.

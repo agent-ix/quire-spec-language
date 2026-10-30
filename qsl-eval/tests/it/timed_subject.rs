@@ -208,8 +208,8 @@ fn rpc_unit_guarded(t: u32, guard: &str, extra: &str) -> String {
 
 struct World {
     package: CheckedPackage,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
 }
 
@@ -251,14 +251,12 @@ fn try_world_of(
     unit_body: &str,
     objects: Json,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let packages = package_input([document.as_slice()]);
-    let digest = *packages.keys().next().expect("one model");
+    let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{unit_body}",
-        hex(&digest)
+         model M = \"{PACKAGE}\";\n{unit_body}",
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-231", "fixture", "1"),
@@ -288,8 +286,7 @@ fn try_world_of(
     .expect("the unit assembles")
     .with_unwritten_timed_members()
     .check(CheckingLimits::default())?;
-    let header = json!({"identity": PACKAGE, "version": "1.0.0",
-        "digest": format!("sha256-jcs:{}", hex(&digest))});
+    let header = json!({"identity": PACKAGE});
     let document = json!({
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -299,20 +296,19 @@ fn try_world_of(
         "populations": [{"population": ident("calls"), "complete": true, "objects": objects}],
     });
     let bytes = document.to_string().into_bytes();
-    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
-    let snapshot_digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
-        .expect("canonical fixture")
-        .as_bytes();
     Ok(World {
         package: CheckedPackage::link(graph),
         packages,
-        snapshots: BTreeMap::from([(snapshot_digest, bytes)]),
+        snapshots: BTreeMap::from([(
+            qsl_semantics::model::observation::document_reference(&bytes)
+                .expect("a document names itself"),
+            bytes,
+        )]),
         initial: DocumentRef {
             authority: "test".to_owned(),
             identity: "s0".to_owned(),
             revision_namespace: "fixture".to_owned(),
             revision: "fixture:1".to_owned(),
-            digest: snapshot_digest,
         },
     })
 }

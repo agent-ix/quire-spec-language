@@ -8,8 +8,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, EvidenceKind,
-    EvidenceKindsDefect, FairnessKindsMember, ItemEvidence, ManifestDigest, ManifestMembers, Mode,
-    ProviderOrigin, RegistrationCause, RegistrationRefusal, Registry,
+    EvidenceKindsDefect, FairnessKindsMember, ItemEvidence, ManifestMembers, Mode, ProviderOrigin,
+    RegistrationCause, RegistrationRefusal, Registry,
 };
 use qsl_semantics::check::Capability;
 use std::collections::BTreeSet;
@@ -18,14 +18,13 @@ const PROBABILISTIC: &str = "probabilistic-satisfaction";
 
 fn admit(
     id: &str,
-    digest_byte: u8,
+
     kind: &str,
     evidence: Option<&[&str]>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(BackendId::new(id)),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([digest_byte; 32]),
         [(Some(kind), Some("unbounded"))],
         ManifestMembers {
             domains: None,
@@ -39,7 +38,7 @@ fn admit(
 }
 
 fn probabilistic(id: &str, evidence: &[&str]) -> BackendDescriptor {
-    admit(id, 1, PROBABILISTIC, Some(evidence)).expect("a well-formed probabilistic descriptor")
+    admit(id, PROBABILISTIC, Some(evidence)).expect("a well-formed probabilistic descriptor")
 }
 
 fn ids(outcome: CandidateOutcome) -> Vec<String> {
@@ -83,7 +82,6 @@ fn each_admitted_evidence_set_is_retained_exactly() {
         let typed = BackendDescriptor::new(
             Candidate::new(BackendId::new("p")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([1; 32]),
             [(Capability::ProbabilisticSatisfaction, Mode::Unbounded)],
             None,
             Some(kinds(expected)),
@@ -121,7 +119,7 @@ fn a_defective_evidence_set_is_refused_keyed_by_backend() {
         ),
     ];
     for (labels, defect) in cases {
-        let refusal = admit("p", 1, PROBABILISTIC, labels).expect_err("must refuse");
+        let refusal = admit("p", PROBABILISTIC, labels).expect_err("must refuse");
         assert_eq!(refusal.identity().as_str(), "p", "{labels:?}");
         assert_eq!(
             refusal.cause(),
@@ -136,7 +134,6 @@ fn a_defective_evidence_set_is_refused_keyed_by_backend() {
     let typed = BackendDescriptor::new(
         Candidate::new(BackendId::new("p")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([1; 32]),
         [(Capability::ProbabilisticSatisfaction, Mode::Unbounded)],
         None,
         Some(BTreeSet::new()),
@@ -157,7 +154,7 @@ fn a_refused_evidence_set_leaves_the_earlier_registration_standing() {
     registry
         .register(probabilistic("p", &["statistical"]))
         .unwrap();
-    let refused = admit("p", 1, PROBABILISTIC, Some(&["bogus"]));
+    let refused = admit("p", PROBABILISTIC, Some(&["bogus"]));
     assert!(refused.is_err());
     // The driver registers only an admitted descriptor, so the refused one
     // never reaches the registry.
@@ -178,7 +175,7 @@ fn a_non_probabilistic_descriptor_needs_no_evidence_kinds() {
             continue;
         }
         others += 1;
-        let admitted = admit("p", 1, kind.to_wire(), None)
+        let admitted = admit("p", kind.to_wire(), None)
             .unwrap_or_else(|refusal| panic!("{kind:?} refused: {refusal}"));
         assert!(admitted.evidence_kinds().is_empty(), "{kind:?}");
     }
@@ -236,7 +233,7 @@ fn candidates_match_the_exact_evidence_kind() {
     // its evidence.
     let mut other_kind = Registry::new();
     other_kind
-        .register(admit("v", 2, "value-validity", None).unwrap())
+        .register(admit("v", "value-validity", None).unwrap())
         .unwrap();
     assert!(item(&other_kind, &statistical, None).is_empty());
 }
@@ -304,10 +301,11 @@ fn an_evidence_difference_is_a_duplicate_backend_conflict() {
         let (first, second) = if reversed { (b, a) } else { (a, b) };
         let mut registry = Registry::new();
         registry.register(first).unwrap();
-        let refusals = registry.register(second).expect_err("conflict");
-        assert!(refusals
-            .iter()
-            .all(|r| r.catalog_code().to_string() == "invalid_capability/duplicate-backend"));
+        let refusal = registry.register(second).expect_err("conflict");
+        assert_eq!(
+            refusal.catalog_code().to_string(),
+            "invalid_capability/duplicate-backend"
+        );
         assert!(
             registry.descriptors().next().is_none(),
             "reversed={reversed}"
@@ -336,7 +334,7 @@ fn every_one_of_the_twelve_kinds_registers_and_routes() {
             (kind == Capability::ProbabilisticSatisfaction).then_some(&["statistical"][..]);
         let id = format!("backend-{index}");
         registry
-            .register(admit(&id, 1, kind.to_wire(), evidence).expect("admitted"))
+            .register(admit(&id, kind.to_wire(), evidence).expect("admitted"))
             .unwrap();
     }
     assert_eq!(Capability::ALL.len(), 12);
@@ -356,13 +354,12 @@ fn every_one_of_the_twelve_kinds_registers_and_routes() {
 #[test]
 #[trace("FR-075-AC-11")]
 fn another_backends_evidence_labels_are_ignored() {
-    let ignored = admit("p", 1, "value-validity", Some(&["bogus", "exact"]))
+    let ignored = admit("p", "value-validity", Some(&["bogus", "exact"]))
         .expect("a non-probabilistic backend is never refused over evidence");
     assert!(ignored.evidence_kinds().is_empty());
     let typed = BackendDescriptor::new(
         Candidate::new(BackendId::new("p")),
         ProviderOrigin::Linked,
-        ManifestDigest::from_digest([1; 32]),
         [(Capability::ValueValidity, Mode::Unbounded)],
         None,
         Some(kinds(&[EvidenceKind::Exact])),
@@ -395,7 +392,6 @@ fn evidence_is_judged_after_pairs_domains_and_fairness() {
         descriptor_from_manifest(
             Candidate::new(BackendId::new("p")),
             ProviderOrigin::Linked,
-            ManifestDigest::from_digest([1; 32]),
             advertised,
             ManifestMembers {
                 domains,
