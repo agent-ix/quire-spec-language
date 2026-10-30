@@ -15,8 +15,9 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
 use qsl_semantics::model::observation::{
-    AdmissionFailure, AdmissionRecord, BundleKey, BundlePart, Keyed, ObservationOrigin,
-    ObservationRole, PopulationEnumerationFailure, RelationshipExtents, ResolveBundle,
+    AdmissionFailure, AdmissionRecord, BundleKey, BundlePart, DocumentRef, Keyed,
+    ObservationOrigin, ObservationRole, PopulationEnumerationFailure, RelationshipExtents,
+    ResolveBundle,
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, NodeKey, ObjectId, ObjectReference, UniverseId};
@@ -1070,9 +1071,14 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
     assert_eq!(refusal.selected.role, ObservationRole::Pre);
     assert_eq!(refusal.differing.role, ObservationRole::Post);
 
-    // Another document digest of one identity.
+    // Another document of another identity.
     let other_document = BundleKey {
-        origin: ObservationOrigin::Document([9; 32]),
+        origin: ObservationOrigin::Document(DocumentRef {
+            authority: "agent-ix".to_owned(),
+            identity: "another".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+        }),
         ..selected.clone()
     };
     let refusal = build(&other_document, &selected, &selected).expect_err("manifest differs");

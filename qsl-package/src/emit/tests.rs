@@ -700,10 +700,7 @@ fn every_written_node_recomputes_to_its_node_id() {
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
 fn recursion_group_members_are_written_in_ordinal_order() {
-    for (package, label) in [
-        (recursive_f(), None::<String>),
-        (tree(), None),
-    ] {
+    for (package, label) in [(recursive_f(), None::<String>), (tree(), None)] {
         let expected: BTreeMap<String, usize> = package
             .graph()
             .semantic_graph()

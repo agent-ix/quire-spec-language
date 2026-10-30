@@ -2381,6 +2381,7 @@ impl<'t> PopulationValues<'t> {
     pub(super) fn attach_read_context(
         &mut self,
         machine: &str,
+        role: ObservationRole,
         snapshot: &DocumentRef,
         receiver: &DocumentRef,
     ) -> Result<ObjectReference, AdmissionFailure> {
@@ -2407,7 +2408,10 @@ impl<'t> PopulationValues<'t> {
             )
         })?;
         let reference = ObjectReference::new(
-            UniverseId::from_digest(snapshot.key()),
+            // BLOCKED-BY IR-1141 (owner: planner titan:QSL:plan): UniverseId::from_digest.
+            // `quire_exact::UniverseId` is constructible only from `[u8; 32]`;
+            // the token is the observation's role ordinal, not a hash.
+            UniverseId::from_digest(role_token(role)),
             context.effective,
             object,
         );
@@ -3644,6 +3648,18 @@ pub(super) fn admit_result(
             Ok(Some(value))
         }
     }
+}
+
+/// The fixed-width token `quire_exact::UniverseId` takes for the universe of
+/// one observation: its role ordinal, not a hash.
+fn role_token(role: ObservationRole) -> [u8; 32] {
+    let mut token = [0_u8; 32];
+    token[0] = match role {
+        ObservationRole::Current => 1,
+        ObservationRole::Pre => 2,
+        ObservationRole::Post => 3,
+    };
+    token
 }
 
 #[cfg(test)]

@@ -225,19 +225,6 @@ pub struct DocumentRef {
     pub revision: String,
 }
 
-impl DocumentRef {
-    /// A fixed-width key for this reference's four labels, for the maps and
-    /// identities that need one. It is derived from the labels alone.
-    pub fn key(&self) -> [u8; 32] {
-        crate::model::key::document_ref_key(
-            &self.authority,
-            &self.identity,
-            &self.revision_namespace,
-            &self.revision,
-        )
-    }
-}
-
 /// The anchor an invariant's current snapshot names: `{kind, name}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelectedAnchor {
@@ -2546,11 +2533,16 @@ fn admit_invocation_documents(
             if self_object.is_some() {
                 return Err(wrong_self_kind());
             }
-            let receiver_pre =
-                pre_values.attach_read_context(context_name, &documents.pre.identity, selected)?;
+            let receiver_pre = pre_values.attach_read_context(
+                context_name,
+                ObservationRole::Pre,
+                &documents.pre.identity,
+                selected,
+            )?;
             let receiver_post = if post_self {
                 Some(post_values.attach_read_context(
                     context_name,
+                    ObservationRole::Post,
                     &documents.post.identity,
                     selected,
                 )?)
@@ -2914,6 +2906,7 @@ fn admit_pre_call(
         }
         let reference = values.attach_read_context(
             context.context_name,
+            ObservationRole::Current,
             &input.pre.identity,
             &receiver_identity,
         )?;

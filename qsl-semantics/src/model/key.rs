@@ -410,28 +410,3 @@ pub(super) fn canonical_len(preimage: &impl Encode) -> u64 {
     )
     .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"))
 }
-
-/// A document reference's `{authority, identity, revision_namespace,
-/// revision}` preimage form.
-#[derive(Serialize, FixedShape)]
-struct DocumentRefWire<'a> {
-    authority: &'a str,
-    identity: &'a str,
-    revision_namespace: &'a str,
-    revision: &'a str,
-}
-
-/// The fixed-width key of a document reference's four labels.
-pub(super) fn document_ref_key(
-    authority: &str,
-    identity: &str,
-    revision_namespace: &str,
-    revision: &str,
-) -> [u8; 32] {
-    sha256_digest(&DocumentRefWire {
-        authority,
-        identity,
-        revision_namespace,
-        revision,
-    })
-}
