@@ -536,7 +536,7 @@ fn braking2_restored_nodes_match_qspec_vectors() {
                 .as_array()
                 .expect("node dependencies")
                 .iter()
-                .map(|dependency| idtext(dependency)),
+                .map(idtext),
         );
         pending.push(idtext(&node["semantic_type"]));
     }
