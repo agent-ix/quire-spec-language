@@ -998,12 +998,7 @@ impl Controls<'_, '_> {
         while let Some((node, expanded)) = stack.pop() {
             if expanded {
                 state.insert(node, true);
-                if tree
-                    .control(node)
-                    .is_some_and(|control| control.kind != ProtocolNodeKind::Branch)
-                {
-                    order.push(node);
-                }
+                order.push(node);
                 continue;
             }
             match state.get(&node) {
