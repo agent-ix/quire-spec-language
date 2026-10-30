@@ -35,6 +35,7 @@ use crate::SmtEncodingRefusal;
 
 /// One simulated population and its finite key set.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct RefinementUniverse {
     /// The population's declaration key.
     pub population: DeclarationKey,
@@ -46,7 +47,9 @@ pub struct RefinementUniverse {
 /// (FR-314's subject): the provisions its initial states are read from, the
 /// initial states, the finite universes, the per-expansion candidate bound,
 /// the limits and the proof bounds it is qualified by. The provision maps and
-/// document labels are passed through unchanged (QSL-1282 scope).
+/// document labels are passed through unchanged (QSL-1282 scope). Build one
+/// with [`RefinementQuerySubject::new`].
+#[non_exhaustive]
 pub struct RefinementQuerySubject<'a> {
     /// FR-056's domain package input.
     pub packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
@@ -66,6 +69,53 @@ pub struct RefinementQuerySubject<'a> {
     pub meter: ScalarLimits,
     /// The ADR-014 B-4 proof bounds the item is qualified by.
     pub proof_bounds: Vec<ProofBound>,
+}
+
+impl RefinementUniverse {
+    /// The universe of `keys` for the population `population` declared in
+    /// `package`, by declared name.
+    pub fn for_population(package: &str, population: &str, keys: Vec<String>) -> Self {
+        Self::new(
+            DeclarationKey {
+                package: package.to_owned(),
+                node: format!("ix://{package}/{population}"),
+            },
+            keys,
+        )
+    }
+
+    /// The universe of `keys` for the population declared by `population`.
+    pub fn new(population: DeclarationKey, keys: Vec<String>) -> Self {
+        Self { population, keys }
+    }
+}
+
+impl<'a> RefinementQuerySubject<'a> {
+    /// A subject over the provisions `packages` and `snapshots`, starting at
+    /// `initial`, simulating `universes`, with at most `max_candidates` per
+    /// expansion and the evaluation budget `meter`. The normalization and
+    /// observation limits are their defaults and there are no proof bounds;
+    /// set the public fields to change them.
+    pub fn new(
+        packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+        snapshots: &'a BTreeMap<[u8; 32], Vec<u8>>,
+        initial: Vec<DocumentRef>,
+        universes: Vec<RefinementUniverse>,
+        max_candidates: u64,
+        meter: ScalarLimits,
+    ) -> Self {
+        Self {
+            packages,
+            snapshots,
+            initial,
+            universes,
+            max_candidates,
+            normalization: ModelNormalizationLimits::default(),
+            observation: ObservationLimits::default(),
+            meter,
+            proof_bounds: Vec::new(),
+        }
+    }
 }
 
 impl RefinementQuerySubject<'_> {
@@ -195,4 +245,71 @@ pub fn refinement_step_sources(
                 .map_err(|_| SmtEncodingRefusal::fault("a source row position fits a u64"))
         })
         .collect()
+}
+
+/// Why [`CheckedClosureHandle::refinement_node_key`] gave no key.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum RefinementKeyRefusal {
+    /// The closure declares nothing named `name`.
+    #[error("the closure declares no refinement named {name}")]
+    UnknownName {
+        /// The requested declared name.
+        name: String,
+    },
+    /// `name` is declared, but it is a state clause and not a refinement.
+    #[error("{name} is declared, but not as a refinement")]
+    NotARefinement {
+        /// The requested declared name.
+        name: String,
+    },
+    /// The named refinement has no emitted node.
+    #[error("the refinement does not emit: {invariant}")]
+    NotEmitted {
+        /// The broken invariant.
+        invariant: &'static str,
+    },
+}
+
+impl CheckedClosureHandle {
+    /// The node key of the refinement declared as `name`, resolved from the
+    /// closure.
+    ///
+    /// # Errors
+    ///
+    /// [`RefinementKeyRefusal`] for a name the closure does not declare, a
+    /// name declared as another kind, or a refinement with no emitted node.
+    pub fn refinement_node_key(&self, name: &str) -> Result<NodeKey, RefinementKeyRefusal> {
+        use qsl_semantics::check::RefinementV2EncodingError;
+        let graph = self.checked_package().graph();
+        let Some(refinement) = graph
+            .refinements()
+            .iter()
+            .find(|refinement| refinement.name() == name)
+        else {
+            return Err(if graph.state_clause(name).is_some() {
+                RefinementKeyRefusal::NotARefinement {
+                    name: name.to_owned(),
+                }
+            } else {
+                RefinementKeyRefusal::UnknownName {
+                    name: name.to_owned(),
+                }
+            });
+        };
+        refinement
+            .v2_emission()
+            .map(|emission| emission.identity)
+            .map_err(|error| RefinementKeyRefusal::NotEmitted {
+                invariant: match error {
+                    RefinementV2EncodingError::MissingSubject => {
+                        "the refinement selects its model subjects"
+                    }
+                    RefinementV2EncodingError::MissingRows => {
+                        "the refinement rows are lowered to node keys"
+                    }
+                    _ => "the refinement emits its V2 body",
+                },
+            })
+    }
 }

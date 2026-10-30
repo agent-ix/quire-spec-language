@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1275 (FR-492-AC-1 to FR-492-AC-3): a consumer encodes a refinement's
+//! TC-1275 (FR-492-AC-1 to FR-492-AC-3, FR-492-AC-5 to FR-492-AC-7): a consumer encodes a refinement's
 //! `Initial` and `Step { row }` queries and reads the ordered step-row
 //! mapping through the `qsl_replay` root. The queries and mapping are called
 //! as `qsl_replay::{encode_refinement_query, refinement_step_sources}`
 //! over a `RefinementQueryRequest` built from `qsl_replay` root items alone
-//! (the retained checked closure from `acquire_checked_closure`); the fixture world (the checked graph, the oracle) is built
-//! with the shared refinement support.
+//! (the retained checked closure from `acquire_checked_closure`, the node key
+//! from `refinement_node_key`, the population key from
+//! `RefinementUniverse::for_population`). The fixture supplies only document
+//! values and the assertion oracle.
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    acquire_checked_closure, encode_refinement_query, refinement_step_sources, DependencyInput,
-    ModelNormalizationLimits, ObservationLimits, RefinementQueryKind, RefinementQueryRequest,
-    RefinementQuerySubject, RefinementUniverse, ReplayLimits, SourceIdentity, StageLimits,
+    acquire_checked_closure, encode_refinement_query, refinement_step_sources,
+    CheckedClosureHandle, DependencyInput, RefinementKeyRefusal, RefinementQueryKind,
+    RefinementQueryRequest, RefinementQuerySubject, RefinementUniverse, ReplayLimits,
+    SourceIdentity, StageLimits,
 };
 
 use crate::refinement_fixture::{
@@ -19,14 +22,12 @@ use crate::refinement_fixture::{
 };
 use crate::refinement_proofs::row_of;
 
-/// Run `body` with the facade request of the refinement text `refinement`,
-/// built from `qsl_replay` root items alone: the retained checked closure of
-/// the unit, the refinement's node key and the two subjects. The `World`
-/// supplies only the fixture's values (documents, snapshots, the node key).
-fn with_request<T>(
-    refinement: &str,
-    body: impl FnOnce(&RefinementQueryRequest<'_>, &World) -> T,
-) -> T {
+/// The declared name of the refinement in the fixture text.
+const REFINEMENT: &str = "CasRefinesCounter";
+
+/// Run `body` with the retained checked closure of the unit that declares
+/// the refinement text `refinement`, obtained through `acquire_checked_closure`.
+fn with_closure<T>(refinement: &str, body: impl FnOnce(&CheckedClosureHandle, &World) -> T) -> T {
     let world = World::new(refinement);
     let documents = packages(Variant::CAS);
     let text = unit_text(&documents, refinement, Variant::CAS);
@@ -40,27 +41,46 @@ fn with_request<T>(
         ReplayLimits::default(),
     )
     .expect("the unit compiles");
-    let subject = |model: &str, initial| RefinementQuerySubject {
-        packages: world.package_provision(),
-        snapshots: world.snapshot_provision(),
-        initial: vec![initial],
-        universes: vec![RefinementUniverse {
-            population: key(model, "counters"),
-            keys: world.object_keys().to_vec(),
-        }],
-        max_candidates: 1_000_000,
-        normalization: ModelNormalizationLimits::default(),
-        observation: ObservationLimits::default(),
-        meter: UNLIMITED,
-        proof_bounds: Vec::new(),
-    };
-    let request = RefinementQueryRequest::new(
-        compiled.handle(),
-        world.refinement().v2_emission().expect("emits").identity,
-        subject(CAS, world.concrete_initial()),
-        subject(SPEC, world.abstract_initial()),
-    );
-    body(&request, &world)
+    body(compiled.handle(), &world)
+}
+
+/// Run `body` with the facade request of the refinement text `refinement`.
+///
+/// The closure, the refinement's `NodeKey` (by declared name) and the
+/// population's `DeclarationKey` (by declared package and name) come from
+/// `qsl_replay` root items alone. What still comes from the fixture `World`
+/// is the document values: the provision maps, the initial documents and the
+/// object keys (QSL-1282 scope), and the oracle used only by the assertions.
+fn with_request<T>(
+    refinement: &str,
+    body: impl FnOnce(&RefinementQueryRequest<'_>, &World) -> T,
+) -> T {
+    with_closure(refinement, |handle, world| {
+        let subject = |model: &str, initial| {
+            RefinementQuerySubject::new(
+                world.package_provision(),
+                world.snapshot_provision(),
+                vec![initial],
+                vec![RefinementUniverse::for_population(
+                    model,
+                    "counters",
+                    world.object_keys().to_vec(),
+                )],
+                1_000_000,
+                UNLIMITED,
+            )
+        };
+        let node = handle
+            .refinement_node_key(REFINEMENT)
+            .expect("the refinement is declared");
+        let request = RefinementQueryRequest::new(
+            handle,
+            node,
+            subject(CAS, world.concrete_initial()),
+            subject(SPEC, world.abstract_initial()),
+        );
+        body(&request, world)
+    })
 }
 
 fn is_permutation(sources: &[u64]) -> bool {
@@ -140,4 +160,55 @@ fn reordering_the_written_rows_changes_the_mapping_not_the_query() {
     assert!(is_permutation(&a) && is_permutation(&b));
     assert_ne!(a, b, "the written order differs, so the mapping differs");
     assert_eq!(a_query, b_query);
+}
+
+/// FR-492-AC-5: the declared name of a refinement resolves to its node key,
+/// and the key names the same refinement the checked graph holds.
+#[trace("TC-1275", "FR-492-AC-5")]
+#[test]
+fn a_declared_refinement_name_resolves_to_its_node_key() {
+    with_closure(&cas_refines_counter(), |handle, world| {
+        let node = handle.refinement_node_key(REFINEMENT).expect("resolves");
+        assert_eq!(
+            node,
+            world.refinement().v2_emission().expect("emits").identity
+        );
+        assert_eq!(
+            node,
+            handle.refinement_node_key(REFINEMENT).expect("stable")
+        );
+    });
+}
+
+/// FR-492-AC-6: an unknown name and a name declared as another kind each
+/// refuse with their own typed refusal.
+#[trace("TC-1275", "FR-492-AC-6")]
+#[test]
+fn an_unknown_or_non_refinement_name_is_refused() {
+    with_closure(&cas_refines_counter(), |handle, _| {
+        assert_eq!(
+            handle.refinement_node_key("Missing"),
+            Err(RefinementKeyRefusal::UnknownName {
+                name: "Missing".to_owned()
+            })
+        );
+        assert_eq!(
+            handle.refinement_node_key("CanInc"),
+            Err(RefinementKeyRefusal::NotARefinement {
+                name: "CanInc".to_owned()
+            })
+        );
+    });
+}
+
+/// FR-492-AC-7: the by-name population constructor builds the declaration key
+/// of the population declared in the package.
+#[trace("TC-1275", "FR-492-AC-7")]
+#[test]
+fn a_population_universe_is_keyed_by_declared_name() {
+    let universe = RefinementUniverse::for_population(CAS, "counters", vec!["a".to_owned()]);
+    assert_eq!(
+        universe,
+        RefinementUniverse::new(key(CAS, "counters"), vec!["a".to_owned()])
+    );
 }

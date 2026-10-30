@@ -34,6 +34,16 @@ root items alone:
   request of a refinement query (FR-314's request of a refinement item). It
   takes the `CheckedClosureHandle` that `acquire_checked_closure` retains, the
   refinement's `NodeKey` and two subjects.
+- `CheckedClosureHandle::refinement_node_key(name) -> Result<NodeKey,
+  RefinementKeyRefusal>`: the node key of the refinement declared as `name`,
+  resolved from the retained closure (no digest; it does not depend on how
+  documents are keyed). `RefinementKeyRefusal` is `UnknownName`,
+  `NotARefinement` (declared as a state clause) or `NotEmitted`.
+- `RefinementUniverse::for_population(package, population, keys)` and
+  `RefinementUniverse::new(population, keys)`: a universe keyed by the declared
+  names. `RefinementUniverse` and `RefinementQuerySubject` are
+  `#[non_exhaustive]`; `RefinementQuerySubject::new(..)` builds a subject with
+  default normalization and observation limits and no proof bounds.
 - `RefinementQuerySubject`: one subject (the concrete or the abstract model):
   the domain package and snapshot provisions, the initial `DocumentRef`s, the
   `RefinementUniverse`s (a population's `DeclarationKey` and its object keys),
@@ -68,6 +78,9 @@ root items alone:
 | FR-492-AC-2 | `refinement_step_sources` over `CasRefinesCounter` returns a permutation of `0..7` and each named operation's `steps` position maps to the source row of that operation. | Test (TC-1275) |
 | FR-492-AC-3 | Writing `commitB` before `commitA` changes the mapping and not the `Step` query the `commitA` row encodes. | Test (TC-1275) |
 | FR-492-AC-4 | The `qsl_replay` root re-exports no `qsl_eval` item: `arch-lint api-surface --qsl . --qsl-only` reports no finding. | Test (arch-lint-api-surface-qsl) |
+| FR-492-AC-5 | `refinement_node_key("CasRefinesCounter")` over the retained closure returns the node key of that refinement, and a second call returns the same key. | Test (TC-1275) |
+| FR-492-AC-6 | `refinement_node_key` over a name the closure does not declare returns `UnknownName`, and over a name declared as a state clause returns `NotARefinement`. | Test (TC-1275) |
+| FR-492-AC-7 | `RefinementUniverse::for_population(package, population, keys)` equals the universe of the `DeclarationKey` of that population declared in that package. | Test (TC-1275) |
 
 ## Dependencies
 
