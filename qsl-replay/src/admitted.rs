@@ -16,10 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{
-    CheckedGraph, CheckedTypeNode, CompositeForm, NominalNode, SemanticGraph,
-};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
+use qsl_semantics::library::LibraryName;
 use quire_exact::{Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
@@ -47,8 +45,8 @@ impl AdmittedEnumCase {
     }
 
     /// The admitted key of the case's member node.
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 }
 
@@ -64,8 +62,8 @@ pub struct AdmittedEnum {
 
 impl AdmittedEnum {
     /// The admitted key of the declaration node.
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 
     /// The declaration's qualified name.
@@ -172,8 +170,8 @@ impl AdmittedComposite {
     /// is also the settled key: the `final_key` of `seal_union_verified`, the
     /// declaration of every [`AdmittedUnionMember::member`] and the id a
     /// replay witness names the union by.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The declaration's kernel key: the key `CompositeDeclaration::new` and
@@ -181,8 +179,8 @@ impl AdmittedComposite {
     /// `TypeEnvironment` and replay use. For a union this is the handle of its
     /// types (the `handle` of `seal_union_verified`); its values and members
     /// carry [`Self::node`].
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 
     /// The declaration's qualified name.
@@ -227,8 +225,8 @@ impl AdmittedDimension {
     /// The id of the dimension's node: the wire node id
     /// [`AdmittedContext::dimension_declaration`] finds it by and
     /// [`AdmittedUnit::dimension`] names it by.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The declaration's qualified name.
@@ -271,8 +269,8 @@ pub struct AdmittedUnit {
 impl AdmittedUnit {
     /// The id of the unit's node: the wire node id
     /// [`AdmittedContext::unit_declaration`] finds it by.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The unit's kernel id: the id `ValueType::Quantity` and a kernel
@@ -288,8 +286,8 @@ impl AdmittedUnit {
     }
 
     /// The node id of the unit's dimension ([`AdmittedDimension::node`]).
-    pub fn dimension(&self) -> NodeKey {
-        self.dimension
+    pub fn dimension(&self) -> &NodeKey {
+        &self.dimension
     }
 
     /// The unit as the kernel's quantity operations take it: its normalized
@@ -325,12 +323,12 @@ pub enum AdmittedLookupRefusal {
     /// The declaration id names a declaration of the looked-up kind that a
     /// dependency of this package admitted, not this package. Its keys are
     /// that package's.
-    #[error("foreign_declaration: declaration {declaration} is admitted by dependency package {}", .package.hex())]
+    #[error("foreign_declaration: declaration {declaration} is admitted by dependency package {package}")]
     Foreign {
         /// The declaration id looked up.
         declaration: NodeKey,
         /// The dependency package that admitted it.
-        package: PackageId,
+        package: LibraryName,
     },
     /// The declaration id names a node this package admitted that is not a
     /// declaration of the looked-up kind (for a record, tuple or union lookup
@@ -362,28 +360,27 @@ fn unknown_what(declaration: &NodeKey, case: &Option<Identifier>) -> String {
 /// record, tuple, union, dimension and unit a dependency admitted.
 #[derive(Clone, Debug)]
 pub struct AdmittedContext {
-    package: PackageId,
-    enums: BTreeMap<[u8; 32], AdmittedEnum>,
-    foreign: BTreeMap<[u8; 32], PackageId>,
-    composites: BTreeMap<[u8; 32], AdmittedComposite>,
-    foreign_composites: BTreeMap<[u8; 32], PackageId>,
-    units: BTreeMap<[u8; 32], AdmittedUnit>,
-    foreign_units: BTreeMap<[u8; 32], PackageId>,
-    dimensions: BTreeMap<[u8; 32], AdmittedDimension>,
-    foreign_dimensions: BTreeMap<[u8; 32], PackageId>,
+    package: LibraryName,
+    enums: BTreeMap<NodeKey, AdmittedEnum>,
+    foreign: BTreeMap<NodeKey, LibraryName>,
+    composites: BTreeMap<NodeKey, AdmittedComposite>,
+    foreign_composites: BTreeMap<NodeKey, LibraryName>,
+    units: BTreeMap<NodeKey, AdmittedUnit>,
+    foreign_units: BTreeMap<NodeKey, LibraryName>,
+    dimensions: BTreeMap<NodeKey, AdmittedDimension>,
+    foreign_dimensions: BTreeMap<NodeKey, LibraryName>,
     unit_table: UnitTable,
     /// Every node of this package's checked graph, and every declared unit
     /// and dimension (a unit enters the graph only when the package uses
     /// it): the ids a composite, unit or dimension lookup refuses as the
-    /// wrong kind when it is not of the looked-up kind. One 32-byte id per
-    /// node, so the context grows with the package's graph (FR-396, FR-398).
-    nodes: BTreeSet<[u8; 32]>,
+    /// wrong kind when it is not of the looked-up kind.
+    nodes: BTreeSet<NodeKey>,
 }
 
 impl AdmittedContext {
-    /// The `package_id` of the package whose check admitted this context.
-    pub fn package_id(&self) -> PackageId {
-        self.package
+    /// The library name of the package whose check admitted this context.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package
     }
 
     /// Every enum declaration this package admitted, ascending by key.
@@ -399,16 +396,16 @@ impl AdmittedContext {
     /// [`AdmittedLookupRefusal::Unknown`] when no package of the closure did.
     pub fn enum_declaration(
         &self,
-        declaration: NodeKey,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedEnum, AdmittedLookupRefusal> {
-        let id = *declaration.as_bytes();
-        if let Some(admitted) = self.enums.get(&id) {
+        if let Some(admitted) = self.enums.get(declaration) {
             return Ok(admitted);
         }
-        Err(match self.foreign.get(&id) {
-            Some(&package) => AdmittedLookupRefusal::Foreign {
+        let declaration = declaration.clone();
+        Err(match self.foreign.get(&declaration) {
+            Some(package) => AdmittedLookupRefusal::Foreign {
+                package: package.clone(),
                 declaration,
-                package,
             },
             None => AdmittedLookupRefusal::Unknown {
                 declaration,
@@ -425,13 +422,13 @@ impl AdmittedContext {
     /// naming the case when the declaration has no such case.
     pub fn enum_case(
         &self,
-        declaration: NodeKey,
+        declaration: &NodeKey,
         case: &Identifier,
     ) -> Result<&AdmittedEnumCase, AdmittedLookupRefusal> {
         self.enum_declaration(declaration)?
             .case(case)
             .ok_or_else(|| AdmittedLookupRefusal::Unknown {
-                declaration,
+                declaration: declaration.clone(),
                 case: Some(case.clone()),
             })
     }
@@ -453,10 +450,9 @@ impl AdmittedContext {
     /// otherwise.
     pub fn composite_declaration(
         &self,
-        declaration: NodeKey,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedComposite, AdmittedLookupRefusal> {
-        let id = *declaration.as_bytes();
-        if let Some(admitted) = self.composites.get(&id) {
+        if let Some(admitted) = self.composites.get(declaration) {
             return Ok(admitted);
         }
         Err(self.refusal(declaration, &self.foreign_composites))
@@ -478,10 +474,10 @@ impl AdmittedContext {
     /// [`AdmittedLookupRefusal::Unknown`] otherwise.
     pub fn unit_declaration(
         &self,
-        declaration: NodeKey,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedUnit, AdmittedLookupRefusal> {
         self.units
-            .get(declaration.as_bytes())
+            .get(declaration)
             .ok_or_else(|| self.refusal(declaration, &self.foreign_units))
     }
 
@@ -498,10 +494,10 @@ impl AdmittedContext {
     /// As [`Self::unit_declaration`], for a dimension.
     pub fn dimension_declaration(
         &self,
-        declaration: NodeKey,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedDimension, AdmittedLookupRefusal> {
         self.dimensions
-            .get(declaration.as_bytes())
+            .get(declaration)
             .ok_or_else(|| self.refusal(declaration, &self.foreign_dimensions))
     }
 
@@ -518,16 +514,16 @@ impl AdmittedContext {
     /// `Unknown`.
     fn refusal(
         &self,
-        declaration: NodeKey,
-        foreign: &BTreeMap<[u8; 32], PackageId>,
+        declaration: &NodeKey,
+        foreign: &BTreeMap<NodeKey, LibraryName>,
     ) -> AdmittedLookupRefusal {
-        let id = declaration.as_bytes();
-        if let Some(&package) = foreign.get(id) {
+        let declaration = declaration.clone();
+        if let Some(package) = foreign.get(&declaration) {
             AdmittedLookupRefusal::Foreign {
+                package: package.clone(),
                 declaration,
-                package,
             }
-        } else if self.nodes.contains(id) {
+        } else if self.nodes.contains(&declaration) {
             AdmittedLookupRefusal::WrongKind { declaration }
         } else {
             AdmittedLookupRefusal::Unknown {
@@ -606,8 +602,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::DomainPackages(_)
             | ReplayRefusal::SourceCount(_)
             | ReplayRefusal::DependencySelections(_)
-            | ReplayRefusal::DependencyIdentityMismatch { .. }
-            | ReplayRefusal::PackageIdMismatch { .. }
+            | ReplayRefusal::InvalidPackageName(_)
             | ReplayRefusal::UnknownFunction { .. }
             | ReplayRefusal::ClaimOccurrence { .. }
             | ReplayRefusal::UnknownParameter(_)
