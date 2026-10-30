@@ -19,7 +19,6 @@ fn fixed_minimal_control_and_multiple_clause_vectors_match_the_public_producer()
         )
         .unwrap();
         assert_eq!(package.bytes(), vector.artifact, "{} artifact", vector.name);
-        assert_eq!(package.digest(), ByteDigest::of(&vector.artifact));
         assert_eq!(
             package.canonical_identity().to_string(),
             vector.digest,

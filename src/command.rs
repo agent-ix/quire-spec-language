@@ -12,7 +12,7 @@ pub use output::NativeResult;
 
 use crate::formal_source::FormalSource;
 use crate::model_source::ModelSourceError;
-use crate::package::{NativePackageRef, PackageError};
+use crate::package::PackageError;
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
@@ -207,17 +207,6 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
-    /// The selected package failed its verified reader; source compilation is not a fallback.
-    #[error("selected package {file}: {error}")]
-    SelectedPackage {
-        /// Request-selected package file.
-        file: String,
-        /// Exact expected package byte reference.
-        expected: NativePackageRef,
-        /// Original reader failure.
-        #[source]
-        error: Box<PackageError>,
-    },
     /// A `1-draft` program's request selects what spine compile does not
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
@@ -327,7 +316,7 @@ impl RunCause {
             Self::Linking(error) => error.diagnostic.code,
             Self::Checking(error) => error.diagnostic.code,
             Self::Model(error) => error.code(),
-            Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
+            Self::Package(error) => error.code,
             Self::CompleteSelection(_)
             | Self::Libraries(_)
             | Self::CompleteRunSelection(_)

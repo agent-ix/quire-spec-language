@@ -50,18 +50,14 @@ NativePackage::read_verified(
 NativePackage::checked(&self) -> &CheckedPackage<'model>
 NativePackage::bytes(&self) -> &[u8]
 NativePackage::canonical_identity(&self) -> NativePackageIdentity
-NativePackage::reference(&self) -> NativePackageRef
 NativePackage::usage(&self) -> &PackageUsage
-NativePackageRef::new(identity: NativePackageIdentity) -> NativePackageRef
-NativePackageRef::identity(&self) -> &NativePackageIdentity
-NativePackageRef::format(&self) -> &'static str
 ```
 
 NativePackage is constructor-private, owns the checked package and accepted
 immutable artifact bytes, and borrows the same admitted models through that
-checked package. Reference types cannot be interchanged with SourceIdentity,
-SnapshotRef or InvocationRef. A NativePackageRef is an identity selector, not proof
-that a package exists or has been checked. It fixes format native-linked-package/1.
+checked package. read_verified takes no expected package reference: bytes that
+do not reconstruct from the offered bindings and models are refused
+InvalidPackage at the compare stage.
 
 PackageReadLimits contains separate `package: PackageLimits`, `syntax: Limits`,
 `link: LinkLimits` and `check: CheckLimits`. Each default equals the existing

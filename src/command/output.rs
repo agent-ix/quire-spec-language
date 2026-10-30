@@ -68,32 +68,6 @@ fn diagnostic_with_upstream<'a>(
     }
 }
 
-fn package_path(value: &crate::package::PackagePathSegment) -> types::PackagePath<'_> {
-    match value {
-        crate::package::PackagePathSegment::Field(name) => types::PackagePath::Field(name),
-        crate::package::PackagePathSegment::Index(index) => types::PackagePath::Index(*index),
-    }
-}
-
-fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_> {
-    match value {
-        crate::package::PackageCause::Native(value) => {
-            types::PackageCause::Native(diagnostic(value))
-        }
-        crate::package::PackageCause::Linking(value) => types::PackageCause::Native(
-            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
-        ),
-        crate::package::PackageCause::Checking(value) => types::PackageCause::Native(
-            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
-        ),
-        crate::package::PackageCause::Json(value) => types::PackageCause::Json {
-            line: value.line(),
-            column: value.column(),
-            message: value.to_string(),
-        },
-    }
-}
-
 pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         #[cfg(feature = "quire-extraction")]
@@ -187,23 +161,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Package,
             types::Details::Package {
                 stage: error.stage.to_string(),
-            },
-        ),
-        RunCause::SelectedPackage {
-            file,
-            expected,
-            error,
-        } => (
-            types::Stage::SelectedPackage,
-            types::Details::SelectedPackage {
-                file,
-                expected: types::PackageReference {
-                    format: expected.format(),
-                    digest: expected.digest().to_string(),
-                },
-                stage: error.stage.to_string(),
-                path: error.path.iter().map(package_path).collect(),
-                cause: error.cause.as_ref().map(package_cause),
             },
         ),
         RunCause::CompleteSelection(_)
