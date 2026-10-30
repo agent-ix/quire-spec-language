@@ -89,19 +89,64 @@ JCS implementation ADR-013 §2 names (`quire-canonical`).
 
 ### The `quire.structural-node/v1` preimage
 
-For rule 3 above, `check` SHALL build the closed structural preimage defined
-by QSpec FR-322, “Structural node preimage,” and compute its key using the
-canonical encoder ADR-013 §2 names. The `owner` value on a declared source
-node comes from its declaring unit; a model-owned node uses the owner supplied
-under FR-094. QSL does not define a second preimage shape or literal spelling.
-The type/form-to-node mapping below and the group ordering in this
-requirement determine the inputs QSL supplies to that QSpec preimage.
+The preimage is one JSON object with these members:
 
-QSpec FR-322, “Scalar literal values” and “Integers in a node-key preimage,”
-own literal canonical forms and counter encodings. QSL's check stage SHALL
-build those values from its checked types and literals, and SHALL NOT reject
-a key input solely for integer magnitude.
+| Member | Value |
+|---|---|
+| `version` | `"quire.structural-node/v1"` |
+| `owner` | Present exactly when `declaration` is not `null` or the node is model-owned: the declaring node's QSpec `Owner` (ADR-013 O-04). A `Value` declaration compiled from source carries its unit's `SourceOwner`, `{kind: "source", authority, identity}`. A model-owned node carries `ModelOwner` and a `null` `declaration` ([FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)). Absent otherwise. |
+| `node_tag` | The node's FR-322 `node_tag`. |
+| `semantic_form` | The node's FR-322 `semantic_form`. |
+| `semantic_type` | The key of the node's semantic type, or `null` when the node's semantic type is the node itself. When the semantic type is a member of the node's own recursion group, `{term: "group_reference", ordinal}` (Recursion groups). |
+| `declaration` | `{qualified_name}` for a node with a `declaration` source occurrence (FR-322 `declaration`), else `null`. |
+| `recursion` | `null` for a node outside every recursion group, else `{size, ordinal, group}` (Recursion groups). |
+| `body` | The node's FR-322 body term. A `reference` to a member of the node's own recursion group is written `{term: "group_reference", ordinal}`, as `quire.application-node/v1` writes it. |
 
+The members, the `group_reference` rule and the term shapes are those of
+`quire.application-node/v1`, with four differences: the `version`, the
+`owner` member of a declared or model-owned node, a `null`
+`semantic_type` for a self-typed node, and the `group` member and
+`semantic_type` position of an in-group node (Recursion groups). A
+`scalar_type` and a `composite_type` node are their own semantic type, so
+this `null` keeps their preimage acyclic.
+
+A preimage holds integers in two kinds of place. A *counter* is
+`recursion`'s `size` and `ordinal`, a `group_reference` `ordinal` or an
+`operation.member` `position`. A counter is a JCS number when its value is
+at most 2^53-1 (9007199254740991), and its canonical decimal string
+otherwise; each counter is decided on its own. This is the replay wire's
+rule for an integer that can exceed 2^53 (ADR-013 O-09), and it is not a
+choice: RFC 8785 renders a JSON number exactly only up to 2^53-1, so the
+decimal string is the one exact spelling beyond it. Every other integer is
+a literal's *value*, which includes every bound of `Int[lo, hi]`, and is
+the canonical decimal string at every magnitude (below). Keying never
+refuses an integer for its magnitude. Every key minted before this rule
+had counters below 2^53 and string values, so no existing key changes.
+`recursion`'s `group` is the group key (Recursion groups). A literal's value is
+spelled by its `value_kind`:
+
+- `integer`: the canonical decimal string of the value: no leading zero, no
+  `+`, and `-` only before a nonzero value (QSpec `IntegerString`);
+- `rational`: `"n/d"`, the reduced fraction with a positive denominator, and
+  `"0/1"` for zero;
+- `boolean`: a JSON boolean;
+- `text`: the text as a JSON string;
+- `string`: the exact Unicode scalar sequence as a JSON string, with no
+  normalization;
+- `uuid`: the canonical lowercase `8-4-4-4-12` text;
+- `timestamp`: the canonical decimal string of the signed 128-bit nanosecond
+  count, `0` or an optional `-` before a nonzero digit and further digits, as
+  for `integer`;
+  QSpec FR-322 "Scalar literal values" fixes these three spellings;
+- `decimal`: the coefficient and scale of a `decimal(c, s)` constructor as
+  QSpec FR-322 "Scalar literal values" spells them: the digits of `|c|` with
+  the decimal point placed `s` digits from the right, padded on the left with
+  zeros so that at least one digit precedes the point, no point when `s` is
+  `0`, and `-` only before a nonzero `c`. So `(125, 2)` is `"1.25"`, `(5, 2)`
+  is `"0.05"`, `(10, 0)` is `"10"`, `(0, 2)` is `"0.00"` and `(-5, 1)` is
+  `"-0.5"`. The spelling keeps the scale as written, so `decimal(10, 1)` and
+  `decimal(100, 2)` are two values of one magnitude and two literal nodes;
+- `none`: `null`.
 
 Building a type node and lowering a checked expression each walk a tree of
 any depth over an explicit heap stack, bounded by the check stage's node,
@@ -123,8 +168,11 @@ preimage: a body `reference` target, its `semantic_type`, an application's
 A node's **recursion group** is its strongly connected component in the graph
 of these edges when that component has more than one node or a node that
 names itself. Recursive functions form groups (a function node, its body's
-conditional and its recursive call). Source-level recursive record forms
-follow QSpec FR-143; this requirement adds no record-cycle admission rule.
+conditional and its recursive call), and so do the recursive records that
+QSpec FR-143 admits (a record and the `Option` or collection node that its
+field names). FR-143 admits a record cycle only through an optional field,
+an `Option` or a collection whose minimum is zero, and admits no cycle
+through a tuple position.
 
 `check` SHALL key nodes in dependency order. It keys a node outside every
 group after every node that node names. It keys a group after every node
@@ -134,15 +182,28 @@ already knows every key that the members name outside the group.
 
 #### An in-group node's preimage
 
-`check` SHALL form each in-group preimage under QSpec FR-322's structural or
-application node-key rules. The group's `size`, member ordinal, and
-`group_reference` substitutions are determined by the QSL ordering below;
-QSL's package emitter writes group members in that same ordinal order so the
-reader can recover the order from graph position. In particular, an in-group
-structural node may name a member through `semantic_type`, as the
-`collection_bounds` node does for `Sequence<Tree>` in G9. QSpec FR-322 owns
-the corresponding reader checks for retained keys and group labels; QSL's
-producer MUST emit keys current under that contract.
+`check` SHALL key a member of a recursion group by the preimage its kind
+selects (rule 2 or rule 3), with these members:
+
+- `recursion` is `{size, ordinal}`, where `size` is the number of the
+  group's classes and `ordinal` is the rank of the member's class in the
+  group order below. In a `quire.structural-node/v1` preimage, `recursion`
+  also has `group`, the group key below. In a
+  `quire.application-node/v1` preimage, `recursion` is exactly
+  `{size, ordinal}`, as FR-322 writes it.
+- Each position that names a member of the node's own group holds
+  `{term: "group_reference", ordinal}`, with that member's ordinal, in place
+  of the member's `reference` term or `NodeId`.
+
+An application node names members of its own group only through body
+`reference` terms: its `result_type`, its literal types and its member
+declarations are type or model nodes, and a type or model node names no
+expression, value or function node, so it is never in the application
+node's group. The application-node preimage of an in-group node therefore
+keeps FR-322's shape. A structural in-group node can name a member at its
+`semantic_type`: in `record Tree { kids: Sequence<Tree>[0, 3]; }`, the
+`collection_bounds` node's semantic type is the `Sequence<Tree>` node of the
+same group (G9).
 
 #### The group order
 

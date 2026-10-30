@@ -151,12 +151,16 @@ reaches the crate through `quire-contract-model` (which also brings
 behind `qsl-package`'s `std` feature. The others stay: `qsl-package` is
 crate tier, so its host check needs only its own source to be `no_std`.
 
-QSpec FR-322 owns the checked-package wire and package-identity contract; IR's
-`quire-contract-model` owns the reader, and QSL's emitter writes the form.
-With `std` disabled, the checked-IR path reads no JSON and computes no
-`package_id`. A no-`std` consumer that must read JSON SHALL use
-`quire-canonical`'s `read` (ADR-030 RU-2) and its encoder (ADR-013 §2), never
-`serde_json` or a second reader.
+The wire representation is unchanged: QSpec FR-322 defines
+`quire.checked-package/v2`, IR's `quire-contract-model` owns its reader,
+and QSL's emitter writes it. `package_id` is the QSpec FR-322 identity
+member of the `quire.checked-package-id/v2` identity preimage, encoded
+through `quire-canonical`, the one encoder (ADR-013 §2); QSL computes no hash
+of it (BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): the `package_id` hash computation and its `PackageId`/`verify_binding` deletion). When a `no_std`
+crate must read JSON, it reads through `quire-canonical`'s `read` (the one
+shared iterative reader, ADR-030 RU-2, which builds `no_std` + `alloc`),
+never through `serde_json` or a second reader, and it encodes identities
+through `quire-canonical`'s encoder only.
 
 ### `qsl-package` surface with `std` disabled
 
