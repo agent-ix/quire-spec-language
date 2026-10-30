@@ -119,7 +119,7 @@ pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     let initial: Vec<DocumentRef> = values
         .iter()
         .enumerate()
-        .map(|(index, value)| documents.start(&format!("s{index}"), &[("c", *value)]))
+        .map(|(index, value)| documents.start(&format!("s{index}-{value}"), &[("c", *value)]))
         .collect();
     let outcome = check_model(
         ModelCheckRequest {

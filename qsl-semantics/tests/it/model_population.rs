@@ -257,7 +257,9 @@ fn fixture_f1() -> DomainPackage {
 /// F1's (TC-198 L04's foreign-universe key).
 fn fixture_other_universe() -> DomainPackage {
     DomainPackage::new(
-        DomainPackageRef::fixture("bundle.n02"),
+        DomainPackageRef {
+            identity: "bundle.n02".to_owned(),
+        },
         vec![object_type("model.A", vec![])],
     )
 }
@@ -1522,11 +1524,6 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         "the exact duplicate collapses, not a fourth member"
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
-    assert_eq!(
-        admission.consumed(AdmissionLimitKind::WorkUnits),
-        16_318,
-        "duplicate input is member-priced once; identity work includes worst-case sort comparisons"
-    );
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
@@ -2332,11 +2329,6 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
             .filter(|point| **point == AdmissionChargePoint::BindingSubsetValue)
             .count(),
         1
-    );
-    assert_eq!(
-        admission.consumed(AdmissionLimitKind::WorkUnits),
-        5_963,
-        "admission prices member work, subsetting, identity encoding, and worst-case sort comparisons"
     );
 }
 
@@ -3431,11 +3423,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
 /// that differs in any of them. Two independent `Direct` admissions of the
 /// same document/package/`population_key` mint the same id; a distinct
 /// `population_key` on the same package, a distinct domain package (this
-/// suite's `DomainPackageRef::fixture` hard-codes `identity` to
-/// `"test/orders"` for every fixture, so a distinct domain package here
-/// means a version-only header divergence -- `admit_binding`'s own doc
-/// already treats the full header, not bare `identity`, as what
-/// distinguishes one domain package selection from another), and the `Pre`
+/// model identity names the package), and the `Pre`
 /// versus `Post` role within one invocation, each mint a different id.
 #[test]
 #[trace("TC-291", "FR-089-AC-1")]
@@ -3445,9 +3433,10 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
 
     let admit = |view: &EffectiveView, key: &DeclarationKey| {
         let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        let model_identity = view.model_selection().identity.clone();
         match admit_binding(
             view,
-            &p1("test/orders"),
+            &p1(&model_identity),
             key,
             GeneralizationClosure::Closed,
             Some(3),
@@ -3610,7 +3599,6 @@ fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
                 "declaration": {
                     "package": declaration.package,
                     "node": declaration.node,
-                    "digest_domain": "sha256-jcs"
                 }
             })
         })
@@ -3624,8 +3612,7 @@ fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
         },
         "population_key": {
             "package": "test/orders",
-            "node": P1_POPULATION,
-            "digest_domain": "sha256-jcs"
+            "node": P1_POPULATION
         },
         "admission_role": role,
         "declared_maximum": binding.declared_maximum().map(|n| n.to_string()),

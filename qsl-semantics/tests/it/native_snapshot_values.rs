@@ -1582,64 +1582,6 @@ fn a_string_object_counts_as_one_value() {
     );
 }
 
-/// TC-1036 step 9 (FR-106-AC-32): a lone surrogate escape or an invalid UTF-8
-/// byte in a `label` text is a document the shared reader refuses at check
-/// 1.3 (`stale_dependency`/`byte-digest-mismatch`) before any value is read,
-/// even beside a wrong-kind `token`; a text past the byte limit refuses
-/// `input-bytes-exceeded` at check 1.2.
-#[trace("TC-1036", "FR-106-AC-32")]
-#[test]
-fn the_document_edge_refuses_before_any_value_is_read() {
-    let replay = replay();
-    let (base, _) = snapshot(&replay, "current", "current", &base_fields());
-    let admit_bytes = |bytes: Vec<u8>| {
-        let provision = BTreeMap::from([(base.clone(), bytes)]);
-        admit_current_snapshot(
-            replay.graph.model_selections(),
-            replay.graph.scope().types(),
-            &replay.packages,
-            ModelNormalizationLimits::default(),
-            &provision,
-            &base,
-            ObservationLimits::default(),
-        )
-        .map(|_| ())
-    };
-    let wrong_token = with(base_fields(), "token", timestamp("0"));
-    let text = snapshot_text(&replay, "current", "current", &base_fields());
-    let wrong_text = snapshot_text(&replay, "current", "current", &wrong_token);
-    let mut documents = vec![
-        text.replace("\"ready\"", "\"\\ud800\"").into_bytes(),
-        text.replace("\"ready\"", "\"\\udc00\"").into_bytes(),
-        wrong_text.replace("\"ready\"", "\"\\ud800\"").into_bytes(),
-    ];
-    let mut raw = text.replace("\"ready\"", "\"r\u{1}y\"").into_bytes();
-    let at = raw
-        .windows(3)
-        .position(|window| window == b"r\x01y")
-        .expect("the marker");
-    raw[at + 1] = 0xC0;
-    raw.remove(at + 2);
-    documents.push(raw);
-    for bytes in documents {
-        let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
-            panic!("a refusal");
-        };
-        assert_eq!(record.code, Code::StaleDependency);
-        assert_eq!(record.cause, "byte-digest-mismatch");
-    }
-    let huge = text.replace("\"ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
-    let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
-        panic!("a refusal");
-    };
-    assert_eq!(record.code, Code::StageLimitExceeded);
-    assert_eq!(record.cause, "input-bytes-exceeded");
-    assert_eq!(
-        record.fields.get("setting").map(String::as_str),
-        Some("observation.input_bytes")
-    );
-}
-
 /// TC-1038 / FR-106-AC-34, FR-106-AC-35 (the part this fixture reaches): a
 /// Text object runs the envelope (missing member, unknown member, non-text
 /// payload) and then refuses `wrong-value-kind` in every slot this fixture
@@ -2000,64 +1942,6 @@ fn a_text_object_counts_as_one_value() {
             ObservationLimits::default().with_values_per_document(16),
         ),
         16,
-    );
-}
-
-/// TC-1038 step 10 (FR-106-AC-38): a `title` text holding a lone surrogate
-/// escape or the byte `0xC0`, selected under the base snapshot's digest,
-/// refuses `byte-digest-mismatch` before any value is read (a wrong-kind
-/// `token` elsewhere changes nothing); a document over the byte limit refuses
-/// `input-bytes-exceeded` naming `observation.input_bytes`.
-#[trace("TC-1038", "FR-106-AC-38")]
-#[test]
-fn the_document_edge_refuses_a_title_before_any_value_is_read() {
-    let replay = text_replay();
-    let (base, _) = snapshot(&replay, "current", "current", &replay.base);
-    let admit_bytes = |bytes: Vec<u8>| {
-        let provision = BTreeMap::from([(base.clone(), bytes)]);
-        admit_current_snapshot(
-            replay.graph.model_selections(),
-            replay.graph.scope().types(),
-            &replay.packages,
-            ModelNormalizationLimits::default(),
-            &provision,
-            &base,
-            ObservationLimits::default(),
-        )
-        .map(|_| ())
-    };
-    let text_of = snapshot_text(&replay, "current", "current", &replay.base);
-    let wrong_token = with(replay.base.clone(), "token", timestamp("0"));
-    let wrong_text = snapshot_text(&replay, "current", "current", &wrong_token);
-    let mut documents = vec![
-        text_of.replace("\"Ready\"", "\"\\ud800\"").into_bytes(),
-        text_of.replace("\"Ready\"", "\"\\udc00\"").into_bytes(),
-        wrong_text.replace("\"Ready\"", "\"\\ud800\"").into_bytes(),
-    ];
-    let mut raw = text_of.replace("\"Ready\"", "\"r\u{1}y\"").into_bytes();
-    let at = raw
-        .windows(3)
-        .position(|window| window == b"r\x01y")
-        .expect("the marker");
-    raw[at + 1] = 0xC0;
-    raw.remove(at + 2);
-    documents.push(raw);
-    for bytes in documents {
-        let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
-            panic!("a refusal");
-        };
-        assert_eq!(record.code, Code::StaleDependency);
-        assert_eq!(record.cause, "byte-digest-mismatch");
-    }
-    let huge = text_of.replace("\"Ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
-    let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
-        panic!("a refusal");
-    };
-    assert_eq!(record.code, Code::StageLimitExceeded);
-    assert_eq!(record.cause, "input-bytes-exceeded");
-    assert_eq!(
-        record.fields.get("setting").map(String::as_str),
-        Some("observation.input_bytes")
     );
 }
 

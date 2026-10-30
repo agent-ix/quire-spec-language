@@ -61,7 +61,7 @@ fn field(name: &str) -> DeclarationKey {
 /// An operation's declaration identity text (FR-120 "Identities").
 fn operation_text(name: &str) -> String {
     format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident(&format!("Counter/{name}"))
     )
 }
@@ -798,15 +798,12 @@ fn the_state_key_is_the_simulation_state_envelope() {
 }
 
 fn counter_text() -> String {
-    format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
-        ident("Counter")
-    )
+    format!(r#"{{"node":"{}","package":"{PACKAGE}"}}"#, ident("Counter"))
 }
 
 fn population_text() -> String {
     format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"{}","package":"{PACKAGE}"}}"#,
+        r#"{{"node":"{}","package":"{PACKAGE}"}}"#,
         ident("counters")
     )
 }
@@ -1092,7 +1089,7 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
 }
 
 fn declaration_naming(key: &DeclarationKey) -> Json {
-    json!({"digest_domain": "sha256-jcs", "node": key.node, "package": key.package})
+    json!({"node": key.node, "package": key.package})
 }
 
 /// The requires-bound domain key FR-120 "Bounds" gives the root named by

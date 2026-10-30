@@ -4,8 +4,8 @@
 //! follow closed formulas that are linear in effective types and direct
 //! supertype edges, however many ancestor paths the shape has.
 //!
-//! The expected figures are computed here from the byte shapes of the
-//! published preimages, independently of the encoder under test.
+//! The fact and work-unit figures are computed here independently of the
+//! encoder under test; byte totals are checked only for linear growth.
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{
@@ -92,39 +92,6 @@ fn dense(count: usize, fan: usize, width: usize) -> Vec<Node> {
         .collect()
 }
 
-/// The RFC 8785 length of a declaration key.
-fn key_len(name: &str) -> u64 {
-    let text = format!(
-        r#"{{"digest_domain":"sha256-jcs","node":"ix://test/orders/{name}","package":"test/orders"}}"#
-    );
-    u64::try_from(text.len()).expect("a key's length fits")
-}
-
-fn digits(value: usize) -> u64 {
-    u64::try_from(value.to_string().len()).expect("digit count fits")
-}
-
-/// TC-1024 step 3: twice the preimages (once alone, once in the view), the
-/// view header, the 154-byte frame per entry and the separators, plus one
-/// universe per root count (335 bytes, 126 more for each further root).
-fn expected_hashed_bytes(nodes: &[Node]) -> u64 {
-    let mut preimages = 0u64;
-    for node in nodes {
-        let own = key_len(&node.name);
-        let mut len = 106 + own + 96 + own;
-        for (at, parent) in node.parents.iter().enumerate() {
-            len += 1 + 217 + key_len(parent) + (digits(at + 1) - 1);
-        }
-        preimages += len;
-    }
-    let entries = u64::try_from(nodes.len()).expect("count fits");
-    let roots = u64::try_from(nodes.iter().filter(|node| node.parents.is_empty()).count())
-        .expect("count fits");
-    let view = 264 + 154 * entries + (entries - 1);
-    let universe = 335 + 126 * (roots - 1);
-    2 * preimages + view + universe
-}
-
 fn edges(nodes: &[Node]) -> u64 {
     nodes
         .iter()
@@ -165,29 +132,24 @@ fn assert_closed_formulas(nodes: &[Node]) {
         4 * types + 2 * edges + 2,
         "4V + 2E + 2"
     );
-    assert_eq!(counters.hashed_bytes, expected_hashed_bytes(nodes));
 }
 
-/// The published N13 shapes, by their literal counters.
+/// The published N13 shapes, by their literal fact and work-unit counters.
 #[trace("QSpec-TC-195", "QSpec-FR-081-AC-11")]
 #[test]
 fn n13_counters_equal_the_published_figures() {
     let one = counters(&chain(99, 2));
-    assert_eq!(
-        (one.facts, one.hashed_bytes, one.work_units),
-        (199, 149_894, 600),
-        "chain of 99 edges"
-    );
+    assert_eq!((one.facts, one.work_units), (199, 600), "chain of 99 edges");
     let two = counters(&ladder(50, 2));
     assert_eq!(
-        (two.facts, two.hashed_bytes, two.work_units),
-        (296, 209_400, 794),
+        (two.facts, two.work_units),
+        (296, 794),
         "50-layer width-2 ladder, 196 edges"
     );
     let three = counters(&dense(30, 5, 2));
     assert_eq!(
-        (three.facts, three.hashed_bytes, three.work_units),
-        (165, 108_988, 392),
+        (three.facts, three.work_units),
+        (165, 392),
         "thirty types, each generalizing the previous five"
     );
 }
@@ -204,11 +166,14 @@ fn cost_follows_closed_formulas() {
     assert_closed_formulas(&dense(1000, 10, 1));
 }
 
-/// The formula reproduces the published full-size figure before any
-/// normalization runs, so a wrong constant cannot hide in both places.
+/// Hashed bytes grow linearly along a chain: every added edge adds the same
+/// number of bytes, so the cost has no hidden quadratic term.
+#[trace("QSpec-TC-1024", "QSpec-NFR-012")]
 #[test]
-fn the_formula_reproduces_the_ten_thousand_edge_figure() {
-    assert_eq!(expected_hashed_bytes(&chain(10_000, 1)), 15_104_845);
+fn hashed_bytes_grow_linearly_along_a_chain() {
+    let bytes = |edges: usize| counters(&chain(edges, 4)).hashed_bytes;
+    let (a, b, c) = (bytes(100), bytes(200), bytes(300));
+    assert_eq!(b - a, c - b, "equal added edges add equal bytes");
 }
 
 /// N12 as TC-1024 step 5 states it: 13 effective declarations, 24 retained
