@@ -377,9 +377,10 @@ pub fn select_contract(
             let row = match entry.record().obligation {
                 StepObligation::Initial => None,
                 StepObligation::Step { row } => {
-                    let checked = &graph.refinements()[refinement];
-                    let source = (0..checked.steps().len())
-                        .find(|source| checked.step_row_ref(*source) == Some(row))
+                    // A row is named by its declaration position.
+                    let source = usize::try_from(row.index())
+                        .ok()
+                        .filter(|source| *source < graph.refinements()[refinement].steps().len())
                         .ok_or(ContractSelection::MissingNode)?;
                     Some(source)
                 }

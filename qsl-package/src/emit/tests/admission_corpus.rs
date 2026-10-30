@@ -2207,54 +2207,43 @@ fn population_and_object_rows_read_back() {
 
 /// QSpec FR-375-AC-22, FR-322-AC-88 and AC-128 (AC-87 does not apply: QSL
 /// derives no node per step row, the rows are members of the owner's
-/// body): each step row has
+/// body): `steps` holds the rows in declaration order, each step row has
 /// one `refinement_step_rows` entry at its own source row, keyed by the
-/// owner and its canonical ordinal, and a proof-eligible owner a
-/// `generated` occurrence per row (ordinal `i + 1` at row `i`'s region)
-/// beside the one at its declaration. Writing the rows in the other order
-/// moves the regions but not the `steps` order, the node id or the
-/// package id.
+/// owner and its ordinal, and a proof-eligible owner a `generated`
+/// occurrence per row (ordinal `i + 1` at row `i`'s region) beside the one
+/// at its declaration, whichever order the rows are written in.
 #[trace("FR-375-AC-22", "FR-322-AC-88", "FR-322-AC-128", "TC-310", "TC-233")]
 #[test]
-fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
+fn step_rows_carry_their_source_regions_by_ordinal() {
     let operations = ["attemptUpdate", "rollback"];
     let update = "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);";
     let rollback = "step C::ConfigVersion::rollback -> stutter;";
-    let (forward, forward_unit) = emit_rows(&format!("{MAPS}\n{update}\n{rollback}"), &operations);
-    let (reversed, reversed_unit) =
-        emit_rows(&format!("{MAPS}\n{rollback}\n{update}"), &operations);
-    let (forward_node, reversed_node) = (
-        refinement_node(&forward.emission),
-        refinement_node(&reversed.emission),
-    );
-    assert_eq!(forward_node["node_id"], reversed_node["node_id"]);
-    assert_eq!(forward_node["body"], reversed_node["body"]);
-    assert_eq!(
-        wire(&forward.emission)["package_id"],
-        wire(&reversed.emission)["package_id"]
-    );
-    let classes: Vec<&str> = forward_node["body"]["steps"]
-        .as_array()
-        .expect("steps")
-        .iter()
-        .map(|step| step["source_class"].as_str().expect("a class"))
-        .collect();
-    assert_eq!(
-        classes,
-        ["ConfigVersion::attemptUpdate", "ConfigVersion::rollback"]
-    );
-    for (emitted, unit, node) in [
-        (&forward, &forward_unit, &forward_node),
-        (&reversed, &reversed_unit, &reversed_node),
+    for (rows, classes) in [
+        (
+            [update, rollback],
+            ["ConfigVersion::attemptUpdate", "ConfigVersion::rollback"],
+        ),
+        (
+            [rollback, update],
+            ["ConfigVersion::rollback", "ConfigVersion::attemptUpdate"],
+        ),
     ] {
+        let (emitted, unit) = emit_rows(&format!("{MAPS}\n{}\n{}", rows[0], rows[1]), &operations);
+        let node = refinement_node(&emitted.emission);
+        let written_classes: Vec<&str> = node["body"]["steps"]
+            .as_array()
+            .expect("steps")
+            .iter()
+            .map(|step| step["source_class"].as_str().expect("a class"))
+            .collect();
+        assert_eq!(written_classes, classes);
         let written = wire(&emitted.emission);
-        let rows = written["refinement_step_rows"]
+        let sidecar = written["refinement_step_rows"]
             .as_array()
             .expect("a step-row sidecar");
-        let at = |row: &str| span_of(unit, row);
-        let expected = [at(update), at(rollback)];
-        assert_eq!(rows.len(), 2);
-        for (ordinal, (row, (start, end))) in rows.iter().zip(expected).enumerate() {
+        let expected = [span_of(&unit, rows[0]), span_of(&unit, rows[1])];
+        assert_eq!(sidecar.len(), 2);
+        for (ordinal, (row, (start, end))) in sidecar.iter().zip(expected).enumerate() {
             assert_eq!(row["node_id"], node["node_id"]);
             assert_eq!(row["ordinal"], ordinal);
             assert_eq!(
@@ -2275,7 +2264,7 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
                 )
             })
             .collect();
-        let declaration = span_of(unit, "refinement R");
+        let declaration = span_of(&unit, "refinement R");
         assert_eq!(generated.len(), 3, "{generated:?}");
         assert_eq!(generated[0].1, declaration.0);
         assert_eq!((generated[1].1, generated[1].2), expected[0]);
