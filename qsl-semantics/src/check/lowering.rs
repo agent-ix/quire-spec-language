@@ -19,7 +19,7 @@
 //! Every node is identified by its admitted structural `NodeKey`; lowering never
 //! hashes content to identify a node. Recursive functions and records form
 //! recursion groups (FR-092 "Recursion groups"). The text law is
-//! //! QSL's own text profile; the protocol law is the profile the unit's header
+//! QSL's own text profile; the protocol law is the profile the unit's header
 //! selected, and a protocol node with none refuses
 //! (`missing_declaration`/`missing-selection`).
 //!
@@ -32,6 +32,16 @@
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::ControlFlow;
 
+use qsl_foundation::IdentityLimits;
+use quire_exact::{
+    ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
+    TextProfile, Value, ValueType,
+};
+
+use super::check::{EnumBinding, Scope};
+use super::claims::BinderSite;
+use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
     Arithmetic, CaseArm, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId,
